@@ -653,8 +653,6 @@ function BottomTabNavigator() {
           shadowOffset: { width: 0, height: -5 },
           shadowOpacity: 0.1,
           shadowRadius: 8,
-          paddingBottom: 10,
-          height: 65,
           borderTopWidth: 0,
         },
       })}>
