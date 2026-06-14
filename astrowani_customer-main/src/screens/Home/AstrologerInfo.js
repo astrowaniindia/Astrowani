@@ -8,64 +8,32 @@ import {
   ScrollView,
   ActivityIndicator,
   Share,
+  Dimensions,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import AntDesign from 'react-native-vector-icons/AntDesign';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import GiftModal from '../../Component/Modal';
-import Icons from 'react-native-vector-icons/MaterialIcons';
 
-const Reviews = [
-  {
-    name: 'Anonymous User',
-    date: 'Aug 17, 2024',
-    rating: 5,
-    comment: 'Good',
-  },
-  {
-    name: 'Pravatee Nayak',
-    date: 'Aug 17, 2024',
-    rating: 5,
-    comment:
-      'Mam aap ki prediction sab accurate hai. Jo v bola aap ne sab sahi hai. Puja mai karungi',
-  },
-  {
-    name: 'Anonymous User',
-    date: 'Aug 16, 2024',
-    rating: 5,
-    comment: 'Very Good',
-  },
-  {
-    name: 'Pravatee Nayak',
-    date: 'Aug 15, 2024',
-    rating: 5,
-    comment:
-      'Aapne Jo Jo bola sab sahi hai mam. Aapki prediction 100%accurate hai. Sab sahi hai. Aapse bat karke dil ko tasali mil geyi . Mai puja karungi mam. Thank u so much',
-  },
-  {
-    name: 'Priyalakshmi Sukumaran',
-    date: 'Aug 1, 2024',
-    rating: 5,
-    comment: 'accurate',
-  },
-];
+const { width } = Dimensions.get('window');
+
 const AstrologerInfo = ({route, navigation}) => {
   const {person} = route.params;
   const [isExpanded, setIsExpanded] = useState(false);
   const [isFavorite, setIsFavorite] = useState(person.isFavorite || false);
   const [loading, setLoading] = useState(false);
   const [reviewloading, setReviewLoading] = useState(false);
-  const [reviews, setReviews] = useState('');
+  const [reviews, setReviews] = useState([]);
   const [reviewError, setReviewError] = useState('');
   const [avgRating, setAvgRating] = useState('');
   const [avgError, setAvgError] = useState('');
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
+
   const handleShowAllReviews = () => {
     setShowAllReviews(true);
   };
@@ -77,14 +45,10 @@ const AstrologerInfo = ({route, navigation}) => {
       setLoading(true);
       try {
         const token = await AsyncStorage.getItem('token');
-        if (!token) {
-          throw new Error('Token not found');
-        }
+        if (!token) throw new Error('Token not found');
 
         const response = await Instance.get('/api/favoriteAstrologer', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
         const favoriteAstrologers = response.data.favoriteAstrologer || [];
@@ -104,78 +68,47 @@ const AstrologerInfo = ({route, navigation}) => {
       setReviewLoading(true);
       try {
         const token = await AsyncStorage.getItem('token');
-        if (!token) {
-          throw new Error('Token not found');
-        }
+        if (!token) throw new Error('Token not found');
 
         const response = await Instance.get(
           `/api/reviews/astrologer/${person._id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
+          { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        if (response.data) {
-          setReviews(response.data);
-          // console.log('reviews', response.data);
-        }
+        if (response.data) setReviews(response.data);
       } catch (err) {
-        console.log('Error fetching favorite astrologers:', err);
         setReviewError(err.message);
       } finally {
         setReviewLoading(false);
       }
     };
+
     const fetchAvgRating = async () => {
-      setReviewLoading(true);
       try {
         const token = await AsyncStorage.getItem('token');
-        if (!token) {
-          throw new Error('Token not found');
-        }
+        if (!token) throw new Error('Token not found');
 
         const response = await Instance.get(
           `/api/reviews/astrologer/${person._id}/average-rating`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
+          { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        if (response.data) {
-          setAvgRating(response.data);
-          console.log('avgRating', response.data);
-        }
+        if (response.data) setAvgRating(response.data);
       } catch (err) {
-        console.log('Error fetching favorite astrologers:', err);
         setAvgError(err.message);
-      } finally {
-        setReviewLoading(false);
       }
     };
+    
     fetchAvgRating();
     fetchReviews();
     fetchFavorites();
   }, [navigation, person._id]);
+
   const onShare = async () => {
     try {
-      const result = await Share.share({
-        message: 'Check out this awesome content! https://example.com',
+      await Share.share({
+        message: `Check out ${person.name || 'this Astrologer'} on Astrowani!`,
       });
-
-      if (result.action === Share.sharedAction) {
-        if (result.activityType) {
-          // iOS specific
-          console.log('Shared with activity type: ', result.activityType);
-        } else {
-          console.log('Content Shared');
-        }
-      } else if (result.action === Share.dismissedAction) {
-        console.log('Share dismissed');
-      }
     } catch (error) {
       alert(error.message);
     }
@@ -184,571 +117,315 @@ const AstrologerInfo = ({route, navigation}) => {
   const toggleFavorite = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-
-      if (!token) {
-        throw new Error('Token not found');
-      }
+      if (!token) throw new Error('Token not found');
+      
       const response = await Instance.post(
-        isFavorite
-          ? '/api/favoriteAstrologer/remove'
-          : 'api/favoriteAstrologer/add',
-        {
-          astrologerId: person._id,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        },
+        isFavorite ? '/api/favoriteAstrologer/remove' : 'api/favoriteAstrologer/add',
+        { astrologerId: person._id },
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
       );
 
       if (response.data) {
         setIsFavorite(!isFavorite);
-        console.log(response.data);
-      } else {
-        console.error('Error updating favorite status:', result.message);
       }
     } catch (error) {
-      if (error.response) {
-        console.error('API call failed:', error.response.data);
-      } else {
-        console.log('error message:', error.message);
-      }
+      console.error('API call failed:', error.message);
     }
   };
-  const handleReadMore = () => {
-    setIsExpanded(!isExpanded);
-  };
 
-  const languages = person.language?.join(', ');
-  const specialties = person.specialties
-    ?.map(specialty => specialty.name)
-    .join(', ');
-
-  const handleChat = () => {
-    // navigation.navigate('ChatIntakeForm', { person: person });
-    navigation.navigate('PersonToPersonChat', {person: person});
-  };
-
-  const handleCall = async () => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
-
-      navigation.navigate('EnxJoinScreen', {
-        userId: person.userId,
-        name: userEntireData?.name || 'User',
-        astroId: person.userId,
-        callType: 'voice',
-        receiverId: person.userId,
-        callingCondition: 'outgoing',
-        callerRole: 'customer',
-        userToken: token,
-      });
-    } catch (error) {
-      console.log('Error initiating call:', error);
-      alert('Failed to initiate call');
-    }
-  };
+  const languages = person.language?.join(', ') || 'Hindi, English';
+  const specialties = person.specialties?.map(s => s.name).join(', ') || 'Vedic Astrology';
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Profile Section */}
-        <View style={styles.profileSection}>
-          <Image
-            source={{
-              uri:
-                person.profileImage ||
-                'https://cdn-icons-png.flaticon.com/128/3135/3135715.png',
-            }}
-            style={styles.avatar}
-          />
-          <View style={styles.profileDetails}>
-            <View style={styles.nameView}>
-              <Text style={styles.profileName}>{person.name || 'Name'}</Text>
-              <TouchableOpacity onPress={toggleFavorite} disabled={loading}>
-                {loading ? (
-                  <ActivityIndicator size="small" color="gray" />
-                ) : (
-                  <FontAwesome
-                    name={isFavorite ? 'heart' : 'heart-o'}
-                    size={20}
-                    color={isFavorite ? 'red' : 'gray'}
-                  />
-                )}
-              </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        {/* Background Header Arch */}
+        <View style={styles.headerBackground} />
+
+        {/* Profile Card */}
+        <View style={styles.profileCard}>
+          <View style={styles.profileTopRow}>
+            <Image
+              source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+              style={styles.avatar}
+            />
+            <View style={styles.profileDetails}>
+              <View style={styles.nameRow}>
+                <Text style={styles.profileName} numberOfLines={1}>{person.name || 'Astrologer'}</Text>
+                <TouchableOpacity onPress={toggleFavorite} disabled={loading} style={styles.favBtn}>
+                  {loading ? (
+                    <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+                  ) : (
+                    <FontAwesome name={isFavorite ? 'heart' : 'heart-o'} size={moderateScale(22)} color={isFavorite ? COLORS.AstroMaroon : '#ccc'} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.specialization} numberOfLines={1}>{person.specialties?.[0]?.name || 'Vedic Astrology'}</Text>
+              <Text style={styles.languages} numberOfLines={1}>{languages}</Text>
             </View>
-            <Text style={styles.specialization}>
-              {person.specialties?.[0]?.name || 'vedic Astrology'}
-            </Text>
-            <Text style={styles.languages}>{languages || 'hindi'}</Text>
-            <View style={styles.reviewsRow}>
-              {/* <Text style={styles.reviews}>Reviews: {}</Text> */}
-              <Text style={styles.rating}>{person.rating || '0'} ★</Text>
-              <Text style={styles.experience}>
-                Exp: {person.experience || '0'}
-              </Text>
-              <TouchableOpacity onPress={onShare}>
-                <AntDesign name="sharealt" size={24} color="red" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setModalVisible(true)}
-                style={{flexDirection: 'row', alignItems: 'center'}}>
-                <Icons
-                  name="card-giftcard"
-                  size={18}
-                  color="red"
-                  style={{marginRight: 5}}
-                />
-                <Text style={{fontSize: 14, color: 'red'}}>Send Gift</Text>
-              </TouchableOpacity>
+          </View>
+
+          {/* Stats Bar */}
+          <View style={styles.statsBar}>
+            <View style={styles.statItem}>
+              <MaterialIcons name="star" size={moderateScale(18)} color={COLORS.AstroGold} />
+              <Text style={styles.statText}>{person.rating || avgRating?.averageRating || 'New'}</Text>
             </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <MaterialIcons name="work-outline" size={moderateScale(18)} color="#666" />
+              <Text style={styles.statText}>{person.experience || '1'} Yrs</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <TouchableOpacity style={styles.statItem} onPress={() => setModalVisible(true)}>
+              <MaterialIcons name="card-giftcard" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+              <Text style={[styles.statText, { color: COLORS.AstroMaroon }]}>Gift</Text>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity style={styles.statItem} onPress={onShare}>
+              <AntDesign name="sharealt" size={moderateScale(18)} color="#666" />
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Specialization */}
-        <View style={styles.specializationSection}>
-          <Text style={styles.sectionTitle}>Specialization</Text>
-          <View style={styles.tagsContainer}>
-            {person.specialties?.length > 0 ? (
-              person.specialties?.map((item, index) => (
-                <View style={styles.tag} key={index}>
-                  <Text style={styles.tagText}>{item.name || 'Vedic'}</Text>
+        {/* Info Cards */}
+        <View style={styles.infoSection}>
+          
+          {/* Specialization Card */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialIcons name="stars" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+              <Text style={styles.sectionTitle}>Specialization</Text>
+            </View>
+            <View style={styles.tagsContainer}>
+              {person.specialties?.length > 0 ? (
+                person.specialties.map((item, index) => (
+                  <View style={styles.tag} key={index}>
+                    <Text style={styles.tagText}>{item.name}</Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.tag}><Text style={styles.tagText}>Vedic Astrology</Text></View>
+              )}
+            </View>
+          </View>
+
+          {/* About Card */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialIcons name="info-outline" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+              <Text style={styles.sectionTitle}>About My Services</Text>
+            </View>
+            <Text numberOfLines={isExpanded ? undefined : 3} style={styles.bodyText}>
+              {person.bio || 'Experienced and professional astrologer here to guide you through your life journey.'}
+            </Text>
+            <TouchableOpacity onPress={() => setIsExpanded(!isExpanded)}>
+              <Text style={styles.readMore}>{isExpanded ? 'Read Less' : 'Read More'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Experience Card */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialIcons name="school" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+              <Text style={styles.sectionTitle}>Experience & Qualification</Text>
+            </View>
+            <Text style={styles.bodyText}>
+              With several years of dedicated practice, I've honed my skills in {specialties}.
+            </Text>
+          </View>
+
+          {/* Reviews Card */}
+          <View style={[styles.card, { marginBottom: verticalScale(20) }]}>
+            <View style={styles.reviewsHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Client Reviews</Text>
+                <Text style={styles.reviewSubText}>{avgRating.totalReviews || '0'} reviews on Astrowani</Text>
+              </View>
+              <View style={styles.ratingBadge}>
+                <Text style={styles.ratingBadgeText}>{avgRating.averageRating || '0'}</Text>
+                <MaterialIcons name="star" size={moderateScale(14)} color="#FFF" />
+              </View>
+            </View>
+
+            {reviewloading ? (
+              <ActivityIndicator size="small" color={COLORS.AstroMaroon} style={{ marginVertical: 20 }} />
+            ) : reviewError ? (
+              <Text style={{ color: 'red', textAlign: 'center' }}>{reviewError}</Text>
+            ) : reviewsToShow.length > 0 ? (
+              reviewsToShow.map((review, index) => (
+                <View key={index} style={styles.reviewItem}>
+                  <View style={styles.reviewItemHeader}>
+                    <View style={styles.reviewerAvatar}>
+                      <Text style={styles.reviewerInitial}>{review.user?.firstName?.charAt(0) || 'A'}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: scale(10) }}>
+                      <Text style={styles.reviewerName}>{review.user?.firstName || 'Anonymous'}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <MaterialIcons key={i} name="star" size={moderateScale(12)} color={i < (review.rating || 5) ? COLORS.AstroGold : '#ddd'} />
+                        ))}
+                      </View>
+                    </View>
+                    <Text style={styles.reviewDate}>
+                      {review.createdAt ? new Date(review.createdAt).toLocaleDateString('en-GB') : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.reviewComment}>{review.comment || 'Great experience!'}</Text>
+                  {index !== reviewsToShow.length - 1 && <View style={styles.reviewDivider} />}
                 </View>
               ))
             ) : (
-              <Text style={styles.tagText}>Vedic</Text>
+              <Text style={{ textAlign: 'center', color: '#888', marginVertical: 15 }}>No reviews yet.</Text>
             )}
-          </View>
-        </View>
-        <View style={styles.separator}></View>
-        {/* About My Services */}
-        <View style={styles.aboutSection}>
-          <Text style={styles.sectionTitle}>About My Services</Text>
-          <Text
-            numberOfLines={isExpanded ? null : 5}
-            ellipsizeMode="tail"
-            style={styles.aboutText}>
-            {person.bio || 'hello'}
-          </Text>
-          <TouchableOpacity onPress={handleReadMore}>
-            <Text style={styles.readMore}>
-              {isExpanded ? 'Read Less' : 'Read More'}
-            </Text>
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.separator}></View>
-
-        {/* Experience & Qualification */}
-        <View style={styles.experienceSection}>
-          <Text style={styles.sectionTitle}>Experience & Qualification</Text>
-          <Text style={styles.experienceText}>
-            With several years of dedicated practice, I've honed my skills in
-            {specialties || 'vedic'}
-          </Text>
-        </View>
-
-        {/* Reviews Section */}
-        <View style={styles.reviewsSection}>
-          <Text style={styles.reviewsTitle}>
-            Reviews:{' '}
-            <Text style={styles.reviewCount}>
-              {avgRating.totalReviews || '0'}
-            </Text>
-          </Text>
-          <View style={styles.ratingAvg}>
-            <Text style={styles.overallRating}>
-              {avgRating.averageRating || '0'}
-            </Text>
-            <MaterialIcons name="star" size={16} color="orange" />
-          </View>
-
-          {/* Individual Reviews */}
-          {reviewloading ? (
-            <View style={styles.indicator}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-            </View>
-          ) : reviewError ? (
-            <Text style={styles.errorText}>{reviewError}</Text>
-          ) : reviewsToShow && reviewsToShow.length > 0 ? (
-            reviewsToShow?.map((review, index) => (
-              <View key={index} style={styles.reviewItem}>
-                <View style={styles.reviewHeader}>
-                  <Text style={styles.reviewerName}>
-                    {review.user?.firstName || 'Anonymous'}
-                  </Text>
-                  <Text style={styles.reviewDate}>
-                    {review.createdAt
-                      ? new Date(review.createdAt).toLocaleDateString('en-GB')
-                      : 'Date not provided'}
-                  </Text>
-                </View>
-                <View style={styles.starsContainer}>
-                  {review.rating !== undefined
-                    ? Array.from({length: review.rating}).map(
-                        (_, starIndex) => (
-                          <MaterialIcons
-                            key={starIndex}
-                            name="star"
-                            size={moderateScale(14)}
-                            color="orange"
-                            style={styles.star}
-                          />
-                        ),
-                      )
-                    : null}
-                </View>
-                <Text style={styles.reviewComment}>
-                  {review.comment || 'no comment'}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.noReviewsText}>No reviews available.</Text>
-          )}
-
-          {/* Show All Reviews Button */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            {!showAllReviews && reviews.length <= 2 && (
-              <TouchableOpacity onPress={handleShowAllReviews}>
-                <Text style={styles.showAllReviews}>Show All Reviews</Text>
+            <View style={styles.reviewActionRow}>
+              {!showAllReviews && reviews.length > 2 && (
+                <TouchableOpacity onPress={handleShowAllReviews}>
+                  <Text style={styles.actionTextBtn}>Show All</Text>
+                </TouchableOpacity>
+              )}
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity onPress={() => navigation.navigate('AddReview', { person })} style={styles.addReviewBtn}>
+                <Text style={styles.addReviewTxt}>+ Write Review</Text>
               </TouchableOpacity>
-            )}
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('AddReview', { person })}
-              style={{
-                marginTop: verticalScale(15),
-                backgroundColor: COLORS.AstroMaroon,
-                paddingHorizontal: scale(15),
-                paddingVertical: verticalScale(6),
-                borderRadius: moderateScale(20),
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: moderateScale(12), fontWeight: 'bold' }}>+ Add Review</Text>
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Chat and Call Buttons */}
-      <View style={styles.footer}>
-        <View>
-          <TouchableOpacity onPress={handleChat} style={styles.chatButton}>
-            <MaterialIcons
-              name="chat"
-              size={20}
-              color="#000"
-              style={styles.icon}
-            />
-            <Text style={styles.buttonText}>Chat</Text>
-          </TouchableOpacity>
-          <View style={styles.priceRow}>
-            <Text style={styles.offer}>
-              {person.pricing ? `₹${person.pricing}/min` : 'Free'}
-            </Text>
+      {/* Floating Action Dock */}
+      <View style={styles.floatingDock}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('PersonToPersonChat', {person: person})}>
+          <MaterialIcons name="chat" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+          <View style={styles.actionBtnTextCol}>
+            <Text style={styles.actionBtnText}>Chat</Text>
+            <Text style={styles.actionBtnPrice}>{person.pricing ? `₹${person.pricing}/min` : 'Free'}</Text>
           </View>
-        </View>
-        <View>
-          <TouchableOpacity onPress={handleCall} style={styles.chatButton}>
-            <MaterialIcons
-              name="call"
-              size={20}
-              color="#000"
-              style={styles.icon}
-            />
-            <Text style={styles.buttonText}>Call</Text>
-          </TouchableOpacity>
-          <View style={styles.priceRow}>
-            {/* <Text style={styles.buttonSubText}>₹21/min</Text> */}
-            <Text style={styles.offer}>{person.videoPrice ? `₹${person.videoPrice}/min` : 'Free'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.actionBtn, { marginLeft: scale(10) }]} 
+          onPress={async () => {
+            const token = await AsyncStorage.getItem('token');
+            const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
+            navigation.navigate('EnxJoinScreen', {
+              userId: person.userId, name: userEntireData?.name || 'User', astroId: person.userId,
+              callType: 'voice', receiverId: person.userId, callingCondition: 'outgoing', callerRole: 'customer', userToken: token,
+            });
+          }}>
+          <MaterialIcons name="call" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+          <View style={styles.actionBtnTextCol}>
+            <Text style={styles.actionBtnText}>Call</Text>
+            <Text style={styles.actionBtnPrice}>{person.videoPrice ? `₹${person.videoPrice}/min` : 'Free'}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
-      <GiftModal
-        visible={isModalVisible}
-        onClose={() => setModalVisible(false)}
-      />
+
+      <GiftModal visible={isModalVisible} onClose={() => setModalVisible(false)} />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.AstroSoftOrange,
-  },
-
-  scrollContainer: {
-    paddingBottom: verticalScale(80),
-  },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: moderateScale(10),
-    padding: moderateScale(15),
-    marginHorizontal: scale(15),
-    marginTop: verticalScale(10),
-    position: 'relative',
-  },
-  avatar: {
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: moderateScale(40),
-  },
-  profileDetails: {
-    flex: 1,
-    marginLeft: scale(10),
-  },
-  profileName: {
-    fontSize: moderateScale(17),
-    fontFamily: 'Lato-Bold',
-    color: 'black',
-    marginBottom: verticalScale(3),
-  },
-  specialization: {
-    color: 'black',
-    fontFamily: 'Lato-Regular',
-    marginBottom: verticalScale(3),
-    fontSize: moderateScale(14),
-  },
-  languages: {
-    fontSize: moderateScale(13),
-    color: '#000',
-    fontFamily: 'Lato-Regular',
-    marginBottom: verticalScale(3),
-  },
-  reviewsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: verticalScale(6),
-    gap: 10,
-  },
-  reviews: {
-    fontSize: moderateScale(12),
-    color: '#000',
-  },
-  errorText: {
-    color: 'red',
-    textAlign: 'center',
-    paddingVertical: verticalScale(10),
-  },
-  indicator: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: verticalScale(10),
-  },
-  rating: {
-    fontSize: moderateScale(14),
-    color: 'orange',
-    fontFamily: 'Lato-Bold',
-  },
-  experience: {
-    fontSize: moderateScale(13),
-    color: '#000',
-    marginLeft: scale(10),
-    fontFamily: 'Lato-Regular',
-  },
-  notifyButton: {
+  container: { flex: 1, backgroundColor: COLORS.AstroSoftOrange },
+  scrollContainer: { paddingBottom: verticalScale(100) },
+  headerBackground: {
+    backgroundColor: COLORS.AstroMaroon,
+    height: verticalScale(120),
+    borderBottomLeftRadius: moderateScale(40),
+    borderBottomRightRadius: moderateScale(40),
     position: 'absolute',
-    top: 10,
-    right: 10,
+    top: 0, left: 0, right: 0,
   },
-
-  specializationSection: {
-    marginTop: verticalScale(20),
+  profileCard: {
+    backgroundColor: '#fff',
     marginHorizontal: scale(15),
-  },
-  sectionTitle: {
-    fontSize: moderateScale(16),
-    marginBottom: verticalScale(3),
-    fontFamily: 'Lato-Bold',
-
-    color: '#000',
-  },
-  separator: {
-    borderTopWidth: moderateScale(2), // Thickness of the separator
-    width: scale(320),
-    marginVertical: verticalScale(13),
-    alignSelf: 'center',
-    borderTopColor: 'rgba(128, 0, 0, 0.1)',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: verticalScale(10),
-  },
-  tag: {
-    backgroundColor: '#F0F0F0',
+    marginTop: verticalScale(30),
     borderRadius: moderateScale(20),
-    paddingHorizontal: scale(15),
-    paddingVertical: verticalScale(6),
-    margin: moderateScale(5),
+    padding: scale(15),
+    elevation: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6,
   },
-  tagText: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontFamily: 'Lato-Regular',
+  profileTopRow: { flexDirection: 'row', alignItems: 'center' },
+  avatar: {
+    width: scale(80), height: scale(80),
+    borderRadius: moderateScale(40),
+    borderWidth: 3, borderColor: COLORS.AstroSoftOrange,
   },
-  aboutSection: {
-    marginTop: moderateScale(10),
-    marginHorizontal: scale(15),
+  profileDetails: { flex: 1, marginLeft: scale(15) },
+  nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  profileName: { fontSize: moderateScale(18), fontFamily: 'Lato-Bold', color: '#000', flex: 1 },
+  favBtn: { padding: scale(5) },
+  specialization: { fontSize: moderateScale(13), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', marginTop: verticalScale(2) },
+  languages: { fontSize: moderateScale(12), color: '#666', fontFamily: 'Lato-Regular', marginTop: verticalScale(2) },
+  statsBar: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: verticalScale(15), paddingTop: verticalScale(15),
+    borderTopWidth: 1, borderTopColor: '#eee',
   },
-  aboutText: {
-    fontSize: moderateScale(14),
-    marginVertical: verticalScale(3),
-    fontFamily: 'Lato-Regular',
-    color: '#000',
+  statItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  statText: { fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: '#333' },
+  statDivider: { width: 1, height: '100%', backgroundColor: '#eee' },
+  infoSection: { paddingHorizontal: scale(15), marginTop: verticalScale(15) },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(15),
+    padding: scale(15),
+    marginBottom: verticalScale(15),
+    borderWidth: 1.5, borderColor: COLORS.AstroMaroon,
+    elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4,
   },
-  readMore: {
-    color: 'red',
-    marginTop: verticalScale(5),
-    fontSize: moderateScale(13),
-    fontFamily: 'Lato-Regular',
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(10), gap: 8 },
+  sectionTitle: { fontSize: moderateScale(16), fontFamily: 'Lato-Bold', color: '#000' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  tag: {
+    backgroundColor: 'rgba(128,0,0,0.08)',
+    borderRadius: moderateScale(20),
+    paddingHorizontal: scale(12), paddingVertical: verticalScale(6),
+    marginRight: scale(8), marginBottom: verticalScale(8),
   },
-  experienceSection: {
-    marginTop: verticalScale(10),
-    marginHorizontal: scale(15),
+  tagText: { fontSize: moderateScale(12), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold' },
+  bodyText: { fontSize: moderateScale(13), color: '#444', fontFamily: 'Lato-Regular', lineHeight: 20 },
+  readMore: { color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', marginTop: verticalScale(8), fontSize: moderateScale(12) },
+  reviewsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: verticalScale(15) },
+  reviewSubText: { fontSize: moderateScale(12), color: '#888', marginTop: verticalScale(2) },
+  ratingBadge: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.AstroGold,
+    paddingHorizontal: scale(10), paddingVertical: verticalScale(5), borderRadius: moderateScale(12), gap: 4
   },
-  experienceText: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Regular',
-    color: '#000',
-    marginVertical: verticalScale(3),
+  ratingBadgeText: { color: '#FFF', fontFamily: 'Lato-Bold', fontSize: moderateScale(14) },
+  reviewItem: { marginBottom: verticalScale(15) },
+  reviewItemHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(8) },
+  reviewerAvatar: {
+    width: scale(35), height: scale(35), borderRadius: scale(17.5),
+    backgroundColor: 'rgba(128,0,0,0.1)', justifyContent: 'center', alignItems: 'center'
   },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: moderateScale(15),
-    paddingVertical: verticalScale(10),
-    // borderTopWidth: verticalScale(1),
-    borderColor: '#ddd',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10, // Ensure it stays on top
+  reviewerInitial: { color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', fontSize: moderateScale(16) },
+  reviewerName: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: '#000' },
+  reviewDate: { fontSize: moderateScale(11), color: '#999' },
+  reviewComment: { fontSize: moderateScale(13), color: '#555', fontFamily: 'Lato-Regular', marginLeft: scale(45) },
+  reviewDivider: { height: 1, backgroundColor: '#f0f0f0', marginTop: verticalScale(15), marginLeft: scale(45) },
+  reviewActionRow: { flexDirection: 'row', alignItems: 'center', marginTop: verticalScale(10) },
+  actionTextBtn: { color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', fontSize: moderateScale(13) },
+  addReviewBtn: {
+    backgroundColor: COLORS.AstroMaroon,
+    paddingHorizontal: scale(16), paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(20),
   },
-  chatButton: {
-    flexDirection: 'row',
-    backgroundColor: 'orange',
-    borderRadius: moderateScale(30),
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: scale(150),
-    height: verticalScale(45),
-    paddingHorizontal: scale(5),
-    paddingVertical: verticalScale(5),
+  addReviewTxt: { color: '#FFF', fontFamily: 'Lato-Bold', fontSize: moderateScale(12) },
+  floatingDock: {
+    position: 'absolute', bottom: verticalScale(20), left: scale(15), right: scale(15),
+    flexDirection: 'row', backgroundColor: '#fff', borderRadius: moderateScale(30),
+    padding: scale(8), elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 15,
   },
-  icon: {
-    marginHorizontal: scale(5),
+  actionBtn: {
+    flex: 1, flexDirection: 'row', backgroundColor: COLORS.AstroGold, borderRadius: moderateScale(25),
+    justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(10),
   },
-
-  buttonText: {
-    fontSize: moderateScale(14),
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  buttonSubText: {
-    fontSize: moderateScale(11),
-    color: 'red',
-    textDecorationLine: 'line-through',
-    textAlign: 'center',
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-  },
-  offer: {
-    fontSize: moderateScale(12),
-    color: 'red',
-    fontWeight: 'bold',
-    marginLeft: scale(5),
-  },
-
-  reviewsSection: {
-    marginTop: verticalScale(20),
-    backgroundColor: '#FFF',
-    paddingVertical: verticalScale(20),
-    paddingHorizontal: scale(15),
-    borderTopRightRadius: moderateScale(16),
-    borderTopLeftRadius: moderateScale(16),
-  },
-
-  reviewsTitle: {
-    fontSize: moderateScale(17),
-
-    color: 'black',
-    fontFamily: 'Lato-Bold',
-  },
-  reviewCount: {
-    fontFamily: 'Lato-Bold',
-
-    fontSize: moderateScale(15),
-    color: COLORS.AstroMaroon,
-  },
-  overallRating: {
-    marginRight: scale(2),
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Bold',
-
-    color: 'black',
-  },
-  reviewItem: {
-    marginTop: verticalScale(20),
-  },
-  reviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  reviewerName: {
-    fontSize: moderateScale(14),
-    fontWeight: 'bold',
-    color: 'black',
-    fontFamily: 'Lato-Regular',
-  },
-  reviewDate: {
-    fontSize: moderateScale(10),
-    color: '#666',
-  },
-
-  starsContainer: {
-    flexDirection: 'row',
-    marginTop: verticalScale(4),
-  },
-  star: {
-    marginRight: scale(1), // Add space between stars if needed
-  },
-  reviewComment: {
-    marginTop: verticalScale(5),
-    fontSize: moderateScale(12),
-    color: '#666',
-    fontFamily: 'Poppins-Regular',
-  },
-
-  showAllReviews: {
-    marginTop: verticalScale(15),
-    color: COLORS.AstroMaroon,
-    fontSize: moderateScale(12),
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  ratingAvg: {
-    marginTop: verticalScale(5),
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  nameView: {
-    flexDirection: 'row',
-    width: scale(200),
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+  actionBtnTextCol: { marginLeft: scale(8) },
+  actionBtnText: { fontSize: moderateScale(15), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
+  actionBtnPrice: { fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, opacity: 0.8 },
 });
 
 export default AstrologerInfo;
