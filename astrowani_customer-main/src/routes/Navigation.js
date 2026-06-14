@@ -594,7 +594,7 @@ function BottomTabNavigator() {
       <Text
         style={{
           fontSize: focused ? moderateScale(11) : moderateScale(10),
-          color: focused ? 'white' : 'gray',
+          color: focused ? COLORS.AstroMaroon : 'black',
         }}>
         {children}
       </Text>
@@ -640,10 +640,17 @@ function BottomTabNavigator() {
         tabBarLabel: ({ focused }) => (
           <TabBarLabel focused={focused}>{route.name}</TabBarLabel>
         ),
-        tabBarActiveTintColor: 'white',
+        tabBarActiveTintColor: COLORS.AstroMaroon,
         tabBarInactiveTintColor: 'gray',
         tabBarStyle: {
-          backgroundColor: COLORS.AstroMaroon,
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: '#f0f0f0',
+          elevation: 10,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
         },
       })}>
       <Tab.Screen name="Home" component={HomeStack} />
