@@ -115,7 +115,7 @@ const Home = ({navigation}) => {
   React.useEffect(() => {
     const timer = setInterval(() => {
       if (isAutoScrolling.current && listRef.current && loopedAstrologers.length > 0) {
-        scrollOffset.current += 0.5; 
+        scrollOffset.current += 1; 
         try {
           listRef.current.scrollToOffset({ offset: scrollOffset.current, animated: false });
         } catch (e) {}
@@ -659,6 +659,9 @@ const Home = ({navigation}) => {
               }
             }}
             scrollEventThrottle={16}
+            onTouchStart={() => { isAutoScrolling.current = false; }}
+            onTouchEnd={() => { isAutoScrolling.current = true; }}
+            onTouchCancel={() => { isAutoScrolling.current = true; }}
             onScrollBeginDrag={() => { isAutoScrolling.current = false; }}
             onScrollEndDrag={() => { isAutoScrolling.current = true; }}
             onMomentumScrollBegin={() => { isAutoScrolling.current = false; }}
