@@ -48,25 +48,15 @@ const OtpScreen = ({ navigation, route }) => {
         console.log('OTP verification successful');
         
         // Fetch the astrologer from Supabase
-        const { data: user, error: fetchError } = await supabase
+        // Hardcoded to log in as Ansh Sharma regardless of what phone number was typed
+        const { data: exactUser } = await supabase
           .from('astrologers')
           .select('id')
-          .eq('phone_number', phone.replace('+91', '')) // Removing +91 if they registered without it, or just match exactly if they did
+          .eq('phone_number', '1234567890')
           .single();
-
-        if (user) {
-          await AsyncStorage.setItem('astroId', user.id);
-        } else {
-          // If we can't find them, let's try with the exact phone format
-          const { data: exactUser } = await supabase
-            .from('astrologers')
-            .select('id')
-            .eq('phone_number', phone)
-            .single();
-            
-          if (exactUser) {
-            await AsyncStorage.setItem('astroId', exactUser.id);
-          }
+          
+        if (exactUser) {
+          await AsyncStorage.setItem('astroId', String(exactUser.id));
         }
 
         await AsyncStorage.setItem('userToken', 'dummy_token_for_now');
@@ -76,8 +66,8 @@ const OtpScreen = ({ navigation, route }) => {
         Alert.alert('Error', 'Invalid OTP. Please try again.');
       }
     } catch (error) {
-      console.log(error);
-      Alert.alert('Error', error.message || 'Failed to verify OTP. Please try again.');
+      console.log('CRASH in verify:', error);
+      Alert.alert('Debug Error', error?.message || JSON.stringify(error) || 'Unknown error');
     } finally {
       setLoading(false);
     }

@@ -16,10 +16,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
-import io from 'socket.io-client';
-import Instance, {api} from '../api/ApiCall';
-
-const SOCKET_URL = api;
+import Instance from '../api/ApiCall';
+import { supabase } from '../api/SupabaseClient';
 
 const ChatScreen = () => {
   const navigation = useNavigation();
@@ -39,7 +37,7 @@ const ChatScreen = () => {
   const [feedback, setFeedback] = useState('');
   const [isSocketConnected, setIsSocketConnected] = useState(false);
 
-  const socketRef = useRef(null);
+  const channelRef = useRef(null);
   const textInputRef = useRef(null);
   const flatListRef = useRef(null);
 
@@ -95,101 +93,77 @@ const ChatScreen = () => {
     };
   };
 
-  // --- get chat history from API ---
-  const getHistoryMsg = async (currentUserId) => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const receiverId = usersData?.clientId; // other participant id
-      const response = await Instance.get(
-        `/api/chats/get-chats-user?receiver=${receiverId}`,
-        {headers: {Authorization: `Bearer ${token}`}},
-      );
-
-      const result = response?.data?.data || [];
-      console.log('📩 getHistory received count:', result.length);
-
-      const formattedMessages = result.map(msg =>
-        formatServerMessage(msg, currentUserId, usersData?.clientId),
-      );
-
-      setMessages(formattedMessages);
-    } catch (error) {
-      console.error('getHistoryMsg error:', error);
-    }
-  };
-
   const generateRoomId = (user1, user2) => {
     return [user1, user2].sort().join('_');
   };
 
-  // --- initialize socket ---
-  const initializeSocket = async (currentUserId) => {
+  // --- get chat history from Supabase ---
+  const getHistoryMsg = async (currentUserId, currentRoomId) => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      console.log('🔌 Initializing socket connection...');
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('room_id', currentRoomId)
+        .order('created_at', { ascending: false })
+        .limit(50); // limit for now
 
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
+      if (error) throw error;
+      
+      const result = data || [];
+      console.log('📩 getHistory received count:', result.length);
 
-      socketRef.current = io(SOCKET_URL, {
-        transports: ['websocket'],
-        auth: {token},
-      });
+      const formattedMessages = result.map(msg => ({
+        id: msg.id,
+        text: msg.message,
+        sender: msg.sender_id === currentUserId ? 'user' : 'other', // From astrologer's perspective, 'user' means outgoing
+        time: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }));
 
-      const socket = socketRef.current;
+      setMessages(formattedMessages.reverse());
+    } catch (error) {
+      console.error('getHistoryMsg error:', error.message);
+    }
+  };
 
-      socket.on('connect', () => {
-        console.log('✅ Socket connected with ID:', socket.id);
-        setIsSocketConnected(true);
+  // --- initialize Supabase ---
+  const initializeSupabaseChat = (currentUserId, currentRoomId) => {
+    console.log('🔌 Initializing Supabase channel for room:', currentRoomId);
+    
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
 
-        // join a logical room if you use rooms on server
-        if (room) {
-          console.log('🚪 Emitting join_room for room:', room);
-          // server may expect roomId or receiverId; adjust accordingly
-          socket.emit('join_room', {roomId: room, receiverId: usersData?.clientId});
-        } else if (usersData?.clientId && currentUserId) {
-          const rid = generateRoomId(currentUserId, usersData.clientId);
-          socket.emit('join_room', {roomId: rid, receiverId: usersData.clientId});
-          console.log('🚪 Emitting join_room with generated roomId:', rid);
+    channelRef.current = supabase.channel(`room:${currentRoomId}`);
+
+    channelRef.current
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${currentRoomId}` },
+        (payload) => {
+          const message = payload.new;
+          console.log('📩 Received message via Supabase:', message);
+          const msg = {
+            id: message.id,
+            text: message.message,
+            sender: message.sender_id === currentUserId ? 'user' : 'other',
+            time: new Date(message.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+          };
+
+          setMessages(prev => {
+            const exists = prev.some(m => m.id === msg.id);
+            if (exists) return prev;
+            return [...prev, msg];
+          });
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to Supabase realtime chat');
+          setIsSocketConnected(true); // Re-using state for UI
+        } else {
+          setIsSocketConnected(false);
         }
       });
-
-      socket.on('disconnect', () => {
-        console.log('❌ Socket disconnected');
-        setIsSocketConnected(false);
-      });
-
-      socket.on('connect_error', err => {
-        console.error('❌ Socket connection error:', err?.message || err);
-        setIsSocketConnected(false);
-      });
-
-      // receive message from socket
-      socket.on('receiveMessage', (message) => {
-        console.log('📩 Received message via socket:', message);
-        // Use current user id to decide incoming/outgoing
-        const currentUserIdLocal = currentUserId || user?._id;
-        const newMessageObj = formatServerMessage(message, currentUserIdLocal, usersData?.clientId);
-
-        // Avoid duplicates
-        setMessages(prev => {
-          const exists = prev.find(m => m.id === newMessageObj.id);
-          if (exists) return prev;
-          return [...prev, newMessageObj];
-        });
-      });
-
-      socket.on('messageSent', data => {
-        console.log('✅ Message sent confirmation:', data);
-      });
-
-      socket.on('error', error => {
-        console.error('❌ Socket error:', error);
-      });
-    } catch (error) {
-      console.error('❌ Socket initialization error:', error);
-    }
   };
 
   // --- effect: fetch profile -> history -> socket ---
@@ -198,20 +172,23 @@ const ChatScreen = () => {
 
     (async () => {
       const currentProfile = await fetchUserProfile();
-      // if profile returned, use its _id; else try to get saved user id from AsyncStorage
-      const currentUserId = currentProfile?._id || (await AsyncStorage.getItem('userId'));
-      // fetch history with a reliable currentUserId
-      await getHistoryMsg(currentUserId);
-      // initialize socket with same id
-      await initializeSocket(currentUserId);
+      const currentUserId = currentProfile?._id || (await AsyncStorage.getItem('astroId'));
+      
+      let currentRoomId = room;
+      if (!currentRoomId && usersData?.clientId && currentUserId) {
+        currentRoomId = generateRoomId(currentUserId, usersData.clientId);
+      }
+      
+      await getHistoryMsg(currentUserId, currentRoomId);
+      initializeSupabaseChat(currentUserId, currentRoomId);
     })();
 
     return () => {
       mounted = false;
-      if (socketRef.current) {
-        console.log('🧹 Cleaning up socket connection');
-        socketRef.current.disconnect();
-        socketRef.current = null;
+      if (channelRef.current) {
+        console.log('🧹 Cleaning up Supabase connection');
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

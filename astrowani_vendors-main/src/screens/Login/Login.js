@@ -200,8 +200,8 @@ const Login = ({navigation}) => {
     // Format phone number with country code
     const formattedPhone = `+${callingCode}${phoneNumber}`;
     
-    // Generate a random 4-digit OTP
-    const generatedOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    // Hardcoded OTP for easy testing since SMS may not deliver properly
+    const generatedOtp = '1234';
 
     try {
       // Direct API call to EnableX to send SMS

@@ -39,6 +39,7 @@ import ChatHistorys from '../screens/HIstory/ChatHiostory';
 import TodayEarning from '../screens/Earning/TodayEarning';
 import TotalEarning from '../screens/Earning/TotalEarning';
 import RatingReview from '../screens/Review/RatingReview';
+import VendorChatSession from '../screens/VendorChatSession';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -233,7 +234,12 @@ function NavigationScreen() {
         <Stack.Screen
           name="Wallet"
           component={Wallet}
-          options={({ route }) => ({ headerShown: true })}
+          options={{ headerShown: true, title: 'My Wallet', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }}
+        />
+        <Stack.Screen
+          name="VendorChatSession"
+          component={VendorChatSession}
+          options={{ headerShown: false }}
         />
 
         <Stack.Screen
@@ -277,6 +283,11 @@ function DrawerNavigator({ navigation }) {
         component={HomeStack}
         options={{ headerShown: false }}
       />
+      <Drawer.Screen
+        name="Wallet"
+        component={Wallet}
+        options={{ headerShown: true, title: 'Wallet' }}
+      />
     </Drawer.Navigator>
   );
 }
@@ -284,14 +295,19 @@ function DrawerNavigator({ navigation }) {
 function HomeStack({ navigation }) {
   return (
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
-      <Stack.Screen
-        name="HomeScreen"
-        component={HomeScreen}
-        options={{
-          header: () => <CustomHeader title="Astrowani" />,
-        }}
-      />
-    </Stack.Navigator>
+        <Stack.Screen
+          name="HomeScreen"
+          component={HomeScreen}
+          options={{
+            header: () => <CustomHeader title="Astrowani" />,
+          }}
+        />
+        <Stack.Screen
+          name="Wallet"
+          component={Wallet}
+          options={{ headerShown: true, title: 'Wallet' }}
+        />
+      </Stack.Navigator>
   );
 }
 

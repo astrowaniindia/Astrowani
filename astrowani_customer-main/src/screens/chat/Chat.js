@@ -1,6 +1,5 @@
-// Chat.js
+// Chat.js — Customer side
 import React, { useState, useEffect, useRef } from 'react';
-import { api } from '../../api/ApiCall';
 import {
   View,
   Text,
@@ -9,7 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Platform,
+  Modal,
 } from 'react-native';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
@@ -19,156 +18,157 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
 
 const Chat = ({ navigation }) => {
-  const [activeTab, setActiveTab] = useState('');
-  const [astrologer, setAstrologer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [specialAstro, setSpecialAstro] = useState([]);
-  const [messages, setMessages] = useState([]); // store incoming messages
-  const mountedRef = useRef(true);
-  const currentChatRef = useRef(null); // track current opened astrologer id
-  const channelRef = useRef(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch all astrologers
+  // Request-flow state
+  const [requesting, setRequesting] = useState(false);  // "Requesting…" popup
+  const [requestAstro, setRequestAstro] = useState(null); // astrologer we requested
+  const [pendingRequestId, setPendingRequestId] = useState(null);
+
+  const channelRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  // ─── Load astrologers ────────────────────────────────────────────────────────
   const getAllAstrologers = async () => {
     try {
       setLoading(true);
       const response = await Instance.get(`/api/astrologers`);
       if (!mountedRef.current) return;
       setSpecialAstro(response.data.data || []);
-      setLoading(false);
     } catch (err) {
-      console.log('getAllAstrologers error: ', err);
+      console.log('getAllAstrologers error:', err);
       if (!mountedRef.current) return;
       setError('Failed to load astrologers');
-      setLoading(false);
+    } finally {
+      if (mountedRef.current) setLoading(false);
     }
   };
 
-  // Initialize Supabase realtime connection for global incoming messages
-  const initSocket = async () => {
-    try {
-      const userDataStr = await AsyncStorage.getItem('userData');
-      if (!userDataStr) return;
-      const userData = JSON.parse(userDataStr);
-      const myId = userData?._id;
-      if (!myId || !mountedRef.current) return;
+  // ─── Supabase listener for request status updates ────────────────────────────
+  const listenForRequestUpdate = async (requestId) => {
+    const userStr = await AsyncStorage.getItem('userData');
+    const user = userStr ? JSON.parse(userStr) : null;
+    if (!user) return;
 
-      channelRef.current = supabase.channel(`user_inbox_${myId}`);
+    // Clean up previous channel
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
 
-      channelRef.current
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `receiver_id=eq.${myId}` },
-          (payload) => {
-            const messageRow = payload.new;
-            console.log('Supabase real-time incoming message:', messageRow);
-            if (!mountedRef.current) return;
+    channelRef.current = supabase.channel(`req_status_${requestId}`);
+    channelRef.current
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_requests',
+          filter: `id=eq.${requestId}`,
+        },
+        async (payload) => {
+          if (!mountedRef.current) return;
+          const updated = payload.new;
 
-            // Formulate payload to match old UI expectations
-            const incomingMsg = {
-              from: { _id: messageRow.sender_id }, // We only have sender_id from db trigger, not full object. In real app, you might fetch sender profile.
-              to: messageRow.receiver_id,
-              text: messageRow.message,
-              createdAt: messageRow.created_at
-            };
-
-            setMessages((prev) => [incomingMsg, ...prev]);
-
-            const currentChatId = currentChatRef.current;
-            if (currentChatId && currentChatId === messageRow.sender_id) {
-              // Already looking at this chat, the PersonToPersonChat screen will handle it
-              return;
-            } else {
-              Alert.alert(
-                'New Message',
-                messageRow.message,
-                [
-                  {
-                    text: 'Open Chat',
-                    onPress: () => {
-                      // Attempt to find full sender info from astrologers list
-                      const senderProfile = specialAstro.find(a => a.userId === messageRow.sender_id) || { userId: messageRow.sender_id };
-                      navigation.navigate('PersonToPersonChat', {
-                        person: senderProfile,
-                        initialMessage: incomingMsg,
-                      });
-                    },
-                  },
-                  { text: 'Close', style: 'cancel' },
-                ],
-                { cancelable: true }
-              );
-            }
+          if (updated.status === 'accepted') {
+            setRequesting(false);
+            setPendingRequestId(null);
+            // Navigate to ChatSessionScreen with requestId
+            navigation.navigate('ChatSessionScreen', {
+              requestId: requestId,
+              person: requestAstro,
+            });
+          } else if (updated.status === 'rejected') {
+            setRequesting(false);
+            setPendingRequestId(null);
+            Alert.alert('Astrologer Busy', 'The astrologer is currently busy. Please try again later.');
           }
-        )
-        .subscribe();
-
-    } catch (err) {
-      console.log('initSocket error: ', err);
-    }
+        }
+      )
+      .subscribe();
   };
-
-
 
   useEffect(() => {
     mountedRef.current = true;
-
-    // load astrologers and start socket
-    (async () => {
-      await getAllAstrologers();
-      await initSocket();
-    })();
-
+    getAllAstrologers();
     return () => {
       mountedRef.current = false;
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
   }, []);
 
-  // Called when user opens an astrologer profile / opens chat
-  const handleAstrologerProfile = (item) => {
-    navigation.navigate('AstrologerInfo', {
-      person: item,
-    });
-  };
-
+  // ─── Handle Chat button press ─────────────────────────────────────────────
   const handleChat = async (item) => {
-    console.log('Starting chat with astrologer:', item._id);
-    currentChatRef.current = item.userId;
+    try {
+      const userStr = await AsyncStorage.getItem('userData');
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (!user) {
+        Alert.alert('Error', 'Please log in first.');
+        return;
+      }
 
-    navigation.navigate('PersonToPersonChat', {
-      person: item,
-      // optionally pass any cached messages for this person
-      cachedMessages: messages.filter(
-        (m) => (m.from?._id === item._id) || (m.to?._id === item._id)
-      ),
-    });
+      // Check wallet balance before requesting
+      const token = await AsyncStorage.getItem('token');
+      const walletResp = await fetch(
+        `${Instance.defaults.baseURL}/api/wallet`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const walletJson = await walletResp.json();
+      const balance = walletJson?.data?.balance ?? 0;
+
+      const chargePerMin = item.chat_charge_per_minute ?? item.chatChargePerMinute ?? 0;
+      if (balance < chargePerMin) {
+        Alert.alert('Low Balance', 'Your wallet balance is too low to start a chat. Please recharge.');
+        return;
+      }
+
+      // Create request in Supabase
+      const { data, error } = await supabase.from('chat_requests').insert([
+        {
+          caller_id: user._id,
+          receiver_id: item._id || item.id,
+          status: 'pending',
+          request_type: 'chat',
+        },
+      ]).select();
+
+      if (error) throw error;
+      const requestId = data[0]?.id;
+
+      setRequestAstro(item);
+      setPendingRequestId(requestId);
+      setRequesting(true);
+
+      // Start listening for vendor response
+      await listenForRequestUpdate(requestId);
+    } catch (err) {
+      console.log('handleChat error:', err);
+      Alert.alert('Error', 'Could not send chat request. Please try again.');
+    }
   };
 
-  const [refreshing, setRefreshing] = useState(false);
+  // ─── Cancel pending request ───────────────────────────────────────────────
+  const cancelRequest = async () => {
+    if (pendingRequestId) {
+      await supabase
+        .from('chat_requests')
+        .update({ status: 'cancelled' })
+        .eq('id', pendingRequestId);
+    }
+    setRequesting(false);
+    setPendingRequestId(null);
+    setRequestAstro(null);
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
     await getAllAstrologers();
     setRefreshing(false);
   };
-
-  const renderTabContent = () => {
-    return (
-      <Allastrologers
-        actionButton={handleChat}
-        data={specialAstro}
-        handleAstrologer={handleAstrologerProfile}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-      />
-    );
-  };
-
-
 
   if (loading) {
     return (
@@ -184,142 +184,74 @@ const Chat = ({ navigation }) => {
 
   return (
     <View style={styles.main}>
-      {renderTabContent()}
+      <Allastrologers
+        actionButton={handleChat}
+        data={specialAstro}
+        handleAstrologer={(item) => navigation.navigate('AstrologerInfo', { person: item })}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      />
+
+      {/* ── "Requesting…" popup ─────────────────────────────── */}
+      <Modal visible={requesting} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.popup}>
+            <ActivityIndicator size="large" color={COLORS.AstroMaroon} style={{ marginBottom: 16 }} />
+            <Text style={styles.popupTitle}>Requesting Chat…</Text>
+            <Text style={styles.popupSubtitle}>
+              Waiting for {requestAstro?.name || 'the astrologer'} to accept
+            </Text>
+            <TouchableOpacity style={styles.cancelBtn} onPress={cancelRequest}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  main: {
+  main: { flex: 1, backgroundColor: COLORS.white },
+  indicator: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  errorText: { color: 'red', textAlign: 'center', paddingVertical: verticalScale(10) },
+
+  // Requesting popup
+  overlay: {
     flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  container: {
-    padding: scale(10),
-    backgroundColor: COLORS.AstroSoftOrange,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: moderateScale(10),
-    padding: scale(10),
-    marginBottom: verticalScale(10),
-    elevation: 2,
-  },
-  badge: {
-    position: 'absolute',
-    top: verticalScale(-10),
-    left: scale(-10),
-    backgroundColor: 'red',
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(5),
-    borderTopLeftRadius: moderateScale(10),
-    borderBottomRightRadius: moderateScale(10),
-  },
-  badgeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: scale(60),
-    height: verticalScale(60),
-    borderRadius: moderateScale(30),
-    marginRight: scale(10),
-  },
-  details: {
-    flex: 1,
-  },
-  name: {
-    fontSize: moderateScale(16),
-    color: 'black',
-    fontWeight: 'bold',
-  },
-  specialization: {
-    fontSize: moderateScale(14),
-    color: '#666',
-  },
-  languages: {
-    fontSize: moderateScale(12),
-    color: '#666',
-  },
-  experience: {
-    fontSize: moderateScale(12),
-    color: '#666',
-  },
-  reviews: {
-    fontSize: moderateScale(12),
-    color: COLORS.AstroMaroon,
-    fontWeight: 'bold',
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  price: {
-    textDecorationLine: 'line-through',
-    fontSize: moderateScale(12),
-    color: '#666',
-  },
-  offer: {
-    fontSize: moderateScale(12),
-    color: 'red',
-    marginLeft: scale(5),
-  },
-  chatButton: {
-    backgroundColor: '#00C853',
-    borderRadius: moderateScale(20),
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(5),
-  },
-  chatText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#DBC2A9',
-    paddingVertical: verticalScale(5),
-    paddingHorizontal: scale(5),
-  },
-  tab: {
-    paddingHorizontal: scale(10),
-    marginLeft: scale(5),
-    paddingVertical: verticalScale(5),
-  },
-  tabText: {
-    color: 'black',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(13),
-    paddingHorizontal: scale(10),
-  },
-  activeTab: {
-    marginLeft: scale(5),
-    borderWidth: moderateScale(1),
-    borderColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(20),
-    backgroundColor: 'white',
-  },
-  activeTabText: {
-    paddingHorizontal: scale(10),
-    color: 'black',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(13),
-  },
-  errorText: {
-    color: 'red',
-    textAlign: 'center',
-    paddingVertical: verticalScale(10),
-  },
-  indicator: {
-    flex: 1,
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'center',
-    marginVertical: verticalScale(10),
+    alignItems: 'center',
   },
+  popup: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
+    padding: 28,
+    width: '80%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+    elevation: 15,
+  },
+  popupTitle: {
+    color: '#fff',
+    fontSize: moderateScale(20),
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  popupSubtitle: {
+    color: '#aaa',
+    fontSize: moderateScale(14),
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  cancelBtn: {
+    backgroundColor: '#F44336',
+    paddingVertical: 12,
+    paddingHorizontal: 36,
+    borderRadius: 30,
+  },
+  cancelText: { color: '#fff', fontWeight: 'bold', fontSize: moderateScale(15) },
 });
 
 export default Chat;

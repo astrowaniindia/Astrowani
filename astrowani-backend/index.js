@@ -429,6 +429,198 @@ app.post('/api/astro-services/gemstone-query', (req, res) => {
   return res.status(200).json({ success: true, message: 'Query submitted successfully' });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WALLET: Get customer wallet balance + transactions
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/wallet', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.userId || decoded._id || decoded.id;
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('wallet_balance')
+      .eq('id', userId)
+      .single();
+
+    if (error) throw error;
+
+    // Fetch recent wallet transactions
+    const { data: txns } = await supabase
+      .from('wallet_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        balance: user?.wallet_balance ?? 0,
+        transactions: (txns || []).map(t => ({
+          id: t.id,
+          description: t.description || (t.type === 'credit' ? 'Money Added' : 'Chat/Call Charge'),
+          amount: t.type === 'credit' ? t.amount : -t.amount,
+          date: new Date(t.created_at).toLocaleDateString('en-IN'),
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/wallet error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch wallet' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WALLET: Deduct from customer AND credit to vendor (called every minute during chat/call)
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/wallet/deduct-and-credit', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.userId || decoded._id || decoded.id;
+
+    const { sessionId, requestId, amount } = req.body;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid amount' });
+    }
+
+    // 1. Get current customer balance
+    const { data: userRow, error: userErr } = await supabase
+      .from('users')
+      .select('wallet_balance')
+      .eq('id', userId)
+      .single();
+
+    if (userErr) throw userErr;
+
+    const currentBalance = userRow?.wallet_balance ?? 0;
+    if (currentBalance < amount) {
+      return res.status(400).json({ success: false, message: 'Insufficient balance' });
+    }
+
+    // 2. Deduct from customer
+    const { error: deductErr } = await supabase
+      .from('users')
+      .update({ wallet_balance: currentBalance - amount })
+      .eq('id', userId);
+    if (deductErr) throw deductErr;
+
+    // 3. Log customer deduction transaction
+    await supabase.from('wallet_transactions').insert([{
+      user_id: userId,
+      type: 'debit',
+      amount: amount,
+      description: 'Chat/Call charge (per minute)',
+      session_id: sessionId,
+      request_id: requestId,
+    }]);
+
+    // 4. Find vendor from chat_sessions
+    const { data: sessionRow, error: sessErr } = await supabase
+      .from('chat_sessions')
+      .select('vendor_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (!sessErr && sessionRow?.vendor_id) {
+      const vendorId = sessionRow.vendor_id;
+
+      // 5. Get vendor current wallet balance (from astrologers table)
+      const { data: astroRow } = await supabase
+        .from('astrologers')
+        .select('wallet_balance, today_earnings, total_earnings')
+        .eq('id', vendorId)
+        .single();
+
+      const vendorBalance = astroRow?.wallet_balance ?? 0;
+      const todayEarnings = astroRow?.today_earnings ?? 0;
+      const totalEarnings = astroRow?.total_earnings ?? 0;
+
+      // 6. Credit vendor wallet
+      await supabase
+        .from('astrologers')
+        .update({
+          wallet_balance: vendorBalance + amount,
+          today_earnings: todayEarnings + amount,
+          total_earnings: totalEarnings + amount,
+        })
+        .eq('id', vendorId);
+
+      // 7. Log vendor credit transaction
+      await supabase.from('vendor_wallet_transactions').insert([{
+        vendor_id: vendorId,
+        type: 'credit',
+        amount: amount,
+        description: 'Earnings from chat/call (per minute)',
+        session_id: sessionId,
+        request_id: requestId,
+      }]);
+    }
+
+    return res.status(200).json({
+      success: true,
+      newBalance: currentBalance - amount,
+    });
+  } catch (err) {
+    console.error('POST /api/wallet/deduct-and-credit error:', err.message);
+    return res.status(500).json({ success: false, message: 'Transaction failed' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VENDOR WALLET: Get vendor wallet balance + transactions
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/vendor/wallet', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const { data: astroRow, error } = await supabase
+      .from('astrologers')
+      .select('wallet_balance')
+      .eq('id', vendorId)
+      .single();
+
+    if (error) throw error;
+
+    const { data: txns } = await supabase
+      .from('vendor_wallet_transactions')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        balance: astroRow?.wallet_balance ?? 0,
+        transactions: (txns || []).map(t => ({
+          id: t.id,
+          description: t.description || 'Consultation Earning',
+          amount: t.type === 'credit' ? t.amount : -t.amount,
+          date: new Date(t.created_at).toLocaleDateString('en-IN'),
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('GET /vendor/wallet error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch vendor wallet' });
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`🚀 Astrowani backend server is running on http://localhost:${PORT}`);
 });
+

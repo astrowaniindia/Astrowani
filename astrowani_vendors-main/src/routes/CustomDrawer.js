@@ -197,6 +197,11 @@ function CustomDrawer(props) {
           icon={() => <Icon name="help" size={24} color={COLORS.AstroMaroon} />}
           onPress={() => props.navigation.navigate('RatingReview')}
         />
+        <DrawerItem
+          label="Wallet"
+          icon={() => <Icon name="account-balance-wallet" size={24} color={COLORS.AstroMaroon} />}
+          onPress={() => props.navigation.navigate('Wallet')}
+        />
         <View style={styles.onlineSwitchContainer}>
           <View style={styles.switchMain}>
             <MaterialIcons

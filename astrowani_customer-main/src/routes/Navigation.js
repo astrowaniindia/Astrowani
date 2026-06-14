@@ -14,6 +14,7 @@ import CustomHeader from './CustomHeader';
 import Chat from '../screens/chat/Chat';
 import CustomDrawerContent from './CustomDrawerContent'; // Your custom drawer content
 import UserProfileScreen from '../screens/drawerScreens/UserProfileScreen';
+import ChatSessionScreen from '../screens/ChatSessionScreen';
 import Video from '../screens/Video/Video';
 import Call from '../screens/Call/Call';
 import Live from '../screens/Live/Live';
@@ -543,6 +544,11 @@ export default function Navigation({ initialRoute }) {
         />
         <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} />
         <Stack.Screen name="JoinRoom" component={JoinRoom} />
+        <Stack.Screen
+          name="ChatSessionScreen"
+          component={ChatSessionScreen}
+          options={{ headerShown: false }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

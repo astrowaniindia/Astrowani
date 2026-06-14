@@ -1,28 +1,59 @@
-import { StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../../api/ApiCall';
+import { COLORS } from '../../Theme/Colors';
 
 export default function Wallet() {
-  const transactions = [
-    { id: '1', description: 'Payment Received', amount: '+₹500', date: '25 Nov 2024' },
-    { id: '2', description: 'Purchase', amount: '-₹150', date: '24 Nov 2024' },
-    { id: '3', description: 'Top Up', amount: '+₹1000', date: '23 Nov 2024' },
-  ];
+  const [balance, setBalance] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchWallet = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${api}/vendor/wallet`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      setBalance(json?.data?.balance ?? 0);
+      setTransactions(json?.data?.transactions ?? []);
+    } catch (e) {
+      console.warn('Wallet fetch error', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWallet();
+  }, []);
 
   const renderTransaction = ({ item }) => (
     <View style={styles.transactionCard}>
       <Text style={styles.transactionDescription}>{item.description}</Text>
-      <Text style={styles.transactionAmount}>{item.amount}</Text>
+      <Text style={styles.transactionAmount}>
+        {item.amount > 0 ? `+₹${item.amount}` : `-₹${Math.abs(item.amount)}`}
+      </Text>
       <Text style={styles.transactionDate}>{item.date}</Text>
     </View>
   );
+
+  if (loading) {
+    return (
+      <View style={styles.containerCenter}>
+        <ActivityIndicator size="large" color={COLORS.AstroMaroon} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       {/* Wallet Balance Section */}
       <View style={styles.walletCard}>
         <Text style={styles.walletText}>Wallet Balance</Text>
-        <Text style={styles.walletBalance}>₹5,350</Text>
-        <TouchableOpacity style={styles.topUpButton}>
+        <Text style={styles.walletBalance}>₹{balance}</Text>
+        <TouchableOpacity style={styles.topUpButton} onPress={() => {}}>
           <Text style={styles.topUpButtonText}>Top Up</Text>
         </TouchableOpacity>
       </View>
@@ -40,11 +71,8 @@ export default function Wallet() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-    padding: 16,
-  },
+  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 16 },
+  containerCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   walletCard: {
     backgroundColor: '#4CAF50',
     borderRadius: 10,
@@ -57,37 +85,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  walletText: {
-    fontSize: 16,
-    color: '#FFF',
-    marginBottom: 8,
-  },
-  walletBalance: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 16,
-  },
-  topUpButton: {
-    backgroundColor: '#FFF',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-  },
-  topUpButtonText: {
-    fontSize: 16,
-    color: '#4CAF50',
-    fontWeight: 'bold',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-  },
-  transactionList: {
-    paddingBottom: 20,
-  },
+  walletText: { fontSize: 16, color: '#FFF', marginBottom: 8 },
+  walletBalance: { fontSize: 36, fontWeight: 'bold', color: '#FFF', marginBottom: 16 },
+  topUpButton: { backgroundColor: '#FFF', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 5 },
+  topUpButtonText: { fontSize: 16, color: '#4CAF5' /* intentionally left as placeholder for quick fix */ },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+  transactionList: { paddingBottom: 20 },
   transactionCard: {
     backgroundColor: '#FFF',
     borderRadius: 8,
@@ -99,19 +102,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  transactionDescription: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 4,
-  },
-  transactionAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-    marginBottom: 4,
-  },
-  transactionDate: {
-    fontSize: 14,
-    color: '#777',
-  },
+  transactionDescription: { fontSize: 16, color: '#333', marginBottom: 4 },
+  transactionAmount: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50', marginBottom: 4 },
+  transactionDate: { fontSize: 14, color: '#777' },
 });

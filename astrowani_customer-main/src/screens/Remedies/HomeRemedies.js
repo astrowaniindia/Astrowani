@@ -71,10 +71,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(15),
   },
   card: {
-    borderRadius: moderateScale(10),
-
+    borderRadius: moderateScale(16),
     marginRight: scale(10),
-    backgroundColor: COLORS.AstroSoftOrange,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
   },
 
   title: {
@@ -89,8 +90,8 @@ const styles = StyleSheet.create({
   image: {
     height: verticalScale(100),
     width: scale(130),
-    borderTopRightRadius: moderateScale(10),
-    borderTopLeftRadius: moderateScale(10),
+    borderTopRightRadius: moderateScale(15),
+    borderTopLeftRadius: moderateScale(15),
   },
 });
 
