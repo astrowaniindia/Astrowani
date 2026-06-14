@@ -1,12 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
-
-
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -23,35 +20,27 @@ function CustomDrawerContent(props, navigation) {
       fetchUserProfile();
     }, []),
   );
-const handleShareApp = async () => {
-  try {
-    const shareOptions = {
-      message: 'Check out this awesome astrology app!', // Message to share
-      url: 'https://your-app-link.com', // Replace with your app's URL
-      title: 'Share App', // Title for the share dialog
-    };
 
-    await Share.share(shareOptions);
-  } catch (error) {
-    console.error('Error sharing:', error.message);
-  }
-};
+  const handleShareApp = async () => {
+    try {
+      const shareOptions = {
+        message: 'Check out this awesome astrology app! Connect with top astrologers today.',
+      };
+      await Share.share(shareOptions);
+    } catch (error) {
+      console.error('Error sharing:', error.message);
+    }
+  };
+
   const fetchUserProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-
-      if (!token) {
-        throw new Error('Token not found');
-      }
+      if (!token) throw new Error('Token not found');
+      
       const response = await Instance.get('/api/users/profile', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.data) {
-        setUser(response.data.data);
-        // console.log('user', response.data.data);
-      }
+      if (response.data) setUser(response.data.data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -71,136 +60,148 @@ const handleShareApp = async () => {
     }
   };
 
+  // Helper function to render drawer icons inside a stylish circular container
+  const renderIcon = (IconComponent, name, size = 20) => (
+    <View style={styles.iconWrapper}>
+      <IconComponent name={name} size={moderateScale(size)} color={COLORS.AstroMaroon} />
+    </View>
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: 'white' }}>
-      <View style={styles.drawerHeader}>
-        <TouchableOpacity onPress={() => props.navigation.closeDrawer()} style={styles.backButton}>
-          <Icon name="arrow-back-ios" size={20} color="white" />
+    <View style={styles.container}>
+      {/* Unified Header & Profile Section */}
+      <View style={styles.headerBlock}>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.drawerTitle}>Astrowani</Text>
+          <TouchableOpacity onPress={() => props.navigation.closeDrawer()} style={styles.closeBtn}>
+            <Icon name="close" size={moderateScale(24)} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.profileSection}
+          activeOpacity={0.8}
+          onPress={() => props.navigation.navigate('UserProfileScreen', { user: user })}
+        >
+          <View style={styles.avatarRing}>
+            {user?.profilePic ? (
+              <Image source={{ uri: user?.profilePic }} style={styles.profileImage} />
+            ) : (
+              <Icon name="account-circle" size={moderateScale(60)} color={COLORS.AstroGold} />
+            )}
+          </View>
+          <View style={styles.profileTextContainer}>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {user?.firstName || user?.phoneNumber || 'Welcome!'}
+            </Text>
+            <Text style={styles.profileEmail} numberOfLines={1}>
+              {user?.email || 'Update your profile'}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={moderateScale(24)} color={COLORS.AstroGold} />
         </TouchableOpacity>
-        <Text style={styles.drawerTitle}>Astrowani</Text>
       </View>
 
-      <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
-        <TouchableOpacity
-          style={styles.userInfoSection}
-          onPress={() =>
-            props.navigation.navigate('UserProfileScreen', { user: user })
-          }>
-          {user?.profilePic ? (
-            <Image source={{ uri: user?.profilePic }} style={styles.profile} />
-          ) : (
-            <Icon name="account-circle" size={60} color={COLORS.AstroMaroon} />
-          )}
-
-          <View style={styles.nameMobile}>
-            <View style={styles.userNamerow}>
-              <Text style={styles.userName} numberOfLines={1}>
-                {user?.firstName || user?.phoneNumber || 'User'}
-              </Text>
-              <Icon
-                style={styles.editIcon}
-                name="edit"
-                size={16}
-                color={COLORS.AstroMaroon}
-              />
-            </View>
-            <Text style={styles.phone} numberOfLines={1}>{user?.email || 'email'}</Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.drawerItemsContainer}>
+      <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.drawerItemsWrapper}>
           <DrawerItem
             label="My Wallet"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="account-balance-wallet" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'account-balance-wallet')}
             onPress={() => props.navigation.navigate('Wallet')}
           />
           <DrawerItem
             label="My Sessions"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="phone-in-talk" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'phone-in-talk')}
             onPress={() => props.navigation.navigate('SessionStack')}
           />
           <DrawerItem
-            label="Gemstone"
+            label="Gemstones"
             labelStyle={styles.drawerLabel}
-            icon={() => <FontAwesome6 name="gem" size={20} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(FontAwesome6, 'gem', 18)}
             onPress={() => props.navigation.navigate('GemstoneDetails')}
           />
           <DrawerItem
             label="Remedies"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="spa" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'spa')}
             onPress={() => props.navigation.navigate('DrawerRemedies')}
           />
           <DrawerItem
             label="Chat With Astrologer"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="question-answer" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'question-answer')}
             onPress={() => props.navigation.navigate('DrawerChat')}
           />
           <DrawerItem
             label="Astrowani Blogs"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="menu-book" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'menu-book')}
             onPress={() => props.navigation.navigate('BlogList')}
           />
           <DrawerItem
             label="My Favorites"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="favorite" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'favorite')}
             onPress={() => props.navigation.navigate('FavoriteScreen')}
           />
+          
+          <View style={styles.divider} />
+          
           <DrawerItem
-            label="Refer A friend"
+            label="Refer A Friend"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="card-giftcard" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'card-giftcard')}
             onPress={() => props.navigation.navigate('ReferFriend')}
           />
           <DrawerItem 
             label="Settings" 
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="settings" size={22} color={COLORS.AstroMaroon} />} 
+            icon={() => renderIcon(Icon, 'settings')} 
             onPress={() => props.navigation.navigate('Settings')} 
           />
           <DrawerItem 
             label="Support" 
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="support-agent" size={22} color={COLORS.AstroMaroon} />} 
+            icon={() => renderIcon(Icon, 'support-agent')} 
             onPress={() => props.navigation.navigate('SupportScreen')} 
           />
           <DrawerItem
             label="Share App"
             labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="share" size={22} color={COLORS.AstroMaroon} />}
+            icon={() => renderIcon(Icon, 'share')}
             onPress={handleShareApp}
           />
           <DrawerItem
             label="Logout"
-            labelStyle={styles.drawerLabel}
-            icon={() => <Icon name="logout" size={22} color={COLORS.AstroMaroon} />}
+            labelStyle={[styles.drawerLabel, { color: 'red' }]}
+            icon={() => (
+              <View style={[styles.iconWrapper, { backgroundColor: 'rgba(255,0,0,0.1)' }]}>
+                <Icon name="logout" size={moderateScale(20)} color="red" />
+              </View>
+            )}
             onPress={handleLogout}
-            style={styles.logoutButton}
           />
         </View>
 
-        <View style={styles.socialSection}>
-          <Text style={styles.socialheadig}>Available On</Text>
+        <View style={styles.socialContainer}>
+          <Text style={styles.socialHeading}>Connect With Us</Text>
           <View style={styles.socialIconsRow}>
-            <TouchableOpacity>
-              <FontAwesome name="facebook-square" size={28} color="#3b5998" />
+            <TouchableOpacity style={styles.socialBtn}>
+              <FontAwesome name="facebook" size={moderateScale(20)} color="#3b5998" />
             </TouchableOpacity>
-            <TouchableOpacity>
-              <FontAwesome name="twitter-square" size={28} color="#00acee" style={styles.socialIcon} />
+            <TouchableOpacity style={styles.socialBtn}>
+              <FontAwesome name="twitter" size={moderateScale(20)} color="#00acee" />
             </TouchableOpacity>
-            <TouchableOpacity>
-              <FontAwesome name="instagram" size={28} color="#C13584" style={styles.socialIcon} />
+            <TouchableOpacity style={styles.socialBtn}>
+              <FontAwesome name="instagram" size={moderateScale(20)} color="#C13584" />
             </TouchableOpacity>
-            <TouchableOpacity>
-              <FontAwesome name="whatsapp" size={28} color="#25D366" style={styles.socialIcon} />
+            <TouchableOpacity style={styles.socialBtn}>
+              <FontAwesome name="whatsapp" size={moderateScale(20)} color="#25D366" />
             </TouchableOpacity>
-            <TouchableOpacity>
-              <FontAwesome name="youtube-square" size={28} color="#FF0000" style={styles.socialIcon} />
+            <TouchableOpacity style={styles.socialBtn}>
+              <FontAwesome name="youtube-play" size={moderateScale(20)} color="#FF0000" />
             </TouchableOpacity>
           </View>
         </View>
@@ -210,89 +211,68 @@ const handleShareApp = async () => {
 }
 
 const styles = StyleSheet.create({
-  drawerHeader: {
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  headerBlock: {
     backgroundColor: COLORS.AstroMaroon,
-    paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + verticalScale(5) : verticalScale(15),
-    paddingVertical: verticalScale(15),
-    paddingHorizontal: scale(15),
+    paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + verticalScale(10) : verticalScale(30),
+    paddingBottom: verticalScale(25),
+    paddingHorizontal: scale(20),
+    borderBottomLeftRadius: moderateScale(30),
+    borderBottomRightRadius: moderateScale(30),
+    elevation: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10,
+    zIndex: 10,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: verticalScale(20),
+  },
+  drawerTitle: { color: COLORS.AstroGold, fontSize: moderateScale(22), fontFamily: 'Lato-Bold' },
+  closeBtn: { padding: scale(5) },
+  profileSection: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  backButton: {
-    padding: scale(5),
-    marginRight: scale(10),
+  avatarRing: {
+    width: scale(64), height: scale(64),
+    borderRadius: moderateScale(32),
+    backgroundColor: '#fff',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: COLORS.AstroGold,
   },
-  drawerTitle: {
-    color: 'white',
-    fontSize: moderateScale(18),
-    fontFamily: 'Lato-Bold',
-    fontWeight: 'bold',
-  },
-  userInfoSection: {
-    padding: moderateScale(15),
+  profileImage: { width: '100%', height: '100%', borderRadius: moderateScale(32) },
+  profileTextContainer: { flex: 1, marginLeft: scale(15) },
+  profileName: { fontSize: moderateScale(18), fontFamily: 'Lato-Bold', color: '#fff', marginBottom: verticalScale(4) },
+  profileEmail: { fontSize: moderateScale(13), fontFamily: 'Lato-Regular', color: 'rgba(255,255,255,0.8)' },
+  scrollContent: { paddingTop: verticalScale(15), paddingBottom: verticalScale(30) },
+  drawerItemsWrapper: { paddingHorizontal: scale(10) },
+  iconWrapper: {
+    width: scale(38), height: scale(38),
+    borderRadius: moderateScale(19),
     backgroundColor: COLORS.AstroSoftOrange,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: scale(0.5),
-    borderBottomColor: COLORS.AshGray,
-    marginBottom: verticalScale(5),
-  },
-  drawerItemsContainer: {
-    flex: 1,
+    justifyContent: 'center', alignItems: 'center',
   },
   drawerLabel: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Regular',
-    color: 'black',
-    marginLeft: -scale(15),
+    fontSize: moderateScale(15), fontFamily: 'Lato-Bold', color: '#333',
+    marginLeft: -scale(10), // brings text closer to the circular icon
   },
-  logoutButton: {
-    marginTop: verticalScale(10),
-  },
-  profile: {
-    width: scale(60),
-    height: verticalScale(60),
-    borderRadius: moderateScale(30),
-  },
-  socialSection: {
-    padding: moderateScale(10),
-    margin: scale(25),
-
+  divider: { height: 1, backgroundColor: '#E0E0E0', marginVertical: verticalScale(10), marginHorizontal: scale(20) },
+  socialContainer: {
+    marginTop: verticalScale(15),
+    paddingTop: verticalScale(20),
+    borderTopWidth: 1, borderTopColor: '#E0E0E0',
     alignItems: 'center',
-    borderTopWidth: scale(0.5),
-    borderTopColor: COLORS.AshGray,
   },
-  socialheadig: {
-    color: '#000',
-  },
-  userName: {
-    fontSize: moderateScale(17),
-    fontWeight: 'bold',
-  },
-  userNamerow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: scale(170),
-  },
-  editIcon: {
-    paddingHorizontal: scale(7),
-  },
-  nameMobile: {
-    marginLeft: scale(10),
-  },
-  socialIconsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginVertical: verticalScale(10),
-  },
-  socialIcon: {
-    marginLeft: scale(5),
-  },
-  phone: {
-    fontSize: moderateScale(12),
-    color: COLORS.red,
-    width: 200
+  socialHeading: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: '#666', marginBottom: verticalScale(15) },
+  socialIconsRow: { flexDirection: 'row', justifyContent: 'center', gap: scale(15) },
+  socialBtn: {
+    width: scale(40), height: scale(40),
+    borderRadius: moderateScale(20),
+    backgroundColor: '#fff',
+    justifyContent: 'center', alignItems: 'center',
+    elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
   },
 });
 
