@@ -570,19 +570,19 @@ const Home = ({navigation}) => {
         }}>
           <View style={{height: 150, marginHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
             <Swiper
-              autoplay
+              autoplay={true}
               autoplayTimeout={3}
-              loop
-              scrollEnabled={false}
+              loop={true}
               showsPagination={false}
               style={{height: 150}}>
               {banners.map((img, index) => (
-                <Image
-                  key={index}
-                  source={{uri: img?.imageUrl}}
-                  style={{width: '100%', height: '100%'}}
-                  resizeMode="cover"
-                />
+                <View key={index} style={{flex: 1}}>
+                  <Image
+                    source={{uri: img?.imageUrl}}
+                    style={{width: '100%', height: '100%'}}
+                    resizeMode="cover"
+                  />
+                </View>
               ))}
             </Swiper>
           </View>
@@ -718,14 +718,19 @@ const Home = ({navigation}) => {
 
         <View style={styles.darkBottomSection}>
           <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>
-            <Text style={[styles.topAstrologerTxt, {color: 'white'}]}>What Our Client Says</Text>
+            <View style={{alignItems: 'center', marginBottom: verticalScale(20)}}>
+              <MaterialIcons name="format-quote" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
+              <Text style={[styles.topAstrologerTxt, {color: 'white', fontSize: moderateScale(20), marginTop: verticalScale(5)}]}>What Our Clients Say</Text>
+              <Text style={{color: COLORS.AstroSoftOrange, fontFamily: 'Lato-Regular', fontSize: moderateScale(12), marginTop: verticalScale(5)}}>Discover why thousands trust Astrowani</Text>
+            </View>
+            
             {loadingReview ? (
               <View style={styles.indicator}>
                 <ActivityIndicator size="small" color={'white'} />
               </View>
             ) : errorReview ? (
               <Text style={styles.errorText}>{errorReview}</Text>
-            ) : (
+            ) : topRatedReviews && topRatedReviews.length > 0 ? (
               <FlatList
                 data={topRatedReviews}
                 renderItem={renderReviewList}
@@ -734,22 +739,30 @@ const Home = ({navigation}) => {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.ReviewsList}
               />
+            ) : (
+              <View style={styles.emptyReviewCard}>
+                <MaterialIcons name="rate-review" size={moderateScale(30)} color={COLORS.AstroMaroon} />
+                <Text style={styles.emptyReviewTxt}>No reviews available yet.</Text>
+              </View>
             )}
           </View>
 
           <View style={[styles.footer, {backgroundColor: 'transparent', paddingBottom: 0}]}>
-            <Text style={[styles.footerTitle, {color: 'white'}]}>
-              Why Astrowani Is Best For Astrology ?
-            </Text>
+            <View style={{alignItems: 'center', marginBottom: verticalScale(15), marginTop: verticalScale(20)}}>
+              <MaterialIcons name="stars" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
+              <Text style={[styles.footerTitle, {color: 'white', fontSize: moderateScale(18), textAlign: 'center', marginTop: verticalScale(8)}]}>
+                Why Astrowani Is Best For Astrology?
+              </Text>
+            </View>
             <View style={styles.footericonView}>
-              <Text style={[styles.why, {color: '#f0f0f0'}]}>
+              <Text style={[styles.why, {color: '#f0f0f0', textAlign: 'center', lineHeight: verticalScale(24), fontSize: moderateScale(13)}]}>
                 Astrowani reveals the destiny that Stars has designed for us.
                 Astrowani is a proven science with its methods and way of
                 interpreting the influence of stars and planets on earthly affairs
                 and human destinies. Astrowani, with its scientific method of
                 calculation and prediction of actual events, is approving enough
                 to make people start believing in it. And it has been doing the
-                same since the early Vedic period. life.
+                same since the early Vedic period.
               </Text>
             </View>
           </View>
@@ -1399,7 +1412,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.AstroMaroon,
     borderTopLeftRadius: moderateScale(35),
     borderTopRightRadius: moderateScale(35),
-    paddingTop: verticalScale(10),
+    paddingTop: verticalScale(20),
     paddingBottom: verticalScale(85),
     marginTop: verticalScale(25),
     elevation: 10,
@@ -1407,6 +1420,24 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: -4},
     shadowOpacity: 0.2,
     shadowRadius: 8,
+  },
+  emptyReviewCard: {
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(16),
+    padding: moderateScale(20),
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    width: '85%',
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroSoftOrange,
+    marginVertical: verticalScale(10),
+  },
+  emptyReviewTxt: {
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    marginTop: verticalScale(10),
+    fontSize: moderateScale(14),
   },
   blogCard: {
     backgroundColor: '#fff',
