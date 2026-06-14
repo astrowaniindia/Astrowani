@@ -537,14 +537,27 @@ const Home = ({navigation}) => {
             <Text style={styles.searchTxt}>Search Here</Text>
           </TouchableOpacity>
         </View>
+        <View
+          style={{
+            backgroundColor: COLORS.AstroMaroon,
+            width: '100%',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingVertical: 10,
+            paddingHorizontal: '5%',
+          }}>
+          <Text style={[styles.topAstrologerTxt, {color: 'white', textAlign: 'center'}]}>
+            {thought?.thoughtText || 'Welcome to Astrowani!'}
+          </Text>
+        </View>
+
         <View style={{height: 150}}>
           <Swiper
             autoplay
             autoplayTimeout={3}
             loop
-            showsPagination={true}
-            dotColor="#fff"
-            activeDotColor="#f39c12"
+            scrollEnabled={false}
+            showsPagination={false}
             style={{height: 150}}>
             {banners.map((img, index) => (
               <Image
@@ -555,23 +568,6 @@ const Home = ({navigation}) => {
               />
             ))}
           </Swiper>
-        </View>
-
-        <View
-          style={{
-            backgroundColor: COLORS.AstroMaroon,
-            width: '100%',
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            paddingVertical: 10,
-            paddingHorizontal: '5%',
-          }}>
-          <Text style={[styles.topAstrologerTxt, {color: 'white'}]}>
-            Thoughts of the day
-          </Text>
-          <Text style={[styles.topAstrologerTxt, {color: 'white'}]}>
-            {thought?.thoughtText}
-          </Text>
         </View>
 
         <View style={styles.topAstrologers}>

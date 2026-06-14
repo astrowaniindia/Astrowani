@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Share } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
