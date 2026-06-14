@@ -594,7 +594,7 @@ function BottomTabNavigator() {
       <Text
         style={{
           fontSize: focused ? moderateScale(11) : moderateScale(10),
-          color: focused ? COLORS.AstroMaroon : 'black',
+          color: focused ? 'white' : 'gray',
         }}>
         {children}
       </Text>
@@ -640,8 +640,11 @@ function BottomTabNavigator() {
         tabBarLabel: ({ focused }) => (
           <TabBarLabel focused={focused}>{route.name}</TabBarLabel>
         ),
-        tabBarActiveTintColor: COLORS.AstroMaroon, // Marron color for active icon
-        tabBarInactiveTintColor: 'gray', // Gray color for inactive icon
+        tabBarActiveTintColor: 'white',
+        tabBarInactiveTintColor: 'gray',
+        tabBarStyle: {
+          backgroundColor: COLORS.AstroMaroon,
+        },
       })}>
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Chat" component={ChatStack} />

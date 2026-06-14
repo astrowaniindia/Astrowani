@@ -976,6 +976,8 @@ const styles = StyleSheet.create({
   topAstrologers: {
     marginHorizontal: scale(15),
     marginVertical: verticalScale(4),
+    marginTop: verticalScale(25),
+    marginBottom: verticalScale(10),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -983,7 +985,8 @@ const styles = StyleSheet.create({
   customerReviews: {
     marginHorizontal: scale(15),
     marginVertical: verticalScale(4),
-
+    marginTop: verticalScale(25),
+    marginBottom: verticalScale(10),
     justifyContent: 'space-between',
   },
   topAstrologerTxt: {
@@ -1235,6 +1238,8 @@ const styles = StyleSheet.create({
   },
   CategoryTitle: {
     marginHorizontal: scale(15),
+    marginTop: verticalScale(25),
+    marginBottom: verticalScale(5),
     color: 'black',
     fontFamily: 'Lato-Bold',
   },
@@ -1360,7 +1365,7 @@ const styles = StyleSheet.create({
   },
   fixedBtn: {
     flexDirection: 'row',
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.AstroMaroon,
     borderRadius: moderateScale(30),
     alignItems: 'center',
     justifyContent: 'center',
@@ -1371,12 +1376,10 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 3},
     shadowOpacity: 0.2,
     shadowRadius: 5,
-    borderWidth: 1,
-    borderColor: COLORS.AstroGold,
     marginHorizontal: scale(10),
   },
   fixedBtnTxt: {
-    color: 'black',
+    color: 'white',
     fontSize: moderateScale(10),
     fontFamily: 'Lato-Bold',
     marginHorizontal: scale(4),
