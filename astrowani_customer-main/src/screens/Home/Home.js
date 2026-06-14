@@ -716,29 +716,7 @@ const Home = ({navigation}) => {
         <CustomerReview />
         <Remedies />
 
-        <View style={[styles.darkBottomSection, {paddingBottom: verticalScale(30)}]}>
-          <View style={[styles.footer, {backgroundColor: 'transparent', paddingBottom: 0}]}>
-            <View style={{alignItems: 'center', marginBottom: verticalScale(15), marginTop: verticalScale(20)}}>
-              <MaterialIcons name="stars" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
-              <Text style={[styles.footerTitle, {color: 'white', fontSize: moderateScale(18), textAlign: 'center', marginTop: verticalScale(8)}]}>
-                Why Astrowani Is Best For Astrology?
-              </Text>
-            </View>
-            <View style={styles.footericonView}>
-              <Text style={[styles.why, {color: '#f0f0f0', textAlign: 'center', lineHeight: verticalScale(24), fontSize: moderateScale(13)}]}>
-                Astrowani reveals the destiny that Stars has designed for us.
-                Astrowani is a proven science with its methods and way of
-                interpreting the influence of stars and planets on earthly affairs
-                and human destinies. Astrowani, with its scientific method of
-                calculation and prediction of actual events, is approving enough
-                to make people start believing in it. And it has been doing the
-                same since the early Vedic period.
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={[styles.reviewsBox, {paddingBottom: verticalScale(85)}]}>
+        <View style={styles.reviewsBox}>
           <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>
             <View style={{alignItems: 'center', marginBottom: verticalScale(20)}}>
               <MaterialIcons name="format-quote" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
@@ -767,6 +745,28 @@ const Home = ({navigation}) => {
                 <Text style={styles.emptyReviewTxt}>No reviews available yet.</Text>
               </View>
             )}
+          </View>
+        </View>
+
+        <View style={styles.darkBottomSection}>
+          <View style={[styles.footer, {backgroundColor: 'transparent', paddingBottom: 0}]}>
+            <View style={{alignItems: 'center', marginBottom: verticalScale(15), marginTop: verticalScale(20)}}>
+              <MaterialIcons name="stars" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
+              <Text style={[styles.footerTitle, {color: 'white', fontSize: moderateScale(18), textAlign: 'center', marginTop: verticalScale(8)}]}>
+                Why Astrowani Is Best For Astrology?
+              </Text>
+            </View>
+            <View style={styles.footericonView}>
+              <Text style={[styles.why, {color: '#f0f0f0', textAlign: 'center', lineHeight: verticalScale(24), fontSize: moderateScale(13)}]}>
+                Astrowani reveals the destiny that Stars has designed for us.
+                Astrowani is a proven science with its methods and way of
+                interpreting the influence of stars and planets on earthly affairs
+                and human destinies. Astrowani, with its scientific method of
+                calculation and prediction of actual events, is approving enough
+                to make people start believing in it. And it has been doing the
+                same since the early Vedic period.
+              </Text>
+            </View>
           </View>
         </View>
 
