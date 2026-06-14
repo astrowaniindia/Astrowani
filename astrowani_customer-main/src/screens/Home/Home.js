@@ -78,7 +78,7 @@ const Home = ({navigation}) => {
   React.useEffect(() => {
     const timer = setInterval(() => {
       if (isAutoScrolling.current && listRef.current && loopedAstrologers.length > 0) {
-        scrollOffset.current += 1.5; 
+        scrollOffset.current += 0.5; 
         try {
           listRef.current.scrollToOffset({ offset: scrollOffset.current, animated: false });
         } catch (e) {}
