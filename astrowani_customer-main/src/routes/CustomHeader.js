@@ -44,7 +44,7 @@ const CustomHeader = ({title, showLanguage}) => {
             <TouchableOpacity onPress={toggleLanguageModal}>
               <MaterialIcons name="language" color="white" size={24} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => alert('notification option')}>
+            <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')}>
               <MaterialIcons
                 name="notifications-none"
                 color="white"

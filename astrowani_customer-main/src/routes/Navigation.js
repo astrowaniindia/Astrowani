@@ -28,6 +28,7 @@ import AstrologerInfo from '../screens/Home/AstrologerInfo';
 import BlogList from '../screens/Home/BlogList';
 import BlogScreen from '../screens/Home/BlogScreen';
 import SearchScreen from '../screens/Home/SearchScreen';
+import NotificationScreen from '../screens/Home/NotificationScreen';
 import AddReview from '../screens/Home/AddReview';
 import BookPujaScreen from '../screens/Remedies/BookPujaScreen';
 import PujaDetails from '../screens/Remedies/PujaDetails';
@@ -667,6 +668,16 @@ function HomeStack({ navigation }) {
           component={EnxConferenceScreen}
           options={{ headerShown: false }}
         />
+      <Stack.Screen
+        name="NotificationScreen"
+        component={NotificationScreen}
+        options={{
+          headerShown: true,
+          title: 'Notifications',
+          headerStyle: { backgroundColor: COLORS.AstroMaroon },
+          headerTintColor: '#fff'
+        }}
+      />
       <Stack.Screen
         name="BlogList"
         component={BlogList}
