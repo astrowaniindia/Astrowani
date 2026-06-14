@@ -1,0 +1,10 @@
+pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+rootProject.name = 'AstroIndia_Astrologers'
+include ':app'
+includeBuild('../node_modules/@react-native/gradle-plugin')
+include(":EnxRtcAndroid")
+project(":EnxRtcAndroid").projectDir = file('../node_modules/enx-rtc-react-native/android/EnxRtcAndroid')
+include(":LibWebRtc")
+project(":LibWebRtc").projectDir = file('../node_modules/enx-rtc-react-native/android/LibWebRtc')

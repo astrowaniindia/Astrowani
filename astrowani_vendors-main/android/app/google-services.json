@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "835775840755",
+    "project_id": "astrowani-vendor",
+    "storage_bucket": "astrowani-vendor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:835775840755:android:d471d1dfaacc10d648d286",
+        "android_client_info": {
+          "package_name": "com.astrowaniVendor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwR3DN8laJ6TEg1NHIWn6XCQTVoFkjyqE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

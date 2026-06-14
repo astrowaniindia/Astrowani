@@ -1,0 +1,17 @@
+export const countries = [
+  {code: 'IN', callingCode: '91', flag: '🇮🇳', name: 'India'},
+  {code: 'US', callingCode: '1', flag: '🇺🇸', name: 'United States'},
+  {code: 'GB', callingCode: '44', flag: '🇬🇧', name: 'United Kingdom'},
+  {code: 'CA', callingCode: '1', flag: '🇨🇦', name: 'Canada'},
+  {code: 'AU', callingCode: '61', flag: '🇦🇺', name: 'Australia'},
+  {code: 'DE', callingCode: '49', flag: '🇩🇪', name: 'Germany'},
+  {code: 'FR', callingCode: '33', flag: '🇫🇷', name: 'France'},
+  {code: 'JP', callingCode: '81', flag: '🇯🇵', name: 'Japan'},
+  {code: 'CN', callingCode: '86', flag: '🇨🇳', name: 'China'},
+  {code: 'BR', callingCode: '55', flag: '🇧🇷', name: 'Brazil'},
+  {code: 'ZA', callingCode: '27', flag: '🇿🇦', name: 'South Africa'},
+  {code: 'RU', callingCode: '7', flag: '🇷🇺', name: 'Russia'},
+  {code: 'IT', callingCode: '39', flag: '🇮🇹', name: 'Italy'},
+  {code: 'MX', callingCode: '52', flag: '🇲🇽', name: 'Mexico'},
+  {code: 'ES', callingCode: '34', flag: '🇪🇸', name: 'Spain'},
+];
