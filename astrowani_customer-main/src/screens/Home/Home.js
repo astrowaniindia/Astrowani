@@ -12,7 +12,8 @@ import {
   ActivityIndicator,
   Dimensions,
   Alert,
-  RefreshControl
+  RefreshControl,
+  Animated
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
@@ -31,6 +32,42 @@ import { showAlert } from '../../Component/CustomAlert';
 import { supabase } from '../../api/SupabaseClient';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
+
+const FadeBanner = ({ banners }) => {
+  const [currentIndex, setCurrentIndex] = React.useState(0);
+  const fadeAnim = React.useRef(new Animated.Value(1)).current;
+
+  React.useEffect(() => {
+    if (!banners || banners.length <= 1) return;
+    const interval = setInterval(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0.2, // slightly dim instead of pitch black
+        duration: 500, // half-second fade out
+        useNativeDriver: true,
+      }).start(() => {
+        setCurrentIndex((prev) => (prev + 1) % banners.length);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 500, // half-second fade in
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 4000); // Wait 4 seconds before transitioning
+    return () => clearInterval(interval);
+  }, [banners.length]);
+
+  if (!banners || banners.length === 0) return null;
+
+  return (
+    <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+      <Image
+        source={{ uri: banners[currentIndex]?.imageUrl }}
+        style={{ width: '100%', height: '100%', borderRadius: 15 }}
+        resizeMode="cover"
+      />
+    </Animated.View>
+  );
+};
 
 const Home = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -590,23 +627,7 @@ const Home = ({navigation}) => {
           shadowRadius: 5
         }}>
           <View style={{height: 150, marginHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
-            <Swiper
-              key={banners.length}
-              autoplay={true}
-              autoplayTimeout={3}
-              loop={true}
-              showsPagination={false}
-              style={{height: 150}}>
-              {banners.map((img, index) => (
-                <View key={index} style={{flex: 1}}>
-                  <Image
-                    source={{uri: img?.imageUrl}}
-                    style={{width: '100%', height: '100%'}}
-                    resizeMode="cover"
-                  />
-                </View>
-              ))}
-            </Swiper>
+            <FadeBanner banners={banners} />
           </View>
 
           <View style={styles.topAstrologers}>
