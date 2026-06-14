@@ -501,6 +501,7 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  TextInput,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -517,18 +518,27 @@ const CallsList = ({navigation}) => {
   const [filteredCalls, setFilteredCalls] = useState([]);
   const [showMissedOnly, setShowMissedOnly] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   useEffect(() => {
     fetchCalls();
   }, []);
 
   useEffect(() => {
     filterCalls();
-  }, [calls, showMissedOnly]);
+  }, [calls, showMissedOnly, searchQuery]);
 
   const filterCalls = () => {
     let filtered = calls;
     if (showMissedOnly) {
       filtered = filtered.filter(call => call.isMissed);
+    }
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(item => {
+        const nameMatch = `${item.name || ''} ${item.lastName || ''}`.toLowerCase().includes(query);
+        return nameMatch;
+      });
     }
     setFilteredCalls(filtered);
   };
@@ -756,6 +766,16 @@ const CallsList = ({navigation}) => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.searchContainer}>
+        <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
+        <TextInput 
+           style={styles.searchInput}
+           placeholder="Search astrologer by name..."
+           value={searchQuery}
+           onChangeText={setSearchQuery}
+           placeholderTextColor={COLORS.AshGray}
+        />
+      </View>
       {renderContent()}
       <Modal transparent={true} visible={isWaiting} animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
@@ -800,6 +820,31 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingVertical: verticalScale(10),
+    paddingBottom: verticalScale(85),
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    margin: scale(10),
+    marginBottom: 0,
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(12),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+  },
+  searchInput: {
+    flex: 1,
+    height: verticalScale(45),
+    marginLeft: scale(10),
+    color: 'black',
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(14),
   },
   callItem: {
     flexDirection: 'row',
