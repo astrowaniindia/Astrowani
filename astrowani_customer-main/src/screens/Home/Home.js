@@ -1352,8 +1352,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     borderWidth: 1,
     borderColor: COLORS.AstroGold,
-  },    marginHorizontal: scale(10),
-    padding: scale(14),
+    marginHorizontal: scale(10),
   },
   fixedBtnTxt: {
     color: 'black',
