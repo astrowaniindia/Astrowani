@@ -555,7 +555,7 @@ const Home = ({navigation}) => {
         </View>
 
         <View style={{
-          backgroundColor: 'white', 
+          backgroundColor: COLORS.AstroSoftOrange, 
           flex: 1, 
           paddingBottom: 50,
           borderTopLeftRadius: 30,
@@ -1039,7 +1039,7 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(12),
     paddingTop: verticalScale(45),
     borderWidth: 1,
-    borderColor: COLORS.AstroSoftOrange,
+    borderColor: 'white',
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
@@ -1267,7 +1267,7 @@ const styles = StyleSheet.create({
     marginVertical: verticalScale(12),
     alignSelf: 'center',
     borderWidth: 2,
-    borderColor: COLORS.AstroSoftOrange,
+    borderColor: 'white',
   },
   darkOverlay: {
     ...StyleSheet.absoluteFillObject,
