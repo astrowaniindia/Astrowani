@@ -210,8 +210,8 @@ app.get('/api/users/profile', (req, res) => {
 app.get('/api/banners/all', (req, res) => {
   return res.status(200).json({
     data: [
-      { id: 1, title: 'Chat With Premium Astrologers', description: 'Get 50% Off on Your First Call', imageUrl: 'https://astrowani.onrender.com/public/images/banner1.png' },
-      { id: 2, title: 'Live Astrologer Session', description: 'Ask your queries live now!', imageUrl: 'https://astrowani.onrender.com/public/images/banner2.png' }
+      { id: 1, title: 'Chat With Premium Astrologers', description: 'Get 50% Off on Your First Call', imageUrl: 'https://astrowani.onrender.com/public/images/banner1.jpeg' },
+      { id: 2, title: 'Live Astrologer Session', description: 'Ask your queries live now!', imageUrl: 'https://astrowani.onrender.com/public/images/banner2.jpeg' }
     ]
   });
 });
