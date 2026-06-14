@@ -834,14 +834,14 @@ const Home = ({navigation}) => {
         <TouchableOpacity
           onPress={() => navigation.navigate('Chat')}
           style={styles.fixedBtn}>
-          <MaterialIcons name="wechat" size={22} color="black" />
+          <MaterialIcons name="wechat" size={22} color="white" />
           <Text style={styles.fixedBtnTxt}>Chat with Astrologer</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => navigation.navigate('VoiceCallScreen')}
           style={styles.fixedBtn}>
-          <MaterialIcons name="add-call" size={22} color="black" />
+          <MaterialIcons name="add-call" size={22} color="white" />
           <Text style={styles.fixedBtnTxt}>Talk To Astrologer</Text>
         </TouchableOpacity>
       </View>
@@ -1370,19 +1370,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(10),
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
+    paddingVertical: verticalScale(12),
+    elevation: 8,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     marginHorizontal: scale(10),
   },
   fixedBtnTxt: {
     color: 'white',
-    fontSize: moderateScale(10),
+    fontSize: moderateScale(11),
     fontFamily: 'Lato-Bold',
-    marginHorizontal: scale(4),
+    marginHorizontal: scale(6),
   },
   BlogView: {
     flexDirection: 'row',
