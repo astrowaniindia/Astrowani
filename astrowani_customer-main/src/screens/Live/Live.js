@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Image, ImageBackground, TouchableOpacity, FlatList, StyleSheet, } from 'react-native';
+import { View, Text, Image, ImageBackground, TouchableOpacity, FlatList, StyleSheet, TextInput } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
@@ -71,7 +72,18 @@ const Live = ({ navigation }) => {
   ];
 
   const [liveAstro, setLiveAstro] = useState([]);
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredData = React.useMemo(() => {
+    if (!searchQuery || !liveAstro) return liveAstro;
+    const query = searchQuery.toLowerCase();
+    return liveAstro.filter(item => {
+      const nameMatch = item.name?.toLowerCase().includes(query);
+      const specMatch = item.title?.toLowerCase().includes(query) || item.specialty?.toLowerCase().includes(query);
+      return nameMatch || specMatch;
+    });
+  }, [liveAstro, searchQuery]);
 
   const getLiveAstro = async () => {
     return await Instance.get(`/api/astrologers/liveAstrologers`).then((response) => {
@@ -116,8 +128,18 @@ const Live = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.searchContainer}>
+        <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
+        <TextInput 
+           style={styles.searchInput}
+           placeholder="Search live sessions..."
+           value={searchQuery}
+           onChangeText={setSearchQuery}
+           placeholderTextColor={COLORS.AshGray}
+        />
+      </View>
       <FlatList 
-        data={liveAstro} 
+        data={filteredData} 
         renderItem={renderItem} 
         keyExtractor={item => item.id} 
         contentContainerStyle={{paddingBottom: verticalScale(85)}}
@@ -131,7 +153,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.AstroSoftOrange,
     paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(10),
+    paddingTop: verticalScale(10),
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginBottom: verticalScale(15),
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(12),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+  },
+  searchInput: {
+    flex: 1,
+    height: verticalScale(45),
+    marginLeft: scale(10),
+    color: 'black',
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(14),
   },
   card: {
     marginBottom: verticalScale(15),

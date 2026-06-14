@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
@@ -22,6 +23,17 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
   const navigation = useNavigation();
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitingAstroName, setWaitingAstroName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredData = React.useMemo(() => {
+    if (!searchQuery || !data) return data;
+    const query = searchQuery.toLowerCase();
+    return data.filter(item => {
+      const nameMatch = item.name?.toLowerCase().includes(query);
+      const specMatch = item.specialties?.[0]?.name?.toLowerCase().includes(query) || item.specialty?.toLowerCase().includes(query);
+      return nameMatch || specMatch;
+    });
+  }, [data, searchQuery]);
 
   const getRoomTokenWebCall = async (item) => {
     try {
@@ -264,9 +276,19 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: COLORS.AstroSoftOrange }}>
+      <View style={styles.searchContainer}>
+        <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
+        <TextInput 
+           style={styles.searchInput}
+           placeholder="Search astrologer by name or skill..."
+           value={searchQuery}
+           onChangeText={setSearchQuery}
+           placeholderTextColor={COLORS.AshGray}
+        />
+      </View>
       <FlatList
-        data={data}
+        data={filteredData}
         keyExtractor={item => item._id}
         renderItem={renderItem}
         contentContainerStyle={styles.container}
@@ -317,6 +339,30 @@ const styles = StyleSheet.create({
     padding: scale(10),
     paddingBottom: verticalScale(85),
     backgroundColor: COLORS.AstroSoftOrange,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    margin: scale(10),
+    marginBottom: 0,
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(12),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+  },
+  searchInput: {
+    flex: 1,
+    height: verticalScale(45),
+    marginLeft: scale(10),
+    color: 'black',
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(14),
   },
   card: {
     backgroundColor: '#fff',
