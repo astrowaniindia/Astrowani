@@ -108,7 +108,9 @@ const styles = {
   reviewCard: {
     backgroundColor: '#fff',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#800000', // COLORS.AstroMaroon
     alignItems: 'center',
     marginRight: 10,
     width: 150,
