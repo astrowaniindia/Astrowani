@@ -829,14 +829,14 @@ const Home = ({navigation}) => {
         <TouchableOpacity
           onPress={() => navigation.navigate('Chat')}
           style={styles.fixedBtn}>
-          <MaterialIcons name="wechat" size={22} color="white" />
+          <MaterialIcons name="wechat" size={22} color={COLORS.AstroMaroon} />
           <Text style={styles.fixedBtnTxt}>Chat with Astrologer</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => navigation.navigate('VoiceCallScreen')}
           style={styles.fixedBtn}>
-          <MaterialIcons name="add-call" size={22} color="white" />
+          <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
           <Text style={styles.fixedBtnTxt}>Talk To Astrologer</Text>
         </TouchableOpacity>
       </View>
@@ -1369,7 +1369,7 @@ const styles = StyleSheet.create({
   },
   fixedBtnView: {
     position: 'absolute',
-    bottom: 0,
+    bottom: verticalScale(75),
     left: 0,
     right: 0,
     flexDirection: 'row',
@@ -1380,21 +1380,21 @@ const styles = StyleSheet.create({
   },
   fixedBtn: {
     flexDirection: 'row',
-    backgroundColor: COLORS.AstroMaroon,
+    backgroundColor: COLORS.AstroGold,
     borderRadius: moderateScale(30),
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(16),
     paddingVertical: verticalScale(12),
     elevation: 8,
-    shadowColor: COLORS.AstroMaroon,
+    shadowColor: '#000',
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.3,
     shadowRadius: 6,
     marginHorizontal: scale(10),
   },
   fixedBtnTxt: {
-    color: 'white',
+    color: COLORS.AstroMaroon,
     fontSize: moderateScale(11),
     fontFamily: 'Lato-Bold',
     marginHorizontal: scale(6),
