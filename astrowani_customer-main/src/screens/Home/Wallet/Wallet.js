@@ -6,25 +6,24 @@ import {
   StyleSheet,
   FlatList,
   Alert,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
-const plans = [
-  {id: '1', amount: 50},
-  {id: '2', amount: 100},
-  {id: '3', amount: 150},
-  {id: '4', amount: 200},
-  {id: '5', amount: 250},
-  {id: '6', amount: 300},
-  {id: '7', amount: 500},
-  {id: '8', amount: 1000},
-  {id: '9', amount: 2000},
-];
+import { COLORS } from '../../../Theme/Colors';
+
+const presetAmounts = [50, 100, 200, 500, 1000, 2000];
+
 const Wallet = ({navigation}) => {
-  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [amount, setAmount] = useState('');
+
   const handleSubmit = () => {
-    if (!selectedPlan) {
-      Alert.alert('Please select a plan first.');
+    const finalAmount = parseInt(amount);
+    if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount to recharge.');
       return;
     }
     const options = {
@@ -32,55 +31,90 @@ const Wallet = ({navigation}) => {
       image: 'https://your-logo-url.com/logo.png',
       currency: 'INR',
       key: 'rzp_live_3PXDqZGmI6Zz4o', 
-      amount: selectedPlan.amount * 100,
+      amount: finalAmount * 100,
       name: 'Astrowani',
       prefill: {
         email: 'test@example.com',
         contact: '+919829304067',
         name: 'User',
       },
-      theme: {color: '#F37254'},
+      theme: {color: COLORS.AstroMaroon},
     };
     RazorpayCheckout.open(options)
       .then(data => {
-        // Success
         Alert.alert('Payment Successful', `Payment ID: ${data.razorpay_payment_id}`);
-        // Optionally, call an API to update wallet balance
       })
       .catch(error => {
-        // Failure
         Alert.alert('Payment Failed', error.description);
       });
   };
 
-  const renderPlan = ({item}) => (
+  const renderPreset = ({item}) => (
     <TouchableOpacity
-      style={[
-        styles.planContainer,
-        selectedPlan?.id === item.id && styles.selectedPlan,
-      ]}
-      onPress={() => setSelectedPlan(item)}>
-      <Text style={styles.planText}>₹ {item.amount}</Text>
+      style={styles.presetChip}
+      onPress={() => setAmount(item.toString())}>
+      <Text style={styles.presetText}>+ ₹{item}</Text>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Tap on a plan to recharge</Text>
-      <FlatList
-        data={plans}
-        renderItem={renderPlan}
-        keyExtractor={item => item.id}
-        numColumns={3}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.contentContainer}
-      />
-      {selectedPlan && (
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-          <Text style={styles.submitTxt}>Submit & Pay ₹{selectedPlan.amount}</Text>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <View style={styles.headerCard}>
+        <View style={styles.walletIconContainer}>
+          <MaterialIcons name="account-balance-wallet" size={40} color={COLORS.AstroGold} />
+        </View>
+        <Text style={styles.headerTitle}>Add Money to Wallet</Text>
+        <Text style={styles.headerSubtitle}>Recharge seamlessly to talk to experts</Text>
+      </View>
+
+      <View style={styles.inputSection}>
+        <Text style={styles.inputLabel}>Enter Amount</Text>
+        <View style={styles.inputWrapper}>
+          <Text style={styles.currencySymbol}>₹</Text>
+          <TextInput
+            style={styles.amountInput}
+            keyboardType="number-pad"
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="0"
+            placeholderTextColor="#ccc"
+            maxLength={6}
+          />
+        </View>
+      </View>
+
+      <View style={styles.presetSection}>
+        <Text style={styles.presetLabel}>Recommended amounts</Text>
+        <FlatList
+          data={presetAmounts}
+          renderItem={renderPreset}
+          keyExtractor={item => item.toString()}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.presetList}
+        />
+      </View>
+
+      <View style={{ flex: 1 }} />
+
+      <View style={styles.bottomSection}>
+        <View style={styles.billDetails}>
+          <Text style={styles.billText}>Total Payable</Text>
+          <Text style={styles.billAmount}>₹{amount || '0'}</Text>
+        </View>
+        <TouchableOpacity 
+          style={[styles.submitBtn, !amount && styles.disabledBtn]} 
+          onPress={handleSubmit}
+          disabled={!amount}
+        >
+          <Text style={styles.submitTxt}>Proceed to Pay</Text>
+          <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />
         </TouchableOpacity>
-      )}
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -89,48 +123,153 @@ export default Wallet;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    padding: scale(16),
+    backgroundColor: '#F8F9FA',
   },
-  heading: {
-    fontSize: moderateScale(16),
+  headerCard: {
+    backgroundColor: COLORS.AstroMaroon,
+    padding: scale(25),
+    paddingTop: scale(40),
+    alignItems: 'center',
+    borderBottomLeftRadius: moderateScale(30),
+    borderBottomRightRadius: moderateScale(30),
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  walletIconContainer: {
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    padding: scale(15),
+    borderRadius: scale(50),
+    marginBottom: verticalScale(15),
+  },
+  headerTitle: {
+    fontSize: moderateScale(22),
     fontFamily: 'Lato-Bold',
-    color: 'black',
-    marginBottom: verticalScale(16),
+    color: COLORS.white,
+    marginBottom: verticalScale(5),
   },
-  planContainer: {
-    flex: 1,
-    backgroundColor: '#f0f0f0',
-    margin: scale(5),
+  headerSubtitle: {
+    fontSize: moderateScale(14),
+    color: '#E0E0E0',
+    fontFamily: 'Lato-Regular',
+  },
+  inputSection: {
+    backgroundColor: COLORS.white,
+    marginHorizontal: scale(20),
+    marginTop: verticalScale(-20),
     padding: scale(20),
-    borderRadius: moderateScale(10),
+    borderRadius: moderateScale(15),
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  inputLabel: {
+    fontSize: moderateScale(14),
+    color: '#666',
+    fontFamily: 'Lato-Regular',
+    marginBottom: verticalScale(10),
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.AstroMaroon,
+    paddingBottom: verticalScale(5),
+  },
+  currencySymbol: {
+    fontSize: moderateScale(30),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.black,
+    marginRight: scale(10),
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: moderateScale(35),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.black,
+    padding: 0,
+  },
+  presetSection: {
+    marginTop: verticalScale(25),
+    paddingLeft: scale(20),
+  },
+  presetLabel: {
+    fontSize: moderateScale(14),
+    fontFamily: 'Lato-Bold',
+    color: '#333',
+    marginBottom: verticalScale(15),
+  },
+  presetList: {
+    paddingRight: scale(20),
+  },
+  presetChip: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(10),
+    borderRadius: moderateScale(20),
+    marginRight: scale(12),
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  presetText: {
+    fontSize: moderateScale(14),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+  },
+  bottomSection: {
+    backgroundColor: COLORS.white,
+    padding: scale(20),
+    paddingBottom: Platform.OS === 'ios' ? verticalScale(30) : verticalScale(20),
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  billDetails: {
+    flex: 1,
+  },
+  billText: {
+    fontSize: moderateScale(12),
+    color: '#666',
+    fontFamily: 'Lato-Regular',
+  },
+  billAmount: {
+    fontSize: moderateScale(20),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.black,
+    marginTop: verticalScale(2),
+  },
+  submitBtn: {
+    backgroundColor: COLORS.AstroMaroon,
+    flexDirection: 'row',
+    paddingHorizontal: scale(25),
+    paddingVertical: verticalScale(15),
+    borderRadius: moderateScale(12),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selectedPlan: {
-    backgroundColor: '#B71C1C',
-  },
-  planText: {
-    fontSize: moderateScale(16),
-    fontFamily: 'Lato-Bold',
-    color: '#000',
-  },
-  row: {
-    justifyContent: 'space-between',
-  },
-  contentContainer: {
-    paddingBottom: verticalScale(16),
-  },
-  submitBtn: {
-    backgroundColor: '#B71C1C',
-    padding: scale(14),
-    borderRadius: scale(8),
-    alignItems: 'center',
-    marginTop: verticalScale(20),
+  disabledBtn: {
+    backgroundColor: '#ccc',
   },
   submitTxt: {
-    color: '#fff',
+    color: COLORS.white,
     fontSize: moderateScale(16),
     fontFamily: 'Lato-Bold',
+    marginRight: scale(8),
   },
 });
