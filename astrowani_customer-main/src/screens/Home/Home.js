@@ -1369,7 +1369,7 @@ const styles = StyleSheet.create({
   },
   fixedBtnView: {
     position: 'absolute',
-    bottom: verticalScale(75),
+    bottom: verticalScale(50),
     left: 0,
     right: 0,
     flexDirection: 'row',
