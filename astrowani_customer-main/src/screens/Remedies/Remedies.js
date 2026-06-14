@@ -6,6 +6,7 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
@@ -58,13 +59,13 @@ const Remedies = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.listContainer}>
+      <ScrollView contentContainerStyle={[styles.listContainer, {paddingBottom: verticalScale(85)}]}>
         {data.map((item) => (
           <React.Fragment key={item.id}>
             {renderItem({ item })}
           </React.Fragment>
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 };

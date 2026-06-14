@@ -116,7 +116,12 @@ const Live = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <FlatList data={liveAstro} renderItem={renderItem} keyExtractor={item => item.id} />
+      <FlatList 
+        data={liveAstro} 
+        renderItem={renderItem} 
+        keyExtractor={item => item.id} 
+        contentContainerStyle={{paddingBottom: verticalScale(85)}}
+      />
     </View>
   );
 };

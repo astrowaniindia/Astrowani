@@ -315,6 +315,7 @@ export default ReusableList;
 const styles = StyleSheet.create({
   container: {
     padding: scale(10),
+    paddingBottom: verticalScale(85),
     backgroundColor: COLORS.AstroSoftOrange,
   },
   card: {
