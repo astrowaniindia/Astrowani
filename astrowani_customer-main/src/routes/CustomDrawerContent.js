@@ -140,6 +140,12 @@ const handleShareApp = async () => {
             onPress={() => props.navigation.navigate('DrawerChat')}
           />
           <DrawerItem
+            label="Astrowani Blogs"
+            labelStyle={styles.drawerLabel}
+            icon={() => <Icon name="menu-book" size={22} color={COLORS.AstroMaroon} />}
+            onPress={() => props.navigation.navigate('BlogList')}
+          />
+          <DrawerItem
             label="My Favorites"
             labelStyle={styles.drawerLabel}
             icon={() => <Icon name="favorite" size={22} color={COLORS.AstroMaroon} />}
