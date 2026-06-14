@@ -716,7 +716,7 @@ const Home = ({navigation}) => {
         <CustomerReview />
         <Remedies />
 
-        <View style={styles.darkBottomSection}>
+        <View style={styles.reviewsBox}>
           <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>
             <View style={{alignItems: 'center', marginBottom: verticalScale(20)}}>
               <MaterialIcons name="format-quote" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
@@ -746,7 +746,9 @@ const Home = ({navigation}) => {
               </View>
             )}
           </View>
+        </View>
 
+        <View style={styles.darkBottomSection}>
           <View style={[styles.footer, {backgroundColor: 'transparent', paddingBottom: 0}]}>
             <View style={{alignItems: 'center', marginBottom: verticalScale(15), marginTop: verticalScale(20)}}>
               <MaterialIcons name="stars" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
@@ -1407,6 +1409,19 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(20),
     backgroundColor: COLORS.AstroSoftOrange,
     paddingBottom: verticalScale(75),
+  },
+  reviewsBox: {
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(24),
+    marginHorizontal: scale(10),
+    paddingBottom: verticalScale(20),
+    paddingTop: verticalScale(10),
+    marginTop: verticalScale(20),
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   darkBottomSection: {
     backgroundColor: COLORS.AstroMaroon,
