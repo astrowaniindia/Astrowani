@@ -526,7 +526,7 @@ const Home = ({navigation}) => {
   return (
     <View style={{flex: 1, backgroundColor: COLORS.AstroMaroon}}>
       <ScrollView 
-        style={styles.main}
+        style={{flex: 1}}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
         }
@@ -543,7 +543,8 @@ const Home = ({navigation}) => {
             width: '100%',
             justifyContent: 'center',
             alignItems: 'center',
-            paddingVertical: 10,
+            paddingBottom: 15,
+            paddingTop: 5,
             paddingHorizontal: '5%',
           }}>
           <Text style={[styles.topAstrologerTxt, {color: 'white', textAlign: 'center'}]}>
@@ -551,33 +552,34 @@ const Home = ({navigation}) => {
           </Text>
         </View>
 
-        <View style={{height: 150}}>
-          <Swiper
-            autoplay
-            autoplayTimeout={3}
-            loop
-            scrollEnabled={false}
-            showsPagination={false}
-            style={{height: 150}}>
-            {banners.map((img, index) => (
-              <Image
-                key={index}
-                source={{uri: img?.imageUrl}}
-                style={{width: '100%', height: '100%'}}
-                resizeMode="cover"
-              />
-            ))}
-          </Swiper>
-        </View>
+        <View style={{backgroundColor: 'white', flex: 1, paddingBottom: 50}}>
+          <View style={{height: 150}}>
+            <Swiper
+              autoplay
+              autoplayTimeout={3}
+              loop
+              scrollEnabled={false}
+              showsPagination={false}
+              style={{height: 150}}>
+              {banners.map((img, index) => (
+                <Image
+                  key={index}
+                  source={{uri: img?.imageUrl}}
+                  style={{width: '100%', height: '100%'}}
+                  resizeMode="cover"
+                />
+              ))}
+            </Swiper>
+          </View>
 
-        <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>India's Best Astrologers</Text>
-          <TouchableOpacity
-            style={styles.viewAllBtn}
-            onPress={() => navigation.navigate('Chat')}>
-            <Text style={styles.viewAll}>View All</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={styles.topAstrologers}>
+            <Text style={styles.topAstrologerTxt}>India's Best Astrologers</Text>
+            <TouchableOpacity
+              style={styles.viewAllBtn}
+              onPress={() => navigation.navigate('Chat')}>
+              <Text style={styles.viewAll}>View All</Text>
+            </TouchableOpacity>
+          </View>
         {loadingAstrologer ? (
           <View style={styles.indicator}>
             <ActivityIndicator size="small" color={COLORS.primary} />
@@ -811,6 +813,7 @@ const Home = ({navigation}) => {
             </View>
           </Modal>
         )}
+        </View>
       </ScrollView>
       <View style={styles.fixedBtnView}>
         <TouchableOpacity
