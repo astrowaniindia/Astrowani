@@ -29,7 +29,16 @@ const CustomHeader = ({title, showLanguage}) => {
     toggleLanguageModal();
   };
   return (
-    <View style={{backgroundColor: COLORS.AstroMaroon}}>
+    <View style={{
+      backgroundColor: COLORS.AstroMaroon,
+      borderBottomLeftRadius: 30,
+      borderBottomRightRadius: 30,
+      elevation: 5,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 3},
+      shadowOpacity: 0.15,
+      shadowRadius: 5,
+    }}>
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
           <TouchableOpacity onPress={() => navigation.openDrawer()}>

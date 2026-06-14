@@ -644,13 +644,18 @@ function BottomTabNavigator() {
         tabBarInactiveTintColor: 'gray',
         tabBarStyle: {
           backgroundColor: '#fff',
-          borderTopWidth: 1,
-          borderTopColor: '#f0f0f0',
-          elevation: 10,
+          borderTopLeftRadius: 30,
+          borderTopRightRadius: 30,
+          position: 'absolute',
+          bottom: 0,
+          elevation: 15,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
+          shadowOffset: { width: 0, height: -5 },
           shadowOpacity: 0.1,
-          shadowRadius: 4,
+          shadowRadius: 8,
+          paddingBottom: 10,
+          height: 65,
+          borderTopWidth: 0,
         },
       })}>
       <Tab.Screen name="Home" component={HomeStack} />

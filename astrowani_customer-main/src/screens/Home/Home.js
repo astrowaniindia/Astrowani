@@ -612,6 +612,7 @@ const Home = ({navigation}) => {
           />
         )}
 
+        <View style={styles.separator} />
 
         <Text style={styles.CategoryTitle}>Astrowani's Categories</Text>
         <View>
@@ -648,6 +649,7 @@ const Home = ({navigation}) => {
           </ScrollView>
         </View>
 
+        <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>{t('remedies')}</Text>
@@ -655,7 +657,7 @@ const Home = ({navigation}) => {
 
         <HomeRemedies navigation={navigation} />
 
-        
+        <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>Live Astrologers</Text>
@@ -675,6 +677,7 @@ const Home = ({navigation}) => {
           contentContainerStyle={styles.liveAstrologersView}
         />
         
+        <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>Free Services</Text>
@@ -684,7 +687,7 @@ const Home = ({navigation}) => {
           onServiceSelect={handleServiceSelect}
         />
 
-        
+        <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>Astrowani's Blog</Text>
@@ -885,6 +888,13 @@ const Home = ({navigation}) => {
 export default Home;
 
 const styles = StyleSheet.create({
+  separator: {
+    height: verticalScale(1),
+    backgroundColor: COLORS.AstroMaroon,
+    marginHorizontal: scale(15),
+    marginVertical: verticalScale(10),
+    opacity: 0.15,
+  },
   main: {backgroundColor: 'white'},
   searchTxt: {
     paddingHorizontal: scale(5),
