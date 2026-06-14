@@ -442,7 +442,7 @@ app.get('/api/wallet', async (req, res) => {
     const userId = decoded.userId || decoded._id || decoded.id;
 
     const { data: user, error } = await supabase
-      .from('users')
+      .from('customers')
       .select('wallet_balance')
       .eq('id', userId)
       .single();
@@ -494,7 +494,7 @@ app.post('/api/wallet/deduct-and-credit', async (req, res) => {
 
     // 1. Get current customer balance
     const { data: userRow, error: userErr } = await supabase
-      .from('users')
+      .from('customers')
       .select('wallet_balance')
       .eq('id', userId)
       .single();
@@ -508,7 +508,7 @@ app.post('/api/wallet/deduct-and-credit', async (req, res) => {
 
     // 2. Deduct from customer
     const { error: deductErr } = await supabase
-      .from('users')
+      .from('customers')
       .update({ wallet_balance: currentBalance - amount })
       .eq('id', userId);
     if (deductErr) throw deductErr;
