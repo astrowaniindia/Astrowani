@@ -82,10 +82,12 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     marginBottom: verticalScale(10),
-    borderRadius: moderateScale(10),
+    borderRadius: moderateScale(16),
     overflow: 'hidden',
     backgroundColor: COLORS.white,
     height: verticalScale(120),
+    borderWidth: 1.5,
+    borderColor: '#800000', // COLORS.AstroMaroon
   },
   textContainer: {
     flex: 2,
