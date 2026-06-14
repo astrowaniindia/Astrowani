@@ -29,16 +29,7 @@ const CustomHeader = ({title, showLanguage}) => {
     toggleLanguageModal();
   };
   return (
-    <View style={{
-      backgroundColor: COLORS.AstroMaroon,
-      borderBottomLeftRadius: 30,
-      borderBottomRightRadius: 30,
-      elevation: 5,
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 3},
-      shadowOpacity: 0.15,
-      shadowRadius: 5,
-    }}>
+    <View style={{backgroundColor: COLORS.AstroMaroon}}>
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
           <TouchableOpacity onPress={() => navigation.openDrawer()}>
@@ -52,7 +43,7 @@ const CustomHeader = ({title, showLanguage}) => {
               <Ionicons name="wallet-outline" color="white" size={24} />
             </TouchableOpacity>
             <TouchableOpacity onPress={toggleLanguageModal}>
-              <MaterialIcons name="language" color="white" size={24} />
+              <MaterialIcons name="translate" color="white" size={24} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')}>
               <MaterialIcons
