@@ -14,16 +14,18 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 
+import { LanguageContext } from '../context/LanguageContext';
+
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState(null);
+  const { language, changeLanguage, t } = React.useContext(LanguageContext);
 
   const toggleLanguageModal = () => {
     setLanguageModalVisible(!languageModalVisible);
   };
-  const selectLanguage = language => {
-    setSelectedLanguage(language);
+  const selectLanguage = lang => {
+    changeLanguage(lang);
     toggleLanguageModal();
   };
   return (
@@ -34,7 +36,6 @@ const CustomHeader = ({title, showLanguage}) => {
             <Ionicons name="menu" color="white" size={28} />
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
-          {/* <Image resizeMode='contain' style={{width:24,height:24}} source={require("../assets/images/loginLogo.jpeg")}/> */}
         </View>
         {showLanguage && (
           <View style={styles.notificationView}>
@@ -64,24 +65,24 @@ const CustomHeader = ({title, showLanguage}) => {
           activeOpacity={1}
           onPressOut={toggleLanguageModal}>
           <TouchableOpacity style={styles.modalContent} activeOpacity={1}>
-            <Text style={styles.modalTitle}>Choose Language</Text>
+            <Text style={[styles.modalTitle, {color: 'black'}]}>{t('language')}</Text>
             <TouchableOpacity
               style={styles.languageOption}
               onPress={() => selectLanguage('English')}>
               <View style={styles.roundIcon}>
-                {selectedLanguage === 'English' && (
+                {language === 'English' && (
                   <View style={styles.point} />
                 )}
               </View>
-              <Text style={styles.languageText}>English</Text>
+              <Text style={[styles.languageText, {color: 'black'}]}>English</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.languageOption}
               onPress={() => selectLanguage('Hindi')}>
               <View style={styles.roundIcon}>
-                {selectedLanguage === 'Hindi' && <View style={styles.point} />}
+                {language === 'Hindi' && <View style={styles.point} />}
               </View>
-              <Text style={styles.languageText}>Hindi</Text>
+              <Text style={[styles.languageText, {color: 'black'}]}>Hindi</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>

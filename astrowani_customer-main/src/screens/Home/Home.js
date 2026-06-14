@@ -30,8 +30,10 @@ import axios from 'axios';
 import { showAlert } from '../../Component/CustomAlert';
 import { supabase } from '../../api/SupabaseClient';
 import io from 'socket.io-client';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const Home = ({navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedReview, setSelectedReview] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -417,7 +419,7 @@ const Home = ({navigation}) => {
             <TouchableOpacity
               onPress={() => handleChatPress(item)}
               style={styles.chatBtn}>
-              <Text style={styles.chatBtnTxt}>Chat</Text>
+              <Text style={styles.chatBtnTxt}>{t('chat')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               // onPress={() =>
@@ -432,7 +434,7 @@ const Home = ({navigation}) => {
                 getRoomTokenWebCall(item);
               }}
               style={styles.callButton}>
-              <Text style={styles.chatBtnTxt}>Call</Text>
+              <Text style={styles.chatBtnTxt}>{t('call')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -498,7 +500,7 @@ const Home = ({navigation}) => {
             astrologer.live ? styles.live : styles.scheduled,
           ]}>
           <Text style={astrologer.live ? styles.livetxt : styles.scheduledtxt}>
-            {astrologer.live ? 'Live' : 'Scheduled'}
+            {astrologer.live ? t('live') : t('scheduled')}
           </Text>
         </View>
         <View style={styles.astroNameview}>
@@ -534,7 +536,7 @@ const Home = ({navigation}) => {
         <View style={styles.searchBtnView}>
           <TouchableOpacity onPress={handleSearch} style={styles.searchBtn}>
             <MaterialIcons name="search" size={24} color="#800000" />
-            <Text style={styles.searchTxt}>Search Here</Text>
+            <Text style={styles.searchTxt}>{t('search')}</Text>
           </TouchableOpacity>
         </View>
         <View
@@ -548,7 +550,7 @@ const Home = ({navigation}) => {
             paddingHorizontal: '5%',
           }}>
           <Text style={[styles.topAstrologerTxt, {color: 'white', textAlign: 'center'}]}>
-            {thought?.thoughtText || 'Welcome to Astrowani!'}
+            {thought?.thoughtText || t('welcome')}
           </Text>
         </View>
 
@@ -573,11 +575,11 @@ const Home = ({navigation}) => {
           </View>
 
           <View style={styles.topAstrologers}>
-            <Text style={styles.topAstrologerTxt}>India's Best Astrologers</Text>
+            <Text style={styles.topAstrologerTxt}>{t('bestAstrologers')}</Text>
             <TouchableOpacity
               style={styles.viewAllBtn}
               onPress={() => navigation.navigate('Chat')}>
-              <Text style={styles.viewAll}>View All</Text>
+              <Text style={styles.viewAll}>{t('viewAll')}</Text>
             </TouchableOpacity>
           </View>
         {loadingAstrologer ? (
@@ -635,7 +637,7 @@ const Home = ({navigation}) => {
 
 
         <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>Astrowani Remedies</Text>
+          <Text style={styles.topAstrologerTxt}>{t('remedies')}</Text>
         </View>
 
         <HomeRemedies navigation={navigation} />

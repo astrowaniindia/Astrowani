@@ -9,6 +9,8 @@ import { requestUserPermission } from './src/utils/PushNotification';
 import CustomAlert from './src/Component/CustomAlert';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { LanguageProvider } from './src/context/LanguageContext';
+
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [userToken, setUserToken] = useState(null);
@@ -19,23 +21,14 @@ const App = () => {
       try {
         token = await AsyncStorage.getItem('token');
       } catch (e) {
-        // Restoring token failed
         console.log('Failed to get token from AsyncStorage', e);
       }
 
-      // Request FCM token
       const fcmToken = await requestUserPermission();
       if (fcmToken) {
         await AsyncStorage.setItem('fcmToken', fcmToken);
-        console.log('FCM Token stored:', fcmToken);
-      } else {
-        console.log('FCM Token not obtained');
       }
 
-      // After restoring token, we may need to validate it in production apps
-
-      // This will switch to the App screen or Auth screen and this loading
-      // screen will be unmounted and thrown away.
       setUserToken(token);
       setIsLoading(false);
     };
@@ -55,10 +48,12 @@ const App = () => {
 
   return (
     <SafeAreaProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <Navigation initialRoute={userToken ? 'DrawerNavigator' : 'Login'} />
-        <CustomAlert />
-      </GestureHandlerRootView>
+      <LanguageProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <Navigation initialRoute={userToken ? 'DrawerNavigator' : 'Login'} />
+          <CustomAlert />
+        </GestureHandlerRootView>
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 };
