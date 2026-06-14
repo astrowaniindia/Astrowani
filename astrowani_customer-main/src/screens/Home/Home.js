@@ -412,8 +412,8 @@ const Home = ({navigation}) => {
           <Text style={styles.language}>{languages || 'hindi'}</Text>
         </View>
         <View style={styles.btnView}>
-          <Text style={[styles.charge, {color: item.isFree ? 'red' : 'green'}]}>
-            {item.pricing === 0 ? 'Free' : `₹${item.pricing}/min`}
+          <Text style={[styles.charge, {color: 'green'}]}>
+            {item.isFree ? 'Free' : `₹${item.chargePerMinute || 0}/min`}
           </Text>
           <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}>
             <TouchableOpacity
@@ -545,7 +545,7 @@ const Home = ({navigation}) => {
             width: '100%',
             justifyContent: 'center',
             alignItems: 'center',
-            paddingBottom: 15,
+            paddingBottom: 40,
             paddingTop: 5,
             paddingHorizontal: '5%',
           }}>
@@ -568,7 +568,7 @@ const Home = ({navigation}) => {
           shadowOpacity: 0.1,
           shadowRadius: 5
         }}>
-          <View style={{height: 150}}>
+          <View style={{height: 150, paddingHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
             <Swiper
               autoplay
               autoplayTimeout={3}
@@ -580,7 +580,7 @@ const Home = ({navigation}) => {
                 <Image
                   key={index}
                   source={{uri: img?.imageUrl}}
-                  style={{width: '100%', height: '100%'}}
+                  style={{width: '100%', height: '100%', borderRadius: 15}}
                   resizeMode="cover"
                 />
               ))}
