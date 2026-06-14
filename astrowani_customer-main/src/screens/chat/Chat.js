@@ -16,9 +16,7 @@ import { COLORS } from '../../Theme/Colors';
 import Allastrologers from './Allastrologers';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { io } from 'socket.io-client';
-
-const SOCKET_URL = api;
+import { supabase } from '../../api/SupabaseClient';
 
 const Chat = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('');
@@ -27,9 +25,9 @@ const Chat = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [specialAstro, setSpecialAstro] = useState([]);
   const [messages, setMessages] = useState([]); // store incoming messages
-  const socketRef = useRef(null);
   const mountedRef = useRef(true);
   const currentChatRef = useRef(null); // track current opened astrologer id
+  const channelRef = useRef(null);
 
   // Fetch all astrologers
   const getAllAstrologers = async () => {
@@ -47,76 +45,65 @@ const Chat = ({ navigation }) => {
     }
   };
 
-  // Initialize socket connection
+  // Initialize Supabase realtime connection for global incoming messages
   const initSocket = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      if (!mountedRef.current) return;
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const userData = JSON.parse(userDataStr);
+      const myId = userData?._id;
+      if (!myId || !mountedRef.current) return;
 
-      // Create socket connection with token for auth (if your server expects it)
-      socketRef.current = io(SOCKET_URL, {
-        transports: ['websocket'],
-        auth: { token },
-        reconnectionAttempts: 5,
-        reconnectionDelay: 2000,
-      });
+      channelRef.current = supabase.channel(`user_inbox_${myId}`);
 
-      socketRef.current.on('connect', () => {
-        console.log('Socket connected:', socketRef.current.id);
-        // Optionally emit join with user id so server can send messages to this user
-        // const userId = await AsyncStorage.getItem('user_id'); // if you store it
-        // socketRef.current.emit('join', { userId });
-      });
+      channelRef.current
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `receiver_id=eq.${myId}` },
+          (payload) => {
+            const messageRow = payload.new;
+            console.log('Supabase real-time incoming message:', messageRow);
+            if (!mountedRef.current) return;
 
-      socketRef.current.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
-      });
+            // Formulate payload to match old UI expectations
+            const incomingMsg = {
+              from: { _id: messageRow.sender_id }, // We only have sender_id from db trigger, not full object. In real app, you might fetch sender profile.
+              to: messageRow.receiver_id,
+              text: messageRow.message,
+              createdAt: messageRow.created_at
+            };
 
-      socketRef.current.on('connect_error', (err) => {
-        console.log('Socket connect_error:', err);
-      });
+            setMessages((prev) => [incomingMsg, ...prev]);
 
-      // Incoming message handler — adapt event name to your server ('message' is common)
-      socketRef.current.on('message', (payload) => {
-        // payload expected: { from: { _id, name, ... }, to, text, createdAt, ... }
-        console.log('Socket message received:', payload);
-        if (!mountedRef.current) return;
+            const currentChatId = currentChatRef.current;
+            if (currentChatId && currentChatId === messageRow.sender_id) {
+              // Already looking at this chat, the PersonToPersonChat screen will handle it
+              return;
+            } else {
+              Alert.alert(
+                'New Message',
+                messageRow.message,
+                [
+                  {
+                    text: 'Open Chat',
+                    onPress: () => {
+                      // Attempt to find full sender info from astrologers list
+                      const senderProfile = specialAstro.find(a => a.userId === messageRow.sender_id) || { userId: messageRow.sender_id };
+                      navigation.navigate('PersonToPersonChat', {
+                        person: senderProfile,
+                        initialMessage: incomingMsg,
+                      });
+                    },
+                  },
+                  { text: 'Close', style: 'cancel' },
+                ],
+                { cancelable: true }
+              );
+            }
+          }
+        )
+        .subscribe();
 
-        // add to local messages state
-        setMessages((prev) => [payload, ...prev]); // newest first
-
-        // If currently viewing chat with this astrologer, navigate to chat screen with message
-        const fromId = payload.from?._id || payload.from;
-        const currentChatId = currentChatRef.current;
-        if (currentChatId && fromId && currentChatId === fromId) {
-          // If already on that person's chat, just navigate/update
-          navigation.navigate('PersonToPersonChat', {
-            person: payload.from,
-            initialMessage: payload,
-          });
-        } else {
-          // Not currently viewing this chat — show a small alert / notification
-          // Replace this with your in-app notification or local push if you have one
-          Alert.alert(
-            payload.from?.name || 'New Message',
-            payload.text || 'You have received a new message',
-            [
-              {
-                text: 'Open',
-                onPress: () => {
-                  // navigate to chat with sender
-                  navigation.navigate('PersonToPersonChat', {
-                    person: payload.from,
-                    initialMessage: payload,
-                  });
-                },
-              },
-              { text: 'Close', style: 'cancel' },
-            ],
-            { cancelable: true }
-          );
-        }
-      });
     } catch (err) {
       console.log('initSocket error: ', err);
     }
@@ -135,11 +122,8 @@ const Chat = ({ navigation }) => {
 
     return () => {
       mountedRef.current = false;
-      // clean up socket connection
-      if (socketRef.current) {
-        socketRef.current.off('message');
-        socketRef.current.disconnect();
-        socketRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
       }
     };
   }, []);
@@ -151,20 +135,9 @@ const Chat = ({ navigation }) => {
     });
   };
 
-  // Called when user taps chat button in the list — sets the currentChatRef and navigates
   const handleChat = async (item) => {
     console.log('Starting chat with astrologer:', item._id);
-    // set currently opened chat id so incoming socket messages can be handled accordingly
-    currentChatRef.current = item._id;
-
-    // Optionally, you might want to emit to server that user has opened chat (read/unread)
-    try {
-      if (socketRef.current && socketRef.current.connected) {
-        socketRef.current.emit('open_chat', { with: item._id });
-      }
-    } catch (err) {
-      console.log('emit open_chat error', err);
-    }
+    currentChatRef.current = item.userId;
 
     navigation.navigate('PersonToPersonChat', {
       person: item,

@@ -20,7 +20,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance, {api} from '../../api/ApiCall';
-import io from 'socket.io-client';
+import { supabase } from '../../api/SupabaseClient';
 import {useNavigation} from '@react-navigation/native';
 
 const SOCKET_URL = api;
@@ -45,8 +45,8 @@ const ChatScreen = ({route}) => {
   const [currentPage, setCurrentPage] = useState(1);
 
   const flatListRef = useRef(null);
-  const socketRef = useRef(null);
   const textInputRef = useRef(null);
+  const channelRef = useRef(null);
 
   // Create or get session
   const handCreateSession = async () => {
@@ -102,49 +102,36 @@ const ChatScreen = ({route}) => {
       const token = await AsyncStorage.getItem('token');
       if (!token) return;
 
-      // Add pagination parameters (assuming API supports page and limit)
-      const response = await Instance.get(
-        `/api/chats/get-chats-user?receiver=${person.userId}&page=${page}&limit=20`,
-        {headers: {Authorization: `Bearer ${token}`}},
-      );
+      const room = [person.userId, currentUserId].sort().join('_');
+      
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('room_id', room)
+        .order('created_at', { ascending: false })
+        .range((page - 1) * 20, page * 20 - 1);
 
-      const result = response?.data?.data || [];
-      const totalMessages = response?.data?.total || 0;
-      const totalPages = response?.data?.totalPages || 1;
+      if (error) throw error;
 
-      // Map into UI-friendly items
+      const result = data || [];
       const formatted = result.map(message => ({
-        id: message._id || String(Math.random()),
-        text: message.message || '',
-        sender:
-          message.sender === 'System'
-            ? 'system'
-            : message.sender === person?.userId
-            ? 'astrologer'
-            : 'user',
-        time: new Date(message.createdAt).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
+        id: message.id,
+        text: message.message,
+        sender: message.sender_id === person.userId ? 'astrologer' : 'user',
+        time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }));
 
       if (append) {
-        // Append new messages to existing ones (for pagination)
-        setMessages(prevMessages => [...formatted.reverse(), ...prevMessages]);
+        setMessages(prev => [...formatted.reverse(), ...prev]);
       } else {
-        // Set messages in chronological order: oldest first
         setMessages(formatted.reverse());
       }
 
-      // Check if there are more messages
-      setHasMoreMessages(page < totalPages);
+      setHasMoreMessages(result.length === 20);
       setCurrentPage(page);
 
     } catch (error) {
-      console.error(
-        'getHistoryMsg error',
-        error?.response?.data || error.message,
-      );
+      console.error('getHistoryMsg error', error.message);
     } finally {
       setLoadingHistory(false);
     }
@@ -163,129 +150,55 @@ const ChatScreen = ({route}) => {
     const initializeChat = async () => {
       // Get current user ID first
       const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-      setCurrentUserId(userData?._id);
-      console.log(userData,"userData@@@@@@@@@@@@@@@")
+      const uid = userData?._id;
+      setCurrentUserId(uid);
 
       const sessionData = await handCreateSession();
       if (!mounted || !sessionData) return;
 
-      // Load history
-      await getHistoryMsg(sessionData._id);
+      const room = [person.userId, uid].sort().join('_');
+      setRoomId(room);
 
-      const token = await AsyncStorage.getItem('token');
-      if (!token) return;
+      // Load history from Supabase
+      await getHistoryMsg(1);
 
-      // Connect socket
-      socketRef.current = io(SOCKET_URL, {
-        transports: ['websocket', 'polling'],
-        auth: {token},
-        reconnectionAttempts: 5,
-      });
+      // Connect Supabase Realtime
+      setIsConnected(true);
+      channelRef.current = supabase.channel(`room:${room}`);
 
-      const socket = socketRef.current;
+      channelRef.current
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${room}` },
+          (payload) => {
+            const message = payload.new;
+            const msg = {
+              id: message.id,
+              text: message.message,
+              sender: message.sender_id === person.userId ? 'astrologer' : 'user',
+              time: new Date(message.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+            };
 
-      socket.on('connect', async () => {
-        console.log('Socket connected', socket.id);
-        setIsConnected(true);
-console.log(person.userId,"%%%%%%%%%%%%%%%")
-console.log(userData._id,"******currentUserId")
-        // Generate room ID locally by combining user IDs
-        const room = [person.userId, userData._id].sort().join('_');
-        setRoomId(room);
-        console.log('Joining room:', room);
-      socket.emit('join_room', {receiverId: person.userId});
-
-      });
-
-      socket.on('disconnect', () => {
-        console.log('Socket disconnected');
-        setIsConnected(false);
-      });
-
-      socket.on('connect_error', err => {
-        console.error('connect_error', err?.message || err);
-        setIsConnected(false);
-      });
-
-      socket.on('receiveMessage', message => {
-        console.log('Received message:', message);
-
-        // push new message to bottom (FlatList inverted)
-        const msg = {
-          id: message._id || String(Date.now()),
-          text: message.message || '',
-          sender:
-            message.sender === 'System'
-              ? 'system'
-              : message.sender === person?.userId
-              ? 'astrologer'
-              : 'user',
-          time: new Date(message.createdAt || Date.now()).toLocaleTimeString(
-            [],
-            {hour: '2-digit', minute: '2-digit'},
-          ),
-        };
-
-        setMessages(prev => {
-          // Check if message already exists to prevent duplicates
-          const exists = prev.some(
-            m =>
-              m.id === msg.id ||
-              (m.text === msg.text && m.sender === msg.sender),
-          );
-          if (exists) return prev;
-          return [...prev, msg];
+            setMessages(prev => {
+              const exists = prev.some(m => m.id === msg.id);
+              if (exists) return prev;
+              return [...prev, msg];
+            });
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully subscribed to Supabase realtime chat');
+          }
         });
-      });
-
-      socket.on('message', message => {
-        console.log('Message event:', message);
-
-        // push new message to bottom (FlatList inverted)
-        const msg = {
-          id: message._id || String(Date.now()),
-          text: message.message || '',
-          sender:
-            message.sender === 'System'
-              ? 'system'
-              : message.sender === person?.userId
-              ? 'astrologer'
-              : 'user',
-          time: new Date(message.createdAt || Date.now()).toLocaleTimeString(
-            [],
-            {hour: '2-digit', minute: '2-digit'},
-          ),
-        };
-
-        setMessages(prev => {
-          // Check if message already exists to prevent duplicates
-          const exists = prev.some(
-            m =>
-              m.id === msg.id ||
-              (m.text === msg.text && m.sender === msg.sender),
-          );
-          if (exists) return prev;
-          return [...prev, msg];
-        });
-      });
-
-      socket.on('error', err => {
-        console.error('socket error', err);
-      });
-
-      // Catch all events for debugging
-      socket.onAny((event, ...args) => {
-        console.log('Socket received event:', event, args);
-      });
     };
 
     initializeChat();
 
     return () => {
       mounted = false;
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
       }
     };
   }, [person.userId]);
@@ -298,29 +211,32 @@ console.log(userData._id,"******currentUserId")
 
     try {
       const payload = {
-        roomId,
-        sessionId: session._id,
-        receiver: person.userId,
+        room_id: roomId,
+        session_id: session._id,
+        sender_id: currentUserId,
+        receiver_id: person.userId,
         message: newMessage.trim(),
       };
-console.log(payload,"********************")
-      socketRef.current.emit('sendMessage', payload);
 
-      // Optimistic UI: show local message immediately
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Local optimistic UI isn't strictly necessary since Supabase Realtime will bounce it back instantly,
+      // but if we do it, we use the returned DB id to prevent duplicates.
       const localMsg = {
-        id: String(Date.now()),
+        id: data.id,
         text: newMessage.trim(),
         sender: 'user',
-        time: new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages(p => [...p, localMsg]);
       setNewMessage('');
-
-      // keep input focused
       textInputRef.current?.focus();
     } catch (error) {
       console.error('send error', error);
