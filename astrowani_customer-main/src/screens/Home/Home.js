@@ -689,7 +689,7 @@ const Home = ({navigation}) => {
 
         <View style={styles.separator} />
 
-        <View style={styles.topAstrologers}>
+        <View style={[styles.topAstrologers, styles.boxedHeader]}>
           <Text style={styles.topAstrologerTxt}>Astrowani's Blog</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
@@ -716,65 +716,42 @@ const Home = ({navigation}) => {
         <CustomerReview />
         <Remedies />
 
-        
-        <View style={styles.customerReviews}>
-          <Text style={styles.topAstrologerTxt}>What Our Client Says</Text>
-          {loadingReview ? (
-            <View style={styles.indicator}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-            </View>
-          ) : errorReview ? (
-            <Text style={styles.errorText}>{errorReview}</Text>
-          ) : (
-            <FlatList
-              data={topRatedReviews}
-              renderItem={renderReviewList}
-              keyExtractor={item => item._id.toString()}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.ReviewsList}
-            />
-          )}
-        </View>
-        
+        <View style={styles.darkBottomSection}>
+          <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>
+            <Text style={[styles.topAstrologerTxt, {color: 'white'}]}>What Our Client Says</Text>
+            {loadingReview ? (
+              <View style={styles.indicator}>
+                <ActivityIndicator size="small" color={'white'} />
+              </View>
+            ) : errorReview ? (
+              <Text style={styles.errorText}>{errorReview}</Text>
+            ) : (
+              <FlatList
+                data={topRatedReviews}
+                renderItem={renderReviewList}
+                keyExtractor={item => item._id.toString()}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.ReviewsList}
+              />
+            )}
+          </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerTitle}>
-            Why Astrowani Is Best For Astrology ?
-          </Text>
-          <View style={styles.footericonView}>
-            {/* <View style={styles.firstsection}>
-              <Image
-                source={require('../../assets/images/verified.png')}
-                style={styles.verifyLogo}
-              />
-              <Text style={styles.sectionTxt}>Verified Astrologers</Text>
-            </View>
-            <View style={styles.firstsection}>
-              <Image
-                source={require('../../assets/images/question.png')}
-                style={styles.verifyLogo}
-              />
-              <Text style={styles.sectionTxt}>
-                Talk With Astrologer via Multiple Ways
+          <View style={[styles.footer, {backgroundColor: 'transparent', paddingBottom: 0}]}>
+            <Text style={[styles.footerTitle, {color: 'white'}]}>
+              Why Astrowani Is Best For Astrology ?
+            </Text>
+            <View style={styles.footericonView}>
+              <Text style={[styles.why, {color: '#f0f0f0'}]}>
+                Astrowani reveals the destiny that Stars has designed for us.
+                Astrowani is a proven science with its methods and way of
+                interpreting the influence of stars and planets on earthly affairs
+                and human destinies. Astrowani, with its scientific method of
+                calculation and prediction of actual events, is approving enough
+                to make people start believing in it. And it has been doing the
+                same since the early Vedic period. life.
               </Text>
             </View>
-            <View style={styles.firstsection}>
-              <Image
-                source={require('../../assets/images/padlock.png')}
-                style={styles.verifyLogo}
-              />
-              <Text style={styles.sectionTxt}>100 % Privacy</Text>
-            </View> */}
-            <Text style={styles.why}>
-              Astrowani reveals the destiny that Stars has designed for us.
-              Astrowani is a proven science with its methods and way of
-              interpreting the influence of stars and planets on earthly affairs
-              and human destinies. Astrowani, with its scientific method of
-              calculation and prediction of actual events, is approving enough
-              to make people start believing in it. And it has been doing the
-              same since the early Vedic period. life.
-            </Text>
           </View>
         </View>
 
@@ -1003,6 +980,19 @@ const styles = StyleSheet.create({
     color: 'black',
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(16),
+  },
+  boxedHeader: {
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(16),
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(12),
+    backgroundColor: '#fff',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   viewAllBtn: {
     paddingHorizontal: scale(18),
@@ -1248,7 +1238,7 @@ const styles = StyleSheet.create({
   },
   CategoryTitle: {
     marginHorizontal: scale(15),
-    marginTop: verticalScale(25),
+    marginTop: verticalScale(10),
     marginBottom: verticalScale(5),
     color: 'black',
     fontFamily: 'Lato-Bold',
@@ -1404,6 +1394,19 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(20),
     backgroundColor: COLORS.AstroSoftOrange,
     paddingBottom: verticalScale(75),
+  },
+  darkBottomSection: {
+    backgroundColor: COLORS.AstroMaroon,
+    borderTopLeftRadius: moderateScale(35),
+    borderTopRightRadius: moderateScale(35),
+    paddingTop: verticalScale(10),
+    paddingBottom: verticalScale(85),
+    marginTop: verticalScale(25),
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: -4},
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
   blogCard: {
     backgroundColor: '#fff',
