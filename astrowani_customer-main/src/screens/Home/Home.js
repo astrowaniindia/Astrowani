@@ -653,10 +653,16 @@ const Home = ({navigation}) => {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.astrologerList}
-            onTouchStart={() => { isAutoScrolling.current = false; }}
-            onTouchEnd={() => { isAutoScrolling.current = true; }}
+            onScroll={(e) => {
+              if (!isAutoScrolling.current) {
+                scrollOffset.current = e.nativeEvent.contentOffset.x;
+              }
+            }}
+            scrollEventThrottle={16}
             onScrollBeginDrag={() => { isAutoScrolling.current = false; }}
             onScrollEndDrag={() => { isAutoScrolling.current = true; }}
+            onMomentumScrollBegin={() => { isAutoScrolling.current = false; }}
+            onMomentumScrollEnd={() => { isAutoScrolling.current = true; }}
           />
         )}
 
