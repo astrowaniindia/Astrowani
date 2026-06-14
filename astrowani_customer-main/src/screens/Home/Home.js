@@ -108,8 +108,8 @@ const Home = ({navigation}) => {
   const isAutoScrolling = React.useRef(true);
   
   const loopedAstrologers = React.useMemo(() => {
-    if (!astrologerToShow) return [];
-    return [...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow];
+    if (!astrologerToShow || astrologerToShow.length === 0) return [];
+    return Array(1000).fill(astrologerToShow).flat();
   }, [astrologerToShow]);
 
   React.useEffect(() => {
