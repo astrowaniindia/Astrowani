@@ -568,7 +568,7 @@ const Home = ({navigation}) => {
           shadowOpacity: 0.1,
           shadowRadius: 5
         }}>
-          <View style={{height: 150, paddingHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
+          <View style={{height: 150, marginHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
             <Swiper
               autoplay
               autoplayTimeout={3}
@@ -580,7 +580,7 @@ const Home = ({navigation}) => {
                 <Image
                   key={index}
                   source={{uri: img?.imageUrl}}
-                  style={{width: '100%', height: '100%', borderRadius: 15}}
+                  style={{width: '100%', height: '100%'}}
                   resizeMode="cover"
                 />
               ))}
