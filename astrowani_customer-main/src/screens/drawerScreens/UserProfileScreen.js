@@ -138,9 +138,32 @@ const UserProfileScreen = ({navigation, route}) => {
       const token = await AsyncStorage.getItem('token');
       if (!token) throw new Error('Token not found');
 
+      // 1. Update existing NodeJS Backend
       const response = await Instance.put('/api/users/profile', userProfile, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
+
+      // 2. Synchronize with Supabase for real-time signaling data
+      if (userProfile.phoneNumber) {
+        try {
+          const supabaseUpdate = {
+            name: userProfile.firstName,
+            email: userProfile.email,
+            gender: userProfile.gender,
+            dob: userProfile.dateOfBirth ? new Date(userProfile.dateOfBirth).toISOString() : null,
+            place_of_birth: userProfile.address?.city || null,
+          };
+          const { error: sbError } = await supabase
+            .from('customers')
+            .update(supabaseUpdate)
+            .eq('mobile', userProfile.phoneNumber);
+            
+          if (sbError) console.warn('Supabase profile sync warning:', sbError);
+        } catch (sbEx) {
+          console.warn('Supabase profile sync exception:', sbEx);
+        }
+      }
+
       if (response.data) {
         Alert.alert('Success', 'Profile updated successfully!');
         navigation.goBack();
