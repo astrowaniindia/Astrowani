@@ -91,13 +91,13 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
   },
   emptyContainer: {
     flex: 1,
@@ -115,8 +115,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
   },
   serviceBox: {
-    backgroundColor: COLORS.AstroSoftOrange,
-    borderRadius: moderateScale(8),
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(16),
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
     paddingHorizontal: scale(20),
     paddingVertical: verticalScale(20),
     marginRight: scale(12),
