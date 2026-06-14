@@ -66,6 +66,27 @@ const Home = ({navigation}) => {
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitingAstroName, setWaitingAstroName] = useState('');
 
+  const listRef = React.useRef(null);
+  const scrollOffset = React.useRef(0);
+  const isAutoScrolling = React.useRef(true);
+  
+  const loopedAstrologers = React.useMemo(() => {
+    if (!astrologerToShow) return [];
+    return [...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow, ...astrologerToShow];
+  }, [astrologerToShow]);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      if (isAutoScrolling.current && listRef.current && loopedAstrologers.length > 0) {
+        scrollOffset.current += 1.5; 
+        try {
+          listRef.current.scrollToOffset({ offset: scrollOffset.current, animated: false });
+        } catch (e) {}
+      }
+    }, 16);
+    return () => clearInterval(timer);
+  }, [loopedAstrologers.length]);
+
   const getRoomTokenWebCall = async item => {
     if (!user || Object.keys(user).length === 0 || !user.email || user.email.trim() === '') {
       showAlert('Profile Required', 'Please complete your profile to continue.', 'error', () => {
@@ -570,6 +591,7 @@ const Home = ({navigation}) => {
         }}>
           <View style={{height: 150, marginHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
             <Swiper
+              key={banners.length}
               autoplay={true}
               autoplayTimeout={3}
               loop={true}
@@ -603,12 +625,17 @@ const Home = ({navigation}) => {
           <Text style={styles.errorText}>{errorAstrologer}</Text>
         ) : (
           <FlatList
-            data={astrologerToShow}
-            keyExtractor={item => item._id.toString()}
+            ref={listRef}
+            data={loopedAstrologers}
+            keyExtractor={(item, index) => item._id.toString() + index.toString()}
             renderItem={renderAstrologerList}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.astrologerList}
+            onTouchStart={() => { isAutoScrolling.current = false; }}
+            onTouchEnd={() => { isAutoScrolling.current = true; }}
+            onScrollBeginDrag={() => { isAutoScrolling.current = false; }}
+            onScrollEndDrag={() => { isAutoScrolling.current = true; }}
           />
         )}
 
