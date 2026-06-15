@@ -130,7 +130,7 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
 /**
  * Endpoint to verify an OTP
  */
-app.post('/api/users/mobile-otp-verify', (req, res) => {
+app.post('/api/users/mobile-otp-verify', async (req, res) => {
   const { phoneNumber, otp, fcmToken, role } = req.body;
 
   if (!phoneNumber || !otp) {
