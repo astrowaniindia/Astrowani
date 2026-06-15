@@ -466,26 +466,42 @@ app.get('/api/wallet', async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded.userId || decoded._id || decoded.id;
 
-    const { data: user, error } = await supabase
-      .from('customers')
-      .select('wallet_balance')
-      .eq('id', userId)
-      .single();
+    let userRow = null;
+    let actualUserId = userId;
 
-    if (error) throw error;
+    if (decoded.phone) {
+      const { data: cData } = await supabase
+        .from('customers')
+        .select('id, wallet_balance')
+        .eq('mobile', decoded.phone)
+        .limit(1);
+      if (cData && cData.length > 0) {
+        userRow = cData[0];
+        actualUserId = cData[0].id;
+      }
+    }
+
+    if (!userRow && String(userId).includes('-')) { // crude uuid check
+      const { data, error } = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', userId)
+        .single();
+      if (!error) userRow = data;
+    }
 
     // Fetch recent wallet transactions
     const { data: txns } = await supabase
       .from('wallet_transactions')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', actualUserId)
       .order('created_at', { ascending: false })
       .limit(20);
 
     return res.status(200).json({
       success: true,
       data: {
-        balance: user?.wallet_balance ?? 0,
+        balance: userRow?.wallet_balance ?? 0,
         transactions: (txns || []).map(t => ({
           id: t.id,
           description: t.description || (t.type === 'credit' ? 'Money Added' : 'Chat/Call Charge'),
@@ -517,16 +533,35 @@ app.post('/api/wallet/deduct-and-credit', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid amount' });
     }
 
-    // 1. Get current customer balance
-    const { data: userRow, error: userErr } = await supabase
-      .from('customers')
-      .select('wallet_balance')
-      .eq('id', userId)
-      .single();
+    let userRow = null;
+    let actualUserId = userId;
 
-    if (userErr) throw userErr;
+    if (decoded.phone) {
+      const { data: cData } = await supabase
+        .from('customers')
+        .select('id, wallet_balance')
+        .eq('mobile', decoded.phone)
+        .limit(1);
+      if (cData && cData.length > 0) {
+        userRow = cData[0];
+        actualUserId = cData[0].id;
+      }
+    }
 
-    const currentBalance = userRow?.wallet_balance ?? 0;
+    if (!userRow && String(userId).includes('-')) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', userId)
+        .single();
+      if (!error) userRow = data;
+    }
+
+    if (!userRow) {
+      return res.status(400).json({ success: false, message: 'Customer not found' });
+    }
+
+    const currentBalance = userRow.wallet_balance ?? 0;
     if (currentBalance < amount) {
       return res.status(400).json({ success: false, message: 'Insufficient balance' });
     }
@@ -535,7 +570,7 @@ app.post('/api/wallet/deduct-and-credit', async (req, res) => {
     const { error: deductErr } = await supabase
       .from('customers')
       .update({ wallet_balance: currentBalance - amount })
-      .eq('id', userId);
+      .eq('id', actualUserId);
     if (deductErr) throw deductErr;
 
     // 3. Log customer deduction transaction
