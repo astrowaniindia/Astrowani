@@ -158,14 +158,16 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // Look up or create the customer in Supabase to get the real UUID
   let supabaseCustomerId = null;
   try {
-    const { data: existingCustomer } = await supabase
+    const { data: customersList, error } = await supabase
       .from('customers')
       .select('id, name')
       .eq('mobile', phoneNumber)
-      .single();
+      .limit(1);
     
-    if (existingCustomer) {
-      supabaseCustomerId = existingCustomer.id;
+    if (error) throw error;
+    
+    if (customersList && customersList.length > 0) {
+      supabaseCustomerId = customersList[0].id;
     } else {
       // Create a new customer row
       const { data: newCustomer } = await supabase

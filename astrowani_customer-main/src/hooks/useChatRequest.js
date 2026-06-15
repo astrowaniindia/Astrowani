@@ -68,8 +68,10 @@ const useChatRequest = (navigation) => {
         let q = supabase.from('customers').select('id');
         if (mobile) q = q.eq('mobile', mobile);
         else if (email) q = q.eq('email', email);
-        const { data: custRow } = await q.single();
-        supabaseCustomerId = custRow?.id || null;
+        const { data: custRows } = await q.limit(1);
+        if (custRows && custRows.length > 0) {
+          supabaseCustomerId = custRows[0].id;
+        }
       } catch (e) {
         console.warn('Could not fetch supabase customer id:', e.message);
       }
