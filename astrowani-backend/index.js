@@ -217,18 +217,53 @@ app.get('/', (req, res) => {
 // MOCK ENDPOINTS TO PREVENT 404 CRASHES
 // ==========================================
 
-// Mock User Profile
-app.get('/api/users/profile', (req, res) => {
-  return res.status(200).json({
-    success: true,
-    data: {
-      id: "550e8400-e29b-41d4-a716-446655440000",
-      name: "Test User",
-      email: "testuser@example.com",
-      phone: "+919999999999",
-      profilePic: ""
+// User Profile
+app.get('/api/users/profile', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.userId || decoded._id || decoded.id;
+
+    let userRow = null;
+    if (decoded.phone) {
+      const { data } = await supabase.from('customers').select('*').eq('mobile', decoded.phone).limit(1);
+      if (data && data.length > 0) userRow = data[0];
     }
-  });
+    if (!userRow && String(userId).includes('-')) {
+      const { data, error } = await supabase.from('customers').select('*').eq('id', userId).single();
+      if (!error) userRow = data;
+    }
+
+    if (userRow) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          id: userRow.id,
+          name: userRow.name || userRow.first_name || "User",
+          email: userRow.email || "",
+          phone: userRow.mobile || decoded.phone || "",
+          profilePic: userRow.profile_image || ""
+        }
+      });
+    }
+
+    // Fallback if not found
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: userId,
+        name: "User",
+        email: "",
+        phone: decoded.phone || "",
+        profilePic: ""
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch profile' });
+  }
 });
 
 // Mock Banners
