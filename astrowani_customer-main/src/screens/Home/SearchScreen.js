@@ -11,6 +11,8 @@ import ReusableList from '../component/ReusableList';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 import debounce from 'lodash.debounce';
+import useChatRequest from '../../hooks/useChatRequest';
+import RequestingPopup from '../../components/RequestingPopup';
 
 const SearchScreen = ({navigation, route}) => {
   const {data = []} = route.params || {};
@@ -70,12 +72,12 @@ const SearchScreen = ({navigation, route}) => {
     }
   };
 
+  const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
+
   const handleAstrologer = item => {
     navigation.navigate('AstrologerInfo', {person: item});
   };
-  const handleChat = item => {
-    navigation.navigate('ChatIntakeForm', {person: item});
-  };
+  const handleChat = item => sendChatRequest(item);
 
   return (
     <View style={styles.container}>
@@ -128,6 +130,12 @@ const SearchScreen = ({navigation, route}) => {
           </View>
         </View>
       )}
+
+      <RequestingPopup
+        visible={requesting}
+        astro={requestAstro}
+        onCancel={cancelRequest}
+      />
     </View>
   );
 };

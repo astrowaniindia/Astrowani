@@ -155,22 +155,45 @@ app.post('/api/users/mobile-otp-verify', (req, res) => {
   // OTP is valid!
   otpStore.delete(phoneNumber); // Clear OTP after successful use
 
-  // Generate a dummy user ID or fetch from DB
-  const userId = `user_${Date.now()}`;
+  // Look up or create the customer in Supabase to get the real UUID
+  let supabaseCustomerId = null;
+  try {
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('id, name')
+      .eq('mobile', phoneNumber)
+      .single();
+    
+    if (existingCustomer) {
+      supabaseCustomerId = existingCustomer.id;
+    } else {
+      // Create a new customer row
+      const { data: newCustomer } = await supabase
+        .from('customers')
+        .insert([{ mobile: phoneNumber, wallet_balance: 0 }])
+        .select('id')
+        .single();
+      supabaseCustomerId = newCustomer?.id;
+    }
+  } catch (e) {
+    console.warn('Could not look up Supabase customer:', e.message);
+  }
 
-  // Generate JWT token
-  const token = jwt.sign({ id: userId, phone: phoneNumber, role }, JWT_SECRET, {
-    expiresIn: '30d'
-  });
+  // Generate JWT token with the real Supabase UUID
+  const token = jwt.sign(
+    { id: supabaseCustomerId || `user_${Date.now()}`, userId: supabaseCustomerId, phone: phoneNumber, role },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
 
-  console.log(`User ${phoneNumber} logged in successfully.`);
+  console.log(`User ${phoneNumber} logged in successfully. Supabase ID: ${supabaseCustomerId}`);
 
   // Return token to the app
   return res.status(200).json({
     success: true,
     message: 'OTP verified successfully',
     token: token,
-    user: { id: userId, phoneNumber, role }
+    user: { id: supabaseCustomerId || `user_${Date.now()}`, phoneNumber, role }
   });
 });
 

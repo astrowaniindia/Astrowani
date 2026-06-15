@@ -1,17 +1,22 @@
 // ChatSessionScreen.js — Customer side
-// Shows timer + wallet balance on top, live chat below
-// Deducts per-minute charge from customer, credits vendor
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Alert,
   TouchableOpacity,
+  TextInput,
+  FlatList,
+  ActivityIndicator,
+  ImageBackground,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
-import PersonToPersonChat from './component/PersonToPersonChat';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -19,92 +24,94 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person } = route.params;
 
-  const [session, setSession] = useState(null);      // chat_sessions row
+  const [session, setSession] = useState(null);
   const [seconds, setSeconds] = useState(0);
   const [wallet, setWallet] = useState(0);
-  const [ended, setEnded] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+  const [myId, setMyId] = useState(null);
+  const [connecting, setConnecting] = useState(true);
+  const [vendorTyping, setVendorTyping] = useState(false);
 
   const secondTimerRef = useRef(null);
   const minuteTimerRef = useRef(null);
   const sessionRef = useRef(null);
   const walletRef = useRef(0);
+  const channelRef = useRef(null);
+  const flatListRef = useRef(null);
+  const hasEndedRef = useRef(false);
+  const pollRef = useRef(null);
+  const pollEndRef = useRef(null);
 
-  // ─── Load wallet balance ──────────────────────────────────────────────────
+  const pad = (n) => n.toString().padStart(2, '0');
+
+  // ─── Load wallet balance via backend ─────────────────────────────────────
   const loadWallet = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      const resp = await fetch(
-        `${Instance.defaults.baseURL}/api/wallet`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const json = await resp.json();
-      const bal = json?.data?.balance ?? 0;
-      setWallet(bal);
-      walletRef.current = bal;
+      if (!token) return;
+      const res = await Instance.get('/api/wallet', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data?.success) {
+        const bal = res.data.data.balance ?? 0;
+        setWallet(bal);
+        walletRef.current = bal;
+      }
     } catch (e) {
-      console.warn('loadWallet error:', e);
+      console.warn('loadWallet error:', e.message);
     }
   };
 
-  // ─── Load/poll chat session until it exists ───────────────────────────────
-  const loadSession = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('chat_sessions')
-        .select('*')
-        .eq('request_id', requestId)
-        .single();
-      if (data) {
-        setSession(data);
-        sessionRef.current = data;
-        return true;
-      }
-    } catch (e) {}
-    return false;
-  };
-
-  // ─── Deduct from customer wallet, credit vendor ───────────────────────────
+  // ─── Deduct from customer wallet, credit vendor via backend API ───────────
   const deductAndCredit = async () => {
     const sess = sessionRef.current;
     if (!sess) return;
     const charge = sess.per_minute_charge ?? 0;
 
     if (walletRef.current <= 0 || walletRef.current < charge) {
-      endSession('Balance empty – ending chat.');
+      endSession('Your wallet balance is empty. Chat has ended.');
       return;
     }
 
     try {
       const token = await AsyncStorage.getItem('token');
-      await fetch(`${Instance.defaults.baseURL}/api/wallet/deduct-and-credit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      if (!token) return;
+
+      const res = await Instance.post(
+        '/api/wallet/deduct-and-credit',
+        {
           sessionId: sess.id,
           requestId: requestId,
           amount: charge,
-        }),
-      });
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-      const newBal = walletRef.current - charge;
-      walletRef.current = newBal;
-      setWallet(newBal);
+      if (res.data?.success) {
+        const newBal = res.data.newBalance;
+        walletRef.current = newBal;
+        setWallet(newBal);
+      } else {
+        // Insufficient balance
+        endSession('Your wallet balance is empty. Chat has ended.');
+      }
     } catch (e) {
-      console.warn('deductAndCredit error:', e);
+      console.warn('deductAndCredit error:', e.message);
     }
   };
 
   // ─── End session ──────────────────────────────────────────────────────────
   const endSession = (message) => {
-    if (ended) return;
-    setEnded(true);
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+
     clearInterval(secondTimerRef.current);
     clearInterval(minuteTimerRef.current);
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (pollEndRef.current) clearInterval(pollEndRef.current);
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
 
-    // Mark session ended in DB
     if (sessionRef.current) {
       supabase
         .from('chat_sessions')
@@ -113,71 +120,214 @@ const ChatSessionScreen = ({ route, navigation }) => {
         .then(() => {});
     }
 
+    const goBackOrHome = () => {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.replace('Home');
+      }
+    };
+
     if (message) {
       Alert.alert('Session Ended', message, [
-        { text: 'OK', onPress: () => navigation.goBack() },
+        { text: 'OK', onPress: goBackOrHome },
       ]);
     } else {
-      navigation.goBack();
+      goBackOrHome();
     }
   };
 
-  // ─── Initialise everything ────────────────────────────────────────────────
+  // ─── Send message ─────────────────────────────────────────────────────────
+  const sendMessage = async () => {
+    if (!text.trim() || !sessionRef.current || !myId) return;
+    const msg = text.trim();
+    setText('');
+    
+    // Reset typing status on send
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { isTyping: false },
+      });
+    }
+
+    // Send to Supabase — Realtime will update UI
+    await supabase.from('chat_messages').insert([
+      {
+        room_id: requestId,
+        session_id: sessionRef.current.id,
+        sender_id: myId,
+        receiver_id: person?._id || person?.id || person?.userId,
+        message: msg,
+      },
+    ]);
+  };
+
+  // ─── Initialise ───────────────────────────────────────────────────────────
   useEffect(() => {
     let pollCount = 0;
+
     const init = async () => {
+      // Get my user ID
+      const userStr = await AsyncStorage.getItem('userData');
+      const user = userStr ? JSON.parse(userStr) : null;
+      const userId = user?._id || user?.id || user?.userId;
+      setMyId(userId);
+
       await loadWallet();
 
-      // Poll for session (vendor might take a moment to create it)
-      const poll = setInterval(async () => {
+      // Poll until session is created by vendor
+      let isFetching = false;
+      pollRef.current = setInterval(async () => {
+        if (isFetching || sessionRef.current || hasEndedRef.current) return;
+        isFetching = true;
         pollCount++;
-        const found = await loadSession();
-        if (found) {
-          clearInterval(poll);
-          startTimers();
-        }
-        if (pollCount > 15) {
-          clearInterval(poll);
-          Alert.alert('Error', 'Session could not be started.');
-          navigation.goBack();
+        
+        try {
+          const { data, error } = await supabase
+            .from('chat_sessions')
+            .select('*')
+            .eq('request_id', requestId)
+            .single();
+
+          if (data && !error && !sessionRef.current) {
+            clearInterval(pollRef.current);
+            setSession(data);
+            sessionRef.current = data;
+            setConnecting(false);
+
+            // Start timers
+            secondTimerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+            deductAndCredit(); // Deduct first minute!
+            minuteTimerRef.current = setInterval(() => deductAndCredit(), 60 * 1000);
+
+            // Load existing messages
+            const { data: msgs } = await supabase
+              .from('chat_messages')
+              .select('*')
+              .eq('session_id', data.id)
+              .order('created_at', { ascending: true });
+            if (msgs) setMessages(msgs);
+
+            // Subscribe to new messages & broadcasts
+            channelRef.current = supabase.channel(`chat_session_${data.id}`, {
+              config: { broadcast: { self: true } },
+            });
+            channelRef.current
+              .on('broadcast', { event: 'typing' }, (payload) => {
+                setVendorTyping(payload.payload.isTyping);
+              })
+              .on(
+                'postgres_changes',
+                {
+                  event: 'INSERT',
+                  schema: 'public',
+                  table: 'chat_messages',
+                  filter: `session_id=eq.${data.id}`,
+                },
+                (payload) => {
+                  setMessages((prev) => {
+                    // Avoid duplicates
+                    if (prev.find((m) => m.id === payload.new.id)) return prev;
+                    return [...prev, payload.new];
+                  });
+                  flatListRef.current?.scrollToEnd({ animated: true });
+                }
+              )
+              .subscribe();
+          }
+
+          if (pollCount > 20 && !sessionRef.current) {
+            clearInterval(pollRef.current);
+            endSession('Session could not be started.');
+          }
+        } finally {
+          isFetching = false;
         }
       }, 1000);
+
+          // Check if Vendor ended the chat
+          pollEndRef.current = setInterval(async () => {
+            if (hasEndedRef.current || !sessionRef.current) return;
+            const { data: checkSess } = await supabase
+              .from('chat_sessions')
+              .select('ended_at')
+              .eq('id', sessionRef.current.id)
+              .single();
+            if (checkSess?.ended_at) {
+              endSession('The astrologer has ended the session.');
+            }
+          }, 3000);
+
     };
 
     init();
+
     return () => {
       clearInterval(secondTimerRef.current);
       clearInterval(minuteTimerRef.current);
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollEndRef.current) clearInterval(pollEndRef.current);
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
   }, []);
 
-  const startTimers = () => {
-    // Second-by-second timer for display
-    secondTimerRef.current = setInterval(() => {
-      setSeconds((s) => s + 1);
-    }, 1000);
-
-    // Per-minute billing
-    minuteTimerRef.current = setInterval(() => {
-      deductAndCredit();
-    }, 60 * 1000);
+  const handleTyping = (text) => {
+    setText(text);
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { isTyping: text.length > 0 },
+      });
+    }
   };
 
   const minutes = Math.floor(seconds / 60);
   const secs = seconds % 60;
-  const pad = (n) => n.toString().padStart(2, '0');
+
+  const renderMessage = ({ item }) => {
+    const isMine = String(item.sender_id) === String(myId);
+    const time = item.created_at 
+      ? new Date(item.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+    return (
+      <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
+        <Text style={[styles.bubbleText, isMine && styles.myBubbleText]}>{item.message}</Text>
+        <View style={styles.timeContainer}>
+          <Text style={[styles.timeText, isMine && styles.myTimeText]}>{time}</Text>
+          {isMine && <Ionicons name="checkmark-done" size={14} color="#ffd" style={styles.readIcon} />}
+        </View>
+      </View>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      {/* ── Top bar: timer + wallet ─────────────────────────── */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+
+      {/* ── Header: name + timer + wallet ─────── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => endSession(null)} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
+        
+        {person?.profileImage || person?.image ? (
+          <Image source={{ uri: person?.profileImage || person?.image }} style={styles.headerAvatar} />
+        ) : (
+          <View style={styles.headerAvatarFallback}>
+            <Ionicons name="person" size={20} color={COLORS.AstroMaroon} />
+          </View>
+        )}
 
         <View style={styles.headerCenter}>
-          <Text style={styles.astroName}>{person?.name || 'Astrologer'}</Text>
-          {session ? (
+          <Text style={styles.astroName} numberOfLines={1}>{person?.name || person?.firstName || 'Astrologer'}</Text>
+          {vendorTyping ? (
+            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>typing...</Text>
+          ) : session ? (
             <Text style={styles.charge}>₹{session.per_minute_charge}/min</Text>
           ) : (
             <Text style={styles.charge}>Connecting…</Text>
@@ -186,45 +336,144 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
         <View style={styles.headerRight}>
           <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
-          <Text style={styles.walletBal}>₹{wallet}</Text>
+          <TouchableOpacity style={styles.endBtn} onPress={() => endSession(null)}>
+            <Ionicons name="call" size={16} color="#fff" />
+            <Text style={styles.endText}>End</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* ── Chat area ──────────────────────────────────────── */}
-      {session ? (
-        <PersonToPersonChat
-          person={person}
-          navigation={navigation}
-          sessionId={session.id}
-        />
-      ) : (
+      {/* ── Messages ──────────────────────────── */}
+      {connecting ? (
         <View style={styles.waiting}>
-          <Text style={styles.waitingText}>Connecting to chat…</Text>
+          <ActivityIndicator size="large" color={COLORS.AstroMaroon} />
+          <Text style={styles.waitingText}>Waiting for astrologer to accept…</Text>
+        </View>
+      ) : (
+        <ImageBackground 
+          source={{ uri: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png' }} 
+          style={{ flex: 1 }} 
+          imageStyle={{ opacity: 0.15 }}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            style={{ flex: 1 }}
+            keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          />
+        </ImageBackground>
+      )}
+
+      {/* ── Input ─────────────────────────────── */}
+      {!connecting && (
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            value={text}
+            onChangeText={handleTyping}
+            placeholder="Type a message…"
+            placeholderTextColor="#aaa"
+            multiline
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+            <Ionicons name="send" size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
+  container: { 
+    flex: 1, 
+    backgroundColor: COLORS.AstroMaroon,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
   header: {
     backgroundColor: COLORS.AstroMaroon,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
-  backBtn: { marginRight: 10 },
-  headerCenter: { flex: 1 },
+  backBtn: { marginRight: 8, padding: 4 },
+  headerAvatar: { width: 40, height: 40, borderRadius: 20, marginRight: 10, borderWidth: 1, borderColor: COLORS.AstroGold },
+  headerAvatarFallback: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', marginRight: 10, justifyContent: 'center', alignItems: 'center' },
+  headerCenter: { flex: 1, marginRight: 4 },
   astroName: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  charge: { color: '#ffd', fontSize: 12 },
-  headerRight: { alignItems: 'flex-end' },
-  timer: { color: '#fff', fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  walletBal: { color: '#ffd', fontSize: 12 },
-  waiting: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  waitingText: { color: '#888', fontSize: 16 },
+  charge: { color: COLORS.AstroGold, fontSize: 12, marginTop: 2 },
+  headerRight: { alignItems: 'center', flexDirection: 'row' },
+  timer: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 1, fontVariant: ['tabular-nums'], marginRight: 12 },
+  endBtn: { backgroundColor: '#ff4444', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, elevation: 2 },
+  endText: { color: '#fff', marginLeft: 4, fontWeight: '700', fontSize: 13 },
+  walletBal: { color: '#ffd', fontSize: 12, marginTop: 2 },
+  waiting: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
+  waitingText: { color: '#888', fontSize: 15 },
+  messagesList: { padding: 12, paddingBottom: 20 },
+  bubble: {
+    maxWidth: '80%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+  },
+  myBubble: { alignSelf: 'flex-end', backgroundColor: COLORS.AstroMaroon, borderBottomRightRadius: 4 },
+  theirBubble: { alignSelf: 'flex-start', backgroundColor: '#fff', borderBottomLeftRadius: 4 },
+  bubbleText: { color: '#2c3e50', fontSize: 15.5, lineHeight: 22 },
+  myBubbleText: { color: '#fff' },
+  timeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  timeText: { fontSize: 11, color: '#888', alignSelf: 'flex-end' },
+  myTimeText: { color: 'rgba(255,255,255,0.7)' },
+  readIcon: { marginLeft: 4 },
+
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    fontSize: 16,
+    maxHeight: 120,
+    color: '#333',
+    marginRight: 10,
+    backgroundColor: '#f9f9f9',
+  },
+  sendBtn: {
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: 25,
+    width: 46,
+    height: 46,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+  },
 });
 
 export default ChatSessionScreen;

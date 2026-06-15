@@ -1,5 +1,4 @@
 // VendorChatSession.js — Vendor side active chat screen
-// Shows the same timer UI to vendor, no deduction (money goes in)
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -10,32 +9,43 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
+  StatusBar,
+  ImageBackground,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { supabase } from '../../api/SupabaseClient';
+import { supabase } from '../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLORS } from '../../Theme/Colors';
+import { COLORS } from '../Theme/Colors';
 
 const VendorChatSession = ({ route, navigation }) => {
   const { requestId, callerName, callerId, perMinuteCharge } = route.params;
 
   const [messages, setMessages] = useState([]);
-  const [text, setText] = useState('');
+  const [newMessage, setNewMessage] = useState('');
   const [seconds, setSeconds] = useState(0);
+  const [customerTyping, setCustomerTyping] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [astroId, setAstroId] = useState(null);
 
   const timerRef = useRef(null);
   const channelRef = useRef(null);
   const flatListRef = useRef(null);
+  const sessionIdRef = useRef(null);
+  const astroIdRef = useRef(null);
+  const pollMsgRef = useRef(null);
+  const pollEndRef = useRef(null);
 
   const pad = (n) => n.toString().padStart(2, '0');
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
 
-  // ─── Load session & astroId ─────────────────────────────────────────────
+  // ─── Init ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       const id = await AsyncStorage.getItem('astroId');
       setAstroId(id);
+      astroIdRef.current = id;
 
       // Get session
       const { data } = await supabase
@@ -43,199 +53,347 @@ const VendorChatSession = ({ route, navigation }) => {
         .select('id')
         .eq('request_id', requestId)
         .single();
-      if (data) setSessionId(data.id);
 
-      // Start second timer
-      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
-
-      // Subscribe to new messages in this session
-      channelRef.current = supabase.channel(`vendor_chat_${requestId}`);
-      channelRef.current
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'chat_messages',
-            filter: `session_id=eq.${data?.id}`,
-          },
-          (payload) => {
-            setMessages((prev) => [...prev, payload.new]);
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }
-        )
-        .subscribe();
-
-      // Load existing messages
       if (data?.id) {
+        setSessionId(data.id);
+        sessionIdRef.current = data.id;
+
+        // Load existing messages
         const { data: msgs } = await supabase
           .from('chat_messages')
           .select('*')
           .eq('session_id', data.id)
           .order('created_at', { ascending: true });
         if (msgs) setMessages(msgs);
+
+        // Subscribe to new messages & broadcasts
+        channelRef.current = supabase.channel(`chat_session_${data.id}`, {
+          config: { broadcast: { self: true } },
+        });
+        channelRef.current
+          .on('broadcast', { event: 'typing' }, (payload) => {
+            setCustomerTyping(payload.payload.isTyping);
+          })
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'chat_messages',
+              filter: `session_id=eq.${data.id}`,
+            },
+            (payload) => {
+              setMessages((prev) => {
+                if (prev.find((m) => m.id === payload.new.id)) return prev;
+                return [...prev, payload.new];
+              });
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            }
+          )
+          .subscribe();
+
+          // Check if Customer ended the chat
+          pollEndRef.current = setInterval(async () => {
+            if (!sessionIdRef.current) return;
+            const { data: checkSess } = await supabase
+              .from('chat_sessions')
+              .select('ended_at')
+              .eq('id', sessionIdRef.current)
+              .single();
+            if (checkSess?.ended_at) {
+              clearInterval(timerRef.current);
+              if (pollMsgRef.current) clearInterval(pollMsgRef.current);
+              if (pollEndRef.current) clearInterval(pollEndRef.current);
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.replace('DrawerNavigator');
+              }
+            }
+          }, 3000);
       }
+
+      // Start timer
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     };
 
     init();
 
     return () => {
       clearInterval(timerRef.current);
+      if (pollMsgRef.current) clearInterval(pollMsgRef.current);
+      if (pollEndRef.current) clearInterval(pollEndRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
   }, []);
 
-  // ─── Send message ───────────────────────────────────────────────────────
+  // ─── Send message ─────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!text.trim() || !sessionId || !astroId) return;
-    const msg = text.trim();
-    setText('');
+    if (!newMessage.trim() || !sessionIdRef.current || !astroIdRef.current) return;
+    const msg = newMessage.trim();
+    setNewMessage('');
+    
+    // Reset typing status on send
+    if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: { isTyping: false },
+        });
+      }
+    
+    // Send to Supabase — Realtime will update the UI
     await supabase.from('chat_messages').insert([
       {
-        session_id: sessionId,
-        sender_id: astroId,
+        room_id: requestId,
+        session_id: sessionIdRef.current,
+        sender_id: astroIdRef.current,
         receiver_id: callerId,
         message: msg,
       },
     ]);
   };
 
-  // ─── End session ─────────────────────────────────────────────────────────
+  // ─── End session ──────────────────────────────────────────────────────────
   const endSession = async () => {
     clearInterval(timerRef.current);
+    if (pollMsgRef.current) clearInterval(pollMsgRef.current);
+    if (pollEndRef.current) clearInterval(pollEndRef.current);
     if (channelRef.current) supabase.removeChannel(channelRef.current);
-    if (sessionId) {
+    if (sessionIdRef.current) {
       await supabase
         .from('chat_sessions')
         .update({ ended_at: new Date().toISOString() })
-        .eq('id', sessionId);
+        .eq('id', sessionIdRef.current);
     }
-    navigation.goBack();
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('DrawerNavigator');
+    }
+  };
+
+  const handleTyping = (text) => {
+    setNewMessage(text);
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { isTyping: text.length > 0 },
+      });
+    }
   };
 
   const renderMessage = ({ item }) => {
-    const isMine = item.sender_id === astroId;
+    const isMine = String(item.sender_id) === String(astroIdRef.current);
+    const time = item.created_at 
+      ? new Date(item.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
     return (
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
-        <Text style={[styles.bubbleText, isMine && styles.myBubbleText]}>{item.message}</Text>
+        <Text style={[styles.bubbleText, isMine && styles.myBubbleText]}>
+          {item.message}
+        </Text>
+        <View style={styles.timeContainer}>
+          <Text style={[styles.timeText, isMine && styles.myTimeText]}>{time}</Text>
+          {isMine && <Ionicons name="checkmark-done" size={14} color="#ffd" style={styles.readIcon} />}
+        </View>
       </View>
     );
   };
 
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {/* Header */}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar backgroundColor={COLORS.AstroMaroon} barStyle="light-content" />
+
+      {/* ── Header ─────────────────────────────── */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.callerName}>{callerName}</Text>
-          <Text style={styles.charge}>₹{perMinuteCharge}/min</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.replace('DrawerNavigator');
+          }
+        }}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        
+        <View style={styles.headerAvatarFallback}>
+          <Ionicons name="person" size={20} color={COLORS.AstroMaroon} />
         </View>
-        <View style={styles.headerRight}>
-          <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
+
+        <View style={styles.headerInfo}>
+          <Text style={styles.callerName} numberOfLines={1}>{callerName || 'Customer'}</Text>
+          {customerTyping ? (
+            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>typing...</Text>
+          ) : (
+            <Text style={styles.charge}>₹{perMinuteCharge}/min</Text>
+          )}
         </View>
+
+        <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
+
         <TouchableOpacity style={styles.endBtn} onPress={endSession}>
-          <Ionicons name="call" size={20} color="#fff" />
+          <Ionicons name="call" size={16} color="#fff" />
           <Text style={styles.endText}>End</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
-        renderItem={renderMessage}
-        contentContainerStyle={styles.messagesList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-      />
+      {/* ── Chat + Input ────────────────────────── */}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-      {/* Input */}
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          value={text}
-          onChangeText={setText}
-          placeholder="Type a message…"
-          placeholderTextColor="#aaa"
-          multiline
-        />
-        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-          <Ionicons name="send" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        <ImageBackground 
+          source={{ uri: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png' }} 
+          style={{ flex: 1 }} 
+          imageStyle={{ opacity: 0.15 }}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          />
+        </ImageBackground>
+
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Message..."
+            placeholderTextColor="#999"
+            value={newMessage}
+            onChangeText={handleTyping}
+            multiline
+            maxLength={500}
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+            <Ionicons name="send" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.AstroMaroon,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  flex: { flex: 1 },
+
+  // Header
   header: {
     backgroundColor: COLORS.AstroMaroon,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
     elevation: 4,
   },
-  headerLeft: { flex: 1 },
+  backBtn: { marginRight: 8, padding: 4 },
+  headerAvatarFallback: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', marginRight: 10, justifyContent: 'center', alignItems: 'center' },
+  headerInfo: { flex: 1, marginRight: 8 },
   callerName: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  charge: { color: '#ffd', fontSize: 12 },
-  headerRight: { marginRight: 12 },
-  timer: { color: '#fff', fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  charge: { color: COLORS.AstroGold, fontSize: 12, marginTop: 2 },
+  timer: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginRight: 12,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 1,
+  },
   endBtn: {
-    backgroundColor: '#e53935',
+    backgroundColor: '#ff4444',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 24,
+    elevation: 2,
   },
-  endText: { color: '#fff', marginLeft: 4, fontWeight: '700' },
-  messagesList: { padding: 12, paddingBottom: 80 },
+  endText: { color: '#fff', marginLeft: 6, fontWeight: '700', fontSize: 14 },
+
+  // Messages
+  messagesList: {
+    padding: 12,
+    paddingBottom: 20,
+    flexGrow: 1,
+  },
   bubble: {
-    maxWidth: '75%',
-    borderRadius: 16,
-    padding: 10,
-    marginBottom: 8,
-    backgroundColor: '#fff',
-    elevation: 1,
+    maxWidth: '80%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
   },
-  myBubble: { alignSelf: 'flex-end', backgroundColor: COLORS.AstroMaroon, borderBottomRightRadius: 4 },
-  theirBubble: { alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  bubbleText: { color: '#333', fontSize: 15 },
+  myBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: COLORS.AstroMaroon,
+    borderBottomRightRadius: 4,
+  },
+  theirBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+  },
+  bubbleText: { color: '#2c3e50', fontSize: 15.5, lineHeight: 22 },
   myBubbleText: { color: '#fff' },
+  timeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  timeText: { fontSize: 11, color: '#888', alignSelf: 'flex-end' },
+  myTimeText: { color: 'rgba(255,255,255,0.7)' },
+  readIcon: { marginLeft: 4 },
+
+  // Input
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: '#f0f0f0',
   },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#e0e0e0',
     borderRadius: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    fontSize: 15,
-    maxHeight: 100,
+    fontSize: 16,
+    maxHeight: 120,
     color: '#333',
-    marginRight: 8,
+    marginRight: 10,
+    backgroundColor: '#f9f9f9',
   },
   sendBtn: {
     backgroundColor: COLORS.AstroMaroon,
-    borderRadius: 24,
-    width: 44,
-    height: 44,
+    borderRadius: 25,
+    width: 46,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 2,
   },
 });
 

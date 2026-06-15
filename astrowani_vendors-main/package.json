@@ -43,7 +43,8 @@
     "react-native-sound": "^0.11.2",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-vector-icons": "^10.2.0",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "text-encoding": "^0.7.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

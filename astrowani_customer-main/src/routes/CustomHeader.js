@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
 import {useNavigation} from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../api/SupabaseClient';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 
@@ -19,7 +21,60 @@ import { LanguageContext } from '../context/LanguageContext';
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
   const { language, changeLanguage, t } = React.useContext(LanguageContext);
+
+  useEffect(() => {
+    let subscription = null;
+    const fetchBalance = async () => {
+      try {
+        const userDataStr = await AsyncStorage.getItem('userData');
+        if (userDataStr) {
+          const userData = JSON.parse(userDataStr);
+          const mobile = userData.phoneNumber || userData.mobile;
+          const email = userData.email;
+          
+          if (mobile || email) {
+            // Fetch initial balance
+            let query = supabase.from('customers').select('wallet_balance');
+            
+            if (mobile) {
+              query = query.eq('mobile', mobile);
+            } else {
+              query = query.eq('email', email);
+            }
+            
+            const { data, error } = await query.single();
+              
+            if (data && data.wallet_balance !== undefined) {
+              setWalletBalance(data.wallet_balance);
+            }
+
+            // Subscribe to realtime updates
+            const filterKey = mobile ? `mobile=eq.${mobile}` : `email=eq.${email}`;
+            subscription = supabase
+              .channel('public:customers_header')
+              .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers', filter: filterKey }, payload => {
+                if (payload.new && payload.new.wallet_balance !== undefined) {
+                  setWalletBalance(payload.new.wallet_balance);
+                }
+              })
+              .subscribe();
+          }
+        }
+      } catch (e) {
+        console.log('Error fetching wallet balance:', e);
+      }
+    };
+
+    fetchBalance();
+
+    return () => {
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
+    };
+  }, []);
 
   const toggleLanguageModal = () => {
     setLanguageModalVisible(!languageModalVisible);
@@ -39,7 +94,8 @@ const CustomHeader = ({title, showLanguage}) => {
         </View>
         {showLanguage && (
           <View style={styles.notificationView}>
-            <TouchableOpacity onPress={() => navigation.navigate('Wallet')}>
+            <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={{flexDirection: 'row', alignItems: 'center'}}>
+              <Text style={styles.balanceText}>₹ {walletBalance}</Text>
               <Ionicons name="wallet-outline" color="white" size={24} />
             </TouchableOpacity>
             <TouchableOpacity onPress={toggleLanguageModal}>
@@ -113,8 +169,14 @@ const styles = StyleSheet.create({
   notificationView: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: scale(85),
+    width: scale(120),
     justifyContent: 'space-between',
+  },
+  balanceText: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginRight: scale(5),
+    fontSize: moderateScale(14),
   },
   modalContainer: {
     flex: 1,

@@ -17,9 +17,9 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
+import { supabase } from '../../api/SupabaseClient';
 
-export default function Profile() {
-  const navigation = useNavigation();
+export default function Profile({ navigation }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
@@ -27,27 +27,42 @@ export default function Profile() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        Alert.alert('Error', 'Token is missing. Please log in again.');
+      const astroId = await AsyncStorage.getItem('astroId');
+      if (!astroId) {
+        Alert.alert('Error', 'Session missing. Please log in again.');
         return;
       }
-      const response = await Instance.get('/api/astrologers/get-astrologer', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      // console.log("response: ", response?.data);
 
-      if (response.data.success) {
-        setData(response.data.data);
-        console.log(response.data.data, 'Profile data fetched successfully');
+      const { data: astroData, error } = await supabase
+        .from('astrologers')
+        .select('*')
+        .eq('id', astroId)
+        .single();
+
+      if (error) throw error;
+
+      if (astroData) {
+        setData({
+          name: `${astroData.first_name || ''} ${astroData.last_name || ''}`.trim(),
+          email: astroData.email,
+          profileImage: astroData.profile_image || astroData.image || '',
+          experience: astroData.experience || astroData.years_of_experience || 0,
+          chatChargePerMinute: astroData.chat_charge_per_minute || 0,
+          callChargePerMinute: astroData.call_charge_per_minute || 0,
+          language: Array.isArray(astroData.language) ? astroData.language : (astroData.language ? [astroData.language] : []),
+          userId: {
+            firstName: astroData.first_name || '',
+            lastName: astroData.last_name || '',
+            gender: astroData.gender || 'Not specified',
+            phoneNumber: astroData.phone_number || astroData.mobile || 'Not specified',
+          }
+        });
       } else {
-        Alert.alert('Error', response.data.message || 'Failed to fetch data.');
+        Alert.alert('Error', 'Profile not found.');
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      Alert.alert('Error', 'An unexpected error occurred.');
+      Alert.alert('Error', 'An unexpected error occurred while fetching your profile.');
     } finally {
       setLoading(false);
     }
@@ -61,7 +76,7 @@ export default function Profile() {
   const handleLogout = async () => {
     try {
       await AsyncStorage.clear();
-      props.navigation.navigate('Login');
+      navigation.replace('Login');
     } catch (error) {
       console.error('Error logging out:', error);
     }
@@ -77,44 +92,81 @@ export default function Profile() {
   // console.log("data: ", data);
 
   return (
-    <ScrollView >
-      <View style={styles.container}>
-        {/* Profile Details */}
-        <View style={styles.profileSection}>
-          <TouchableOpacity style={{ borderWidth: 1, borderRadius: scale(40) }} onPress={() => navigation.navigate('EditProfile')}>{data?.profileImage && data.profileImage.length > 0 ? (<Image source={{ uri: data.profileImage }} style={styles.profileImage} />) : (<Icon name="account-circle" size={80} color={COLORS.AstroMaroon} />)}</TouchableOpacity>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Top Banner & Profile Header */}
+      <View style={styles.headerBackground}>
+        <View style={styles.profileHeaderContent}>
+          <View style={styles.profileImageContainer}>
+            {data?.profileImage && data.profileImage.length > 0 ? (
+              <Image source={{ uri: data.profileImage }} style={styles.profileImage} />
+            ) : (
+              <Icon name="account-circle" size={100} color={COLORS.AstroMaroon} />
+            )}
+          </View>
           <Text style={styles.profileName}>{data?.name || 'Name not available'}</Text>
           <Text style={styles.profileEmail}>{data?.email || 'Email not available'}</Text>
-
+          
+          <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditProfile')}>
+            <Icon name="edit" size={16} color={COLORS.white} />
+            <Text style={styles.editButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
         </View>
-        <View>
-          <Text style={styles.profileName}>Profile Details</Text>
+      </View>
 
-          <Text style={styles.profileName}>{data?.userId?.firstName || 'First Name not available'}</Text>
-          <Text style={styles.profileEmail}>{data?.userId?.lastName || 'Last Name not available'}</Text>
-
-          <Text style={[styles.profileName, { textTransform: 'capitalize' }]}>{data?.userId?.gender || 'Gender is not available'}</Text>
-          <Text style={styles.profileEmail}>{data?.userId?.phoneNumber || 'Phone Number not available'}</Text>
-
-          <Text style={[styles.profileName, { textTransform: 'capitalize' }]}>Experience</Text>
-          <Text style={styles.profileEmail}>{data?.experience || '0'} Years</Text>
-
-          <Text style={[styles.profileName, { textTransform: 'capitalize' }]}>Chat charges</Text>
-          <Text style={styles.profileEmail}>{data?.chatChargePerMinute || '0'}/min</Text>
-
-          <Text style={[styles.profileName, { textTransform: 'capitalize' }]}>Call Charges</Text>
-          <Text style={styles.profileEmail}>{data?.callChargePerMinute || '0'}/min</Text>
+      <View style={styles.bodyContainer}>
+        {/* Personal Details Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Personal Details</Text>
+          <View style={styles.divider} />
+          
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>First Name</Text>
+            <Text style={styles.infoValue}>{data?.userId?.firstName || 'Not available'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Last Name</Text>
+            <Text style={styles.infoValue}>{data?.userId?.lastName || 'Not available'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Gender</Text>
+            <Text style={[styles.infoValue, { textTransform: 'capitalize' }]}>{data?.userId?.gender || 'Not specified'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Phone</Text>
+            <Text style={styles.infoValue}>{data?.userId?.phoneNumber || 'Not available'}</Text>
+          </View>
         </View>
-        <View>
-          <Text style={styles.profileName}>Language</Text>
-          {data?.language?.map((item, index) => (
-            <Text key={index} style={styles.profileEmail}>{item}</Text>
-          ))}
+
+        {/* Professional Details Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Professional Details</Text>
+          <View style={styles.divider} />
+          
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Experience</Text>
+            <Text style={styles.infoValue}>{data?.experience || '0'} Years</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Chat Charges</Text>
+            <Text style={styles.infoValue}>₹{data?.chatChargePerMinute || '0'}/min</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Call Charges</Text>
+            <Text style={styles.infoValue}>₹{data?.callChargePerMinute || '0'}/min</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Language</Text>
+            <Text style={styles.infoValue}>
+              {data?.language && data.language.length > 0 ? data.language.join(', ') : 'Not specified'}
+            </Text>
+          </View>
         </View>
 
         {/* Logout Button */}
         <TouchableOpacity
           style={styles.logoutButton}
           onPress={() => setLogoutModalVisible(true)}>
+          <Icon name="logout" size={20} color={COLORS.white} />
           <Text style={styles.logoutButtonText}>Logout</Text>
         </TouchableOpacity>
 
@@ -152,45 +204,135 @@ export default function Profile() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#F8F9FA',
+  },
+  headerBackground: {
+    backgroundColor: COLORS.AstroMaroon,
+    paddingTop: verticalScale(30),
+    paddingBottom: verticalScale(40),
+    borderBottomLeftRadius: moderateScale(30),
+    borderBottomRightRadius: moderateScale(30),
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+  },
+  profileHeaderContent: {
+    alignItems: 'center',
+  },
+  profileImageContainer: {
+    width: scale(100),
+    height: scale(100),
+    borderRadius: scale(50),
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    borderWidth: 3,
+    borderColor: COLORS.white,
+    marginBottom: verticalScale(10),
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: scale(50),
+  },
+  profileName: {
+    fontSize: moderateScale(22),
+    fontWeight: 'bold',
+    color: COLORS.white,
+    fontFamily: 'Lato-Bold',
+  },
+  profileEmail: {
+    fontSize: moderateScale(14),
+    color: '#EEEEEE',
+    marginTop: verticalScale(4),
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(20),
+    marginTop: verticalScale(15),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  editButtonText: {
+    color: COLORS.white,
+    fontSize: moderateScale(14),
+    fontWeight: 'bold',
+    marginLeft: scale(5),
+  },
+  bodyContainer: {
+    padding: scale(15),
+    marginTop: verticalScale(-20),
+  },
+  card: {
+    backgroundColor: COLORS.white,
+    borderRadius: moderateScale(16),
     padding: scale(20),
+    marginBottom: verticalScale(15),
+    elevation: 4,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  cardTitle: {
+    fontSize: moderateScale(16),
+    fontWeight: 'bold',
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#EEEEEE',
+    marginVertical: verticalScale(12),
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: verticalScale(6),
+  },
+  infoLabel: {
+    fontSize: moderateScale(14),
+    color: '#666',
+    fontWeight: '500',
+  },
+  infoValue: {
+    fontSize: moderateScale(14),
+    color: COLORS.black,
+    fontWeight: 'bold',
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.white,
+    paddingVertical: verticalScale(15),
+    borderRadius: moderateScale(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: verticalScale(10),
+    marginBottom: verticalScale(30),
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+    elevation: 2,
+  },
+  logoutButtonText: {
+    fontSize: moderateScale(16),
+    color: COLORS.AstroMaroon,
+    fontWeight: 'bold',
+    marginLeft: scale(8),
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  profileSection: {
-    alignItems: 'center',
-    marginVertical: verticalScale(30),
-  },
-  profileName: {
-    fontSize: moderateScale(18),
-    fontWeight: 'bold',
-    color: COLORS.black,
-    marginTop: verticalScale(10),
-  },
-  profileEmail: {
-    fontSize: moderateScale(14),
-    color: COLORS.gray,
-    marginTop: verticalScale(5),
-  },
-  profileImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  logoutButton: {
-    backgroundColor: COLORS.AstroMaroon,
-    paddingVertical: verticalScale(12),
-    borderRadius: moderateScale(8),
-    alignItems: 'center',
-    marginTop: verticalScale(20),
-  },
-  logoutButtonText: {
-    fontSize: moderateScale(16),
-    color: COLORS.white,
-    fontWeight: 'bold',
   },
   modalOverlay: {
     flex: 1,
@@ -201,16 +343,17 @@ const styles = StyleSheet.create({
   modalContainer: {
     backgroundColor: COLORS.white,
     padding: scale(20),
-    borderRadius: moderateScale(10),
+    borderRadius: moderateScale(15),
     width: '80%',
     alignItems: 'center',
+    elevation: 5,
   },
   modalTitle: {
     fontSize: moderateScale(16),
     fontWeight: 'bold',
     color: COLORS.black,
     textAlign: 'center',
-    marginBottom: verticalScale(15),
+    marginBottom: verticalScale(20),
   },
   modalButtonContainer: {
     flexDirection: 'row',
@@ -219,25 +362,25 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
-    paddingVertical: verticalScale(10),
-    borderRadius: moderateScale(5),
-    marginHorizontal: scale(5),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(8),
+    marginHorizontal: scale(8),
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: COLORS.gray,
+    backgroundColor: '#E0E0E0',
   },
   confirmButton: {
     backgroundColor: COLORS.AstroMaroon,
   },
   cancelButtonText: {
     color: COLORS.black,
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(15),
     fontWeight: 'bold',
   },
   confirmButtonText: {
     color: COLORS.white,
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(15),
     fontWeight: 'bold',
   },
 });

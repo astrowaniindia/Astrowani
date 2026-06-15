@@ -15,6 +15,8 @@ import CustomHeader from './CustomHeader';
 import HomeScreen from '../screens/Home/HomeScreen';
 import Dashboard from '../screens/Drawer/Dashboard';
 import ChatHistory from '../screens/Drawer/ChatHistory';
+import LiveCallHistory from '../screens/HIstory/LiveCallHistory';
+import VideoCallHistory from '../screens/HIstory/VideoCallHistory';
 import MyCustomers from '../screens/Drawer/MyCustomers';
 import DetailedChat from '../screens/Drawer/DetailedChat';
 import AstrologersListScreen from '../screens/AstrologersScreen';
@@ -116,9 +118,14 @@ function NavigationScreen() {
           component={ChatHistorys}
         /> */}
         <Stack.Screen
-          options={{ headerShown: false }}
           name="CallHistory"
           component={CallHistory}
+          options={{
+            title: 'Call History',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+          }}
         />
         <Stack.Screen
           options={{
@@ -155,6 +162,28 @@ function NavigationScreen() {
           component={ChatHistory}
           options={({ route }) => ({
             title: 'Chat History',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+          })}
+        />
+        
+        <Stack.Screen
+          name="LiveCallHistory"
+          component={LiveCallHistory}
+          options={({ route }) => ({
+            title: 'Live Call History',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+          })}
+        />
+
+        <Stack.Screen
+          name="VideoCallHistory"
+          component={VideoCallHistory}
+          options={({ route }) => ({
+            title: 'Video Call History',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },

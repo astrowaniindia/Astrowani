@@ -18,6 +18,8 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import GiftModal from '../../Component/Modal';
+import useChatRequest from '../../hooks/useChatRequest';
+import RequestingPopup from '../../components/RequestingPopup';
 
 const { width } = Dimensions.get('window');
 
@@ -33,6 +35,8 @@ const AstrologerInfo = ({route, navigation}) => {
   const [avgError, setAvgError] = useState('');
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
+  
+  const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
 
   const handleShowAllReviews = () => {
     setShowAllReviews(true);
@@ -296,7 +300,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
       {/* Floating Action Dock */}
       <View style={styles.floatingDock}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('PersonToPersonChat', {person: person})}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => sendChatRequest(person)}>
           <MaterialIcons name="chat" size={moderateScale(20)} color={COLORS.AstroMaroon} />
           <View style={styles.actionBtnTextCol}>
             <Text style={styles.actionBtnText}>Chat</Text>
@@ -323,6 +327,12 @@ const AstrologerInfo = ({route, navigation}) => {
       </View>
 
       <GiftModal visible={isModalVisible} onClose={() => setModalVisible(false)} />
+      
+      <RequestingPopup
+        visible={requesting}
+        astro={requestAstro}
+        onCancel={cancelRequest}
+      />
     </View>
   );
 };

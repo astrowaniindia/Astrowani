@@ -36,23 +36,25 @@ const CustomHeader = ({title, showLanguage}) => {
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
         </View>
-        {showLanguage && (
-          <View style={styles.notificationView}>
-            <TouchableOpacity onPress={() => navigation.navigate('Wallet')}>
-              <Ionicons name="wallet-outline" color="white" size={24} />
-            </TouchableOpacity>
+        <View style={[styles.notificationView]}>
+          <TouchableOpacity onPress={() => navigation.navigate('MyCustomers')} style={{ marginRight: 12 }}>
+            <Ionicons name="people-outline" color="white" size={24} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Notification')} style={{ marginRight: 12 }}>
+            <MaterialIcons name="notifications-none" color="white" size={24} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginRight: 12 }}>
+            <Ionicons name="person-circle-outline" color="white" size={26} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={{ marginRight: showLanguage ? 12 : 0 }}>
+            <Ionicons name="wallet-outline" color="white" size={24} />
+          </TouchableOpacity>
+          {showLanguage && (
             <TouchableOpacity onPress={toggleLanguageModal}>
               <MaterialIcons name="language" color="white" size={24} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => alert('notification option')}>
-              <MaterialIcons
-                name="notifications-none"
-                color="white"
-                size={24}
-              />
-            </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
       </View>
 
       {/* Language Selection Modal */}
@@ -122,8 +124,6 @@ const styles = StyleSheet.create({
   notificationView: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: scale(85),
-    justifyContent: 'space-between',
   },
   modalContainer: {
     flex: 1,

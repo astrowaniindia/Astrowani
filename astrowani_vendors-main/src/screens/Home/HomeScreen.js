@@ -228,22 +228,30 @@ const HomeScreen = () => {
   const featuredItems = [
     { name: 'Notifications', icon: 'notifications-outline', screen: 'Notification' },
     { name: 'Customers', icon: 'people-outline', screen: 'MyCustomers' },
-    { name: 'Wallet', icon: 'wallet-outline', screen: 'Wallet' },
   ];
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {/* Earnings Section */}
       <View style={styles.topSection}>
         <View style={styles.statCard}>
+          <View style={styles.statIconContainer}>
+            <Ionicons name="wallet" size={20} color={COLORS.orange} />
+          </View>
           <Text style={styles.statNumber}>₹{data?.todayEarnings || 0}</Text>
-          <Text style={styles.statLabel}>Today Earning</Text>
+          <Text style={styles.statLabel}>Today's Earning</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>₹{data?.totalEarnings || 0}</Text>
+          <View style={[styles.statIconContainer, { backgroundColor: 'rgba(40, 167, 69, 0.1)' }]}>
+            <Ionicons name="cash" size={20} color={COLORS.green} />
+          </View>
+          <Text style={[styles.statNumber, { color: COLORS.green }]}>₹{data?.totalEarnings || 0}</Text>
           <Text style={styles.statLabel}>Total Earning</Text>
         </View>
       </View>
 
+      {/* Banner */}
       <View style={styles.profileBanner}>
         <Image
           resizeMode="cover"
@@ -252,78 +260,75 @@ const HomeScreen = () => {
         />
       </View>
 
-      <View style={styles.toggleSection}>
+      {/* Toggles inside a unified premium card */}
+      <View style={styles.cardContainer}>
+        <Text style={styles.sectionTitle}>Service Settings</Text>
         <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Call</Text>
+          <View style={styles.toggleLeft}>
+            <Ionicons name="call" size={22} color={COLORS.AstroMaroon} />
+            <Text style={styles.toggleLabel}>Call</Text>
+          </View>
           <Text style={styles.rate}>₹{charges?.callChargePerMinute}/min</Text>
-          <Switch
-            value={callEnabled}
-            onValueChange={(v) => { setCallEnabled(v); updateToggleStatus('is_call_enabled', v); }}
-          />
-          <Text style={[styles.status, { color: callEnabled ? COLORS.green : COLORS.red }]}>
-            {callEnabled ? 'Enabled' : 'Disabled'}
-          </Text>
+          <View style={styles.toggleRight}>
+            <Switch
+              value={callEnabled}
+              onValueChange={(v) => { setCallEnabled(v); updateToggleStatus('is_call_enabled', v); }}
+              trackColor={{ false: '#ccc', true: COLORS.green }}
+              thumbColor="#fff"
+            />
+          </View>
         </View>
+        
+        <View style={styles.divider} />
+        
         <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Video</Text>
+          <View style={styles.toggleLeft}>
+            <Ionicons name="videocam" size={22} color={COLORS.AstroMaroon} />
+            <Text style={styles.toggleLabel}>Video</Text>
+          </View>
           <Text style={styles.rate}>₹{charges?.videoChargePerMinute}/min</Text>
-          <Switch
-            value={videoCallEnabled}
-            onValueChange={(v) => { setVideoCallEnabled(v); updateToggleStatus('is_video_call_enabled', v); }}
-          />
-          <Text style={[styles.status, { color: videoCallEnabled ? COLORS.green : COLORS.red }]}>
-            {videoCallEnabled ? 'Enabled' : 'Disabled'}
-          </Text>
+          <View style={styles.toggleRight}>
+            <Switch
+              value={videoCallEnabled}
+              onValueChange={(v) => { setVideoCallEnabled(v); updateToggleStatus('is_video_call_enabled', v); }}
+              trackColor={{ false: '#ccc', true: COLORS.green }}
+              thumbColor="#fff"
+            />
+          </View>
         </View>
+
+        <View style={styles.divider} />
+
         <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Chat</Text>
+          <View style={styles.toggleLeft}>
+            <Ionicons name="chatbubble" size={22} color={COLORS.AstroMaroon} />
+            <Text style={styles.toggleLabel}>Chat</Text>
+          </View>
           <Text style={styles.rate}>₹{charges?.chatChargePerMinute}/min</Text>
-          <Switch
-            value={chatEnabled}
-            onValueChange={(v) => { setChatEnabled(v); updateToggleStatus('is_chat_enabled', v); }}
-          />
-          <Text style={[styles.status, { color: chatEnabled ? COLORS.green : COLORS.red }]}>
-            {chatEnabled ? 'Enabled' : 'Disabled'}
-          </Text>
+          <View style={styles.toggleRight}>
+            <Switch
+              value={chatEnabled}
+              onValueChange={(v) => { setChatEnabled(v); updateToggleStatus('is_chat_enabled', v); }}
+              trackColor={{ false: '#ccc', true: COLORS.green }}
+              thumbColor="#fff"
+            />
+          </View>
         </View>
       </View>
 
       <TouchableOpacity
         style={[styles.liveButton, isLive && styles.liveButtonActive]}
+        activeOpacity={0.8}
         onPress={toggleLiveStatus}>
         <Ionicons
           name={isLive ? 'radio-button-on' : 'radio-button-off'}
           size={24}
-          color={isLive ? COLORS.green : COLORS.red}
+          color={isLive ? '#fff' : COLORS.AstroMaroon}
         />
-        <Text style={styles.liveButtonText}>{isLive ? 'LIVE NOW' : 'GO LIVE'}</Text>
+        <Text style={[styles.liveButtonText, isLive && { color: '#fff' }]}>
+          {isLive ? 'LIVE NOW' : 'GO LIVE'}
+        </Text>
       </TouchableOpacity>
-
-      <View style={styles.featuredSection}>
-        <Text style={styles.featuredTitle}>Featured</Text>
-        <View style={styles.featuredIcons}>
-          {featuredItems.map((item, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.featuredItem}
-              onPress={() => navigation.navigate(item.screen)}>
-              <Ionicons name={item.icon} size={28} color={COLORS.AstroMaroon} />
-              <Text style={styles.featuredLabel}>{item.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.historySection}>
-        <TouchableOpacity style={styles.historyButton} onPress={() => navigation.navigate('CallHistory')}>
-          <Ionicons name="call-outline" size={24} color={COLORS.AstroMaroon} />
-          <Text style={styles.historyButtonText}>Call History</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.historyButton} onPress={() => navigation.navigate('ChatHistory')}>
-          <Ionicons name="chatbubbles-outline" size={24} color={COLORS.AstroMaroon} />
-          <Text style={styles.historyButtonText}>Chat History</Text>
-        </TouchableOpacity>
-      </View>
 
       <NotificationPopup
         visible={popupVisible}
@@ -331,34 +336,156 @@ const HomeScreen = () => {
         onAccept={handleAccept}
         onCancel={handleCancel}
       />
-    </ScrollView>
+      </ScrollView>
+
+      {/* Fixed Bottom Bar for History */}
+      <View style={styles.fixedBottomBar}>
+        <TouchableOpacity style={styles.bottomTab} onPress={() => navigation.navigate('CallHistory')}>
+          <Ionicons name="call-outline" size={24} color={COLORS.AstroMaroon} />
+          <Text style={styles.bottomTabText} numberOfLines={1}>Call</Text>
+        </TouchableOpacity>
+        
+        <View style={styles.bottomDivider} />
+
+        <TouchableOpacity style={styles.bottomTab} onPress={() => navigation.navigate('ChatHistory')}>
+          <Ionicons name="chatbubbles-outline" size={24} color={COLORS.AstroMaroon} />
+          <Text style={styles.bottomTabText} numberOfLines={1}>Chat</Text>
+        </TouchableOpacity>
+
+        <View style={styles.bottomDivider} />
+
+        <TouchableOpacity style={styles.bottomTab} onPress={() => navigation.navigate('LiveCallHistory')}>
+          <Ionicons name="radio-outline" size={24} color={COLORS.AstroMaroon} />
+          <Text style={styles.bottomTabText} numberOfLines={1}>Live</Text>
+        </TouchableOpacity>
+
+        <View style={styles.bottomDivider} />
+
+        <TouchableOpacity style={styles.bottomTab} onPress={() => navigation.navigate('VideoCallHistory')}>
+          <Ionicons name="videocam-outline" size={24} color={COLORS.AstroMaroon} />
+          <Text style={styles.bottomTabText} numberOfLines={1}>Video</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '', padding: scale(15) },
-  topSection: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: verticalScale(10) },
-  statCard: { width: '48%', backgroundColor: COLORS.white, borderRadius: moderateScale(8), padding: scale(15), alignItems: 'center', elevation: 4 },
-  statNumber: { fontSize: moderateScale(23), fontWeight: 'bold', color: COLORS.orange },
-  statLabel: { fontSize: moderateScale(13), color: COLORS.lightGrey },
-  profileBanner: { backgroundColor: 'transparent', borderRadius: moderateScale(10), alignItems: 'center', marginVertical: verticalScale(10), overflow: 'hidden' },
-  profileImage: { width: '100%', height: verticalScale(180) },
-  toggleSection: { padding: scale(10) },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: verticalScale(10), borderBottomWidth: 1, borderBottomColor: '#ddd' },
-  toggleLabel: { fontSize: moderateScale(15), color: '#333', fontWeight: 'bold', width: scale(50) },
-  rate: { fontSize: moderateScale(14), color: '#666' },
-  status: { fontSize: moderateScale(13), fontWeight: 'bold', width: scale(50), textAlign: 'right' },
-  featuredSection: { padding: scale(10) },
-  featuredTitle: { fontSize: moderateScale(17), fontWeight: 'bold', color: '#333', marginBottom: verticalScale(14) },
-  featuredIcons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  featuredItem: { alignItems: 'center', width: '25%', marginBottom: verticalScale(10) },
-  featuredLabel: { fontSize: moderateScale(11), color: '#333', marginTop: verticalScale(5), textAlign: 'center' },
-  liveButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.lightGrey, padding: 15, borderRadius: 8, marginVertical: 10 },
-  liveButtonActive: { backgroundColor: COLORS.lightGreen },
-  liveButtonText: { marginLeft: 10, fontWeight: 'bold', color: COLORS.dark },
-  historySection: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 15, marginBottom: 24 },
-  historyButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, padding: 15, borderRadius: 8, width: '48%', elevation: 2 },
-  historyButtonText: { marginLeft: 10, fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  scrollContent: { padding: scale(15), paddingBottom: verticalScale(30) },
+  topSection: { flexDirection: 'row', justifyContent: 'space-between', paddingBottom: verticalScale(15) },
+  statCard: { 
+    width: '48%', 
+    backgroundColor: COLORS.white, 
+    borderRadius: moderateScale(16), 
+    padding: scale(16), 
+    alignItems: 'flex-start', 
+    elevation: 3,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+  },
+  statIconContainer: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: 'rgba(255, 165, 0, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: verticalScale(8),
+  },
+  statNumber: { fontSize: moderateScale(22), fontWeight: 'bold', color: COLORS.orange, fontFamily: 'Lato-Bold' },
+  statLabel: { fontSize: moderateScale(12), color: '#888', marginTop: verticalScale(4), fontFamily: 'Lato-Regular' },
+  profileBanner: { 
+    borderRadius: moderateScale(16), 
+    marginBottom: verticalScale(15), 
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  profileImage: { width: '100%', height: verticalScale(160) },
+  cardContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: moderateScale(16),
+    padding: scale(16),
+    marginBottom: verticalScale(15),
+    elevation: 3,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  sectionTitle: {
+    fontSize: moderateScale(16),
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: verticalScale(12),
+    fontFamily: 'Lato-Bold',
+  },
+  toggleRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    paddingVertical: verticalScale(8) 
+  },
+  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: verticalScale(4) },
+  toggleLeft: { flexDirection: 'row', alignItems: 'center', width: scale(80) },
+  toggleLabel: { fontSize: moderateScale(15), color: '#444', fontWeight: 'bold', marginLeft: scale(8) },
+  rate: { fontSize: moderateScale(14), color: '#666', flex: 1, textAlign: 'center' },
+  toggleRight: { width: scale(50), alignItems: 'flex-end' },
+  liveButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    backgroundColor: COLORS.white, 
+    paddingVertical: verticalScale(14), 
+    borderRadius: moderateScale(25), 
+    marginBottom: verticalScale(15),
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+    elevation: 2,
+  },
+  liveButtonActive: { 
+    backgroundColor: COLORS.green,
+    borderColor: COLORS.green,
+    elevation: 4,
+  },
+  liveButtonText: { marginLeft: 10, fontWeight: 'bold', fontSize: moderateScale(15), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold' },
+  fixedBottomBar: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.white,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(10),
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  bottomTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(5),
+  },
+  bottomDivider: {
+    width: 1,
+    backgroundColor: '#E0E0E0',
+    marginVertical: verticalScale(5),
+  },
+  bottomTabText: {
+    fontSize: moderateScale(11),
+    color: COLORS.AstroMaroon,
+    marginTop: verticalScale(4),
+    fontFamily: 'Lato-Bold',
+    fontWeight: 'bold',
+  },
 });
 
 export default HomeScreen;

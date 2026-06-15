@@ -1,38 +1,12 @@
-import { StyleSheet, Text, View, FlatList, Image, StatusBar, TouchableOpacity } from 'react-native'
+import { StyleSheet, Text, View, FlatList, Image } from 'react-native'
 import React, { useEffect, useState } from 'react'
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
+import { COLORS } from '../../Theme/Colors';
+import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 
-
-const callData = [
-  {
-    id: '1',
-    name: 'John Doe',
-    time: 'Today, 10:30 AM',
-    type: 'Incoming',
-    status: 'Missed',
-    avatar: 'https://i.pravatar.cc/100?img=1'
-  },
-  {
-    id: '2',
-    name: 'Jane Smith',
-    time: 'Yesterday, 8:15 PM',
-    type: 'Outgoing',
-    status: 'Completed',
-    avatar: 'https://i.pravatar.cc/100?img=2'
-  },
-  {
-    id: '3',
-    name: 'Alex Lee',
-    time: 'Monday, 5:45 PM',
-    type: 'Incoming',
-    status: 'Completed',
-    avatar: 'https://i.pravatar.cc/100?img=3'
-  },
-]
-
-export default function CallHistory({ navigation }: any) {
+const CallHistory = ({ navigation }: any) => {
   const [callData, setCallData] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   // const [callHIstory, setCallHistory] = useState<any>([])
@@ -72,26 +46,60 @@ export default function CallHistory({ navigation }: any) {
     getAllCallHistory();
   }, []);
 
-  const renderItem = ({ item }: any) => (
-    <View style={styles.item}>
-      <Image source={{ uri: item?.avatar }} style={styles.avatar} />
-      <View style={styles.details}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.meta}>{item.time} · {item.type}</Text>
+  const renderItem = ({ item }: any) => {
+    const refId = item.session_id || item.id || 'N/A';
+    const customerName = item.client_name || item.customer_name || 'Customer';
+    const avatar = item.client_avatar || item.customer_avatar || 'https://via.placeholder.com/100';
+    const status = item.status || 'Completed';
+    const time = new Date(item.start_time || item.created_at || Date.now()).toLocaleString('en-IN');
+    const rate = item.rate || item.charge_per_minute || 0;
+    const duration = item.duration || item.duration_minutes || 0;
+    const deduction = item.deduction || item.total_charge || (rate * duration);
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.header}>
+          <Text style={styles.refId}>Reference ID: {refId}</Text>
+        </View>
+        <View style={styles.divider} />
+        
+        <View style={styles.body}>
+          <View style={styles.avatarContainer}>
+            <Image source={{ uri: avatar }} style={styles.avatar} />
+            <View style={styles.viewProfileBtn}>
+              <Text style={styles.viewProfileText}>View Profile</Text>
+            </View>
+          </View>
+
+          <View style={styles.details}>
+            <Text style={styles.name}>{customerName}</Text>
+            <Text style={[styles.statusText, status === 'Missed' ? styles.redText : styles.greenText]}>
+              {status} Session
+            </Text>
+            <Text style={styles.meta}>{time}</Text>
+            
+            <Text style={styles.infoText}>Astrologer Rate: ₹{rate}/min</Text>
+            <Text style={styles.infoText}>Duration: {duration} min</Text>
+            <Text style={styles.infoText}>Earnings: ₹{deduction}</Text>
+          </View>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Rate us: </Text>
+          <View style={styles.stars}>
+            <Icon name="star" size={16} color="#FFD700" />
+            <Icon name="star" size={16} color="#FFD700" />
+            <Icon name="star" size={16} color="#FFD700" />
+            <Icon name="star" size={16} color="#FFD700" />
+            <Icon name="star" size={16} color="#FFD700" />
+          </View>
+        </View>
       </View>
-      <Text style={[styles.status, item.status === 'missed' ? styles.missed : styles.completed]}>{item.status}</Text>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar />
-      <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Call History</Text>
-      </View>
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: 'black' }}>Loading...</Text>
@@ -100,8 +108,9 @@ export default function CallHistory({ navigation }: any) {
         <FlatList
           data={callData}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          ListEmptyComponent={!loading ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text>No call history found</Text></View> : null}
+          keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+          contentContainerStyle={{ paddingBottom: verticalScale(30) }}
+          ListEmptyComponent={!loading ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 50 }}><Text>No call history found</Text></View> : null}
         />
       }
     </View>
@@ -109,61 +118,103 @@ export default function CallHistory({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  headerContainer: {
-    backgroundColor: '#800000', // AstroMaroon equivalent
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 10,
-    marginHorizontal: -16,
-    marginTop: -16,
-    marginBottom: 10,
-  },
-  backButton: {
-    paddingRight: 15,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    padding: 16
+    backgroundColor: '#F8F9FA',
+    padding: scale(15),
   },
-  item: {
-    flexDirection: 'row',
+  card: {
+    backgroundColor: '#F5E6D3',
+    borderRadius: moderateScale(12),
+    marginBottom: verticalScale(15),
+    overflow: 'hidden',
+    elevation: 3,
+  },
+  header: {
+    paddingVertical: verticalScale(10),
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#ccc'
+  },
+  refId: {
+    fontSize: moderateScale(12),
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    marginHorizontal: scale(15),
+  },
+  body: {
+    flexDirection: 'row',
+    padding: scale(15),
+  },
+  avatarContainer: {
+    alignItems: 'center',
+    marginRight: scale(15),
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25
+    width: scale(60),
+    height: scale(60),
+    borderRadius: scale(30),
+    marginBottom: verticalScale(8),
+  },
+  viewProfileBtn: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+  },
+  viewProfileText: {
+    color: '#2E7D32',
+    fontSize: moderateScale(10),
+    fontWeight: 'bold',
   },
   details: {
     flex: 1,
-    marginLeft: 12
   },
   name: {
-    fontSize: 16,
-    fontWeight: 'bold'
+    fontSize: moderateScale(16),
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  statusText: {
+    fontSize: moderateScale(12),
+    fontWeight: 'bold',
+    marginTop: verticalScale(2),
+  },
+  greenText: {
+    color: '#2E7D32',
+  },
+  redText: {
+    color: '#D32F2F',
   },
   meta: {
-    fontSize: 14,
-    color: '#666'
+    fontSize: moderateScale(12),
+    color: '#555',
+    marginBottom: verticalScale(6),
   },
-  status: {
-    fontSize: 14,
-    fontWeight: '600'
+  infoText: {
+    fontSize: moderateScale(12),
+    color: '#000',
+    fontWeight: 'bold',
+    marginTop: verticalScale(2),
   },
-  missed: {
-    color: 'red'
+  footer: {
+    backgroundColor: '#4A2A22',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: verticalScale(10),
   },
-  completed: {
-    color: 'green'
-  }
-})
+  footerText: {
+    color: '#fff',
+    fontSize: moderateScale(14),
+    fontWeight: 'bold',
+  },
+  stars: {
+    flexDirection: 'row',
+    marginLeft: scale(5),
+  },
+});
+
+export default CallHistory;

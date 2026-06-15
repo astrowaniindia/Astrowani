@@ -8,6 +8,7 @@ import {
   Switch,
   ToastAndroid,
   Alert,
+  StatusBar,
 } from 'react-native';
 import {DrawerContentScrollView, DrawerItem} from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -94,17 +95,18 @@ function CustomDrawer(props) {
   // console.log("data: ", data);
 
   return (
-    <DrawerContentScrollView {...props}>
+    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
       {/* Header Section */}
       <LinearGradient
-        colors={['#592a19', '#800000']}
+        colors={[COLORS.AstroMaroon, '#800000']}
         style={styles.headerSection}>
+        <Text style={styles.appTitle}>Astrowani Vendors</Text>
         <TouchableOpacity
           style={styles.userInfoSection}
-          onPress={() => props.navigation.navigate('UserProfileScreen')}>
+          onPress={() => props.navigation.navigate('Profile')}>
           {data?.profileImage ? (
             <Image
-              resizeMode="contain"
+              resizeMode="cover"
               source={{uri: data.profileImage}}
               style={styles.profile}
             />
@@ -112,17 +114,17 @@ function CustomDrawer(props) {
             <Icon name="account-circle" size={80} color={COLORS.white} />
           )}
           <View style={styles.nameContainer}>
-            <Text style={styles.userName}>
+            <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
               {data?.name || 'Name not available'}
             </Text>
-            <Text style={styles.userEmail}>
+            <Text style={styles.userEmail} numberOfLines={1} ellipsizeMode="tail">
               {data?.email || 'Email not available'}
             </Text>
           </View>
         </TouchableOpacity>
       </LinearGradient>
 
-      <View style={styles.drawerItems}>
+      <View style={styles.drawerItemsContainer}>
         <DrawerItem
           label="Dashboard"
           icon={() => (
@@ -210,7 +212,7 @@ function CustomDrawer(props) {
               color={COLORS.AstroMaroon}
             />
             <Text style={styles.onlineStatusText}>
-              {isOnline ? 'Online' : 'Offline'}
+              Online
             </Text>
           </View>
           <Switch
@@ -218,6 +220,7 @@ function CustomDrawer(props) {
             onValueChange={handleToggleOnlineStatus}
             trackColor={{false: COLORS.AshGray, true: COLORS.AstroMaroon}}
             thumbColor={isOnline ? COLORS.AstroMaroon : COLORS.white}
+            style={styles.switchControl}
           />
         </View>
         <DrawerItem
@@ -246,16 +249,27 @@ function CustomDrawer(props) {
 
 const styles = StyleSheet.create({
   headerSection: {
-    paddingVertical: verticalScale(20),
+    paddingTop: (StatusBar.currentHeight || 0) + verticalScale(20),
+    paddingBottom: verticalScale(20),
     paddingHorizontal: scale(15),
-    alignItems: 'center',
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.white,
-    marginTop: -10,
+    borderBottomWidth: 0,
+    elevation: 5,
+  },
+  appTitle: {
+    color: '#F0D4A3', // AstroGold or similar
+    fontSize: moderateScale(16),
+    fontFamily: 'Lato-Bold',
+    fontWeight: 'bold',
+    marginBottom: verticalScale(15),
+    textAlign: 'center',
+    letterSpacing: 1,
   },
   userInfoSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    padding: scale(10),
+    borderRadius: moderateScale(12),
   },
   profile: {
     width: scale(40),
@@ -266,48 +280,66 @@ const styles = StyleSheet.create({
     marginRight: scale(10),
   },
   nameContainer: {
-    // flex: 1,
-    width: 200,
+    flex: 1,
   },
   userName: {
-    fontSize: moderateScale(20),
+    fontSize: moderateScale(18),
     fontWeight: 'bold',
     color: COLORS.white,
-    width: 150,
+    fontFamily: 'Lato-Bold',
   },
   userEmail: {
-    fontSize: moderateScale(14),
-    color: COLORS.white,
+    fontSize: moderateScale(13),
+    color: '#EEEEEE',
+    marginTop: verticalScale(2),
   },
-  drawerItems: {
+  drawerItemsContainer: {
     marginTop: verticalScale(10),
+    paddingHorizontal: scale(10),
   },
   socialSection: {
     marginTop: verticalScale(20),
-    padding: moderateScale(10),
+    paddingTop: moderateScale(15),
+    paddingBottom: moderateScale(30), // Extra padding for system nav bar
+    paddingHorizontal: moderateScale(10),
     backgroundColor: COLORS.AshGray,
-    borderRadius: scale(10),
+    borderRadius: scale(15),
     alignItems: 'center',
-    marginHorizontal: 10,
+    marginHorizontal: scale(15),
+    marginBottom: verticalScale(20), // Bottom margin
   },
   socialHeading: {
     fontSize: moderateScale(16),
     fontWeight: 'bold',
-    marginBottom: verticalScale(10),
+    marginBottom: verticalScale(15),
+    color: '#333',
   },
   socialIcons: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     width: '100%',
+    paddingHorizontal: scale(10),
   },
   onlineSwitchContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginHorizontal: scale(14),
+    alignItems: 'center',
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(20),
+    marginLeft: scale(2),
   },
   switchMain: {
     flexDirection: 'row',
-    gap: scale(26),
+    alignItems: 'center',
+  },
+  onlineStatusText: {
+    fontSize: moderateScale(14),
+    fontWeight: '500',
+    color: '#333',
+    marginLeft: scale(32), // Align text with DrawerItem labels
+  },
+  switchControl: {
+    transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }], // Slightly enlarge switch to match design
   },
 });
 

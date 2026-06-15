@@ -684,55 +684,58 @@ const CallsList = ({navigation}) => {
   };
 
   const renderStarRating = rating => {
-    const stars = [];
-    const maxStars = 5;
-    for (let i = 1; i <= maxStars; i++) {
-      stars.push(
-        <MaterialIcons
-          key={i}
-          name={i <= rating ? 'star' : 'star-border'}
-          size={moderateScale(16)}
-          color={i <= rating ? '#FFD700' : '#C0C0C0'}
-          style={styles.starIcon}
-        />,
-      );
-    }
     return (
-      <View style={styles.ratingContainer}>
-        {stars}
-        <Text style={styles.ratingText}>({rating || 'N/A'})</Text>
+      <View style={styles.starsContainer}>
+        {Array.from({length: rating || 0}).map((_, index) => (
+          <MaterialIcons
+            key={index}
+            name="star"
+            size={moderateScale(14)}
+            color={COLORS.AstroGold}
+            style={styles.star}
+          />
+        ))}
       </View>
     );
   };
 
   const renderItem = ({item}) => (
-    <TouchableOpacity style={styles.callItem}>
-      <FastImage
-        source={{uri: item.profileImage || 'https://via.placeholder.com/50'}}
-        style={styles.avatar}
-        defaultSource={require('../../assets/images/Avatar.jpg')}
-      />
-      <View style={styles.callInfo}>
-        <Text style={styles.name}>
-          {`${item.name || ''} ${item.lastName || ''}`.trim() ||
-            'Unknown Astrologer'}
-        </Text>
-        <Text style={styles.name}>₹ {item.pricing || ''}/Min</Text>
-        <Text style={styles.name}>{item.email || ''}</Text>
+    <TouchableOpacity style={styles.card} activeOpacity={0.9}>
+      <View style={styles.row}>
+        <View style={styles.reviewImageView}>
+          <FastImage
+            source={{uri: item.profileImage || 'https://via.placeholder.com/50'}}
+            style={styles.avatar}
+            defaultSource={require('../../assets/images/Avatar.jpg')}
+          />
+          {renderStarRating(item.rating)}
+        </View>
 
-        {renderStarRating(item.rating)}
+        <View style={styles.details}>
+          <Text style={styles.name} numberOfLines={1}>
+            {`${item.name || ''} ${item.lastName || ''}`.trim() || 'Astrologer'}
+          </Text>
+          
+          <Text style={styles.specialization} numberOfLines={1}>
+            <MaterialIcons name="email" size={moderateScale(12)} color={COLORS.AstroMaroon} /> {item.email || 'N/A'}
+          </Text>
+
+          <View style={styles.priceRow}>
+            <Text style={styles.offer}>
+              ₹{item.pricing || '0'}/Min
+            </Text>
+          </View>
+        </View>
+        
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() => {
+            getRoomTokenWebCall(item);
+          }}>
+          <MaterialIcons name="call" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
+          <Text style={styles.actionBtnText}>Call</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        onPress={() => {
-          getRoomTokenWebCall(item);
-        }}>
-        <MaterialIcons
-          name="call"
-          size={moderateScale(24)}
-          color="#8E8E93"
-          style={styles.callTypeIcon}
-        />
-      </TouchableOpacity>
     </TouchableOpacity>
   );
 
@@ -773,7 +776,7 @@ const CallsList = ({navigation}) => {
            placeholder="Search astrologer by name..."
            value={searchQuery}
            onChangeText={setSearchQuery}
-           placeholderTextColor={COLORS.AshGray}
+           placeholderTextColor={COLORS.AstroMaroon}
         />
       </View>
       {renderContent()}
@@ -867,12 +870,12 @@ const styles = StyleSheet.create({
     color: '#000000',
     marginBottom: verticalScale(2),
   },
-  ratingContainer: {
+  starsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: verticalScale(4),
   },
-  starIcon: {
-    marginRight: scale(2),
+  star: {
+    marginRight: scale(1),
   },
   ratingText: {
     fontSize: moderateScale(14),
@@ -895,6 +898,70 @@ const styles = StyleSheet.create({
   noCallsText: {
     fontSize: moderateScale(16),
     color: '#8E8E93',
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(16),
+    padding: scale(15),
+    marginBottom: verticalScale(15),
+    elevation: 5,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(244, 216, 188, 0.5)',
+    marginHorizontal: scale(15),
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reviewImageView: {
+    alignItems: 'center',
+    width: scale(85),
+    marginRight: scale(5),
+  },
+  details: {
+    flex: 1,
+    marginLeft: scale(5),
+    justifyContent: 'center',
+  },
+  specialization: {
+    fontSize: moderateScale(13),
+    marginBottom: verticalScale(4),
+    color: '#424242',
+    fontFamily: 'Lato-Regular',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  offer: {
+    fontSize: moderateScale(14),
+    color: COLORS.green,
+    fontFamily: 'Lato-Bold',
+    fontWeight: 'bold',
+  },
+  actionBtn: {
+    backgroundColor: COLORS.green,
+    borderRadius: moderateScale(25),
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: COLORS.green,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(14),
+    fontWeight: 'bold',
   },
 });
 

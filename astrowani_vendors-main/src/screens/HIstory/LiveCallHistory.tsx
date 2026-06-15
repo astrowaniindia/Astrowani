@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert, } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StyleSheet, Text, View, FlatList, Image } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import Icon from 'react-native-vector-icons/Ionicons';
-import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
+import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 
-const ChatHistory = ({ navigation }) => {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+const LiveCallHistory = ({ navigation }: any) => {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // Fetch chat data from API
-  const fetchData = async () => {
+  const getHistory = async () => {
     setLoading(true);
     try {
       const astroId = await AsyncStorage.getItem('astroId');
@@ -20,77 +19,43 @@ const ChatHistory = ({ navigation }) => {
         return;
       }
 
-      // Query the live sessions table
-      const { data: records, error } = await supabase
-        .from('chat_sessions')
+      // Query the Supabase table (which will be empty for now)
+      const { data, error } = await supabase
+        .from('live_call_history')
         .select('*')
-        .eq('vendor_id', astroId)
-        .order('created_at', { ascending: false });
+        .eq('astrologer_id', astroId)
+        .order('start_time', { ascending: false });
 
       if (error) {
         console.log("Error fetching from Supabase:", error);
       }
-      
-      if (records) {
-        const { data: customers } = await supabase.from('customers').select('id, first_name, last_name, profile_pic');
-        const custMap = {};
-        if (customers) customers.forEach(c => custMap[c.id] = c);
 
-        const formatted = records.map(item => {
-          const cust = custMap[item.caller_id];
-          const name = cust ? `${cust.first_name || ''} ${cust.last_name || ''}`.trim() : 'Customer';
-          const end = new Date(item.ended_at || item.created_at);
-          const start = new Date(item.created_at);
-          const durationMins = Math.max(1, Math.ceil((end - start) / 60000));
-          const earnings = durationMins * (item.per_minute_charge || 0);
-
-          return {
-            id: item.id?.toString(),
-            session_id: item.request_id || item.id || 'N/A',
-            client_name: name || 'Customer',
-            client_avatar: cust?.profile_pic || 'https://via.placeholder.com/100',
-            last_message_time: item.created_at,
-            rate: item.per_minute_charge || 0,
-            duration: durationMins,
-            deduction: earnings,
-            status: item.ended_at ? 'Completed' : 'Ended'
-          };
-        });
-        setData(formatted);
-      }
-
+      setData(data || []);
       setLoading(false);
 
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.log("Error fetching live history: ", error);
       setLoading(false);
     }
   };
 
-  // useEffect for initial data load
   useEffect(() => {
-    fetchData();
+    getHistory();
   }, []);
 
-  // console.log("setData: : ", data);
-
-
-  const renderChatItem = ({ item }) => {
-    const refId = item.session_id || item.room_id || item.id || 'N/A';
-    const customerName = item.client_name || 'Unknown User';
-    const avatar = item.client_avatar || 'https://via.placeholder.com/100';
+  const renderItem = ({ item }: any) => {
+    // Fallbacks for mapping real DB fields
+    const refId = item.session_id || item.id || 'N/A';
+    const customerName = item.client_name || item.customer_name || 'Customer';
+    const avatar = item.client_avatar || item.customer_avatar || 'https://via.placeholder.com/100';
     const status = item.status || 'Completed';
-    const time = item.last_message_time ? new Date(item.last_message_time).toLocaleString('en-IN') : 'N/A';
+    const time = new Date(item.start_time || item.created_at || Date.now()).toLocaleString('en-IN');
     const rate = item.rate || item.charge_per_minute || 0;
     const duration = item.duration || item.duration_minutes || 0;
     const deduction = item.deduction || item.total_charge || (rate * duration);
 
     return (
-      <TouchableOpacity 
-        activeOpacity={0.9} 
-        onPress={() => navigation.navigate('Chat', { user: item, userId: item.id, session: item.session_id, roomId: item.room_id })} 
-        style={styles.card}
-      >
+      <View style={styles.card}>
         <View style={styles.header}>
           <Text style={styles.refId}>Reference ID: {refId}</Text>
         </View>
@@ -127,41 +92,34 @@ const ChatHistory = ({ navigation }) => {
             <Icon name="star" size={16} color="#FFD700" />
           </View>
         </View>
-      </TouchableOpacity>
-    );
-  };
-  // Conditional rendering based on loading state
-  if (loading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={COLORS.AstroMaroon || '#000'} />
       </View>
     );
-  }
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F9FA' }}>
-      <FlatList
-        data={data}
-        keyExtractor={(item, index) => item._id?.toString() || item.id?.toString() || index.toString()}
-        renderItem={renderChatItem}
-        contentContainerStyle={{ padding: scale(15), paddingBottom: verticalScale(30) }}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 50 }}><Text style={styles.emptyText}>No chat history available.</Text></View>}
-      />
+    <View style={styles.container}>
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: 'black' }}>Loading...</Text>
+        </View>
+      ) :
+        <FlatList
+          data={data}
+          renderItem={renderItem}
+          keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+          contentContainerStyle={{ paddingBottom: verticalScale(30) }}
+          ListEmptyComponent={!loading ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 50 }}><Text>No live call history found</Text></View> : null}
+        />
+      }
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  loader: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    textAlign: 'center',
-    fontSize: moderateScale(16),
-    color: 'gray',
+    backgroundColor: '#F8F9FA',
+    padding: scale(15),
   },
   card: {
     backgroundColor: '#F5E6D3',
@@ -223,7 +181,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(2),
   },
   greenText: {
-    color: '#2E7D32',
+    color: '#D32F2F', // Free Session is often red in references, but let's make it match
   },
   redText: {
     color: '#D32F2F',
@@ -240,7 +198,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(2),
   },
   footer: {
-    backgroundColor: '#4A2A22',
+    backgroundColor: '#4A2A22', // Dark brown
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -257,4 +215,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ChatHistory;
+export default LiveCallHistory;

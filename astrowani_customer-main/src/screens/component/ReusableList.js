@@ -172,28 +172,30 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
       case 'video':
         return (
           <TouchableOpacity
-            style={styles.chatButton}
+            style={styles.actionBtn}
             onPress={() => {getRoomTokenWebCall(item)}}
           >
-            <Text style={styles.chatText}>Video</Text>
+            <MaterialIcons name="videocam" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
+            <Text style={styles.actionBtnText}>Video</Text>
           </TouchableOpacity>
         );
       case 'call':
         return (
           <TouchableOpacity
-            style={styles.chatButton}
+            style={styles.actionBtn}
             onPress={() => getRoomTokenWebCall(item)}
           >
-            <Text style={styles.chatText}>Call</Text>
+            <MaterialIcons name="call" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
+            <Text style={styles.actionBtnText}>Call</Text>
           </TouchableOpacity>
         );
       case 'view profile':
         return (
           <TouchableOpacity
-            style={styles.chatButton}
+            style={styles.actionBtnProfile}
             onPress={() => actionButton(item)}
           >
-            <Text style={styles.chatText}>View Profile</Text>
+            <Text style={styles.actionBtnProfileText}>Profile</Text>
           </TouchableOpacity>
         );
       case 'chat':
@@ -201,16 +203,11 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
         return (
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.chatButton, styles.smallButton]}
+              style={[styles.actionBtnChat, styles.smallButton]}
               onPress={() => actionButton(item)}
             >
+              <MaterialIcons name="chat" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
               <Text style={styles.chatText}>Chat</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.callButton, styles.smallButton]}
-              onPress={() => handleCall(item)}
-            >
-              <Text style={styles.callText}>Call</Text>
             </TouchableOpacity>
           </View>
         );
@@ -224,6 +221,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
       <TouchableOpacity
         onPress={() => handleAstrologer && handleAstrologer(item)}
         style={styles.card}
+        activeOpacity={0.9}
       >
         {item.badge && (
           <View style={styles.badge}>
@@ -245,22 +243,26 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
                   key={index}
                   name="star"
                   size={moderateScale(14)}
-                  color="orange"
+                  color={COLORS.AstroGold}
                   style={styles.star}
                 />
               ))}
             </View>
           </View>
           <View style={styles.details}>
-            <Text style={styles.name}>{item.name || 'name'}</Text>
+            <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
 
-            <Text style={styles.specialization}>
+            <Text style={styles.specialization} numberOfLines={1}>
               {item.specialties?.[0]?.name || 'Vedic Astrology'}
             </Text>
 
-            <Text style={styles.languages}>{languages || 'Hindi'}</Text>
+            <Text style={styles.languages} numberOfLines={1}>
+              <MaterialIcons name="language" size={moderateScale(12)} color={COLORS.AstroMaroon} /> {languages || 'Hindi'}
+            </Text>
 
-            <Text style={styles.experience}>Exp: {item.experience ?? '0'}</Text>
+            <Text style={styles.experience}>
+              <MaterialIcons name="work-outline" size={moderateScale(12)} color={COLORS.AstroMaroon} /> Exp: {item.experience ?? '0'} yrs
+            </Text>
 
             <View style={styles.priceRow}>
               <Text style={styles.offer}>
@@ -336,7 +338,7 @@ export default ReusableList;
 
 const styles = StyleSheet.create({
   container: {
-    padding: scale(10),
+    padding: scale(15),
     paddingBottom: verticalScale(85),
     backgroundColor: COLORS.AstroSoftOrange,
   },
@@ -344,131 +346,171 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    margin: scale(10),
-    marginBottom: 0,
-    borderRadius: moderateScale(12),
-    paddingHorizontal: scale(12),
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 1.5,
-    borderColor: COLORS.AstroMaroon,
+    margin: scale(15),
+    marginBottom: scale(5),
+    borderRadius: moderateScale(25),
+    paddingHorizontal: scale(15),
+    elevation: 4,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(89, 42, 25, 0.1)',
   },
   searchInput: {
     flex: 1,
     height: verticalScale(45),
     marginLeft: scale(10),
-    color: 'black',
+    color: COLORS.AstroMaroon,
     fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(15),
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: moderateScale(10),
-    padding: scale(10),
-    marginBottom: verticalScale(10),
-    elevation: 2,
+    borderRadius: moderateScale(16),
+    padding: scale(15),
+    marginBottom: verticalScale(15),
+    elevation: 5,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(244, 216, 188, 0.5)',
   },
   badge: {
     position: 'absolute',
-    top: verticalScale(0),
-    right: scale(0),
-    backgroundColor: 'red',
-    paddingHorizontal: scale(5),
-    paddingVertical: verticalScale(4),
-    borderTopRightRadius: moderateScale(10),
-    borderBottomLeftRadius: moderateScale(10),
+    top: 0,
+    right: 0,
+    backgroundColor: COLORS.AstroGold,
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(5),
+    borderTopRightRadius: moderateScale(15),
+    borderBottomLeftRadius: moderateScale(15),
+    zIndex: 1,
   },
   badgeText: {
-    color: '#fff',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(10),
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(11),
+    fontWeight: 'bold',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   avatar: {
-    width: scale(60),
-    height: verticalScale(60),
-    borderRadius: moderateScale(30),
+    width: scale(70),
+    height: scale(70),
+    borderRadius: scale(35),
+    borderWidth: 2,
+    borderColor: COLORS.AstroGold,
   },
   details: {
     flex: 1,
+    marginLeft: scale(5),
+    justifyContent: 'center',
   },
   name: {
-    fontSize: moderateScale(17),
-    color: 'black',
-    marginBottom: verticalScale(3),
+    fontSize: moderateScale(18),
+    color: COLORS.AstroMaroon,
+    marginBottom: verticalScale(2),
     fontFamily: 'Lato-Bold',
+    fontWeight: '700',
   },
   specialization: {
-    fontSize: moderateScale(14),
-    marginBottom: verticalScale(5),
-    color: '#666',
+    fontSize: moderateScale(13),
+    marginBottom: verticalScale(4),
+    color: COLORS.ARSENIC,
     fontFamily: 'Lato-Regular',
   },
   languages: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(12),
     fontFamily: 'Lato-Regular',
     color: '#666',
-    marginBottom: verticalScale(5),
+    marginBottom: verticalScale(3),
   },
   experience: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(12),
     fontFamily: 'Lato-Regular',
     color: '#666',
-    marginBottom: verticalScale(5),
+    marginBottom: verticalScale(6),
   },
   priceRow: {
     flexDirection: 'row',
-  },
-  price: {
-    textDecorationLine: 'line-through',
-    fontSize: moderateScale(13),
-    fontFamily: 'Lato-Regular',
-    color: '#666',
-  },
-  offer: {
-    fontSize: moderateScale(13),
-    color: 'red',
-    fontFamily: 'Lato-Regular',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
   },
+  offer: {
+    fontSize: moderateScale(14),
+    color: COLORS.green,
+    fontFamily: 'Lato-Bold',
+    fontWeight: 'bold',
+  },
+  buttonContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   smallButton: {
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(5),
-    borderRadius: moderateScale(15),
-    marginHorizontal: scale(2),
-  },
-  chatButton: {
-    backgroundColor: '#00C853',
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
     borderRadius: moderateScale(20),
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(5),
+    marginVertical: verticalScale(4),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  callButton: {
+  actionBtn: {
     backgroundColor: COLORS.green,
+    borderRadius: moderateScale(25),
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: COLORS.green,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(14),
+    fontWeight: 'bold',
+  },
+  actionBtnChat: {
+    backgroundColor: COLORS.AstroMaroon,
+    elevation: 3,
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  actionBtnProfile: {
+    borderColor: COLORS.AstroMaroon,
+    borderWidth: 1.5,
+    borderRadius: moderateScale(20),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+  },
+  actionBtnProfileText: {
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(12),
   },
   chatText: {
     color: '#fff',
     fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(12),
-  },
-  callText: {
-    color: '#fff',
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(12),
+    fontSize: moderateScale(13),
+    fontWeight: 'bold',
   },
   reviewImageView: {
     alignItems: 'center',
-    width: scale(75),
-    marginRight: scale(10),
+    width: scale(85),
+    marginRight: scale(5),
   },
   rating: {
     color: COLORS.AstroMaroon,
