@@ -3051,7 +3051,7 @@ balanced-match@^1.0.0:
   resolved "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz"
   integrity sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==
 
-base64-js@^1.3.1, base64-js@^1.5.1:
+base64-js@^1.3.1, base64-js@^1.5.1, base64-js@1.5.1:
   version "1.5.1"
   resolved "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz"
   integrity sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==
@@ -3554,6 +3554,13 @@ debug@2.6.9:
   dependencies:
     ms "2.0.0"
 
+debug@4.3.4:
+  version "4.3.4"
+  resolved "https://registry.npmjs.org/debug/-/debug-4.3.4.tgz"
+  integrity sha512-PRWFHuSU3eDtQJPvnNY7Jcket1j0t5OuOsFzPPzsekD52Zl8qUfFIPEiswXqIvHWGVHOgX+7G/vCNNhehwxfkQ==
+  dependencies:
+    ms "2.1.2"
+
 decamelize@^1.2.0:
   version "1.2.0"
   resolved "https://registry.npmjs.org/decamelize/-/decamelize-1.2.0.tgz"
@@ -3729,16 +3736,6 @@ envinfo@^7.13.0:
   version "7.14.0"
   resolved "https://registry.npmjs.org/envinfo/-/envinfo-7.14.0.tgz"
   integrity sha512-CO40UI41xDQzhLB1hWyqUKgFhs250pNcGbyGKe1l/e4FSaI/+YE4IMG76GDt0In67WLPACIITC+sOi08x4wIvg==
-
-enx-rtc-react-native@^2.3.46:
-  version "2.3.46"
-  resolved "https://registry.npmjs.org/enx-rtc-react-native/-/enx-rtc-react-native-2.3.46.tgz"
-  integrity sha512-WcvdWNa6Ft4xq6AzvsE0hE69qWF4KlgAD8J4wywBqMpPndDeXgGjg8uPtqnrEsl2xP+fDPcgZu12FnqQ6pOdEQ==
-  dependencies:
-    prop-types "^15.8.1"
-    react-native-check-version "^1.1.0"
-    underscore "^1.13.6"
-    uuid "^9.0.1"
 
 error-ex@^1.3.1:
   version "1.3.2"
@@ -4115,6 +4112,11 @@ event-target-shim@^5.0.0, event-target-shim@^5.0.1:
   version "5.0.1"
   resolved "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz"
   integrity sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==
+
+event-target-shim@6.0.2:
+  version "6.0.2"
+  resolved "https://registry.npmjs.org/event-target-shim/-/event-target-shim-6.0.2.tgz"
+  integrity sha512-8q3LsZjRezbFZ2PN+uP+Q7pnHUMmAOziU2vA2OwoFaKIXxlxl38IylhSSgUorWu/rf4er67w0ikBqjBFk/pomA==
 
 execa@^5.0.0, execa@^5.1.1:
   version "5.1.1"
@@ -6066,6 +6068,11 @@ ms@2.0.0:
   resolved "https://registry.npmjs.org/ms/-/ms-2.0.0.tgz"
   integrity sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==
 
+ms@2.1.2:
+  version "2.1.2"
+  resolved "https://registry.npmjs.org/ms/-/ms-2.1.2.tgz"
+  integrity sha512-sGkPx+VjMtmA6MX27oA4FBFELFCZZ4S4XqeGOXCv68tT+jb3vk/RyaKWP0PTKyWtmLSM0b+adUTEvbs1PEaH2w==
+
 nanoid@^3.1.23:
   version "3.3.8"
   resolved "https://registry.npmjs.org/nanoid/-/nanoid-3.3.8.tgz"
@@ -6629,11 +6636,6 @@ react-is@^18.3.1:
   resolved "https://registry.npmjs.org/react-is/-/react-is-18.3.1.tgz"
   integrity sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==
 
-react-native-check-version@^1.1.0:
-  version "1.3.0"
-  resolved "https://registry.npmjs.org/react-native-check-version/-/react-native-check-version-1.3.0.tgz"
-  integrity sha512-3wvE637IKl4B1fMjnDVAv2eGrctwn26C48w/YdE0FIj9DnkNJWm3tGG7yspALcHRGLhI5ZqAaKDd0R5F+8m9EA==
-
 react-native-debug@^3.0.0:
   version "3.0.0"
   resolved "https://registry.npmjs.org/react-native-debug/-/react-native-debug-3.0.0.tgz"
@@ -6641,7 +6643,7 @@ react-native-debug@^3.0.0:
   dependencies:
     ms "0.7.1"
 
-react-native-device-info@^13.1.0, react-native-device-info@>=0.20.0:
+react-native-device-info@^13.1.0:
   version "13.2.0"
   resolved "https://registry.npmjs.org/react-native-device-info/-/react-native-device-info-13.2.0.tgz"
   integrity sha512-VpTxHZsEZ7kes2alaZkB31278KuSPXfTZ4TmCCN77+bYxNnaHUDiBiQ1TSoKAOp51b7gZ/7EvM4McfgHofcTBQ==
@@ -6695,6 +6697,11 @@ react-native-image-picker@^7.1.2:
   version "7.2.3"
   resolved "https://registry.npmjs.org/react-native-image-picker/-/react-native-image-picker-7.2.3.tgz"
   integrity sha512-zKIZUlQNU3EtqizsXSH92zPeve4vpUrsqHu2kkpCxWE9TZhJFZBb+irDsBOY8J21k0+Edgt06TMQGJ+iPUIXyA==
+
+react-native-incall-manager@^4.2.1:
+  version "4.2.1"
+  resolved "https://registry.npmjs.org/react-native-incall-manager/-/react-native-incall-manager-4.2.1.tgz"
+  integrity sha512-HTdtzQ/AswUbuNhcL0gmyZLAXo8VqBO7SIh+BwbeeM1YMXXlR+Q2MvKxhD4yanjJPeyqMfuRhryCQCJhPlsdAw==
 
 react-native-is-edge-to-edge@1.1.6:
   version "1.1.6"
@@ -6766,6 +6773,15 @@ react-native-vector-icons@^10.2.0:
   dependencies:
     prop-types "^15.7.2"
     yargs "^16.1.1"
+
+react-native-webrtc@^124.0.7:
+  version "124.0.7"
+  resolved "https://registry.npmjs.org/react-native-webrtc/-/react-native-webrtc-124.0.7.tgz"
+  integrity sha512-gnXPdbUS8IkKHq9WNaWptW/yy5s6nMyI6cNn90LXdobPVCgYSk6NA2uUGdT4c4J14BRgaFA95F+cR28tUPkMVA==
+  dependencies:
+    base64-js "1.5.1"
+    debug "4.3.4"
+    event-target-shim "6.0.2"
 
 react-native@*, "react-native@^0.0.0-0 || >=0.60 <1.0", "react-native@^0.0.0-0 || >=0.65 <1.0", react-native@>=0.40.0, react-native@>=0.56, react-native@>=0.60.0, react-native@>=0.73.0, react-native@>=0.8.0, react-native@0.75.3:
   version "0.75.3"
@@ -7783,11 +7799,6 @@ unbox-primitive@^1.1.0:
     has-symbols "^1.1.0"
     which-boxed-primitive "^1.1.1"
 
-underscore@^1.13.6:
-  version "1.13.7"
-  resolved "https://registry.npmjs.org/underscore/-/underscore-1.13.7.tgz"
-  integrity sha512-GMXzWtsc57XAtguZgaQViUOzs0KTkk8ojr3/xAxXLITqf/3EMwxC0inyETfDFjH/Krbhuep0HNbbjI9i/q3F3g==
-
 undici-types@~6.20.0:
   version "6.20.0"
   resolved "https://registry.npmjs.org/undici-types/-/undici-types-6.20.0.tgz"
@@ -7855,11 +7866,6 @@ utils-merge@1.0.1:
   version "1.0.1"
   resolved "https://registry.npmjs.org/utils-merge/-/utils-merge-1.0.1.tgz"
   integrity sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==
-
-uuid@^9.0.1:
-  version "9.0.1"
-  resolved "https://registry.npmjs.org/uuid/-/uuid-9.0.1.tgz"
-  integrity sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==
 
 v8-to-istanbul@^9.0.1:
   version "9.3.0"
