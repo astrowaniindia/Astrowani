@@ -12,29 +12,41 @@ import {
   SafeAreaView,
   StatusBar,
   ImageBackground,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../Theme/Colors';
+import io from 'socket.io-client';
+import { SOCKET_URL } from '../config/api';
+
+// Tap-to-send scripted openers shown above the message box for the astrologer.
+const SCRIPTED_REPLIES = [
+  'Welcome to Astrowani 🙏',
+  'I am creating your chart…',
+  'Your chart is created, now ask your question.',
+];
 
 const VendorChatSession = ({ route, navigation }) => {
-  const { requestId, callerName, callerId, perMinuteCharge } = route.params;
+  const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId } = route.params;
 
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [seconds, setSeconds] = useState(0);
   const [customerTyping, setCustomerTyping] = useState(false);
-  const [sessionId, setSessionId] = useState(null);
+  const [sessionId, setSessionId] = useState(initialSessionId);
   const [astroId, setAstroId] = useState(null);
 
   const timerRef = useRef(null);
   const channelRef = useRef(null);
   const flatListRef = useRef(null);
-  const sessionIdRef = useRef(null);
+  const sessionIdRef = useRef(initialSessionId);
   const astroIdRef = useRef(null);
   const pollMsgRef = useRef(null);
   const pollEndRef = useRef(null);
+  const socketRef = useRef(null);
 
   const pad = (n) => n.toString().padStart(2, '0');
   const minutes = Math.floor(seconds / 60);
@@ -47,27 +59,44 @@ const VendorChatSession = ({ route, navigation }) => {
       setAstroId(id);
       astroIdRef.current = id;
 
-      // Get session
-      const { data } = await supabase
-        .from('chat_sessions')
-        .select('id')
-        .eq('request_id', requestId)
-        .single();
+      // Socket setup
+      socketRef.current = io(SOCKET_URL);
+      
+      let finalSessionId = initialSessionId;
 
-      if (data?.id) {
-        setSessionId(data.id);
-        sessionIdRef.current = data.id;
+      // Get session if not passed
+      if (!finalSessionId) {
+        const { data } = await supabase
+          .from('chat_sessions')
+          .select('id')
+          .eq('request_id', requestId)
+          .single();
+        if (data?.id) finalSessionId = data.id;
+      }
+
+      if (finalSessionId) {
+        setSessionId(finalSessionId);
+        sessionIdRef.current = finalSessionId;
+
+        // Socket signaling
+        socketRef.current.emit('join_session', finalSessionId);
+        socketRef.current.emit('signal_connection', { sessionId: finalSessionId });
+
+        socketRef.current.on('session_ended', (data) => {
+          console.log('Session terminated via socket:', data.reason);
+          endSessionLocal(data.reason);
+        });
 
         // Load existing messages
         const { data: msgs } = await supabase
           .from('chat_messages')
           .select('*')
-          .eq('session_id', data.id)
+          .eq('session_id', finalSessionId)
           .order('created_at', { ascending: true });
         if (msgs) setMessages(msgs);
 
         // Subscribe to new messages & broadcasts
-        channelRef.current = supabase.channel(`chat_session_${data.id}`, {
+        channelRef.current = supabase.channel(`chat_session_${finalSessionId}`, {
           config: { broadcast: { self: true } },
         });
         channelRef.current
@@ -80,7 +109,7 @@ const VendorChatSession = ({ route, navigation }) => {
               event: 'INSERT',
               schema: 'public',
               table: 'chat_messages',
-              filter: `session_id=eq.${data.id}`,
+              filter: `session_id=eq.${finalSessionId}`,
             },
             (payload) => {
               setMessages((prev) => {
@@ -101,16 +130,9 @@ const VendorChatSession = ({ route, navigation }) => {
               .eq('id', sessionIdRef.current)
               .single();
             if (checkSess?.ended_at) {
-              clearInterval(timerRef.current);
-              if (pollMsgRef.current) clearInterval(pollMsgRef.current);
-              if (pollEndRef.current) clearInterval(pollEndRef.current);
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.replace('DrawerNavigator');
-              }
+              endSessionLocal();
             }
-          }, 3000);
+          }, 5000);
       }
 
       // Start timer
@@ -124,15 +146,36 @@ const VendorChatSession = ({ route, navigation }) => {
       if (pollMsgRef.current) clearInterval(pollMsgRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
+      if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
 
-  // ─── Send message ─────────────────────────────────────────────────────────
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !sessionIdRef.current || !astroIdRef.current) return;
-    const msg = newMessage.trim();
-    setNewMessage('');
+  const endSessionLocal = (reason) => {
+    clearInterval(timerRef.current);
+    if (pollMsgRef.current) clearInterval(pollMsgRef.current);
+    if (pollEndRef.current) clearInterval(pollEndRef.current);
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
     
+    if (reason) {
+       Alert.alert('Session Ended', reason);
+    }
+
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('DrawerNavigator');
+    }
+  };
+
+  // ─── Send message ─────────────────────────────────────────────────────────
+  const sendMessage = async (overrideText) => {
+    // overrideText is a string when fired by a scripted-reply chip; the bare
+    // onPress handler passes a press event (object), so only treat strings as overrides.
+    const raw = typeof overrideText === 'string' ? overrideText : newMessage;
+    if (!raw.trim() || !sessionIdRef.current || !astroIdRef.current) return;
+    const msg = raw.trim();
+    if (typeof overrideText !== 'string') setNewMessage('');
+
     // Reset typing status on send
     if (channelRef.current) {
         channelRef.current.send({
@@ -156,21 +199,10 @@ const VendorChatSession = ({ route, navigation }) => {
 
   // ─── End session ──────────────────────────────────────────────────────────
   const endSession = async () => {
-    clearInterval(timerRef.current);
-    if (pollMsgRef.current) clearInterval(pollMsgRef.current);
-    if (pollEndRef.current) clearInterval(pollEndRef.current);
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
-    if (sessionIdRef.current) {
-      await supabase
-        .from('chat_sessions')
-        .update({ ended_at: new Date().toISOString() })
-        .eq('id', sessionIdRef.current);
+    if (socketRef.current && sessionIdRef.current) {
+      socketRef.current.emit('end_session', { sessionId: sessionIdRef.current });
     }
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.replace('DrawerNavigator');
-    }
+    endSessionLocal();
   };
 
   const handleTyping = (text) => {
@@ -259,6 +291,24 @@ const VendorChatSession = ({ route, navigation }) => {
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />
         </ImageBackground>
+
+        {/* Scripted quick replies — tap to send the message to the customer */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          style={styles.quickRow}
+          contentContainerStyle={styles.quickRowContent}>
+          {SCRIPTED_REPLIES.map((reply) => (
+            <TouchableOpacity
+              key={reply}
+              style={styles.quickChip}
+              activeOpacity={0.8}
+              onPress={() => sendMessage(reply)}>
+              <Text style={styles.quickChipText} numberOfLines={1}>{reply}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
         <View style={styles.inputRow}>
           <TextInput
@@ -362,6 +412,33 @@ const styles = StyleSheet.create({
   timeText: { fontSize: 11, color: '#888', alignSelf: 'flex-end' },
   myTimeText: { color: 'rgba(255,255,255,0.7)' },
   readIcon: { marginLeft: 4 },
+
+  // Scripted quick replies
+  quickRow: {
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    maxHeight: 52,
+  },
+  quickRowContent: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  quickChip: {
+    backgroundColor: 'rgba(107,31,42,0.08)',
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  quickChipText: {
+    color: COLORS.AstroMaroon,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   // Input
   inputRow: {

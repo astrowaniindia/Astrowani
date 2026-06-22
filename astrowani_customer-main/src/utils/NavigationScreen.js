@@ -307,7 +307,7 @@ function NavigationScreen() {
         />
               <Stack.Screen name="EnxJoinScreen" component={EnxJoinScreen} />
               <Stack.Screen name="EnxConferenceScreen" component={EnxConferenceScreen} />
-              <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} />
+              <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} options={{ headerShown: false }} />
               <Stack.Screen name="JoinRoom" component={JoinRoom} />
               <Stack.Screen  options={({route}) => ({
             headerShown: false,

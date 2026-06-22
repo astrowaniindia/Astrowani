@@ -14,8 +14,10 @@ const Thankyou = ({navigation}) => {
       <Text style={styles.note}>Thank You </Text>
       <Text style={styles.note}>For Registering With Us</Text>
       <Text style={styles.text}>
-        Your Astro Id is: <Text style={{fontWeight: 'bold'}}>78787</Text>. You
-        will get an email about any updates via email or Whatsaap.
+        Our team will review your details and contact you soon. Have a nice day! 🙏
+      </Text>
+      <Text style={styles.text}>
+        Once your account is approved, log in and you'll go straight to your dashboard.
       </Text>
       <TouchableOpacity
         onPress={() => navigation.navigate('Login')}

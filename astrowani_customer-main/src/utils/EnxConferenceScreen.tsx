@@ -25,6 +25,9 @@ import axios from 'axios';
 import {BackHandler} from 'react-native';
 import {COLORS} from '../Theme/Colors';
 import { showAlert } from '../Component/CustomAlert';
+import io from 'socket.io-client';
+import { SOCKET_URL } from '../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = {
   route: any;
@@ -35,6 +38,7 @@ type State = {
   screenWidth: number;
   isHorizontal: boolean;
   noOfColumn: number;
+  sessionId: string | null;
   selectedDevice: string;
   deviceList: any[];
   base64Icon: string;
@@ -180,6 +184,7 @@ const calculateRow = (data: any[]) => {
 export default class EnxVideoView extends PureComponent<Props, State> {
   roomEventHandlers: RoomEventHandlers;
   streamEventHandlers: StreamEventHandlers;
+  socket: any = null;
   renderItem = ({item, index}: {item: any; index: number}) => {
     return (
       <EnxPlayerView
@@ -255,6 +260,7 @@ export default class EnxVideoView extends PureComponent<Props, State> {
       isConnected: false,
       permissionError: false,
       annotationStreamId: null,
+      sessionId: props.route.params?.sessionId || null,
       localStreamInfo: {
         audio: true,
         video: true,
@@ -310,6 +316,12 @@ export default class EnxVideoView extends PureComponent<Props, State> {
         this.setState({
           isConnected: true,
         });
+        
+        // Signal connection to SessionManager
+        if (this.socket && this.state.sessionId) {
+          this.socket.emit('signal_connection', { sessionId: this.state.sessionId });
+        }
+
         Enx.getLocalStreamId((status: any) => {
           this.setState({
             localStreamId: status,
@@ -683,10 +695,34 @@ export default class EnxVideoView extends PureComponent<Props, State> {
   componentDidMount() {
     console.log("this is confresncescreen")
     BackHandler.addEventListener('hardwareBackPress', this.handleBackButton);
+
+    // Socket setup
+    this.socket = io(SOCKET_URL);
+
+    // Join personal room so SessionManager billing notifications reach this screen
+    AsyncStorage.getItem('userData').then(userStr => {
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (user?.id && this.socket) {
+        this.socket.emit('join_room', user.id);
+      }
+    });
+
+    if (this.state.sessionId) {
+      this.socket.emit('join_session', this.state.sessionId);
+    }
+
+    this.socket.on('session_ended', (data: any) => {
+      console.log('Session terminated via socket:', data.reason);
+      Alert.alert('Session Ended', data.reason);
+      this._onPressDisconnect();
+    });
   }
 
   componentWillUnmount() {
     BackHandler.removeEventListener('hardwareBackPress', this.handleBackButton);
+    if (this.socket) {
+      this.socket.disconnect();
+    }
   }
 
   handleBackButton() {

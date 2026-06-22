@@ -276,6 +276,7 @@ import FastImage from 'react-native-fast-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
+import { SOCKET_URL } from '../config/api';
 
 const AstrologersListScreen = ({ navigation }) => {
   const [calls, setCalls] = useState([]);
@@ -304,7 +305,7 @@ const AstrologersListScreen = ({ navigation }) => {
       setLoading(true);
       const token = await AsyncStorage.getItem('token');
       console.log('Token:', token);
-      const response = await axios.get('https://atro-server.onrender.com/api/call/call-history', {
+      const response = await axios.get(`${SOCKET_URL}/api/call/call-history`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },

@@ -29,11 +29,11 @@ const data = [
 const HomeRemedies = ({ navigation }) => {
   const handleBookPuja = item => {
     if (item.title === 'Puja') {
-      navigation.navigate('PujaDetails');
+      navigation.navigate('RemedyShop', { type: 'puja', title: 'Puja' });
     } else if (item.title === 'Gemstones') {
-      navigation.navigate('GemstoneDetails');
+      navigation.navigate('RemedyShop', { type: 'gemstone', title: 'Gemstones' });
     } else if (item.title === 'Specific Puja') {
-      navigation.navigate('SpecificPuja');
+      navigation.navigate('RemedyShop', { type: 'specific_puja', title: 'Specific Puja' });
     }
   };
 

@@ -28,6 +28,26 @@ function CustomDrawer(props) {
   const [isOnline, setIsOnline] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ids, setIds] = useState('');
+  const [missedCount, setMissedCount] = useState(0);
+
+  // Count missed call/chat requests created since the vendor last opened the Missed screen.
+  const fetchMissedCount = async () => {
+    try {
+      const astroId = await AsyncStorage.getItem('astroId');
+      if (!astroId) return;
+      const seenAt = (await AsyncStorage.getItem('missed_seen_at')) || '1970-01-01T00:00:00.000Z';
+      const [callRes, chatRes] = await Promise.all([
+        supabase.from('call_requests').select('id', { count: 'exact', head: true })
+          .eq('astrologer_id', astroId).eq('status', 'missed').gt('created_at', seenAt),
+        supabase.from('chat_requests').select('id', { count: 'exact', head: true })
+          .eq('receiver_id', astroId).eq('status', 'missed').gt('created_at', seenAt),
+      ]);
+      setMissedCount((callRes.count || 0) + (chatRes.count || 0));
+    } catch (e) {
+      // non-fatal
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -81,6 +101,7 @@ function CustomDrawer(props) {
   useFocusEffect(
     useCallback(() => {
       fetchData();
+      fetchMissedCount();
     }, []),
   );
   const handleLogout = async () => {
@@ -98,7 +119,7 @@ function CustomDrawer(props) {
     <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
       {/* Header Section */}
       <LinearGradient
-        colors={[COLORS.AstroMaroon, '#800000']}
+        colors={['#3d1c11', COLORS.AstroMaroon]}
         style={styles.headerSection}>
         <Text style={styles.appTitle}>Astrowani Vendors</Text>
         <TouchableOpacity
@@ -147,16 +168,30 @@ function CustomDrawer(props) {
           onPress={() => props.navigation.navigate('Profile')}
         />
         <DrawerItem
-          label="Chat History"
+          label="Session History"
           icon={() => (
-            <Icon name="message" size={24} color={COLORS.AstroMaroon} />
+            <Icon name="history" size={24} color={COLORS.AstroMaroon} />
           )}
-          onPress={() => props.navigation.navigate('ChatHistory')}
+          onPress={() => props.navigation.navigate('SessionHistory')}
         />
         <DrawerItem
-          label="Call History"
-          icon={() => <Icon name="call" size={24} color={COLORS.AstroMaroon} />}
-          onPress={() => props.navigation.navigate('CallHistory')}
+          label={() => (
+            <View style={styles.missedLabelRow}>
+              <Text style={styles.missedLabel}>Missed Sessions</Text>
+              {missedCount > 0 && (
+                <View style={styles.missedBadge}>
+                  <Text style={styles.missedBadgeText}>{missedCount > 99 ? '99+' : missedCount}</Text>
+                </View>
+              )}
+            </View>
+          )}
+          icon={() => (
+            <Icon name="phone-missed" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => {
+            setMissedCount(0);
+            props.navigation.navigate('MissedSessions');
+          }}
         />
         <DrawerItem
           label="Support"
@@ -179,20 +214,6 @@ function CustomDrawer(props) {
               color={COLORS.AstroMaroon}
             />
           )}
-        />
-        <DrawerItem
-          label="Today Earning"
-          icon={() => (
-            <Icon name="money" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('TodayEarning')}
-        />
-        <DrawerItem
-          label="Total Earning"
-          icon={() => (
-            <Icon name="money" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('TotalEarning')}
         />
         <DrawerItem
           label="Rating & Review"
@@ -340,6 +361,33 @@ const styles = StyleSheet.create({
   },
   switchControl: {
     transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }], // Slightly enlarge switch to match design
+  },
+  missedLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'space-between',
+    marginLeft: scale(-16), // align with other DrawerItem labels
+  },
+  missedLabel: {
+    fontSize: moderateScale(14),
+    fontWeight: '500',
+    color: '#1c1c1e',
+  },
+  missedBadge: {
+    backgroundColor: COLORS.red,
+    borderRadius: moderateScale(12),
+    minWidth: scale(20),
+    paddingHorizontal: scale(6),
+    paddingVertical: verticalScale(1),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: scale(8),
+  },
+  missedBadgeText: {
+    color: '#fff',
+    fontSize: moderateScale(11),
+    fontWeight: 'bold',
   },
 });
 

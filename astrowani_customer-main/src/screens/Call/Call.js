@@ -491,7 +491,8 @@
 
 // export default CallsList;
 
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
 import {
   StyleSheet,
   View,
@@ -507,21 +508,77 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FastImage from 'react-native-fast-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import StarRating from '../../components/StarRating';
+import { ensureProfileComplete } from '../../utils/profileGate';
 import axios from 'axios';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
+import ReusableList from '../component/ReusableList';
 import { supabase } from '../../api/SupabaseClient';
+import { showStatusPopup } from '../../components/StatusPopup';
+import { SOCKET_URL } from '../../config/api';
+import io from 'socket.io-client';
 
 const CallsList = ({navigation}) => {
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filteredCalls, setFilteredCalls] = useState([]);
   const [showMissedOnly, setShowMissedOnly] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState('');
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [waitingAstroName, setWaitingAstroName] = useState('');
+
+  // Mount-time socket — stays connected for the component's lifetime so
+  // call_accepted arrives reliably even if vendor accepts within seconds.
+  const socketRef = useRef(null);
+  const callChannelRef = useRef(null);
+  // navigatedRef is set true when a call is resolved (navigate/cancel/timeout)
+  // so any stale async handler is ignored.
+  const navigatedRef = useRef(false);
+  // Tracks the in-flight request so cancel/back marks it cancelled + notifies the vendor
+  const activeCallRef = useRef(null);
+
+  // Notify the vendor that the customer abandoned the pending request (dismisses their popup)
+  // status: 'cancelled' (user abandoned) | 'missed' (timeout) | 'rejected' (vendor declined — don't overwrite)
+  const notifyVendorCancelled = (status = 'cancelled') => {
+    const active = activeCallRef.current;
+    activeCallRef.current = null;
+    if (!active?.requestId) return;
+    if (status !== 'rejected') {
+      supabase
+        .from('call_requests')
+        .update({status})
+        .eq('id', active.requestId)
+        .then(() => {}, () => {});
+    }
+    socketRef.current?.emit('cancel_call', {
+      astrologer_id: active.astrologerId,
+      requestId: active.requestId,
+      roomId: active.roomId,
+    });
+  };
 
   useEffect(() => {
-    fetchCalls();
+    const setup = async () => {
+      socketRef.current = io(SOCKET_URL);
+      socketRef.current.on('connect', async () => {
+        console.log('[CallScreen] Socket connected:', socketRef.current.id);
+        const userStr = await AsyncStorage.getItem('userData');
+        const user = userStr ? JSON.parse(userStr) : null;
+        if (user?.id) {
+          socketRef.current.emit('join_room', user.id);
+          console.log('[CallScreen] Joined personal room:', user.id);
+        }
+      });
+      socketRef.current.on('connect_error', err =>
+        console.error('[CallScreen] Socket error:', err.message),
+      );
+    };
+    setup();
+    return () => {
+      if (callChannelRef.current) supabase.removeChannel(callChannelRef.current);
+      if (socketRef.current) socketRef.current.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -542,116 +599,185 @@ const CallsList = ({navigation}) => {
     }
     setFilteredCalls(filtered);
   };
-  const [isWaiting, setIsWaiting] = useState(false);
-  const [waitingAstroName, setWaitingAstroName] = useState('');
+
+  const cancelCall = () => {
+    navigatedRef.current = true;
+    notifyVendorCancelled(); // dismiss the vendor's incoming-call popup
+    if (callChannelRef.current) {
+      supabase.removeChannel(callChannelRef.current);
+      callChannelRef.current = null;
+    }
+    // Remove only per-call listeners; keep the socket alive for the next call
+    socketRef.current?.off('call_accepted');
+    socketRef.current?.off('call_rejected');
+    setIsWaiting(false);
+  };
 
   const getRoomTokenWebCall = async (item) => {
     try {
+      if (!(await ensureProfileComplete(navigation))) return;
       const token = await AsyncStorage.getItem('token');
-      const userToken = await AsyncStorage.getItem('userToken');
       const userDataStr = await AsyncStorage.getItem('userData');
-      if (!userDataStr) {
+      if (!userDataStr || !token) {
         Alert.alert('Error', 'Please login to continue.');
-        return null;
+        return;
       }
       const userEntireData = JSON.parse(userDataStr);
-      
-      const { data: customer, error: customerError } = await supabase
+
+      const pricePerMin = item.chargePerMinute || item.pricing || 15;
+      const minRequired = pricePerMin * 5;
+
+      const {data: customer, error: walletErr} = await supabase
         .from('customers')
         .select('wallet_balance')
         .eq('id', userEntireData.id)
         .single();
-        
-      if (customerError) {
-        console.error('Wallet Error:', customerError);
+
+      if (walletErr) {
         Alert.alert('Error', 'Failed to verify wallet balance.');
-        return null;
+        return;
       }
-      
-      const pricePerMin = item.videoPrice || item.chargePerMinute || 40;
-      const minRequired = pricePerMin * 5; // Require at least 5 mins balance
-      
       if (customer.wallet_balance < minRequired) {
-        Alert.alert('Insufficient Balance', `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`);
-        return null;
+        Alert.alert(
+          'Insufficient Balance',
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+        );
+        return;
       }
-      
+
       setIsWaiting(true);
       setWaitingAstroName(item.name);
-      
+      navigatedRef.current = false;
+
       const response = await axios.post(
-        `http://10.0.2.2:4500/api/call/initiate`,
-        {
-          receiverId: item.userId,
-          callType: 'video',
-          callerRole: 'customer',
-          name: item.name,
-        },
-        {
-          headers: {Authorization: `Bearer ${token}`},
-        }
+        `${SOCKET_URL}/api/call/initiate`,
+        {receiverId: item.userId, callType: 'audio', callerRole: 'customer'},
+        {headers: {Authorization: `Bearer ${token}`}},
       );
 
-      if (response.status === 200) {
-        const roomTokenData = response.data.data?.token?.token || response.data.token?.token || response.data.token;
-        const roomIdData = response.data.data?.roomId || response.data.roomId;
-        
-        const { data: requestData, error: requestError } = await supabase
-          .from('call_requests')
-          .insert([{
-            customer_id: userEntireData.id,
-            astrologer_id: item.userId,
-            customer_name: userEntireData.name || 'Customer',
-            call_type: 'video',
-            status: 'pending',
-            room_id: roomIdData,
-            room_token: roomTokenData
-          }])
-          .select()
-          .single();
-
-        if (requestError) {
-          setIsWaiting(false);
-          Alert.alert('Error', 'Failed to send request to astrologer.');
-          return null;
-        }
-
-        const channel = supabase.channel(`call_request_${requestData.id}`)
-          .on(
-            'postgres_changes',
-            { event: 'UPDATE', schema: 'public', table: 'call_requests', filter: `id=eq.${requestData.id}` },
-            async (payload) => {
-              if (payload.new.status === 'accepted') {
-                supabase.removeChannel(channel);
-                setIsWaiting(false);
-                navigation.navigate("EnxConferenceScreen", { token: roomTokenData });
-              } else if (payload.new.status === 'rejected') {
-                supabase.removeChannel(channel);
-                setIsWaiting(false);
-                Alert.alert('Declined', `${item.name} is currently busy and declined the call.`);
-              }
-            }
-          )
-          .subscribe();
-
-        return response.data.token;
-      } else {
+      if (response.status !== 200) {
         setIsWaiting(false);
-        Alert.alert('Error', response.data.error || 'Unexpected Error');
-        return null;
+        Alert.alert('Error', 'Failed to initiate call.');
+        return;
       }
-    } catch (error) {
+
+      const callerToken =
+        response.data.data?.token?.token ||
+        response.data.token?.token ||
+        response.data.token;
+      const vendorToken =
+        response.data.data?.vendorToken || response.data.vendorToken;
+      const roomId = response.data.data?.roomId || response.data.roomId;
+      const backendSessionId =
+        response.data.data?.sessionId || response.data.sessionId;
+
+      const {data: requestData, error: reqErr} = await supabase
+        .from('call_requests')
+        .insert([{
+          customer_id: userEntireData.id,
+          astrologer_id: item.userId,
+          customer_name: userEntireData.name || 'Customer',
+          call_type: 'audio',
+          status: 'pending',
+          room_id: roomId,
+          room_token: vendorToken,
+        }])
+        .select()
+        .single();
+
+      if (reqErr) {
+        setIsWaiting(false);
+        Alert.alert('Error', 'Failed to send call request.');
+        return;
+      }
+
+      // Track the pending request so cancel/timeout can notify the vendor to dismiss its popup
+      activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
+
+      const goToCall = dbSessionId => {
+        if (navigatedRef.current) return;
+        navigatedRef.current = true;
+        activeCallRef.current = null; // accepted → don't cancel
+        if (callChannelRef.current) {
+          supabase.removeChannel(callChannelRef.current);
+          callChannelRef.current = null;
+        }
+        socketRef.current?.off('call_accepted');
+        socketRef.current?.off('call_rejected');
+        setIsWaiting(false);
+        navigation.navigate('VoiceCallScreen', {
+          token: callerToken,
+          sessionId: dbSessionId || backendSessionId,
+          recieverName: item.name,
+          recieverImage: item.profileImage || '',
+          recieverId: item.userId || item._id,
+        });
+      };
+
+      const cleanupAndAlert = (msg, status = 'cancelled', title = 'Call Ended') => {
+        if (navigatedRef.current) return;
+        navigatedRef.current = true;
+        notifyVendorCancelled(status); // dismiss the vendor's incoming-call popup
+        if (callChannelRef.current) {
+          supabase.removeChannel(callChannelRef.current);
+          callChannelRef.current = null;
+        }
+        socketRef.current?.off('call_accepted');
+        socketRef.current?.off('call_rejected');
+        setIsWaiting(false);
+        if (msg) {
+          showStatusPopup({
+            title,
+            message: msg,
+            variant: status === 'missed' ? 'missed' : status === 'rejected' ? 'busy' : 'info',
+          });
+        }
+      };
+
+      // Socket listeners — mount-time socket is already connected and in customer's room
+      socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
+      socketRef.current?.on('call_rejected', () =>
+        cleanupAndAlert('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+      );
+
+      // Supabase Realtime backup (catches acceptance even if socket misses it)
+      const channel = supabase
+        .channel(`call_request_callscreen_${requestData.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_requests',
+            filter: `id=eq.${requestData.id}`,
+          },
+          payload => {
+            if (payload.new.status === 'accepted') {
+              goToCall(payload.new.session_id);
+            } else if (payload.new.status === 'rejected') {
+              cleanupAndAlert('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy');
+            }
+          },
+        )
+        .subscribe();
+      callChannelRef.current = channel;
+
+      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      setTimeout(() => {
+        cleanupAndAlert('Your audio call was not picked up. Please try again later.', 'missed', 'Not Answered');
+      }, 60000);
+    } catch (err) {
       setIsWaiting(false);
-      Alert.alert('Error', 'Failed to initiate call');
-      return null;
+      console.error('[CallScreen] getRoomTokenWebCall error:', err);
+      Alert.alert('Error', 'Failed to initiate call. Please try again.');
     }
   };
-  const fetchCalls = async () => {
+  const fetchCalls = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('token');
-      const response = await Instance.get('/api/astrologers/liveAstrologers');
-      console.log(response?.data.data, '$$$$$$$$$$$$');
+      // Show ALL astrologers — the Call button reflects is_call_enabled per card
+      // (red "Unavailable" when off) rather than hiding the astrologer.
+      const response = await Instance.get('/api/astrologers');
       if (response?.data.data) {
         setCalls(response.data.data);
       }
@@ -660,44 +786,31 @@ const CallsList = ({navigation}) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleAudioCall = () => {
-    // navigation.navigate('JoinRoom');
-  };
+  // Re-fetch on focus + live sync on any astrologer change
+  useFocusEffect(
+    useCallback(() => {
+      fetchCalls();
+    }, [fetchCalls]),
+  );
 
-  const renderCallTypeIcon = (isVideoCall, item) => {
-    const iconName = isVideoCall ? 'videocam' : 'call';
-    return (
-      <TouchableOpacity
-        onPress={() => {
-          getRoomTokenWebCall(item);
-        }}>
-        <MaterialIcons
-          name={iconName}
-          size={moderateScale(24)}
-          color="#8E8E93"
-          style={styles.callTypeIcon}
-        />
-      </TouchableOpacity>
-    );
-  };
+  useEffect(() => {
+    // Unique name per run — a fixed name makes supabase.channel() return an already-
+    // subscribed channel and .on()-after-subscribe() throws.
+    const channel = supabase
+      .channel(`talk-astro-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
+      .on(
+        'postgres_changes',
+        {event: '*', schema: 'public', table: 'astrologers'},
+        () => fetchCalls(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchCalls]);
 
-  const renderStarRating = rating => {
-    return (
-      <View style={styles.starsContainer}>
-        {Array.from({length: rating || 0}).map((_, index) => (
-          <MaterialIcons
-            key={index}
-            name="star"
-            size={moderateScale(14)}
-            color={COLORS.AstroGold}
-            style={styles.star}
-          />
-        ))}
-      </View>
-    );
-  };
 
   const renderItem = ({item}) => (
     <TouchableOpacity style={styles.card} activeOpacity={0.9}>
@@ -708,7 +821,7 @@ const CallsList = ({navigation}) => {
             style={styles.avatar}
             defaultSource={require('../../assets/images/Avatar.jpg')}
           />
-          {renderStarRating(item.rating)}
+          <StarRating rating={item.rating} totalReviews={item.totalReviews} size={14} style={styles.starsContainer} />
         </View>
 
         <View style={styles.details}>
@@ -728,12 +841,17 @@ const CallsList = ({navigation}) => {
         </View>
         
         <TouchableOpacity
-          style={styles.actionBtn}
+          style={item.isCallEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
+          activeOpacity={0.8}
           onPress={() => {
-            getRoomTokenWebCall(item);
+            if (item.isCallEnabled) {
+              getRoomTokenWebCall(item);
+            } else {
+              Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for calls right now.`);
+            }
           }}>
-          <MaterialIcons name="call" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
-          <Text style={styles.actionBtnText}>Call</Text>
+          <MaterialIcons name={item.isCallEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
+          <Text style={styles.actionBtnText}>{item.isCallEnabled ? 'Call' : 'Unavailable'}</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -769,18 +887,13 @@ const CallsList = ({navigation}) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
-        <TextInput 
-           style={styles.searchInput}
-           placeholder="Search astrologer by name..."
-           value={searchQuery}
-           onChangeText={setSearchQuery}
-           placeholderTextColor={COLORS.AstroMaroon}
-        />
-      </View>
-      {renderContent()}
-      <Modal transparent={true} visible={isWaiting} animationType="fade">
+      <ReusableList
+        data={calls}
+        buttonType="call"
+        actionButton={getRoomTokenWebCall}
+        handleAstrologer={(item) => navigation.navigate('AstrologerInfo', { person: item })}
+      />
+      <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={cancelCall}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
           <View style={{ 
             width: '85%', 
@@ -805,7 +918,7 @@ const CallsList = ({navigation}) => {
                 width: '100%',
                 alignItems: 'center'
               }}
-              onPress={() => setIsWaiting(false)}
+              onPress={cancelCall}
             >
               <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>Cancel Request</Text>
             </TouchableOpacity>
@@ -962,6 +1075,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(14),
     fontWeight: 'bold',
+  },
+  // Red "unavailable" Call button — astrologer stays listed, button signals calls are off
+  actionBtnUnavailable: {
+    backgroundColor: '#C0392B',
+    borderRadius: moderateScale(25),
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.9,
+    elevation: 3,
   },
 });
 

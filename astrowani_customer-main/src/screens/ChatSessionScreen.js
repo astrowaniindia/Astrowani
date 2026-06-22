@@ -19,10 +19,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
+import { showReviewPrompt } from '../components/ReviewPrompt';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import io from 'socket.io-client';
+import { SOCKET_URL } from '../config/api';
 
 const ChatSessionScreen = ({ route, navigation }) => {
-  const { requestId, person } = route.params;
+  const { requestId, person, sessionId: initialSessionId } = route.params;
 
   const [session, setSession] = useState(null);
   const [seconds, setSeconds] = useState(0);
@@ -34,14 +37,16 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const [vendorTyping, setVendorTyping] = useState(false);
 
   const secondTimerRef = useRef(null);
-  const minuteTimerRef = useRef(null);
   const sessionRef = useRef(null);
   const walletRef = useRef(0);
   const channelRef = useRef(null);
   const flatListRef = useRef(null);
   const hasEndedRef = useRef(false);
+  const chatConnectedRef = useRef(false);
+  const detailsSentRef = useRef(false);
   const pollRef = useRef(null);
   const pollEndRef = useRef(null);
+  const socketRef = useRef(null);
 
   const pad = (n) => n.toString().padStart(2, '0');
 
@@ -63,68 +68,29 @@ const ChatSessionScreen = ({ route, navigation }) => {
     }
   };
 
-  // ─── Deduct from customer wallet, credit vendor via backend API ───────────
-  const deductAndCredit = async () => {
-    const sess = sessionRef.current;
-    if (!sess) return;
-    const charge = sess.per_minute_charge ?? 0;
-
-    if (walletRef.current <= 0 || walletRef.current < charge) {
-      endSession('Your wallet balance is empty. Chat has ended.');
-      return;
-    }
-
-    try {
-      const token = await AsyncStorage.getItem('token');
-      if (!token) return;
-
-      const res = await Instance.post(
-        '/api/wallet/deduct-and-credit',
-        {
-          sessionId: sess.id,
-          requestId: requestId,
-          amount: charge,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (res.data?.success) {
-        const newBal = res.data.newBalance;
-        walletRef.current = newBal;
-        setWallet(newBal);
-      } else {
-        // Insufficient balance
-        endSession('Your wallet balance is empty. Chat has ended.');
-      }
-    } catch (e) {
-      console.warn('deductAndCredit error:', e.message);
-    }
-  };
-
   // ─── End session ──────────────────────────────────────────────────────────
   const endSession = (message) => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
 
     clearInterval(secondTimerRef.current);
-    clearInterval(minuteTimerRef.current);
     if (pollRef.current) clearInterval(pollRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
     if (channelRef.current) supabase.removeChannel(channelRef.current);
-
-    if (sessionRef.current) {
-      supabase
-        .from('chat_sessions')
-        .update({ ended_at: new Date().toISOString() })
-        .eq('id', sessionRef.current.id)
-        .then(() => {});
-    }
+    if (socketRef.current) socketRef.current.disconnect();
 
     const goBackOrHome = () => {
       if (navigation.canGoBack()) {
         navigation.goBack();
       } else {
         navigation.replace('Home');
+      }
+      // Prompt for a review only if the chat actually connected.
+      if (chatConnectedRef.current) {
+        const astrologerId = person?._id || person?.userId;
+        if (astrologerId) {
+          showReviewPrompt({ astrologerId, name: person?.name, image: person?.profileImage });
+        }
       }
     };
 
@@ -134,6 +100,53 @@ const ChatSessionScreen = ({ route, navigation }) => {
       ]);
     } else {
       goBackOrHome();
+    }
+  };
+
+  const manualEndSession = async () => {
+    if (socketRef.current && sessionRef.current) {
+        socketRef.current.emit('end_session', { sessionId: sessionRef.current.id });
+    }
+    endSession(null);
+  }
+
+  // ─── Auto first message: customer birth details → astrologer ───────────────
+  const sendCustomerDetails = async (sessionData, senderId) => {
+    try {
+      // Pull the latest profile straight from the source of truth.
+      const { data: prof } = await supabase
+        .from('customers')
+        .select('name, dob, time_of_birth, place_of_birth')
+        .eq('id', senderId)
+        .single();
+
+      const fmtDate = (d) => {
+        if (!d) return 'Not provided';
+        try {
+          return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        } catch (_) {
+          return String(d);
+        }
+      };
+
+      const details =
+        `🙏 Namaste! Here are my details for the reading:\n\n` +
+        `Full Name: ${prof?.name || person?.callerName || 'Not provided'}\n` +
+        `Date of Birth: ${fmtDate(prof?.dob)}\n` +
+        `Time of Birth: ${prof?.time_of_birth || 'Not provided'}\n` +
+        `Place of Birth: ${prof?.place_of_birth || 'Not provided'}`;
+
+      await supabase.from('chat_messages').insert([
+        {
+          room_id: requestId,
+          session_id: sessionData.id,
+          sender_id: senderId,
+          receiver_id: person?._id || person?.id || person?.userId,
+          message: details,
+        },
+      ]);
+    } catch (e) {
+      console.warn('sendCustomerDetails error:', e.message);
     }
   };
 
@@ -177,6 +190,9 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
       await loadWallet();
 
+      // Socket setup
+      socketRef.current = io(SOCKET_URL);
+
       // Poll until session is created by vendor
       let isFetching = false;
       pollRef.current = setInterval(async () => {
@@ -197,10 +213,18 @@ const ChatSessionScreen = ({ route, navigation }) => {
             sessionRef.current = data;
             setConnecting(false);
 
+            // Socket signaling
+            socketRef.current.emit('join_session', data.id);
+            socketRef.current.emit('signal_connection', { sessionId: data.id });
+            
+            socketRef.current.on('session_ended', (termData) => {
+              console.log('Session terminated via socket:', termData.reason);
+              endSession(termData.reason);
+            });
+
             // Start timers
+            chatConnectedRef.current = true;
             secondTimerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
-            deductAndCredit(); // Deduct first minute!
-            minuteTimerRef.current = setInterval(() => deductAndCredit(), 60 * 1000);
 
             // Load existing messages
             const { data: msgs } = await supabase
@@ -236,9 +260,17 @@ const ChatSessionScreen = ({ route, navigation }) => {
                 }
               )
               .subscribe();
+
+            // On the very first connect (no prior messages), auto-send the customer's
+            // birth details so the astrologer has them up front. Sent after subscribing
+            // so it also renders on the customer's own screen via Realtime.
+            if ((!msgs || msgs.length === 0) && !detailsSentRef.current) {
+              detailsSentRef.current = true;
+              await sendCustomerDetails(data, userId);
+            }
           }
 
-          if (pollCount > 20 && !sessionRef.current) {
+          if (pollCount > 30 && !sessionRef.current) {
             clearInterval(pollRef.current);
             endSession('Session could not be started.');
           }
@@ -258,7 +290,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
             if (checkSess?.ended_at) {
               endSession('The astrologer has ended the session.');
             }
-          }, 3000);
+          }, 5000);
 
     };
 
@@ -266,10 +298,10 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
     return () => {
       clearInterval(secondTimerRef.current);
-      clearInterval(minuteTimerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
+      if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
 

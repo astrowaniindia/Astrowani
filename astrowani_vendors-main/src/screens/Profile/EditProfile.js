@@ -30,6 +30,7 @@ export default function EditProfile() {
   const [experience, setExperience] = useState('');
   const [chatCharge, setChatCharge] = useState('');
   const [callCharge, setCallCharge] = useState('');
+  const [videoCharge, setVideoCharge] = useState('');
   const [language, setLanguage] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
@@ -120,8 +121,9 @@ export default function EditProfile() {
         setExperience((astroData.experience || astroData.years_of_experience || '').toString());
         setChatCharge((astroData.chat_charge_per_minute || '').toString());
         setCallCharge((astroData.call_charge_per_minute || '').toString());
-        setLanguage(Array.isArray(astroData.language) ? astroData.language.join(', ') : (astroData.language || ''));
-        setProfileImage(astroData.profile_image || astroData.image || null);
+        setVideoCharge((astroData.video_charge_per_minute || '').toString());
+        setLanguage(Array.isArray(astroData.languages) ? astroData.languages.join(', ') : (astroData.languages || ''));
+        setProfileImage(astroData.profile_pic_url || astroData.profile_image || null);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -157,8 +159,9 @@ export default function EditProfile() {
           experience: parseInt(experience) || 0,
           chat_charge_per_minute: parseInt(chatCharge) || 0,
           call_charge_per_minute: parseInt(callCharge) || 0,
-          language: langArray,
-          profile_image: profileImage 
+          video_charge_per_minute: parseInt(videoCharge) || 0,
+          languages: langArray,
+          profile_pic_url: profileImage
         })
         .eq('id', astroId);
 
@@ -280,6 +283,16 @@ fetchData()
           value={callCharge}
           onChangeText={setCallCharge}
           placeholder="e.g. 20"
+          keyboardType="numeric"
+        />
+
+        <Text style={styles.label}>Video Charges (₹/min)</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={COLORS.lightGrey}
+          value={videoCharge}
+          onChangeText={setVideoCharge}
+          placeholder="e.g. 25"
           keyboardType="numeric"
         />
 

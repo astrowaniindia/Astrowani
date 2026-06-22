@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
+import Instance from '../api/ApiCall';
 
 import { LanguageContext } from '../context/LanguageContext';
 
@@ -28,33 +29,33 @@ const CustomHeader = ({title, showLanguage}) => {
     let subscription = null;
     const fetchBalance = async () => {
       try {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) return;
+        
+        // 1. Initial fetch via backend API
+        const res = await Instance.get('/api/wallet', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data?.success) {
+          setWalletBalance(res.data.data.balance || 0);
+        }
+
+        // 2. Setup Real-time listener for live wallet updates.
+        // fetchBalance runs again on every focus — tear down the previous channel and use a
+        // unique name, else supabase.channel() returns the already-subscribed channel and
+        // .on()-after-subscribe() throws ("cannot add postgres_changes ... after subscribe()").
         const userDataStr = await AsyncStorage.getItem('userData');
         if (userDataStr) {
           const userData = JSON.parse(userDataStr);
           const mobile = userData.phoneNumber || userData.mobile;
-          const email = userData.email;
-          
-          if (mobile || email) {
-            // Fetch initial balance
-            let query = supabase.from('customers').select('wallet_balance');
-            
-            if (mobile) {
-              query = query.eq('mobile', mobile);
-            } else {
-              query = query.eq('email', email);
+          if (mobile) {
+            if (subscription) {
+              supabase.removeChannel(subscription);
+              subscription = null;
             }
-            
-            const { data, error } = await query.single();
-              
-            if (data && data.wallet_balance !== undefined) {
-              setWalletBalance(data.wallet_balance);
-            }
-
-            // Subscribe to realtime updates
-            const filterKey = mobile ? `mobile=eq.${mobile}` : `email=eq.${email}`;
             subscription = supabase
-              .channel('public:customers_header')
-              .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers', filter: filterKey }, payload => {
+              .channel(`customers_header_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
+              .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers', filter: `mobile=eq.${mobile}` }, payload => {
                 if (payload.new && payload.new.wallet_balance !== undefined) {
                   setWalletBalance(payload.new.wallet_balance);
                 }
@@ -63,18 +64,21 @@ const CustomHeader = ({title, showLanguage}) => {
           }
         }
       } catch (e) {
-        console.log('Error fetching wallet balance:', e);
+        console.log('Error fetching wallet balance:', e.message);
       }
     };
 
     fetchBalance();
 
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchBalance();
+    });
+
     return () => {
-      if (subscription) {
-        supabase.removeChannel(subscription);
-      }
+      unsubscribe();
+      if (subscription) supabase.removeChannel(subscription);
     };
-  }, []);
+  }, [navigation]);
 
   const toggleLanguageModal = () => {
     setLanguageModalVisible(!languageModalVisible);

@@ -19,6 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Geocoder from 'react-native-geocoding';
 import axios from 'axios';
+import { SOCKET_URL } from '../../../config/api';
 
 Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); // 
 
@@ -152,7 +153,7 @@ const KundaliMatchScreen = ({navigation}) => {
 
     try {
       const response = await axios.post(
-        'https://astrology-3bjo.onrender.com/api/free-services/kundali-match?ayanamsa=1&language=en',
+        `${SOCKET_URL}/api/free-services/kundali-match?ayanamsa=1&language=en`,
         requestBody
       );
       console.log('API Response:', response.data, boyName,girlName);

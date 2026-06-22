@@ -1,10 +1,12 @@
 // Chat.js — Customer side (uses shared useChatRequest hook)
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../../Theme/Colors';
 import { verticalScale } from '../../utils/Scaling';
 import Allastrologers from './Allastrologers';
 import Instance from '../../api/ApiCall';
+import { supabase } from '../../api/SupabaseClient';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 
@@ -16,9 +18,11 @@ const Chat = ({ navigation }) => {
 
   const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
 
-  const getAllAstrologers = async () => {
+  const getAllAstrologers = useCallback(async () => {
     try {
       setLoading(true);
+      // Show ALL astrologers — the Chat button reflects is_chat_enabled per card
+      // (red "Unavailable" when off) rather than hiding the astrologer.
       const response = await Instance.get(`/api/astrologers`);
       setSpecialAstro(response.data.data || []);
     } catch (err) {
@@ -27,11 +31,31 @@ const Chat = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    getAllAstrologers();
   }, []);
+
+  // Re-fetch whenever the screen regains focus (catches vendor toggle changes)
+  useFocusEffect(
+    useCallback(() => {
+      getAllAstrologers();
+    }, [getAllAstrologers]),
+  );
+
+  // Live sync — re-fetch when any astrologer row changes (toggles, charges, availability)
+  useEffect(() => {
+    // Unique name per run — a fixed name makes supabase.channel() return an already-
+    // subscribed channel and .on()-after-subscribe() throws.
+    const channel = supabase
+      .channel(`chat-astro-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'astrologers' },
+        () => getAllAstrologers(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [getAllAstrologers]);
 
   const onRefresh = async () => {
     setRefreshing(true);

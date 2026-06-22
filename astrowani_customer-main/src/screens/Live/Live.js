@@ -1,76 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Image, ImageBackground, TouchableOpacity, FlatList, StyleSheet, TextInput } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
+import { supabase } from '../../api/SupabaseClient';
+import { ensureProfileComplete } from '../../utils/profileGate';
 
 const Live = ({ navigation }) => {
-  const sessions = [
-    {
-      id: '1',
-      name: 'PARAM',
-      title: 'Daily Predictions',
-      time: 'Today, 11:30 AM',
-      image:
-        'https://astrowaniindia.com/wp-content/uploads/2024/07/Pandit-ji-new-140x140.png',
-      backgroundImage:
-        'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247',
-    },
-    {
-      id: '2',
-      name: 'Taro Renu',
-      title: 'Tarot Reading',
-      time: 'Today, 11:08 AM',
-      image:
-        'https://astrowaniindia.com/wp-content/uploads/2024/07/Pandit-ji-new-140x140.png',
-      backgroundImage:
-        'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247',
-    },
-
-    {
-      id: '5',
-      name: 'PARAM',
-      title: 'Daily Predictions',
-      time: 'Today, 11:30 AM',
-      image:
-        'https://astrowaniindia.com/wp-content/uploads/2024/07/Pandit-ji-new-140x140.png',
-      backgroundImage:
-        'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247',
-    },
-    {
-      id: '6',
-      name: 'Taro Renu',
-      title: 'Tarot Reading',
-      time: 'Today, 11:08 AM',
-      image:
-        'https://astrowaniindia.com/wp-content/uploads/2024/07/Pandit-ji-new-140x140.png',
-      backgroundImage:
-        'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247',
-    },
-    {
-      id: '7',
-      name: 'Taro Renu',
-      title: 'Tarot Reading',
-      time: 'Today, 11:08 AM',
-      image:
-        'https://astrowaniindia.com/wp-content/uploads/2024/07/Pandit-ji-new-140x140.png',
-      backgroundImage:
-        'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247',
-    },
-    {
-      id: '8',
-      name: 'Taro Renu',
-      title: 'Tarot Reading',
-      time: 'Today, 11:08 AM',
-      image:
-        'https://astrowaniindia.com/wp-content/uploads/2024/07/Pandit-ji-new-140x140.png',
-      backgroundImage:
-        'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247',
-    },
-    // Add more items as needed
-  ];
-
   const [liveAstro, setLiveAstro] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,54 +18,63 @@ const Live = ({ navigation }) => {
     const query = searchQuery.toLowerCase();
     return liveAstro.filter(item => {
       const nameMatch = item.name?.toLowerCase().includes(query);
-      const specMatch = item.title?.toLowerCase().includes(query) || item.specialty?.toLowerCase().includes(query);
+      const specMatch = item.specialties?.[0]?.name?.toLowerCase().includes(query);
       return nameMatch || specMatch;
     });
   }, [liveAstro, searchQuery]);
 
-  const getLiveAstro = async () => {
-    return await Instance.get(`/api/astrologers/liveAstrologers`).then((response) => {
-      // console.log("response: ", response?.data?.data);
-      setLiveAstro(response.data.data)
-      setLoading(false)
-    }).catch((error) => {
-      console.log("getSpecialAstrology: ", error);
-      setLoading(false)
-    })
-  }
+  // Only astrologers actually broadcasting right now.
+  const getLiveAstro = useCallback(async () => {
+    try {
+      const response = await Instance.get(`/api/live/active`);
+      setLiveAstro(response.data.data || []);
+    } catch (error) {
+      console.log('getLiveAstro error:', error?.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
+  useFocusEffect(useCallback(() => { getLiveAstro(); }, [getLiveAstro]));
+
+  // Live sync — refresh when a session starts/ends (unique channel per mount).
   useEffect(() => {
-    getLiveAstro()
-  }, [loading])
+    const channel = supabase
+      .channel(`live-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_sessions' }, () => getLiveAstro())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [getLiveAstro]);
 
-  const handlePress = (item) => {
-    navigation.navigate('AstrologerInfo', { person: item });
+  const handlePress = async (item) => {
+    if (!(await ensureProfileComplete(navigation))) return;
+    navigation.navigate('LiveViewerScreen', { sessionId: item.sessionId, astrologer: item });
   };
 
   const renderItem = ({ item }) => (
     <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={() => handlePress(item)}>
-      <ImageBackground 
-        source={{ uri: item.backgroundImage || 'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247' }} 
+      <ImageBackground
+        source={{ uri: 'https://th.bing.com/th?q=Astrology+Wallpaper+4K&w=120&h=120&c=1&rs=1&qlt=90&cb=1&pid=InlineBlock&mkt=en-IN&cc=IN&setlang=en&adlt=moderate&t=1&mw=247' }}
         style={styles.imageBackground}
         imageStyle={styles.imageBackgroundImage}
       >
         <View style={styles.overlay} />
-        
+
         <View style={styles.liveIndicator}>
           <View style={styles.liveDot} />
           <Text style={styles.liveText}>LIVE</Text>
         </View>
 
         <View style={styles.content}>
-          <Image source={{ uri: item.profileImage || item.image }} style={styles.profileImage} />
+          <Image source={{ uri: item.profileImage }} style={styles.profileImage} />
           <View style={styles.details}>
             <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
-            <Text style={styles.title} numberOfLines={1}>{item.title || item.specialty || 'Vedic Astrology'}</Text>
-            
+            <Text style={styles.title} numberOfLines={1}>{item.specialties?.[0]?.name || 'Vedic Astrology'}</Text>
+
             <Text style={styles.time}>
-              <MaterialIcons name="online-prediction" size={moderateScale(12)} color={COLORS.AstroGold} /> {item.time || 'Live Now'}
+              <MaterialIcons name="visibility" size={moderateScale(12)} color={COLORS.AstroGold} /> {item.viewerCount || 0} watching
             </Text>
-            
+
             <TouchableOpacity style={styles.joinButton} onPress={() => handlePress(item)}>
               <MaterialIcons name="play-circle-outline" size={moderateScale(16)} color="#fff" style={{marginRight: 4}} />
               <Text style={styles.joinButtonText}>Join Now</Text>
@@ -142,7 +89,7 @@ const Live = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.searchContainer}>
         <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
-        <TextInput 
+        <TextInput
            style={styles.searchInput}
            placeholder="Search live sessions..."
            value={searchQuery}
@@ -150,11 +97,19 @@ const Live = ({ navigation }) => {
            placeholderTextColor={COLORS.AstroMaroon}
         />
       </View>
-      <FlatList 
-        data={filteredData} 
-        renderItem={renderItem} 
-        keyExtractor={item => item.id} 
+      <FlatList
+        data={filteredData}
+        renderItem={renderItem}
+        keyExtractor={item => String(item.sessionId || item._id)}
         contentContainerStyle={{paddingBottom: verticalScale(85), paddingTop: verticalScale(5)}}
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.emptyBox}>
+              <MaterialIcons name="live-tv" size={moderateScale(40)} color={COLORS.AstroMaroon} />
+              <Text style={styles.emptyText}>No astrologers are live right now.</Text>
+            </View>
+          )
+        }
       />
     </View>
   );
@@ -297,6 +252,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(11),
     fontWeight: 'bold',
+  },
+  emptyBox: {
+    alignItems: 'center',
+    marginTop: verticalScale(80),
+  },
+  emptyText: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(15),
+    marginTop: verticalScale(12),
+    fontFamily: 'Lato-Regular',
   },
 });
 

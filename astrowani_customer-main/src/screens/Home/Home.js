@@ -1,4 +1,5 @@
-import React, {useState, useEffect, act, useTransition} from 'react';
+import React, {useState, useEffect, act, useTransition, useCallback} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
 import {
   ImageBackground,
   ScrollView,
@@ -32,36 +33,53 @@ import { showAlert } from '../../Component/CustomAlert';
 import { supabase } from '../../api/SupabaseClient';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
+import { SOCKET_URL } from '../../config/api';
+import { showStatusPopup } from '../../components/StatusPopup';
+import StarRating from '../../components/StarRating';
+import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 
-const FadeBanner = ({ banners }) => {
+// Bundled fallback banners — shown until the admin adds real banners in the dashboard.
+const FALLBACK_BANNERS = [
+  require('../../assets/images/banner.jpeg'),
+  require('../../assets/images/mainlogo.jpeg'),
+];
+
+const FadeBanner = ({ banners, intervalMs = 4000 }) => {
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
 
+  // Use admin banners when available; otherwise the bundled fallbacks.
+  // Each entry is a valid RN Image source ({uri} for remote/base64, or a require() id).
+  const slides = (banners && banners.length > 0)
+    ? banners.filter(b => b?.imageUrl).map(b => ({ uri: b.imageUrl }))
+    : FALLBACK_BANNERS;
+
   React.useEffect(() => {
-    if (!banners || banners.length <= 1) return;
+    if (!slides || slides.length <= 1) return;
     const interval = setInterval(() => {
       Animated.timing(fadeAnim, {
-        toValue: 0.2, // slightly dim instead of pitch black
-        duration: 500, // half-second fade out
+        toValue: 0.2,
+        duration: 500,
         useNativeDriver: true,
       }).start(() => {
-        setCurrentIndex((prev) => (prev + 1) % banners.length);
+        setCurrentIndex((prev) => (prev + 1) % slides.length);
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 500, // half-second fade in
+          duration: 500,
           useNativeDriver: true,
         }).start();
       });
-    }, 4000); // Wait 4 seconds before transitioning
+    }, Math.max(1000, intervalMs));
     return () => clearInterval(interval);
-  }, [banners.length]);
+  }, [slides.length, intervalMs]);
 
-  if (!banners || banners.length === 0) return null;
+  if (!slides || slides.length === 0) return null;
+  const safeIndex = currentIndex % slides.length;
 
   return (
     <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
       <Image
-        source={{ uri: banners[currentIndex]?.imageUrl }}
+        source={slides[safeIndex]}
         style={{ width: '100%', height: '100%', borderRadius: 15 }}
         resizeMode="cover"
       />
@@ -88,6 +106,7 @@ const Home = ({navigation}) => {
   const [errorReview, setErrorReview] = useState(null);
   const [loadingReview, setLoadingReview] = useState(true);
   const [banners, setBanners] = useState([]);
+  const [bannerIntervalMs, setBannerIntervalMs] = useState(4000);
   const [liveAstro, setLiveAstro] = useState([]);
   const [thought, setThought] = useState();
   const [user, setUser] = useState(null);
@@ -106,6 +125,34 @@ const Home = ({navigation}) => {
   const listRef = React.useRef(null);
   const scrollOffset = React.useRef(0);
   const isAutoScrolling = React.useRef(true);
+
+  // Call signaling refs — mirror the Call.js (Talk-To-Experts) pattern.
+  // Mount-time socket joins the customer's personal room so call_accepted arrives
+  // reliably even if the vendor accepts within seconds.
+  const socketRef = React.useRef(null);
+  const callChannelRef = React.useRef(null);
+  const navigatedRef = React.useRef(false);
+  // Tracks the in-flight call request so cancel/back can mark it cancelled + notify the vendor
+  const activeCallRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const setup = async () => {
+      socketRef.current = io(SOCKET_URL);
+      socketRef.current.on('connect', async () => {
+        const userStr = await AsyncStorage.getItem('userData');
+        const u = userStr ? JSON.parse(userStr) : null;
+        if (u?.id) socketRef.current.emit('join_room', u.id);
+      });
+      socketRef.current.on('connect_error', err =>
+        console.error('[HomeScreen] Socket error:', err.message),
+      );
+    };
+    setup();
+    return () => {
+      if (callChannelRef.current) supabase.removeChannel(callChannelRef.current);
+      if (socketRef.current) socketRef.current.disconnect();
+    };
+  }, []);
   
   const loopedAstrologers = React.useMemo(() => {
     if (!astrologerToShow || astrologerToShow.length === 0) return [];
@@ -124,102 +171,335 @@ const Home = ({navigation}) => {
     return () => clearInterval(timer);
   }, [loopedAstrologers.length]);
 
-  const getRoomTokenWebCall = async item => {
-    if (!user || Object.keys(user).length === 0 || !user.email || user.email.trim() === '') {
-      showAlert('Profile Required', 'Please complete your profile to continue.', 'error', () => {
-        navigation.navigate('UserProfileScreen', { user });
-      }, 'Complete Profile');
-      return null;
+  // Cancel the in-flight call request and tear down listeners/timeout.
+  // Also marks the request 'cancelled' in Supabase + tells the vendor so their
+  // incoming-call popup dismisses (keeps both apps in sync on back/cancel/timeout).
+  // status: 'cancelled' (user abandoned) | 'missed' (timeout, no answer) | 'rejected' (vendor declined).
+  // On 'rejected' the vendor already set the row status, so we don't overwrite it.
+  const cancelCall = (msg, status = 'cancelled', title = 'Call Ended') => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    const active = activeCallRef.current;
+    activeCallRef.current = null;
+    if (active?.requestId) {
+      if (status !== 'rejected') {
+        supabase
+          .from('call_requests')
+          .update({ status })
+          .eq('id', active.requestId)
+          .then(() => {}, () => {});
+      }
+      // Fast path: socket event so the vendor popup closes immediately.
+      socketRef.current?.emit('cancel_call', {
+        astrologer_id: active.astrologerId,
+        requestId: active.requestId,
+        roomId: active.roomId,
+      });
     }
+    if (callChannelRef.current) {
+      supabase.removeChannel(callChannelRef.current);
+      callChannelRef.current = null;
+    }
+    socketRef.current?.off('call_accepted');
+    socketRef.current?.off('call_rejected');
+    setIsWaiting(false);
+    if (msg) {
+      showStatusPopup({
+        title,
+        message: msg,
+        variant: status === 'missed' ? 'missed' : status === 'rejected' ? 'busy' : 'info',
+      });
+    }
+  };
+
+  const getRoomTokenWebCall = async item => {
+    if (!(await ensureProfileComplete(navigation))) return null;
     try {
       const token = await AsyncStorage.getItem('token');
-      const userToken = await AsyncStorage.getItem('userToken');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
-      
+
+      // Wallet check — need at least 5 minutes worth (matches Call.js)
+      const pricePerMin = Number(item.chargePerMinute || item.pricing || 0);
+      const minRequired = pricePerMin * 5;
+      const { data: customer, error: walletErr } = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', userEntireData.id)
+        .single();
+      if (walletErr) {
+        Alert.alert('Error', 'Failed to verify wallet balance.');
+        return null;
+      }
+      if (customer.wallet_balance < minRequired) {
+        Alert.alert(
+          'Insufficient Balance',
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+        );
+        return null;
+      }
+
+      navigatedRef.current = false;
       setIsWaiting(true);
       setWaitingAstroName(item.name);
 
       const response = await axios.post(
-        `http://10.0.2.2:4500/api/call/initiate`,
-        {
-          receiverId: item.userId,
-          callType: 'video',
-          callerRole: 'customer',
-          name: item.name
-        },
-        {
-          headers: {Authorization: `Bearer ${token}`},
-        },
+        `${SOCKET_URL}/api/call/initiate`,
+        { receiverId: item.userId, callType: 'audio', callerRole: 'customer', name: item.name },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      
-      if (response.status === 200) {
-        const roomTokenData = response.data.data?.token?.token || response.data.token?.token || response.data.token;
-        const vendorTokenData = response.data.data?.vendorToken || roomTokenData;
-        const roomIdData = response.data.data?.roomId || response.data.roomId;
-        
-        const { data: requestData, error: requestError } = await supabase
-          .from('call_requests')
-          .insert([{
-            customer_id: userEntireData.id,
-            astrologer_id: item.userId,
-            customer_name: userEntireData.name || 'Customer',
-            call_type: 'video',
-            status: 'pending',
-            room_id: roomIdData,
-            room_token: vendorTokenData
-          }])
-          .select()
-          .single();
 
-        if (requestError) {
-          setIsWaiting(false);
-          Alert.alert('Error', 'Failed to send request to astrologer.');
-          return null;
-        }
-
-        const socket = io('http://10.0.2.2:4500');
-        socket.on('connect', () => {
-          socket.emit('join_room', userEntireData.id);
-          
-          socket.emit('initiate_call', {
-            astrologer_id: item.userId,
-            customer_id: userEntireData.id,
-            customer_name: userEntireData.name || 'Customer',
-            call_type: 'video',
-            room_id: roomIdData,
-            room_token: vendorTokenData
-          });
-        });
-
-        socket.on('call_accepted', (data) => {
-          setIsWaiting(false);
-          socket.disconnect();
-          navigation.navigate("EnxConferenceScreen", { token: roomTokenData });
-        });
-
-        socket.on('call_rejected', (data) => {
-          setIsWaiting(false);
-          socket.disconnect();
-          Alert.alert('Declined', `${item.name} is currently busy and declined the call.`);
-        });
-
-        return response.data.token;
-      } else {
+      if (response.status !== 200) {
         setIsWaiting(false);
         Alert.alert('Error', response.data.error || 'Unexpected Error');
         return null;
       }
+
+      const callerToken = response.data.data?.token?.token || response.data.token?.token || response.data.token;
+      const vendorToken = response.data.data?.vendorToken || response.data.vendorToken || callerToken;
+      const roomId = response.data.data?.roomId || response.data.roomId;
+      const backendSessionId = response.data.data?.sessionId || response.data.sessionId;
+
+      const { data: requestData, error: requestError } = await supabase
+        .from('call_requests')
+        .insert([{
+          customer_id: userEntireData.id,
+          astrologer_id: item.userId,
+          customer_name: userEntireData.name || 'Customer',
+          call_type: 'audio',
+          status: 'pending',
+          room_id: roomId,
+          room_token: vendorToken,
+        }])
+        .select()
+        .single();
+
+      if (requestError) {
+        setIsWaiting(false);
+        Alert.alert('Error', 'Failed to send request to astrologer.');
+        return null;
+      }
+
+      // Remember the in-flight request so cancel/back can notify the vendor
+      activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
+
+      const goToCall = dbSessionId => {
+        if (navigatedRef.current) return;
+        navigatedRef.current = true;
+        activeCallRef.current = null; // accepted → don't cancel
+        if (callChannelRef.current) {
+          supabase.removeChannel(callChannelRef.current);
+          callChannelRef.current = null;
+        }
+        socketRef.current?.off('call_accepted');
+        socketRef.current?.off('call_rejected');
+        setIsWaiting(false);
+        // Audio call → VoiceCallScreen (live audio screen, matches Talk-To-Experts flow)
+        navigation.navigate('VoiceCallScreen', {
+          token: callerToken,
+          sessionId: dbSessionId || backendSessionId,
+          recieverName: item.name,
+          recieverImage: item.profileImage || '',
+          recieverId: item.userId || item._id,
+        });
+      };
+
+      // Tell backend to ring the vendor via the already-connected mount-time socket
+      socketRef.current?.emit('initiate_call', {
+        astrologer_id: item.userId,
+        customer_id: userEntireData.id,
+        customer_name: userEntireData.name || 'Customer',
+        call_type: 'audio',
+        room_id: roomId,
+        room_token: vendorToken,
+      });
+
+      // Socket listeners — mount-time socket is already connected and in customer's room
+      socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
+      socketRef.current?.on('call_rejected', () =>
+        cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+      );
+
+      // Supabase Realtime backup (catches acceptance even if socket misses it)
+      const channel = supabase
+        .channel(`call_request_home_${requestData.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_requests',
+            filter: `id=eq.${requestData.id}`,
+          },
+          payload => {
+            if (payload.new.status === 'accepted') {
+              goToCall(payload.new.session_id);
+            } else if (payload.new.status === 'rejected') {
+              cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy');
+            }
+          },
+        )
+        .subscribe();
+      callChannelRef.current = channel;
+
+      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      setTimeout(() => {
+        cancelCall('Your audio call was not picked up. Please try again later.', 'missed', 'Not Answered');
+      }, 60000);
+
+      return response.data.token;
     } catch (error) {
       setIsWaiting(false);
       Alert.alert('Error', 'Failed to initiate call');
       return null;
     }
   };
+
+  // Video call from a Home card — mirrors getRoomTokenWebCall but callType:'video'
+  // and navigates to VideoCallScreen (same flow as the Video-With-Experts tab).
+  const initiateVideoCall = async item => {
+    if (!(await ensureProfileComplete(navigation))) return null;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
+
+      // Wallet check — need at least 5 minutes worth (video rate)
+      const pricePerMin = Number(item.videoPrice || item.chargePerMinute || item.pricing || 0);
+      const minRequired = pricePerMin * 5;
+      const { data: customer, error: walletErr } = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', userEntireData.id)
+        .single();
+      if (walletErr) {
+        Alert.alert('Error', 'Failed to verify wallet balance.');
+        return null;
+      }
+      if (customer.wallet_balance < minRequired) {
+        Alert.alert(
+          'Insufficient Balance',
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+        );
+        return null;
+      }
+
+      navigatedRef.current = false;
+      setIsWaiting(true);
+      setWaitingAstroName(item.name);
+
+      const response = await axios.post(
+        `${SOCKET_URL}/api/call/initiate`,
+        { receiverId: item.userId, callType: 'video', callerRole: 'customer', name: item.name },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (response.status !== 200) {
+        setIsWaiting(false);
+        Alert.alert('Error', response.data.error || 'Unexpected Error');
+        return null;
+      }
+
+      const callerToken = response.data.data?.token?.token || response.data.token?.token || response.data.token;
+      const vendorToken = response.data.data?.vendorToken || response.data.vendorToken || callerToken;
+      const roomId = response.data.data?.roomId || response.data.roomId;
+      const backendSessionId = response.data.data?.sessionId || response.data.sessionId;
+
+      const { data: requestData, error: requestError } = await supabase
+        .from('call_requests')
+        .insert([{
+          customer_id: userEntireData.id,
+          astrologer_id: item.userId,
+          customer_name: userEntireData.name || 'Customer',
+          call_type: 'video',
+          status: 'pending',
+          room_id: roomId,
+          room_token: vendorToken,
+        }])
+        .select()
+        .single();
+
+      if (requestError) {
+        setIsWaiting(false);
+        Alert.alert('Error', 'Failed to send request to astrologer.');
+        return null;
+      }
+
+      // Remember the in-flight request so cancel/back can notify the vendor
+      activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
+
+      const goToCall = dbSessionId => {
+        if (navigatedRef.current) return;
+        navigatedRef.current = true;
+        activeCallRef.current = null; // accepted → don't cancel
+        if (callChannelRef.current) {
+          supabase.removeChannel(callChannelRef.current);
+          callChannelRef.current = null;
+        }
+        socketRef.current?.off('call_accepted');
+        socketRef.current?.off('call_rejected');
+        setIsWaiting(false);
+        navigation.navigate('VideoCallScreen', {
+          token: callerToken,
+          sessionId: dbSessionId || backendSessionId,
+          recieverName: item.name,
+          recieverImage: item.profileImage || '',
+          recieverId: item.userId || item._id,
+        });
+      };
+
+      socketRef.current?.emit('initiate_call', {
+        astrologer_id: item.userId,
+        customer_id: userEntireData.id,
+        customer_name: userEntireData.name || 'Customer',
+        call_type: 'video',
+        room_id: roomId,
+        room_token: vendorToken,
+      });
+
+      socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
+      socketRef.current?.on('call_rejected', () =>
+        cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+      );
+
+      const channel = supabase
+        .channel(`video_call_request_home_${requestData.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_requests',
+            filter: `id=eq.${requestData.id}`,
+          },
+          payload => {
+            if (payload.new.status === 'accepted') {
+              goToCall(payload.new.session_id);
+            } else if (payload.new.status === 'rejected') {
+              cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy');
+            }
+          },
+        )
+        .subscribe();
+      callChannelRef.current = channel;
+
+      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      setTimeout(() => {
+        cancelCall('Your video call was not picked up. Please try again later.', 'missed', 'Not Answered');
+      }, 60000);
+
+      return response.data.token;
+    } catch (error) {
+      setIsWaiting(false);
+      Alert.alert('Error', 'Failed to initiate video call');
+      return null;
+    }
+  };
   const getBanner = async () => {
-    return await Instance(`/api/banners/all`)
+    return await Instance(`/api/banners/all?app=customer`)
       .then(response => {
         // console.log("response: ", response?.data);
         setBanners(response?.data?.data);
+        const secs = Number(response?.data?.intervalSeconds);
+        if (secs > 0) setBannerIntervalMs(secs * 1000);
       })
       .catch(error => {
         console.log('error on getBanner: ', error);
@@ -317,10 +597,10 @@ const Home = ({navigation}) => {
         const response = await Instance.get('/api/astrologers', {
           headers: {Authorization: `Bearer ${token}`},
         });
-        const astroResponse = response.data.data;
-        const sliceData =
-          astroResponse.length >= 7 ? astroResponse.slice(0, 7) : astroResponse;
-        setAstrologerToShow(sliceData);
+        const astroResponse = response.data.data || [];
+        // Show every astrologer in the carousel (no hard slice, no filtering).
+        // Per-card Chat/Call buttons reflect each astrologer's toggles (red "Unavailable" when off).
+        setAstrologerToShow(astroResponse);
         setAstrologer(astroResponse);
       } catch (err) {
         setErrorAstrologer(err.message);
@@ -330,13 +610,14 @@ const Home = ({navigation}) => {
     };
 
     const getLiveAstro = async () => {
-      return await Instance.get(`/api/astrologers/liveAstrologers`)
+      // Only astrologers actually broadcasting (real lives, not fake "Scheduled").
+      return await Instance.get(`/api/live/active`)
         .then(response => {
-          setLiveAstro(response.data.data);
+          setLiveAstro(response.data.data || []);
           setLoading(false);
         })
         .catch(error => {
-          console.log('getSpecialAstrology: ', error);
+          console.log('getLiveAstro: ', error);
           setLoading(false);
         });
     };
@@ -381,6 +662,53 @@ const Home = ({navigation}) => {
     loadAllData();
   }, []);
 
+  // Refresh the astrologer carousel whenever Home regains focus (catches vendor toggle changes)
+  useFocusEffect(
+    useCallback(() => {
+      fetchAstrologer();
+    }, []),
+  );
+
+  // Live sync — re-fetch the carousel when any astrologer row changes.
+  // Unique channel name per mount: a fixed name makes supabase.channel() return an
+  // already-subscribed channel, and chaining .on() after subscribe() throws
+  // ("cannot add postgres_changes callbacks ... after subscribe()").
+  const astroChannelName = React.useRef(
+    `home-astro-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+  ).current;
+  useEffect(() => {
+    const channel = supabase
+      .channel(astroChannelName)
+      .on(
+        'postgres_changes',
+        {event: '*', schema: 'public', table: 'astrologers'},
+        () => fetchAstrologer(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Live sync — re-fetch the blog carousel when the admin publishes/edits a blog.
+  // Unique channel name per mount (same rule as the astrologer subscription above).
+  const blogChannelName = React.useRef(
+    `home-blog-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+  ).current;
+  useEffect(() => {
+    const channel = supabase
+      .channel(blogChannelName)
+      .on(
+        'postgres_changes',
+        {event: '*', schema: 'public', table: 'blogs'},
+        () => fetchBlogs(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = () => {
     setRefreshing(true);
@@ -408,20 +736,11 @@ const Home = ({navigation}) => {
     navigation.navigate('AstrologerInfo', {person: person});
   };
 
-  const isProfileComplete = () => {
-    if (!user || Object.keys(user).length === 0) return false;
-    if (!user.email || user.email.trim() === '') return false;
-    // Add any other required fields here
-    return true;
-  };
+  // Shared profile-gate check (name, valid email, gender, dob, place of birth).
+  const isProfileComplete = () => checkProfileComplete(user);
 
   const handleChatPress = async (item) => {
-    if (!isProfileComplete()) {
-      showAlert('Profile Required', 'Please complete your profile to continue.', 'error', () => {
-        navigation.navigate('UserProfileScreen', { user });
-      }, 'Complete Profile');
-      return;
-    }
+    if (!(await ensureProfileComplete(navigation))) return;
     console.log("Starting chat from Home with astrologer:", item._id);
     console.log(item,"this is items")
     navigation.navigate('PersonToPersonChat', {
@@ -446,7 +765,6 @@ const Home = ({navigation}) => {
   };
 
   const renderAstrologerList = ({item}) => {
-    console.log(item, 'this is item############');
     const languages = item.language?.join(', ');
     return (
       <TouchableOpacity
@@ -475,24 +793,34 @@ const Home = ({navigation}) => {
           </Text>
           <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}>
             <TouchableOpacity
-              onPress={() => handleChatPress(item)}
-              style={styles.chatBtn}>
-              <Text style={styles.chatBtnTxt}>{t('chat')}</Text>
+              activeOpacity={0.8}
+              onPress={() =>
+                item.isChatEnabled
+                  ? handleChatPress(item)
+                  : Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for chat right now.`)
+              }
+              style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
+              <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('chat') : 'No Chat'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              // onPress={() =>
-              //   navigation.navigate('EnxJoinScreen', {
-              //     userId: item._id,
-              //     callType: 'voice',
-              //     callerRole: 'sender',
-              //     userName: item.name,
-              //   })
-              // }
-              onPress={() => {
-                getRoomTokenWebCall(item);
-              }}
-              style={styles.callButton}>
-              <Text style={styles.chatBtnTxt}>{t('call')}</Text>
+              activeOpacity={0.8}
+              onPress={() =>
+                item.isCallEnabled
+                  ? getRoomTokenWebCall(item)
+                  : Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for calls right now.`)
+              }
+              style={item.isCallEnabled ? styles.callButton : styles.unavailableBtn}>
+              <Text style={item.isCallEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isCallEnabled ? t('call') : 'No Call'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() =>
+                item.isVideoEnabled
+                  ? initiateVideoCall(item)
+                  : Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for video call right now.`)
+              }
+              style={item.isVideoEnabled ? styles.videoButton : styles.unavailableBtn}>
+              <Text style={item.isVideoEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isVideoEnabled ? 'Video' : 'No Video'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -515,19 +843,7 @@ const Home = ({navigation}) => {
             style={styles.ReviewerImage}
           />
 
-          <View style={styles.starsContainer}>
-            {item.rating
-              ? Array.from({length: item.rating}).map((_, index) => (
-                  <MaterialIcons
-                    key={index}
-                    name="star"
-                    size={moderateScale(14)}
-                    color="orange"
-                    style={styles.star}
-                  />
-                ))
-              : null}
-          </View>
+          <StarRating rating={item.rating} totalReviews={item.totalReviews} size={14} style={styles.starsContainer} />
         </View>
 
         <View style={styles.ReviewWrapper}>
@@ -547,23 +863,24 @@ const Home = ({navigation}) => {
 
   const AstrologerItem = ({astrologer}) => {
     return (
-      <TouchableOpacity style={styles.AstroBackWrapper}>
+      <TouchableOpacity
+        style={styles.AstroBackWrapper}
+        onPress={() =>
+          navigation.navigate('LiveViewerScreen', {
+            sessionId: astrologer.sessionId,
+            astrologer,
+          })
+        }>
         <Image
           source={{uri: astrologer.profileImage || astrologer.image}}
           style={styles.liveAstrologerimg}
         />
-        <View
-          style={[
-            styles.livebtn,
-            astrologer.live ? styles.live : styles.scheduled,
-          ]}>
-          <Text style={astrologer.live ? styles.livetxt : styles.scheduledtxt}>
-            {astrologer.live ? t('live') : t('scheduled')}
-          </Text>
+        <View style={[styles.livebtn, styles.live]}>
+          <Text style={styles.livetxt}>{t('live')}</Text>
         </View>
         <View style={styles.astroNameview}>
           <Text style={styles.livename}>{astrologer.name}</Text>
-          <Text style={styles.topic}>{astrologer.topic}</Text>
+          <Text style={styles.topic}>{astrologer.specialties?.[0]?.name || ''}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -627,7 +944,7 @@ const Home = ({navigation}) => {
           shadowRadius: 5
         }}>
           <View style={{height: 150, marginHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
-            <FadeBanner banners={banners} />
+            <FadeBanner banners={banners} intervalMs={bannerIntervalMs} />
           </View>
 
           <View style={styles.topAstrologers}>
@@ -685,7 +1002,12 @@ const Home = ({navigation}) => {
                 categories?.length > 0 &&
                 categories?.map((item, index) => (
                   <TouchableOpacity
-                    onPress={() => navigation.navigate('Chat')}
+                    onPress={() =>
+                      navigation.navigate('CategoryAstrologers', {
+                        categoryId: item._id,
+                        categoryName: item.name,
+                      })
+                    }
                     key={index}
                     style={styles.category}>
                     <FastImage
@@ -847,21 +1169,7 @@ const Home = ({navigation}) => {
                   {selectedReview.user?.firstName || 'Anonymous'}
                 </Text>
 
-                <View style={styles.starsContainer}>
-                  {selectedReview.rating
-                    ? Array.from({length: selectedReview.rating}).map(
-                        (_, index) => (
-                          <MaterialIcons
-                            key={index}
-                            name="star"
-                            size={moderateScale(18)}
-                            color={COLORS.AstroGold}
-                            style={styles.star}
-                          />
-                        ),
-                      )
-                    : null}
-                </View>
+                <StarRating rating={selectedReview.rating} size={18} style={styles.starsContainer} />
 
                 <Text style={styles.modalReview}>
                   {selectedReview.comment || 'no comment'}
@@ -891,14 +1199,14 @@ const Home = ({navigation}) => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('VoiceCallScreen')}
+          onPress={() => navigation.navigate('Call')}
           style={styles.fixedBtn}>
           <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
           <Text style={styles.fixedBtnTxt}>Talk To Astrologer</Text>
         </TouchableOpacity>
       </View>
 
-      <Modal transparent={true} visible={isWaiting} animationType="fade">
+      <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={() => cancelCall()}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
           <View style={{ 
             width: '85%', 
@@ -923,7 +1231,7 @@ const Home = ({navigation}) => {
                 width: '100%',
                 alignItems: 'center'
               }}
-              onPress={() => setIsWaiting(false)}
+              onPress={() => cancelCall()}
             >
               <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>Cancel Request</Text>
             </TouchableOpacity>
@@ -1181,6 +1489,16 @@ const styles = StyleSheet.create({
     borderColor: 'green',
     elevation: 1,
   },
+  videoButton: {
+    backgroundColor: 'white',
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(12),
+    marginVertical: verticalScale(5),
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
+    elevation: 1,
+  },
   callButton: {
     backgroundColor: 'white',
     borderRadius: moderateScale(20),
@@ -1193,6 +1511,22 @@ const styles = StyleSheet.create({
   },
   chatBtnTxt: {
     color: 'black',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(10),
+  },
+  unavailableBtn: {
+    backgroundColor: '#C0392B',
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(12),
+    marginVertical: verticalScale(5),
+    borderWidth: 1,
+    borderColor: '#C0392B',
+    opacity: 0.9,
+    elevation: 1,
+  },
+  unavailableBtnTxt: {
+    color: 'white',
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(10),
   },

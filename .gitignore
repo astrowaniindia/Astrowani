@@ -1,0 +1,54 @@
+# Node modules (all subprojects)
+node_modules/
+**/node_modules/
+
+# Gradle build cache and outputs
+.gradle_cache/
+**/.gradle/
+**/build/
+**/.gradle_cache/
+
+# React Native build outputs
+**/android/app/build/
+**/android/build/
+**/ios/build/
+**/ios/Pods/
+
+# Environment files (secrets)
+.env
+.env.local
+.env.production
+**/.env
+**/.env.local
+**/.env.production
+
+# Lock files (optional - remove if you want to keep them)
+# yarn.lock
+# package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Android keystore (keep secret)
+*.keystore
+*.jks
+
+# Metro bundler cache
+**/.metro-health-check*
+
+# Temporary files
+tmp/
+temp/

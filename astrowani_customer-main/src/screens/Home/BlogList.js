@@ -104,6 +104,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../../api/SupabaseClient';
 
 const BlogList = ({ navigation }) => {
   const [blogs, setBlogs] = useState([]);
@@ -144,6 +145,24 @@ const BlogList = ({ navigation }) => {
 
   useEffect(() => {
     fetchBlogs(1, true);
+  }, []);
+
+  // Live sync — re-fetch the list when the admin publishes/edits a blog.
+  // Unique channel name per mount (app-wide rule: a fixed name makes
+  // supabase.channel() return an already-subscribed channel and .on() throws).
+  useEffect(() => {
+    const channelName = `blog-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'blogs' },
+        () => fetchBlogs(1, true),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleLoadMore = () => {

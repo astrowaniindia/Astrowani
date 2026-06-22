@@ -31,7 +31,14 @@ export const acceptChatRequest = async (request) => {
   const perMinute = astro?.chatChargePerMinute ?? 0;
 
   const { data: sess, error: sessErr } = await supabase.from('chat_sessions').insert([
-    { request_id: request.id, per_minute_charge: perMinute },
+    {
+      request_id: request.id,
+      per_minute_charge: perMinute,
+      call_type: 'chat',
+      is_active: false,
+      caller_id: request.caller_id || null, // Assuming request might have caller_id
+      vendor_id: request.vendor_id || null, // Assuming request might have vendor_id
+    },
   ]);
   if (sessErr) throw sessErr;
   return sess[0];

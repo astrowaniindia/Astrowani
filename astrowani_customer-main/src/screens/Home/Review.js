@@ -1,33 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, FlatList, ScrollView } from 'react-native';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { COLORS } from '../../Theme/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
-
-const reviews = [
-  {
-    id: '1',
-    name: 'John Doe',
-    image: 'https://randomuser.me/api/portraits/men/1.jpg',
-    rating: 5,
-    title: 'Great Service!',
-  },
-  {
-    id: '2',
-    name: 'Jane Smith',
-    image: 'https://randomuser.me/api/portraits/women/2.jpg',
-    rating: 4,
-    title: 'Good experience',
-  },
-  {
-    id: '3',
-    name: 'Michael Lee',
-    image: 'https://randomuser.me/api/portraits/men/3.jpg',
-    rating: 5,
-    title: 'Highly recommended!',
-  },
-];
+import StarRating from '../../components/StarRating';
 
 const CustomerReview = ({ review }) => {
   const [user, setUser] = useState(null);
@@ -79,24 +55,28 @@ const CustomerReview = ({ review }) => {
     feedbackData();
   }, []);
 
+  // Nothing real to show yet — don't render a fake/empty carousel.
+  if (!feedback || feedback.length === 0) return null;
+
   return (
     <View style={{ padding: 10 }}>
-      <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10, color: COLORS.black, }}>Customer Reviews</Text>
+      <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10, color: COLORS.black, }}>Get Best Solutions</Text>
       <FlatList
         data={feedback}
         horizontal={true}
         showsHorizontalScrollIndicator={false}
-        keyExtractor={item => item.id}
+        keyExtractor={(item, index) => String(index)}
         renderItem={({ item }) => (
           <View style={styles.reviewCard}>
-            <Image source={{ uri: item?.user?.profilePic }} style={styles.profileImage} />
-            <Text style={styles.name}>{item?.user?.firstName + " " + item?.user?.lastName || 'Anonymous'}</Text>
-            <View style={styles.starContainer}>
-              {[...Array(5)].map((_, index) => (
-                <Icon key={index} name="star" size={18} color={index < item.rating ? '#FFD700' : '#ccc'} />
-              ))}
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarInitial}>{(item?.user?.firstName || 'C').charAt(0)}</Text>
             </View>
-            <Text style={styles.title}>{item?.comment}</Text>
+            <Text style={styles.name} numberOfLines={1}>{item?.user?.firstName || 'Customer'}</Text>
+            {!!item?.astrologerName && (
+              <Text style={styles.forAstro} numberOfLines={1}>for {item.astrologerName}</Text>
+            )}
+            <StarRating rating={item?.rating} size={16} style={styles.starContainer} />
+            {!!item?.comment && <Text style={styles.title} numberOfLines={3}>{item.comment}</Text>}
           </View>
         )}
       />
@@ -121,15 +101,28 @@ const styles = {
     elevation: 3,
     marginVertical: 10,
   },
-  profileImage: {
+  avatarCircle: {
     width: 50,
     height: 50,
     borderRadius: 25,
     marginBottom: 5,
+    backgroundColor: COLORS.AstroMaroon,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   name: {
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  forAstro: {
+    fontSize: 11,
+    color: COLORS.AstroMaroon,
+    marginTop: 2,
   },
   starContainer: {
     flexDirection: 'row',

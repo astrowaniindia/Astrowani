@@ -51,17 +51,23 @@ const OtpScreen = ({ navigation, route }) => {
         // Hardcoded to log in as Ansh Sharma regardless of what phone number was typed
         const { data: exactUser } = await supabase
           .from('astrologers')
-          .select('id')
+          .select('id, approval_status')
           .eq('phone_number', '1234567890')
           .single();
-          
+
         if (exactUser) {
           await AsyncStorage.setItem('astroId', String(exactUser.id));
         }
 
         await AsyncStorage.setItem('userToken', 'dummy_token_for_now');
         await AsyncStorage.setItem('token', 'dummy_token_for_now');
-        navigation.navigate('DrawerNavigator');
+
+        // Gate on admin approval — pending/rejected vendors can't reach the dashboard.
+        if (exactUser && exactUser.approval_status !== 'approved') {
+          navigation.reset({ index: 0, routes: [{ name: 'PendingApproval' }] });
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+        }
       } else {
         Alert.alert('Error', 'Invalid OTP. Please try again.');
       }

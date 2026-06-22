@@ -10,6 +10,8 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import axios from 'axios';
+import { SOCKET_URL } from '../config/api';
+
 
 // import Logo from '../assets/img/logo.png';
 
@@ -92,7 +94,7 @@ class App extends Component<Props, State> {
     console.log(roomID, '55555555555555555');
     try {
       const response = await axios.post(
-        `https://astrowani-afd23a5eb44a.herokuapp.com/calling/initiate`,
+        `${SOCKET_URL}/api/call/initiate`,
         {
           receiverId: userId,
           callType: "voice",

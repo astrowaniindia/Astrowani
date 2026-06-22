@@ -60,52 +60,66 @@ const UserProfileScreen = ({navigation, route}) => {
     profilePic: user.profilePic || '',
     handPic: user.handPic || '',
     email: user.email || '',
-    firstName: user.firstName || '',
-    lastName: user.lastName || '',
+    firstName: user.firstName || user.name || '',
     gender: user.gender || '',
     state: user.state || '',
     maritalStatus: user.maritalStatus || '',
     dateOfBirth: '',
     timeOfBirth: '',
-    phoneNumber: user.phoneNumber || '',
-    address: {
-      city: (user.address && user.address.city) || '',
-      pinCode: (user.address && user.address.pinCode) || '',
-      location: (user.address && user.address.location) || '',
-      state: (user.address && user.address.State) || '',
-    },
+    phoneNumber: user.phoneNumber || user.phone || '',
+    city: user.city || user.placeOfBirth || '',
   });
 
-  useEffect(() => {
-    const fetchSupabaseProfile = async () => {
-      if (user.phoneNumber || userProfile.phoneNumber) {
-        try {
-          const mobileNumber = user.phoneNumber || userProfile.phoneNumber;
-          const { data, error } = await supabase.from('customers').select('*').eq('mobile', mobileNumber).single();
+  // Parse a "HH:MM[:SS]" string into a Date (today) for the time picker.
+  const parseTime = (t) => {
+    if (!t) return '';
+    const [h, m] = String(t).split(':');
+    const d = new Date();
+    d.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
+    return d;
+  };
 
-          if (data && !error) {
-            setUserProfile(prev => ({
-              ...prev,
-              firstName: prev.firstName || data.name || '',
-              gender: prev.gender || data.gender || '',
-              email: prev.email || data.email || '',
-              dateOfBirth: data.dob ? new Date(data.dob) : prev.dateOfBirth,
-              address: { ...prev.address, city: prev.address.city || data.place_of_birth || '' }
-            }));
-          }
-        } catch (err) {
-          console.log('Supabase fetch error:', err);
+  // Load the full profile from the backend (single source of truth).
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) return;
+        const res = await Instance.get('/api/users/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const d = res?.data?.data;
+        if (d) {
+          setUserProfile(prev => ({
+            ...prev,
+            firstName: d.name || prev.firstName,
+            email: d.email || prev.email,
+            gender: d.gender || prev.gender,
+            maritalStatus: d.maritalStatus || prev.maritalStatus,
+            state: d.state || prev.state,
+            city: d.placeOfBirth || prev.city,
+            phoneNumber: d.phone || prev.phoneNumber,
+            profilePic: d.profilePic || prev.profilePic,
+            handPic: d.handPic || prev.handPic,
+            dateOfBirth: d.dob ? new Date(d.dob) : prev.dateOfBirth,
+            timeOfBirth: d.timeOfBirth ? parseTime(d.timeOfBirth) : prev.timeOfBirth,
+          }));
         }
+      } catch (err) {
+        console.log('Profile fetch error:', err?.message);
       }
     };
-    fetchSupabaseProfile();
-  }, [user.phoneNumber]);
+    fetchProfile();
+  }, []);
 
   const handleEditPic = (type = 'profilePic') => {
-    const options = { title: 'Select Image', mediaType: 'photo', includeBase64: false, quality: 0.8 };
+    const options = { title: 'Select Image', mediaType: 'photo', includeBase64: true, quality: 0.6, maxWidth: 1000, maxHeight: 1000 };
     launchImageLibrary(options, response => {
       if (!response.didCancel && !response.error && response.assets?.length > 0) {
-        handleInputChange(type, response.assets[0].uri);
+        const asset = response.assets[0];
+        // Store as a base64 data-URI so it persists in the DB and renders cross-device.
+        const value = asset.base64 ? `data:${asset.type || 'image/jpeg'};base64,${asset.base64}` : asset.uri;
+        handleInputChange(type, value);
       }
     });
   };
@@ -138,35 +152,34 @@ const UserProfileScreen = ({navigation, route}) => {
       const token = await AsyncStorage.getItem('token');
       if (!token) throw new Error('Token not found');
 
-      // 1. Update existing NodeJS Backend
-      const response = await Instance.put('/api/users/profile', userProfile, {
+      const tob = userProfile.timeOfBirth
+        ? new Date(userProfile.timeOfBirth).toTimeString().slice(0, 5) // "HH:MM"
+        : null;
+      const payload = {
+        name: userProfile.firstName,
+        email: userProfile.email,
+        gender: userProfile.gender,
+        maritalStatus: userProfile.maritalStatus || null,
+        dob: userProfile.dateOfBirth ? new Date(userProfile.dateOfBirth).toISOString() : null,
+        timeOfBirth: tob,
+        city: userProfile.city || null,
+        state: userProfile.state || null,
+        profilePic: userProfile.profilePic || null,
+        handPic: userProfile.handPic || null,
+      };
+
+      const response = await Instance.put('/api/users/profile', payload, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
 
-      // 2. Synchronize with Supabase for real-time signaling data
-      if (userProfile.phoneNumber) {
-        try {
-          const supabaseUpdate = {
-            name: userProfile.firstName,
-            email: userProfile.email,
-            gender: userProfile.gender,
-            dob: userProfile.dateOfBirth ? new Date(userProfile.dateOfBirth).toISOString() : null,
-            place_of_birth: userProfile.address?.city || null,
-          };
-          const { error: sbError } = await supabase
-            .from('customers')
-            .update(supabaseUpdate)
-            .eq('mobile', userProfile.phoneNumber);
-            
-          if (sbError) console.warn('Supabase profile sync warning:', sbError);
-        } catch (sbEx) {
-          console.warn('Supabase profile sync exception:', sbEx);
-        }
-      }
-
-      if (response.data) {
+      const updated = response?.data?.data;
+      if (updated) {
+        // Refresh the cached user so the profile gate unlocks immediately everywhere.
+        await AsyncStorage.setItem('userData', JSON.stringify(updated));
         Alert.alert('Success', 'Profile updated successfully!');
         navigation.goBack();
+      } else {
+        throw new Error('Update failed');
       }
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Error updating profile');
@@ -282,8 +295,8 @@ const UserProfileScreen = ({navigation, route}) => {
               
               <View style={styles.divider} />
               <Text style={styles.formSectionTitle}>Location</Text>
-              {renderField('business-outline', 'City', userProfile.address.city, t => handleInputChange('address', t, 'city'))}
-              {renderField('map-outline', 'State', userProfile.address.state, v => handleInputChange('state', v, 'state'), 'dropdown', { data: StatesOfIndia })}
+              {renderField('business-outline', 'City (Place of Birth)', userProfile.city, t => handleInputChange('city', t))}
+              {renderField('map-outline', 'State', userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
             </View>
           </View>
         )}

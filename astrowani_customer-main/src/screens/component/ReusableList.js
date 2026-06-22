@@ -18,6 +18,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../api/SupabaseClient';
+import StarRating from '../../components/StarRating';
+import { SOCKET_URL } from '../../config/api';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
   const navigation = useNavigation();
@@ -71,7 +73,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
       try {
         // 1. Generate the call room FIRST
         const callResponse = await axios.post(
-          `http://10.0.2.2:4500/api/call/initiate`,
+          `${SOCKET_URL}/api/call/initiate`,
           {
             receiverId: item.userId,
             callType: "voice",
@@ -167,28 +169,49 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     }
   };
 
+  // Show an "unavailable" message when a customer taps a service the astrologer
+  // has turned off — the astrologer stays visible; only the button is disabled.
+  const showUnavailable = (item, serviceLabel) => {
+    Alert.alert(
+      'Unavailable',
+      `${item.name || 'This astrologer'} is not available for ${serviceLabel} right now.`,
+    );
+  };
+
   const renderButton = (item) => {
     switch (buttonType) {
-      case 'video':
+      case 'video': {
+        // Same pill style as the Chat button (maroon, small) for a consistent look.
+        const enabled = item.isVideoEnabled;
         return (
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => {getRoomTokenWebCall(item)}}
-          >
-            <MaterialIcons name="videocam" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
-            <Text style={styles.actionBtnText}>Video</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
+              activeOpacity={0.8}
+              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'video call'))}
+            >
+              <MaterialIcons name={enabled ? 'videocam' : 'videocam-off'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+              <Text style={styles.chatText}>{enabled ? 'Video' : 'Unavailable'}</Text>
+            </TouchableOpacity>
+          </View>
         );
-      case 'call':
+      }
+      case 'call': {
+        // Same pill style as the Chat button; uses the parent-provided handler.
+        const enabled = item.isCallEnabled;
         return (
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => getRoomTokenWebCall(item)}
-          >
-            <MaterialIcons name="call" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
-            <Text style={styles.actionBtnText}>Call</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
+              activeOpacity={0.8}
+              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'calls'))}
+            >
+              <MaterialIcons name={enabled ? 'call' : 'phone-disabled'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+              <Text style={styles.chatText}>{enabled ? 'Call' : 'Unavailable'}</Text>
+            </TouchableOpacity>
+          </View>
         );
+      }
       case 'view profile':
         return (
           <TouchableOpacity
@@ -199,18 +222,21 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
           </TouchableOpacity>
         );
       case 'chat':
-      default:
+      default: {
+        const enabled = item.isChatEnabled;
         return (
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.actionBtnChat, styles.smallButton]}
-              onPress={() => actionButton(item)}
+              style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
+              activeOpacity={0.8}
+              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'chat'))}
             >
-              <MaterialIcons name="chat" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
-              <Text style={styles.chatText}>Chat</Text>
+              <MaterialIcons name={enabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+              <Text style={styles.chatText}>{enabled ? 'Chat' : 'Unavailable'}</Text>
             </TouchableOpacity>
           </View>
         );
+      }
     }
   };
 
@@ -237,17 +263,11 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
               style={styles.avatar}
             />
 
-            <View style={styles.starsContainer}>
-              {Array.from({length: item?.rating || 0}).map((_, index) => (
-                <MaterialIcons
-                  key={index}
-                  name="star"
-                  size={moderateScale(14)}
-                  color={COLORS.AstroGold}
-                  style={styles.star}
-                />
-              ))}
-            </View>
+            <StarRating
+              rating={item?.rating}
+              size={13}
+              style={styles.starsContainer}
+            />
           </View>
           <View style={styles.details}>
             <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
@@ -488,6 +508,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
+  },
+  // Red "unavailable" states — astrologer stays visible, button signals the service is off
+  actionBtnUnavailable: {
+    backgroundColor: '#C0392B',
+    borderRadius: moderateScale(25),
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.85,
+  },
+  actionBtnUnavailableChat: {
+    backgroundColor: '#C0392B',
+    opacity: 0.85,
   },
   actionBtnProfile: {
     borderColor: COLORS.AstroMaroon,

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -7,16 +7,51 @@ import {
   StatusBar,
   Modal,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {supabase} from '../api/SupabaseClient';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(null);
+  const [walletBalance, setWalletBalance] = useState(null);
+  let subscription = null;
+
+  const fetchBalance = async () => {
+    const astroId = await AsyncStorage.getItem('astroId');
+    if (!astroId) return;
+    if (subscription) {
+      supabase.removeChannel(subscription);
+      subscription = null;
+    }
+    const {data} = await supabase
+      .from('astrologers')
+      .select('wallet_balance')
+      .eq('id', astroId)
+      .single();
+    if (data) setWalletBalance(data.wallet_balance);
+
+    subscription = supabase
+      .channel(`vendor_wallet_header_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
+      .on('postgres_changes', {event: 'UPDATE', schema: 'public', table: 'astrologers', filter: `id=eq.${astroId}`}, payload => {
+        if (payload.new?.wallet_balance !== undefined) {
+          setWalletBalance(payload.new.wallet_balance);
+        }
+      })
+      .subscribe();
+  };
+
+  useEffect(() => {
+    fetchBalance();
+    return () => {
+      if (subscription) supabase.removeChannel(subscription);
+    };
+  }, []);
 
   const toggleLanguageModal = () => {
     setLanguageModalVisible(!languageModalVisible);
@@ -46,8 +81,11 @@ const CustomHeader = ({title, showLanguage}) => {
           <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginRight: 12 }}>
             <Ionicons name="person-circle-outline" color="white" size={26} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={{ marginRight: showLanguage ? 12 : 0 }}>
-            <Ionicons name="wallet-outline" color="white" size={24} />
+          <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={[styles.walletBtn, { marginRight: showLanguage ? 12 : 0 }]}>
+            <Ionicons name="wallet-outline" color="white" size={22} />
+            {walletBalance !== null && (
+              <Text style={styles.walletAmount}>₹{walletBalance}</Text>
+            )}
           </TouchableOpacity>
           {showLanguage && (
             <TouchableOpacity onPress={toggleLanguageModal}>
@@ -124,6 +162,20 @@ const styles = StyleSheet.create({
   notificationView: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  walletBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(14),
+    gap: scale(4),
+  },
+  walletAmount: {
+    color: '#fff',
+    fontSize: moderateScale(13),
+    fontWeight: '700',
   },
   modalContainer: {
     flex: 1,

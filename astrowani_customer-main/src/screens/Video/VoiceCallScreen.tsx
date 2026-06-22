@@ -1,9 +1,9 @@
-import React, {useState, useEffect, useCallback, useRef, useMemo} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   StyleSheet,
   Text,
   Alert,
-  TouchableHighlight,
+  TouchableOpacity,
   View,
   Image,
   StatusBar,
@@ -11,923 +11,499 @@ import {
   Platform,
   Animated,
   Easing,
+  PermissionsAndroid,
 } from 'react-native';
-
-import {EnxRoom, Enx, EnxStream} from 'enx-rtc-react-native';
+import {
+  RTCPeerConnection,
+  RTCSessionDescription,
+  RTCIceCandidate,
+  mediaDevices,
+} from 'react-native-webrtc';
+import InCallManager from 'react-native-incall-manager';
 import axios from 'axios';
-import messaging from '@react-native-firebase/messaging';
-import {HEIGHT, WIDTH} from '../common/consts/config';
-import VectorIcon from '../../common/component/VectorIcon';
-// import {BASE_URL} from '../Api/Url';
-// import {END_CALL} from '../Api/baseUrl';
-import {CustomToast} from '../../common/component/CustomToast';
-import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import io from 'socket.io-client';
+import {SOCKET_URL} from '../../config/api';
+import {showReviewPrompt} from '../../components/ReviewPrompt';
+import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
-// import { scaleWidth } from '../../common/consts/size';
+
+type CallState = 'connecting' | 'ringing' | 'in_call';
+
+const AVATAR_SIZE = 140;
+const RING_BASE = AVATAR_SIZE + 40;
+
+const ICE_SERVERS = {
+  iceServers: [
+    {urls: 'stun:stun.l.google.com:19302'},
+    {urls: 'stun:stun1.l.google.com:19302'},
+  ],
+};
+
 const VoiceCallScreen = ({route, navigation}: any) => {
-  // Extract route params with defaults
   const {
-    token = '',
-    username = '',
-    userToken = '',
-    recieverName = '',
-    recieverAge = '',
-    recieverDistance = '',
+    sessionId: initialSessionId = '',
+    recieverName = 'Astrologer',
     recieverImage = '',
-    sessionId = '',
-    receiverId = '',
-    isIncoming = false, // New param to distinguish incoming calls
+    recieverId = '',
   } = route.params || {};
-  // State management
+
+  const sessionIdRef = useRef(initialSessionId);
+
+  const [callState, setCallState] = useState<CallState>('connecting');
   const [audioMuted, setAudioMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
-  const [localStreamId, setLocalStreamId] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
-  const [callAcceptanceDuration, setCallAcceptanceDuration] = useState(30);
-  const [isCallAccepted, setIsCallAccepted] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [showIncomingCallUI, setShowIncomingCallUI] = useState(isIncoming); // Show accept/reject for incoming calls
+  const [ringCountdown, setRingCountdown] = useState(30);
 
-  // Animation values
+  const callStateRef = useRef<CallState>('connecting');
+  const isConnectedRef = useRef(false);
+  const callDurationRef = useRef(0);
+  const isEndingRef = useRef(false);
+
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<any>(null);
+  const iceCandidateBufferRef = useRef<any[]>([]);
+  const vendorReadyHandledRef = useRef(false);
+
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const socketRef = useRef<any>(null);
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const ringAnim = useRef(new Animated.Value(0)).current;
+  const ring1Anim = useRef(new Animated.Value(0)).current;
+  const ring2Anim = useRef(new Animated.Value(0)).current;
 
-  // Refs
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const acceptanceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const backHandlerRef = useRef<any>(null);
-  const messageSubscriptions = useRef<any[]>([]);
-  const roomRef = useRef<any>(null);
-  const callDurationRef = useRef(callDuration);
-
-  // Update the ref whenever callDuration changes
   useEffect(() => {
     callDurationRef.current = callDuration;
   }, [callDuration]);
 
-  // Stream and room configuration
-  const localStreamInfo = useMemo(
-    () => ({
-      audio: true,
-      video: false,
-      data: true,
-      audioMuted: false,
-      name: 'React Native',
-      audio_only: true,
-    }),
-    [],
-  );
-
-  const enxRoomInfo = useMemo(
-    () => ({
-      allow_reconnect: false,
-      number_of_attempts: 3,
-      timeout_interval: 15,
-      playerConfiguration: {
-        audiomute: true,
-        videomute: true,
-        bandwidth: true,
-        screenshot: true,
-        avatar: true,
-        iconHeight: 30,
-        iconWidth: 30,
-        avatarHeight: 50,
-        avatarWidth: 50,
-        iconColor: '#dfc0ef',
-      },
-    }),
-    [],
-  );
-
-  // Animation functions
-  const startPulseAnimation = useCallback(() => {
+  // ─── Animations ────────────────────────────────────────────────────────────
+  const startRipple = useCallback(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1000,
-          easing: Easing.ease,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.ease,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, {toValue: 1.06, duration: 800, easing: Easing.ease, useNativeDriver: true}),
+        Animated.timing(pulseAnim, {toValue: 1, duration: 800, easing: Easing.ease, useNativeDriver: true}),
       ]),
     ).start();
-  }, [pulseAnim]);
+    const animRing = (anim: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {toValue: 1, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true}),
+          Animated.timing(anim, {toValue: 0, duration: 0, useNativeDriver: true}),
+        ]),
+      ).start();
+    };
+    animRing(ring1Anim, 0);
+    animRing(ring2Anim, 800);
+  }, [pulseAnim, ring1Anim, ring2Anim]);
 
-  const startRingAnimation = useCallback(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(ringAnim, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.ease,
-          useNativeDriver: true,
-        }),
-        Animated.timing(ringAnim, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, [ringAnim]);
+  const stopRipple = useCallback(() => {
+    pulseAnim.stopAnimation(); ring1Anim.stopAnimation(); ring2Anim.stopAnimation();
+    pulseAnim.setValue(1); ring1Anim.setValue(0); ring2Anim.setValue(0);
+  }, [pulseAnim, ring1Anim, ring2Anim]);
 
-  const stopAnimations = useCallback(() => {
-    pulseAnim.stopAnimation();
-    ringAnim.stopAnimation();
-  }, [pulseAnim, ringAnim]);
-
-  // Format time display
-  const formatTime = useCallback((seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
+  // ─── Timers ─────────────────────────────────────────────────────────────────
+  const startCallTimer = useCallback(() => {
+    timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
   }, []);
 
-  // Timer management
-  const startTimer = useCallback(() => {
-    stopTimer();
-    timerRef.current = setInterval(() => {
-      setCallDuration(prev => prev + 1);
-    }, 1000);
+  const stopCallTimer = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  const stopRingCountdown = useCallback(() => {
+    if (ringTimerRef.current) { clearInterval(ringTimerRef.current); ringTimerRef.current = null; }
+  }, []);
+
+  const formatTime = useCallback((secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }, []);
+
+  // ─── WebRTC cleanup ─────────────────────────────────────────────────────────
+  const cleanupWebRTC = useCallback(() => {
+    if (pcRef.current) {
+      try { pcRef.current.close(); } catch (_) {}
+      pcRef.current = null;
     }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t: any) => t.stop());
+      try { (localStreamRef.current as any).release(); } catch (_) {}
+      localStreamRef.current = null;
+    }
+    try { InCallManager.stop(); } catch (_) {}
   }, []);
 
-  const startAcceptanceTimer = useCallback(() => {
-    stopAcceptanceTimer();
+  // ─── Call End ───────────────────────────────────────────────────────────────
+  const doEndCall = useCallback(async () => {
+    stopCallTimer();
+    stopRingCountdown();
+    stopRipple();
+    cleanupWebRTC();
+    const sid = sessionIdRef.current;
+    if (sid) {
+      try {
+        const jwt = await AsyncStorage.getItem('token');
+        await axios.post(
+          `${SOCKET_URL}/api/call/end`,
+          {sessionId: sid, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
+          {headers: {Authorization: `Bearer ${jwt}`}},
+        );
+      } catch (e) {
+        console.log('[VoiceCallScreen] doEndCall error:', e);
+      }
+    }
+    navigation.replace('DrawerNavigator');
+    // Prompt for a review only if the session actually connected.
+    if (recieverId && callDurationRef.current > 0) {
+      showReviewPrompt({ astrologerId: recieverId, name: recieverName, image: recieverImage });
+    }
+  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, recieverId, recieverName, recieverImage]);
 
-    acceptanceTimerRef.current = setInterval(() => {
-      setCallAcceptanceDuration(prev => {
-        if (prev <= 1) {
-          stopAcceptanceTimer();
-          if (!isCallAccepted) {
-            handleCallNotAnswered();
+  const startRingCountdown = useCallback(() => {
+    ringTimerRef.current = setInterval(() => {
+      setRingCountdown(c => {
+        if (c <= 1) {
+          clearInterval(ringTimerRef.current!);
+          ringTimerRef.current = null;
+          if (!isEndingRef.current) {
+            isEndingRef.current = true;
+            doEndCall();
           }
           return 0;
         }
-        return prev - 1;
+        return c - 1;
       });
     }, 1000);
-  }, [isCallAccepted]);
-
-  const stopAcceptanceTimer = useCallback(() => {
-    if (acceptanceTimerRef.current) {
-      clearInterval(acceptanceTimerRef.current);
-      acceptanceTimerRef.current = null;
-    }
-  }, []);
-
-  const handleCallNotAnswered = useCallback(() => {
-    onPressDisconnect();
-    CustomToast({
-      type: 'error',
-      title: 'Call not answered!',
-      message: `${recieverName} did not accept your call`,
-    });
-  }, [recieverName]);
-
-  // Accept call API
-  const doAcceptCall = useCallback(async () => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-
-      const response = await axios({
-        url: `http://10.0.2.2:4500/api/call/accept-call`,
-        method: 'POST',
-        data: {
-          receiverId,
-          sessionId,
-          duration: 0,
-          rating: 5,
-          feedback: 'Call accepted',
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      console.log('Accept call API response:', response.data);
-      setShowIncomingCallUI(false); // Hide incoming call UI after accepting
-      setIsCallAccepted(true);
-      startTimer();
-    } catch (error) {
-      console.log('Accept call API error:', error);
-    }
-  }, [receiverId, sessionId, startTimer]);
-
-  // Reject call API
-  const doRejectCall = useCallback(async () => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-
-      const response = await axios({
-        url: `http://10.0.2.2:4500/api/call/reject-call`,
-        method: 'POST',
-        data: {
-          sessionId,
-          reason: 'User rejected the call',
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      console.log('Reject call API response:', response.data);
-      cleanup(); // Disconnect after rejecting
-      navigation.replace('DrawerNavigator');
-    } catch (error) {
-      console.log('Reject call API error:', error);
-      cleanup();
-      navigation.replace('DrawerNavigator');
-    }
-  }, [sessionId, navigation]);
-
-  // End call API
-  const doEndCall = useCallback(async () => {
-    const durationInMinutes = Math.ceil(callDurationRef.current / 60);
-    try {
-      const token = await AsyncStorage.getItem('token');
-
-      const response = await axios({
-        url: `http://10.0.2.2:4500/api/call/end`,
-        method: 'POST',
-        data: {
-          sessionId,
-          duration: durationInMinutes,
-          rating: 5,
-          feedback: 'Nice call',
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.status === 200) {
-        navigation.replace('DrawerNavigator');
-      }
-    } catch (error) {
-      console.log('End call API error:', error);
-      navigation.replace('DrawerNavigator');
-    }
-  }, [callDuration, navigation, sessionId, userToken]);
-
-  // Event handlers
-  const roomEventHandlers = useMemo(
-    () => ({
-      roomConnected: (event: any) => {
-        console.log('roomConnected', event);
-        setIsConnected(true);
-        Enx.getLocalStreamId((status: any) => {
-          setLocalStreamId(status);
-        });
-        Enx.publish();
-        startAcceptanceTimer();
-        if (!isCallAccepted) {
-          startPulseAnimation();
-          startRingAnimation();
-        }
-      },
-      roomError: (event: any) => {
-        console.log('roomError', event);
-        if (event.msg === 'Network disconnected') {
-          doEndCall();
-        }
-      },
-      streamPublished: (event: any) => {
-        console.log('streamPublished', event);
-      },
-      streamAdded: (event: any) => {
-        console.log('streamAdded', event);
-        Enx.subscribe(event.streamId, (status: any) => {
-          console.log('Subscription status:', status);
-        });
-      },
-      activeTalkerList: (event: any) => {
-        console.log('Active Talker List event:', event);
-        if (event.length > 0 && !isCallAccepted) {
-          setIsCallAccepted(true);
-          doAcceptCall();
-          stopAcceptanceTimer();
-          stopAnimations();
-          startTimer();
-        }
-      },
-      roomDisconnected: (event: any) => {
-        console.log('roomDisconnected', event);
-        cleanup();
-        doEndCall();
-      },
-      userDisconnected: (event: any) => {
-        console.log('userDisconnected', event);
-        cleanup();
-        doEndCall();
-      },
-    }),
-    [
-      navigation,
-      startAcceptanceTimer,
-      stopAcceptanceTimer,
-      startTimer,
-      isCallAccepted,
-      startPulseAnimation,
-      startRingAnimation,
-      stopAnimations,
-      doEndCall,
-      doAcceptCall,
-    ],
-  );
-
-  const streamEventHandlers = useMemo(
-    () => ({
-      audioEvent: (event: any) => {
-        if (event.result === '0') {
-          const isMuted = event.msg === 'Audio Off';
-          setAudioMuted(isMuted);
-        }
-      },
-    }),
-    [],
-  );
-
-  // Call controls
-  const toggleMute = useCallback(() => {
-    if (localStreamId) {
-      Enx.muteSelfAudio(localStreamId, !audioMuted);
-    }
-  }, [localStreamId, audioMuted]);
-
-  const toggleSpeaker = useCallback(() => {
-    setSpeakerOn(!speakerOn);
-  }, [speakerOn]);
+  }, [doEndCall]);
 
   const onPressDisconnect = useCallback(() => {
-    if (isConnected) {
-      Enx.disconnect();
-    } else {
-      cleanup();
-      navigation.replace('DrawerNavigator');
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+    doEndCall();
+  }, [doEndCall]);
+
+  // ─── Controls ───────────────────────────────────────────────────────────────
+  const toggleMute = useCallback(() => {
+    const next = !audioMuted;
+    setAudioMuted(next);
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((t: any) => { t.enabled = !next; });
     }
-  }, [isConnected, navigation]);
+  }, [audioMuted]);
 
-  // Handle accept call for incoming calls
-  const handleAcceptCall = useCallback(() => {
-    doAcceptCall();
-  }, [doAcceptCall]);
+  const toggleSpeaker = useCallback(() => {
+    const next = !speakerOn;
+    setSpeakerOn(next);
+    try { InCallManager.setSpeakerphoneOn(next); } catch (_) {}
+  }, [speakerOn]);
 
-  // Handle reject call for incoming calls
-  const handleRejectCall = useCallback(() => {
-    doRejectCall();
-  }, [doRejectCall]);
-
-  // Handle back button
-  const handleBackButton = useCallback(() => {
-    Alert.alert(
-      'Exit Call',
-      'Are you sure you want to end the call?',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'End Call', onPress: onPressDisconnect},
-      ],
-      {cancelable: false},
-    );
-    return true;
-  }, [onPressDisconnect]);
-
-  // Handle remote messages
-  const handleRemoteMessage = useCallback(
-    (remoteMessage: any) => {
-      if (!remoteMessage?.data) return;
-
-      const {type, sessionId: messageSessionId} = remoteMessage.data;
-
-      if (type === 'call_ended' && messageSessionId === sessionId) {
-        CustomToast({
-          type: 'error',
-          title: 'Call Rejected',
-          message: `${recieverName} rejected your call.`,
-        });
-        onPressDisconnect();
-      }
-    },
-    [recieverName, sessionId, onPressDisconnect],
-  );
-
-  // Cleanup function
-  const cleanup = useCallback(() => {
-    stopTimer();
-    stopAcceptanceTimer();
-    stopAnimations();
-    if (backHandlerRef.current) {
-      backHandlerRef.current.remove();
-    }
-    messageSubscriptions.current.forEach(sub => sub());
-    messageSubscriptions.current = [];
-    setAudioMuted(false);
-    setSpeakerOn(false);
-    setIsConnected(false);
-    setCallDuration(0);
-    setCallAcceptanceDuration(30);
-    setIsCallAccepted(false);
-  }, [stopTimer, stopAcceptanceTimer, stopAnimations]);
-
-  // Initialize room and set up listeners
+  // ─── Mount ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const initRoom = async () => {
-      try {
-        await Enx.initRoom();
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Failed to initialize room:', error);
-        navigation.goBack();
+    let cancelled = false;
+
+    const setupWebRTC = async () => {
+      if (Platform.OS === 'android') {
+        try {
+          const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert('Permission Required', 'Microphone access is needed for audio calls.', [
+              {text: 'OK', onPress: () => navigation.goBack()},
+            ]);
+            return;
+          }
+        } catch (e) { console.warn('[VoiceCallScreen] Permission error:', e); }
       }
+      if (cancelled) return;
+
+      try { InCallManager.start({media: 'audio'}); } catch (_) {}
+
+      const stream = await (mediaDevices as any).getUserMedia({audio: true, video: false});
+      if (cancelled) { stream.getTracks().forEach((t: any) => t.stop()); return; }
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      pcRef.current = pc;
+      stream.getTracks().forEach((track: any) => (pc as any).addTrack(track, stream));
+
+      (pc as any).onicecandidate = (event: any) => {
+        if (event.candidate && socketRef.current && sessionIdRef.current) {
+          socketRef.current.emit('webrtc_ice_candidate', {
+            sessionId: sessionIdRef.current,
+            candidate: event.candidate,
+          });
+        }
+      };
+
+      (pc as any).oniceconnectionstatechange = () => {
+        const state = (pc as any).iceConnectionState;
+        console.log('[Customer/Voice] ICE state:', state);
+        if (state === 'connected' || state === 'completed') {
+          if (callStateRef.current !== 'in_call') {
+            callStateRef.current = 'in_call';
+            isConnectedRef.current = true;
+            setCallState('in_call');
+            stopRipple();
+            stopRingCountdown();
+            startCallTimer();
+          }
+        } else if (state === 'failed' || state === 'closed') {
+          if (!isEndingRef.current) { isEndingRef.current = true; doEndCall(); }
+        }
+      };
     };
-    initRoom();
 
-    backHandlerRef.current = BackHandler.addEventListener(
-      'hardwareBackPress',
-      handleBackButton,
-    );
+    const setupSocket = async () => {
+      const socket = io(SOCKET_URL);
+      socketRef.current = socket;
 
-    const foregroundUnsubscribe = messaging().onMessage(handleRemoteMessage);
-    const backgroundUnsubscribe =
-      messaging().onNotificationOpenedApp(handleRemoteMessage);
+      const userStr = await AsyncStorage.getItem('userData');
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (user?.id) socket.emit('join_room', user.id);
+      if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
 
-    messageSubscriptions.current.push(
-      foregroundUnsubscribe,
-      backgroundUnsubscribe,
-    );
+      socket.once('call_accepted', (data: any) => {
+        if (data.sessionId && !sessionIdRef.current) {
+          sessionIdRef.current = data.sessionId;
+          socket.emit('join_session', data.sessionId);
+        }
+      });
 
-    messaging().getInitialNotification().then(handleRemoteMessage);
+      // Vendor is ready — create and send WebRTC offer (handle only once)
+      socket.on('webrtc_ready', async () => {
+        if (vendorReadyHandledRef.current || !pcRef.current) return;
+        vendorReadyHandledRef.current = true;
+        try {
+          const offer = await (pcRef.current as any).createOffer({});
+          await (pcRef.current as any).setLocalDescription(offer);
+          socket.emit('webrtc_offer', {
+            sessionId: sessionIdRef.current,
+            offer: (pcRef.current as any).localDescription,
+          });
+          callStateRef.current = 'ringing';
+          setCallState('ringing');
+          startRipple();
+          startRingCountdown();
+        } catch (e) {
+          console.log('[Customer/Voice] createOffer error:', e);
+        }
+      });
 
-    return cleanup;
-  }, [handleBackButton, handleRemoteMessage, cleanup, navigation]);
+      socket.on('webrtc_answer', async (data: any) => {
+        if (!pcRef.current || !data.answer) return;
+        try {
+          await (pcRef.current as any).setRemoteDescription(new RTCSessionDescription(data.answer));
+          for (const c of iceCandidateBufferRef.current) {
+            try { await (pcRef.current as any).addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+          }
+          iceCandidateBufferRef.current = [];
+        } catch (e) { console.log('[Customer/Voice] setRemoteDescription error:', e); }
+      });
 
-  if (!isInitialized) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Initializing call...</Text>
-      </View>
-    );
-  }
+      socket.on('webrtc_ice_candidate', async (data: any) => {
+        if (!pcRef.current || !data.candidate) return;
+        if ((pcRef.current as any).remoteDescription) {
+          try { await (pcRef.current as any).addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (_) {}
+        } else {
+          iceCandidateBufferRef.current.push(data.candidate);
+        }
+      });
 
-  // Ring animation interpolation
-  const ringInterpolation = ringAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.5],
-  });
+      socket.on('session_ended', (data: any) => {
+        if (data.sessionId && sessionIdRef.current && data.sessionId !== sessionIdRef.current) return;
+        if (!isEndingRef.current) {
+          console.log('[Customer/Voice] session_ended:', data.reason);
+          isEndingRef.current = true;
+          doEndCall();
+        }
+      });
+    };
 
+    setupWebRTC();
+    setupSocket();
+
+    const bh = BackHandler.addEventListener('hardwareBackPress', () => {
+      Alert.alert('End Call', 'Are you sure you want to end the call?', [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'End', style: 'destructive', onPress: onPressDisconnect},
+      ], {cancelable: false});
+      return true;
+    });
+
+    return () => {
+      cancelled = true;
+      bh.remove();
+      stopCallTimer();
+      stopRingCountdown();
+      stopRipple();
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      cleanupWebRTC();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Derived UI ─────────────────────────────────────────────────────────────
+  const ring1Scale = ring1Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]});
+  const ring1Opacity = ring1Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
+  const ring2Scale = ring2Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]});
+  const ring2Opacity = ring2Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
+
+  const statusLabel =
+    callState === 'connecting' ? 'Connecting...' :
+    callState === 'ringing' ? `Ringing... ${ringCountdown}s` :
+    formatTime(callDuration);
+
+  const isActive = callState === 'in_call';
+  const avatarInitial = recieverName.charAt(0).toUpperCase();
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <StatusBar
-        translucent
-        backgroundColor={'transparent'}
-        barStyle={'light-content'}
-      />
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Background with blur effect */}
-      <View style={styles.backgroundContainer}>
-        <Image
-          source={{
-            uri:
-              recieverImage ||
-              'https://cdn-icons-png.flaticon.com/128/1077/1077012.png',
-          }}
-          style={styles.userImage}
-          blurRadius={isCallAccepted ? 5 : 10}
-        />
+      {recieverImage ? (
+        <Image source={{uri: recieverImage}} style={StyleSheet.absoluteFillObject} blurRadius={22} />
+      ) : null}
+      <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
 
-        {/* Dark overlay */}
-        <View style={styles.overlay} />
-      </View>
-
-      {/* Incoming Call UI */}
-      {showIncomingCallUI && (
-        <View style={styles.incomingCallOverlay}>
-          <View style={styles.incomingCallContainer}>
-            <Text style={styles.incomingCallTitle}>Incoming Call</Text>
-            <Text style={styles.incomingCallerName}>{recieverName}</Text>
-            <View style={styles.incomingCallButtons}>
-              <TouchableHighlight
-                style={styles.rejectButton}
-                underlayColor={color.reddeep}
-                onPress={handleRejectCall}>
-                <View style={styles.buttonContent}>
-                  <VectorIcon
-                    name="phone-hangup"
-                    type="MaterialCommunityIcons"
-                    size={24}
-                    color={color.white}
-                  />
-                  <Text style={styles.buttonText}>Reject</Text>
-                </View>
-              </TouchableHighlight>
-              <TouchableHighlight
-                style={styles.acceptButton}
-                underlayColor={color.green}
-                onPress={handleAcceptCall}>
-                <View style={styles.buttonContent}>
-                  <VectorIcon
-                    name="phone"
-                    type="MaterialIcons"
-                    size={24}
-                    color={color.white}
-                  />
-                  <Text style={styles.buttonText}>Accept</Text>
-                </View>
-              </TouchableHighlight>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableHighlight
-          underlayColor="rgba(255,255,255,0.1)"
-          onPress={onPressDisconnect}
-          style={styles.backButton}>
-          <VectorIcon
-            name="arrow-back"
-            type="Ionicons"
-            size={24}
-            color={color.white}
-          />
-        </TouchableHighlight>
-
-        <View style={styles.centerBox}>
-          <Text style={styles.statusText}>
-            {isCallAccepted ? 'In Call' : 'Calling...'}
-          </Text>
-        </View>
-
-        <View style={styles.rightPlaceholder} />
+        <Text style={styles.headerLabel}>AUDIO CALL</Text>
       </View>
 
-      {/* Main Content */}
-      <View style={styles.contentContainer}>
-        {/* User Avatar with Animation */}
-        <View style={styles.avatarContainer}>
-          {!isCallAccepted && (
-            <Animated.View
-              style={[
-                styles.ring,
-                {
-                  transform: [{scale: ringInterpolation}],
-                  opacity: ringAnim,
-                },
-              ]}
-            />
-          )}
+      <View style={styles.centerContent}>
+        {callState === 'ringing' && (
+          <>
+            <Animated.View style={[styles.ring, {transform: [{scale: ring1Scale}], opacity: ring1Opacity}]} />
+            <Animated.View style={[styles.ring, {transform: [{scale: ring2Scale}], opacity: ring2Opacity}]} />
+          </>
+        )}
 
-          <Animated.View
-            style={[
-              styles.avatarWrapper,
-              {
-                transform: [{scale: isCallAccepted ? 1 : pulseAnim}],
-              },
-            ]}>
-            <Image
-              source={{
-                uri:
-                  recieverImage ||
-                  'https://cdn-icons-png.flaticon.com/128/1077/1077012.png',
-              }}
-              style={styles.avatar}
-            />
-          </Animated.View>
-        </View>
-
-        {/* User Info */}
-        <View style={styles.userInfoContainer}>
-          <Text style={styles.userName}>{recieverName}</Text>
-          {recieverAge && (
-            <Text style={styles.userDetails}>
-              {recieverAge} years • {recieverDistance} away
-            </Text>
+        <Animated.View style={[styles.avatarOuter, {transform: [{scale: callState === 'ringing' ? pulseAnim : 1}]}]}>
+          {recieverImage ? (
+            <Image source={{uri: recieverImage}} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+            </View>
           )}
-          <Text style={styles.callStatus}>
-            {isCallAccepted
-              ? formatTime(callDuration)
-              : `Ringing... ${callAcceptanceDuration}s`}
-          </Text>
+        </Animated.View>
+
+        <Text style={styles.callerName}>{recieverName}</Text>
+
+        <View style={styles.statusPill}>
+          <View style={[styles.statusDot, isActive && styles.statusDotGreen]} />
+          <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
       </View>
 
-      {/* Enx Room Component */}
-      <EnxRoom
-        ref={roomRef}
-        token={token}
-        eventHandlers={roomEventHandlers}
-        localInfo={localStreamInfo}
-        roomInfo={enxRoomInfo}>
-        <EnxStream key="stream" eventHandlers={streamEventHandlers} />
-      </EnxRoom>
+      <View style={styles.controlsBar}>
+        <TouchableOpacity style={[styles.ctrlBtn, audioMuted && styles.ctrlBtnRed]} onPress={toggleMute} activeOpacity={0.75}>
+          <VectorIcon name={audioMuted ? 'mic-off' : 'mic'} type="MaterialIcons" size={26} color={audioMuted ? '#FF3B30' : '#fff'} />
+          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? 'Unmute' : 'Mute'}</Text>
+        </TouchableOpacity>
 
-      {/* Controls */}
-      <View style={styles.controlsContainer}>
-        <View style={styles.controlRow}>
-          {/* Speaker Button */}
-          <TouchableHighlight
-            style={[
-              styles.controlButton,
-              speakerOn && styles.controlButtonActive,
-            ]}
-            underlayColor="rgba(255,255,255,0.2)"
-            onPress={toggleSpeaker}>
-            <View style={styles.controlContent}>
-              <Image
-                source={
-                  speakerOn
-                    ? require('../../image_asset/speaker.png')
-                    : require('../../image_asset/speaker.png')
-                }
-                style={styles.controlIcon}
-              />
-              <Text style={styles.controlText}>
-                {speakerOn ? 'Speaker' : 'Speaker'}
-              </Text>
-            </View>
-          </TouchableHighlight>
+        <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
+          <VectorIcon name="call-end" type="MaterialIcons" size={34} color="#fff" />
+        </TouchableOpacity>
 
-          {/* Mute Button */}
-          <TouchableHighlight
-            style={[
-              styles.controlButton,
-              audioMuted && styles.controlButtonActive,
-            ]}
-            underlayColor="rgba(255,255,255,0.2)"
-            onPress={toggleMute}>
-            <View style={styles.controlContent}>
-              <Image
-                source={
-                  audioMuted
-                    ? require('../../image_asset/mute.png')
-                    : require('../../image_asset/unmute.png')
-                }
-                style={styles.controlIcon}
-              />
-              <Text style={styles.controlText}>
-                {audioMuted ? 'Muted' : 'Mute'}
-              </Text>
-            </View>
-          </TouchableHighlight>
-
-          {/* End Call Button */}
-          <TouchableHighlight
-            style={styles.endCallButton}
-            underlayColor={color.reddeep}
-            onPress={onPressDisconnect}>
-            <View style={styles.controlContent}>
-              <View style={styles.endCallIcon}>
-                <VectorIcon
-                  name="phone-hangup"
-                  type="MaterialCommunityIcons"
-                  size={24}
-                  color={color.white}
-                />
-              </View>
-              <Text style={styles.endCallText}>End Call</Text>
-            </View>
-          </TouchableHighlight>
-        </View>
+        <TouchableOpacity style={[styles.ctrlBtn, speakerOn && styles.ctrlBtnGold]} onPress={toggleSpeaker} activeOpacity={0.75}>
+          <VectorIcon name={speakerOn ? 'volume-up' : 'volume-down'} type="MaterialIcons" size={26} color={speakerOn ? color.AstroGold : '#fff'} />
+          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? 'Speaker' : 'Earpiece'}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: color.black,
-  },
-  incomingCallOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  incomingCallContainer: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-    padding: 31,
-    alignItems: 'center',
-    minWidth: 300,
-  },
-  incomingCallTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: color.white,
-    marginBottom: 10,
-  },
-  incomingCallerName: {
-    fontSize: 20,
-    color: color.white,
-    marginBottom: 30,
-  },
-  incomingCallButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-  },
-  rejectButton: {
-    backgroundColor: color.reddeep,
-    borderRadius: 50,
-    padding: 15,
-    marginHorizontal: 10,
-  },
-  acceptButton: {
-    backgroundColor: color.green || '#34C759',
-    borderRadius: 50,
-    padding: 15,
-    marginHorizontal: 10,
-  },
-  buttonContent: {
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: color.white,
-    fontSize: 14,
-    marginTop: 5,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: color.black,
-  },
-  loadingText: {
-    color: color.white,
-    fontSize: 18,
-  },
-  backgroundContainer: {
-    flex: 1,
-    height: '100%',
-    width: '100%',
-    position: 'absolute',
-  },
-  userImage: {
-    height: '100%',
-    width: '100%',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  header: {
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    height: Platform.OS === 'ios' ? 100 : 80,
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  backButton: {
-    padding: 10,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  centerBox: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    flex: 1,
-  },
-  statusText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: color.white,
-  },
-  rightPlaceholder: {
-    width: 40,
-  },
-  contentContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  avatarContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-    position: 'relative',
-  },
+  container: {flex: 1, backgroundColor: '#1A0B05'},
+  bgOverlay: {backgroundColor: 'rgba(26,11,5,0.78)'},
+  header: {paddingTop: Platform.OS === 'ios' ? 58 : 44, alignItems: 'center', paddingBottom: 8},
+  headerLabel: {fontSize: 11, fontWeight: '700', color: 'rgba(244,216,188,0.5)', letterSpacing: 3},
+  centerContent: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   ring: {
     position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
+    width: RING_BASE,
+    height: RING_BASE,
+    borderRadius: RING_BASE / 2,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: color.AstroSoftOrange,
   },
-  avatarWrapper: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.2)',
+  avatarOuter: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    borderWidth: 3,
+    borderColor: color.AstroSoftOrange,
     overflow: 'hidden',
+    marginBottom: 28,
+    shadowColor: color.AstroSoftOrange,
+    shadowOffset: {width: 0, height: 0},
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 12,
   },
-  avatar: {
-    width: '100%',
-    height: '100%',
-  },
-  userInfoContainer: {
-    alignItems: 'center',
-  },
-  userName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: color.white,
-    marginBottom: 8,
-  },
-  userDetails: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 20,
-  },
-  callStatus: {
-    fontSize: 18,
-    color: color.white,
-    fontWeight: '600',
-  },
-  controlsContainer: {
-    position: 'absolute',
-    bottom: 60,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 40,
-  },
-  controlRow: {
+  avatarImage: {width: '100%', height: '100%'},
+  avatarFallback: {flex: 1, backgroundColor: '#592a19', alignItems: 'center', justifyContent: 'center'},
+  avatarInitial: {fontSize: 58, fontWeight: '700', color: color.AstroSoftOrange},
+  callerName: {fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 14, letterSpacing: 0.3},
+  statusPill: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 24,
+    gap: 8,
+  },
+  statusDot: {width: 7, height: 7, borderRadius: 4, backgroundColor: color.AstroSoftOrange},
+  statusDotGreen: {backgroundColor: '#34C759'},
+  statusText: {fontSize: 15, color: color.AstroSoftOrange, fontWeight: '500', fontVariant: ['tabular-nums']},
+  controlsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-around',
+    paddingHorizontal: 32,
+    paddingTop: 28,
+    paddingBottom: Platform.OS === 'ios' ? 52 : 44,
+    backgroundColor: 'rgba(89,42,25,0.55)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(244,216,188,0.2)',
+  },
+  ctrlBtn: {
     alignItems: 'center',
-  },
-  controlButton: {
-    alignItems: 'center',
-    padding: 15,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    minWidth: 70,
-  },
-  controlButtonActive: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  controlContent: {
-    alignItems: 'center',
-  },
-  controlIcon: {
-    width: 24,
-    height: 24,
-    tintColor: color.white,
-    marginBottom: 5,
-  },
-  controlText: {
-    fontSize: 12,
-    color: color.white,
-    marginTop: 4,
-  },
-  endCallButton: {
-    alignItems: 'center',
-    padding: 20,
-    borderRadius: 30,
-    backgroundColor: color.reddeep,
-    minWidth: 80,
-  },
-  endCallIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 5,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    minWidth: 72,
+    gap: 6,
   },
-  endCallText: {
-    fontSize: 12,
-    color: color.white,
-    fontWeight: '600',
+  ctrlBtnRed: {backgroundColor: 'rgba(255,59,48,0.15)'},
+  ctrlBtnGold: {backgroundColor: 'rgba(255,215,0,0.12)'},
+  ctrlLabel: {fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: '500'},
+  ctrlLabelRed: {color: '#FF3B30'},
+  ctrlLabelGold: {color: color.AstroGold},
+  endBtn: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 10,
+    shadowColor: '#FF3B30',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
   },
 });
 

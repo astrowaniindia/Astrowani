@@ -9,6 +9,8 @@ import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import Thankyou from '../screens/Thankyou';
+import PendingApproval from '../screens/PendingApproval';
+import { supabase } from '../api/SupabaseClient';
 import CustomDrawer from './CustomDrawer';
 import Bottom from '../screens/Bottom/Bottom';
 import CustomHeader from './CustomHeader';
@@ -24,6 +26,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import VideoCall from '../screens/VideoCall';
 import AudioCall from '../screens/AudioCall';
+import GoLiveScreen from '../screens/GoLive/GoLiveScreen';
 import Profile from '../screens/Profile/Profile';
 import EditProfile from '../screens/Profile/EditProfile';
 import Notification from '../screens/Notification/Notification';
@@ -31,13 +34,12 @@ import Appointments from '../screens/Home/Appointments';
 import Consultation from '../screens/Home/Consultation';
 import Wallet from '../screens/Home/Report';
 import Chat from '../Chating/Chat';
-import JoinRoom from '../utils/JoinRoom';
-import EnxJoinScreen from '../utils/EnxJoinScreen';
-import EnxConferenceScreen from '../utils/EnxConferenceScreen';
 import EnxScreenVoice from '../utils/EnxScreenVoice';
 import Support from '../screens/Support';
 import CallHistory from '../screens/HIstory/CallHistory';
 import ChatHistorys from '../screens/HIstory/ChatHiostory';
+import SessionHistory from '../screens/HIstory/SessionHistory';
+import MissedSessions from '../screens/HIstory/MissedSessions';
 import TodayEarning from '../screens/Earning/TodayEarning';
 import TotalEarning from '../screens/Earning/TotalEarning';
 import RatingReview from '../screens/Review/RatingReview';
@@ -47,7 +49,8 @@ const Drawer = createDrawerNavigator();
 
 function NavigationScreen() {
   const [isLoading, setIsLoading] = useState(true);
-  const [userToken, setUserToken] = useState(null);
+  // Resolved landing route: 'Login' | 'PendingApproval' | 'DrawerNavigator'
+  const [initialRoute, setInitialRoute] = useState('Login');
 
   useEffect(() => {
     checkToken();
@@ -56,9 +59,28 @@ function NavigationScreen() {
   const checkToken = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      setUserToken(token);
+      if (!token) {
+        setInitialRoute('Login');
+        return;
+      }
+      // Logged in — gate on admin approval. Pending/rejected vendors see the
+      // "under review" screen; approved vendors go straight to the dashboard.
+      const astroId = await AsyncStorage.getItem('astroId');
+      if (astroId) {
+        const { data } = await supabase
+          .from('astrologers')
+          .select('approval_status')
+          .eq('id', astroId)
+          .single();
+        if (data && data.approval_status !== 'approved') {
+          setInitialRoute('PendingApproval');
+          return;
+        }
+      }
+      setInitialRoute('DrawerNavigator');
     } catch (error) {
       console.log('Error checking token:', error);
+      setInitialRoute('Login');
     } finally {
       setIsLoading(false);
     }
@@ -75,12 +97,17 @@ function NavigationScreen() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName={userToken ? 'DrawerNavigator' : 'Login'}
+        initialRouteName={initialRoute}
         screenOptions={{ animation: 'slide_from_right' }}>
         <Stack.Screen
           options={{ headerShown: false }}
           name="Login"
           component={Login}
+        />
+        <Stack.Screen
+          options={{ headerShown: false }}
+          name="PendingApproval"
+          component={PendingApproval}
         />
         <Stack.Screen
           options={{
@@ -125,6 +152,26 @@ function NavigationScreen() {
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
+          }}
+        />
+        <Stack.Screen
+          name="SessionHistory"
+          component={SessionHistory}
+          options={{
+            title: 'Session History',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
+          }}
+        />
+        <Stack.Screen
+          name="MissedSessions"
+          component={MissedSessions}
+          options={{
+            title: 'Missed Sessions',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
           }}
         />
         <Stack.Screen
@@ -226,6 +273,11 @@ function NavigationScreen() {
           options={({ route }) => ({ headerShown: false })}
         />
         <Stack.Screen
+          name="GoLiveScreen"
+          component={GoLiveScreen}
+          options={({ route }) => ({ headerShown: false })}
+        />
+        <Stack.Screen
           name="Profile"
           component={Profile}
           options={({ route }) => ({ headerShown: true })}
@@ -285,12 +337,6 @@ function NavigationScreen() {
           name="Consultation"
           component={Consultation}
           options={({ route }) => ({ headerShown: true })}
-        />
-        <Stack.Screen name="JoinRoom" component={JoinRoom} />
-        <Stack.Screen name="EnxJoinScreen" component={EnxJoinScreen} />
-        <Stack.Screen
-          name="EnxConferenceScreen"
-          component={EnxConferenceScreen}
         />
         <Stack.Screen
           name="EnxScreenVoice"

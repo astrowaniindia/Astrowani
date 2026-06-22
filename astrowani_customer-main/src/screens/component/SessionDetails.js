@@ -1,25 +1,48 @@
-import React, {useState} from 'react';
+import React from 'react';
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
   StyleSheet,
-  Modal,
 } from 'react-native';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import {showReviewPrompt} from '../../components/ReviewPrompt';
+
+const TYPE_COLORS = {
+  'Chat Session': '#5C6BC0',
+  'Audio Call':   '#2E7D32',
+  'Video Call':   '#6A1B9A',
+  'Live Session': '#C62828',
+};
 
 const SessionDetails = ({session, handleprofile}) => {
-  const [isModalVisible, setModalVisible] = useState(false);
+  const typeColor = TYPE_COLORS[session.chatType] || COLORS.AstroMaroon;
+
+  const onRate = () => {
+    const astrologerId = session.astro?._id || session.astro?.userId;
+    if (!astrologerId) return;
+    showReviewPrompt({ astrologerId, name: session.name, image: session.image });
+  };
+
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.referenceText}>
-          Reference ID: {session.referenceId}
-        </Text>
+        <Text style={styles.referenceText}>Ref: {session.referenceId}</Text>
+        <View style={[styles.typePill, {backgroundColor: typeColor + '18', borderColor: typeColor + '44'}]}>
+          <Text style={[styles.typeText, {color: typeColor}]}>{session.chatType}</Text>
+        </View>
+        {session.isActive && (
+          <View style={styles.activePill}>
+            <Text style={styles.activeText}>Active</Text>
+          </View>
+        )}
       </View>
+
+      {/* Body */}
       <View style={styles.details}>
         <View style={styles.imgView}>
           <Image source={{uri: session.image}} style={styles.image} />
@@ -29,26 +52,37 @@ const SessionDetails = ({session, handleprofile}) => {
             <Text style={styles.profileButtonText}>View Profile</Text>
           </TouchableOpacity>
         </View>
+
         <View style={styles.info}>
           <Text style={styles.name}>{session.name}</Text>
-          <Text style={styles.chatType}>{session.chatType}</Text>
           <Text style={styles.time}>{session.time}</Text>
-          <Text style={styles.rate}>Astrologer Rate: ₹{session.rate}/min</Text>
-          <Text style={styles.duration}>Duration: {session.duration} min</Text>
-          <Text style={styles.deduction}>Deduction: ₹{session.deduction}</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Rate</Text>
+              <Text style={styles.statValue}>₹{session.rate}/min</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Duration</Text>
+              <Text style={styles.statValue}>{session.isActive ? 'Active' : `${session.duration} min`}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Charged</Text>
+              <Text style={[styles.statValue, styles.chargedValue]}>{session.isActive ? '—' : `₹${session.deduction}`}</Text>
+            </View>
+          </View>
         </View>
       </View>
 
+      {/* Rate button — opens the shared review prompt (real submission + eligibility). */}
       <TouchableOpacity
-        style={styles.rating}
-        onPress={() => setModalVisible(true)}>
-        <Text style={styles.ratingText}>Rate us: ⭐⭐⭐⭐⭐</Text>
-        {/* Add stars rating component here */}
+        style={styles.ratingBtn}
+        onPress={onRate}
+        activeOpacity={0.8}>
+        <FontAwesome name="star" size={14} color="#FFD700" />
+        <Text style={styles.ratingBtnText}>Rate this session</Text>
       </TouchableOpacity>
-      <RateUsModal
-        visible={isModalVisible}
-        onClose={() => setModalVisible(false)}
-      />
     </View>
   );
 };
@@ -56,225 +90,140 @@ const SessionDetails = ({session, handleprofile}) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.AstroSoftOrange,
-    borderRadius: moderateScale(8),
-    padding: moderateScale(10),
-    marginVertical: verticalScale(10),
+    borderRadius: moderateScale(12),
+    marginVertical: verticalScale(8),
     marginHorizontal: scale(15),
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: verticalScale(2)},
-    shadowOpacity: 0.2,
-    shadowRadius: moderateScale(4),
-    elevation: moderateScale(2),
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    overflow: 'hidden',
   },
+
+  // ── Header ───────────────────────────────────────────────────────────────────
   header: {
-    borderBottomWidth: verticalScale(0.5),
-    borderBottomColor: COLORS.AstroMaroon,
-    paddingBottom: verticalScale(5),
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+    gap: scale(8),
+    flexWrap: 'wrap',
   },
   referenceText: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontWeight: 'bold',
+    fontSize: moderateScale(11),
+    color: '#555',
+    fontWeight: '600',
+    flex: 1,
   },
+  typePill: {
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(10),
+    borderWidth: 1,
+  },
+  typeText: {fontSize: moderateScale(11), fontWeight: '700'},
+  activePill: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(10),
+  },
+  activeText: {fontSize: moderateScale(11), fontWeight: '700', color: '#2E7D32'},
+
+  // ── Body ─────────────────────────────────────────────────────────────────────
   details: {
     flexDirection: 'row',
-    marginTop: verticalScale(10),
+    padding: scale(12),
+    gap: scale(12),
   },
+  imgView: {alignItems: 'center'},
   image: {
-    width: scale(55),
-    height: verticalScale(55),
-    borderRadius: moderateScale(30),
-  },
-  info: {
-    flex: 1,
-    marginLeft: scale(20),
-  },
-  name: {
-    fontSize: moderateScale(16),
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  chatType: {
-    fontSize: moderateScale(14),
-    color: 'red',
-    fontWeight: 'bold',
-    marginVertical: verticalScale(2),
-  },
-  time: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontWeight: 'bold',
-    marginBottom: verticalScale(10),
-  },
-  rate: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontWeight: 'bold',
-    marginBottom: verticalScale(1),
-  },
-  duration: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontWeight: 'bold',
-    marginBottom: verticalScale(1),
-  },
-  deduction: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontWeight: 'bold',
-    marginBottom: verticalScale(1),
+    width: scale(58),
+    height: scale(58),
+    borderRadius: scale(29),
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.6)',
   },
   profileButton: {
-    marginTop: verticalScale(10),
+    marginTop: verticalScale(8),
     backgroundColor: '#e6f2e6',
-    borderRadius: moderateScale(15),
+    borderRadius: moderateScale(12),
     paddingVertical: verticalScale(3),
-    paddingHorizontal: scale(10),
+    paddingHorizontal: scale(8),
   },
-  profileButtonText: {
-    color: 'green',
-    fontSize: moderateScale(11),
-    fontWeight: 'bold',
+  profileButtonText: {color: '#2E7D32', fontSize: moderateScale(10), fontWeight: '700'},
+
+  info: {flex: 1, justifyContent: 'center'},
+  name: {fontSize: moderateScale(16), fontWeight: '700', color: '#111', marginBottom: verticalScale(2)},
+  time: {fontSize: moderateScale(11), color: '#666', marginBottom: verticalScale(10)},
+
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius: moderateScale(8),
+    paddingVertical: verticalScale(6),
   },
-  footer: {
-    marginTop: verticalScale(10),
-  },
-  chatDetails: {
-    color: '#c0392b',
-    fontSize: moderateScale(14),
-    fontWeight: 'bold',
-  },
-  rating: {
+  statItem: {flex: 1, alignItems: 'center', gap: verticalScale(2)},
+  statDivider: {width: 1, backgroundColor: 'rgba(0,0,0,0.1)', marginVertical: verticalScale(2)},
+  statLabel: {fontSize: moderateScale(10), color: '#888', fontWeight: '500'},
+  statValue: {fontSize: moderateScale(13), fontWeight: '700', color: '#222'},
+  chargedValue: {color: COLORS.AstroMaroon},
+
+  // ── Rate button ──────────────────────────────────────────────────────────────
+  ratingBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: verticalScale(20),
     backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(15),
-    paddingVertical: verticalScale(4),
+    paddingVertical: verticalScale(10),
+    gap: scale(6),
   },
-  ratingText: {
-    color: '#fff',
-    alignSelf: 'center',
-    fontWeight: 'bold',
-    fontSize: moderateScale(13),
-  },
-  imgView: {
-    alignItems: 'center',
-  },
+  ratingBtnText: {color: '#fff', fontWeight: '700', fontSize: moderateScale(13)},
 
-  //modal
-
+  // ── Modal ────────────────────────────────────────────────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    width: '80%',
-    backgroundColor: 'white',
-    borderRadius: moderateScale(10),
-    padding: scale(20),
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(16),
+    padding: scale(24),
     alignItems: 'center',
   },
-  closeButton: {
-    position: 'absolute',
-    top: verticalScale(10),
-    right: scale(10),
+  closeButton: {position: 'absolute', top: scale(12), right: scale(12)},
+  modalImage: {
+    width: scale(72),
+    height: scale(72),
+    borderRadius: scale(36),
+    marginBottom: verticalScale(10),
+    borderWidth: 2,
+    borderColor: COLORS.AstroSoftOrange,
   },
-  profileImage: {
-    width: scale(70),
-    height: scale(70),
-    borderRadius: moderateScale(35),
-    marginTop: verticalScale(-55),
-  },
-  title: {
-    fontSize: moderateScale(18),
-    fontWeight: 'bold',
-    marginTop: verticalScale(10),
-    color: '#000',
-  },
-  subtitle: {
-    fontSize: moderateScale(15),
-    marginTop: verticalScale(5),
+  modalName: {fontSize: moderateScale(17), fontWeight: '700', color: '#111', marginBottom: verticalScale(4)},
+  modalSubtitle: {fontSize: moderateScale(15), fontWeight: '600', color: '#333', marginBottom: verticalScale(6)},
+  modalDesc: {
+    fontSize: moderateScale(12),
+    color: '#888',
     textAlign: 'center',
-    color: '#000',
-    fontWeight: 'bold',
+    marginBottom: verticalScale(16),
+    lineHeight: moderateScale(18),
   },
-  description: {
-    fontSize: moderateScale(13),
-    color: '#000',
-    textAlign: 'center',
-    marginVertical: verticalScale(10),
+  starsRow: {flexDirection: 'row', gap: scale(8), marginBottom: verticalScale(20)},
+  starBtn: {padding: scale(2)},
+  submitBtn: {
+    backgroundColor: COLORS.AstroMaroon,
+    paddingVertical: verticalScale(11),
+    paddingHorizontal: scale(40),
+    borderRadius: moderateScale(25),
   },
-  starsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginVertical: scale(20),
-  },
-  submitButton: {
-    backgroundColor: '#FFD700',
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(30),
-    borderRadius: moderateScale(5),
-  },
-  submitButtonText: {
-    color: 'black',
-    fontSize: moderateScale(13),
-    fontWeight: 'bold',
-  },
-  starpress: {
-    marginRight: scale(5),
-  },
+  submitBtnText: {color: '#fff', fontSize: moderateScale(14), fontWeight: '700'},
 });
 
 export default SessionDetails;
-
-const RateUsModal = ({visible, onClose}) => {
-  const [rating, setRating] = useState(0);
-
-  return (
-    <Modal visible={visible} transparent={true} animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <FontAwesome name="times-circle" size={24} color="black" />
-          </TouchableOpacity>
-          <Image
-            source={{
-              uri: 'https://th.bing.com/th/id/OIP.6VsfIq35PtqvwJQQHsHqgAHaF6?w=229&h=183&c=7&r=0&o=5&pid=1.7',
-            }} // Replace with your image URL
-            style={styles.profileImage}
-          />
-          <Text style={styles.title}>Meenakshik</Text>
-          <Text style={styles.subtitle}>How was your Session?</Text>
-          <Text style={styles.description}>
-            Please take a moment to give us your feedback so we can ensure you
-            get the best experience.
-          </Text>
-
-          <View style={styles.starsContainer}>
-            {[1, 2, 3, 4, 5].map(star => (
-              <TouchableOpacity
-                style={styles.starpress}
-                key={star}
-                onPress={() => setRating(star)}>
-                <FontAwesome
-                  name={star <= rating ? 'star' : 'star-o'}
-                  size={30}
-                  color={star <= rating ? '#FFD700' : '#C0C0C0'}
-                />
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity style={styles.submitButton} onPress={onClose}>
-            <Text style={styles.submitButtonText}>Submit Review</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-};

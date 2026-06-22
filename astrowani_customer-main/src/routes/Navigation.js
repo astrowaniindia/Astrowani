@@ -1,5 +1,7 @@
-import React from 'react';
+import React, {useState, useEffect} from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {supabase} from '../api/SupabaseClient';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -18,6 +20,9 @@ import ChatSessionScreen from '../screens/ChatSessionScreen';
 import Video from '../screens/Video/Video';
 import Call from '../screens/Call/Call';
 import Live from '../screens/Live/Live';
+import LiveViewerScreen from '../screens/Live/LiveViewerScreen';
+import { StatusPopupHost } from '../components/StatusPopup';
+import { ReviewPromptHost } from '../components/ReviewPrompt';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
@@ -33,11 +38,10 @@ import NotificationScreen from '../screens/Home/NotificationScreen';
 import AddReview from '../screens/Home/AddReview';
 import BookPujaScreen from '../screens/Remedies/BookPujaScreen';
 import PujaDetails from '../screens/Remedies/PujaDetails';
+import RemedyShop from '../screens/Remedies/RemedyShop';
+import CategoryAstrologers from '../screens/Category/CategoryAstrologers';
 import ChatIntakeForm from '../screens/component/ChatIntakeForm';
 import MySessionScreen from '../screens/drawerScreens/MySessionScreen';
-import ChatSession from '../screens/drawerScreens/ChatSession';
-import CallSession from '../screens/drawerScreens/CallSession';
-import VideoSession from '../screens/drawerScreens/VideoSession';
 import MyPackages from '../screens/drawerScreens/MyPackages';
 import FavoriteScreen from '../screens/drawerScreens/FavoriteScreen';
 import FreeServicesScreen from '../screens/drawerScreens/FreeSeviceScreen/FreeServicesScreen';
@@ -68,9 +72,7 @@ import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScr
 // import InCallScreen from '../screens/Call/InCallScreen';
 // mport { ZegoUIKitPrebuiltCallFloatingMinimizedView } from '@zegocloud/zego-uikit-prebuilt-call-rn';
 import VoiceCallScreen from '../screens/Video/VoiceCallScreen';
-import JoinRoom from '../utils/JoinRoom';
-import EnxJoinScreen from '../utils/EnxJoinScreen';
-import EnxConferenceScreen from '../utils/EnxConferenceScreen';
+import VideoCallScreen from '../screens/Video/VideoCallScreen';
 import GemstoneDetails from '../screens/Home/GemStoneBuy';
 import VipPuja from '../screens/Home/VipPuja';
 import Register from '../screens/Register/Register';
@@ -81,6 +83,7 @@ const TopTab = createMaterialTopTabNavigator();
 
 export default function Navigation({ initialRoute }) {
   return (
+    <>
     <NavigationContainer>
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right' }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
@@ -414,6 +417,41 @@ export default function Navigation({ initialRoute }) {
           })}
         />
         <Stack.Screen
+          name="LiveViewerScreen"
+          component={LiveViewerScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CategoryAstrologers"
+          component={CategoryAstrologers}
+          options={({ route }) => ({
+            title: route?.params?.categoryName || 'Astrologers',
+            headerStyle: {
+              backgroundColor: COLORS.AstroMaroon,
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontSize: moderateScale(18),
+            },
+            tabBarStyle: { display: 'none' },
+          })}
+        />
+        <Stack.Screen
+          name="RemedyShop"
+          component={RemedyShop}
+          options={({ route }) => ({
+            title: route?.params?.title || 'Remedies',
+            headerStyle: {
+              backgroundColor: COLORS.AstroMaroon,
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontSize: moderateScale(18),
+            },
+            tabBarStyle: { display: 'none' },
+          })}
+        />
+        <Stack.Screen
           name="BookPujaScreen"
           component={BookPujaScreen}
           options={({ route }) => ({
@@ -536,14 +574,8 @@ export default function Navigation({ initialRoute }) {
             headerShown: false,
           }}
         /> */}
-        <Stack.Screen name="EnxJoinScreen" component={EnxJoinScreen} />
-        <Stack.Screen
-          name="EnxConferenceScreen"
-          component={EnxConferenceScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} />
-        <Stack.Screen name="JoinRoom" component={JoinRoom} />
+        <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="VideoCallScreen" component={VideoCallScreen} options={{ headerShown: false }} />
         <Stack.Screen
           name="ChatSessionScreen"
           component={ChatSessionScreen}
@@ -551,6 +583,9 @@ export default function Navigation({ initialRoute }) {
         />
       </Stack.Navigator>
     </NavigationContainer>
+    <StatusPopupHost />
+    <ReviewPromptHost />
+    </>
   );
 }
 
@@ -595,6 +630,43 @@ function DrawerNavigator({ navigation }) {
 }
 
 function BottomTabNavigator() {
+  const [walletBalance, setWalletBalance] = useState(null);
+
+  useEffect(() => {
+    let channel = null;
+    const setup = async () => {
+      const userDataStr = await AsyncStorage.getItem('userData');
+      const user = userDataStr ? JSON.parse(userDataStr) : null;
+      if (!user?.id) return;
+
+      const {data} = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', user.id)
+        .single();
+      if (data) setWalletBalance(data.wallet_balance);
+
+      // Unique channel name per setup run — a fixed name makes supabase.channel() return
+      // an already-subscribed channel and .on()-after-subscribe() throws.
+      channel = supabase
+        .channel(`wallet_nav_${user.id}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
+        .on(
+          'postgres_changes',
+          {event: 'UPDATE', schema: 'public', table: 'customers', filter: `id=eq.${user.id}`},
+          payload => {
+            if (payload.new?.wallet_balance !== undefined) {
+              setWalletBalance(payload.new.wallet_balance);
+            }
+          },
+        )
+        .subscribe();
+    };
+    setup();
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
   const TabBarLabel = ({ focused, children }) => {
     return (
       <Text
@@ -638,14 +710,38 @@ function BottomTabNavigator() {
               iconName = 'help';
           }
 
-          // You can return any component that you like here, such as Icon from a library
           return (
             <Icon name={iconName} size={moderateScale(22)} color={color} />
           );
         },
-        tabBarLabel: ({ focused }) => (
-          <TabBarLabel focused={focused}>{route.name}</TabBarLabel>
-        ),
+        tabBarLabel: ({ focused }) => {
+          if (route.name === 'Home') {
+            return (
+              <View style={{alignItems: 'center'}}>
+                <Text
+                  style={{
+                    fontSize: focused ? moderateScale(11) : moderateScale(10),
+                    color: focused ? COLORS.AstroMaroon : 'black',
+                    lineHeight: moderateScale(13),
+                  }}>
+                  Home
+                </Text>
+                {walletBalance !== null && (
+                  <Text
+                    style={{
+                      fontSize: moderateScale(8),
+                      color: '#2E7D32',
+                      fontWeight: 'bold',
+                      lineHeight: moderateScale(10),
+                    }}>
+                    ₹{walletBalance}
+                  </Text>
+                )}
+              </View>
+            );
+          }
+          return <TabBarLabel focused={focused}>{route.name}</TabBarLabel>;
+        },
         tabBarActiveTintColor: COLORS.AstroMaroon,
         tabBarInactiveTintColor: 'gray',
         tabBarStyle: {
@@ -660,7 +756,7 @@ function BottomTabNavigator() {
           shadowOpacity: 0.15,
           shadowRadius: 10,
           borderTopWidth: 0,
-          height: verticalScale(65),
+          height: verticalScale(70),
           paddingBottom: verticalScale(8),
         },
       })}>
@@ -684,11 +780,6 @@ function HomeStack({ navigation }) {
           header: () => <CustomHeader title="Astrowani" showLanguage={true} />,
         }}
       />
-     <Stack.Screen
-          name="EnxConferenceScreen"
-          component={EnxConferenceScreen}
-          options={{ headerShown: false }}
-        />
       <Stack.Screen
         name="NotificationScreen"
         component={NotificationScreen}
@@ -793,6 +884,11 @@ function LiveStack() {
           header: () => <CustomHeader title="Live Sessions" />,
         }}
       />
+      <Stack.Screen
+        name="LiveViewerScreen"
+        component={LiveViewerScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }
@@ -815,7 +911,7 @@ function SessionStack() {
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
       <Stack.Screen
         name="SessionScreen"
-        component={TopTabStack}
+        component={MySessionScreen}
         options={{
           title: 'My Sessions',
 
@@ -828,104 +924,6 @@ function SessionStack() {
             fontSize: moderateScale(18),
           },
         }}
-      />
-    </Stack.Navigator>
-  );
-}
-
-function TopTabStack() {
-  return (
-    <TopTab.Navigator
-      initialRouteName="ChatSession"
-      screenOptions={{
-        tabBarScrollEnabled: true,
-        tabBarLabelStyle: {
-          fontSize: moderateScale(13),
-          fontWeight: 'bold',
-          textTransform: 'none',
-        },
-        tabBarIndicatorStyle: {
-          backgroundColor: COLORS.AstroMaroon,
-          height: verticalScale(3),
-        },
-        tabBarActiveTintColor: COLORS.AstroMaroon,
-        tabBarInactiveTintColor: '#000',
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderBottomWidth: verticalScale(1),
-          borderBottomColor: '#ddd',
-        },
-        tabBarPressColor: COLORS.AstroSoftOrange,
-      }}>
-      <TopTab.Screen
-        name="ChatSession"
-        component={ChatSessionStack}
-        options={{ title: 'Chat Session' }}
-      />
-      <TopTab.Screen
-        name="CallSession"
-        component={CallSessionStack}
-        options={{ title: 'Call Session' }}
-      />
-      <TopTab.Screen
-        name="VideoSession"
-        component={VideoSessionStack}
-        options={{ title: 'Video Session' }}
-      />
-    </TopTab.Navigator>
-  );
-}
-
-function ChatSessionStack() {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="ChatSessionStack"
-        component={ChatSession}
-        options={{
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="AstrologerProfile"
-        component={AstrologerInfo}
-        options={{ headerShown: false }}
-      />
-    </Stack.Navigator>
-  );
-}
-function CallSessionStack() {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="CallSessionStack"
-        component={CallSession}
-        options={{
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="AstrologerProfile"
-        component={AstrologerInfo}
-        options={{ headerShown: false }}
-      />
-    </Stack.Navigator>
-  );
-}
-function VideoSessionStack() {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="VideoSessionStack"
-        component={VideoSession}
-        options={{
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="AstrologerProfile"
-        component={AstrologerInfo}
-        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

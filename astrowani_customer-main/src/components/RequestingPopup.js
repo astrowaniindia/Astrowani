@@ -1,25 +1,23 @@
 // src/components/RequestingPopup.js
-// Drop-in "Requesting Chat…" modal for any screen
+// Drop-in request-waiting modal for any screen (chat / call / video).
+// Uses the Astrowani brown theme so every "requesting…" popup looks identical.
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { COLORS } from '../Theme/Colors';
-import { moderateScale } from '../utils/Scaling';
+import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 
 const RequestingPopup = ({ visible, astro, onCancel }) => {
   if (!visible) return null;
+  const name = astro?.name || astro?.firstName || 'the astrologer';
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <ActivityIndicator size="large" color={COLORS.AstroMaroon} style={styles.spinner} />
-          <Text style={styles.title}>Requesting Chat…</Text>
-          <Text style={styles.sub}>
-            Waiting for{'\n'}
-            <Text style={styles.name}>{astro?.name || astro?.firstName || 'the astrologer'}</Text>
-            {'\n'}to accept
-          </Text>
-          <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-            <Text style={styles.cancelText}>Cancel</Text>
+          <ActivityIndicator size="large" color={COLORS.AstroGold} />
+          <Text style={styles.title}>Request Sent</Text>
+          <Text style={styles.sub}>Waiting for {name} to accept your request...</Text>
+          <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
+            <Text style={styles.cancelText}>Cancel Request</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -30,31 +28,46 @@ const RequestingPopup = ({ visible, astro, onCancel }) => {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   card: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 20,
-    padding: 28,
-    width: '78%',
+    width: '85%',
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(15),
+    padding: scale(25),
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#333',
-    elevation: 15,
+    borderColor: COLORS.AstroSoftOrange,
   },
-  spinner: { marginBottom: 16 },
-  title: { color: '#fff', fontSize: moderateScale(19), fontWeight: '700', marginBottom: 8 },
-  sub: { color: '#aaa', fontSize: moderateScale(14), textAlign: 'center', marginBottom: 24, lineHeight: 22 },
-  name: { color: '#FFD700', fontWeight: '700' },
+  title: {
+    fontSize: moderateScale(20),
+    fontWeight: 'bold',
+    color: COLORS.AstroGold,
+    marginTop: verticalScale(20),
+    marginBottom: verticalScale(10),
+  },
+  sub: {
+    fontSize: moderateScale(16),
+    color: COLORS.AstroSoftOrange,
+    textAlign: 'center',
+    marginBottom: verticalScale(25),
+    lineHeight: moderateScale(22),
+  },
   cancelBtn: {
-    backgroundColor: '#F44336',
-    paddingVertical: 11,
-    paddingHorizontal: 36,
-    borderRadius: 30,
+    backgroundColor: COLORS.AstroSoftOrange,
+    paddingHorizontal: scale(30),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(25),
+    width: '100%',
+    alignItems: 'center',
   },
-  cancelText: { color: '#fff', fontWeight: 'bold', fontSize: moderateScale(15) },
+  cancelText: {
+    color: COLORS.AstroMaroon,
+    fontWeight: 'bold',
+    fontSize: moderateScale(16),
+  },
 });
 
 export default RequestingPopup;

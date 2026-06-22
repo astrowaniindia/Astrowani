@@ -1,5 +1,6 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
+  Alert,
   View,
   Text,
   Image,
@@ -14,12 +15,19 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import io from 'socket.io-client';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import GiftModal from '../../Component/Modal';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
+import {supabase} from '../../api/SupabaseClient';
+import {SOCKET_URL} from '../../config/api';
+import {showStatusPopup} from '../../components/StatusPopup';
+import StarRating from '../../components/StarRating';
+import {ensureProfileComplete} from '../../utils/profileGate';
 
 const { width } = Dimensions.get('window');
 
@@ -35,8 +43,439 @@ const AstrologerInfo = ({route, navigation}) => {
   const [avgError, setAvgError] = useState('');
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
-  
+  const [isCallWaiting, setIsCallWaiting] = useState(false);
+
+  const callSocketRef = useRef(null);
+  // Tracks the in-flight call request so cancel/back can tell the vendor to dismiss its popup
+  const activeCallRef = useRef(null);
+
   const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
+
+  // Notify the vendor that the customer abandoned the pending request (dismisses their popup).
+  // Updating the row to 'cancelled' triggers the vendor's Realtime backup; the socket emit is the fast path.
+  const notifyVendorCancelled = (status = 'cancelled') => {
+    const active = activeCallRef.current;
+    activeCallRef.current = null;
+    if (!active?.requestId) return;
+    if (status !== 'rejected') {
+      supabase
+        .from('call_requests')
+        .update({ status })
+        .eq('id', active.requestId)
+        .then(() => {}, () => {});
+    }
+    callSocketRef.current?.emit('cancel_call', {
+      astrologer_id: active.astrologerId,
+      requestId: active.requestId,
+      roomId: active.roomId,
+    });
+  };
+
+  const cancelCallRequest = () => {
+    notifyVendorCancelled();
+    setIsCallWaiting(false);
+    if (callSocketRef.current) {
+      callSocketRef.current.removeAllListeners();
+      callSocketRef.current.disconnect();
+      callSocketRef.current = null;
+    }
+  };
+
+  // If the user leaves this screen (hardware back / navigation) while a call is still
+  // pending, notify the vendor so their incoming-call popup doesn't linger.
+  useEffect(() => {
+    return () => {
+      if (activeCallRef.current) {
+        notifyVendorCancelled();
+        if (callSocketRef.current) {
+          callSocketRef.current.disconnect();
+          callSocketRef.current = null;
+        }
+      }
+    };
+  }, []);
+
+  const initiateAudioCall = async () => {
+    try {
+      if (!(await ensureProfileComplete(navigation))) return;
+      const token = await AsyncStorage.getItem('token');
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr || !token) {
+        Alert.alert('Error', 'Please login to continue.');
+        return;
+      }
+      const userEntireData = JSON.parse(userDataStr);
+
+      const pricePerMin = person.chargePerMinute || person.pricing || 15;
+      const minRequired = pricePerMin * 5;
+
+      const {data: customer, error: walletErr} = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', userEntireData.id)
+        .single();
+
+      if (walletErr) {
+        Alert.alert('Error', 'Failed to verify wallet balance.');
+        return;
+      }
+      if (customer.wallet_balance < minRequired) {
+        Alert.alert(
+          'Insufficient Balance',
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+        );
+        return;
+      }
+
+      setIsCallWaiting(true);
+
+      const response = await axios.post(
+        `${SOCKET_URL}/api/call/initiate`,
+        {receiverId: person.userId, callType: 'audio', callerRole: 'customer'},
+        {headers: {Authorization: `Bearer ${token}`}},
+      );
+
+      if (response.status !== 200) {
+        setIsCallWaiting(false);
+        Alert.alert('Error', 'Failed to initiate call.');
+        return;
+      }
+
+      const callerToken =
+        response.data.data?.token?.token ||
+        response.data.token?.token ||
+        response.data.token;
+      const vendorToken =
+        response.data.data?.vendorToken || response.data.vendorToken;
+      const roomId = response.data.data?.roomId || response.data.roomId;
+      const backendSessionId =
+        response.data.data?.sessionId || response.data.sessionId;
+
+      const {data: requestData, error: reqErr} = await supabase
+        .from('call_requests')
+        .insert([{
+          customer_id: userEntireData.id,
+          astrologer_id: person.userId,
+          customer_name: userEntireData.name || 'Customer',
+          call_type: 'audio',
+          status: 'pending',
+          room_id: roomId,
+          room_token: vendorToken,
+        }])
+        .select()
+        .single();
+
+      if (reqErr) {
+        setIsCallWaiting(false);
+        Alert.alert('Error', 'Failed to send call request.');
+        return;
+      }
+
+      // Track pending request so cancel/back/timeout can dismiss the vendor's popup
+      activeCallRef.current = { requestId: requestData.id, astrologerId: person.userId, roomId };
+
+      const sock = io(SOCKET_URL);
+      callSocketRef.current = sock;
+      sock.on('connect', () => {
+        sock.emit('join_room', userEntireData.id);
+        sock.emit('initiate_call', {
+          astrologer_id: person.userId,
+          callType: 'audio',
+          callerName: userEntireData.name || 'Customer',
+          callerId: userEntireData.id,
+          roomId,
+          vendorToken,
+          requestId: requestData.id,
+        });
+      });
+
+      let navigated = false;
+      const goToCall = dbSessionId => {
+        if (navigated) return;
+        navigated = true;
+        activeCallRef.current = null; // accepted → don't cancel
+        supabase.removeChannel(channel);
+        sock.removeAllListeners();
+        sock.disconnect();
+        callSocketRef.current = null;
+        setIsCallWaiting(false);
+        const realSessionId = dbSessionId || backendSessionId;
+        navigation.navigate('VoiceCallScreen', {
+          token: callerToken,
+          sessionId: realSessionId,
+          recieverName: person.name,
+          recieverImage: person.profileImage || '',
+          recieverId: person._id || person.userId,
+        });
+      };
+
+      sock.once('call_accepted', data => {
+        goToCall(data.sessionId);
+      });
+
+      sock.on('call_rejected', () => {
+        if (!navigated) {
+          navigated = true;
+          activeCallRef.current = null; // vendor rejected → nothing to cancel
+          supabase.removeChannel(channel);
+          sock.removeAllListeners();
+          sock.disconnect();
+          callSocketRef.current = null;
+          setIsCallWaiting(false);
+          showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+        }
+      });
+
+      const channel = supabase
+        .channel(`call_request_astroinfo_${requestData.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_requests',
+            filter: `id=eq.${requestData.id}`,
+          },
+          payload => {
+            if (payload.new.status === 'accepted') {
+              goToCall(payload.new.session_id);
+            } else if (payload.new.status === 'rejected') {
+              if (!navigated) {
+                navigated = true;
+                activeCallRef.current = null;
+                supabase.removeChannel(channel);
+                sock.removeAllListeners();
+                sock.disconnect();
+                callSocketRef.current = null;
+                setIsCallWaiting(false);
+                showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+              }
+            }
+          },
+        )
+        .subscribe();
+
+      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      setTimeout(() => {
+        if (!navigated) {
+          navigated = true;
+          notifyVendorCancelled('missed'); // mark missed + dismiss the vendor's popup
+          supabase.removeChannel(channel);
+          sock.removeAllListeners();
+          sock.disconnect();
+          callSocketRef.current = null;
+          setIsCallWaiting(false);
+          showStatusPopup({ variant: 'missed', title: 'Not Answered', message: 'Your audio call was not picked up. Please try again later.' });
+        }
+      }, 60000);
+    } catch (err) {
+      setIsCallWaiting(false);
+      console.error('[AstrologerInfo] initiateAudioCall error:', err);
+      Alert.alert('Error', 'Failed to initiate call. Please try again.');
+    }
+  };
+
+  const initiateVideoCall = async () => {
+    try {
+      if (!(await ensureProfileComplete(navigation))) return;
+      const token = await AsyncStorage.getItem('token');
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr || !token) {
+        Alert.alert('Error', 'Please login to continue.');
+        return;
+      }
+      const userEntireData = JSON.parse(userDataStr);
+
+      const pricePerMin = person.videoPrice || person.chargePerMinute || person.pricing || 15;
+      const minRequired = pricePerMin * 5;
+
+      const {data: customer, error: walletErr} = await supabase
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', userEntireData.id)
+        .single();
+
+      if (walletErr) {
+        Alert.alert('Error', 'Failed to verify wallet balance.');
+        return;
+      }
+      if (customer.wallet_balance < minRequired) {
+        Alert.alert(
+          'Insufficient Balance',
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+        );
+        return;
+      }
+
+      setIsCallWaiting(true);
+
+      const response = await axios.post(
+        `${SOCKET_URL}/api/call/initiate`,
+        {receiverId: person.userId, callType: 'video', callerRole: 'customer'},
+        {headers: {Authorization: `Bearer ${token}`}},
+      );
+
+      if (response.status !== 200) {
+        setIsCallWaiting(false);
+        Alert.alert('Error', 'Failed to initiate video call.');
+        return;
+      }
+
+      const callerToken =
+        response.data.data?.token?.token ||
+        response.data.token?.token ||
+        response.data.token;
+      const vendorToken =
+        response.data.data?.vendorToken || response.data.vendorToken;
+      const roomId = response.data.data?.roomId || response.data.roomId;
+      const backendSessionId =
+        response.data.data?.sessionId || response.data.sessionId;
+
+      const {data: requestData, error: reqErr} = await supabase
+        .from('call_requests')
+        .insert([{
+          customer_id: userEntireData.id,
+          astrologer_id: person.userId,
+          customer_name: userEntireData.name || 'Customer',
+          call_type: 'video',
+          status: 'pending',
+          room_id: roomId,
+          room_token: vendorToken,
+        }])
+        .select()
+        .single();
+
+      if (reqErr) {
+        setIsCallWaiting(false);
+        Alert.alert('Error', 'Failed to send call request.');
+        return;
+      }
+
+      // Track pending request so cancel/back/timeout can dismiss the vendor's popup
+      activeCallRef.current = { requestId: requestData.id, astrologerId: person.userId, roomId };
+
+      const sock = io(SOCKET_URL);
+      callSocketRef.current = sock;
+      sock.on('connect', () => {
+        sock.emit('join_room', userEntireData.id);
+        sock.emit('initiate_call', {
+          astrologer_id: person.userId,
+          callType: 'video',
+          callerName: userEntireData.name || 'Customer',
+          callerId: userEntireData.id,
+          roomId,
+          vendorToken,
+          requestId: requestData.id,
+        });
+      });
+
+      let navigated = false;
+      const goToCall = dbSessionId => {
+        if (navigated) return;
+        navigated = true;
+        activeCallRef.current = null; // accepted → don't cancel
+        supabase.removeChannel(channel);
+        sock.removeAllListeners();
+        sock.disconnect();
+        callSocketRef.current = null;
+        setIsCallWaiting(false);
+        const realSessionId = dbSessionId || backendSessionId;
+        navigation.navigate('VideoCallScreen', {
+          token: callerToken,
+          sessionId: realSessionId,
+          recieverName: person.name,
+          recieverImage: person.profileImage || '',
+          recieverId: person._id || person.userId,
+        });
+      };
+
+      sock.once('call_accepted', data => {
+        goToCall(data.sessionId);
+      });
+
+      sock.on('call_rejected', () => {
+        if (!navigated) {
+          navigated = true;
+          activeCallRef.current = null; // vendor rejected → nothing to cancel
+          supabase.removeChannel(channel);
+          sock.removeAllListeners();
+          sock.disconnect();
+          callSocketRef.current = null;
+          setIsCallWaiting(false);
+          showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+        }
+      });
+
+      const channel = supabase
+        .channel(`video_call_request_astroinfo_${requestData.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_requests',
+            filter: `id=eq.${requestData.id}`,
+          },
+          payload => {
+            if (payload.new.status === 'accepted') {
+              goToCall(payload.new.session_id);
+            } else if (payload.new.status === 'rejected') {
+              if (!navigated) {
+                navigated = true;
+                activeCallRef.current = null;
+                supabase.removeChannel(channel);
+                sock.removeAllListeners();
+                sock.disconnect();
+                callSocketRef.current = null;
+                setIsCallWaiting(false);
+                showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+              }
+            }
+          },
+        )
+        .subscribe();
+
+      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      setTimeout(() => {
+        if (!navigated) {
+          navigated = true;
+          notifyVendorCancelled('missed'); // mark missed + dismiss the vendor's popup
+          supabase.removeChannel(channel);
+          sock.removeAllListeners();
+          sock.disconnect();
+          callSocketRef.current = null;
+          setIsCallWaiting(false);
+          showStatusPopup({ variant: 'missed', title: 'Not Answered', message: 'Your video call was not picked up. Please try again later.' });
+        }
+      }, 60000);
+    } catch (err) {
+      setIsCallWaiting(false);
+      console.error('[AstrologerInfo] initiateVideoCall error:', err);
+      Alert.alert('Error', 'Failed to initiate video call. Please try again.');
+    }
+  };
+
+  // Auto-trigger a service when arriving from a card's Chat/Call/Video button
+  // (route.params.autoAction). Reuses the proven handlers above so the list cards
+  // don't have to duplicate the call/chat flow. Fires once.
+  const autoFiredRef = useRef(false);
+  useEffect(() => {
+    const action = route.params?.autoAction;
+    if (!action || autoFiredRef.current) return;
+    autoFiredRef.current = true;
+    const unavailable = label =>
+      Alert.alert('Unavailable', `${person.name || 'This astrologer'} is not available for ${label} right now.`);
+    const t = setTimeout(() => {
+      if (action === 'chat') {
+        person.isChatEnabled !== false ? sendChatRequest(person) : unavailable('chat');
+      } else if (action === 'call') {
+        person.isCallEnabled !== false ? initiateAudioCall() : unavailable('calls');
+      } else if (action === 'video') {
+        person.isVideoEnabled !== false ? initiateVideoCall() : unavailable('video call');
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, []);
 
   const handleShowAllReviews = () => {
     setShowAllReviews(true);
@@ -123,22 +562,32 @@ const AstrologerInfo = ({route, navigation}) => {
       const token = await AsyncStorage.getItem('token');
       if (!token) throw new Error('Token not found');
       
-      const response = await Instance.post(
-        isFavorite ? '/api/favoriteAstrologer/remove' : 'api/favoriteAstrologer/add',
+      // Optimistic flip so the heart responds instantly; revert on failure.
+      const next = !isFavorite;
+      setIsFavorite(next);
+      await Instance.post(
+        next ? '/api/favoriteAstrologer/add' : '/api/favoriteAstrologer/remove',
         { astrologerId: person._id },
         { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
       );
-
-      if (response.data) {
-        setIsFavorite(!isFavorite);
-      }
     } catch (error) {
-      console.error('API call failed:', error.message);
+      console.error('Favorite toggle failed:', error.message);
+      setIsFavorite(prev => !prev); // revert optimistic flip
     }
   };
 
   const languages = person.language?.join(', ') || 'Hindi, English';
   const specialties = person.specialties?.map(s => s.name).join(', ') || 'Vedic Astrology';
+
+  // Service availability — astrologer always shown; a disabled service turns the button
+  // red + "Off" and shows an alert on tap (matches the list screens). Treat an absent
+  // flag as enabled so older navigation sources don't wrongly disable a button.
+  const chatEnabled = person.isChatEnabled !== false;
+  const callEnabled = person.isCallEnabled !== false;
+  const videoEnabled = person.isVideoEnabled !== false;
+
+  const showUnavailable = serviceLabel =>
+    Alert.alert('Unavailable', `${person.name || 'This astrologer'} is not available for ${serviceLabel} right now.`);
 
   return (
     <View style={styles.container}>
@@ -173,7 +622,9 @@ const AstrologerInfo = ({route, navigation}) => {
           <View style={styles.statsBar}>
             <View style={styles.statItem}>
               <MaterialIcons name="star" size={moderateScale(18)} color={COLORS.AstroGold} />
-              <Text style={styles.statText}>{person.rating || avgRating?.averageRating || 'New'}</Text>
+              <Text style={styles.statText}>
+                {avgRating?.totalReviews ? Number(avgRating.averageRating).toFixed(1) : 'New'}
+              </Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -244,12 +695,14 @@ const AstrologerInfo = ({route, navigation}) => {
             <View style={styles.reviewsHeader}>
               <View>
                 <Text style={styles.sectionTitle}>Client Reviews</Text>
-                <Text style={styles.reviewSubText}>{avgRating.totalReviews || '0'} reviews on Astrowani</Text>
+                <Text style={styles.reviewSubText}>{avgRating.totalReviews || 0} reviews on Astrowani</Text>
               </View>
-              <View style={styles.ratingBadge}>
-                <Text style={styles.ratingBadgeText}>{avgRating.averageRating || '0'}</Text>
-                <MaterialIcons name="star" size={moderateScale(14)} color="#FFF" />
-              </View>
+              {avgRating.totalReviews > 0 && (
+                <View style={styles.ratingBadge}>
+                  <Text style={styles.ratingBadgeText}>{Number(avgRating.averageRating).toFixed(1)}</Text>
+                  <MaterialIcons name="star" size={moderateScale(14)} color="#FFF" />
+                </View>
+              )}
             </View>
 
             {reviewloading ? (
@@ -265,17 +718,16 @@ const AstrologerInfo = ({route, navigation}) => {
                     </View>
                     <View style={{ flex: 1, marginLeft: scale(10) }}>
                       <Text style={styles.reviewerName}>{review.user?.firstName || 'Anonymous'}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <MaterialIcons key={i} name="star" size={moderateScale(12)} color={i < (review.rating || 5) ? COLORS.AstroGold : '#ddd'} />
-                        ))}
-                      </View>
+                      <StarRating rating={review.rating} size={12} />
                     </View>
                     <Text style={styles.reviewDate}>
                       {review.createdAt ? new Date(review.createdAt).toLocaleDateString('en-GB') : ''}
                     </Text>
                   </View>
-                  <Text style={styles.reviewComment}>{review.comment || 'Great experience!'}</Text>
+                  {!!review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
+                  {!!review.adminReply && (
+                    <Text style={styles.adminReplyText}>↳ Astrowani: {review.adminReply}</Text>
+                  )}
                   {index !== reviewsToShow.length - 1 && <View style={styles.reviewDivider} />}
                 </View>
               ))
@@ -300,34 +752,53 @@ const AstrologerInfo = ({route, navigation}) => {
 
       {/* Floating Action Dock */}
       <View style={styles.floatingDock}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => sendChatRequest(person)}>
-          <MaterialIcons name="chat" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+        <TouchableOpacity
+          style={chatEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
+          activeOpacity={0.8}
+          onPress={() => (chatEnabled ? sendChatRequest(person) : showUnavailable('chat'))}>
+          <MaterialIcons name={chatEnabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(20)} color={chatEnabled ? COLORS.AstroMaroon : '#fff'} />
           <View style={styles.actionBtnTextCol}>
-            <Text style={styles.actionBtnText}>Chat</Text>
-            <Text style={styles.actionBtnPrice}>{person.pricing ? `₹${person.pricing}/min` : 'Free'}</Text>
+            <Text style={chatEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{chatEnabled ? 'Chat' : 'Off'}</Text>
+            <Text style={chatEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.pricing ? `₹${person.pricing}/min` : 'Free'}</Text>
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.actionBtn, { marginLeft: scale(10) }]} 
-          onPress={async () => {
-            const token = await AsyncStorage.getItem('token');
-            const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
-            navigation.navigate('EnxJoinScreen', {
-              userId: person.userId, name: userEntireData?.name || 'User', astroId: person.userId,
-              callType: 'voice', receiverId: person.userId, callingCondition: 'outgoing', callerRole: 'customer', userToken: token,
-            });
-          }}>
-          <MaterialIcons name="call" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+        <TouchableOpacity
+          style={[callEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
+          activeOpacity={0.8}
+          onPress={() => (callEnabled ? initiateAudioCall() : showUnavailable('calls'))}>
+          <MaterialIcons name={callEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color={callEnabled ? COLORS.AstroMaroon : '#fff'} />
           <View style={styles.actionBtnTextCol}>
-            <Text style={styles.actionBtnText}>Call</Text>
-            <Text style={styles.actionBtnPrice}>{person.videoPrice ? `₹${person.videoPrice}/min` : 'Free'}</Text>
+            <Text style={callEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{callEnabled ? 'Call' : 'Off'}</Text>
+            <Text style={callEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.chargePerMinute ? `₹${person.chargePerMinute}/min` : 'Free'}</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[videoEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
+          activeOpacity={0.8}
+          onPress={() => (videoEnabled ? initiateVideoCall() : showUnavailable('video call'))}>
+          <MaterialIcons name={videoEnabled ? 'videocam' : 'videocam-off'} size={moderateScale(20)} color={videoEnabled ? COLORS.AstroMaroon : '#fff'} />
+          <View style={styles.actionBtnTextCol}>
+            <Text style={videoEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{videoEnabled ? 'Video' : 'Off'}</Text>
+            <Text style={videoEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.videoPrice ? `₹${person.videoPrice}/min` : 'Free'}</Text>
           </View>
         </TouchableOpacity>
       </View>
 
-      <GiftModal visible={isModalVisible} onClose={() => setModalVisible(false)} />
-      
+      <GiftModal
+        visible={isModalVisible}
+        onClose={() => setModalVisible(false)}
+        astrologer={person}
+        context="profile"
+      />
+
+      <RequestingPopup
+        visible={isCallWaiting}
+        astro={person}
+        onCancel={cancelCallRequest}
+      />
+
       <RequestingPopup
         visible={requesting}
         astro={requestAstro}
@@ -415,6 +886,7 @@ const styles = StyleSheet.create({
   reviewerName: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: '#000' },
   reviewDate: { fontSize: moderateScale(11), color: '#999' },
   reviewComment: { fontSize: moderateScale(13), color: '#555', fontFamily: 'Lato-Regular', marginLeft: scale(45) },
+  adminReplyText: { fontSize: moderateScale(12), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', marginLeft: scale(45), marginTop: verticalScale(4), fontStyle: 'italic' },
   reviewDivider: { height: 1, backgroundColor: '#f0f0f0', marginTop: verticalScale(15), marginLeft: scale(45) },
   reviewActionRow: { flexDirection: 'row', alignItems: 'center', marginTop: verticalScale(10) },
   actionTextBtn: { color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', fontSize: moderateScale(13) },
@@ -433,9 +905,15 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', backgroundColor: COLORS.AstroGold, borderRadius: moderateScale(25),
     justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(10),
   },
-  actionBtnTextCol: { marginLeft: scale(8) },
-  actionBtnText: { fontSize: moderateScale(15), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
-  actionBtnPrice: { fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, opacity: 0.8 },
+  actionBtnUnavailable: {
+    flex: 1, flexDirection: 'row', backgroundColor: '#C0392B', borderRadius: moderateScale(25),
+    justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(10), opacity: 0.9,
+  },
+  actionBtnTextCol: { marginLeft: scale(6) },
+  actionBtnText: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
+  actionBtnPrice: { fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, opacity: 0.8 },
+  actionBtnTextUnavailable: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: '#fff' },
+  actionBtnPriceUnavailable: { fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: '#fff', opacity: 0.85 },
 });
 
 export default AstrologerInfo;

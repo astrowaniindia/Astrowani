@@ -117,12 +117,6 @@ function CustomDrawerContent(props, navigation) {
             onPress={() => props.navigation.navigate('SessionStack')}
           />
           <DrawerItem
-            label="Gemstones"
-            labelStyle={styles.drawerLabel}
-            icon={() => renderIcon(FontAwesome6, 'gem', 18)}
-            onPress={() => props.navigation.navigate('GemstoneDetails')}
-          />
-          <DrawerItem
             label="Remedies"
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'spa')}

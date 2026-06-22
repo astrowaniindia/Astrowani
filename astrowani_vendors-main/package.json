@@ -20,7 +20,6 @@
     "@supabase/supabase-js": "^2.108.1",
     "agora-react-native-rtm": "^1.5.1",
     "axios": "^1.7.7",
-    "enx-rtc-react-native": "^2.3.46",
     "otpless-react-native": "^1.1.8",
     "react": "18.3.1",
     "react-delegate-component": "^1.0.0",
@@ -34,6 +33,7 @@
     "react-native-get-random-values": "^1.11.0",
     "react-native-image-crop-picker": "^0.41.2",
     "react-native-image-picker": "^7.1.2",
+    "react-native-incall-manager": "^4.2.1",
     "react-native-keep-awake": "^4.0.0",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-otp-entry": "^1.7.1",
@@ -43,6 +43,7 @@
     "react-native-sound": "^0.11.2",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-vector-icons": "^10.2.0",
+    "react-native-webrtc": "^124.0.7",
     "socket.io-client": "^4.8.3",
     "text-encoding": "^0.7.0"
   },

@@ -7,6 +7,8 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
+import { showStatusPopup } from '../components/StatusPopup';
+import { ensureProfileComplete } from '../utils/profileGate';
 
 const useChatRequest = (navigation) => {
   const [requesting, setRequesting] = useState(false);
@@ -14,9 +16,14 @@ const useChatRequest = (navigation) => {
   const [pendingRequestId, setPendingRequestId] = useState(null);
   const channelRef = useRef(null);
   const astroRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const requestIdRef = useRef(null);
 
   const sendChatRequest = async (item) => {
     try {
+      // Profile gate — locked until the customer completes their profile.
+      if (!(await ensureProfileComplete(navigation))) return;
+
       const userStr = await AsyncStorage.getItem('userData');
       const user = userStr ? JSON.parse(userStr) : null;
       if (!user) {
@@ -99,6 +106,7 @@ const useChatRequest = (navigation) => {
       if (!requestId) throw new Error('No request ID returned');
 
       astroRef.current = item;
+      requestIdRef.current = requestId;
       setRequestAstro(item);
       setPendingRequestId(requestId);
       setRequesting(true);
@@ -119,6 +127,7 @@ const useChatRequest = (navigation) => {
           (payload) => {
             const updated = payload.new;
             if (updated.status === 'accepted') {
+              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
               setRequesting(false);
               setPendingRequestId(null);
               if (channelRef.current) supabase.removeChannel(channelRef.current);
@@ -127,17 +136,32 @@ const useChatRequest = (navigation) => {
                 person: astroRef.current,
               });
             } else if (updated.status === 'rejected') {
+              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
               setRequesting(false);
               setPendingRequestId(null);
               if (channelRef.current) supabase.removeChannel(channelRef.current);
-              Alert.alert(
-                'Astrologer Busy',
-                'The astrologer is currently unavailable. Please try another.'
-              );
+              showStatusPopup({
+                variant: 'busy',
+                title: 'Astrologer Busy',
+                message: 'Astrologer is busy right now. Please try again after some time.',
+              });
             }
           }
         )
         .subscribe();
+
+      // Auto-mark MISSED after 1 minute if the astrologer doesn't answer.
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(async () => {
+        timeoutRef.current = null;
+        try {
+          await supabase.from('chat_requests').update({ status: 'missed' }).eq('id', requestIdRef.current);
+        } catch (_) {}
+        setRequesting(false);
+        setPendingRequestId(null);
+        if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
+        showStatusPopup({ variant: 'missed', title: 'Not Answered', message: 'Your chat request was not picked up. Please try again later.' });
+      }, 60000);
     } catch (err) {
       console.log('sendChatRequest error:', err?.message || JSON.stringify(err));
       Alert.alert('Error', `Could not send request: ${err?.message || 'Please try again.'}`);
@@ -145,6 +169,7 @@ const useChatRequest = (navigation) => {
   };
 
   const cancelRequest = async () => {
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
     if (pendingRequestId) {
       await supabase
         .from('chat_requests')

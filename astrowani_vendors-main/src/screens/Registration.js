@@ -15,13 +15,11 @@ import { Dropdown } from 'react-native-element-dropdown';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { COLORS } from '../Theme/Colors';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import ImagePicker from 'react-native-image-crop-picker';
 import { supabase } from '../api/SupabaseClient';
 import messaging from '@react-native-firebase/messaging';
 
 const Registration = ({ navigation }) => {
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [fcmToken, setFcmToken] = useState('');
 
@@ -43,11 +41,9 @@ const Registration = ({ navigation }) => {
   const [user, setUser] = useState({
     profilePic: '',
     email: '',
-    firstName: '',
-    lastName: '',
+    fullName: '',
     gender: '',
     skills: [],
-    dateOfBirth: '',
     languages: [],
     phoneNumber: '',
     experience: '',
@@ -91,6 +87,11 @@ const Registration = ({ navigation }) => {
   };
 
   const handleSubmit = async () => {
+    const trimmedName = (user.fullName || '').trim();
+    if (!trimmedName || !user.phoneNumber) {
+      Alert.alert('Missing info', 'Please enter at least your full name and phone number.');
+      return;
+    }
     setLoading(true);
     try {
       if (!fcmToken) {
@@ -98,14 +99,18 @@ const Registration = ({ navigation }) => {
         setLoading(false);
         return;
       }
-      
+
+      // Store the full name; split into first/last so the rest of the app (which
+      // still reads first_name/last_name) keeps working.
+      const [firstName, ...rest] = trimmedName.split(/\s+/);
+      const lastName = rest.join(' ');
+
       const { error } = await supabase.from('astrologers').insert([
         {
           email: user.email,
-          first_name: user.firstName,
-          last_name: user.lastName,
+          first_name: firstName,
+          last_name: lastName,
           phone_number: user.phoneNumber,
-          date_of_birth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString() : null,
           gender: user.gender,
           experience: parseInt(user.experience) || 0,
           languages: user.languages,
@@ -114,6 +119,17 @@ const Registration = ({ navigation }) => {
             const skill = skillsOptions.find(opt => opt.label === skillLabel);
             return skill ? skill.value : skillLabel;
           }),
+          // New signups await admin approval before reaching their dashboard.
+          approval_status: 'pending',
+          // Service toggles + charges — start disabled/zero so the astrologer is hidden
+          // everywhere until they set charges (EditProfile) and enable services (HomeScreen).
+          is_chat_enabled: false,
+          is_call_enabled: false,
+          is_video_call_enabled: false,
+          is_available: false,
+          chat_charge_per_minute: 0,
+          call_charge_per_minute: 0,
+          video_charge_per_minute: 0,
         }
       ]);
 
@@ -130,11 +146,6 @@ const Registration = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
-  const onChangeDate = (event, selectedDate) => {
-    const currentDate = selectedDate || user.dateOfBirth;
-    setShowDatePicker(Platform.OS === 'ios');
-    handleInputChange('dateOfBirth', currentDate);
   };
   console.log("Dropdown Options:", skillsOptions);
 
@@ -190,18 +201,11 @@ const Registration = ({ navigation }) => {
 
         <View style={styles.profileView}>
           <TextInput
-            placeholder="First Name"
+            placeholder="Full Name"
             placeholderTextColor="gray"
             style={styles.input}
-            value={user.firstName}
-            onChangeText={text => handleInputChange('firstName', text)}
-          />
-          <TextInput
-            placeholder="Last Name"
-            placeholderTextColor="gray"
-            style={styles.input}
-            value={user.lastName}
-            onChangeText={text => handleInputChange('lastName', text)}
+            value={user.fullName}
+            onChangeText={text => handleInputChange('fullName', text)}
           />
           <View style={styles.dropdownContainer}>
             <Dropdown
@@ -250,17 +254,6 @@ const Registration = ({ navigation }) => {
             value={user.experience}
             onChangeText={text => handleInputChange('experience', text)}
           />
-
-          <TouchableOpacity
-            style={styles.input}
-            onPress={() => setShowDatePicker(true)}>
-            <Text style={styles.dropdownText}>
-              {user.dateOfBirth
-                ? user.dateOfBirth.toLocaleDateString()
-                : 'Select Date of Birth'}
-            </Text>
-            <Ionicons name="calendar" color={COLORS.orange} size={25} />
-          </TouchableOpacity>
 
           <View style={styles.dropdownContainer}>
             <Dropdown
@@ -355,15 +348,6 @@ const Registration = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
           <Text style={styles.signin}>Already have an Account? Sign in</Text>
         </TouchableOpacity>
-
-        {showDatePicker && (
-          <DateTimePicker
-            value={user.dateOfBirth || new Date()}
-            mode="date"
-            display="default"
-            onChange={onChangeDate}
-          />
-        )}
       </ScrollView>
     </View>
   );

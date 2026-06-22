@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
+import { supabase } from '../../api/SupabaseClient';
 
 export default function Wallet() {
   const [balance, setBalance] = useState(null);
@@ -11,13 +13,36 @@ export default function Wallet() {
 
   const fetchWallet = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await fetch(`${api}/vendor/wallet`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json();
-      setBalance(json?.data?.balance ?? 0);
-      setTransactions(json?.data?.transactions ?? []);
+      const astroId = await AsyncStorage.getItem('astroId');
+      if (!astroId) return;
+
+      // 1. Fetch balance
+      const { data: astroData, error: astroErr } = await supabase
+        .from('astrologers')
+        .select('wallet_balance')
+        .eq('id', astroId)
+        .single();
+      
+      if (!astroErr && astroData) {
+        setBalance(astroData.wallet_balance ?? 0);
+      }
+
+      // 2. Fetch transactions
+      const { data: txns, error: txnErr } = await supabase
+        .from('vendor_wallet_transactions')
+        .select('*')
+        .eq('vendor_id', astroId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!txnErr && txns) {
+        setTransactions(txns.map(t => ({
+          id: t.id,
+          description: t.description || 'Consultation Earning',
+          amount: t.type === 'credit' ? t.amount : -t.amount,
+          date: new Date(t.created_at).toLocaleDateString('en-IN'),
+        })));
+      }
     } catch (e) {
       console.warn('Wallet fetch error', e);
     } finally {
@@ -25,9 +50,11 @@ export default function Wallet() {
     }
   };
 
-  useEffect(() => {
-    fetchWallet();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchWallet();
+    }, [])
+  );
 
   const renderTransaction = ({ item }) => (
     <View style={styles.transactionCard}>
