@@ -1,2 +1,2 @@
-export const SOCKET_URL = 'http://localhost:4500';
+export const SOCKET_URL = 'https://astrowani.onrender.com';
 
