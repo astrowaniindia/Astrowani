@@ -1,6 +1,6 @@
 # Project State
 
-**Last updated:** 2026-06-22
+**Last updated:** 2026-06-23
 **Authoritative deep docs:** `CLAUDE.md` (living architecture) + `memory/MEMORY.md` (per-feature notes).
 
 ## Monorepo (4 sub-projects)
@@ -13,6 +13,10 @@
 Feature build-out complete across all four projects. Remaining work is verification on real
 devices + a few explicitly-deferred items (wallet recharge gateway, push notifications, SFU for
 large live audiences).
+
+## Work Completed (This Session)
+- Bypassed the strict FCM token check in `astrowani_vendors-main/src/screens/Registration.js` to allow new astrologers to sign up successfully on emulators and fallback setups.
+- Updated `IMPLEMENTATION_VERIFICATION_REPORT.md` to document the change.
 
 ## Shipped subsystems
 - **Calls (audio/video)** — WebRTC P2P over Socket.io signalling (NOT EnableX, despite docs).

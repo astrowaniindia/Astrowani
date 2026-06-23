@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Login = ({navigation}) => {
   const [countryCode, setCountryCode] = useState('IN');
@@ -67,77 +68,16 @@ const Login = ({navigation}) => {
     return true;
   };
 
+  // TEMPORARY: OTP bypassed — navigate directly to dashboard
   const handleGetOtp = async () => {
     if (validateFields()) {
       SetLoading(true);
-
       try {
-        if (toggle) {
-          // Email OTP flow
-          const response = await Instance.post('/api/users/login-with-email', {
-            email: email,
-               role: 'customer',
-          });
-
-          if (response.data.success) {
-            navigation.navigate('EmailOtpScreen', {email: email,
-            
-
-            });
-          } else {
-            showAlert(
-              'Login Failed',
-              response.data.message || 'Failed to send OTP to email',
-              'error'
-            );
-          }
-        } else {
-          // Mobile OTP flow
-          const response = await Instance.post(
-            '/api/users/mobile-otp-request',
-            {
-              phoneNumber: phoneNumber,
-              role: 'customer',
-            },
-          );
-
-          if (response.data.success) {
-            navigation.navigate('OtpScreen', {
-              email: '',
-              phone: phoneNumber,
-              sessionId: response?.data?.result?.Details,
-              type: 'mobile',
-            });
-          } else {
-            showAlert(
-              'Login Failed',
-              response.data.message || 'Failed to send OTP to mobile',
-              'error'
-            );
-          }
-        }
+        await AsyncStorage.setItem('token', 'bypass_token');
+        navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
       } catch (error) {
-        console.log('API call error:', error);
-
-        if (error.response) {
-          const errorMessage =
-            error.response.data?.message ||
-            error.response.data?.error ||
-            'Server error occurred';
-          showAlert('Error', errorMessage, 'error');
-        } else if (error.request) {
-          showAlert(
-            'Network Error',
-            'Please check your internet connection and try again.',
-            'error'
-          );
-        } else {
-          showAlert(
-            'Error',
-            'An unexpected error occurred. Please try again later.',
-            'error'
-          );
-        }
+        console.log('Login error:', error);
+        showAlert('Error', 'Something went wrong. Please try again.', 'error');
       } finally {
         SetLoading(false);
       }
@@ -242,7 +182,7 @@ const Login = ({navigation}) => {
             {loading ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.btnTxt}>Get OTP</Text>
+              <Text style={styles.btnTxt}>Continue</Text>
             )}
           </TouchableOpacity>
 

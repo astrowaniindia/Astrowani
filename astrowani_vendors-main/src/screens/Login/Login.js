@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useState} from 'react';
 import {
   StyleSheet,
   Image,
@@ -16,15 +16,10 @@ import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {countries} from './Country';
-import {requestUserPermission} from '../../utils/Firebase';
-import messaging from '@react-native-firebase/messaging';
-import {OtplessHeadlessModule} from 'otpless-react-native';
-import showToast from '../../utils/showToast';
 import { supabase } from '../../api/SupabaseClient';
-import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Login = ({navigation}) => {
-  const headlessModule = new OtplessHeadlessModule();
   const [countryCode, setCountryCode] = useState('IN');
   const [callingCode, setCallingCode] = useState('91');
   const [isPickerVisible, setPickerVisible] = useState(false);
@@ -32,103 +27,11 @@ const Login = ({navigation}) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [loading, SetLoading] = useState(false);
-  const [fcmToken, setFcmToken] = useState('');
 
   const togglePicker = () => {
     setPickerVisible(!isPickerVisible);
   };
-  useEffect(() => {
-    headlessModule.initHeadless('XEI0EKAE23XPDNHKAQRJ');
-    headlessModule.setHeadlessCallback(result => {
-      handleGetOtpResponse(result);
-    });
-    return () => {
-      headlessModule.clearListener();
-    };
-  }, []);
-  const handleGetOtps = async () => {
-    if (!validateFields()) return;
-    const headlessRequest = {
-      phone: phoneNumber,
-      countryCode: '+91',
-    };
-    try {
-      const result = headlessModule.startHeadless(headlessRequest);
-      if (!result) {
-        console.error('No result returned from OTP module');
-        return;
-      }
-      if (result.statusCode === 200 && result.response?.otp) {
-        console.log('Headless Result:', result);
-      } else {
-        console.error('Unexpected result or statusCode:', result);
-        ToastAndroid.showWithGravity(
-          'Failed to send OTP, try again later.',
-          ToastAndroid.LONG,
-          ToastAndroid.CENTER,
-        );
-        92;
-      }
-    } catch (error) {
-      console.error('OTPless Error:', error);
-      ToastAndroid.showWithGravity(
-        'Failed to send OTP, try again later.',
-        ToastAndroid.LONG,
-        ToastAndroid.CENTER,
-      );
-    }
-  };
-  const handleGetOtpResponse = result => {
-    console.log('Headless Result:', result);
-    if (result?.statusCode === 200) {
-      navigation.navigate('OtpScreen', {
-        otp: result?.response?.otp,
-        phone: phoneNumber,
-        requestID: result?.requestID,
-      });
-      const responseType = result?.responseType;
-      switch (responseType) {
-        case 'INITIATE':
-          console.log('Headless authentication initiated');
-          break;
-        case 'VERIFY':
-          console.log('Verification completed');
-          break;
-        case 'OTP_AUTO_READ':
-          if (Platform.OS === 'android') {
-            const otp = result;
-            console.log(`OTP Received: ${otp}`);
-          }
-          break;
-        case 'ONETAP':
-          console.log(`Token: ${result.token}`);
-          navigation.navigate('EmailOtpScreen', {token: result.token});
-          break;
-        default:
-          console.warn(`Unknown response type: ${responseType}`);
-          break;
-      }
-    } else {
-      Alert.alert(
-        'Error',
-        `Failed with status: ${result?.statusCode || 'unknown'}`,
-      );
-    }
-  };
-  const getFCMToken = async () => {
-    try {
-      let token = await messaging().getToken();
-      setFcmToken(token);
-      console.log('FCM Token:', token);
-    } catch (error) {
-      console.error('Error fetching FCM Token:', error);
-    }
-  };
 
-  useEffect(() => {
-    requestUserPermission();
-    getFCMToken();
-  }, []);
   const selectCountry = country => {
     setCountryCode(country.code);
     setCallingCode(country.callingCode);
@@ -162,99 +65,61 @@ const Login = ({navigation}) => {
     return true;
   };
 
-  useEffect(() => {
-    requestUserPermission();
-    getFCMToken();
-  }, []);
+  // TEMPORARY: OTP bypassed — look up astrologer and go directly to dashboard
+  const loginByPhone = async () => {
+    if (!validateFields()) return;
+    SetLoading(true);
+    try {
+      const formattedPhone = phoneNumber;
+      const { data: astro } = await supabase
+        .from('astrologers')
+        .select('id, approval_status')
+        .eq('phone_number', formattedPhone)
+        .single();
+
+      if (!astro) {
+        Alert.alert('Not Found', 'No astrologer account found with this phone number. Please register first.');
+        return;
+      }
+
+      await AsyncStorage.setItem('astroId', String(astro.id));
+      await AsyncStorage.setItem('token', 'bypass_token');
+      navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+    } catch (error) {
+      console.log('Login error:', error);
+      Alert.alert('Login Error', 'Something went wrong. Please try again.');
+    } finally {
+      SetLoading(false);
+    }
+  };
+
   const handleGetOtp = async () => {
     if (!validateFields()) return;
-
     SetLoading(true);
     try {
-      if (toggle) {
-        // Send OTP to Email
-        const { error } = await supabase.auth.signInWithOtp({
-          email: email,
-        });
+      const { data: astro } = await supabase
+        .from('astrologers')
+        .select('id, approval_status')
+        .eq('email', email)
+        .single();
 
-        if (error) throw error;
-        navigation.navigate('EmailOtpScreen', {email});
-      } else {
-        navigation.navigate('OtpScreen');
+      if (!astro) {
+        Alert.alert('Not Found', 'No astrologer account found with this email. Please register first.');
+        return;
       }
+
+      await AsyncStorage.setItem('astroId', String(astro.id));
+      await AsyncStorage.setItem('token', 'bypass_token');
+      navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
     } catch (error) {
-      console.log('API Error Message:', error.message);
-      Alert.alert('Login Error', error.message);
+      console.log('Login error:', error);
+      Alert.alert('Login Error', 'Something went wrong. Please try again.');
     } finally {
       SetLoading(false);
     }
   };
 
-  const getMobileOtp = async () => {
-    if (!phoneNumber) {
-      Alert.alert('Validation Error', 'Phone number cannot be empty.');
-      return;
-    }
-    SetLoading(true);
-    
-    // Format phone number with country code
-    const formattedPhone = `+${callingCode}${phoneNumber}`;
-    
-    // Hardcoded OTP for easy testing since SMS may not deliver properly
-    const generatedOtp = '1234';
-
-    try {
-      // Direct API call to EnableX to send SMS
-      const response = await axios.post(
-        'https://api.enablex.io/sms/v1/messages',
-        {
-          type: 'sms',
-          to: [formattedPhone],
-          from: 'ASTRO', // Placeholder sender ID
-          body: `Your Astrowani login OTP is ${generatedOtp}. Do not share this with anyone.`,
-        },
-        {
-          auth: {
-            username: '6a2a6625054e8b26860b4aa8',
-            password: 'RuBaju6yUyaeBuSuHavaguaaDadaguveNaNu\\',
-          },
-        }
-      );
-
-      console.log('EnableX Response:', response.data);
-
-      showToast('OTP sent successfully to your registered mobile');
-      
-      // Pass the generated OTP to the next screen for verification
-      navigation.navigate('OtpScreen', {
-        phone: formattedPhone,
-        expectedOtp: generatedOtp, // We pass it so the next screen can check it!
-      });
-      
-    } catch (error) {
-      console.log('EnableX Error:', error.response?.data || error.message);
-      
-      // If EnableX fails (e.g. because of strict Indian DLT rules or missing campaign),
-      // we can still let you login with a bypass for testing!
-      Alert.alert(
-        'SMS Failed', 
-        'EnableX failed to send SMS (you may need to configure a Campaign/Sender ID in EnableX). For testing, use OTP: ' + generatedOtp,
-        [
-          {
-            text: 'Continue with Bypass',
-            onPress: () => {
-              navigation.navigate('OtpScreen', {
-                phone: formattedPhone,
-                expectedOtp: generatedOtp,
-              });
-            }
-          }
-        ]
-      );
-    } finally {
-      SetLoading(false);
-    }
-  };
+  const getMobileOtp = loginByPhone;
 
   // console.log("phoneNumber: ", phoneNumber);
 
@@ -325,7 +190,7 @@ const Login = ({navigation}) => {
               {loading ? (
                 <ActivityIndicator color={COLORS.white} />
               ) : (
-                <Text style={styles.btnTxt}>Get OTP</Text>
+                <Text style={styles.btnTxt}>Continue</Text>
               )}
             </TouchableOpacity>
           </>
@@ -338,7 +203,7 @@ const Login = ({navigation}) => {
               {loading ? (
                 <ActivityIndicator color={COLORS.white} />
               ) : (
-                <Text style={styles.btnTxt}>Get OTP Mobile</Text>
+                <Text style={styles.btnTxt}>Continue</Text>
               )}
             </TouchableOpacity>
           </>

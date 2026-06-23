@@ -487,6 +487,16 @@ const HomeScreen = () => {
       {/* Banner — admin-managed, rotates on the admin-set interval */}
       <HomeBanner />
 
+      {/* TEMPORARY: pending-approval notice */}
+      {user && user.approval_status !== 'approved' && (
+        <View style={styles.pendingApprovalBanner}>
+          <Ionicons name="time-outline" size={22} color="#fff" />
+          <Text style={styles.pendingApprovalText}>
+            We will review your profile and get back to you soon!
+          </Text>
+        </View>
+      )}
+
       {/* Profile-incomplete notice — locks services until the profile is filled */}
       {!profileComplete && (
         <TouchableOpacity
@@ -595,6 +605,22 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   scrollContent: { padding: scale(15), paddingBottom: verticalScale(30) },
+  pendingApprovalBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#b45309',
+    borderRadius: moderateScale(14),
+    padding: scale(14),
+    marginBottom: verticalScale(14),
+    elevation: 3,
+    gap: scale(10),
+  },
+  pendingApprovalText: {
+    flex: 1,
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: moderateScale(14),
+  },
   incompleteProfileBanner: {
     flexDirection: 'row',
     alignItems: 'center',

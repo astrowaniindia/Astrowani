@@ -94,10 +94,9 @@ const Registration = ({ navigation }) => {
     }
     setLoading(true);
     try {
+      // If fcmToken is missing (e.g. on emulator), log a warning but continue registration
       if (!fcmToken) {
-        Alert.alert('Error', 'FCM token not available. Please try again.');
-        setLoading(false);
-        return;
+        console.warn('FCM token not available. Registering without push notifications.');
       }
 
       // Store the full name; split into first/last so the rest of the app (which

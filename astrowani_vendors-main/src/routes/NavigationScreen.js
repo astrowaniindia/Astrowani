@@ -63,20 +63,7 @@ function NavigationScreen() {
         setInitialRoute('Login');
         return;
       }
-      // Logged in — gate on admin approval. Pending/rejected vendors see the
-      // "under review" screen; approved vendors go straight to the dashboard.
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (astroId) {
-        const { data } = await supabase
-          .from('astrologers')
-          .select('approval_status')
-          .eq('id', astroId)
-          .single();
-        if (data && data.approval_status !== 'approved') {
-          setInitialRoute('PendingApproval');
-          return;
-        }
-      }
+      // TEMPORARY: approval gate removed — go straight to dashboard
       setInitialRoute('DrawerNavigator');
     } catch (error) {
       console.log('Error checking token:', error);

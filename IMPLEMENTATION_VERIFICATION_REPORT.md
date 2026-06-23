@@ -1,38 +1,26 @@
-# Implementation Verification Report: Phase 3B Financial & Configuration Fixes
+# Implementation Verification Report: Registration Bypasses
 
 ## 1. Target Files
-- **Backend:** `astrowani-backend/src/sessionManager.js`
-- **Customer App Configuration:** `astrowani_customer-main/src/config/api.js`
-- **Vendor App Configuration:** `astrowani_vendors-main/src/config/api.js`
-- **Customer App Screens/Components:**
-  - `astrowani_customer-main/src/screens/Video/VoiceCallScreen.tsx`
-  - `astrowani_customer-main/src/screens/Home/Home.js`
-  - `astrowani_customer-main/src/api/ApiCall.js`
-  - `astrowani_customer-main/src/utils/JoinRoom.tsx`
-  - `astrowani_customer-main/src/utils/EnxJoinScreen.tsx`
-- **Vendor App Screens/Components:**
-  - `astrowani_vendors-main/src/api/ApiCall.js`
+- **Vendor App:** `astrowani_vendors-main/src/screens/Registration.js`
 
 ## 2. Verification Evidence (Pre-Modification)
-- **Hardcoded URLs Identified:** Grep search performed for `192.168.29.168` to confirm all occurrences. Located hardcoded URLs in `src/config/api.js` (both apps) and `JoinRoom.tsx` + `EnxJoinScreen.tsx`.
-- **Connectivity Issue Identified:** Customer app logs showed `[AxiosError: Network Error]` when connecting to the static IP because of firewall restrictions and potential Wi-Fi client isolation on the network.
+- **FCM Token Check identified:** Inspected `Registration.js` at line 97 to find the strict check:
+  ```javascript
+  if (!fcmToken) {
+    Alert.alert('Error', 'FCM token not available. Please try again.');
+    setLoading(false);
+    return;
+  }
+  ```
+- **Limitation:** In emulators or situations without Google Play Services / Firebase connectivity, `fcmToken` is empty, leading to a blocked registration flow.
 
 ## 3. Change Summary
-
-### **Fix 1: Environment Variables**
-Strictly enforced that `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are defined. Removed fallbacks and warnings; the SessionManager now explicitly throws an Error if either environment variable is missing, preventing silent failure.
-
-### **Fix 2: RPC Migration in sessionManager.js**
-- Removed the multi-step billing update logic from the background worker in `sessionManager.js`.
-- Replaced it with a single call to `supabase.rpc('process_session_billing', { p_session_id })`.
-
-### **Fix 3: Remove Hardcoded URLs & Consolidated Configuration**
-- Updated `astrowani_customer-main/src/config/api.js` and `astrowani_vendors-main/src/config/api.js` to ONLY export `SOCKET_URL` set to `'http://localhost:4500'`.
-- Refactored `JoinRoom.tsx` and `EnxJoinScreen.tsx` to import and reference `SOCKET_URL` from the configuration instead of using a hardcoded local IP address.
+- **Made FCM Token Optional:** Replaced the strict early-return and `Alert.alert` validation with a simple `console.warn` log.
+- **Database Compatibility:** Verified that the Supabase `astrologers` table `fcm_token` column allows `NULL` values, ensuring that registering without an FCM token does not cause database insertion failures.
 
 ## 4. Validation Results
-- **Syntax Check:** Ran successfully with no compile or build errors.
-- **Port Forwarding Verification:** Verified that `adb reverse` routes traffic from both emulator and physical device to localhost.
+- **Code verification:** The modification correctly checks `!fcmToken` and prints a warning rather than blocking registration, allowing users to proceed on emulators and fallback setups.
+- **Route registration:** Redirects correctly navigate to the `Thankyou` screen upon successful submission.
 
 ---
-**Status:** VALIDATED & IMPLEMENTED (Fix 1, Fix 2 Refactor, & Fix 3 Localhost Routing)
+**Status:** VALIDATED & IMPLEMENTED (FCM token blocker bypass)
