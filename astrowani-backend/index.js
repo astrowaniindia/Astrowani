@@ -218,6 +218,10 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' })); // blog/banner images may be base64 data-URIs
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+// Admin dashboard — built from astrowani-admin/ into admin-dist/
+app.use('/admin', express.static(path.join(__dirname, 'admin-dist')));
+app.get('/admin/*', (_req, res) => res.sendFile(path.join(__dirname, 'admin-dist', 'index.html')));
+
 const PORT = process.env.PORT || 4500;
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 
