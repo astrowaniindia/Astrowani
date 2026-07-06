@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
@@ -55,6 +56,41 @@ const UserProfileScreen = ({navigation, route}) => {
   const [emailError, setEmailError] = useState(null);
   const [genderError, setGenderError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [editableFields, setEditableFields] = useState({
+    firstName: false,
+    phoneNumber: false,
+    email: false,
+    gender: false,
+    maritalStatus: false,
+    dateOfBirth: false,
+    timeOfBirth: false,
+    city: false,
+    state: false,
+  });
+
+  const [customAlert, setCustomAlert] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    buttons: [],
+  });
+
+  const showCustomAlert = (title, message, buttons = []) => {
+    const finalButtons = buttons.length > 0 ? buttons : [{ text: 'OK', onPress: () => {} }];
+    setCustomAlert({
+      visible: true,
+      title,
+      message,
+      buttons: finalButtons,
+    });
+  };
+
+  const toggleEditable = (fieldKey) => {
+    setEditableFields(prev => ({
+      ...prev,
+      [fieldKey]: !prev[fieldKey]
+    }));
+  };
   
   const [userProfile, setUserProfile] = useState({
     profilePic: user.profilePic || '',
@@ -125,26 +161,82 @@ const UserProfileScreen = ({navigation, route}) => {
   };
 
   const removePic = (type = 'profilePic') => {
-    Alert.alert('Remove Photo', 'Are you sure you want to remove this photo?', [
+    showCustomAlert('Remove Photo', 'Are you sure you want to remove this photo?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => handleInputChange(type, '') },
     ]);
   };
 
   const handleUpdate = async () => {
+    // 1. Profile Picture validation
+    if (!userProfile.profilePic) {
+      showCustomAlert('Validation Error', 'Please upload a Profile Photo.');
+      return;
+    }
+
+    // 2. Name validation
+    if (!userProfile.firstName || !userProfile.firstName.trim()) {
+      showCustomAlert('Validation Error', 'Please enter your Full Name.');
+      return;
+    }
+
+    // 3. Mobile Number validation
+    if (!userProfile.phoneNumber || !userProfile.phoneNumber.trim()) {
+      showCustomAlert('Validation Error', 'Please enter your Mobile Number.');
+      return;
+    }
+
+    // 4. Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!userProfile.email) {
-      setEmailError('Email cannot be empty'); return;
+    if (!userProfile.email || !userProfile.email.trim()) {
+      setEmailError('Email cannot be empty');
+      showCustomAlert('Validation Error', 'Email cannot be empty.');
+      return;
     } else if (!emailRegex.test(userProfile.email)) {
-      setEmailError('Please enter a valid email address'); return;
+      setEmailError('Please enter a valid email address');
+      showCustomAlert('Validation Error', 'Please enter a valid email address.');
+      return;
     } else {
       setEmailError(null);
     }
     
+    // 5. Gender validation
     if (!userProfile.gender) {
-      setGenderError('Please select a gender'); return;
+      setGenderError('Please select a gender');
+      showCustomAlert('Validation Error', 'Please select your Gender.');
+      return;
     } else {
       setGenderError(null);
+    }
+
+    // 6. Marital Status validation
+    if (!userProfile.maritalStatus) {
+      showCustomAlert('Validation Error', 'Please select your Marital Status.');
+      return;
+    }
+
+    // 7. Date of Birth validation
+    if (!userProfile.dateOfBirth) {
+      showCustomAlert('Validation Error', 'Please select your Date of Birth.');
+      return;
+    }
+
+    // 8. Time of Birth validation
+    if (!userProfile.timeOfBirth) {
+      showCustomAlert('Validation Error', 'Please select your Time of Birth.');
+      return;
+    }
+
+    // 9. City validation
+    if (!userProfile.city || !userProfile.city.trim()) {
+      showCustomAlert('Validation Error', 'Please enter your City (Place of Birth).');
+      return;
+    }
+
+    // 10. State validation
+    if (!userProfile.state) {
+      showCustomAlert('Validation Error', 'Please select your State.');
+      return;
     }
 
     setLoading(true);
@@ -176,13 +268,14 @@ const UserProfileScreen = ({navigation, route}) => {
       if (updated) {
         // Refresh the cached user so the profile gate unlocks immediately everywhere.
         await AsyncStorage.setItem('userData', JSON.stringify(updated));
-        Alert.alert('Success', 'Profile updated successfully!');
-        navigation.goBack();
+        showCustomAlert('Success', 'Profile updated successfully!', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
       } else {
         throw new Error('Update failed');
       }
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Error updating profile');
+      showCustomAlert('Error', err.response?.data?.message || 'Error updating profile');
     } finally {
       setLoading(false);
     }
@@ -196,49 +289,61 @@ const UserProfileScreen = ({navigation, route}) => {
     }
   };
 
-  const renderField = (icon, placeholder, value, onChange, type = 'text', extraProps = {}) => (
-    <View style={styles.inputWrapper}>
-      <View style={styles.inputIcon}>
-        <Ionicons name={icon} size={moderateScale(20)} color={COLORS.AstroMaroon} />
+  const renderField = (fieldKey, icon, placeholder, value, onChange, type = 'text', extraProps = {}) => {
+    const isEditable = editableFields[fieldKey];
+    return (
+      <View style={[styles.inputWrapper, !isEditable && { opacity: 0.85 }]}>
+        <View style={styles.inputIcon}>
+          <Ionicons name={icon} size={moderateScale(20)} color={COLORS.AstroMaroon} />
+        </View>
+        <View style={styles.inputContent}>
+          <Text style={styles.inputLabel}>{placeholder}</Text>
+          {type === 'text' && (
+            <TextInput
+              style={[styles.textInput, !isEditable && { color: '#666' }]}
+              value={value}
+              onChangeText={onChange}
+              placeholder={`Enter ${placeholder}`}
+              placeholderTextColor="#999"
+              editable={isEditable}
+              {...extraProps}
+            />
+          )}
+          {type === 'dropdown' && (
+            <Dropdown
+              style={styles.dropdownInput}
+              data={extraProps.data}
+              labelField="label"
+              valueField="value"
+              placeholder={`Select ${placeholder}`}
+              placeholderStyle={{ color: '#999', fontSize: moderateScale(14) }}
+              selectedTextStyle={{ color: isEditable ? '#000' : '#666', fontSize: moderateScale(14) }}
+              containerStyle={styles.dropdownContainer}
+              itemTextStyle={styles.dropdownItemText}
+              activeColor="#f0f0f0"
+              disable={!isEditable}
+              value={value}
+              onChange={item => onChange(item.value)}
+            />
+          )}
+          {type === 'date' && (
+            <TouchableOpacity 
+              onPress={() => { if (isEditable) extraProps.onPress(); }} 
+              disabled={!isEditable} 
+              style={styles.datePickerBtn}
+            >
+              <Text style={{ color: value ? (isEditable ? '#000' : '#666') : '#999', fontSize: moderateScale(14) }}>
+                {value || `Select ${placeholder}`}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity style={styles.editIconBadge} onPress={() => toggleEditable(fieldKey)}>
+          <MaterialIcons name="edit" size={moderateScale(16)} color={isEditable ? COLORS.AstroMaroon : '#888'} />
+        </TouchableOpacity>
       </View>
-      <View style={styles.inputContent}>
-        <Text style={styles.inputLabel}>{placeholder}</Text>
-        {type === 'text' && (
-          <TextInput
-            style={styles.textInput}
-            value={value}
-            onChangeText={onChange}
-            placeholder={`Enter ${placeholder}`}
-            placeholderTextColor="#999"
-            {...extraProps}
-          />
-        )}
-        {type === 'dropdown' && (
-          <Dropdown
-            style={styles.dropdownInput}
-            data={extraProps.data}
-            labelField="label"
-            valueField="value"
-            placeholder={`Select ${placeholder}`}
-            placeholderStyle={{ color: '#999', fontSize: moderateScale(14) }}
-            selectedTextStyle={{ color: '#000', fontSize: moderateScale(14) }}
-            value={value}
-            onChange={item => onChange(item.value)}
-          />
-        )}
-        {type === 'date' && (
-          <TouchableOpacity onPress={extraProps.onPress} style={styles.datePickerBtn}>
-            <Text style={{ color: value ? '#000' : '#999', fontSize: moderateScale(14) }}>
-              {value || `Select ${placeholder}`}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <View style={styles.editIconBadge}>
-        <MaterialIcons name="edit" size={moderateScale(16)} color="#888" />
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -277,26 +382,26 @@ const UserProfileScreen = ({navigation, route}) => {
             {/* Form Fields */}
             <View style={styles.formCard}>
               <Text style={styles.formSectionTitle}>Basic Details</Text>
-              {renderField('person-outline', 'Full Name', userProfile.firstName, t => handleInputChange('firstName', t))}
-              {renderField('call-outline', 'Mobile Number', userProfile.phoneNumber, t => handleInputChange('phoneNumber', t), 'text', { keyboardType: 'phone-pad', maxLength: 10 })}
+              {renderField('firstName', 'person-outline', 'Full Name', userProfile.firstName, t => handleInputChange('firstName', t))}
+              {renderField('phoneNumber', 'call-outline', 'Mobile Number', userProfile.phoneNumber, t => handleInputChange('phoneNumber', t), 'text', { keyboardType: 'phone-pad', maxLength: 10 })}
               
-              {renderField('mail-outline', 'Email Address', userProfile.email, t => handleInputChange('email', t), 'text', { keyboardType: 'email-address' })}
+              {renderField('email', 'mail-outline', 'Email Address', userProfile.email, t => handleInputChange('email', t), 'text', { keyboardType: 'email-address' })}
               {emailError && <Text style={styles.errorText}>{emailError}</Text>}
 
-              {renderField('male-female-outline', 'Gender', userProfile.gender, v => handleInputChange('gender', v), 'dropdown', { data: genderOptions })}
+              {renderField('gender', 'male-female-outline', 'Gender', userProfile.gender, v => handleInputChange('gender', v), 'dropdown', { data: genderOptions })}
               {genderError && <Text style={styles.errorText}>{genderError}</Text>}
               
-              {renderField('heart-outline', 'Marital Status', userProfile.maritalStatus, v => handleInputChange('maritalStatus', v), 'dropdown', { data: MarriedOptions })}
+              {renderField('maritalStatus', 'heart-outline', 'Marital Status', userProfile.maritalStatus, v => handleInputChange('maritalStatus', v), 'dropdown', { data: MarriedOptions })}
 
               <View style={styles.divider} />
               <Text style={styles.formSectionTitle}>Birth Details</Text>
-              {renderField('calendar-outline', 'Date of Birth', userProfile.dateOfBirth ? userProfile.dateOfBirth.toLocaleDateString() : '', null, 'date', { onPress: () => setShowDatePicker(true) })}
-              {renderField('time-outline', 'Time of Birth', userProfile.timeOfBirth ? userProfile.timeOfBirth.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '', null, 'date', { onPress: () => setShowTimePicker(true) })}
+              {renderField('dateOfBirth', 'calendar-outline', 'Date of Birth', userProfile.dateOfBirth ? userProfile.dateOfBirth.toLocaleDateString() : '', null, 'date', { onPress: () => setShowDatePicker(true) })}
+              {renderField('timeOfBirth', 'time-outline', 'Time of Birth', userProfile.timeOfBirth ? userProfile.timeOfBirth.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '', null, 'date', { onPress: () => setShowTimePicker(true) })}
               
               <View style={styles.divider} />
               <Text style={styles.formSectionTitle}>Location</Text>
-              {renderField('business-outline', 'City (Place of Birth)', userProfile.city, t => handleInputChange('city', t))}
-              {renderField('map-outline', 'State', userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
+              {renderField('city', 'business-outline', 'City (Place of Birth)', userProfile.city, t => handleInputChange('city', t))}
+              {renderField('state', 'map-outline', 'State', userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
             </View>
           </View>
         )}
@@ -349,6 +454,57 @@ const UserProfileScreen = ({navigation, route}) => {
           onChange={(e, time) => { setShowTimePicker(Platform.OS === 'ios'); if(time) handleInputChange('timeOfBirth', time); }}
         />
       )}
+
+      {/* Custom Themed Popup Modal */}
+      <Modal
+        visible={customAlert.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setCustomAlert(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Ionicons 
+              name={customAlert.title.toLowerCase().includes('error') ? "warning-outline" : "information-circle-outline"} 
+              size={moderateScale(40)} 
+              color={customAlert.title.toLowerCase().includes('error') ? '#d9534f' : COLORS.AstroMaroon} 
+              style={{ marginBottom: verticalScale(12) }}
+            />
+            <Text style={styles.modalTitle}>{customAlert.title}</Text>
+            <Text style={styles.modalMessage}>{customAlert.message}</Text>
+            <View style={styles.modalButtonsContainer}>
+              {customAlert.buttons.map((btn, index) => {
+                const isDestructive = btn.style === 'destructive';
+                const isCancel = btn.style === 'cancel';
+                
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.modalButton,
+                      isCancel && styles.modalCancelButton,
+                      isDestructive && styles.modalDestructiveButton,
+                      customAlert.buttons.length > 1 && { flex: 1, marginHorizontal: scale(5) }
+                    ]}
+                    onPress={() => {
+                      setCustomAlert(prev => ({ ...prev, visible: false }));
+                      if (btn.onPress) btn.onPress();
+                    }}
+                  >
+                    <Text style={[
+                      styles.modalButtonText,
+                      isCancel && styles.modalCancelButtonText,
+                      isDestructive && styles.modalDestructiveButtonText
+                    ]}>
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -400,6 +556,16 @@ const styles = StyleSheet.create({
   dropdownInput: { height: verticalScale(24), padding: 0, margin: 0 },
   datePickerBtn: { justifyContent: 'center', height: verticalScale(24) },
   editIconBadge: { width: scale(24), alignItems: 'flex-end' },
+  dropdownContainer: {
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderColor: COLORS.AstroMaroon,
+    borderWidth: 1,
+  },
+  dropdownItemText: {
+    fontSize: moderateScale(14),
+    color: '#000',
+  },
 
   errorText: { color: 'red', fontSize: moderateScale(11), marginTop: -verticalScale(10), marginBottom: verticalScale(10), marginLeft: scale(45) },
 
@@ -413,7 +579,74 @@ const styles = StyleSheet.create({
 
   infoText: { color: '#666', fontSize: moderateScale(13), lineHeight: 20, textAlign: 'center', fontFamily: 'Lato-Regular' },
   placeholderHand: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0', borderRadius: moderateScale(15) },
-  placeholderTxt: { color: '#888', marginTop: verticalScale(10), fontFamily: 'Lato-Regular' }
+  placeholderTxt: { color: '#888', marginTop: verticalScale(10), fontFamily: 'Lato-Regular' },
+
+  // Custom Modal Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  modalContainer: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(16),
+    padding: scale(20),
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: 'bold',
+    color: COLORS.AstroMaroon,
+    marginBottom: verticalScale(10),
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: moderateScale(14),
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: verticalScale(20),
+    lineHeight: verticalScale(20),
+  },
+  modalButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  modalButton: {
+    backgroundColor: COLORS.AstroGold,
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(20),
+    borderRadius: moderateScale(8),
+    minWidth: scale(100),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonText: {
+    color: COLORS.AstroMaroon || '#000',
+    fontSize: moderateScale(14),
+    fontWeight: 'bold',
+  },
+  modalCancelButton: {
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  modalCancelButtonText: {
+    color: '#333',
+  },
+  modalDestructiveButton: {
+    backgroundColor: '#d9534f',
+  },
+  modalDestructiveButtonText: {
+    color: '#fff',
+  },
 });
 
 export default UserProfileScreen;

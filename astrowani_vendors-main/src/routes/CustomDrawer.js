@@ -214,6 +214,7 @@ function CustomDrawer(props) {
               color={COLORS.AstroMaroon}
             />
           )}
+          onPress={() => props.navigation.navigate('Settings')}
         />
         <DrawerItem
           label="Rating & Review"

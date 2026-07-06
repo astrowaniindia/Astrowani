@@ -73,7 +73,7 @@ const Login = ({navigation}) => {
     if (validateFields()) {
       SetLoading(true);
       try {
-        await AsyncStorage.setItem('token', 'bypass_token');
+        await AsyncStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMCIsInVzZXJJZCI6IjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMCIsInBob25lIjoiOTk5OTk5OTk5OSIsInJvbGUiOiJjdXN0b21lciIsImlhdCI6MTc4MjQyMTczNCwiZXhwIjoxNzg1MDEzNzM0fQ.mBG3EXZi-gVDmjqH5xhwS27VjKiL2YNek133mP03O0Q');
         navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
       } catch (error) {
         console.log('Login error:', error);

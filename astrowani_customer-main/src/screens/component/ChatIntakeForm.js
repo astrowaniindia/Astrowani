@@ -107,6 +107,10 @@ const ChatIntakeForm = ({ navigation, route }) => {
               valueField="value"
               placeholder="Select Gender"
               placeholderStyle={styles.dropdownText}
+              selectedTextStyle={{ color: '#000', fontSize: moderateScale(14) }}
+              containerStyle={styles.dropdownContainerStyle}
+              itemTextStyle={styles.dropdownItemText}
+              activeColor="#f0f0f0"
               value={gender}
               onChange={item => {
                 setGender(item.value);
@@ -129,6 +133,10 @@ const ChatIntakeForm = ({ navigation, route }) => {
               valueField="value"
               placeholder="Select Martial Status"
               placeholderStyle={styles.dropdownText}
+              selectedTextStyle={{ color: '#000', fontSize: moderateScale(14) }}
+              containerStyle={styles.dropdownContainerStyle}
+              itemTextStyle={styles.dropdownItemText}
+              activeColor="#f0f0f0"
               value={married}
               onChange={item => {
                 setMarried(item.value);
@@ -195,6 +203,10 @@ const ChatIntakeForm = ({ navigation, route }) => {
               valueField="value"
               placeholder="Select  Concerns"
               placeholderStyle={styles.dropdownText}
+              selectedTextStyle={{ color: '#000', fontSize: moderateScale(14) }}
+              containerStyle={styles.dropdownContainerStyle}
+              itemTextStyle={styles.dropdownItemText}
+              activeColor="#f0f0f0"
               value={concern}
               onChange={item => {
                 setConcern(item.value);
@@ -240,6 +252,10 @@ const ChatIntakeForm = ({ navigation, route }) => {
                   valueField="value"
                   placeholder="Select Gender"
                   placeholderStyle={styles.dropdownText}
+                  selectedTextStyle={{ color: '#000', fontSize: moderateScale(14) }}
+                  containerStyle={styles.dropdownContainerStyle}
+                  itemTextStyle={styles.dropdownItemText}
+                  activeColor="#f0f0f0"
                   value={partnergender}
                   onChange={item => {
                     setPartnerGender(item.value);
@@ -446,6 +462,16 @@ const styles = StyleSheet.create({
   dropdown: {
     width: '100%',
     height: verticalScale(55),
+  },
+  dropdownContainerStyle: {
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderColor: COLORS.AstroMaroon || 'maroon',
+    borderWidth: 1,
+  },
+  dropdownItemText: {
+    fontSize: moderateScale(14),
+    color: '#000',
   },
   chatButton: {
     height: verticalScale(45),

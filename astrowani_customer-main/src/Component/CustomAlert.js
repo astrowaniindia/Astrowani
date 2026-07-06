@@ -62,10 +62,10 @@ const CustomAlert = () => {
           <Text style={styles.message}>{config.message}</Text>
           
           <TouchableOpacity 
-            style={[styles.button, { backgroundColor: isSuccess ? COLORS.AstroMaroon : '#f44336' }]} 
+            style={[styles.button, { backgroundColor: COLORS.AstroGold || '#FFD700' }]} 
             onPress={handleClose}
           >
-            <Text style={styles.buttonText}>{config.buttonText}</Text>
+            <Text style={[styles.buttonText, { color: COLORS.AstroMaroon || '#000' }]}>{config.buttonText}</Text>
           </TouchableOpacity>
         </View>
       </View>

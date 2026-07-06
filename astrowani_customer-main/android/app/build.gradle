@@ -79,8 +79,8 @@ android {
         applicationId "com.astrowanicustomer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "8.0"
+        versionCode 15
+        versionName "15.0"
     }
     signingConfigs {
         debug {
@@ -96,6 +96,11 @@ android {
                 keyAlias MYAPP_UPLOAD_KEY_ALIAS
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
             }
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
         }
     }
     buildTypes {

@@ -44,6 +44,9 @@ import TodayEarning from '../screens/Earning/TodayEarning';
 import TotalEarning from '../screens/Earning/TotalEarning';
 import RatingReview from '../screens/Review/RatingReview';
 import VendorChatSession from '../screens/VendorChatSession';
+import Settings from '../screens/Settings';
+import AboutUsScreen from '../screens/AboutUsScreen';
+import FaqScreen from '../screens/FaqScreen';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -125,6 +128,39 @@ function NavigationScreen() {
           options={{ headerShown: false }}
           name="Support"
           component={Support}
+        />
+        <Stack.Screen
+          name="Settings"
+          component={Settings}
+          options={{
+            headerShown: true,
+            title: 'Settings',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
+          }}
+        />
+        <Stack.Screen
+          name="AboutUsScreen"
+          component={AboutUsScreen}
+          options={{
+            headerShown: true,
+            title: 'About Us',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
+          }}
+        />
+        <Stack.Screen
+          name="FaqScreen"
+          component={FaqScreen}
+          options={{
+            headerShown: true,
+            title: "FAQ's",
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
+          }}
         />
         {/* <Stack.Screen
           options={{headerShown: false}}
