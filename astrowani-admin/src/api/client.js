@@ -18,7 +18,7 @@ client.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('admin_token');
       localStorage.removeItem('admin_user');
-      if (location.pathname !== '/login') location.href = '/login';
+      if (location.pathname !== '/admin/login') location.href = '/admin/login';
     }
     return Promise.reject(err);
   }
