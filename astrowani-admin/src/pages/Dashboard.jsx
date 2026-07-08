@@ -17,6 +17,7 @@ export default function Dashboard() {
     { label: 'Active Sessions', key: 'activeSessions' },
     { label: 'Total Sessions', key: 'totalSessions' },
     { label: 'Revenue (₹)', key: 'revenue' },
+    { label: 'Admin Wallet Balance (₹)', key: 'adminWalletBalance' },
   ];
 
   return (

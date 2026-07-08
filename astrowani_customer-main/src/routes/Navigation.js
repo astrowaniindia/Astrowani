@@ -54,7 +54,25 @@ import KundaliMatchingReport from '../screens/drawerScreens/FreeSeviceScreen/Kun
 import Horoscope from '../screens/drawerScreens/FreeSeviceScreen/Horoscope';
 import HoroscopeDetails from '../screens/drawerScreens/FreeSeviceScreen/HoroscopeDetails';
 import ShubhMuhurat from '../screens/drawerScreens/FreeSeviceScreen/ShubhMuhurat';
-import VrataUpvaas from '../screens/drawerScreens/FreeSeviceScreen/VrataUpvaas';
+import KundliInputScreen from '../screens/drawerScreens/AstroServices/KundliInputScreen';
+import KundliResultScreen from '../screens/drawerScreens/AstroServices/KundliResultScreen';
+import MatchingInputScreen from '../screens/drawerScreens/AstroServices/MatchingInputScreen';
+import MatchingResultScreen from '../screens/drawerScreens/AstroServices/MatchingResultScreen';
+import ChartInputScreen from '../screens/drawerScreens/AstroServices/ChartInputScreen';
+import ChartResultScreen from '../screens/drawerScreens/AstroServices/ChartResultScreen';
+import DashaInputScreen from '../screens/drawerScreens/AstroServices/DashaInputScreen';
+import DashaResultScreen from '../screens/drawerScreens/AstroServices/DashaResultScreen';
+import DoshInputScreen from '../screens/drawerScreens/AstroServices/DoshInputScreen';
+import DoshResultScreen from '../screens/drawerScreens/AstroServices/DoshResultScreen';
+import NumerologyInputScreen from '../screens/drawerScreens/AstroServices/NumerologyInputScreen';
+import NumerologyResultScreen from '../screens/drawerScreens/AstroServices/NumerologyResultScreen';
+import LalKitabInputScreen from '../screens/drawerScreens/AstroServices/LalKitabInputScreen';
+import LalKitabResultScreen from '../screens/drawerScreens/AstroServices/LalKitabResultScreen';
+import KPAstrologyInputScreen from '../screens/drawerScreens/AstroServices/KPAstrologyInputScreen';
+import KPAstrologyResultScreen from '../screens/drawerScreens/AstroServices/KPAstrologyResultScreen';
+import TarotScreen from '../screens/drawerScreens/AstroServices/TarotScreen';
+import PdfReportInputScreen from '../screens/drawerScreens/AstroServices/PdfReportInputScreen';
+import PdfReportResultScreen from '../screens/drawerScreens/AstroServices/PdfReportResultScreen';
 import Home from '../screens/Home/Home';
 import ReferAndEarnScreen from '../screens/drawerScreens/ReferAndEarnScreen';
 import Settings from '../screens/drawerScreens/Settings';
@@ -178,22 +196,6 @@ export default function Navigation({ initialRoute }) {
           })}
         />
         <Stack.Screen
-          name="VrataUpvaas"
-          component={VrataUpvaas}
-          options={({ route }) => ({
-            title: 'Vrat and Upvaas',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-            tabBarStyle: { display: 'none' },
-          })}
-        />
-
-        <Stack.Screen
           name="ReferFriend"
           component={ReferAndEarnScreen}
           options={{
@@ -270,6 +272,44 @@ export default function Navigation({ initialRoute }) {
             tabBarStyle: { display: 'none' },
           })}
         />
+        {[
+          ['KundliInputScreen', KundliInputScreen, 'Kundli Report'],
+          ['KundliResultScreen', KundliResultScreen, 'Kundli Report'],
+          ['MatchingInputScreen', MatchingInputScreen, 'Kundli Matching'],
+          ['MatchingResultScreen', MatchingResultScreen, 'Match Result'],
+          ['ChartInputScreen', ChartInputScreen, 'Divisional Chart'],
+          ['ChartResultScreen', ChartResultScreen, 'Chart'],
+          ['DashaInputScreen', DashaInputScreen, 'Dasha Report'],
+          ['DashaResultScreen', DashaResultScreen, 'Dasha Report'],
+          ['DoshInputScreen', DoshInputScreen, 'Dosh Report'],
+          ['DoshResultScreen', DoshResultScreen, 'Dosh Report'],
+          ['NumerologyInputScreen', NumerologyInputScreen, 'Numerology Report'],
+          ['NumerologyResultScreen', NumerologyResultScreen, 'Numerology Report'],
+          ['LalKitabInputScreen', LalKitabInputScreen, 'Lal Kitab Report'],
+          ['LalKitabResultScreen', LalKitabResultScreen, 'Lal Kitab Report'],
+          ['KPAstrologyInputScreen', KPAstrologyInputScreen, 'KP Astrology Report'],
+          ['KPAstrologyResultScreen', KPAstrologyResultScreen, 'KP Astrology Report'],
+          ['TarotScreen', TarotScreen, 'Tarot Reading'],
+          ['PdfReportInputScreen', PdfReportInputScreen, 'PDF Report'],
+          ['PdfReportResultScreen', PdfReportResultScreen, 'PDF Report'],
+        ].map(([name, component, title]) => (
+          <Stack.Screen
+            key={name}
+            name={name}
+            component={component}
+            options={({ route }) => ({
+              title,
+              headerStyle: {
+                backgroundColor: COLORS.AstroMaroon,
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontSize: moderateScale(18),
+              },
+              tabBarStyle: { display: 'none' },
+            })}
+          />
+        ))}
         <Stack.Screen
           name="AboutUsScreen"
           component={AboutUsScreen}

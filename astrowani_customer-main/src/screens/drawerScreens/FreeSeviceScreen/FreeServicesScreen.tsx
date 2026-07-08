@@ -19,30 +19,38 @@ type ServiceItem = {
   title: string;
   icon: string;
   description?: string;
+  price?: number;
 };
 
 type FreeServicesScreenProps = {
   services: ServiceItem[];
   onServiceSelect: (item: ServiceItem) => void;
   loading?: boolean;
+  showPrice?: boolean;
 };
 
 const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   services,
   onServiceSelect,
   loading = false,
+  showPrice = false,
 }) => {
   const renderService = ({ item }: { item: ServiceItem }) => (
 
-    <TouchableOpacity 
-      onPress={() => onServiceSelect(item)} 
+    <TouchableOpacity
+      onPress={() => onServiceSelect(item)}
       style={styles.serviceBox}
       activeOpacity={0.7}
     >
+      {showPrice && item.price != null && (
+        <View style={styles.priceBadge}>
+          <Text style={styles.priceBadgeText}>₹{item.price}</Text>
+        </View>
+      )}
       {item.icon ? (
-        <Image 
-          source={{ uri: item.icon }} 
-          style={styles.icon} 
+        <Image
+          source={{ uri: item.icon }}
+          style={styles.icon}
           resizeMode="contain"
           onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
         />
@@ -134,6 +142,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  priceBadge: {
+    position: 'absolute',
+    top: verticalScale(6),
+    right: scale(6),
+    backgroundColor: COLORS.AstroGold,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(6),
+    paddingVertical: verticalScale(2),
+  },
+  priceBadgeText: {
+    fontSize: moderateScale(10),
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
   },
   icon: {
     width: scale(50),

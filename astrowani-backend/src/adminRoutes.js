@@ -84,6 +84,13 @@ module.exports = function registerAdminRoutes(app) {
       db.from('wallet_transactions').select('amount, type').eq('type', 'debit'),
     ]);
     const revenue = (txns.data || []).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    // admin_wallet only exists once sql/astro_services_schema.sql has been run — degrade to 0
+    // rather than 500ing the whole dashboard if it's missing.
+    let adminWalletBalance = 0;
+    try {
+      const { data } = await db.from('admin_wallet').select('balance').limit(1).maybeSingle();
+      adminWalletBalance = Number(data?.balance) || 0;
+    } catch (_) { /* table not migrated yet */ }
     return res.json({
       success: true,
       stats: {
@@ -92,6 +99,7 @@ module.exports = function registerAdminRoutes(app) {
         activeSessions: activeSessions.count || 0,
         totalSessions: sessions.count || 0,
         revenue,
+        adminWalletBalance,
       },
     });
   }));
@@ -157,6 +165,11 @@ module.exports = function registerAdminRoutes(app) {
   crud('gifts', 'gifts', {
     orderBy: 'sort_order', ascending: true,
     allowed: ['name', 'price', 'image', 'is_active', 'sort_order'],
+  });
+  // Paid astrology report catalog (JyotishamAstroAPI) — prices flow into admin_wallet on purchase.
+  crud('astro-services', 'astro_services', {
+    orderBy: 'sort_order', ascending: true,
+    allowed: ['key', 'name', 'description', 'category', 'price', 'is_active', 'sort_order'],
   });
 
   // ── Live moderation ───────────────────────────────────────────────────────

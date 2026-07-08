@@ -12,6 +12,7 @@ const links = [
   { to: '/remedies', label: 'Remedies Shop' },
   { to: '/orders', label: 'Orders' },
   { to: '/gifts', label: 'Gifts' },
+  { to: '/astro-services', label: 'Astro Services' },
   { to: '/live', label: 'Live Streams' },
   { to: '/missed', label: 'Missed Sessions' },
   { to: '/push', label: 'Push Notifications' },

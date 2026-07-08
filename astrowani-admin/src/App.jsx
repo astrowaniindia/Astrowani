@@ -12,6 +12,7 @@ import Sessions from './pages/Sessions';
 import Remedies from './pages/Remedies';
 import Orders from './pages/Orders';
 import Gifts from './pages/Gifts';
+import AstroServices from './pages/AstroServices';
 import Live from './pages/Live';
 import Missed from './pages/Missed';
 import Withdrawals from './pages/Withdrawals';
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="remedies" element={<Remedies />} />
         <Route path="orders" element={<Orders />} />
         <Route path="gifts" element={<Gifts />} />
+        <Route path="astro-services" element={<AstroServices />} />
         <Route path="live" element={<Live />} />
         <Route path="missed" element={<Missed />} />
         <Route path="push" element={<Push />} />

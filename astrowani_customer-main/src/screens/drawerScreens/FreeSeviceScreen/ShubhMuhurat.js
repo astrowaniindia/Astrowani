@@ -19,121 +19,22 @@ const tabs = [
   {id: '4', title: 'Rahu Kaal'},
 
 ];
-const choghadiyaData = [
-  {
-    name: 'Amrit',
-    time: '06:02 - 07:37',
-    description: 'All type of works (Specially Milk Product Related)',
-  },
-  {
-    name: 'Kaal',
-    time: '07:37 - 09:11',
-    description: 'Machine, Construction and Agriculture related activities',
-    icon: 'alert-circle-outline',
-    subText: 'Kaal Vela',
-  },
-  {
-    name: 'Shubh',
-    time: '09:11 - 10:45',
-    description: 'Marriage, Religious, Education activities',
-  },
-  {
-    name: 'Rog',
-    time: '10:45 - 12:19',
-    description: 'Debate, Contest, Dispute Settlement',
-  },
-  {
-    name: 'Udveg',
-    time: '12:19 - 13:53',
-    description: 'Government related work',
-  },
-  {
-    name: 'Char',
-    time: '13:53 - 15:28',
-    description: 'Travel, Beauty/Dance/Cultural activities',
-  },
-  {
-    name: 'Labh',
-    time: '15:28 - 17:02',
-    description: 'Start new business, Education',
-    icon: 'check-circle-outline',
-    subText: 'Vaar Vela',
-  },
-  {
-    name: 'Amrit',
-    time: '17:02 - 18:36',
-    description: 'All type of works (Specially Milk Product Related)',
-  },
-];
-const ShubhHoraData = [
-  {
-    time: '06:02 - 07:37',
-    description: 'Mars',
-  },
-  {
-    time: '07:37 - 09:11',
-    description: 'Sun',
-  },
-  {
-    time: '06:02 - 07:37',
-    description: 'Mars',
-  },
-  {
-    time: '07:37 - 09:11',
-    description: 'Sun',
-  },
-];
-
-const RahukaalData = [
-  {
-    name: 'Monday',
-    description: '06:02 - 07:37',
-  },
-  {
-    name: 'Monday',
-    description: '06:02 - 07:37',
-  },
-  {
-    name: 'Monday',
-    description: '06:02 - 07:37',
-  },
-  {
-    name: 'Monday',
-    description: '06:02 - 07:37',
-  },
-  {
-    name: 'Monday',
-    description: '06:02 - 07:37',
-  },
-];
 const ShubhMuhurat = ({navigation}) => {
   const [activeTab, setActiveTab] = useState('Choghadiya');
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'Choghadiya':
-        return <MuhuratCard title="Day Choghadiya" data={choghadiyaData} />;
+        return <MuhuratCard title="Day Choghadiya" />;
       case 'Shubh Hora':
-        return <MuhuratCard title="Day Hora" data={ShubhHoraData} />;
+        return <MuhuratCard title="Day Hora" />;
       case 'Gowri Panchangam':
-        return <MuhuratCard title="Gowri Panchangam" data={ShubhHoraData} />;
+        // MuhuratCard has no live endpoint for this tab yet — it still renders a
+        // hardcoded sample internally (see component/MuhuratCard.js formatMuhuratData).
+        return <MuhuratCard title="Gowri Panchangam" />;
 
       case 'Rahu Kaal':
-        return (
-          <View style={{flex: 1, backgroundColor: COLORS.AstroSoftOrange}}>
-            <View style={styles.rahukaalrow}>
-              <View>
-                <Text style={styles.rahukaalTxt}>Rahu Kaal Time</Text>
-                <Text style={styles.rahukaal}>12:18 to 13:52</Text>
-              </View>
-              <View>
-                <Text style={styles.rahukaalTxt}>Duration</Text>
-                <Text style={styles.rahukaal}>01 hr 40 minutes</Text>
-              </View>
-            </View>
-            <MuhuratCard title="Rahu Kaal" data={RahukaalData} />
-          </View>
-        );
+        return <MuhuratCard title="Rahu Kaal" />;
 
       default:
         return null;
@@ -293,25 +194,6 @@ const styles = StyleSheet.create({
   activeMain: {
     flex: 1,
     backgroundColor: COLORS.AstroSoftOrange,
-  },
-  rahukaalrow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginHorizontal: scale(15),
-    marginTop: verticalScale(5),
-    padding: scale(10),
-    backgroundColor: 'pink',
-    borderRadius: moderateScale(10),
-  },
-  rahukaalTxt: {
-    color: '#000',
-    fontSize: moderateScale(15),
-    fontFamily: 'Lato-Bold',
-  },
-  rahukaal: {
-    color: COLORS.AstroMaroon,
-    fontFamily: 'Lato-Bold',
-    marginTop: verticalScale(3),
   },
 });
 

@@ -229,6 +229,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
 
+// Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
+require('./src/astroRoutes')(app);
+
 // In-memory store for OTPs (In production, use Redis or Database)
 const otpStore = new Map();
 

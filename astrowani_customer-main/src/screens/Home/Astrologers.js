@@ -100,11 +100,6 @@ export const services = [
     title: 'Shubh Muhurat',
     icon: 'https://astrowani.onrender.com/public/images/icon_muhurat.png',
   },
-  {
-    id: 6,
-    title: 'Vrat and Upvaas',
-    icon: 'https://astrowani.onrender.com/public/images/icon_vrat.png',
-  },
 ];
 
 export const blogs = [

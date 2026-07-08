@@ -24,6 +24,7 @@ import FastImage from 'react-native-fast-image';
 import Swiper from 'react-native-swiper';
 import Astrologers, {LiveAstrologers, Reviews, services} from './Astrologers';
 import Instance from '../../api/ApiCall';
+import {getAstroServices} from '../../api/astroApi';
 import FreeServicesScreen from '../drawerScreens/FreeSeviceScreen/FreeServicesScreen';
 import HomeRemedies from '../Remedies/HomeRemedies';
 import CustomerReview from './Review';
@@ -110,6 +111,7 @@ const Home = ({navigation}) => {
   const [liveAstro, setLiveAstro] = useState([]);
   const [thought, setThought] = useState();
   const [user, setUser] = useState(null);
+  const [astroServices, setAstroServices] = useState([]);
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -134,6 +136,43 @@ const Home = ({navigation}) => {
   const navigatedRef = React.useRef(false);
   // Tracks the in-flight call request so cancel/back can mark it cancelled + notify the vendor
   const activeCallRef = React.useRef(null);
+
+  React.useEffect(() => {
+    getAstroServices()
+      .then(list => setAstroServices(list))
+      .catch(err => console.log('Failed to load astro services:', err.message));
+  }, []);
+
+  const ASTRO_SERVICE_ICONS = {
+    Kundli: 'https://cdn-icons-png.flaticon.com/128/9085/9085836.png',
+    Matching: 'https://cdn-icons-png.flaticon.com/128/2589/2589903.png',
+    Chart: 'https://cdn-icons-png.flaticon.com/128/1055/1055687.png',
+    Dasha: 'https://cdn-icons-png.flaticon.com/128/2784/2784489.png',
+    Dosh: 'https://cdn-icons-png.flaticon.com/128/564/564619.png',
+    Numerology: 'https://cdn-icons-png.flaticon.com/128/3132/3132693.png',
+    'Lal Kitab': 'https://cdn-icons-png.flaticon.com/128/2436/2436874.png',
+    'KP Astrology': 'https://cdn-icons-png.flaticon.com/128/1791/1791961.png',
+    Tarot: 'https://cdn-icons-png.flaticon.com/128/2951/2951587.png',
+    'PDF Reports': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
+  };
+
+  const ASTRO_SERVICE_ROUTES = {
+    kundli: 'KundliInputScreen',
+    matching: 'MatchingInputScreen',
+    chart: 'ChartInputScreen',
+    dasha: 'DashaInputScreen',
+    dosh: 'DoshInputScreen',
+    numerology: 'NumerologyInputScreen',
+    'lal-kitab': 'LalKitabInputScreen',
+    'kp-astrology': 'KPAstrologyInputScreen',
+    tarot: 'TarotScreen',
+    'pdf-report': 'PdfReportInputScreen',
+  };
+
+  const handleAstroServiceSelect = service => {
+    const routeName = ASTRO_SERVICE_ROUTES[service.key];
+    if (routeName) navigation.navigate(routeName);
+  };
 
   React.useEffect(() => {
     const setup = async () => {
@@ -759,8 +798,6 @@ const Home = ({navigation}) => {
       navigation.navigate('Horoscope');
     } else if (service.title === 'Shubh Muhurat') {
       navigation.navigate('ShubhMuhurat');
-    } else if (service.title === 'Vrat and Upvaas') {
-      navigation.navigate('VrataUpvaas');
     }
   };
 
@@ -1064,6 +1101,23 @@ const Home = ({navigation}) => {
         <FreeServicesScreen
           services={services}
           onServiceSelect={handleServiceSelect}
+        />
+
+        <View style={styles.separator} />
+
+        <View style={styles.topAstrologers}>
+          <Text style={styles.topAstrologerTxt}>Astro Reports</Text>
+        </View>
+        <FreeServicesScreen
+          services={astroServices.map(s => ({
+            id: s.id,
+            key: s.key,
+            title: s.name,
+            icon: ASTRO_SERVICE_ICONS[s.category],
+            price: s.price,
+          }))}
+          onServiceSelect={handleAstroServiceSelect}
+          showPrice
         />
 
         <View style={styles.separator} />
