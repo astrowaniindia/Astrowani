@@ -14,8 +14,10 @@ import Orders from './pages/Orders';
 import Gifts from './pages/Gifts';
 import Live from './pages/Live';
 import Missed from './pages/Missed';
+import Withdrawals from './pages/Withdrawals';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
+import Push from './pages/Push';
 
 export default function App() {
   return (
@@ -32,6 +34,8 @@ export default function App() {
         <Route path="gifts" element={<Gifts />} />
         <Route path="live" element={<Live />} />
         <Route path="missed" element={<Missed />} />
+        <Route path="push" element={<Push />} />
+        <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="new-entries" element={<NewEntries />} />
         <Route path="astrologers" element={<Astrologers />} />
         <Route path="reviews" element={<Reviews />} />

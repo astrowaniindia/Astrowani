@@ -21,7 +21,6 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Login = ({navigation}) => {
   const [countryCode, setCountryCode] = useState('IN');
@@ -68,13 +67,23 @@ const Login = ({navigation}) => {
     return true;
   };
 
-  // TEMPORARY: OTP bypassed — navigate directly to dashboard
   const handleGetOtp = async () => {
+    if (toggle) {
+      showAlert('Not Available', 'Email login is not available yet. Please use your mobile number.', 'error');
+      return;
+    }
     if (validateFields()) {
       SetLoading(true);
       try {
-        await AsyncStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMCIsInVzZXJJZCI6IjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMCIsInBob25lIjoiOTk5OTk5OTk5OSIsInJvbGUiOiJjdXN0b21lciIsImlhdCI6MTc4MjQyMTczNCwiZXhwIjoxNzg1MDEzNzM0fQ.mBG3EXZi-gVDmjqH5xhwS27VjKiL2YNek133mP03O0Q');
-        navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+        const res = await Instance.post('/api/users/mobile-otp-request', {
+          phoneNumber,
+          role: 'customer',
+        });
+        if (res?.data?.success) {
+          navigation.navigate('VerifyOtp', { phoneNumber, role: 'customer' });
+        } else {
+          showAlert('Error', res?.data?.message || 'Could not send OTP. Please try again.', 'error');
+        }
       } catch (error) {
         console.log('Login error:', error);
         showAlert('Error', 'Something went wrong. Please try again.', 'error');

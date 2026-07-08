@@ -8,6 +8,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
+const { sendPush } = require('./push');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 
@@ -326,6 +327,64 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, data: data || [] });
   }));
 
+  // ── Vendor withdrawal requests (view + approve/reject/mark paid) ──────────
+  app.get('/api/admin/withdrawals', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('withdrawal_requests')
+      .select('*, astrologers(first_name, last_name, mobile)')
+      .order('requested_at', { ascending: false })
+      .limit(300);
+    if (error) throw error;
+    return res.json({ success: true, data: data || [] });
+  }));
+
+  app.patch('/api/admin/withdrawals/:id', requireAdmin, h(async (req, res) => {
+    const { status, admin_note } = req.body || {};
+    if (!['approved', 'rejected', 'paid'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    const { data: withdrawal, error: fetchErr } = await db
+      .from('withdrawal_requests')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (fetchErr) throw fetchErr;
+    if (withdrawal.status !== 'pending') {
+      return res.status(400).json({ success: false, message: 'Request already processed' });
+    }
+
+    // Rejecting refunds the amount that was put on hold when the vendor requested it.
+    if (status === 'rejected') {
+      const { data: astroRow, error: astroErr } = await db
+        .from('astrologers')
+        .select('wallet_balance')
+        .eq('id', withdrawal.astrologer_id)
+        .single();
+      if (astroErr) throw astroErr;
+      await db
+        .from('astrologers')
+        .update({ wallet_balance: (astroRow?.wallet_balance ?? 0) + Number(withdrawal.amount) })
+        .eq('id', withdrawal.astrologer_id);
+      await db.from('vendor_wallet_transactions').insert([{
+        vendor_id: withdrawal.astrologer_id,
+        type: 'credit',
+        amount: withdrawal.amount,
+        description: 'Withdrawal request rejected — refunded',
+        request_id: withdrawal.id,
+      }]);
+    }
+
+    const { data, error } = await db
+      .from('withdrawal_requests')
+      .update({ status, admin_note: admin_note || null, processed_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return res.json({ success: true, data });
+  }));
+
   // ── Orders (view + update status) ─────────────────────────────────────────
   app.get('/api/admin/orders', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
@@ -424,6 +483,56 @@ module.exports = function registerAdminRoutes(app) {
       .upsert({ key, value: String(value), updated_at: new Date().toISOString() }, { onConflict: 'key' });
     if (error) throw error;
     return res.json({ success: true });
+  }));
+
+  // Audience segmentation by signup date — 'new' = joined within the last N days,
+  // 'old' = joined before that, 'all' = no date filter.
+  function applyAudienceFilter(query, audience, cutoffIso) {
+    if (audience === 'new') return query.gte('created_at', cutoffIso);
+    if (audience === 'old') return query.lt('created_at', cutoffIso);
+    return query;
+  }
+
+  // ── Segment preview — lets the admin see audience size before sending ──
+  app.get('/api/admin/customers/segment-count', requireAdmin, h(async (req, res) => {
+    const audience = req.query.audience || 'all';
+    const days = Number(req.query.days) > 0 ? Number(req.query.days) : 30;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const [{ count: total }, { count: withToken }] = await Promise.all([
+      applyAudienceFilter(db.from('customers').select('id', { count: 'exact', head: true }), audience, cutoff),
+      applyAudienceFilter(db.from('customers').select('id', { count: 'exact', head: true }).not('fcm_token', 'is', null), audience, cutoff),
+    ]);
+    return res.json({ success: true, total: total || 0, withToken: withToken || 0 });
+  }));
+
+  // ── Push broadcast — send an announcement/offer to a customer segment ──
+  app.post('/api/admin/push/broadcast', requireAdmin, h(async (req, res) => {
+    const { title, body, audience = 'all', days } = req.body || {};
+    if (!title || !body) return res.status(400).json({ success: false, message: 'title and body are required' });
+
+    const thresholdDays = Number(days) > 0 ? Number(days) : 30;
+    const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: customers, error } = await applyAudienceFilter(
+      db.from('customers').select('fcm_token').not('fcm_token', 'is', null),
+      audience,
+      cutoff,
+    );
+    if (error) throw error;
+    const tokens = (customers || []).map((c) => c.fcm_token).filter(Boolean);
+
+    // FCM allows up to 500 tokens per multicast call — chunk accordingly.
+    const CHUNK_SIZE = 500;
+    let successCount = 0;
+    let failureCount = 0;
+    for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
+      const chunk = tokens.slice(i, i + CHUNK_SIZE);
+      const result = await sendPush(chunk, { title, body, data: { type: 'admin_broadcast' } });
+      successCount += result.successCount || 0;
+      failureCount += result.failureCount || 0;
+    }
+    return res.json({ success: true, audience, days: thresholdDays, targeted: tokens.length, successCount, failureCount });
   }));
 
   console.log('[admin] routes registered under /api/admin');

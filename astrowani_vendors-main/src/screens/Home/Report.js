@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../../api/ApiCall';
+import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { supabase } from '../../api/SupabaseClient';
 
@@ -10,6 +10,9 @@ export default function Wallet() {
   const [balance, setBalance] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchWallet = async () => {
     try {
@@ -22,7 +25,7 @@ export default function Wallet() {
         .select('wallet_balance')
         .eq('id', astroId)
         .single();
-      
+
       if (!astroErr && astroData) {
         setBalance(astroData.wallet_balance ?? 0);
       }
@@ -56,6 +59,43 @@ export default function Wallet() {
     }, [])
   );
 
+  const openWithdrawModal = () => {
+    setAmount('');
+    setModalVisible(true);
+  };
+
+  const submitWithdrawal = async () => {
+    const value = Number(amount);
+    if (!value || value <= 0) {
+      Alert.alert('Enter a valid amount');
+      return;
+    }
+    if (value > (balance ?? 0)) {
+      Alert.alert('Amount exceeds your wallet balance');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.post(
+        '/vendor/wallet/withdraw',
+        { amount: value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data?.success) {
+        setModalVisible(false);
+        Alert.alert('Withdrawal requested', 'Your request has been submitted and is pending admin approval.');
+        fetchWallet();
+      } else {
+        Alert.alert('Unable to request withdrawal', res.data?.message || 'Please try again.');
+      }
+    } catch (e) {
+      Alert.alert('Unable to request withdrawal', e.response?.data?.message || 'Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const renderTransaction = ({ item }) => (
     <View style={styles.transactionCard}>
       <Text style={styles.transactionDescription}>{item.description}</Text>
@@ -80,8 +120,8 @@ export default function Wallet() {
       <View style={styles.walletCard}>
         <Text style={styles.walletText}>Wallet Balance</Text>
         <Text style={styles.walletBalance}>₹{balance}</Text>
-        <TouchableOpacity style={styles.topUpButton} onPress={() => {}}>
-          <Text style={styles.topUpButtonText}>Top Up</Text>
+        <TouchableOpacity style={styles.topUpButton} onPress={openWithdrawModal}>
+          <Text style={styles.topUpButtonText}>Request Withdrawal</Text>
         </TouchableOpacity>
       </View>
 
@@ -93,6 +133,37 @@ export default function Wallet() {
         renderItem={renderTransaction}
         contentContainerStyle={styles.transactionList}
       />
+
+      <Modal transparent visible={modalVisible} animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Request Withdrawal</Text>
+            <Text style={styles.modalSubtitle}>Available balance: ₹{balance}</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Enter amount"
+              keyboardType="numeric"
+              value={amount}
+              onChangeText={setAmount}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalCancelButton} onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalSubmitButton}
+                onPress={submitWithdrawal}
+                disabled={submitting}>
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -115,7 +186,7 @@ const styles = StyleSheet.create({
   walletText: { fontSize: 16, color: '#FFF', marginBottom: 8 },
   walletBalance: { fontSize: 36, fontWeight: 'bold', color: '#FFF', marginBottom: 16 },
   topUpButton: { backgroundColor: '#FFF', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 5 },
-  topUpButtonText: { fontSize: 16, color: '#4CAF5' /* intentionally left as placeholder for quick fix */ },
+  topUpButtonText: { fontSize: 16, color: '#4CAF50', fontWeight: '600' },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 10 },
   transactionList: { paddingBottom: 20 },
   transactionCard: {
@@ -132,4 +203,39 @@ const styles = StyleSheet.create({
   transactionDescription: { fontSize: 16, color: '#333', marginBottom: 4 },
   transactionAmount: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50', marginBottom: 4 },
   transactionDate: { fontSize: 14, color: '#777' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCard: {
+    width: '85%',
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    padding: 20,
+  },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 4 },
+  modalSubtitle: { fontSize: 14, color: '#777', marginBottom: 16 },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end' },
+  modalCancelButton: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 },
+  modalCancelText: { color: '#777', fontSize: 15 },
+  modalSubmitButton: {
+    backgroundColor: COLORS.AstroMaroon,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  modalSubmitText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
 });

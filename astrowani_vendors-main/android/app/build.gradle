@@ -82,8 +82,8 @@ android {
         applicationId "com.astrowaniVendor"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "5.0"
+        versionCode 6
+        versionName "5.1"
     }
     signingConfigs {
         /* debug {

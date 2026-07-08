@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const { sendPush } = require('./src/push');
 
 const SUPABASE_URL = 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_iLfw8Co1PiXDyYJZvzCRKw_5hQBKn_O';
@@ -341,11 +342,14 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     
     if (customersList && customersList.length > 0) {
       supabaseCustomerId = customersList[0].id;
+      if (fcmToken) {
+        await supabase.from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+      }
     } else {
       // Create a new customer row
       const { data: newCustomer } = await supabase
         .from('customers')
-        .insert([{ mobile: phoneNumber, wallet_balance: 0 }])
+        .insert([{ mobile: phoneNumber, wallet_balance: 0, fcm_token: fcmToken || null }])
         .select('id')
         .single();
       supabaseCustomerId = newCustomer?.id;
@@ -815,6 +819,50 @@ async function resolveCustomerFromReq(req) {
     return null;
   }
 }
+
+// Store/refresh the customer's FCM token so the backend can push notifications
+// (incoming chat while backgrounded, missed sessions, admin broadcasts).
+app.post('/api/users/fcm-token', async (req, res) => {
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { fcmToken } = req.body;
+    if (!fcmToken) return res.status(400).json({ success: false, message: 'fcmToken is required' });
+    await supabaseService.from('customers').update({ fcm_token: fcmToken }).eq('id', customer.id);
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('[push] fcm-token save error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not save token' });
+  }
+});
+
+// Called by the vendor app right after it inserts a chat_messages row, so the customer
+// gets a push if their app is backgrounded/killed (chat itself runs over Supabase Realtime,
+// which the Node backend has no visibility into).
+app.post('/api/push/notify-chat-message', async (req, res) => {
+  try {
+    const { customerId, astrologerId, message } = req.body;
+    if (!customerId || !message) return res.status(400).json({ success: false, message: 'customerId and message are required' });
+
+    const [{ data: customerRow }, { data: astroRow }] = await Promise.all([
+      supabaseService.from('customers').select('fcm_token').eq('id', customerId).limit(1).single(),
+      supabaseService.from('astrologers').select('first_name, last_name').eq('id', astrologerId).limit(1).single(),
+    ]);
+
+    const astroName = `${astroRow?.first_name || ''} ${astroRow?.last_name || ''}`.trim() || 'Your Astrologer';
+    if (customerRow?.fcm_token) {
+      await sendPush(customerRow.fcm_token, {
+        title: astroName,
+        body: message.length > 100 ? message.slice(0, 97) + '...' : message,
+        data: { type: 'chat_message', astrologerId: astrologerId || '' },
+      });
+    }
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('[push] notify-chat-message error:', e.message);
+    return res.status(200).json({ success: false });
+  }
+});
 
 // Reviews list for an astrologer — non-hidden, newest first, with reviewer first name.
 app.get('/api/reviews/astrologer/:id', async (req, res) => {
@@ -1345,6 +1393,88 @@ app.get('/vendor/wallet', async (req, res) => {
   } catch (err) {
     console.error('GET /vendor/wallet error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch vendor wallet' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VENDOR WALLET: Request a withdrawal (deducts balance immediately, pending admin payout)
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/vendor/wallet/withdraw', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const amount = Number(req.body.amount);
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Enter a valid amount' });
+    }
+
+    const { data: astroRow, error: astroErr } = await supabase
+      .from('astrologers')
+      .select('wallet_balance')
+      .eq('id', vendorId)
+      .single();
+    if (astroErr) throw astroErr;
+
+    const currentBalance = astroRow?.wallet_balance ?? 0;
+    if (amount > currentBalance) {
+      return res.status(400).json({ success: false, message: 'Amount exceeds wallet balance' });
+    }
+
+    const newBalance = currentBalance - amount;
+    const { error: updateErr } = await supabase
+      .from('astrologers')
+      .update({ wallet_balance: newBalance })
+      .eq('id', vendorId);
+    if (updateErr) throw updateErr;
+
+    const { data: withdrawal, error: insertErr } = await supabase
+      .from('withdrawal_requests')
+      .insert([{ astrologer_id: vendorId, amount, status: 'pending' }])
+      .select()
+      .single();
+    if (insertErr) throw insertErr;
+
+    await supabase.from('vendor_wallet_transactions').insert([{
+      vendor_id: vendorId,
+      type: 'debit',
+      amount,
+      description: 'Withdrawal requested',
+      request_id: withdrawal.id,
+    }]);
+
+    return res.status(200).json({ success: true, newBalance, withdrawal });
+  } catch (err) {
+    console.error('POST /vendor/wallet/withdraw error:', err.message);
+    return res.status(500).json({ success: false, message: 'Withdrawal request failed' });
+  }
+});
+
+// GET vendor's own withdrawal request history
+app.get('/vendor/wallet/withdrawals', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const { data, error } = await supabase
+      .from('withdrawal_requests')
+      .select('*')
+      .eq('astrologer_id', vendorId)
+      .order('requested_at', { ascending: false });
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('GET /vendor/wallet/withdrawals error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch withdrawal history' });
   }
 });
 

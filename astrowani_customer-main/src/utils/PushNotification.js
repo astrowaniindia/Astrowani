@@ -1,9 +1,56 @@
 
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, Alert, PermissionsAndroid } from 'react-native';
-// import PushNotification from 'react-native-push-notification';
-// import { navigationRef } from '../common/component/NavigationService';
+import { Platform, PermissionsAndroid } from 'react-native';
+import PushNotification from 'react-native-push-notification';
+import Instance from '../api/ApiCall';
+
+const CHANNEL_ID = 'astrowani-default';
+
+PushNotification.configure({
+  onNotification: function () {},
+  popInitialNotification: true,
+  requestPermissions: false, // permission is requested explicitly via requestUserPermission()
+});
+
+PushNotification.createChannel(
+  {
+    channelId: CHANNEL_ID,
+    channelName: 'Astrowani Notifications',
+    importance: 4, // IMPORTANCE_HIGH
+    vibrate: true,
+  },
+  () => {},
+);
+
+function showLocalNotification(remoteMessage) {
+  const title = remoteMessage?.notification?.title || remoteMessage?.data?.title;
+  const message = remoteMessage?.notification?.body || remoteMessage?.data?.body;
+  if (!message) return;
+  PushNotification.localNotification({
+    channelId: CHANNEL_ID,
+    title,
+    message,
+    userInfo: remoteMessage?.data || {},
+  });
+}
+
+// Sends the current FCM token to the backend so it can push to this device later.
+// Silently no-ops if the user isn't logged in yet — OTP verification also sends the
+// token directly as part of its own request.
+async function syncTokenWithBackend(token) {
+  try {
+    const authToken = await AsyncStorage.getItem('token');
+    if (!authToken || !token) return;
+    await Instance.post(
+      '/api/users/fcm-token',
+      { fcmToken: token },
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    );
+  } catch (_) {
+    // best-effort — a missed sync just means push arrives once the token next refreshes
+  }
+}
 
 export async function requestUserPermission() {
   if (Platform.OS == 'android' && Platform.Version >= 33) {
@@ -29,18 +76,23 @@ const getFCMToken = async () => {
     let token = await messaging().getToken();
     await AsyncStorage.setItem('fcmToken', token);
     console.log('FCM Token:', token);
+    await syncTokenWithBackend(token);
   } catch (error) {
     console.error('Error fetching FCM Token:', error);
   }
 };
+
+messaging().onTokenRefresh(async token => {
+  await AsyncStorage.setItem('fcmToken', token);
+  await syncTokenWithBackend(token);
+});
+
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
-  if (Platform.OS === 'ios') {
-    /* PushNotification.localNotification({
-      title: remoteMessage.notification.title,
-      message: remoteMessage.notification.body,
-    }); */
-  }
+
+  // Android/iOS both need a manual local notification while the app is foregrounded —
+  // FCM only auto-displays the system-tray notification when the app is backgrounded/killed.
+  showLocalNotification(remoteMessage);
 
   // Handle incoming call notifications
   if (remoteMessage?.data?.type === 'incoming_call') {

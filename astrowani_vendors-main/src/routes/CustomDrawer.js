@@ -64,7 +64,7 @@ function CustomDrawer(props) {
         setData({
           name: astrologerData.first_name + ' ' + astrologerData.last_name,
           email: astrologerData.email,
-          profileImage: astrologerData.profile_image // Add this column later if needed
+          profileImage: astrologerData.profile_pic_url || astrologerData.profile_image
         });
         setIsOnline(astrologerData.is_available);
       }

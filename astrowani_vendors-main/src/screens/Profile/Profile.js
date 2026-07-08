@@ -45,7 +45,7 @@ export default function Profile({ navigation }) {
         setData({
           name: `${astroData.first_name || ''} ${astroData.last_name || ''}`.trim(),
           email: astroData.email,
-          profileImage: astroData.profile_image || astroData.image || '',
+          profileImage: astroData.profile_pic_url || astroData.profile_image || astroData.image || '',
           experience: astroData.experience || astroData.years_of_experience || 0,
           chatChargePerMinute: astroData.chat_charge_per_minute || 0,
           callChargePerMinute: astroData.call_charge_per_minute || 0,

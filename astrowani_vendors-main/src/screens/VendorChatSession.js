@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../Theme/Colors';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
+import Instance from '../api/ApiCall';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -195,6 +196,13 @@ const VendorChatSession = ({ route, navigation }) => {
         message: msg,
       },
     ]);
+
+    // Fire-and-forget push notification for when the customer's app is backgrounded/killed.
+    Instance.post('/api/push/notify-chat-message', {
+      customerId: callerId,
+      astrologerId: astroIdRef.current,
+      message: msg,
+    }).catch(() => {});
   };
 
   // ─── End session ──────────────────────────────────────────────────────────

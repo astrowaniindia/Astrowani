@@ -305,6 +305,7 @@ const styles = StyleSheet.create({
     borderWidth: verticalScale(1),
     backgroundColor: COLORS.white,
     borderColor: COLORS.AshGray,
+    color: '#000',
   },
   dropdownText: {
     fontSize: moderateScale(14),

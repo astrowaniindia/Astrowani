@@ -94,7 +94,7 @@ const Live = ({ navigation }) => {
            placeholder="Search live sessions..."
            value={searchQuery}
            onChangeText={setSearchQuery}
-           placeholderTextColor={COLORS.AstroMaroon}
+           placeholderTextColor={COLORS.gray}
         />
       </View>
       <FlatList

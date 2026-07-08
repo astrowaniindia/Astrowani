@@ -330,6 +330,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 20,
     height: 50,
+    color: '#000',
   },
   queryTypeContainer: { flexDirection: 'row', marginBottom: 20 },
   queryTypeButton: {

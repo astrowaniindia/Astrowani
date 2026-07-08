@@ -14,6 +14,8 @@ const links = [
   { to: '/gifts', label: 'Gifts' },
   { to: '/live', label: 'Live Streams' },
   { to: '/missed', label: 'Missed Sessions' },
+  { to: '/push', label: 'Push Notifications' },
+  { to: '/withdrawals', label: 'Withdrawals' },
   { to: '/astrologers', label: 'Astrologers' },
   { to: '/reviews', label: 'Reviews' },
   { to: '/customers', label: 'Customers' },

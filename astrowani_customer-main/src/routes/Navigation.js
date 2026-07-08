@@ -10,6 +10,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import Splash from '../screens/Splash/Splash';
 import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
+import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import CustomHeader from './CustomHeader';
@@ -90,6 +91,7 @@ export default function Navigation({ initialRoute }) {
         <Stack.Screen options={{ headerShown: false }} name="Login" component={Login} />
         <Stack.Screen options={{ headerShown: false }} name="Register" component={Register} />
 
+        <Stack.Screen options={{ headerShown: false }} name="VerifyOtp" component={VerifyOtp} />
         <Stack.Screen options={{ title: 'Verify Phone', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="OtpScreen" component={OtpScreen} />
         <Stack.Screen options={{ title: 'Verify Email', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="EmailOtpScreen" component={EmailOtpScreen} />
         <Stack.Screen options={{ headerShown: false }} name="DrawerNavigator" component={DrawerNavigator} />

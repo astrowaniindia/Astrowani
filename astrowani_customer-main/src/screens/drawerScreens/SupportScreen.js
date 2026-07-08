@@ -191,6 +191,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderColor: COLORS.AshGray,
     fontFamily: 'Lato-Regular',
+    color: '#000',
   },
   dropdownContainer: {
     paddingHorizontal: scale(10),
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(10),
     marginBottom: verticalScale(10),
     fontSize: moderateScale(14),
-
+    color: '#000',
     fontFamily: 'Lato-Regular',
     textAlignVertical: 'top',
     borderRadius: moderateScale(8),

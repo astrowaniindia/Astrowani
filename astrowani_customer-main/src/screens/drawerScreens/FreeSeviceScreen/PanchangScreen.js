@@ -458,6 +458,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Regular',
     paddingHorizontal: scale(10),
     paddingVertical: verticalScale(5),
+    color: '#000',
   },
   dateContainer: {
     flexDirection: 'row',

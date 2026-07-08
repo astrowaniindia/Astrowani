@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(10),
     alignItems: 'center',
     fontFamily: 'Lato-Regular',
-
+    color: '#000',
     justifyContent: 'space-between',
     borderRadius: moderateScale(8),
     borderWidth: verticalScale(1),

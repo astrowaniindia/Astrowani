@@ -1,6 +1,7 @@
 // astrowani-backend/src/sessionManager.js
 
 const { createClient } = require('@supabase/supabase-js');
+const { sendPush } = require('./push');
 
 // Initialize Supabase Client with Service Role Key for administrative access
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -102,16 +103,58 @@ class SessionManager {
   async markStaleRequestsMissed() {
     const cutoff = new Date(Date.now() - 75 * 1000).toISOString();
     try {
-      await supabase.from('call_requests')
+      const { data: missedCalls } = await supabase.from('call_requests')
         .update({ status: 'missed' })
         .eq('status', 'pending')
-        .lt('created_at', cutoff);
-      await supabase.from('chat_requests')
+        .lt('created_at', cutoff)
+        .select('customer_id, astrologer_id');
+      const { data: missedChats } = await supabase.from('chat_requests')
         .update({ status: 'missed' })
         .eq('status', 'pending')
-        .lt('created_at', cutoff);
+        .lt('created_at', cutoff)
+        .select('caller_id, receiver_id');
+
+      await this.notifyMissed(missedCalls, 'customer_id', 'astrologer_id', 'call');
+      await this.notifyMissed(missedChats, 'caller_id', 'receiver_id', 'chat');
     } catch (err) {
       console.error('[SessionManager] markStaleRequestsMissed error:', err.message);
+    }
+  }
+
+  /**
+   * Pushes a "missed" notification to the customer side of each flipped request
+   * (backup path — the customer app itself may already show an inline alert if it's
+   * still open; this covers the case where it's backgrounded or killed).
+   */
+  async notifyMissed(rows, customerKey, astrologerKey, kind) {
+    if (!rows || !rows.length) return;
+    try {
+      const astroIds = [...new Set(rows.map((r) => r[astrologerKey]).filter(Boolean))];
+      const custIds = [...new Set(rows.map((r) => r[customerKey]).filter(Boolean))];
+      const [{ data: astros }, { data: customers }] = await Promise.all([
+        supabase.from('astrologers').select('id, first_name, last_name').in('id', astroIds),
+        supabase.from('customers').select('id, fcm_token').in('id', custIds),
+      ]);
+
+      const astroNameById = {};
+      (astros || []).forEach((a) => {
+        astroNameById[a.id] = `${a.first_name || ''} ${a.last_name || ''}`.trim() || 'Astrologer';
+      });
+      const tokenById = {};
+      (customers || []).forEach((c) => { tokenById[c.id] = c.fcm_token; });
+
+      for (const row of rows) {
+        const token = tokenById[row[customerKey]];
+        if (!token) continue;
+        const name = astroNameById[row[astrologerKey]] || 'Astrologer';
+        await sendPush(token, {
+          title: kind === 'call' ? 'Missed Call' : 'Missed Chat',
+          body: `${name} didn't pick up your ${kind} request.`,
+          data: { type: 'missed_session', kind },
+        });
+      }
+    } catch (err) {
+      console.error('[SessionManager] notifyMissed error:', err.message);
     }
   }
 

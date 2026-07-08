@@ -4,31 +4,23 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import {COLORS} from '../Theme/Colors';
 
-// In-app screens (rendered natively, no URL needed).
-const SETTINGS_SCREENS = [
-  {label: 'About Us', icon: 'info', screen: 'AboutUsScreen'},
-  {label: "FAQ's", icon: 'help-outline', screen: 'FaqScreen'},
-];
+const SETTINGS_SCREENS = [];
 
-// TODO: replace these placeholder URLs with the real website links.
+// TODO: replace the About Us / FAQ's URLs with the real website links.
 const SETTINGS_LINKS = [
-  {label: 'Refund & Cancellation', icon: 'attach-money', url: 'https://astrowani.com/refund-and-cancellation'},
-  {label: 'Privacy Policy', icon: 'privacy-tip', url: 'https://astrowani.com/privacy-policy'},
-  {label: 'Terms & Conditions', icon: 'gavel', url: 'https://astrowani.com/terms-and-conditions'},
-  {label: 'Child Safety Standards', icon: 'shield', url: 'https://astrowani.com/child-safety-standards'},
-  {label: 'Safety Standards', icon: 'verified-user', url: 'https://astrowani.com/safety-standards'},
-  {label: 'Report Vulnerability', icon: 'bug-report', url: 'https://astrowani.com/report-vulnerability'},
+  {label: 'About Us', icon: 'info', url: 'https://astrowani.com/about-us/'},
+  {label: "FAQ's", icon: 'help-outline', url: 'https://astrowani.com/faq/'},
+  {label: 'Refund & Cancellation', icon: 'attach-money', url: 'https://astrowani.com/refund_cancellation/'},
+  {label: 'Privacy Policy', icon: 'privacy-tip', url: 'https://astrowani.com/privacy-policy/'},
+  {label: 'Terms & Conditions', icon: 'gavel', url: 'https://astrowani.com/term_conditions/'},
+  {label: 'Safety Guidelines', icon: 'verified-user', url: 'https://astrowani.com/safety-guidelines/'},
+  {label: 'Child Safety', icon: 'shield', url: 'https://astrowani.com/child-safety/'},
 ];
 
 export default function Settings({navigation}) {
   const openLink = async url => {
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('Unable to open link', url);
-      }
+      await Linking.openURL(url);
     } catch (error) {
       Alert.alert('Unable to open link', 'Please check your internet connection and try again.');
     }

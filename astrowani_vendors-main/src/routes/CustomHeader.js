@@ -6,6 +6,7 @@ import {
   StyleSheet,
   StatusBar,
   Modal,
+  Image,
 } from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -20,6 +21,7 @@ const CustomHeader = ({title, showLanguage}) => {
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
+  const [profileImage, setProfileImage] = useState(null);
   let subscription = null;
 
   const fetchBalance = async () => {
@@ -31,10 +33,13 @@ const CustomHeader = ({title, showLanguage}) => {
     }
     const {data} = await supabase
       .from('astrologers')
-      .select('wallet_balance')
+      .select('wallet_balance, profile_pic_url, profile_image')
       .eq('id', astroId)
       .single();
-    if (data) setWalletBalance(data.wallet_balance);
+    if (data) {
+      setWalletBalance(data.wallet_balance);
+      setProfileImage(data.profile_pic_url || data.profile_image || null);
+    }
 
     subscription = supabase
       .channel(`vendor_wallet_header_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
@@ -79,7 +84,11 @@ const CustomHeader = ({title, showLanguage}) => {
             <MaterialIcons name="notifications-none" color="white" size={24} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginRight: 12 }}>
-            <Ionicons name="person-circle-outline" color="white" size={26} />
+            {profileImage ? (
+              <Image source={{uri: profileImage}} style={styles.avatar} />
+            ) : (
+              <Ionicons name="person-circle-outline" color="white" size={26} />
+            )}
           </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={[styles.walletBtn, { marginRight: showLanguage ? 12 : 0 }]}>
             <Ionicons name="wallet-outline" color="white" size={22} />
@@ -176,6 +185,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: moderateScale(13),
     fontWeight: '700',
+  },
+  avatar: {
+    width: moderateScale(26),
+    height: moderateScale(26),
+    borderRadius: moderateScale(13),
+    borderWidth: 1,
+    borderColor: 'white',
   },
   modalContainer: {
     flex: 1,
