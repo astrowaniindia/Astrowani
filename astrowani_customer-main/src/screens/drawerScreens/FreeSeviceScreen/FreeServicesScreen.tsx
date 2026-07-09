@@ -47,16 +47,18 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
           <Text style={styles.priceBadgeText}>₹{item.price}</Text>
         </View>
       )}
-      {item.icon ? (
-        <Image
-          source={{ uri: item.icon }}
-          style={styles.icon}
-          resizeMode="contain"
-          onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
-        />
-      ) : (
-        <MaterialIcons name="image-not-supported" size={scale(30)} color={COLORS.lightGrey} />
-      )}
+      <View style={styles.iconBadge}>
+        {item.icon ? (
+          <Image
+            source={{ uri: item.icon }}
+            style={styles.icon}
+            resizeMode="contain"
+            onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
+          />
+        ) : (
+          <MaterialIcons name="image-not-supported" size={scale(26)} color={COLORS.lightGrey} />
+        )}
+      </View>
       <Text style={styles.serviceText} numberOfLines={2}>
         {item.title}
       </Text>
@@ -124,50 +126,62 @@ const styles = StyleSheet.create({
   },
   serviceBox: {
     backgroundColor: '#fff',
-    borderRadius: moderateScale(16),
-    borderWidth: 1.5,
-    borderColor: COLORS.AstroMaroon,
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(20),
+    borderRadius: moderateScale(20),
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(18),
     marginRight: scale(12),
     alignItems: 'center',
     justifyContent: 'center',
     width: scale(120),
-    height: verticalScale(140),
-    shadowColor: '#000',
+    height: verticalScale(144),
+    overflow: 'hidden',
+    shadowColor: COLORS.AstroMaroon,
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 6,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
   },
   priceBadge: {
     position: 'absolute',
-    top: verticalScale(6),
-    right: scale(6),
+    top: verticalScale(10),
+    right: scale(10),
     backgroundColor: COLORS.AstroGold,
-    borderRadius: moderateScale(8),
-    paddingHorizontal: scale(6),
-    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(10),
+    paddingHorizontal: scale(7),
+    paddingVertical: verticalScale(3),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   priceBadgeText: {
     fontSize: moderateScale(10),
     color: COLORS.AstroMaroon,
     fontFamily: 'Lato-Bold',
   },
-  icon: {
-    width: scale(50),
-    height: scale(50),
+  iconBadge: {
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: COLORS.AstroSoftOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: verticalScale(12),
   },
+  icon: {
+    width: scale(38),
+    height: scale(38),
+  },
   serviceText: {
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(13),
     textAlign: 'center',
-    color: COLORS.black,
+    color: COLORS.AstroMaroon,
     fontFamily: 'Lato-Bold',
-    marginTop: verticalScale(5),
+    marginTop: verticalScale(2),
   },
 });
 

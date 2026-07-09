@@ -247,6 +247,23 @@ const UserProfileScreen = ({navigation, route}) => {
       const tob = userProfile.timeOfBirth
         ? new Date(userProfile.timeOfBirth).toTimeString().slice(0, 5) // "HH:MM"
         : null;
+
+      // Only newly-picked images are base64 (data-URI) — upload those to Storage
+      // and use the resulting URL instead, so we never write base64 into the DB.
+      const uploadIfNeeded = async (value) => {
+        if (!value || !value.startsWith('data:')) return value || null;
+        const uploadRes = await Instance.post(
+          '/api/upload-image',
+          { base64: value, folder: 'customer-profiles' },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        return uploadRes.data.url;
+      };
+      const [profilePicUrl, handPicUrl] = await Promise.all([
+        uploadIfNeeded(userProfile.profilePic),
+        uploadIfNeeded(userProfile.handPic),
+      ]);
+
       const payload = {
         name: userProfile.firstName,
         email: userProfile.email,
@@ -256,8 +273,8 @@ const UserProfileScreen = ({navigation, route}) => {
         timeOfBirth: tob,
         city: userProfile.city || null,
         state: userProfile.state || null,
-        profilePic: userProfile.profilePic || null,
-        handPic: userProfile.handPic || null,
+        profilePic: profilePicUrl,
+        handPic: handPicUrl,
       };
 
       const response = await Instance.put('/api/users/profile', payload, {

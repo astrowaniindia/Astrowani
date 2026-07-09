@@ -19,6 +19,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling'; // Re
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../api/SupabaseClient';
+import Instance from '../../api/ApiCall';
 
 export default function EditProfile() {
   const Navigation=useNavigation()
@@ -147,13 +148,26 @@ export default function EditProfile() {
       const lastName = lastNameParts.join(' ');
 
       const langArray = language.split(',').map(l => l.trim()).filter(l => l);
-      
+
+      // Only newly-picked images are base64 (data-URI) — upload those to Storage
+      // and use the resulting URL instead, so we never write base64 into the DB.
+      let profilePicUrlToSave = profileImage;
+      if (profileImage && profileImage.startsWith('data:')) {
+        const token = await AsyncStorage.getItem('token');
+        const uploadRes = await Instance.post(
+          '/api/upload-image',
+          { base64: profileImage, folder: 'astrologer-profiles' },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        profilePicUrlToSave = uploadRes.data.url;
+      }
+
       const { error } = await supabase
         .from('astrologers')
-        .update({ 
-          first_name: firstName, 
-          last_name: lastName, 
-          email: email, 
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
           phone_number: phone,
           gender: gender,
           experience: parseInt(experience) || 0,
@@ -161,7 +175,7 @@ export default function EditProfile() {
           call_charge_per_minute: parseInt(callCharge) || 0,
           video_charge_per_minute: parseInt(videoCharge) || 0,
           languages: langArray,
-          profile_pic_url: profileImage
+          profile_pic_url: profilePicUrlToSave
         })
         .eq('id', astroId);
 

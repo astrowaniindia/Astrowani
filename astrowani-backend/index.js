@@ -232,6 +232,9 @@ require('./src/adminRoutes')(app);
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
 
+// Image upload — base64 -> Supabase Storage URL (POST /api/upload-image)
+require('./src/uploadRoutes')(app);
+
 // In-memory store for OTPs (In production, use Redis or Database)
 const otpStore = new Map();
 

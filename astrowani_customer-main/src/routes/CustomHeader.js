@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +22,7 @@ import { LanguageContext } from '../context/LanguageContext';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const { language, changeLanguage, t } = React.useContext(LanguageContext);
@@ -88,7 +90,7 @@ const CustomHeader = ({title, showLanguage}) => {
     toggleLanguageModal();
   };
   return (
-    <View style={{backgroundColor: COLORS.AstroMaroon}}>
+    <View style={{backgroundColor: COLORS.AstroMaroon, paddingTop: insets.top}}>
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
           <TouchableOpacity onPress={() => navigation.openDrawer()}>
