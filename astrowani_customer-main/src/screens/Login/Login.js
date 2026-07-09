@@ -78,6 +78,7 @@ const Login = ({navigation}) => {
         const res = await Instance.post('/api/users/mobile-otp-request', {
           phoneNumber,
           role: 'customer',
+          intent: 'login',
         });
         if (res?.data?.success) {
           navigation.navigate('VerifyOtp', { phoneNumber, role: 'customer' });
@@ -85,8 +86,16 @@ const Login = ({navigation}) => {
           showAlert('Error', res?.data?.message || 'Could not send OTP. Please try again.', 'error');
         }
       } catch (error) {
-        console.log('Login error:', error);
-        showAlert('Error', 'Something went wrong. Please try again.', 'error');
+        if (error?.response?.data?.code === 'NO_ACCOUNT') {
+          showAlert(
+            'No Account Found',
+            "We couldn't find an account for this number. Please sign up first.",
+            'error'
+          );
+        } else {
+          console.log('Login error:', error);
+          showAlert('Error', 'Something went wrong. Please try again.', 'error');
+        }
       } finally {
         SetLoading(false);
       }

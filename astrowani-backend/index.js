@@ -260,10 +260,36 @@ function toE164(phoneNumber) {
  * Endpoint to request an OTP
  */
 app.post('/api/users/mobile-otp-request', async (req, res) => {
-  const { phoneNumber, role } = req.body;
+  const { phoneNumber, role, intent } = req.body;
 
   if (!phoneNumber) {
     return res.status(400).json({ success: false, message: 'Phone number is required' });
+  }
+
+  // Login must not silently create an account, and signup must not silently log an
+  // existing user in — both would send an OTP either way, hiding the actual problem.
+  // Only enforced when the caller explicitly says which flow this is (`intent`); callers
+  // that don't send it keep the old permissive (either-is-fine) behavior.
+  if (intent === 'login' || intent === 'signup') {
+    const table = role === 'astrologer' || role === 'vendor' ? 'astrologers' : 'customers';
+    const idColumn = table === 'astrologers' ? 'phone_number' : 'mobile';
+    const { data: existing } = await supabase.from(table).select('id').eq(idColumn, phoneNumber).limit(1);
+    const accountExists = !!(existing && existing.length);
+
+    if (intent === 'login' && !accountExists) {
+      return res.status(404).json({
+        success: false,
+        code: 'NO_ACCOUNT',
+        message: 'No account found for this number. Please sign up first.',
+      });
+    }
+    if (intent === 'signup' && accountExists) {
+      return res.status(409).json({
+        success: false,
+        code: 'ACCOUNT_EXISTS',
+        message: 'An account already exists for this number. Please log in instead.',
+      });
+    }
   }
 
   // Generate a 6-digit OTP
