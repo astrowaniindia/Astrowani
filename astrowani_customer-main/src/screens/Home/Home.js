@@ -1113,11 +1113,12 @@ const Home = ({navigation}) => {
             id: s.id,
             key: s.key,
             title: s.name,
-            icon: ASTRO_SERVICE_ICONS[s.category],
+            icon: s.image || ASTRO_SERVICE_ICONS[s.category],
             price: s.price,
           }))}
           onServiceSelect={handleAstroServiceSelect}
           showPrice
+          variant="image"
         />
 
         <View style={styles.separator} />

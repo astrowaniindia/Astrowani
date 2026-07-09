@@ -27,6 +27,10 @@ type FreeServicesScreenProps = {
   onServiceSelect: (item: ServiceItem) => void;
   loading?: boolean;
   showPrice?: boolean;
+  // 'badge' (default): small circular icon, for fixed in-app tools (Panchang, Kundali…).
+  // 'image': full-width top image like a blog card — for admin-managed content
+  // (Astro Reports) where the image and title are edited from the admin dashboard.
+  variant?: 'badge' | 'image';
 };
 
 const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
@@ -34,36 +38,70 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   onServiceSelect,
   loading = false,
   showPrice = false,
+  variant = 'badge',
 }) => {
-  const renderService = ({ item }: { item: ServiceItem }) => (
-
-    <TouchableOpacity
-      onPress={() => onServiceSelect(item)}
-      style={styles.serviceBox}
-      activeOpacity={0.7}
-    >
-      {showPrice && item.price != null && (
-        <View style={styles.priceBadge}>
-          <Text style={styles.priceBadgeText}>₹{item.price}</Text>
-        </View>
-      )}
-      <View style={styles.iconBadge}>
-        {item.icon ? (
-          <Image
-            source={{ uri: item.icon }}
-            style={styles.icon}
-            resizeMode="contain"
-            onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
-          />
-        ) : (
-          <MaterialIcons name="image-not-supported" size={scale(26)} color={COLORS.lightGrey} />
+  const renderService = ({ item }: { item: ServiceItem }) => {
+    if (variant === 'image') {
+      return (
+        <TouchableOpacity
+          onPress={() => onServiceSelect(item)}
+          style={styles.imageCard}
+          activeOpacity={0.85}
+        >
+          <View style={styles.imageCardImageWrap}>
+            {item.icon ? (
+              <Image
+                source={{ uri: item.icon }}
+                style={styles.imageCardImage}
+                resizeMode="cover"
+                onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
+              />
+            ) : (
+              <View style={[styles.imageCardImage, styles.imageCardImageFallback]}>
+                <MaterialIcons name="image-not-supported" size={scale(30)} color={COLORS.lightGrey} />
+              </View>
+            )}
+            {showPrice && item.price != null && (
+              <View style={styles.priceBadge}>
+                <Text style={styles.priceBadgeText}>₹{item.price}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.imageCardText} numberOfLines={2}>
+            {item.title}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity
+        onPress={() => onServiceSelect(item)}
+        style={styles.serviceBox}
+        activeOpacity={0.7}
+      >
+        {showPrice && item.price != null && (
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceBadgeText}>₹{item.price}</Text>
+          </View>
         )}
-      </View>
-      <Text style={styles.serviceText} numberOfLines={2}>
-        {item.title}
-      </Text>
-    </TouchableOpacity>
-  );
+        <View style={styles.iconBadge}>
+          {item.icon ? (
+            <Image
+              source={{ uri: item.icon }}
+              style={styles.icon}
+              resizeMode="contain"
+              onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
+            />
+          ) : (
+            <MaterialIcons name="image-not-supported" size={scale(26)} color={COLORS.lightGrey} />
+          )}
+        </View>
+        <Text style={styles.serviceText} numberOfLines={2}>
+          {item.title}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -182,6 +220,39 @@ const styles = StyleSheet.create({
     color: COLORS.AstroMaroon,
     fontFamily: 'Lato-Bold',
     marginTop: verticalScale(2),
+  },
+  imageCard: {
+    backgroundColor: '#fff',
+    width: scale(150),
+    borderRadius: moderateScale(16),
+    marginRight: scale(12),
+    overflow: 'hidden',
+    shadowColor: COLORS.AstroMaroon,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  imageCardImageWrap: {
+    width: '100%',
+    height: verticalScale(100),
+  },
+  imageCardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageCardImageFallback: {
+    backgroundColor: COLORS.AstroSoftOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageCardText: {
+    fontSize: moderateScale(13),
+    textAlign: 'center',
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(10),
   },
 });
 

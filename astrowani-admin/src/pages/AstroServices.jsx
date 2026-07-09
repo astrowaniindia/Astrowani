@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
+import ImageField from '../components/ImageField';
 
 const CATEGORIES = [
   'Kundli', 'Matching', 'Chart', 'Dasha', 'Dosh', 'Numerology', 'Lal Kitab', 'KP Astrology', 'Tarot', 'PDF Reports',
 ];
 
-const EMPTY = { key: '', name: '', description: '', category: CATEGORIES[0], price: 0, is_active: true, sort_order: 0 };
+const EMPTY = { key: '', name: '', description: '', category: CATEGORIES[0], price: 0, image: '', is_active: true, sort_order: 0 };
 
 export default function AstroServices() {
   const [rows, setRows] = useState([]);
@@ -71,17 +72,18 @@ export default function AstroServices() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Key</th><th>Name</th><th>Price (₹)</th><th>Active</th><th>Order</th><th></th></tr></thead>
+          <thead><tr><th>Image</th><th>Key</th><th>Name</th><th>Price (₹)</th><th>Active</th><th>Order</th><th></th></tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={6} className="empty">Loading…</td></tr>}
+            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
             {!loading && loadError && (
-              <tr><td colSpan={6} className="empty" style={{ color: 'var(--red)' }}>
+              <tr><td colSpan={7} className="empty" style={{ color: 'var(--red)' }}>
                 Couldn't load astro services: {loadError} (run sql/astro_services_schema.sql in the Supabase SQL editor)
               </td></tr>
             )}
-            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={6} className="empty">No services in {tab} yet.</td></tr>}
+            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={7} className="empty">No services in {tab} yet.</td></tr>}
             {visibleRows.map((r) => (
               <tr key={r.id}>
+                <td>{r.image ? <img src={r.image} alt="" className="thumb" /> : <span className="muted">—</span>}</td>
                 <td><code>{r.key}</code></td>
                 <td>{r.name}</td>
                 <td>₹{r.price}</td>
@@ -105,6 +107,7 @@ export default function AstroServices() {
             <input type="text" value={editing.name} onChange={(e) => set('name', e.target.value)} /></div>
           <div className="field"><label>Description</label>
             <input type="text" value={editing.description || ''} onChange={(e) => set('description', e.target.value)} /></div>
+          <ImageField label="Card image" value={editing.image} onChange={(v) => set('image', v)} />
           <div className="field"><label>Category</label>
             <select value={editing.category} onChange={(e) => set('category', e.target.value)}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}

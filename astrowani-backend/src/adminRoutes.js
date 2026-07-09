@@ -169,7 +169,7 @@ module.exports = function registerAdminRoutes(app) {
   // Paid astrology report catalog (JyotishamAstroAPI) — prices flow into admin_wallet on purchase.
   crud('astro-services', 'astro_services', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['key', 'name', 'description', 'category', 'price', 'is_active', 'sort_order'],
+    allowed: ['key', 'name', 'description', 'category', 'price', 'image', 'is_active', 'sort_order'],
   });
 
   // ── Live moderation ───────────────────────────────────────────────────────

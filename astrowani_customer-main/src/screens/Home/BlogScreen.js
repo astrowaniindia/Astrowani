@@ -1,11 +1,27 @@
 import React from 'react';
-import { View, Text, Image, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Image, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import RenderHTML from 'react-native-render-html'; // Import the RenderHTML component
 
+// Reset every tag to the same readable typography, no matter what formatting the
+// admin's rich-text editor baked into the pasted HTML (borders, monospace, etc.).
+const HTML_TAGS_STYLES = {
+  body: { fontFamily: 'Lato-Regular', color: COLORS.black },
+  p: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), lineHeight: verticalScale(24), marginBottom: verticalScale(10) },
+  div: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), lineHeight: verticalScale(24) },
+  span: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15) },
+  li: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), lineHeight: verticalScale(24) },
+  h1: { fontFamily: 'Lato-Bold', fontSize: moderateScale(20), marginBottom: verticalScale(10) },
+  h2: { fontFamily: 'Lato-Bold', fontSize: moderateScale(18), marginBottom: verticalScale(8) },
+  h3: { fontFamily: 'Lato-Bold', fontSize: moderateScale(16), marginBottom: verticalScale(8) },
+  strong: { fontFamily: 'Lato-Bold' },
+  b: { fontFamily: 'Lato-Bold' },
+};
+
 const BlogScreen = ({ route }) => {
   const { data = {} } = route.params || {};
+  const { width } = useWindowDimensions();
 
   // console.log("data:", data);
 
@@ -25,7 +41,13 @@ const BlogScreen = ({ route }) => {
 
   const isHindiHTML = /<\/?[a-z][\s\S]*>/i.test(contentHindi);
 
-  const cleanHTML = (html) => html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+  // Strip <style> blocks, inline style="" attributes, and pre/code tags (some blog content is
+  // pasted from rich-text editors with inline monospace/bordered styling baked in) so every
+  // blog renders with consistent, readable typography regardless of how the admin authored it.
+  const cleanHTML = (html) => html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/\sstyle="[^"]*"/gi, '')
+    .replace(/<\/?(pre|code)[^>]*>/gi, '');
 
 
   return (
@@ -42,57 +64,42 @@ const BlogScreen = ({ route }) => {
 
         {/* Blog Description Section */}
         <View style={styles.blogDescriptionContainer}>
+          <Text style={styles.langLabel}>English</Text>
           <Text style={styles.blogTitle}>{data?.english?.title}</Text>
-          <Text style={styles.blogTitle}>{data?.hindi?.title}</Text>
         </View>
 
         {/* Blog Content Section */}
         <View style={styles.contentView}>
           <Text style={styles.blogheadline}>{data?.english?.excerpt}</Text>
-          <Text style={styles.blogheadline}>{data?.hindi?.excerpt}</Text>
 
           {isHTML ? (
             <RenderHTML
-              contentWidth={scale(320)}
+              contentWidth={width - moderateScale(30)}
               source={{ html: cleanHTML(content) }}
               baseStyle={styles.htmlContent}
+              tagsStyles={HTML_TAGS_STYLES}
               ignoredDomTags={['style', 'script']}
             />
           ) : (
             <Text style={styles.content}>{content}</Text>
           )}
+
+          <View style={styles.langDivider} />
+          <Text style={styles.langLabel}>हिन्दी</Text>
+          <Text style={styles.blogTitle}>{data?.hindi?.title}</Text>
+          <Text style={styles.blogheadline}>{data?.hindi?.excerpt}</Text>
 
           {isHindiHTML ? (
             <RenderHTML
-              contentWidth={scale(320)}
+              contentWidth={width - moderateScale(30)}
               source={{ html: cleanHTML(contentHindi) }}
               baseStyle={styles.htmlContent}
+              tagsStyles={HTML_TAGS_STYLES}
               ignoredDomTags={['style', 'script']}
             />
           ) : (
             <Text style={styles.content}>{contentHindi}</Text>
           )}
-
-
-          {/* Conditional Rendering for HTML vs Plain Text */}
-          {/* {isHTML ? (
-            <RenderHTML
-              contentWidth={scale(320)}
-              source={{ html: cleanHTML(content) }}
-              baseStyle={styles.htmlContent}
-            />
-          ) : (
-            <Text style={styles.content}>{content}</Text>
-          )} */}
-          {/* {isHindiHTML ? (
-            <RenderHTML
-              contentWidth={scale(320)}
-              source={{ html: cleanHTML(contentHindi) }}
-              baseStyle={styles.htmlContent}
-            />
-          ) : (
-            <Text style={styles.content}>{contentHindi}</Text>
-          )} */}
         </View>
         <Text style={[styles.blogMeta, { paddingBottom: 10 }]}>Created At {formattedDate}</Text>
       </ScrollView>
@@ -123,6 +130,19 @@ const styles = StyleSheet.create({
   blogDescriptionContainer: {
     padding: scale(20),
     alignItems: 'center',
+  },
+  langLabel: {
+    fontSize: moderateScale(11),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: verticalScale(6),
+  },
+  langDivider: {
+    height: 1,
+    backgroundColor: COLORS.lightBorder,
+    marginVertical: verticalScale(20),
   },
   blogTitle: {
     fontSize: moderateScale(19),
