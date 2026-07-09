@@ -23,7 +23,7 @@ import messaging from '@react-native-firebase/messaging';
 const RESEND_SECONDS = 60;
 
 const VerifyOtp = ({navigation, route}) => {
-  const {phoneNumber, role = 'customer'} = route?.params || {};
+  const {phoneNumber, role = 'customer', profileData} = route?.params || {};
 
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -69,6 +69,32 @@ const VerifyOtp = ({navigation, route}) => {
       });
       if (res?.data?.success && res?.data?.token) {
         await AsyncStorage.setItem('token', res.data.token);
+
+        // Signup flow (Register screen) — apply the details collected before OTP verify
+        // now that we have a real auth token to call the profile endpoint with.
+        if (profileData) {
+          try {
+            let profilePic = profileData.profilePic;
+            if (profilePic && profilePic.startsWith('data:')) {
+              const uploadRes = await Instance.post(
+                '/api/upload-image',
+                {base64: profilePic, folder: 'customer-profiles'},
+                {headers: {Authorization: `Bearer ${res.data.token}`}}
+              );
+              profilePic = uploadRes.data.url;
+            }
+            await Instance.put(
+              '/api/users/profile',
+              {...profileData, profilePic},
+              {headers: {Authorization: `Bearer ${res.data.token}`}}
+            );
+          } catch (profileErr) {
+            // Account is created and verified either way — a profile-save hiccup
+            // shouldn't strand the user on the OTP screen; they can fill it in later.
+            console.log('Failed to save registration details:', profileErr.message);
+          }
+        }
+
         navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       } else {
         showAlert('Verification Failed', res?.data?.message || 'Invalid OTP. Please try again.', 'error');

@@ -17,10 +17,10 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { Dropdown } from 'react-native-element-dropdown';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import { supabase } from '../../api/SupabaseClient';
 import { showAlert } from '../../Component/CustomAlert';
 import { COLORS } from '../../Theme/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import Instance from '../../api/ApiCall';
 
 export default function Register({ navigation }) {
   const [name, setName] = useState('');
@@ -32,7 +32,8 @@ export default function Register({ navigation }) {
   const [place, setPlace] = useState('');
   const [mobile, setMobile] = useState('');
   const [email, setEmail] = useState('');
-  const [image, setImage] = useState(null);
+  const [image, setImage] = useState(null); // data-URI, for the preview
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     // Request camera permission on Android
@@ -88,7 +89,7 @@ export default function Register({ navigation }) {
     let options = {
       mediaType: 'photo',
       quality: 1,
-      includeBase64: false,
+      includeBase64: true,
     };
 
     launchImageLibrary(options, (response) => {
@@ -98,7 +99,7 @@ export default function Register({ navigation }) {
         console.log('ImagePicker Error: ', response.errorMessage);
       } else if (response.assets && response.assets.length > 0) {
         const source = response.assets[0];
-        setImage(source.uri);
+        setImage(`data:${source.type || 'image/jpeg'};base64,${source.base64}`);
       }
     });
   };
@@ -108,7 +109,7 @@ export default function Register({ navigation }) {
     let options = {
       mediaType: 'photo',
       quality: 1,
-      includeBase64: false,
+      includeBase64: true,
       saveToPhotos: true,
       cameraType: 'back',
     };
@@ -120,7 +121,7 @@ export default function Register({ navigation }) {
         console.log('Camera Error: ', response.errorMessage);
       } else if (response.assets && response.assets.length > 0) {
         const source = response.assets[0];
-        setImage(source.uri);
+        setImage(`data:${source.type || 'image/jpeg'};base64,${source.base64}`);
       }
     });
   };
@@ -130,44 +131,50 @@ export default function Register({ navigation }) {
       showAlert('Error', 'Please fill in at least your Name and Mobile Number.', 'error');
       return;
     }
+    if (mobile.length < 10) {
+      showAlert('Error', 'Please enter a valid 10-digit mobile number.', 'error');
+      return;
+    }
 
+    setSubmitting(true);
     try {
-      const formData = {
-        name,
-        gender,
-        dob: dob.toISOString().split('T')[0],
-        time_of_birth: timeOfBirth.toTimeString().split(' ')[0],
-        place_of_birth: place,
-        mobile,
-        email,
-        profile_image: image, // You'll need Supabase Storage setup to fully upload images
-      };
-      
-      const { data, error } = await supabase
-        .from('customers')
-        .insert([formData]);
-
-      if (error) {
-        console.error('Supabase error:', error);
-        showAlert('Error', error.message, 'error');
+      const res = await Instance.post('/api/users/mobile-otp-request', {
+        phoneNumber: mobile,
+        role: 'customer',
+        intent: 'signup',
+      });
+      if (res?.data?.success) {
+        navigation.navigate('VerifyOtp', {
+          phoneNumber: mobile,
+          role: 'customer',
+          // Applied to the new account via PUT /api/users/profile right after OTP verify.
+          profileData: {
+            name,
+            gender,
+            dob: dob.toISOString().split('T')[0],
+            time_of_birth: timeOfBirth.toTimeString().split(' ')[0],
+            place_of_birth: place,
+            email,
+            profilePic: image || null,
+          },
+        });
       } else {
-        console.log('Customer saved to Supabase:', formData);
-        showAlert(
-          'Success', 
-          'Registration submitted successfully!', 
-          'success',
-          () => {
-            // Once they click OK, send them to the main app and show Welcome message
-            navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
-            setTimeout(() => {
-              showAlert('Welcome', 'Welcome to Astrowani!', 'success', null, 'Get Started');
-            }, 500);
-          }
-        );
+        showAlert('Error', res?.data?.message || 'Could not send OTP. Please try again.', 'error');
       }
-    } catch (err) {
-      console.error(err);
-      showAlert('Error', 'Something went wrong during registration.', 'error');
+    } catch (error) {
+      if (error?.response?.data?.code === 'ACCOUNT_EXISTS') {
+        showAlert(
+          'Account Already Exists',
+          'An account already exists for this number. Please log in instead.',
+          'error',
+          () => navigation.navigate('Login')
+        );
+      } else {
+        console.error(error);
+        showAlert('Error', 'Something went wrong. Please try again.', 'error');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -292,8 +299,11 @@ export default function Register({ navigation }) {
           onChangeText={setEmail}
         />
 
-            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-              <Text style={styles.submitButtonText}>Submit</Text>
+            <TouchableOpacity
+              style={[styles.submitButton, submitting && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={submitting}>
+              <Text style={styles.submitButtonText}>{submitting ? 'Sending OTP…' : 'Submit'}</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>

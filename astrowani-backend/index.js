@@ -373,33 +373,37 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // OTP is valid!
   otpStore.delete(phoneNumber); // Clear OTP after successful use
 
-  // Look up or create the customer in Supabase to get the real UUID
+  // Look up or create the customer in Supabase to get the real UUID.
+  // Uses the service-role client so this write can't be silently blocked by RLS.
   let supabaseCustomerId = null;
   try {
-    const { data: customersList, error } = await supabase
+    const { data: customersList, error } = await supabaseService
       .from('customers')
       .select('id, name')
       .eq('mobile', phoneNumber)
       .limit(1);
-    
+
     if (error) throw error;
-    
+
     if (customersList && customersList.length > 0) {
       supabaseCustomerId = customersList[0].id;
       if (fcmToken) {
-        await supabase.from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+        const { error: updateError } = await supabaseService
+          .from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+        if (updateError) console.error('Failed to update customer fcm_token:', updateError.message);
       }
     } else {
       // Create a new customer row
-      const { data: newCustomer } = await supabase
+      const { data: newCustomer, error: insertError } = await supabaseService
         .from('customers')
         .insert([{ mobile: phoneNumber, wallet_balance: 0, fcm_token: fcmToken || null }])
         .select('id')
         .single();
+      if (insertError) throw insertError;
       supabaseCustomerId = newCustomer?.id;
     }
   } catch (e) {
-    console.warn('Could not look up Supabase customer:', e.message);
+    console.error('Could not look up/create Supabase customer:', e.message);
   }
 
   // Generate JWT token with the real Supabase UUID
