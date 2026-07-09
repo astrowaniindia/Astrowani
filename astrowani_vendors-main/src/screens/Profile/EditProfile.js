@@ -23,7 +23,7 @@ import Instance from '../../api/ApiCall';
 
 export default function EditProfile() {
   const Navigation=useNavigation()
-  const [name, setName] = useState('John Doe');
+  const [name, setName] = useState('');
   const [data, setData] = useState(null);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');

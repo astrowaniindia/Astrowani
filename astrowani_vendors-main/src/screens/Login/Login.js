@@ -16,8 +16,7 @@ import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {countries} from './Country';
-import { supabase } from '../../api/SupabaseClient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Instance from '../../api/ApiCall';
 
 const Login = ({navigation}) => {
   const [countryCode, setCountryCode] = useState('IN');
@@ -51,29 +50,27 @@ const Login = ({navigation}) => {
     return true;
   };
 
-  // TEMPORARY: OTP bypassed — look up astrologer and go directly to dashboard
   const loginByPhone = async () => {
     if (!validateFields()) return;
     SetLoading(true);
     try {
-      const formattedPhone = phoneNumber;
-      const { data: astro } = await supabase
-        .from('astrologers')
-        .select('id, approval_status')
-        .eq('phone_number', formattedPhone)
-        .single();
-
-      if (!astro) {
-        Alert.alert('Not Found', 'No astrologer account found with this phone number. Please register first.');
-        return;
+      const res = await Instance.post('/api/users/mobile-otp-request', {
+        phoneNumber,
+        role: 'astrologer',
+        intent: 'login',
+      });
+      if (res?.data?.success) {
+        navigation.navigate('VerifyOtp', { phoneNumber, role: 'astrologer' });
+      } else {
+        Alert.alert('Error', res?.data?.message || 'Could not send OTP. Please try again.');
       }
-
-      await AsyncStorage.setItem('astroId', String(astro.id));
-      await AsyncStorage.setItem('token', 'bypass_token');
-      navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
     } catch (error) {
-      console.log('Login error:', error);
-      Alert.alert('Login Error', 'Something went wrong. Please try again.');
+      if (error?.response?.data?.code === 'NO_ACCOUNT') {
+        Alert.alert('Not Found', 'No astrologer account found with this phone number. Please register first.');
+      } else {
+        console.log('Login error:', error);
+        Alert.alert('Login Error', 'Something went wrong. Please try again.');
+      }
     } finally {
       SetLoading(false);
     }

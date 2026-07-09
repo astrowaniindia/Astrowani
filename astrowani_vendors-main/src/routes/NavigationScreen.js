@@ -8,6 +8,7 @@ import Registration from '../screens/Registration';
 import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
+import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import Thankyou from '../screens/Thankyou';
 import PendingApproval from '../screens/PendingApproval';
 import { supabase } from '../api/SupabaseClient';
@@ -118,6 +119,11 @@ function NavigationScreen() {
           }}
           name="EmailOtpScreen"
           component={EmailOtpScreen}
+        />
+        <Stack.Screen
+          options={{ headerShown: false }}
+          name="VerifyOtp"
+          component={VerifyOtp}
         />
         <Stack.Screen
           options={{ headerShown: false }}

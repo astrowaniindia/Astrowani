@@ -17,6 +17,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { COLORS } from '../Theme/Colors';
 import ImagePicker from 'react-native-image-crop-picker';
 import { supabase } from '../api/SupabaseClient';
+import Instance from '../api/ApiCall';
 import messaging from '@react-native-firebase/messaging';
 
 const Registration = ({ navigation }) => {
@@ -92,6 +93,10 @@ const Registration = ({ navigation }) => {
       Alert.alert('Missing info', 'Please enter at least your full name and phone number.');
       return;
     }
+    if (user.phoneNumber.length < 10) {
+      Alert.alert('Missing info', 'Please enter a valid 10-digit phone number.');
+      return;
+    }
     setLoading(true);
     try {
       // If fcmToken is missing (e.g. on emulator), log a warning but continue registration
@@ -104,8 +109,22 @@ const Registration = ({ navigation }) => {
       const [firstName, ...rest] = trimmedName.split(/\s+/);
       const lastName = rest.join(' ');
 
-      const { error } = await supabase.from('astrologers').insert([
-        {
+      // The actual astrologers row is only created after the phone number is OTP-verified
+      // (see VerifyOtp.js's finishRegistration) — this just requests the OTP.
+      const res = await Instance.post('/api/users/mobile-otp-request', {
+        phoneNumber: user.phoneNumber,
+        role: 'astrologer',
+        intent: 'signup',
+      });
+      if (!res?.data?.success) {
+        Alert.alert('Registration Failed', res?.data?.message || 'Could not send OTP. Please try again.');
+        return;
+      }
+
+      navigation.navigate('VerifyOtp', {
+        phoneNumber: user.phoneNumber,
+        role: 'astrologer',
+        registrationData: {
           email: user.email,
           first_name: firstName,
           last_name: lastName,
@@ -129,19 +148,19 @@ const Registration = ({ navigation }) => {
           chat_charge_per_minute: 0,
           call_charge_per_minute: 0,
           video_charge_per_minute: 0,
-        }
-      ]);
-
-      if (error) {
-        throw error;
-      }
-
-      console.log('Registered successfully in Supabase!');
-      navigation.navigate('Thankyou');
-      
+        },
+      });
     } catch (error) {
-      console.error('Error Message:', error.message);
-      Alert.alert('Registration Failed', error.message || 'Something went wrong.');
+      if (error?.response?.data?.code === 'ACCOUNT_EXISTS') {
+        Alert.alert(
+          'Account Already Exists',
+          'An account already exists for this number. Please log in instead.'
+        );
+        navigation.navigate('Login');
+      } else {
+        console.error('Error Message:', error.message);
+        Alert.alert('Registration Failed', error.message || 'Something went wrong.');
+      }
     } finally {
       setLoading(false);
     }

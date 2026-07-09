@@ -373,37 +373,60 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // OTP is valid!
   otpStore.delete(phoneNumber); // Clear OTP after successful use
 
-  // Look up or create the customer in Supabase to get the real UUID.
-  // Uses the service-role client so this write can't be silently blocked by RLS.
+  const isVendor = role === 'astrologer' || role === 'vendor';
   let supabaseCustomerId = null;
   try {
-    const { data: customersList, error } = await supabaseService
-      .from('customers')
-      .select('id, name')
-      .eq('mobile', phoneNumber)
-      .limit(1);
-
-    if (error) throw error;
-
-    if (customersList && customersList.length > 0) {
-      supabaseCustomerId = customersList[0].id;
-      if (fcmToken) {
-        const { error: updateError } = await supabaseService
-          .from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
-        if (updateError) console.error('Failed to update customer fcm_token:', updateError.message);
-      }
-    } else {
-      // Create a new customer row
-      const { data: newCustomer, error: insertError } = await supabaseService
-        .from('customers')
-        .insert([{ mobile: phoneNumber, wallet_balance: 0, fcm_token: fcmToken || null }])
+    if (isVendor) {
+      // Vendors are never auto-created here — an astrologer account needs the full
+      // Registration form (specialties, experience, etc.), which runs *after* this verify
+      // succeeds for a brand-new number. Login-time verify just looks up the existing row.
+      const { data: astroList, error } = await supabaseService
+        .from('astrologers')
         .select('id')
-        .single();
-      if (insertError) throw insertError;
-      supabaseCustomerId = newCustomer?.id;
+        .eq('phone_number', phoneNumber)
+        .limit(1);
+      if (error) throw error;
+      if (astroList && astroList.length > 0) {
+        supabaseCustomerId = astroList[0].id;
+        if (fcmToken) {
+          const { error: updateError } = await supabaseService
+            .from('astrologers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+          if (updateError) console.error('Failed to update astrologer fcm_token:', updateError.message);
+        }
+      }
+      // else: no row yet (signup) — leave supabaseCustomerId null, app completes
+      // registration next and gets a real token from that step instead.
+    } else {
+      // Look up or create the customer in Supabase to get the real UUID.
+      // Uses the service-role client so this write can't be silently blocked by RLS.
+      const { data: customersList, error } = await supabaseService
+        .from('customers')
+        .select('id, name')
+        .eq('mobile', phoneNumber)
+        .limit(1);
+
+      if (error) throw error;
+
+      if (customersList && customersList.length > 0) {
+        supabaseCustomerId = customersList[0].id;
+        if (fcmToken) {
+          const { error: updateError } = await supabaseService
+            .from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+          if (updateError) console.error('Failed to update customer fcm_token:', updateError.message);
+        }
+      } else {
+        // Create a new customer row
+        const { data: newCustomer, error: insertError } = await supabaseService
+          .from('customers')
+          .insert([{ mobile: phoneNumber, wallet_balance: 0, fcm_token: fcmToken || null }])
+          .select('id')
+          .single();
+        if (insertError) throw insertError;
+        supabaseCustomerId = newCustomer?.id;
+      }
     }
   } catch (e) {
-    console.error('Could not look up/create Supabase customer:', e.message);
+    console.error('Could not look up/create Supabase account:', e.message);
   }
 
   // Generate JWT token with the real Supabase UUID
