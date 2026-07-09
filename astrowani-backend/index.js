@@ -235,9 +235,10 @@ require('./src/astroRoutes')(app);
 // In-memory store for OTPs (In production, use Redis or Database)
 const otpStore = new Map();
 
-// EnableX Credentials (add these to your .env file)
-const ENABLEX_APP_ID = process.env.ENABLEX_APP_ID;
-const ENABLEX_APP_KEY = process.env.ENABLEX_APP_KEY;
+// EnableX Credentials for the SMS/OTP project specifically ("OTP Atrowani").
+// Distinct from ENABLEX_APP_ID/ENABLEX_APP_KEY, which belong to a different EnableX project.
+const ENABLEX_APP_ID = process.env.ENABLEX_APP_ID_otp_message;
+const ENABLEX_APP_KEY = process.env.ENABLEX_APP_KEY_otp_message;
 
 // EnableX SMS project "OTP Atrowani" — Campaign Cloud campaign "OTP astrowani"
 const ENABLEX_SMS_CAMPAIGN_ID = '1245560';
