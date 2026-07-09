@@ -239,6 +239,19 @@ const otpStore = new Map();
 const ENABLEX_APP_ID = process.env.ENABLEX_APP_ID;
 const ENABLEX_APP_KEY = process.env.ENABLEX_APP_KEY;
 
+// EnableX SMS project "OTP Atrowani" — Campaign Cloud campaign "OTP astrowani"
+const ENABLEX_SMS_CAMPAIGN_ID = '1245560';
+const ENABLEX_SMS_TEMPLATE_ID = '463430427'; // "OTP for astrowani" (DLT 1207172007863021380): "Hi user, your OTP is {$var1} for Login on – Astrowaniindia"
+const ENABLEX_SMS_SENDER_ID = 'ASTRWI';
+
+// EnableX requires E.164 numbers (with country code). Assumes India (+91) for bare 10-digit numbers.
+function toE164(phoneNumber) {
+  const digits = String(phoneNumber).replace(/\D/g, '');
+  if (phoneNumber.startsWith('+')) return phoneNumber;
+  if (digits.length === 10) return `+91${digits}`;
+  return `+${digits}`;
+}
+
 /**
  * Endpoint to request an OTP
  */
@@ -262,30 +275,28 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
 
   console.log(`Generated OTP for ${phoneNumber}: ${otp} (Session: ${sessionId})`);
 
-  // TODO: Send OTP via EnableX SMS API
+  // Send OTP via EnableX SMS API using the DLT-approved "OTP for astrowani" template
   if (ENABLEX_APP_ID && ENABLEX_APP_KEY) {
     try {
-      // Encode credentials for Basic Auth
       const authHeader = Buffer.from(`${ENABLEX_APP_ID}:${ENABLEX_APP_KEY}`).toString('base64');
-      
-      // EnableX SMS API Payload (adjust according to your EnableX campaign template)
+
       const payload = {
-        type: "sms",
-        data: {
-          to: [phoneNumber], // Ensure phoneNumber has country code if required by EnableX
-          from: "ASTROWANI", // Your registered sender ID
-          message: `Your Astrowani login OTP is ${otp}. It is valid for 5 minutes.`
-        }
+        from: ENABLEX_SMS_SENDER_ID,
+        to: [toE164(phoneNumber)],
+        type: 'sms',
+        campaign_id: ENABLEX_SMS_CAMPAIGN_ID,
+        template_id: ENABLEX_SMS_TEMPLATE_ID,
+        data: { var1: otp }, // fills {$var1} in the approved template
+        data_coding: 'plain',
       };
 
-      // Uncomment this to make the actual API call when keys are ready
-      await axios.post('https://api.enablex.io/sms/v1/messages', payload, {
+      const enxResponse = await axios.post('https://api.enablex.io/sms/v1/messages/', payload, {
         headers: {
           'Authorization': `Basic ${authHeader}`,
           'Content-Type': 'application/json'
         }
       });
-      console.log('EnableX SMS sent successfully');
+      console.log('EnableX SMS sent successfully. job_id:', enxResponse.data?.job_id);
     } catch (error) {
       console.error('Failed to send SMS via EnableX:', error?.response?.data || error.message);
       // Even if SMS fails, you might want to return an error, but for testing we continue
