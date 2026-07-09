@@ -26,9 +26,7 @@ const Login = ({navigation}) => {
   const [countryCode, setCountryCode] = useState('IN');
   const [callingCode, setCallingCode] = useState('91');
   const [isPickerVisible, setPickerVisible] = useState(false);
-  const [toggle, setToggle] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [email, setEmail] = useState('');
   const [loading, SetLoading] = useState(false);
 
   const togglePicker = () => {
@@ -40,38 +38,22 @@ const Login = ({navigation}) => {
     setPickerVisible(false);
   };
   const validateFields = () => {
-    if (toggle) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!email) {
-        showAlert('Validation Error', 'Email address cannot be empty.', 'error');
-        return false;
-      }
-      if (!emailRegex.test(email)) {
-        showAlert('Validation Error', 'Please enter a valid email address.', 'error');
-        return false;
-      }
-    } else {
-      if (!phoneNumber) {
-        showAlert('Validation Error', 'Phone number cannot be empty.', 'error');
-        return false;
-      }
-      if (phoneNumber.length < 10) {
-        showAlert(
-          'Validation Error',
-          'Phone number must be at least 10 digits long.',
-          'error'
-        );
-        return false;
-      }
+    if (!phoneNumber) {
+      showAlert('Validation Error', 'Phone number cannot be empty.', 'error');
+      return false;
+    }
+    if (phoneNumber.length < 10) {
+      showAlert(
+        'Validation Error',
+        'Phone number must be at least 10 digits long.',
+        'error'
+      );
+      return false;
     }
     return true;
   };
 
   const handleGetOtp = async () => {
-    if (toggle) {
-      showAlert('Not Available', 'Email login is not available yet. Please use your mobile number.', 'error');
-      return;
-    }
     if (validateFields()) {
       SetLoading(true);
       try {
@@ -127,71 +109,30 @@ const Login = ({navigation}) => {
             <Text style={styles.tagline}>Discover Your Cosmic Path</Text>
           </View>
 
-          <View style={styles.toggleContainer}>
+          <View style={styles.inputContainer}>
             <TouchableOpacity
-              style={[
-                styles.toggleOption,
-                !toggle && styles.activeToggleOption,
-              ]}
-              onPress={() => setToggle(false)}>
-              <Text
-                style={[styles.toggleText, !toggle && styles.activeToggleText]}>
-                Mobile
+              style={styles.countryPicker}
+              onPress={togglePicker}>
+              <Text style={styles.flag}>
+                {countries.find(c => c.code === countryCode).flag}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleOption, toggle && styles.activeToggleOption]}
-              onPress={() => setToggle(true)}>
-              <Text
-                style={[styles.toggleText, toggle && styles.activeToggleText]}>
-                Email
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {toggle ? (
-            <View style={styles.inputContainer}>
+              <Text style={styles.callingCode}>+{callingCode}</Text>
               <Icon
-                name="email"
+                name="keyboard-arrow-down"
                 size={24}
                 color={COLORS.AstroMaroon}
-                style={styles.inputIcon}
               />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter Email Address"
-                placeholderTextColor={COLORS.placeholder}
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-              />
-            </View>
-          ) : (
-            <View style={styles.inputContainer}>
-              <TouchableOpacity
-                style={styles.countryPicker}
-                onPress={togglePicker}>
-                <Text style={styles.flag}>
-                  {countries.find(c => c.code === countryCode).flag}
-                </Text>
-                <Text style={styles.callingCode}>+{callingCode}</Text>
-                <Icon
-                  name="keyboard-arrow-down"
-                  size={24}
-                  color={COLORS.AstroMaroon}
-                />
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.input, styles.phoneInput]}
-                maxLength={10}
-                placeholder="Phone number"
-                placeholderTextColor={COLORS.placeholder}
-                keyboardType="phone-pad"
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-              />
-            </View>
-          )}
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.input, styles.phoneInput]}
+              maxLength={10}
+              placeholder="Phone number"
+              placeholderTextColor={COLORS.placeholder}
+              keyboardType="phone-pad"
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+            />
+          </View>
 
           <TouchableOpacity
             style={[styles.otpBtn, loading && styles.disabledBtn]}

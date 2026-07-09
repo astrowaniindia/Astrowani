@@ -23,9 +23,7 @@ const Login = ({navigation}) => {
   const [countryCode, setCountryCode] = useState('IN');
   const [callingCode, setCallingCode] = useState('91');
   const [isPickerVisible, setPickerVisible] = useState(false);
-  const [toggle, setToggle] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [email, setEmail] = useState('');
   const [loading, SetLoading] = useState(false);
 
   const togglePicker = () => {
@@ -39,28 +37,16 @@ const Login = ({navigation}) => {
   };
 
   const validateFields = () => {
-    if (toggle) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!email) {
-        Alert.alert('Validation Error', 'Email address cannot be empty.');
-        return false;
-      }
-      if (!emailRegex.test(email)) {
-        Alert.alert('Validation Error', 'Please enter a valid email address.');
-        return false;
-      }
-    } else {
-      if (!phoneNumber) {
-        Alert.alert('Validation Error', 'Phone number cannot be empty.');
-        return false;
-      }
-      if (phoneNumber.length < 10) {
-        Alert.alert(
-          'Validation Error',
-          'Phone number must be at least 10 digits long.',
-        );
-        return false;
-      }
+    if (!phoneNumber) {
+      Alert.alert('Validation Error', 'Phone number cannot be empty.');
+      return false;
+    }
+    if (phoneNumber.length < 10) {
+      Alert.alert(
+        'Validation Error',
+        'Phone number must be at least 10 digits long.',
+      );
+      return false;
     }
     return true;
   };
@@ -93,36 +79,6 @@ const Login = ({navigation}) => {
     }
   };
 
-  const handleGetOtp = async () => {
-    if (!validateFields()) return;
-    SetLoading(true);
-    try {
-      const { data: astro } = await supabase
-        .from('astrologers')
-        .select('id, approval_status')
-        .eq('email', email)
-        .single();
-
-      if (!astro) {
-        Alert.alert('Not Found', 'No astrologer account found with this email. Please register first.');
-        return;
-      }
-
-      await AsyncStorage.setItem('astroId', String(astro.id));
-      await AsyncStorage.setItem('token', 'bypass_token');
-      navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
-    } catch (error) {
-      console.log('Login error:', error);
-      Alert.alert('Login Error', 'Something went wrong. Please try again.');
-    } finally {
-      SetLoading(false);
-    }
-  };
-
-  const getMobileOtp = loginByPhone;
-
-  // console.log("phoneNumber: ", phoneNumber);
-
   return (
     <View style={styles.main}>
       <StatusBar
@@ -138,76 +94,40 @@ const Login = ({navigation}) => {
 
       <Text style={styles.subTitle}>For Astrologers</Text>
       <View style={styles.loginContainer}>
-        {toggle ? (
-          <View style={styles.numberInput}>
+        <View style={styles.numberInput}>
+          <TouchableOpacity
+            style={styles.countryPicker}
+            onPress={togglePicker}>
+            <Text style={styles.flag}>
+              {countries.find(c => c.code === countryCode).flag}
+            </Text>
+            <Text style={styles.callingCode}>+{callingCode}</Text>
             <Icon
-              name="email"
+              name="keyboard-arrow-down"
               size={24}
-              color="gray"
-              style={styles.emailIcon}
+              color={COLORS.AstroMaroon}
             />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Email Address"
-              keyboardType="email-address"
-              value={email}
-              placeholderTextColor={COLORS.lightGrey}
-              onChangeText={setEmail}
-            />
-          </View>
-        ) : (
-          <View style={styles.numberInput}>
-            <TouchableOpacity
-              style={styles.countryPicker}
-              onPress={togglePicker}>
-              <Text style={styles.flag}>
-                {countries.find(c => c.code === countryCode).flag}
-              </Text>
-              <Text style={styles.callingCode}>+{callingCode}</Text>
-              <Icon
-                name="keyboard-arrow-down"
-                size={24}
-                color={COLORS.AstroMaroon}
-              />
-            </TouchableOpacity>
-            <TextInput
-              style={styles.input}
-              maxLength={10}
-              placeholder="Phone number"
-              keyboardType="phone-pad"
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-            />
-          </View>
-        )}
+          </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            maxLength={10}
+            placeholder="Phone number"
+            keyboardType="phone-pad"
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+          />
+        </View>
 
-        {toggle ? (
-          <>
-            <TouchableOpacity
-              style={[styles.otpBtn, loading && styles.disabledBtn]}
-              disabled={loading}
-              onPress={handleGetOtp}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <Text style={styles.btnTxt}>Continue</Text>
-              )}
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity
-              style={[styles.otpBtn, loading && styles.disabledBtn]}
-              disabled={loading}
-              onPress={getMobileOtp}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <Text style={styles.btnTxt}>Continue</Text>
-              )}
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity
+          style={[styles.otpBtn, loading && styles.disabledBtn]}
+          disabled={loading}
+          onPress={loginByPhone}>
+          {loading ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.btnTxt}>Continue</Text>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.termsView}>
           <Text style={styles.termsText}>By signing up, you agree to our</Text>
@@ -219,16 +139,6 @@ const Login = ({navigation}) => {
             <Text style={styles.linktext}>Privacy Policy</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          onPress={() => setToggle(!toggle)}
-          style={styles.signInBtn}>
-          {toggle ? (
-            <Text style={styles.signInTxt}>Sign in with Mobile Number</Text>
-          ) : (
-            <Text style={styles.signInTxt}>Sign in with Email</Text>
-          )}
-        </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('Registration')}>
           <Text style={styles.register}>Don't have an Account ? Register</Text>
@@ -372,34 +282,14 @@ const styles = StyleSheet.create({
     padding: scale(1),
   },
   linktext: {fontSize: moderateScale(10), color: COLORS.AstroMaroon},
-  signInTxt: {
-    color: COLORS.DODGERBLUE,
-    textAlign: 'center',
-
-    fontWeight: 'bold',
-  },
   register: {
     color: COLORS.AstroMaroon,
     textAlign: 'center',
-
     fontWeight: 'bold',
-  },
-  signInBtn: {
-    marginVertical: verticalScale(35),
-  },
-  emailIcon: {
-    paddingLeft: scale(10),
   },
   flag: {
     fontSize: moderateScale(20),
     marginHorizontal: scale(8),
-  },
-  countryPicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  countryPickerButton: {
-    marginLeft: scale(10),
   },
   modalContainer: {
     flex: 1,
