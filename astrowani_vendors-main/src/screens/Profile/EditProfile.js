@@ -119,10 +119,11 @@ export default function EditProfile() {
         setEmail(astroData.email || '');
         setPhone(astroData.phone_number || astroData.mobile || '');
         setGender(astroData.gender || '');
-        setExperience((astroData.experience || astroData.years_of_experience || '').toString());
-        setChatCharge((astroData.chat_charge_per_minute || '').toString());
-        setCallCharge((astroData.call_charge_per_minute || '').toString());
-        setVideoCharge((astroData.video_charge_per_minute || '').toString());
+        const experienceVal = astroData.experience ?? astroData.years_of_experience;
+        setExperience(experienceVal == null ? '' : experienceVal.toString());
+        setChatCharge(astroData.chat_charge_per_minute == null ? '' : astroData.chat_charge_per_minute.toString());
+        setCallCharge(astroData.call_charge_per_minute == null ? '' : astroData.call_charge_per_minute.toString());
+        setVideoCharge(astroData.video_charge_per_minute == null ? '' : astroData.video_charge_per_minute.toString());
         setLanguage(Array.isArray(astroData.languages) ? astroData.languages.join(', ') : (astroData.languages || ''));
         setProfileImage(astroData.profile_pic_url || astroData.profile_image || null);
       }
@@ -286,7 +287,6 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={chatCharge}
           onChangeText={setChatCharge}
-          placeholder="e.g. 15"
           keyboardType="numeric"
         />
 
@@ -296,7 +296,6 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={callCharge}
           onChangeText={setCallCharge}
-          placeholder="e.g. 20"
           keyboardType="numeric"
         />
 
@@ -306,7 +305,6 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={videoCharge}
           onChangeText={setVideoCharge}
-          placeholder="e.g. 25"
           keyboardType="numeric"
         />
 
