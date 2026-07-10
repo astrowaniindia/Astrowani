@@ -6,8 +6,6 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Registration from '../screens/Registration';
 import Login from '../screens/Login/Login';
-import OtpScreen from '../screens/OtpScreen/OtpScreen';
-import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import Thankyou from '../screens/Thankyou';
 import PendingApproval from '../screens/PendingApproval';
@@ -99,26 +97,6 @@ function NavigationScreen() {
           options={{ headerShown: false }}
           name="PendingApproval"
           component={PendingApproval}
-        />
-        <Stack.Screen
-          options={{
-            title: 'Verify ',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
-          }}
-          name="OtpScreen"
-          component={OtpScreen}
-        />
-        <Stack.Screen
-          options={{
-            title: 'Verify Email',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
-          }}
-          name="EmailOtpScreen"
-          component={EmailOtpScreen}
         />
         <Stack.Screen
           options={{ headerShown: false }}
