@@ -1,6 +1,7 @@
 /**
  * @format
  */
+import 'react-native-gesture-handler';
 
 // Polyfill TextEncoder/TextDecoder for Supabase Realtime
 import { TextEncoder, TextDecoder } from 'text-encoding';
