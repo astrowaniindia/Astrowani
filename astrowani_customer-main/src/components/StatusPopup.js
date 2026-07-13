@@ -11,6 +11,7 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing } fro
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
+import { LanguageContext } from '../context/LanguageContext';
 
 let listener = null;
 export const showStatusPopup = (opts) => {
@@ -25,6 +26,7 @@ const VARIANTS = {
 };
 
 export function StatusPopupHost() {
+  const { t } = React.useContext(LanguageContext);
   const [state, setState] = useState(null); // { title, message, variant, buttonText }
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
@@ -34,11 +36,11 @@ export function StatusPopupHost() {
         title: opts.title || 'Notice',
         message: opts.message || '',
         variant: opts.variant || 'info',
-        buttonText: opts.buttonText || 'OK',
+        buttonText: opts.buttonText || t('common.ok'),
       });
     };
     return () => { listener = null; };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (state) {

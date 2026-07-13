@@ -1,4 +1,9 @@
 {
   "name": "AstrologyApp",
-  "displayName": "AstrologyApp"
+  "displayName": "AstrologyApp",
+  "extra": {
+    "eas": {
+      "projectId": "bbdc8460-4b17-4d15-8b78-3ac4288138eb"
+    }
+  }
 }

@@ -6,6 +6,7 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import BirthDetailsForm from './BirthDetailsForm';
 import useAstroPurchase from './useAstroPurchase';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 const DIVISIONS = [
   {label: 'D1 — Rasi Chart', value: 'd1'}, {label: 'D3', value: 'd3'}, {label: 'D4', value: 'd4'},
@@ -19,6 +20,7 @@ const DIVISIONS = [
 ];
 
 export default function ChartInputScreen({navigation}) {
+  const {t} = React.useContext(LanguageContext);
   const [values, setValues] = useState({isComplete: false});
   const [division, setDivision] = useState(null);
   const {service, submitting, submit} = useAstroPurchase('chart');
@@ -34,15 +36,15 @@ export default function ChartInputScreen({navigation}) {
 
   return (
     <ScrollView style={styles.main} contentContainerStyle={styles.content}>
-      <BirthDetailsForm title="Enter Birth Details" showName={false} onValuesChange={setValues} />
-      <Text style={styles.label}>Choose Chart</Text>
+      <BirthDetailsForm title={t('astro.enterBirthDetails')} showName={false} onValuesChange={setValues} />
+      <Text style={styles.label}>{t('astro.chooseChart')}</Text>
       <View style={styles.dropdownContainer}>
         <Dropdown
           style={styles.dropdown}
           data={DIVISIONS}
           labelField="label"
           valueField="value"
-          placeholder="Select a chart"
+          placeholder={t('astro.selectAChart')}
           placeholderStyle={styles.dropdownText}
           selectedTextStyle={styles.dropdownText}
           value={division}
@@ -57,7 +59,7 @@ export default function ChartInputScreen({navigation}) {
         {submitting ? (
           <ActivityIndicator color={COLORS.black} />
         ) : (
-          <Text style={styles.buttonText}>Get Chart{service ? ` — ₹${service.price}` : ''}</Text>
+          <Text style={styles.buttonText}>{t('astro.getChart')}{service ? ` — ₹${service.price}` : ''}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

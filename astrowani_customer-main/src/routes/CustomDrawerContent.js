@@ -10,8 +10,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
+import { LanguageContext } from '../context/LanguageContext';
 
 function CustomDrawerContent(props, navigation) {
+  const { t } = React.useContext(LanguageContext);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -92,10 +94,10 @@ function CustomDrawerContent(props, navigation) {
           </View>
           <View style={styles.profileTextContainer}>
             <Text style={styles.profileName} numberOfLines={1}>
-              {user?.firstName || user?.phoneNumber || 'Welcome!'}
+              {user?.firstName || user?.phoneNumber || t('drawer.welcome')}
             </Text>
             <Text style={styles.profileEmail} numberOfLines={1}>
-              {user?.email || 'Update your profile'}
+              {user?.email || t('drawer.updateProfile')}
             </Text>
           </View>
           <Icon name="chevron-right" size={moderateScale(24)} color={COLORS.AstroGold} />
@@ -105,70 +107,70 @@ function CustomDrawerContent(props, navigation) {
       <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.drawerItemsWrapper}>
           <DrawerItem
-            label="My Wallet"
+            label={t('drawer.myWallet')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'account-balance-wallet')}
             onPress={() => props.navigation.navigate('Wallet')}
           />
           <DrawerItem
-            label="My Sessions"
+            label={t('drawer.mySessions')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'phone-in-talk')}
             onPress={() => props.navigation.navigate('SessionStack')}
           />
           <DrawerItem
-            label="Remedies"
+            label={t('drawer.remedies')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'spa')}
             onPress={() => props.navigation.navigate('DrawerRemedies')}
           />
           <DrawerItem
-            label="Chat With Astrologer"
+            label={t('drawer.chatWithAstrologer')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'question-answer')}
             onPress={() => props.navigation.navigate('DrawerChat')}
           />
           <DrawerItem
-            label="Astrowani Blogs"
+            label={t('drawer.blogs')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'menu-book')}
             onPress={() => props.navigation.navigate('BlogList')}
           />
           <DrawerItem
-            label="My Favorites"
+            label={t('drawer.myFavorites')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'favorite')}
             onPress={() => props.navigation.navigate('FavoriteScreen')}
           />
-          
+
           <View style={styles.divider} />
-          
+
           <DrawerItem
-            label="Refer A Friend"
+            label={t('drawer.referFriend')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'card-giftcard')}
             onPress={() => props.navigation.navigate('ReferFriend')}
           />
-          <DrawerItem 
-            label="Settings" 
+          <DrawerItem
+            label={t('drawer.settings')}
             labelStyle={styles.drawerLabel}
-            icon={() => renderIcon(Icon, 'settings')} 
-            onPress={() => props.navigation.navigate('Settings')} 
-          />
-          <DrawerItem 
-            label="Support" 
-            labelStyle={styles.drawerLabel}
-            icon={() => renderIcon(Icon, 'support-agent')} 
-            onPress={() => props.navigation.navigate('SupportScreen')} 
+            icon={() => renderIcon(Icon, 'settings')}
+            onPress={() => props.navigation.navigate('Settings')}
           />
           <DrawerItem
-            label="Share App"
+            label={t('drawer.support')}
+            labelStyle={styles.drawerLabel}
+            icon={() => renderIcon(Icon, 'support-agent')}
+            onPress={() => props.navigation.navigate('SupportScreen')}
+          />
+          <DrawerItem
+            label={t('drawer.shareApp')}
             labelStyle={styles.drawerLabel}
             icon={() => renderIcon(Icon, 'share')}
             onPress={handleShareApp}
           />
           <DrawerItem
-            label="Logout"
+            label={t('drawer.logout')}
             labelStyle={[styles.drawerLabel, { color: 'red' }]}
             icon={() => (
               <View style={[styles.iconWrapper, { backgroundColor: 'rgba(255,0,0,0.1)' }]}>
@@ -180,7 +182,7 @@ function CustomDrawerContent(props, navigation) {
         </View>
 
         <View style={styles.socialContainer}>
-          <Text style={styles.socialHeading}>Connect With Us</Text>
+          <Text style={styles.socialHeading}>{t('drawer.connectWithUs')}</Text>
           <View style={styles.socialIconsRow}>
             <TouchableOpacity style={styles.socialBtn}>
               <FontAwesome name="facebook" size={moderateScale(20)} color="#3b5998" />

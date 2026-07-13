@@ -3,15 +3,17 @@ import {ScrollView, StyleSheet} from 'react-native';
 import {verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import ReportResultView from './ReportResultView';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function DashaResultScreen({route}) {
+  const {t} = React.useContext(LanguageContext);
   const {data} = route.params || {};
   return (
     <ScrollView style={styles.main} contentContainerStyle={{paddingVertical: verticalScale(15)}}>
-      <ReportResultView title="Current Mahadasha" data={data?.currentMahadashaFull} />
-      <ReportResultView title="Mahadasha Timeline" data={data?.mahadasha} />
-      <ReportResultView title="Yogini Dasha (Main)" data={data?.yoginiDashaMain} />
-      <ReportResultView title="Yogini Dasha (Sub)" data={data?.yoginiDashaSub} />
+      <ReportResultView title={t('result.currentMahadasha')} data={data?.currentMahadashaFull} />
+      <ReportResultView title={t('result.mahadashaTimeline')} data={data?.mahadasha} />
+      <ReportResultView title={t('result.yoginiDashaMain')} data={data?.yoginiDashaMain} />
+      <ReportResultView title={t('result.yoginiDashaSub')} data={data?.yoginiDashaSub} />
     </ScrollView>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
 
-const EMPTY = { text: '', author: '', is_active: true };
+const EMPTY = { text: '', text_hi: '', author: '', author_hi: '', is_active: true };
 
 export default function Thoughts() {
   const [rows, setRows] = useState([]);
@@ -70,10 +70,14 @@ export default function Thoughts() {
 
       {editing && (
         <Modal title={editing.id ? 'Edit Thought' : 'New Thought'} onClose={() => setEditing(null)}>
-          <div className="field"><label>Thought text</label>
+          <div className="field"><label>Thought text (English)</label>
             <textarea value={editing.text} onChange={(e) => set('text', e.target.value)} /></div>
-          <div className="field"><label>Author (optional)</label>
+          <div className="field"><label>Thought text (Hindi)</label>
+            <textarea value={editing.text_hi || ''} onChange={(e) => set('text_hi', e.target.value)} placeholder="हिंदी में विचार" /></div>
+          <div className="field"><label>Author (optional, English)</label>
             <input type="text" value={editing.author || ''} onChange={(e) => set('author', e.target.value)} /></div>
+          <div className="field"><label>Author (optional, Hindi)</label>
+            <input type="text" value={editing.author_hi || ''} onChange={(e) => set('author_hi', e.target.value)} /></div>
           <div className="field checkbox-row">
             <input id="ta" type="checkbox" checked={editing.is_active} onChange={(e) => set('is_active', e.target.checked)} />
             <label htmlFor="ta" style={{ margin: 0 }}>Active</label></div>

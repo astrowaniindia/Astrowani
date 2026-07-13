@@ -8,27 +8,20 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import CheckBox from '@react-native-community/checkbox';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {LanguageContext} from '../../context/LanguageContext';
 
 export default function Settings({navigation}) {
-  // const {data} = route.params;
-  const [modalVisible, setModalVisible] = useState(false);
+  const {t} = React.useContext(LanguageContext);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState('English');
-
-  const toggleLanguage = language => {
-    setSelectedLanguage(language);
-    setModalVisible(false);
-  };
 
   const handleDeleteAccount = () => {
     setDeleteModalVisible(false);
-    Alert.alert('Account deleted successfully');
+    Alert.alert(t('settings.accountDeleted'));
   };
   const handleLogout = async () => {
     try {
@@ -42,7 +35,7 @@ export default function Settings({navigation}) {
 
       setLogoutModalVisible(false);
 
-      Alert.alert('Logged out successfully');
+      Alert.alert(t('settings.loggedOut'));
     } catch (error) {
       console.error('Error logging out:', error);
     }
@@ -51,24 +44,6 @@ export default function Settings({navigation}) {
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollContainer}>
-        {/* <TouchableOpacity
-          style={styles.item}
-          onPress={() => setModalVisible(true)}>
-          <View style={styles.itemContent}>
-            <Icon
-              name="language"
-              size={25}
-              color={COLORS.AstroMaroon}
-              style={styles.icon}
-            />
-            <Text style={styles.text}>Select Language</Text>
-          </View>
-          <View style={styles.languageRight}>
-            <Text style={styles.language}>{selectedLanguage}</Text>
-            <Icon name="keyboard-arrow-right" size={25} color="#000" />
-          </View>
-        </TouchableOpacity> */}
-
         <TouchableOpacity
           onPress={() => navigation.navigate('AboutUsScreen')}
           style={styles.item}>
@@ -79,7 +54,7 @@ export default function Settings({navigation}) {
               color={COLORS.AstroMaroon}
               style={styles.icon}
             />
-            <Text style={styles.text}>About Us</Text>
+            <Text style={styles.text}>{t('settings.aboutUs')}</Text>
           </View>
           <Icon name="keyboard-arrow-right" size={25} color="#000" />
         </TouchableOpacity>
@@ -94,7 +69,7 @@ export default function Settings({navigation}) {
               color={COLORS.AstroMaroon}
               style={styles.icon}
             />
-            <Text style={styles.text}>FAQ's</Text>
+            <Text style={styles.text}>{t('settings.faqs')}</Text>
           </View>
           <Icon name="keyboard-arrow-right" size={25} color="#000" />
         </TouchableOpacity>
@@ -124,7 +99,7 @@ export default function Settings({navigation}) {
               color={COLORS.AstroMaroon}
               style={styles.icon}
             />
-            <Text style={styles.text}>Refund & Cancellation</Text>
+            <Text style={styles.text}>{t('settings.refundCancellation')}</Text>
           </View>
           <Icon name="keyboard-arrow-right" size={25} color="#000" />
         </TouchableOpacity>
@@ -139,7 +114,7 @@ export default function Settings({navigation}) {
               color={COLORS.AstroMaroon}
               style={styles.icon}
             />
-            <Text style={styles.text}>Privacy Policy</Text>
+            <Text style={styles.text}>{t('settings.privacyPolicy')}</Text>
           </View>
           <Icon name="keyboard-arrow-right" size={25} color="#000" />
         </TouchableOpacity>
@@ -154,7 +129,7 @@ export default function Settings({navigation}) {
               color={COLORS.AstroMaroon}
               style={styles.icon}
             />
-            <Text style={styles.text}>Terms of Use</Text>
+            <Text style={styles.text}>{t('settings.termsOfUse')}</Text>
           </View>
           <Icon name="keyboard-arrow-right" size={25} color="#000" />
         </TouchableOpacity>
@@ -169,7 +144,7 @@ export default function Settings({navigation}) {
               color={COLORS.AstroMaroon}
               style={styles.icon}
             />
-            <Text style={styles.text}>Logout</Text>
+            <Text style={styles.text}>{t('drawer.logout')}</Text>
           </View>
         </TouchableOpacity>
 
@@ -179,44 +154,11 @@ export default function Settings({navigation}) {
           <View style={styles.itemContent}>
             <Icon name="delete" size={25} color="red" style={styles.icon} />
             <Text style={[styles.text, styles.deleteText]}>
-              Delete my account
+              {t('settings.deleteAccount')}
             </Text>
           </View>
         </TouchableOpacity>
       </ScrollView>
-
-      {/* Language Selection Modal */}
-      <Modal
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-        animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Language</Text>
-            <TouchableOpacity
-              style={styles.languageOption}
-              onPress={() => toggleLanguage('English')}>
-              <Text style={styles.languageSelect}>English</Text>
-              <CheckBox
-                value={selectedLanguage === 'English'}
-                onValueChange={() => toggleLanguage('English')}
-                tintColors={{true: COLORS.AstroMaroon, false: '#000000'}}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.languageOption}
-              onPress={() => toggleLanguage('Hindi')}>
-              <Text style={styles.languageSelect}>Hindi</Text>
-              <CheckBox
-                value={selectedLanguage === 'Hindi'}
-                onValueChange={() => toggleLanguage('Hindi')}
-                tintColors={{true: COLORS.AstroMaroon, false: '#000000'}}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* Logout Confirmation Modal */}
       <Modal
@@ -226,20 +168,20 @@ export default function Settings({navigation}) {
         animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirm Logout</Text>
+            <Text style={styles.modalTitle}>{t('settings.confirmLogoutTitle')}</Text>
             <Text style={styles.modalMessage}>
-              Are you sure you want to log out?
+              {t('settings.confirmLogoutMsg')}
             </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setLogoutModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmButton}
                 onPress={handleLogout}>
-                <Text style={styles.confirmText}>Logout</Text>
+                <Text style={styles.confirmText}>{t('drawer.logout')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -254,21 +196,20 @@ export default function Settings({navigation}) {
         animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirm Delete</Text>
+            <Text style={styles.modalTitle}>{t('settings.confirmDeleteTitle')}</Text>
             <Text style={styles.modalMessage}>
-              Are you sure you want to delete your account? Once deleted, all
-              your saved history will be lost. Do you still wish to continue?
+              {t('settings.confirmDeleteMsg')}
             </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setDeleteModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmButton}
                 onPress={handleDeleteAccount}>
-                <Text style={styles.confirmText}>Delete</Text>
+                <Text style={styles.confirmText}>{t('settings.deleteBtn')}</Text>
               </TouchableOpacity>
             </View>
           </View>

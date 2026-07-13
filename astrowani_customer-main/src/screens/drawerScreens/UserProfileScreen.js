@@ -22,7 +22,10 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
 import { supabase } from '../../api/SupabaseClient';
+import { LanguageContext } from '../../context/LanguageContext';
 
+// Indian state names are proper nouns — intentionally not translated (kept English/Roman
+// script, which is how they're commonly written even in Hindi-language Indian UIs).
 const StatesOfIndia = [
   {label: 'Andhra Pradesh', value: 'Andhra Pradesh'}, {label: 'Arunachal Pradesh', value: 'Arunachal Pradesh'},
   {label: 'Assam', value: 'Assam'}, {label: 'Bihar', value: 'Bihar'}, {label: 'Chhattisgarh', value: 'Chhattisgarh'},
@@ -37,18 +40,17 @@ const StatesOfIndia = [
   {label: 'Uttarakhand', value: 'Uttarakhand'}, {label: 'West Bengal', value: 'West Bengal'},
 ];
 
-const genderOptions = [
-  {label: 'Male', value: 'male'},
-  {label: 'Female', value: 'female'},
-  {label: 'Other', value: 'other'},
-];
-
-const MarriedOptions = [
-  {label: 'Married', value: 'married'},
-  {label: 'Unmarried', value: 'unmarried'},
-];
-
 const UserProfileScreen = ({navigation, route}) => {
+  const { t } = React.useContext(LanguageContext);
+  const genderOptions = [
+    {label: t('register.male'), value: 'male'},
+    {label: t('register.female'), value: 'female'},
+    {label: t('register.other'), value: 'other'},
+  ];
+  const MarriedOptions = [
+    {label: t('userProfile.married'), value: 'married'},
+    {label: t('userProfile.unmarried'), value: 'unmarried'},
+  ];
   const user = route.params?.user || {};
   const [activeTab, setActiveTab] = useState('Profile');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -73,15 +75,20 @@ const UserProfileScreen = ({navigation, route}) => {
     title: '',
     message: '',
     buttons: [],
+    isError: false,
   });
 
-  const showCustomAlert = (title, message, buttons = []) => {
-    const finalButtons = buttons.length > 0 ? buttons : [{ text: 'OK', onPress: () => {} }];
+  const showCustomAlert = (title, message, buttons = [], isError = null) => {
+    const finalButtons = buttons.length > 0 ? buttons : [{ text: t('common.ok'), onPress: () => {} }];
+    // isError drives the modal icon — computed explicitly rather than sniffing the
+    // (now-translatable) title string, since "includes('error')" breaks once titles are Hindi.
+    const resolvedIsError = isError !== null ? isError : ![t('userProfile.removePhoto'), t('userProfile.success')].includes(title);
     setCustomAlert({
       visible: true,
       title,
       message,
       buttons: finalButtons,
+      isError: resolvedIsError,
     });
   };
 
@@ -149,7 +156,7 @@ const UserProfileScreen = ({navigation, route}) => {
   }, []);
 
   const handleEditPic = (type = 'profilePic') => {
-    const options = { title: 'Select Image', mediaType: 'photo', includeBase64: true, quality: 0.6, maxWidth: 1000, maxHeight: 1000 };
+    const options = { title: t('userProfile.selectImage'), mediaType: 'photo', includeBase64: true, quality: 0.6, maxWidth: 1000, maxHeight: 1000 };
     launchImageLibrary(options, response => {
       if (!response.didCancel && !response.error && response.assets?.length > 0) {
         const asset = response.assets[0];
@@ -161,49 +168,49 @@ const UserProfileScreen = ({navigation, route}) => {
   };
 
   const removePic = (type = 'profilePic') => {
-    showCustomAlert('Remove Photo', 'Are you sure you want to remove this photo?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => handleInputChange(type, '') },
+    showCustomAlert(t('userProfile.removePhoto'), t('userProfile.removePhotoConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('userProfile.remove'), style: 'destructive', onPress: () => handleInputChange(type, '') },
     ]);
   };
 
   const handleUpdate = async () => {
     // 1. Profile Picture validation
     if (!userProfile.profilePic) {
-      showCustomAlert('Validation Error', 'Please upload a Profile Photo.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.uploadProfilePhoto'));
       return;
     }
 
     // 2. Name validation
     if (!userProfile.firstName || !userProfile.firstName.trim()) {
-      showCustomAlert('Validation Error', 'Please enter your Full Name.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.enterFullName'));
       return;
     }
 
     // 3. Mobile Number validation
     if (!userProfile.phoneNumber || !userProfile.phoneNumber.trim()) {
-      showCustomAlert('Validation Error', 'Please enter your Mobile Number.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.enterMobile'));
       return;
     }
 
     // 4. Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!userProfile.email || !userProfile.email.trim()) {
-      setEmailError('Email cannot be empty');
-      showCustomAlert('Validation Error', 'Email cannot be empty.');
+      setEmailError(t('userProfile.emailEmpty'));
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.emailEmpty'));
       return;
     } else if (!emailRegex.test(userProfile.email)) {
-      setEmailError('Please enter a valid email address');
-      showCustomAlert('Validation Error', 'Please enter a valid email address.');
+      setEmailError(t('userProfile.emailInvalid'));
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.emailInvalid'));
       return;
     } else {
       setEmailError(null);
     }
-    
+
     // 5. Gender validation
     if (!userProfile.gender) {
-      setGenderError('Please select a gender');
-      showCustomAlert('Validation Error', 'Please select your Gender.');
+      setGenderError(t('userProfile.selectGender'));
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectGender'));
       return;
     } else {
       setGenderError(null);
@@ -211,31 +218,31 @@ const UserProfileScreen = ({navigation, route}) => {
 
     // 6. Marital Status validation
     if (!userProfile.maritalStatus) {
-      showCustomAlert('Validation Error', 'Please select your Marital Status.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectMaritalStatus'));
       return;
     }
 
     // 7. Date of Birth validation
     if (!userProfile.dateOfBirth) {
-      showCustomAlert('Validation Error', 'Please select your Date of Birth.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectDob'));
       return;
     }
 
     // 8. Time of Birth validation
     if (!userProfile.timeOfBirth) {
-      showCustomAlert('Validation Error', 'Please select your Time of Birth.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectTob'));
       return;
     }
 
     // 9. City validation
     if (!userProfile.city || !userProfile.city.trim()) {
-      showCustomAlert('Validation Error', 'Please enter your City (Place of Birth).');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.enterCity'));
       return;
     }
 
     // 10. State validation
     if (!userProfile.state) {
-      showCustomAlert('Validation Error', 'Please select your State.');
+      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectState'));
       return;
     }
 
@@ -285,14 +292,14 @@ const UserProfileScreen = ({navigation, route}) => {
       if (updated) {
         // Refresh the cached user so the profile gate unlocks immediately everywhere.
         await AsyncStorage.setItem('userData', JSON.stringify(updated));
-        showCustomAlert('Success', 'Profile updated successfully!', [
-          { text: 'OK', onPress: () => navigation.goBack() }
+        showCustomAlert(t('userProfile.success'), t('userProfile.updatedSuccessfully'), [
+          { text: t('common.ok'), onPress: () => navigation.goBack() }
         ]);
       } else {
         throw new Error('Update failed');
       }
     } catch (err) {
-      showCustomAlert('Error', err.response?.data?.message || 'Error updating profile');
+      showCustomAlert(t('common.error'), err.response?.data?.message || t('userProfile.updateError'));
     } finally {
       setLoading(false);
     }
@@ -320,7 +327,7 @@ const UserProfileScreen = ({navigation, route}) => {
               style={[styles.textInput, !isEditable && { color: '#666' }]}
               value={value}
               onChangeText={onChange}
-              placeholder={`Enter ${placeholder}`}
+              placeholder={t('userProfile.enterField', { field: placeholder })}
               placeholderTextColor="#999"
               editable={isEditable}
               {...extraProps}
@@ -332,7 +339,7 @@ const UserProfileScreen = ({navigation, route}) => {
               data={extraProps.data}
               labelField="label"
               valueField="value"
-              placeholder={`Select ${placeholder}`}
+              placeholder={t('userProfile.selectField', { field: placeholder })}
               placeholderStyle={{ color: '#999', fontSize: moderateScale(14) }}
               selectedTextStyle={{ color: isEditable ? '#000' : '#666', fontSize: moderateScale(14) }}
               containerStyle={styles.dropdownContainer}
@@ -350,7 +357,7 @@ const UserProfileScreen = ({navigation, route}) => {
               style={styles.datePickerBtn}
             >
               <Text style={{ color: value ? (isEditable ? '#000' : '#666') : '#999', fontSize: moderateScale(14) }}>
-                {value || `Select ${placeholder}`}
+                {value || t('userProfile.selectField', { field: placeholder })}
               </Text>
             </TouchableOpacity>
           )}
@@ -366,10 +373,10 @@ const UserProfileScreen = ({navigation, route}) => {
     <View style={styles.container}>
       <View style={styles.tabsContainer}>
         <TouchableOpacity style={[styles.tab, activeTab === 'Profile' && styles.activeTab]} onPress={() => setActiveTab('Profile')}>
-          <Text style={activeTab === 'Profile' ? styles.tabTextActive : styles.tabTextInactive}>Personal Info</Text>
+          <Text style={activeTab === 'Profile' ? styles.tabTextActive : styles.tabTextInactive}>{t('userProfile.personalInfo')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.tab, activeTab === 'Hand Photo' && styles.activeTab]} onPress={() => setActiveTab('Hand Photo')}>
-          <Text style={activeTab === 'Hand Photo' ? styles.tabTextActive : styles.tabTextInactive}>Palm/Hand Photo</Text>
+          <Text style={activeTab === 'Hand Photo' ? styles.tabTextActive : styles.tabTextInactive}>{t('userProfile.palmHandPhoto')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -391,61 +398,61 @@ const UserProfileScreen = ({navigation, route}) => {
               {userProfile.profilePic ? (
                 <TouchableOpacity style={styles.removePicBtn} onPress={() => removePic('profilePic')}>
                   <Ionicons name="trash-outline" size={moderateScale(14)} color="red" />
-                  <Text style={styles.removePicTxt}>Remove Photo</Text>
+                  <Text style={styles.removePicTxt}>{t('userProfile.removePhoto')}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
 
             {/* Form Fields */}
             <View style={styles.formCard}>
-              <Text style={styles.formSectionTitle}>Basic Details</Text>
-              {renderField('firstName', 'person-outline', 'Full Name', userProfile.firstName, t => handleInputChange('firstName', t))}
-              {renderField('phoneNumber', 'call-outline', 'Mobile Number', userProfile.phoneNumber, t => handleInputChange('phoneNumber', t), 'text', { keyboardType: 'phone-pad', maxLength: 10 })}
-              
-              {renderField('email', 'mail-outline', 'Email Address', userProfile.email, t => handleInputChange('email', t), 'text', { keyboardType: 'email-address' })}
+              <Text style={styles.formSectionTitle}>{t('userProfile.basicDetails')}</Text>
+              {renderField('firstName', 'person-outline', t('userProfile.fullName'), userProfile.firstName, v => handleInputChange('firstName', v))}
+              {renderField('phoneNumber', 'call-outline', t('userProfile.mobileNumber'), userProfile.phoneNumber, v => handleInputChange('phoneNumber', v), 'text', { keyboardType: 'phone-pad', maxLength: 10 })}
+
+              {renderField('email', 'mail-outline', t('userProfile.emailAddress'), userProfile.email, v => handleInputChange('email', v), 'text', { keyboardType: 'email-address' })}
               {emailError && <Text style={styles.errorText}>{emailError}</Text>}
 
-              {renderField('gender', 'male-female-outline', 'Gender', userProfile.gender, v => handleInputChange('gender', v), 'dropdown', { data: genderOptions })}
+              {renderField('gender', 'male-female-outline', t('userProfile.gender'), userProfile.gender, v => handleInputChange('gender', v), 'dropdown', { data: genderOptions })}
               {genderError && <Text style={styles.errorText}>{genderError}</Text>}
-              
-              {renderField('maritalStatus', 'heart-outline', 'Marital Status', userProfile.maritalStatus, v => handleInputChange('maritalStatus', v), 'dropdown', { data: MarriedOptions })}
+
+              {renderField('maritalStatus', 'heart-outline', t('userProfile.maritalStatus'), userProfile.maritalStatus, v => handleInputChange('maritalStatus', v), 'dropdown', { data: MarriedOptions })}
 
               <View style={styles.divider} />
-              <Text style={styles.formSectionTitle}>Birth Details</Text>
-              {renderField('dateOfBirth', 'calendar-outline', 'Date of Birth', userProfile.dateOfBirth ? userProfile.dateOfBirth.toLocaleDateString() : '', null, 'date', { onPress: () => setShowDatePicker(true) })}
-              {renderField('timeOfBirth', 'time-outline', 'Time of Birth', userProfile.timeOfBirth ? userProfile.timeOfBirth.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '', null, 'date', { onPress: () => setShowTimePicker(true) })}
-              
+              <Text style={styles.formSectionTitle}>{t('userProfile.birthDetails')}</Text>
+              {renderField('dateOfBirth', 'calendar-outline', t('userProfile.dateOfBirth'), userProfile.dateOfBirth ? userProfile.dateOfBirth.toLocaleDateString() : '', null, 'date', { onPress: () => setShowDatePicker(true) })}
+              {renderField('timeOfBirth', 'time-outline', t('userProfile.timeOfBirth'), userProfile.timeOfBirth ? userProfile.timeOfBirth.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '', null, 'date', { onPress: () => setShowTimePicker(true) })}
+
               <View style={styles.divider} />
-              <Text style={styles.formSectionTitle}>Location</Text>
-              {renderField('city', 'business-outline', 'City (Place of Birth)', userProfile.city, t => handleInputChange('city', t))}
-              {renderField('state', 'map-outline', 'State', userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
+              <Text style={styles.formSectionTitle}>{t('userProfile.location')}</Text>
+              {renderField('city', 'business-outline', t('userProfile.cityPlaceOfBirth'), userProfile.city, v => handleInputChange('city', v))}
+              {renderField('state', 'map-outline', t('userProfile.state'), userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
             </View>
           </View>
         )}
 
         {activeTab === 'Hand Photo' && (
           <View style={styles.formCard}>
-            <Text style={styles.formSectionTitle}>Upload Palm Photo</Text>
-            <Text style={styles.infoText}>Uploading a clear photo of your palm helps our astrologers provide more accurate palmistry readings.</Text>
-            
+            <Text style={styles.formSectionTitle}>{t('userProfile.uploadPalmPhoto')}</Text>
+            <Text style={styles.infoText}>{t('userProfile.palmPhotoInfo')}</Text>
+
             <View style={[styles.avatarWrapper, { width: scale(200), height: verticalScale(250), borderRadius: moderateScale(15), alignSelf: 'center', marginTop: verticalScale(20) }]}>
               {userProfile.handPic ? (
                 <Image source={{ uri: userProfile.handPic }} style={{ width: '100%', height: '100%', borderRadius: moderateScale(15) }} resizeMode="cover" />
               ) : (
                 <View style={styles.placeholderHand}>
                   <Ionicons name="hand-right-outline" size={moderateScale(60)} color="#ccc" />
-                  <Text style={styles.placeholderTxt}>No photo uploaded</Text>
+                  <Text style={styles.placeholderTxt}>{t('userProfile.noPhotoUploaded')}</Text>
                 </View>
               )}
               <TouchableOpacity style={[styles.cameraBadge, { bottom: 10, right: 10 }]} onPress={() => handleEditPic('handPic')}>
                 <Ionicons name="camera" size={moderateScale(20)} color="#fff" />
               </TouchableOpacity>
             </View>
-            
+
             {userProfile.handPic ? (
               <TouchableOpacity style={[styles.removePicBtn, { alignSelf: 'center', marginTop: verticalScale(15) }]} onPress={() => removePic('handPic')}>
                 <Ionicons name="trash-outline" size={moderateScale(14)} color="red" />
-                <Text style={styles.removePicTxt}>Remove Photo</Text>
+                <Text style={styles.removePicTxt}>{t('userProfile.removePhoto')}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -455,7 +462,7 @@ const UserProfileScreen = ({navigation, route}) => {
       {/* Sticky Bottom Save Button */}
       <View style={styles.bottomFooter}>
         <TouchableOpacity style={styles.saveBtn} onPress={handleUpdate} disabled={loading}>
-          {loading ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.saveBtnTxt}>Save Changes</Text>}
+          {loading ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.saveBtnTxt}>{t('userProfile.saveChanges')}</Text>}
         </TouchableOpacity>
       </View>
 
@@ -481,10 +488,10 @@ const UserProfileScreen = ({navigation, route}) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Ionicons 
-              name={customAlert.title.toLowerCase().includes('error') ? "warning-outline" : "information-circle-outline"} 
-              size={moderateScale(40)} 
-              color={customAlert.title.toLowerCase().includes('error') ? '#d9534f' : COLORS.AstroMaroon} 
+            <Ionicons
+              name={customAlert.isError ? "warning-outline" : "information-circle-outline"}
+              size={moderateScale(40)}
+              color={customAlert.isError ? '#d9534f' : COLORS.AstroMaroon}
               style={{ marginBottom: verticalScale(12) }}
             />
             <Text style={styles.modalTitle}>{customAlert.title}</Text>

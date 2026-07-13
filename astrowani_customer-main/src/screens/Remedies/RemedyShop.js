@@ -17,9 +17,11 @@ import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
+import { LanguageContext } from '../../context/LanguageContext';
 
 // Unified shop screen for all three remedy types. route.params: { type, title }.
 const RemedyShop = ({ route, navigation }) => {
+  const { t, language } = React.useContext(LanguageContext);
   const type = route?.params?.type || 'puja';
   const headerTitle = route?.params?.title || 'Remedies';
 
@@ -115,22 +117,26 @@ const RemedyShop = ({ route, navigation }) => {
     }
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <Image
-        source={{ uri: item.image || 'https://astrowaniindia.com/wp-content/uploads/2024/05/second-300x300.jpg' }}
-        style={styles.image}
-      />
-      <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-      {item.description ? (
-        <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
-      ) : null}
-      <Text style={styles.price}>₹{item.price}</Text>
-      <TouchableOpacity style={styles.buyBtn} onPress={() => openBuy(item)}>
-        <Text style={styles.buyBtnTxt}>Buy Now</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderItem = ({ item }) => {
+    const title = language === 'Hindi' ? (item.hindi?.title || item.title) : item.title;
+    const description = language === 'Hindi' ? (item.hindi?.description || item.description) : item.description;
+    return (
+      <View style={styles.card}>
+        <Image
+          source={{ uri: item.image || 'https://astrowaniindia.com/wp-content/uploads/2024/05/second-300x300.jpg' }}
+          style={styles.image}
+        />
+        <Text style={styles.title} numberOfLines={2}>{title}</Text>
+        {description ? (
+          <Text style={styles.desc} numberOfLines={2}>{description}</Text>
+        ) : null}
+        <Text style={styles.price}>₹{item.price}</Text>
+        <TouchableOpacity style={styles.buyBtn} onPress={() => openBuy(item)}>
+          <Text style={styles.buyBtnTxt}>{t('remedies.buyNow')}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   if (loading) {
     return (

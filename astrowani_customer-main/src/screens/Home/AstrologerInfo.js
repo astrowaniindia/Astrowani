@@ -28,10 +28,12 @@ import {SOCKET_URL} from '../../config/api';
 import {showStatusPopup} from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import {ensureProfileComplete} from '../../utils/profileGate';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const { width } = Dimensions.get('window');
 
 const AstrologerInfo = ({route, navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const {person} = route.params;
   const [isExpanded, setIsExpanded] = useState(false);
   const [isFavorite, setIsFavorite] = useState(person.isFavorite || false);
@@ -101,7 +103,7 @@ const AstrologerInfo = ({route, navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
-        Alert.alert('Error', 'Please login to continue.');
+        Alert.alert(t('common.error'), t('call.pleaseLogin'));
         return;
       }
       const userEntireData = JSON.parse(userDataStr);
@@ -116,12 +118,12 @@ const AstrologerInfo = ({route, navigation}) => {
         .single();
 
       if (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return;
       }
       if (customer.wallet_balance < minRequired) {
         Alert.alert(
-          'Insufficient Balance',
+          t('alerts.insufficientBalance'),
           `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
         );
         return;
@@ -137,7 +139,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
       if (response.status !== 200) {
         setIsCallWaiting(false);
-        Alert.alert('Error', 'Failed to initiate call.');
+        Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
         return;
       }
 
@@ -167,7 +169,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
       if (reqErr) {
         setIsCallWaiting(false);
-        Alert.alert('Error', 'Failed to send call request.');
+        Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
 
@@ -222,7 +224,7 @@ const AstrologerInfo = ({route, navigation}) => {
           sock.disconnect();
           callSocketRef.current = null;
           setIsCallWaiting(false);
-          showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+          showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
         }
       });
 
@@ -248,7 +250,7 @@ const AstrologerInfo = ({route, navigation}) => {
                 sock.disconnect();
                 callSocketRef.current = null;
                 setIsCallWaiting(false);
-                showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+                showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
               }
             }
           },
@@ -265,13 +267,13 @@ const AstrologerInfo = ({route, navigation}) => {
           sock.disconnect();
           callSocketRef.current = null;
           setIsCallWaiting(false);
-          showStatusPopup({ variant: 'missed', title: 'Not Answered', message: 'Your audio call was not picked up. Please try again later.' });
+          showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('alerts.notPickedUpAudio') });
         }
       }, 60000);
     } catch (err) {
       setIsCallWaiting(false);
       console.error('[AstrologerInfo] initiateAudioCall error:', err);
-      Alert.alert('Error', 'Failed to initiate call. Please try again.');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
     }
   };
 
@@ -281,7 +283,7 @@ const AstrologerInfo = ({route, navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
-        Alert.alert('Error', 'Please login to continue.');
+        Alert.alert(t('common.error'), t('call.pleaseLogin'));
         return;
       }
       const userEntireData = JSON.parse(userDataStr);
@@ -296,12 +298,12 @@ const AstrologerInfo = ({route, navigation}) => {
         .single();
 
       if (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return;
       }
       if (customer.wallet_balance < minRequired) {
         Alert.alert(
-          'Insufficient Balance',
+          t('alerts.insufficientBalance'),
           `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
         );
         return;
@@ -317,7 +319,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
       if (response.status !== 200) {
         setIsCallWaiting(false);
-        Alert.alert('Error', 'Failed to initiate video call.');
+        Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
         return;
       }
 
@@ -347,7 +349,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
       if (reqErr) {
         setIsCallWaiting(false);
-        Alert.alert('Error', 'Failed to send call request.');
+        Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
 
@@ -402,7 +404,7 @@ const AstrologerInfo = ({route, navigation}) => {
           sock.disconnect();
           callSocketRef.current = null;
           setIsCallWaiting(false);
-          showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+          showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
         }
       });
 
@@ -428,7 +430,7 @@ const AstrologerInfo = ({route, navigation}) => {
                 sock.disconnect();
                 callSocketRef.current = null;
                 setIsCallWaiting(false);
-                showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+                showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
               }
             }
           },
@@ -445,13 +447,13 @@ const AstrologerInfo = ({route, navigation}) => {
           sock.disconnect();
           callSocketRef.current = null;
           setIsCallWaiting(false);
-          showStatusPopup({ variant: 'missed', title: 'Not Answered', message: 'Your video call was not picked up. Please try again later.' });
+          showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('alerts.notPickedUpVideo') });
         }
       }, 60000);
     } catch (err) {
       setIsCallWaiting(false);
       console.error('[AstrologerInfo] initiateVideoCall error:', err);
-      Alert.alert('Error', 'Failed to initiate video call. Please try again.');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
     }
   };
 
@@ -463,18 +465,18 @@ const AstrologerInfo = ({route, navigation}) => {
     const action = route.params?.autoAction;
     if (!action || autoFiredRef.current) return;
     autoFiredRef.current = true;
-    const unavailable = label =>
-      Alert.alert('Unavailable', `${person.name || 'This astrologer'} is not available for ${label} right now.`);
-    const t = setTimeout(() => {
+    const unavailable = key =>
+      Alert.alert(t('alerts.unavailable'), t(key, { name: person.name || 'This astrologer' }));
+    const timer = setTimeout(() => {
       if (action === 'chat') {
-        person.isChatEnabled !== false ? sendChatRequest(person) : unavailable('chat');
+        person.isChatEnabled !== false ? sendChatRequest(person) : unavailable('alerts.notAvailableChat');
       } else if (action === 'call') {
-        person.isCallEnabled !== false ? initiateAudioCall() : unavailable('calls');
+        person.isCallEnabled !== false ? initiateAudioCall() : unavailable('alerts.notAvailableCall');
       } else if (action === 'video') {
-        person.isVideoEnabled !== false ? initiateVideoCall() : unavailable('video call');
+        person.isVideoEnabled !== false ? initiateVideoCall() : unavailable('alerts.notAvailableVideo');
       }
     }, 400);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleShowAllReviews = () => {
@@ -586,8 +588,8 @@ const AstrologerInfo = ({route, navigation}) => {
   const callEnabled = person.isCallEnabled !== false;
   const videoEnabled = person.isVideoEnabled !== false;
 
-  const showUnavailable = serviceLabel =>
-    Alert.alert('Unavailable', `${person.name || 'This astrologer'} is not available for ${serviceLabel} right now.`);
+  const showUnavailable = key =>
+    Alert.alert(t('alerts.unavailable'), t(key, { name: person.name || 'This astrologer' }));
 
   return (
     <View style={styles.container}>
@@ -623,18 +625,18 @@ const AstrologerInfo = ({route, navigation}) => {
             <View style={styles.statItem}>
               <MaterialIcons name="star" size={moderateScale(18)} color={COLORS.AstroGold} />
               <Text style={styles.statText}>
-                {avgRating?.totalReviews ? Number(avgRating.averageRating).toFixed(1) : 'New'}
+                {avgRating?.totalReviews ? Number(avgRating.averageRating).toFixed(1) : t('profile.new')}
               </Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <MaterialIcons name="work-outline" size={moderateScale(18)} color="#666" />
-              <Text style={styles.statText}>{person.experience || '1'} Yrs</Text>
+              <Text style={styles.statText}>{person.experience || '1'} {t('profile.yrs')}</Text>
             </View>
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem} onPress={() => setModalVisible(true)}>
               <MaterialIcons name="card-giftcard" size={moderateScale(18)} color={COLORS.AstroMaroon} />
-              <Text style={[styles.statText, { color: COLORS.AstroMaroon }]}>Gift</Text>
+              <Text style={[styles.statText, { color: COLORS.AstroMaroon }]}>{t('profile.gift')}</Text>
             </TouchableOpacity>
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem} onPress={onShare}>
@@ -650,7 +652,7 @@ const AstrologerInfo = ({route, navigation}) => {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <MaterialIcons name="stars" size={moderateScale(20)} color={COLORS.AstroMaroon} />
-              <Text style={styles.sectionTitle}>Specialization</Text>
+              <Text style={styles.sectionTitle}>{t('profile.specialization')}</Text>
             </View>
             <View style={styles.tagsContainer}>
               {person.specialties?.length > 0 ? (
@@ -669,13 +671,13 @@ const AstrologerInfo = ({route, navigation}) => {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <MaterialIcons name="info-outline" size={moderateScale(20)} color={COLORS.AstroMaroon} />
-              <Text style={styles.sectionTitle}>About My Services</Text>
+              <Text style={styles.sectionTitle}>{t('profile.aboutServices')}</Text>
             </View>
             <Text numberOfLines={isExpanded ? undefined : 3} style={styles.bodyText}>
-              {person.bio || 'Experienced and professional astrologer here to guide you through your life journey.'}
+              {person.bio || t('profile.aboutFallback')}
             </Text>
             <TouchableOpacity onPress={() => setIsExpanded(!isExpanded)}>
-              <Text style={styles.readMore}>{isExpanded ? 'Read Less' : 'Read More'}</Text>
+              <Text style={styles.readMore}>{isExpanded ? t('profile.readLess') : t('home.readMore')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -683,10 +685,10 @@ const AstrologerInfo = ({route, navigation}) => {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <MaterialIcons name="school" size={moderateScale(20)} color={COLORS.AstroMaroon} />
-              <Text style={styles.sectionTitle}>Experience & Qualification</Text>
+              <Text style={styles.sectionTitle}>{t('profile.experienceQualification')}</Text>
             </View>
             <Text style={styles.bodyText}>
-              With several years of dedicated practice, I've honed my skills in {specialties}.
+              {t('profile.experienceBody', { specialties })}
             </Text>
           </View>
 
@@ -694,8 +696,8 @@ const AstrologerInfo = ({route, navigation}) => {
           <View style={[styles.card, { marginBottom: verticalScale(20) }]}>
             <View style={styles.reviewsHeader}>
               <View>
-                <Text style={styles.sectionTitle}>Client Reviews</Text>
-                <Text style={styles.reviewSubText}>{avgRating.totalReviews || 0} reviews on Astrowani</Text>
+                <Text style={styles.sectionTitle}>{t('profile.clientReviews')}</Text>
+                <Text style={styles.reviewSubText}>{t('profile.reviewsOnAstrowani', { count: avgRating.totalReviews || 0 })}</Text>
               </View>
               {avgRating.totalReviews > 0 && (
                 <View style={styles.ratingBadge}>
@@ -726,24 +728,24 @@ const AstrologerInfo = ({route, navigation}) => {
                   </View>
                   {!!review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
                   {!!review.adminReply && (
-                    <Text style={styles.adminReplyText}>↳ Astrowani: {review.adminReply}</Text>
+                    <Text style={styles.adminReplyText}>{t('profile.astrowaniReplyPrefix')}{review.adminReply}</Text>
                   )}
                   {index !== reviewsToShow.length - 1 && <View style={styles.reviewDivider} />}
                 </View>
               ))
             ) : (
-              <Text style={{ textAlign: 'center', color: '#888', marginVertical: 15 }}>No reviews yet.</Text>
+              <Text style={{ textAlign: 'center', color: '#888', marginVertical: 15 }}>{t('profile.noReviewsYet')}</Text>
             )}
 
             <View style={styles.reviewActionRow}>
               {!showAllReviews && reviews.length > 2 && (
                 <TouchableOpacity onPress={handleShowAllReviews}>
-                  <Text style={styles.actionTextBtn}>Show All</Text>
+                  <Text style={styles.actionTextBtn}>{t('profile.showAll')}</Text>
                 </TouchableOpacity>
               )}
               <View style={{ flex: 1 }} />
               <TouchableOpacity onPress={() => navigation.navigate('AddReview', { person })} style={styles.addReviewBtn}>
-                <Text style={styles.addReviewTxt}>+ Write Review</Text>
+                <Text style={styles.addReviewTxt}>{t('profile.writeReview')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -755,33 +757,33 @@ const AstrologerInfo = ({route, navigation}) => {
         <TouchableOpacity
           style={chatEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
           activeOpacity={0.8}
-          onPress={() => (chatEnabled ? sendChatRequest(person) : showUnavailable('chat'))}>
+          onPress={() => (chatEnabled ? sendChatRequest(person) : showUnavailable('alerts.notAvailableChat'))}>
           <MaterialIcons name={chatEnabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(20)} color={chatEnabled ? COLORS.AstroMaroon : '#fff'} />
           <View style={styles.actionBtnTextCol}>
-            <Text style={chatEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{chatEnabled ? 'Chat' : 'Off'}</Text>
-            <Text style={chatEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.pricing ? `₹${person.pricing}/min` : 'Free'}</Text>
+            <Text style={chatEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{chatEnabled ? t('common.chat') : t('profile.off')}</Text>
+            <Text style={chatEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.pricing ? `₹${person.pricing}/min` : t('common.free')}</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[callEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
           activeOpacity={0.8}
-          onPress={() => (callEnabled ? initiateAudioCall() : showUnavailable('calls'))}>
+          onPress={() => (callEnabled ? initiateAudioCall() : showUnavailable('alerts.notAvailableCall'))}>
           <MaterialIcons name={callEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color={callEnabled ? COLORS.AstroMaroon : '#fff'} />
           <View style={styles.actionBtnTextCol}>
-            <Text style={callEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{callEnabled ? 'Call' : 'Off'}</Text>
-            <Text style={callEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.chargePerMinute ? `₹${person.chargePerMinute}/min` : 'Free'}</Text>
+            <Text style={callEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{callEnabled ? t('common.call') : t('profile.off')}</Text>
+            <Text style={callEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.chargePerMinute ? `₹${person.chargePerMinute}/min` : t('common.free')}</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[videoEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
           activeOpacity={0.8}
-          onPress={() => (videoEnabled ? initiateVideoCall() : showUnavailable('video call'))}>
+          onPress={() => (videoEnabled ? initiateVideoCall() : showUnavailable('alerts.notAvailableVideo'))}>
           <MaterialIcons name={videoEnabled ? 'videocam' : 'videocam-off'} size={moderateScale(20)} color={videoEnabled ? COLORS.AstroMaroon : '#fff'} />
           <View style={styles.actionBtnTextCol}>
-            <Text style={videoEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{videoEnabled ? 'Video' : 'Off'}</Text>
-            <Text style={videoEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.videoPrice ? `₹${person.videoPrice}/min` : 'Free'}</Text>
+            <Text style={videoEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{videoEnabled ? t('common.video') : t('profile.off')}</Text>
+            <Text style={videoEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.videoPrice ? `₹${person.videoPrice}/min` : t('common.free')}</Text>
           </View>
         </TouchableOpacity>
       </View>

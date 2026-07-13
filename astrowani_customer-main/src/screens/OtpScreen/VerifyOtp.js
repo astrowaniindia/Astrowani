@@ -19,10 +19,12 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const RESEND_SECONDS = 60;
 
 const VerifyOtp = ({navigation, route}) => {
+  const {t} = React.useContext(LanguageContext);
   const {phoneNumber, role = 'customer', profileData} = route?.params || {};
 
   const [code, setCode] = useState('');
@@ -55,7 +57,7 @@ const VerifyOtp = ({navigation, route}) => {
 
   const handleVerify = async () => {
     if (code.length !== 6) {
-      showAlert('Invalid OTP', 'Please enter the complete 6-digit code.', 'error');
+      showAlert(t('otp.invalidOtpTitle'), t('otp.enterComplete'), 'error');
       return;
     }
     setVerifying(true);
@@ -97,11 +99,11 @@ const VerifyOtp = ({navigation, route}) => {
 
         navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       } else {
-        showAlert('Verification Failed', res?.data?.message || 'Invalid OTP. Please try again.', 'error');
+        showAlert(t('otp.verificationFailed'), res?.data?.message || t('otp.invalidTryAgain'), 'error');
       }
     } catch (error) {
-      const message = error?.response?.data?.message || 'Failed to verify OTP. Please try again.';
-      showAlert('Verification Failed', message, 'error');
+      const message = error?.response?.data?.message || t('otp.failedVerify');
+      showAlert(t('otp.verificationFailed'), message, 'error');
     } finally {
       setVerifying(false);
     }
@@ -119,12 +121,12 @@ const VerifyOtp = ({navigation, route}) => {
         setCode('');
         otpRef.current?.clear?.();
         setTimer(RESEND_SECONDS);
-        showAlert('OTP Sent', 'A new code has been sent to your number.', 'success');
+        showAlert(t('otp.otpSentTitle'), t('otp.newCodeSent'), 'success');
       } else {
-        showAlert('Error', res?.data?.message || 'Could not resend OTP.', 'error');
+        showAlert(t('common.error'), res?.data?.message || t('otp.couldNotResend'), 'error');
       }
     } catch (error) {
-      showAlert('Error', 'Could not resend OTP. Please try again.', 'error');
+      showAlert(t('common.error'), t('otp.couldNotResendRetry'), 'error');
     } finally {
       setResending(false);
     }
@@ -147,16 +149,16 @@ const VerifyOtp = ({navigation, route}) => {
             source={require('../../assets/images/logo2.jpeg')}
             style={styles.logo}
           />
-          <Text style={styles.title}>Verify Your Number</Text>
+          <Text style={styles.title}>{t('otp.verifyTitle')}</Text>
           <Text style={styles.subTitle}>
-            Enter the 6-digit code sent to{' '}
-            {phoneNumber ? `+91 ${phoneNumber}` : 'your number'}
+            {t('otp.enterCodeSentTo')}
+            {phoneNumber ? `+91 ${phoneNumber}` : t('otp.yourNumber')}
           </Text>
         </View>
 
         <View style={styles.card}>
           <View style={styles.taglineContainer}>
-            <Text style={styles.tagline}>Almost There!</Text>
+            <Text style={styles.tagline}>{t('otp.almostThere')}</Text>
           </View>
 
           <View style={styles.otpWrapper}>
@@ -181,18 +183,18 @@ const VerifyOtp = ({navigation, route}) => {
             {verifying ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.btnTxt}>Verify OTP</Text>
+              <Text style={styles.btnTxt}>{t('otp.verifyBtn')}</Text>
             )}
           </TouchableOpacity>
 
           <View style={styles.resendView}>
             <Text style={styles.resendText}>
-              {timer > 0 ? `Resend OTP in ${formatTime(timer)}` : "Didn't receive the OTP?"}
+              {timer > 0 ? t('otp.resendIn', {time: formatTime(timer)}) : t('otp.notReceived')}
             </Text>
             {timer === 0 && (
               <TouchableOpacity onPress={handleResend} disabled={resending}>
                 <Text style={styles.resendLink}>
-                  {resending ? 'Sending...' : 'Resend OTP'}
+                  {resending ? t('otp.sending') : t('otp.resend')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -201,7 +203,7 @@ const VerifyOtp = ({navigation, route}) => {
           <TouchableOpacity
             style={styles.changeNumberBtn}
             onPress={() => navigation.goBack()}>
-            <Text style={styles.changeNumberText}>Change Phone Number</Text>
+            <Text style={styles.changeNumberText}>{t('otp.changeNumber')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

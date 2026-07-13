@@ -3,7 +3,7 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 
-const EMPTY = { name: '', image: '', sort_order: 0 };
+const EMPTY = { name: '', name_hi: '', image: '', sort_order: 0 };
 
 export default function Categories() {
   const [rows, setRows] = useState([]);
@@ -68,8 +68,10 @@ export default function Categories() {
 
       {editing && (
         <Modal title={editing.id ? 'Edit Category' : 'New Category'} onClose={() => setEditing(null)}>
-          <div className="field"><label>Name</label>
+          <div className="field"><label>Name (English)</label>
             <input type="text" value={editing.name} onChange={(e) => set('name', e.target.value)} /></div>
+          <div className="field"><label>Name (Hindi)</label>
+            <input type="text" value={editing.name_hi || ''} onChange={(e) => set('name_hi', e.target.value)} placeholder="हिंदी में नाम" /></div>
           <ImageField label="Icon / image (URL or upload)" value={editing.image} onChange={(v) => set('image', v)} />
           <div className="field"><label>Sort order</label>
             <input type="number" value={editing.sort_order} onChange={(e) => set('sort_order', e.target.value)} /></div>

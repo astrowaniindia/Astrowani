@@ -3,7 +3,7 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 
-const EMPTY = { title: '', description: '', image: '', link: '', sort_order: 0, is_active: true, app: 'both' };
+const EMPTY = { title: '', title_hi: '', description: '', description_hi: '', image: '', link: '', sort_order: 0, is_active: true, app: 'both' };
 
 const APP_LABELS = { customer: 'Customer App', vendor: 'Vendor App', both: 'Both Apps' };
 
@@ -132,10 +132,14 @@ export default function Banners() {
 
       {editing && (
         <Modal title={editing.id ? 'Edit Banner' : 'New Banner'} onClose={() => setEditing(null)}>
-          <div className="field"><label>Title</label>
+          <div className="field"><label>Title (English)</label>
             <input type="text" value={editing.title || ''} onChange={(e) => set('title', e.target.value)} /></div>
-          <div className="field"><label>Description</label>
+          <div className="field"><label>Title (Hindi)</label>
+            <input type="text" value={editing.title_hi || ''} onChange={(e) => set('title_hi', e.target.value)} placeholder="हिंदी में शीर्षक" /></div>
+          <div className="field"><label>Description (English)</label>
             <input type="text" value={editing.description || ''} onChange={(e) => set('description', e.target.value)} /></div>
+          <div className="field"><label>Description (Hindi)</label>
+            <input type="text" value={editing.description_hi || ''} onChange={(e) => set('description_hi', e.target.value)} placeholder="हिंदी में विवरण" /></div>
           <ImageField label="Banner image (URL or upload)" value={editing.image} onChange={(v) => set('image', v)} />
           <div className="field"><label>Link (optional)</label>
             <input type="text" value={editing.link || ''} onChange={(e) => set('link', e.target.value)} /></div>

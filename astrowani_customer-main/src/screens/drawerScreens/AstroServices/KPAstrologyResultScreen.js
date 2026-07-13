@@ -4,8 +4,10 @@ import {SvgXml} from 'react-native-svg';
 import {scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import ReportResultView from './ReportResultView';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function KPAstrologyResultScreen({route}) {
+  const {t} = React.useContext(LanguageContext);
   const {data} = route.params || {};
   return (
     <ScrollView style={styles.main} contentContainerStyle={{paddingVertical: verticalScale(15)}}>
@@ -14,9 +16,9 @@ export default function KPAstrologyResultScreen({route}) {
           <SvgXml xml={data.chartSvg} width="100%" height={300} />
         </View>
       ) : null}
-      <ReportResultView title="Planet Details" data={data?.planetDetails} />
-      <ReportResultView title="Cusp Details" data={data?.cuspDetails} />
-      <ReportResultView title="House Significators" data={data?.houseSignificators} />
+      <ReportResultView title={t('result.planetDetails')} data={data?.planetDetails} />
+      <ReportResultView title={t('result.cuspDetails')} data={data?.cuspDetails} />
+      <ReportResultView title={t('result.houseSignificators')} data={data?.houseSignificators} />
     </ScrollView>
   );
 }

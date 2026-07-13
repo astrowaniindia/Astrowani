@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 const ZODIAC_SIGNS = [
   {sign: 'aries', name: 'Aries', dateRange: {start: '2024-03-21', end: '2024-04-19'}},
@@ -27,6 +28,8 @@ const ZODIAC_SIGNS = [
 ];
 
 const Horoscope = ({navigation}) => {
+  const {t} = React.useContext(LanguageContext);
+  const zodiacName = sign => t(`zodiac.${sign}`);
   const [selected, setSelected] = useState(ZODIAC_SIGNS[0]);
   const [horoscopeData, setHoroscopeData] = useState(null);
   const [error, setError] = useState('');
@@ -53,14 +56,14 @@ const Horoscope = ({navigation}) => {
         const response = await fetchHoroscope(selected.sign);
         setHoroscopeData({
           _id: selected.sign,
-          zodiacSign: response.data.daily_prediction.sign_name,
+          zodiacSign: zodiacName(selected.sign),
           dateRange: selected.dateRange,
           prediction: response.data.daily_prediction.prediction,
           date: response.data.daily_prediction.date,
         });
       } catch (err) {
         console.error(`Failed to fetch horoscope for ${selected.sign}:`, err);
-        setError('Unable to fetch horoscope data. Please try again later.');
+        setError(t('horoscope.unableToFetch'));
       } finally {
         setLoading(false);
       }
@@ -70,7 +73,7 @@ const Horoscope = ({navigation}) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{selected.name} Horoscope</Text>
+      <Text style={styles.title}>{t('horoscope.title', {sign: zodiacName(selected.sign)})}</Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.signPicker} contentContainerStyle={styles.signPickerContent}>
         {ZODIAC_SIGNS.map(z => (
@@ -78,7 +81,7 @@ const Horoscope = ({navigation}) => {
             key={z.sign}
             style={[styles.signChip, selected.sign === z.sign && styles.signChipActive]}
             onPress={() => setSelected(z)}>
-            <Text style={[styles.signChipText, selected.sign === z.sign && styles.signChipTextActive]}>{z.name}</Text>
+            <Text style={[styles.signChipText, selected.sign === z.sign && styles.signChipTextActive]}>{zodiacName(z.sign)}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>

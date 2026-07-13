@@ -16,10 +16,12 @@ import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Geocoder from 'react-native-geocoding';
+import { LanguageContext } from '../../../context/LanguageContext';
 
 Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA");
 
 const JanamKundaliScreen = ({navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const [gender, setGender] = useState(null);
   const [name, setName] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -41,9 +43,9 @@ const JanamKundaliScreen = ({navigation}) => {
   };
 
   const genderOptions = [
-    {label: 'Male', value: 'male'},
-    {label: 'Female', value: 'female'},
-    {label: 'Other', value: 'other'},
+    {label: t('register.male'), value: 'male'},
+    {label: t('register.female'), value: 'female'},
+    {label: t('register.other'), value: 'other'},
   ];
 
   const onChangeDate = (event, selectedDate) => {
@@ -61,19 +63,19 @@ const JanamKundaliScreen = ({navigation}) => {
   const handleShowKundali = async () => {
     // Validate required fields
     if (!name) {
-      Alert.alert('Error', 'Please enter your name');
+      Alert.alert(t('common.error'), t('kundali.pleaseEnterName'));
       return;
     }
     if (!gender) {
-      Alert.alert('Error', 'Please select your gender');
+      Alert.alert(t('common.error'), t('kundali.pleaseSelectGender'));
       return;
     }
     if (!dateOfBirth) {
-      Alert.alert('Error', 'Please select your date of birth');
+      Alert.alert(t('common.error'), t('kundali.pleaseSelectDob'));
       return;
     }
     if (!dontKnowTime && !timeOfBirth) {
-      Alert.alert('Error', 'Please select your time of birth or check "I don\'t know"');
+      Alert.alert(t('common.error'), t('kundali.pleaseSelectTob'));
       return;
     }
 
@@ -100,7 +102,7 @@ const JanamKundaliScreen = ({navigation}) => {
       console.log("datata is", data)
       navigation.navigate('Kundali Details', { kundaliData: data.data , name});
     } catch (error) {
-      Alert.alert('Error', error.message || 'Something went wrong');
+      Alert.alert(t('common.error'), error.message || t('login.somethingWrong'));
     } finally {
       setLoading(false);
     }
@@ -116,12 +118,12 @@ const JanamKundaliScreen = ({navigation}) => {
             }}
             style={styles.icon}
           />
-          <Text style={styles.title}>Enter Your Details</Text>
+          <Text style={styles.title}>{t('kundali.enterDetails')}</Text>
         </View>
 
         <View style={styles.profileView}>
           <TextInput
-            placeholder="Enter full Name"
+            placeholder={t('kundali.enterFullName')}
             placeholderTextColor="#000"
             style={styles.input}
             value={name}
@@ -134,7 +136,7 @@ const JanamKundaliScreen = ({navigation}) => {
               data={genderOptions}
               labelField="label"
               valueField="value"
-              placeholder="Select Gender"
+              placeholder={t('kundali.selectGender')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={gender}
@@ -162,7 +164,7 @@ const JanamKundaliScreen = ({navigation}) => {
             <Text style={styles.dropdownText}>
               {dateOfBirth
                 ? dateOfBirth.toLocaleDateString()
-                : 'Select Date of Birth'}
+                : t('kundali.selectDob')}
             </Text>
             <Ionicons name="calendar" color={COLORS.orange} size={25} />
           </TouchableOpacity>
@@ -180,7 +182,7 @@ const JanamKundaliScreen = ({navigation}) => {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
-                : 'Select Time of Birth'}
+                : t('kundali.selectTob')}
             </Text>
             <Ionicons name="alarm-outline" color={COLORS.orange} size={25} />
           </TouchableOpacity>
@@ -193,11 +195,11 @@ const JanamKundaliScreen = ({navigation}) => {
               size={20}
               color="red"
             />
-            <Text style={styles.label}>I don't know</Text>
+            <Text style={styles.label}>{t('kundali.dontKnow')}</Text>
           </TouchableOpacity>
 
           <GooglePlacesAutocomplete
-            placeholder="Enter Place of Birth"
+            placeholder={t('kundali.enterPlaceOfBirth')}
             onPress={(data, details = null) => {
               const { lat, lng } = details.geometry.location;
               setCoordinates({
@@ -236,7 +238,7 @@ const JanamKundaliScreen = ({navigation}) => {
           style={[styles.Button, loading && styles.disabledButton]}
           disabled={loading}>
           <Text style={styles.ButtonText}>
-            {loading ? 'Loading...' : 'Show Kundali'}
+            {loading ? t('panchang.loading') : t('kundali.showKundali')}
           </Text>
         </TouchableOpacity>
       </View>

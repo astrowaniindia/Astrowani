@@ -105,8 +105,10 @@ import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const BlogList = ({ navigation }) => {
+  const { language } = React.useContext(LanguageContext);
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -179,15 +181,13 @@ const BlogList = ({ navigation }) => {
   const renderBlogItem = ({ item }) => {
     const date = new Date(item.createdAt);
     const formattedDate = date.toLocaleDateString();
-
-    // console.log("item: ", item);
-
+    const title = language === 'Hindi' ? (item.hindi?.title || item.title) : item.title;
 
     return (
       <TouchableOpacity onPress={() => navigation.navigate('BlogScreen', { data: item })} style={styles.card}>
         <Image source={{ uri: item.thumbnail }} style={styles.image} resizeMode="cover" />
         <View style={styles.textContainer}>
-          <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+          <Text style={styles.title} numberOfLines={2}>{title}</Text>
           <Text style={styles.excerpt} numberOfLines={3}>{item.excerpt}</Text>
           <View style={styles.infoRow}>
             <Text style={styles.category}>{item.category?.name}</Text>

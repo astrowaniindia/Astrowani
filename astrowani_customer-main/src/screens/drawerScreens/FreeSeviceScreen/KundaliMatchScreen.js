@@ -20,11 +20,13 @@ import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplet
 import Geocoder from 'react-native-geocoding';
 import axios from 'axios';
 import { SOCKET_URL } from '../../../config/api';
+import { LanguageContext } from '../../../context/LanguageContext';
 
-Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); // 
+Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); //
 
 
 const KundaliMatchScreen = ({navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const [boygender, setBoyGender] = useState(null);
   const [girlgender, setGirlGender] = useState(null);
   const [boyName, setBoyName] = useState('');
@@ -79,9 +81,9 @@ const KundaliMatchScreen = ({navigation}) => {
   };
 
   const genderOptions = [
-    {label: 'Male', value: 'male'},
-    {label: 'Female', value: 'female'},
-    {label: 'Other', value: 'other'},
+    {label: t('register.male'), value: 'male'},
+    {label: t('register.female'), value: 'female'},
+    {label: t('register.other'), value: 'other'},
   ];
 
   const onBoyChangeDate = (event, selectedDate) => {
@@ -122,7 +124,7 @@ const KundaliMatchScreen = ({navigation}) => {
 
   const handleShowReport = async () => {
     if (!boydateOfBirth || !girldateOfBirth || !boyLatitude || !boyLongitude || !girlLatitude || !girlLongitude) {
-      alert('Please fill in all required fields');
+      alert(t('match.fillAllFields'));
       return;
     }
 
@@ -165,7 +167,7 @@ const KundaliMatchScreen = ({navigation}) => {
       });
     } catch (error) {
       console.error('API Error:', error);
-      alert('An error occurred while fetching the report. Please try again.');
+      alert(t('match.errorFetching'));
     }
   };
 
@@ -179,17 +181,17 @@ const KundaliMatchScreen = ({navigation}) => {
             }}
             style={styles.icon}
           />
-          <Text style={styles.title}>Enter Your Details</Text>
+          <Text style={styles.title}>{t('kundali.enterDetails')}</Text>
         </View>
 
         <View style={styles.boysView}>
           <MaterialIcons name="boy" color={COLORS.AstroMaroon} size={28} />
-          <Text style={styles.boystext}>Boy's Details</Text>
+          <Text style={styles.boystext}>{t('match.boysDetails')}</Text>
         </View>
 
         <View style={styles.profileView}>
           <TextInput
-            placeholder="Enter full Name"
+            placeholder={t('kundali.enterFullName')}
             placeholderTextColor="gray"
             style={styles.input}
             onChange={text => setBoyName(text.nativeEvent.text)}
@@ -201,7 +203,7 @@ const KundaliMatchScreen = ({navigation}) => {
               data={genderOptions}
               labelField="label"
               valueField="value"
-              placeholder="Select Gender"
+              placeholder={t('kundali.selectGender')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={boygender}
@@ -229,7 +231,7 @@ const KundaliMatchScreen = ({navigation}) => {
             <Text style={styles.dropdownText}>
               {boydateOfBirth
                 ? boydateOfBirth.toLocaleDateString()
-                : 'Select Date of Birth'}
+                : t('kundali.selectDob')}
             </Text>
             <Ionicons name="calendar" color={COLORS.orange} size={25} />
           </TouchableOpacity>
@@ -246,7 +248,7 @@ const KundaliMatchScreen = ({navigation}) => {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
-                : 'Select Time of Birth'}
+                : t('kundali.selectTob')}
             </Text>
             <Ionicons name="alarm-outline" color={COLORS.orange} size={25} />
           </TouchableOpacity>
@@ -259,7 +261,7 @@ const KundaliMatchScreen = ({navigation}) => {
               size={20}
               color="red"
             />
-            <Text style={styles.label}>I don't know</Text>
+            <Text style={styles.label}>{t('kundali.dontKnow')}</Text>
           </TouchableOpacity>
 
           {/* <TextInput
@@ -268,7 +270,7 @@ const KundaliMatchScreen = ({navigation}) => {
             style={styles.input}
           /> */}
             <GooglePlacesAutocomplete
-          placeholder="Enter Boy's Place of Birth"
+          placeholder={t('match.enterBoyPlace')}
           onPress={(data, details = null) => {
             setBoyBirthPlace(data.description);
             getCoordinates(data.description, setBoyLatitude, setBoyLongitude);
@@ -286,12 +288,12 @@ const KundaliMatchScreen = ({navigation}) => {
 
         <View style={styles.boysView}>
           <MaterialIcons name="girl" color={COLORS.AstroMaroon} size={28} />
-          <Text style={styles.boystext}>Girl's Details</Text>
+          <Text style={styles.boystext}>{t('match.girlsDetails')}</Text>
         </View>
 
         <View style={styles.profileView}>
           <TextInput
-            placeholder="Enter full Name"
+            placeholder={t('kundali.enterFullName')}
             placeholderTextColor="gray"
             style={styles.input}
             onChange={text => setGirlName(text.nativeEvent.text)}
@@ -303,7 +305,7 @@ const KundaliMatchScreen = ({navigation}) => {
               data={genderOptions}
               labelField="label"
               valueField="value"
-              placeholder="Select Gender"
+              placeholder={t('kundali.selectGender')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={girlgender}
@@ -331,7 +333,7 @@ const KundaliMatchScreen = ({navigation}) => {
             <Text style={styles.dropdownText}>
               {girldateOfBirth
                 ? girldateOfBirth.toLocaleDateString()
-                : 'Select Date of Birth'}
+                : t('kundali.selectDob')}
             </Text>
             <Ionicons name="calendar" color={COLORS.orange} size={25} />
           </TouchableOpacity>
@@ -348,7 +350,7 @@ const KundaliMatchScreen = ({navigation}) => {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
-                : 'Select Time of Birth'}
+                : t('kundali.selectTob')}
             </Text>
             <Ionicons name="alarm-outline" color={COLORS.orange} size={25} />
           </TouchableOpacity>
@@ -361,7 +363,7 @@ const KundaliMatchScreen = ({navigation}) => {
               size={20}
               color="red"
             />
-            <Text style={styles.label}>I don't know</Text>
+            <Text style={styles.label}>{t('kundali.dontKnow')}</Text>
           </TouchableOpacity>
 
           {/* <TextInput
@@ -370,7 +372,7 @@ const KundaliMatchScreen = ({navigation}) => {
             style={styles.input}
           /> */}
             <GooglePlacesAutocomplete
-          placeholder="Enter Girl's Place of Birth"
+          placeholder={t('match.enterGirlPlace')}
           onPress={(data, details = null) => {
             setGirlBirthPlace(data.description);
             getCoordinates(data.description, setGirlLatitude, setGirlLongitude);
@@ -390,7 +392,7 @@ const KundaliMatchScreen = ({navigation}) => {
         <TouchableOpacity
             onPress={handleShowReport}
           style={styles.Button}>
-          <Text style={styles.ButtonText}>Show Report</Text>
+          <Text style={styles.ButtonText}>{t('match.showReport')}</Text>
         </TouchableOpacity>
       </ScrollView>
 

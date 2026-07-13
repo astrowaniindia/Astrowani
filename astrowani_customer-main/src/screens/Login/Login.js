@@ -21,8 +21,10 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const Login = ({navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const [countryCode, setCountryCode] = useState('IN');
   const [callingCode, setCallingCode] = useState('91');
   const [isPickerVisible, setPickerVisible] = useState(false);
@@ -39,13 +41,13 @@ const Login = ({navigation}) => {
   };
   const validateFields = () => {
     if (!phoneNumber) {
-      showAlert('Validation Error', 'Phone number cannot be empty.', 'error');
+      showAlert(t('login.validationError'), t('login.phoneEmpty'), 'error');
       return false;
     }
     if (phoneNumber.length < 10) {
       showAlert(
-        'Validation Error',
-        'Phone number must be at least 10 digits long.',
+        t('login.validationError'),
+        t('login.phoneTooShort'),
         'error'
       );
       return false;
@@ -65,18 +67,18 @@ const Login = ({navigation}) => {
         if (res?.data?.success) {
           navigation.navigate('VerifyOtp', { phoneNumber, role: 'customer' });
         } else {
-          showAlert('Error', res?.data?.message || 'Could not send OTP. Please try again.', 'error');
+          showAlert(t('common.error'), res?.data?.message || t('login.otpFailed'), 'error');
         }
       } catch (error) {
         if (error?.response?.data?.code === 'NO_ACCOUNT') {
           showAlert(
-            'No Account Found',
-            "We couldn't find an account for this number. Please sign up first.",
+            t('login.noAccountTitle'),
+            t('login.noAccountMsg'),
             'error'
           );
         } else {
           console.log('Login error:', error);
-          showAlert('Error', 'Something went wrong. Please try again.', 'error');
+          showAlert(t('common.error'), t('login.somethingWrong'), 'error');
         }
       } finally {
         SetLoading(false);
@@ -101,12 +103,12 @@ const Login = ({navigation}) => {
             style={styles.logo}
           />
           <Text style={styles.title}>Astrowani</Text>
-          <Text style={styles.subTitle}>Best Astrologer's Team</Text>
+          <Text style={styles.subTitle}>{t('login.tagline')}</Text>
         </View>
 
         <View style={styles.loginContainer}>
           <View style={styles.taglineContainer}>
-            <Text style={styles.tagline}>Discover Your Cosmic Path</Text>
+            <Text style={styles.tagline}>{t('login.discoverPath')}</Text>
           </View>
 
           <View style={styles.inputContainer}>
@@ -126,7 +128,7 @@ const Login = ({navigation}) => {
             <TextInput
               style={[styles.input, styles.phoneInput]}
               maxLength={10}
-              placeholder="Phone number"
+              placeholder={t('login.phoneNumber')}
               placeholderTextColor={COLORS.placeholder}
               keyboardType="phone-pad"
               value={phoneNumber}
@@ -141,27 +143,27 @@ const Login = ({navigation}) => {
             {loading ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.btnTxt}>Continue</Text>
+              <Text style={styles.btnTxt}>{t('login.continue')}</Text>
             )}
           </TouchableOpacity>
 
           <View style={styles.termsView}>
             <Text style={styles.termsText}>
-              By signing up, you agree to our{' '}
+              {t('login.agreeTerms')}
             </Text>
             <TouchableOpacity style={styles.termsLink}>
-              <Text style={styles.linktext}>Terms of use</Text>
+              <Text style={styles.linktext}>{t('settings.termsOfUse')}</Text>
             </TouchableOpacity>
-            <Text style={styles.termsText}> & </Text>
+            <Text style={styles.termsText}>{t('login.and')}</Text>
             <TouchableOpacity style={styles.termsLink}>
-              <Text style={styles.linktext}>Privacy Policy</Text>
+              <Text style={styles.linktext}>{t('settings.privacyPolicy')}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
+            <Text style={styles.footerText}>{t('login.noAccount')}</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.registerText}>Register</Text>
+              <Text style={styles.registerText}>{t('login.register')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -173,7 +175,7 @@ const Login = ({navigation}) => {
           animationType="slide">
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Country</Text>
+              <Text style={styles.modalTitle}>{t('login.selectCountry')}</Text>
               <FlatList
                 data={countries}
                 keyExtractor={item => item.code}
@@ -192,7 +194,7 @@ const Login = ({navigation}) => {
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={togglePicker}>
-                <Text style={styles.closeText}>Close</Text>
+                <Text style={styles.closeText}>{t('login.close')}</Text>
               </TouchableOpacity>
             </View>
           </View>

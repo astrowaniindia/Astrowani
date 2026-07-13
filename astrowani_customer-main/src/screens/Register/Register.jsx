@@ -21,8 +21,10 @@ import { showAlert } from '../../Component/CustomAlert';
 import { COLORS } from '../../Theme/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 
 export default function Register({ navigation }) {
+  const { t } = React.useContext(LanguageContext);
   const [name, setName] = useState('');
   const [gender, setGender] = useState('');
   const [dob, setDob] = useState(new Date());
@@ -47,11 +49,11 @@ export default function Register({ navigation }) {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.CAMERA,
         {
-          title: 'Camera Permission',
-          message: 'This app needs access to your camera',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
+          title: t('register.cameraPermTitle'),
+          message: t('register.cameraPermMsg'),
+          buttonNeutral: t('register.askLater'),
+          buttonNegative: t('common.cancel'),
+          buttonPositive: t('common.ok'),
         }
       );
       if (granted === PermissionsAndroid.RESULTS.GRANTED) {
@@ -128,11 +130,11 @@ export default function Register({ navigation }) {
 
   const handleSubmit = async () => {
     if (!name || !mobile) {
-      showAlert('Error', 'Please fill in at least your Name and Mobile Number.', 'error');
+      showAlert(t('common.error'), t('register.fillNameMobile'), 'error');
       return;
     }
     if (mobile.length < 10) {
-      showAlert('Error', 'Please enter a valid 10-digit mobile number.', 'error');
+      showAlert(t('common.error'), t('register.validMobile'), 'error');
       return;
     }
 
@@ -159,19 +161,19 @@ export default function Register({ navigation }) {
           },
         });
       } else {
-        showAlert('Error', res?.data?.message || 'Could not send OTP. Please try again.', 'error');
+        showAlert(t('common.error'), res?.data?.message || t('login.otpFailed'), 'error');
       }
     } catch (error) {
       if (error?.response?.data?.code === 'ACCOUNT_EXISTS') {
         showAlert(
-          'Account Already Exists',
-          'An account already exists for this number. Please log in instead.',
+          t('register.accountExists'),
+          t('register.accountExistsMsg'),
           'error',
           () => navigation.navigate('Login')
         );
       } else {
         console.error(error);
-        showAlert('Error', 'Something went wrong. Please try again.', 'error');
+        showAlert(t('common.error'), t('login.somethingWrong'), 'error');
       }
     } finally {
       setSubmitting(false);
@@ -187,7 +189,7 @@ export default function Register({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Icon name="arrow-back" size={28} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.title}>Register</Text>
+        <Text style={styles.title}>{t('register.title')}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -197,14 +199,14 @@ export default function Register({ navigation }) {
             <Image source={{ uri: image }} style={styles.image} />
           ) : (
             <View style={styles.imagePlaceholder}>
-              <Text style={styles.imagePlaceholderText}>Tap to add photo</Text>
+              <Text style={styles.imagePlaceholderText}>{t('register.tapToAddPhoto')}</Text>
             </View>
           )}
         </TouchableOpacity>
 
         <TextInput
           style={styles.input}
-          placeholder="Full Name"
+          placeholder={t('register.fullName')}
           value={name}
           onChangeText={setName}
         />
@@ -216,14 +218,14 @@ export default function Register({ navigation }) {
             placeholderStyle={styles.placeholderStyle}
             selectedTextStyle={styles.selectedTextStyle}
             data={[
-              { label: 'Male', value: 'Male' },
-              { label: 'Female', value: 'Female' },
-              { label: 'Other', value: 'Other' },
+              { label: t('register.male'), value: 'Male' },
+              { label: t('register.female'), value: 'Female' },
+              { label: t('register.other'), value: 'Other' },
             ]}
             maxHeight={300}
             labelField="label"
             valueField="value"
-            placeholder="Select Gender"
+            placeholder={t('register.selectGender')}
             value={gender}
             onChange={item => {
               setGender(item.value);
@@ -276,14 +278,14 @@ export default function Register({ navigation }) {
 
         <TextInput
           style={styles.input}
-          placeholder="Place of Birth"
+          placeholder={t('register.placeOfBirth')}
           value={place}
           onChangeText={setPlace}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Mobile Number"
+          placeholder={t('register.mobileNumber')}
           value={mobile}
           keyboardType="phone-pad"
           onChangeText={setMobile}
@@ -292,7 +294,7 @@ export default function Register({ navigation }) {
 
         <TextInput
           style={styles.input}
-          placeholder="Email Address"
+          placeholder={t('register.emailAddress')}
           value={email}
           keyboardType="email-address"
           autoCapitalize="none"
@@ -303,7 +305,7 @@ export default function Register({ navigation }) {
               style={[styles.submitButton, submitting && { opacity: 0.6 }]}
               onPress={handleSubmit}
               disabled={submitting}>
-              <Text style={styles.submitButtonText}>{submitting ? 'Sending OTP…' : 'Submit'}</Text>
+              <Text style={styles.submitButtonText}>{submitting ? t('register.sendingOtp') : t('register.submit')}</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>

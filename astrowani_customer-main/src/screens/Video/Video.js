@@ -19,8 +19,10 @@ import {supabase} from '../../api/SupabaseClient';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import io from 'socket.io-client';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const Video = ({navigation}) => {
+  const {t} = React.useContext(LanguageContext);
   const [astrologer, setAstrologer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -137,7 +139,7 @@ const Video = ({navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
-        Alert.alert('Error', 'Please login to continue.');
+        Alert.alert(t('common.error'), t('call.pleaseLogin'));
         return;
       }
       const userEntireData = JSON.parse(userDataStr);
@@ -152,12 +154,12 @@ const Video = ({navigation}) => {
         .single();
 
       if (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return;
       }
       if (customer.wallet_balance < minRequired) {
         Alert.alert(
-          'Insufficient Balance',
+          t('alerts.insufficientBalance'),
           `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
         );
         return;
@@ -175,7 +177,7 @@ const Video = ({navigation}) => {
 
       if (response.status !== 200) {
         setIsWaiting(false);
-        Alert.alert('Error', 'Failed to initiate video call.');
+        Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
         return;
       }
 
@@ -205,7 +207,7 @@ const Video = ({navigation}) => {
 
       if (reqErr) {
         setIsWaiting(false);
-        Alert.alert('Error', 'Failed to send request to astrologer.');
+        Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
 
@@ -255,7 +257,7 @@ const Video = ({navigation}) => {
       // Mount-time socket is already connected and in customer's room
       socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
       socketRef.current?.on('call_rejected', () =>
-        cleanupAndAlert('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+        cleanupAndAlert(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy'),
       );
 
       // Supabase Realtime backup
@@ -282,12 +284,12 @@ const Video = ({navigation}) => {
 
       // Auto-cancel after 1 minute if vendor doesn't respond → missed call
       setTimeout(() => {
-        cleanupAndAlert('Your video call was not picked up. Please try again later.', 'missed', 'Not Answered');
+        cleanupAndAlert(t('alerts.notPickedUpVideo'), 'missed', 'Not Answered');
       }, 60000);
     } catch (err) {
       setIsWaiting(false);
       console.error('[VideoScreen] initiateVideoCall error:', err);
-      Alert.alert('Error', 'Failed to initiate video call. Please try again.');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
     }
   };
 
@@ -304,7 +306,7 @@ const Video = ({navigation}) => {
   }
 
   if (error) {
-    return <Text style={styles.errorText}>Error: {error}</Text>;
+    return <Text style={styles.errorText}>{t('common.error')}: {error}</Text>;
   }
 
   return (
@@ -319,14 +321,14 @@ const Video = ({navigation}) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <ActivityIndicator size="large" color={COLORS.AstroGold} />
-            <Text style={styles.modalTitle}>Request Sent</Text>
+            <Text style={styles.modalTitle}>{t('home.requestSent')}</Text>
             <Text style={styles.modalText}>
-              Waiting for {waitingAstroName} to accept your video call...
+              {t('video.waitingFor', {name: waitingAstroName})}
             </Text>
             <Text
               style={styles.cancelBtn}
               onPress={cancelCall}>
-              Cancel Request
+              {t('home.cancelRequest')}
             </Text>
           </View>
         </View>

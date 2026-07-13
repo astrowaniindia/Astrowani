@@ -3,21 +3,23 @@ import {View, Text, TouchableOpacity, StyleSheet, Linking} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function PdfReportResultScreen({route}) {
+  const {t} = React.useContext(LanguageContext);
   const {data} = route.params || {};
 
   return (
     <View style={styles.main}>
       <View style={styles.card}>
         <Ionicons name="document-text" size={60} color={COLORS.AstroMaroon} />
-        <Text style={styles.title}>Your report is ready</Text>
-        <Text style={styles.subtitle}>Tap below to view or download your PDF report.</Text>
+        <Text style={styles.title}>{t('result.reportReady')}</Text>
+        <Text style={styles.subtitle}>{t('result.tapToViewDownload')}</Text>
         <TouchableOpacity
           style={styles.button}
           disabled={!data?.pdfUrl}
           onPress={() => data?.pdfUrl && Linking.openURL(data.pdfUrl)}>
-          <Text style={styles.buttonText}>View Report</Text>
+          <Text style={styles.buttonText}>{t('result.viewReport')}</Text>
         </TouchableOpacity>
       </View>
     </View>

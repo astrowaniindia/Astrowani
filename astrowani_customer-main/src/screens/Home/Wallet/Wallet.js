@@ -14,16 +14,18 @@ import RazorpayCheckout from 'react-native-razorpay';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import { COLORS } from '../../../Theme/Colors';
+import { LanguageContext } from '../../../context/LanguageContext';
 
 const presetAmounts = [50, 100, 200, 500, 1000, 2000];
 
 const Wallet = ({navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const [amount, setAmount] = useState('');
 
   const handleSubmit = () => {
     const finalAmount = parseInt(amount);
     if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount to recharge.');
+      Alert.alert(t('wallet.invalidAmount'), t('wallet.enterValidAmount'));
       return;
     }
     const options = {
@@ -42,10 +44,10 @@ const Wallet = ({navigation}) => {
     };
     RazorpayCheckout.open(options)
       .then(data => {
-        Alert.alert('Payment Successful', `Payment ID: ${data.razorpay_payment_id}`);
+        Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
       })
       .catch(error => {
-        Alert.alert('Payment Failed', error.description);
+        Alert.alert(t('wallet.paymentFailed'), error.description);
       });
   };
 
@@ -66,12 +68,12 @@ const Wallet = ({navigation}) => {
         <View style={styles.walletIconContainer}>
           <MaterialIcons name="account-balance-wallet" size={40} color={COLORS.AstroGold} />
         </View>
-        <Text style={styles.headerTitle}>Add Money to Wallet</Text>
-        <Text style={styles.headerSubtitle}>Recharge seamlessly to talk to experts</Text>
+        <Text style={styles.headerTitle}>{t('wallet.addMoney')}</Text>
+        <Text style={styles.headerSubtitle}>{t('wallet.rechargeSubtitle')}</Text>
       </View>
 
       <View style={styles.inputSection}>
-        <Text style={styles.inputLabel}>Enter Amount</Text>
+        <Text style={styles.inputLabel}>{t('wallet.enterAmount')}</Text>
         <View style={styles.inputWrapper}>
           <Text style={styles.currencySymbol}>₹</Text>
           <TextInput
@@ -87,7 +89,7 @@ const Wallet = ({navigation}) => {
       </View>
 
       <View style={styles.presetSection}>
-        <Text style={styles.presetLabel}>Recommended amounts</Text>
+        <Text style={styles.presetLabel}>{t('wallet.recommendedAmounts')}</Text>
         <FlatList
           data={presetAmounts}
           renderItem={renderPreset}
@@ -102,15 +104,15 @@ const Wallet = ({navigation}) => {
 
       <View style={styles.bottomSection}>
         <View style={styles.billDetails}>
-          <Text style={styles.billText}>Total Payable</Text>
+          <Text style={styles.billText}>{t('wallet.totalPayable')}</Text>
           <Text style={styles.billAmount}>₹{amount || '0'}</Text>
         </View>
-        <TouchableOpacity 
-          style={[styles.submitBtn, !amount && styles.disabledBtn]} 
+        <TouchableOpacity
+          style={[styles.submitBtn, !amount && styles.disabledBtn]}
           onPress={handleSubmit}
           disabled={!amount}
         >
-          <Text style={styles.submitTxt}>Proceed to Pay</Text>
+          <Text style={styles.submitTxt}>{t('wallet.proceedToPay')}</Text>
           <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />
         </TouchableOpacity>
       </View>

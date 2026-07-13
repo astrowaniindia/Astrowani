@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  Modal,
   Image,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
@@ -23,9 +22,8 @@ import { LanguageContext } from '../context/LanguageContext';
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
-  const { language, changeLanguage, t } = React.useContext(LanguageContext);
+  const { language, changeLanguage } = React.useContext(LanguageContext);
 
   useEffect(() => {
     let subscription = null;
@@ -82,12 +80,8 @@ const CustomHeader = ({title, showLanguage}) => {
     };
   }, [navigation]);
 
-  const toggleLanguageModal = () => {
-    setLanguageModalVisible(!languageModalVisible);
-  };
-  const selectLanguage = lang => {
-    changeLanguage(lang);
-    toggleLanguageModal();
+  const toggleLanguage = () => {
+    changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
   };
   return (
     <View style={{backgroundColor: COLORS.AstroMaroon, paddingTop: insets.top}}>
@@ -104,8 +98,10 @@ const CustomHeader = ({title, showLanguage}) => {
               <Text style={styles.balanceText}>₹ {walletBalance}</Text>
               <Ionicons name="wallet-outline" color="white" size={24} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={toggleLanguageModal}>
-              <MaterialIcons name="translate" color="white" size={24} />
+            <TouchableOpacity onPress={toggleLanguage} style={styles.langPill} activeOpacity={0.7}>
+              <Text style={[styles.langPillText, language === 'English' && styles.langPillTextActive]}>EN</Text>
+              <Text style={styles.langPillDivider}>|</Text>
+              <Text style={[styles.langPillText, language === 'Hindi' && styles.langPillTextActive]}>हिं</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')}>
               <MaterialIcons
@@ -117,38 +113,6 @@ const CustomHeader = ({title, showLanguage}) => {
           </View>
         )}
       </View>
-      <Modal
-        transparent={true}
-        visible={languageModalVisible}
-        animationType="slide"
-        onRequestClose={toggleLanguageModal}>
-        <TouchableOpacity
-          style={styles.modalContainer}
-          activeOpacity={1}
-          onPressOut={toggleLanguageModal}>
-          <TouchableOpacity style={styles.modalContent} activeOpacity={1}>
-            <Text style={[styles.modalTitle, {color: 'black'}]}>{t('language')}</Text>
-            <TouchableOpacity
-              style={styles.languageOption}
-              onPress={() => selectLanguage('English')}>
-              <View style={styles.roundIcon}>
-                {language === 'English' && (
-                  <View style={styles.point} />
-                )}
-              </View>
-              <Text style={[styles.languageText, {color: 'black'}]}>English</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.languageOption}
-              onPress={() => selectLanguage('Hindi')}>
-              <View style={styles.roundIcon}>
-                {language === 'Hindi' && <View style={styles.point} />}
-              </View>
-              <Text style={[styles.languageText, {color: 'black'}]}>Hindi</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 };
@@ -175,7 +139,7 @@ const styles = StyleSheet.create({
   notificationView: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: scale(120),
+    width: scale(150),
     justifyContent: 'space-between',
   },
   balanceText: {
@@ -184,45 +148,27 @@ const styles = StyleSheet.create({
     marginRight: scale(5),
     fontSize: moderateScale(14),
   },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    marginHorizontal: scale(20),
-    padding: scale(20),
-    backgroundColor: 'white',
-    borderRadius: moderateScale(10),
-  },
-  modalTitle: {
-    fontSize: moderateScale(18),
-    fontWeight: 'bold',
-    marginBottom: verticalScale(15),
-  },
-  languageOption: {
+  langPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: verticalScale(15),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(6),
+    paddingVertical: verticalScale(2),
   },
-  languageText: {
-    fontSize: moderateScale(16),
-    marginLeft: scale(10),
+  langPillText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: moderateScale(11),
+    fontFamily: 'Lato-Bold',
   },
-  roundIcon: {
-    width: moderateScale(20),
-    height: moderateScale(20),
-    borderRadius: moderateScale(10),
-    borderWidth: 2,
-    borderColor: 'black',
-    alignItems: 'center',
-    justifyContent: 'center',
+  langPillTextActive: {
+    color: 'white',
   },
-  point: {
-    width: moderateScale(10),
-    height: moderateScale(10),
-    borderRadius: moderateScale(5),
-    backgroundColor: 'red',
+  langPillDivider: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: moderateScale(11),
+    marginHorizontal: scale(3),
   },
 });
 

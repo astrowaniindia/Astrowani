@@ -1,4 +1,9 @@
 {
   "name": "AstroIndia_Astrologers",
-  "displayName": "OhmAstro"
+  "displayName": "OhmAstro",
+  "extra": {
+    "eas": {
+      "projectId": "19b40e50-fef3-455e-9a1c-f8746547a258"
+    }
+  }
 }

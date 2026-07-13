@@ -6,6 +6,7 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import BirthDetailsForm from './BirthDetailsForm';
 import useAstroPurchase from './useAstroPurchase';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 const TEMPLATES = [
   {label: 'Vedic 5 Year Predictions', value: 'vedic_five_year_predictions'},
@@ -35,6 +36,7 @@ const TEMPLATES = [
 ];
 
 export default function PdfReportInputScreen({navigation}) {
+  const {t} = React.useContext(LanguageContext);
   const [name, setName] = useState('');
   const [values, setValues] = useState({isComplete: false});
   const [template, setTemplate] = useState(null);
@@ -52,17 +54,17 @@ export default function PdfReportInputScreen({navigation}) {
 
   return (
     <ScrollView style={styles.main} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Your Details</Text>
+      <Text style={styles.title}>{t('astro.yourDetails')}</Text>
       <TextInput
-        placeholder="Enter full name" placeholderTextColor={COLORS.placeholder}
+        placeholder={t('kundali.enterFullName')} placeholderTextColor={COLORS.placeholder}
         style={styles.input} value={name} onChangeText={setName}
       />
       <BirthDetailsForm title="" showName={false} onValuesChange={setValues} />
-      <Text style={styles.label}>Choose Report</Text>
+      <Text style={styles.label}>{t('astro.chooseReport')}</Text>
       <View style={styles.dropdownContainer}>
         <Dropdown
           style={styles.dropdown} data={TEMPLATES} labelField="label" valueField="value"
-          placeholder="Select a PDF report" placeholderStyle={styles.dropdownText} selectedTextStyle={styles.dropdownText}
+          placeholder={t('astro.selectPdfReport')} placeholderStyle={styles.dropdownText} selectedTextStyle={styles.dropdownText}
           value={template} onChange={(item) => setTemplate(item.value)}
           renderRightIcon={() => <Ionicons name="chevron-down-outline" color={COLORS.AstroMaroon} size={20} />}
         />
@@ -74,7 +76,7 @@ export default function PdfReportInputScreen({navigation}) {
         {submitting ? (
           <ActivityIndicator color={COLORS.black} />
         ) : (
-          <Text style={styles.buttonText}>Generate PDF Report{service ? ` — ₹${service.price}` : ''}</Text>
+          <Text style={styles.buttonText}>{t('astro.generatePdfReport')}{service ? ` — ₹${service.price}` : ''}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

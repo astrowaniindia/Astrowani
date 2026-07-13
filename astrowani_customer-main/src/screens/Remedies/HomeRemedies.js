@@ -2,6 +2,13 @@ import React from 'react';
 import { View, Text, Image, StyleSheet, FlatList, TouchableOpacity, } from 'react-native';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
+import { LanguageContext } from '../../context/LanguageContext';
+
+const TITLE_KEYS = {
+  Puja: 'remedies.puja',
+  Gemstones: 'remedies.gemstones',
+  'Specific Puja': 'remedies.specificPuja',
+};
 
 const data = [
   {
@@ -27,6 +34,7 @@ const data = [
 ];
 
 const HomeRemedies = ({ navigation }) => {
+  const { t } = React.useContext(LanguageContext);
   const handleBookPuja = item => {
     if (item.title === 'Puja') {
       navigation.navigate('RemedyShop', { type: 'puja', title: 'Puja' });
@@ -43,7 +51,7 @@ const HomeRemedies = ({ navigation }) => {
         <Image source={item.image} style={styles.image} />
         {/* <Image source={{ uri: item.image }} style={styles.image} /> */}
 
-        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.title}>{t(TITLE_KEYS[item.title]) || item.title}</Text>
       </View>
     </TouchableOpacity>
   );

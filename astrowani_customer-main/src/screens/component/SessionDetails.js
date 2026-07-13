@@ -10,16 +10,19 @@ import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
+import {LanguageContext} from '../../context/LanguageContext';
 
+// Keyed by the stable English typeKey (not the translated display label in session.chatType).
 const TYPE_COLORS = {
-  'Chat Session': '#5C6BC0',
-  'Audio Call':   '#2E7D32',
-  'Video Call':   '#6A1B9A',
-  'Live Session': '#C62828',
+  chat:  '#5C6BC0',
+  audio: '#2E7D32',
+  video: '#6A1B9A',
+  live:  '#C62828',
 };
 
 const SessionDetails = ({session, handleprofile}) => {
-  const typeColor = TYPE_COLORS[session.chatType] || COLORS.AstroMaroon;
+  const {t} = React.useContext(LanguageContext);
+  const typeColor = TYPE_COLORS[session.typeKey] || COLORS.AstroMaroon;
 
   const onRate = () => {
     const astrologerId = session.astro?._id || session.astro?.userId;
@@ -31,13 +34,13 @@ const SessionDetails = ({session, handleprofile}) => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.referenceText}>Ref: {session.referenceId}</Text>
+        <Text style={styles.referenceText}>{t('session.ref', {id: session.referenceId})}</Text>
         <View style={[styles.typePill, {backgroundColor: typeColor + '18', borderColor: typeColor + '44'}]}>
           <Text style={[styles.typeText, {color: typeColor}]}>{session.chatType}</Text>
         </View>
         {session.isActive && (
           <View style={styles.activePill}>
-            <Text style={styles.activeText}>Active</Text>
+            <Text style={styles.activeText}>{t('session.active')}</Text>
           </View>
         )}
       </View>
@@ -49,7 +52,7 @@ const SessionDetails = ({session, handleprofile}) => {
           <TouchableOpacity
             onPress={() => handleprofile(session)}
             style={styles.profileButton}>
-            <Text style={styles.profileButtonText}>View Profile</Text>
+            <Text style={styles.profileButtonText}>{t('session.viewProfile')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -58,17 +61,17 @@ const SessionDetails = ({session, handleprofile}) => {
           <Text style={styles.time}>{session.time}</Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Rate</Text>
+              <Text style={styles.statLabel}>{t('session.rate')}</Text>
               <Text style={styles.statValue}>₹{session.rate}/min</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Duration</Text>
-              <Text style={styles.statValue}>{session.isActive ? 'Active' : `${session.duration} min`}</Text>
+              <Text style={styles.statLabel}>{t('session.duration')}</Text>
+              <Text style={styles.statValue}>{session.isActive ? t('session.active') : `${session.duration} min`}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Charged</Text>
+              <Text style={styles.statLabel}>{t('session.charged')}</Text>
               <Text style={[styles.statValue, styles.chargedValue]}>{session.isActive ? '—' : `₹${session.deduction}`}</Text>
             </View>
           </View>
@@ -81,7 +84,7 @@ const SessionDetails = ({session, handleprofile}) => {
         onPress={onRate}
         activeOpacity={0.8}>
         <FontAwesome name="star" size={14} color="#FFD700" />
-        <Text style={styles.ratingBtnText}>Rate this session</Text>
+        <Text style={styles.ratingBtnText}>{t('session.rateThisSession')}</Text>
       </TouchableOpacity>
     </View>
   );

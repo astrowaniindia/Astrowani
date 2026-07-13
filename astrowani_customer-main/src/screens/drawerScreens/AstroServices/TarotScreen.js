@@ -4,8 +4,10 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import useAstroPurchase from './useAstroPurchase';
 import ReportResultView from './ReportResultView';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function TarotScreen() {
+  const {t} = React.useContext(LanguageContext);
   const [reading, setReading] = useState(null);
   const {service, submitting, submit} = useAstroPurchase('tarot');
 
@@ -22,17 +24,17 @@ export default function TarotScreen() {
           source={{uri: 'https://cdn-icons-png.flaticon.com/128/2951/2951587.png'}}
           style={styles.icon}
         />
-        <Text style={styles.title}>Yes or No Tarot Reading</Text>
-        <Text style={styles.subtitle}>Draw a card for a quick answer to your question.</Text>
+        <Text style={styles.title}>{t('astro.tarotTitle')}</Text>
+        <Text style={styles.subtitle}>{t('astro.tarotSubtitle')}</Text>
         <TouchableOpacity style={[styles.button, submitting && styles.disabled]} disabled={submitting} onPress={onDraw}>
           {submitting ? (
             <ActivityIndicator color={COLORS.black} />
           ) : (
-            <Text style={styles.buttonText}>Draw a Card{service ? ` — ₹${service.price}` : ''}</Text>
+            <Text style={styles.buttonText}>{t('astro.drawCard')}{service ? ` — ₹${service.price}` : ''}</Text>
           )}
         </TouchableOpacity>
       </View>
-      {reading ? <ReportResultView title="Your Reading" data={reading} /> : null}
+      {reading ? <ReportResultView title={t('astro.yourReading')} data={reading} /> : null}
     </ScrollView>
   );
 }

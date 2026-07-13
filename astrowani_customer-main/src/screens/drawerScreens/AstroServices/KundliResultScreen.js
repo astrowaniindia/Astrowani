@@ -4,8 +4,10 @@ import {SvgXml} from 'react-native-svg';
 import {scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import ReportResultView from './ReportResultView';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function KundliResultScreen({route}) {
+  const {t} = React.useContext(LanguageContext);
   const {data} = route.params || {};
   return (
     <ScrollView style={styles.main} contentContainerStyle={{paddingVertical: verticalScale(15)}}>
@@ -14,9 +16,9 @@ export default function KundliResultScreen({route}) {
           <SvgXml xml={data.chartSvg} width="100%" height={300} />
         </View>
       ) : null}
-      <ReportResultView title="Kundli Overview" data={data?.extendedKundali} />
-      <ReportResultView title="Ascendant Report" data={data?.ascendantReport} />
-      <ReportResultView title="Planet Details" data={data?.planetDetails} />
+      <ReportResultView title={t('result.kundliOverview')} data={data?.extendedKundali} />
+      <ReportResultView title={t('result.ascendantReport')} data={data?.ascendantReport} />
+      <ReportResultView title={t('result.planetDetails')} data={data?.planetDetails} />
     </ScrollView>
   );
 }

@@ -13,25 +13,27 @@ import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 import debounce from 'lodash.debounce';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const SearchScreen = ({navigation, route}) => {
+  const {t} = React.useContext(LanguageContext);
   const {data = []} = route.params || {};
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredData, setFilteredData] = useState([]);
   const [searchSubmitted, setSearchSubmitted] = useState(false);
 
   const mostSearched = [
-    'Marital Life',
-    'Love & Relationship',
-    'Career & Job',
-    'Cheating & Affairs',
-    'Finance & Business',
-    'Break-Up & Divorce',
-    'Vedic Astrology',
-    'Psychic Reading',
-    'Tarot Reading',
-    'Numerology',
-    'Relationship Counseling',
+    t('search.tag.maritalLife'),
+    t('search.tag.loveRelationship'),
+    t('search.tag.careerJob'),
+    t('search.tag.cheatingAffairs'),
+    t('search.tag.financeBusiness'),
+    t('search.tag.breakupDivorce'),
+    t('search.tag.vedicAstrology'),
+    t('search.tag.psychicReading'),
+    t('search.tag.tarotReading'),
+    t('search.tag.numerology'),
+    t('search.tag.relationshipCounseling'),
   ];
 
   const filterAstrologers = query => {
@@ -86,7 +88,7 @@ const SearchScreen = ({navigation, route}) => {
           <MaterialIcons name="search" size={24} color="#800000" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search Here"
+            placeholder={t('home.search')}
             placeholderTextColor="#ccc"
             value={searchQuery}
             onChangeText={handleSearchChange}
@@ -112,12 +114,12 @@ const SearchScreen = ({navigation, route}) => {
               size={60}
               color="#800000"
             />
-            <Text style={styles.noDataText}>No astrologer found</Text>
+            <Text style={styles.noDataText}>{t('search.noAstrologerFound')}</Text>
           </View>
         )
       ) : (
         <View>
-          <Text style={styles.sectionTitle}>Most searched on Astrowani</Text>
+          <Text style={styles.sectionTitle}>{t('search.mostSearched')}</Text>
           <View style={styles.mostSearchedContainer}>
             {mostSearched.map((item, index) => (
               <TouchableOpacity

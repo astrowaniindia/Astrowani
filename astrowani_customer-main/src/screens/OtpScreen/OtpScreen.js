@@ -15,11 +15,13 @@ import { OtpInput } from 'react-native-otp-entry';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requestUserPermission } from '../../utils/PushNotification';
+import { LanguageContext } from '../../context/LanguageContext';
 // import { requestUserPermission } from '../../utils/PushNotification';
 
 // import Instance from '../../api/ApiCall';
 
 const OtpScreen = ({ navigation, route }) => {
+  const { t } = React.useContext(LanguageContext);
   const [timer, setTimer] = useState(180);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,13 +77,13 @@ const OtpScreen = ({ navigation, route }) => {
         });
         setLoading(false)
       } else {
-        Alert.alert('Error', 'Invalid OTP. Please try again.');
+        Alert.alert(t('common.error'), t('otp.invalidTryAgain'));
         setLoading(false)
       }
     } catch (error) {
       setLoading(false)
       console.log(error);
-      Alert.alert('Error', 'Failed to verify OTP. Please try again.');
+      Alert.alert(t('common.error'), t('otp.failedVerify'));
     } finally {
       setLoading(false);
     }
@@ -114,10 +116,10 @@ const OtpScreen = ({ navigation, route }) => {
         barStyle="Light-content"
       />
 
-      <Text style={styles.Verifytitle}>OTP sent to your Number</Text>
+      <Text style={styles.Verifytitle}>{t('otp.sentToNumber')}</Text>
       <View style={styles.OTptimeingView}>
         <Text style={styles.VerifyotpTimer}>
-          OTP expires in {formatTime(timer)}
+          {t('otp.expiresIn', {time: formatTime(timer)})}
         </Text>
       </View>
       <View style={styles.OtpInputView}>
@@ -138,13 +140,13 @@ const OtpScreen = ({ navigation, route }) => {
         {loading ? (
           <ActivityIndicator size="small" color={COLORS.AntiFlashWhite} />
         ) : (
-          <Text style={styles.VerifybuttonText}>Verify OTP</Text>
+          <Text style={styles.VerifybuttonText}>{t('otp.verifyBtn')}</Text>
         )}
       </TouchableOpacity>
       <View style={styles.VerifyResendOtpView}>
-        <Text style={styles.VerifyResendOtpTXt}>Didn't receive the OTP? </Text>
+        <Text style={styles.VerifyResendOtpTXt}>{t('otp.notReceived')}</Text>
         <TouchableOpacity onPress={handleResendOTP} disabled={loading}>
-          <Text style={styles.VerifyResendOtpTXt2}>Resend OTP</Text>
+          <Text style={styles.VerifyResendOtpTXt2}>{t('otp.resend')}</Text>
         </TouchableOpacity>
       </View>
     </View>

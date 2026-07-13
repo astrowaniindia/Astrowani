@@ -89,7 +89,7 @@ const FadeBanner = ({ banners, intervalMs = 4000 }) => {
 };
 
 const Home = ({navigation}) => {
-  const { t } = React.useContext(LanguageContext);
+  const { t, language } = React.useContext(LanguageContext);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedReview, setSelectedReview] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -266,12 +266,12 @@ const Home = ({navigation}) => {
         .eq('id', userEntireData.id)
         .single();
       if (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return null;
       }
       if (customer.wallet_balance < minRequired) {
         Alert.alert(
-          'Insufficient Balance',
+          t('alerts.insufficientBalance'),
           `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
         );
         return null;
@@ -289,7 +289,7 @@ const Home = ({navigation}) => {
 
       if (response.status !== 200) {
         setIsWaiting(false);
-        Alert.alert('Error', response.data.error || 'Unexpected Error');
+        Alert.alert(t('common.error'), response.data.error || 'Unexpected Error');
         return null;
       }
 
@@ -314,7 +314,7 @@ const Home = ({navigation}) => {
 
       if (requestError) {
         setIsWaiting(false);
-        Alert.alert('Error', 'Failed to send request to astrologer.');
+        Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return null;
       }
 
@@ -355,7 +355,7 @@ const Home = ({navigation}) => {
       // Socket listeners — mount-time socket is already connected and in customer's room
       socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
       socketRef.current?.on('call_rejected', () =>
-        cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+        cancelCall(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy'),
       );
 
       // Supabase Realtime backup (catches acceptance even if socket misses it)
@@ -373,7 +373,7 @@ const Home = ({navigation}) => {
             if (payload.new.status === 'accepted') {
               goToCall(payload.new.session_id);
             } else if (payload.new.status === 'rejected') {
-              cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy');
+              cancelCall(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy');
             }
           },
         )
@@ -382,13 +382,13 @@ const Home = ({navigation}) => {
 
       // Auto-cancel after 1 minute if vendor doesn't respond → missed call
       setTimeout(() => {
-        cancelCall('Your audio call was not picked up. Please try again later.', 'missed', 'Not Answered');
+        cancelCall(t('alerts.notPickedUpAudio'), 'missed', 'Not Answered');
       }, 60000);
 
       return response.data.token;
     } catch (error) {
       setIsWaiting(false);
-      Alert.alert('Error', 'Failed to initiate call');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
       return null;
     }
   };
@@ -410,12 +410,12 @@ const Home = ({navigation}) => {
         .eq('id', userEntireData.id)
         .single();
       if (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return null;
       }
       if (customer.wallet_balance < minRequired) {
         Alert.alert(
-          'Insufficient Balance',
+          t('alerts.insufficientBalance'),
           `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
         );
         return null;
@@ -433,7 +433,7 @@ const Home = ({navigation}) => {
 
       if (response.status !== 200) {
         setIsWaiting(false);
-        Alert.alert('Error', response.data.error || 'Unexpected Error');
+        Alert.alert(t('common.error'), response.data.error || 'Unexpected Error');
         return null;
       }
 
@@ -458,7 +458,7 @@ const Home = ({navigation}) => {
 
       if (requestError) {
         setIsWaiting(false);
-        Alert.alert('Error', 'Failed to send request to astrologer.');
+        Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return null;
       }
 
@@ -496,7 +496,7 @@ const Home = ({navigation}) => {
 
       socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
       socketRef.current?.on('call_rejected', () =>
-        cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+        cancelCall(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy'),
       );
 
       const channel = supabase
@@ -513,7 +513,7 @@ const Home = ({navigation}) => {
             if (payload.new.status === 'accepted') {
               goToCall(payload.new.session_id);
             } else if (payload.new.status === 'rejected') {
-              cancelCall('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy');
+              cancelCall(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy');
             }
           },
         )
@@ -522,13 +522,13 @@ const Home = ({navigation}) => {
 
       // Auto-cancel after 1 minute if vendor doesn't respond → missed call
       setTimeout(() => {
-        cancelCall('Your video call was not picked up. Please try again later.', 'missed', 'Not Answered');
+        cancelCall(t('alerts.notPickedUpVideo'), 'missed', 'Not Answered');
       }, 60000);
 
       return response.data.token;
     } catch (error) {
       setIsWaiting(false);
-      Alert.alert('Error', 'Failed to initiate video call');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
       return null;
     }
   };
@@ -834,30 +834,30 @@ const Home = ({navigation}) => {
               onPress={() =>
                 item.isChatEnabled
                   ? handleChatPress(item)
-                  : Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for chat right now.`)
+                  : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
               }
               style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
-              <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('chat') : 'No Chat'}</Text>
+              <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('common.chat') : t('common.noChat')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() =>
                 item.isCallEnabled
                   ? getRoomTokenWebCall(item)
-                  : Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for calls right now.`)
+                  : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableCall', {name: item.name || 'This astrologer'}))
               }
               style={item.isCallEnabled ? styles.callButton : styles.unavailableBtn}>
-              <Text style={item.isCallEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isCallEnabled ? t('call') : 'No Call'}</Text>
+              <Text style={item.isCallEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isCallEnabled ? t('common.call') : t('common.noCall')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() =>
                 item.isVideoEnabled
                   ? initiateVideoCall(item)
-                  : Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for video call right now.`)
+                  : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableVideo', {name: item.name || 'This astrologer'}))
               }
               style={item.isVideoEnabled ? styles.videoButton : styles.unavailableBtn}>
-              <Text style={item.isVideoEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isVideoEnabled ? 'Video' : 'No Video'}</Text>
+              <Text style={item.isVideoEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isVideoEnabled ? t('common.video') : t('common.noVideo')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -913,7 +913,7 @@ const Home = ({navigation}) => {
           style={styles.liveAstrologerimg}
         />
         <View style={[styles.livebtn, styles.live]}>
-          <Text style={styles.livetxt}>{t('live')}</Text>
+          <Text style={styles.livetxt}>{t('common.live')}</Text>
         </View>
         <View style={styles.astroNameview}>
           <Text style={styles.livename}>{astrologer.name}</Text>
@@ -924,12 +924,13 @@ const Home = ({navigation}) => {
   };
 
   const BlogItem = ({blog}) => {
+    const title = language === 'Hindi' ? (blog.hindi?.title || blog.title) : blog.title;
     return (
       <TouchableOpacity
         onPress={() => navigation.navigate('BlogScreen', {data: blog})}
         style={styles.blogCard}>
         <Image style={styles.blogImg} source={{uri: blog.thumbnail}} />
-        <Text style={styles.blogTitle}>{blog.title}</Text>
+        <Text style={styles.blogTitle}>{title}</Text>
         <Text style={styles.blogContent} numberOfLines={2} ellipsizeMode="tail">
           {blog.metaDescription}
         </Text>
@@ -948,7 +949,7 @@ const Home = ({navigation}) => {
         <View style={styles.searchBtnView}>
           <TouchableOpacity onPress={handleSearch} style={styles.searchBtn}>
             <MaterialIcons name="search" size={24} color="#800000" />
-            <Text style={styles.searchTxt}>{t('search')}</Text>
+            <Text style={styles.searchTxt}>{t('home.search')}</Text>
           </TouchableOpacity>
         </View>
         <View
@@ -962,7 +963,7 @@ const Home = ({navigation}) => {
             paddingHorizontal: '5%',
           }}>
           <Text style={[styles.topAstrologerTxt, {color: 'white', textAlign: 'center'}]}>
-            {thought?.thoughtText || t('welcome')}
+            {(language === 'Hindi' ? thought?.hindi?.thoughtText : thought?.thoughtText) || t('home.welcome')}
           </Text>
         </View>
 
@@ -985,11 +986,11 @@ const Home = ({navigation}) => {
           </View>
 
           <View style={styles.topAstrologers}>
-            <Text style={styles.topAstrologerTxt}>{t('bestAstrologers')}</Text>
+            <Text style={styles.topAstrologerTxt}>{t('home.bestAstrologers')}</Text>
             <TouchableOpacity
               style={styles.viewAllBtn}
               onPress={() => navigation.navigate('Chat')}>
-              <Text style={styles.viewAll}>{t('viewAll')}</Text>
+              <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
             </TouchableOpacity>
           </View>
         {loadingAstrologer ? (
@@ -1025,7 +1026,7 @@ const Home = ({navigation}) => {
 
         <View style={styles.separator} />
 
-        <Text style={styles.CategoryTitle}>Astrowani's Categories</Text>
+        <Text style={styles.CategoryTitle}>{t('home.categories')}</Text>
         <View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.CategoryView}>
@@ -1042,7 +1043,7 @@ const Home = ({navigation}) => {
                     onPress={() =>
                       navigation.navigate('CategoryAstrologers', {
                         categoryId: item._id,
-                        categoryName: item.name,
+                        categoryName: language === 'Hindi' ? (item.hindi?.name || item.name) : item.name,
                       })
                     }
                     key={index}
@@ -1057,7 +1058,9 @@ const Home = ({navigation}) => {
                         priority: FastImage.priority.normal,
                       }}
                     />
-                    <Text style={styles.categoryName}>{item.name}</Text>
+                    <Text style={styles.categoryName}>
+                      {language === 'Hindi' ? (item.hindi?.name || item.name) : item.name}
+                    </Text>
                   </TouchableOpacity>
                 ))
               )}
@@ -1068,7 +1071,7 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>{t('remedies')}</Text>
+          <Text style={styles.topAstrologerTxt}>{t('home.remedies')}</Text>
         </View>
 
         <HomeRemedies navigation={navigation} />
@@ -1076,11 +1079,11 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>Live Astrologers</Text>
+          <Text style={styles.topAstrologerTxt}>{t('home.liveAstrologers')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
             onPress={() => navigation.navigate('Live')}>
-            <Text style={styles.viewAll}>View All</Text>
+            <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -1096,7 +1099,7 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>Free Services</Text>
+          <Text style={styles.topAstrologerTxt}>{t('home.freeServices')}</Text>
         </View>
         <FreeServicesScreen
           services={services}
@@ -1106,7 +1109,7 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>Astro Reports</Text>
+          <Text style={styles.topAstrologerTxt}>{t('home.astroReports')}</Text>
         </View>
         <FreeServicesScreen
           services={astroServices.map(s => ({
@@ -1124,11 +1127,11 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={[styles.topAstrologers, styles.boxedHeader]}>
-          <Text style={styles.topAstrologerTxt}>Astrowani's Blog</Text>
+          <Text style={styles.topAstrologerTxt}>{t('home.blog')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
             onPress={() => navigation.navigate('BlogList', {data: blogs})}>
-            <Text style={styles.viewAll}>View All</Text>
+            <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
           </TouchableOpacity>
         </View>
         {loadingBlogs ? (
@@ -1154,8 +1157,8 @@ const Home = ({navigation}) => {
           <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>
             <View style={{alignItems: 'center', marginBottom: verticalScale(20)}}>
               <MaterialIcons name="format-quote" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
-              <Text style={[styles.topAstrologerTxt, {color: 'white', fontSize: moderateScale(20), marginTop: verticalScale(5)}]}>What Our Clients Say</Text>
-              <Text style={{color: COLORS.AstroSoftOrange, fontFamily: 'Lato-Regular', fontSize: moderateScale(12), marginTop: verticalScale(5)}}>Discover why thousands trust Astrowani</Text>
+              <Text style={[styles.topAstrologerTxt, {color: 'white', fontSize: moderateScale(20), marginTop: verticalScale(5)}]}>{t('home.whatClientsSay')}</Text>
+              <Text style={{color: COLORS.AstroSoftOrange, fontFamily: 'Lato-Regular', fontSize: moderateScale(12), marginTop: verticalScale(5)}}>{t('home.discoverTrust')}</Text>
             </View>
             
             {loadingReview ? (
@@ -1176,7 +1179,7 @@ const Home = ({navigation}) => {
             ) : (
               <View style={styles.emptyReviewCard}>
                 <MaterialIcons name="rate-review" size={moderateScale(30)} color={COLORS.AstroMaroon} />
-                <Text style={styles.emptyReviewTxt}>No reviews available yet.</Text>
+                <Text style={styles.emptyReviewTxt}>{t('home.noReviews')}</Text>
               </View>
             )}
           </View>
@@ -1187,18 +1190,12 @@ const Home = ({navigation}) => {
             <View style={{alignItems: 'center', marginBottom: verticalScale(15), marginTop: verticalScale(20)}}>
               <MaterialIcons name="stars" size={moderateScale(35)} color={COLORS.AstroSoftOrange} />
               <Text style={[styles.footerTitle, {color: 'white', fontSize: moderateScale(18), textAlign: 'center', marginTop: verticalScale(8)}]}>
-                Why Astrowani Is Best For Astrology?
+                {t('home.whyBest')}
               </Text>
             </View>
             <View style={styles.footericonView}>
               <Text style={[styles.why, {color: '#f0f0f0', textAlign: 'center', lineHeight: verticalScale(24), fontSize: moderateScale(13)}]}>
-                Astrowani reveals the destiny that Stars has designed for us.
-                Astrowani is a proven science with its methods and way of
-                interpreting the influence of stars and planets on earthly affairs
-                and human destinies. Astrowani, with its scientific method of
-                calculation and prediction of actual events, is approving enough
-                to make people start believing in it. And it has been doing the
-                same since the early Vedic period.
+                {t('home.whyBestBody')}
               </Text>
             </View>
           </View>
@@ -1250,45 +1247,45 @@ const Home = ({navigation}) => {
           onPress={() => navigation.navigate('Chat')}
           style={styles.fixedBtn}>
           <MaterialIcons name="wechat" size={22} color={COLORS.AstroMaroon} />
-          <Text style={styles.fixedBtnTxt}>Chat with Astrologer</Text>
+          <Text style={styles.fixedBtnTxt}>{t('home.chatWithAstrologer')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => navigation.navigate('Call')}
           style={styles.fixedBtn}>
           <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
-          <Text style={styles.fixedBtnTxt}>Talk To Astrologer</Text>
+          <Text style={styles.fixedBtnTxt}>{t('home.talkToAstrologer')}</Text>
         </TouchableOpacity>
       </View>
 
       <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={() => cancelCall()}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ 
-            width: '85%', 
-            backgroundColor: COLORS.AstroMaroon, 
-            borderRadius: 15, 
-            padding: 25, 
+          <View style={{
+            width: '85%',
+            backgroundColor: COLORS.AstroMaroon,
+            borderRadius: 15,
+            padding: 25,
             alignItems: 'center',
             borderWidth: 1,
             borderColor: COLORS.AstroSoftOrange
           }}>
             <ActivityIndicator size="large" color={COLORS.AstroGold} />
-            <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.AstroGold, marginTop: 20, marginBottom: 10 }}>Request Sent</Text>
+            <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.AstroGold, marginTop: 20, marginBottom: 10 }}>{t('home.requestSent')}</Text>
             <Text style={{ fontSize: 16, color: COLORS.AstroSoftOrange, textAlign: 'center', marginBottom: 25, lineHeight: 22 }}>
-              Waiting for {waitingAstroName} to accept your request...
+              {t('home.waitingFor', {name: waitingAstroName})}
             </Text>
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: COLORS.AstroSoftOrange, 
-                paddingHorizontal: 30, 
-                paddingVertical: 12, 
+            <TouchableOpacity
+              style={{
+                backgroundColor: COLORS.AstroSoftOrange,
+                paddingHorizontal: 30,
+                paddingVertical: 12,
                 borderRadius: 25,
                 width: '100%',
                 alignItems: 'center'
               }}
               onPress={() => cancelCall()}
             >
-              <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>Cancel Request</Text>
+              <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>{t('home.cancelRequest')}</Text>
             </TouchableOpacity>
           </View>
         </View>

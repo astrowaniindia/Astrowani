@@ -2,15 +2,17 @@
 // Shared hook — use this in ANY screen that has a "Chat" button
 // Handles the full request flow: create request → show popup → listen for response → navigate
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useContext } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { ensureProfileComplete } from '../utils/profileGate';
+import { LanguageContext } from '../context/LanguageContext';
 
 const useChatRequest = (navigation) => {
+  const { t } = useContext(LanguageContext);
   const [requesting, setRequesting] = useState(false);
   const [requestAstro, setRequestAstro] = useState(null);
   const [pendingRequestId, setPendingRequestId] = useState(null);
@@ -27,19 +29,19 @@ const useChatRequest = (navigation) => {
       const userStr = await AsyncStorage.getItem('userData');
       const user = userStr ? JSON.parse(userStr) : null;
       if (!user) {
-        Alert.alert('Error', 'Please log in first.');
+        Alert.alert(t('common.error'), t('chat.pleaseLogIn'));
         return;
       }
 
       const callerId = user._id || user.id || user.userId;
       if (!callerId) {
-        Alert.alert('Error', 'Session invalid. Please log out and log back in.');
+        Alert.alert(t('common.error'), t('chat.sessionInvalid'));
         return;
       }
 
       const receiverId = item._id || item.id || item.userId;
       if (!receiverId) {
-        Alert.alert('Error', 'Astrologer info missing. Please refresh and try again.');
+        Alert.alert(t('common.error'), t('chat.astrologerInfoMissing'));
         return;
       }
 
@@ -56,8 +58,8 @@ const useChatRequest = (navigation) => {
             const charge = item.chat_charge_per_minute ?? item.chatChargePerMinute ?? 0;
             if (charge > 0 && balance < charge) {
               Alert.alert(
-                'Low Balance',
-                `You need at least ₹${charge} to start a chat. Please recharge your wallet.`
+                t('chat.lowBalance'),
+                t('chat.lowBalanceMsg', { charge }),
               );
               return;
             }
@@ -142,8 +144,8 @@ const useChatRequest = (navigation) => {
               if (channelRef.current) supabase.removeChannel(channelRef.current);
               showStatusPopup({
                 variant: 'busy',
-                title: 'Astrologer Busy',
-                message: 'Astrologer is busy right now. Please try again after some time.',
+                title: t('status.astrologerBusyTitle'),
+                message: t('alerts.astrologerBusy'),
               });
             }
           }
@@ -160,11 +162,11 @@ const useChatRequest = (navigation) => {
         setRequesting(false);
         setPendingRequestId(null);
         if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
-        showStatusPopup({ variant: 'missed', title: 'Not Answered', message: 'Your chat request was not picked up. Please try again later.' });
+        showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('chat.notPickedUp') });
       }, 60000);
     } catch (err) {
       console.log('sendChatRequest error:', err?.message || JSON.stringify(err));
-      Alert.alert('Error', `Could not send request: ${err?.message || 'Please try again.'}`);
+      Alert.alert(t('common.error'), t('chat.couldNotSendRequest', { msg: err?.message || 'Please try again.' }));
     }
   };
 

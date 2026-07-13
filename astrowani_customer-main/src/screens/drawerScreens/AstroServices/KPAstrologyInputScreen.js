@@ -4,8 +4,10 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import BirthDetailsForm from './BirthDetailsForm';
 import useAstroPurchase from './useAstroPurchase';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function KPAstrologyInputScreen({navigation}) {
+  const {t} = React.useContext(LanguageContext);
   const [values, setValues] = useState({isComplete: false});
   const {service, submitting, submit} = useAstroPurchase('kp-astrology');
 
@@ -18,7 +20,7 @@ export default function KPAstrologyInputScreen({navigation}) {
 
   return (
     <ScrollView style={styles.main} contentContainerStyle={styles.content}>
-      <BirthDetailsForm title="Enter Birth Details" showName={false} onValuesChange={setValues} />
+      <BirthDetailsForm title={t('astro.enterBirthDetails')} showName={false} onValuesChange={setValues} />
       <TouchableOpacity
         style={[styles.button, (!values.isComplete || submitting) && styles.disabled]}
         disabled={!values.isComplete || submitting}
@@ -26,7 +28,7 @@ export default function KPAstrologyInputScreen({navigation}) {
         {submitting ? (
           <ActivityIndicator color={COLORS.black} />
         ) : (
-          <Text style={styles.buttonText}>Get KP Astrology Report{service ? ` — ₹${service.price}` : ''}</Text>
+          <Text style={styles.buttonText}>{t('astro.getKPReport')}{service ? ` — ₹${service.price}` : ''}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

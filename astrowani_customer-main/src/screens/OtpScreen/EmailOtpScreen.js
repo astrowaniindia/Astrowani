@@ -16,8 +16,10 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
 import {requestUserPermission} from '../../utils/PushNotification';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const EmailOtpScreen = ({navigation, route}) => {
+  const {t} = React.useContext(LanguageContext);
   const {email} = route.params;
   const [timer, setTimer] = useState(180);
   const [code, setCode] = useState('');
@@ -46,11 +48,11 @@ const EmailOtpScreen = ({navigation, route}) => {
         if (response.data.success) {
           console.log(response.data);
         } else {
-          Alert.alert('Login Failed', response.data.message);
+          Alert.alert(t('emailOtp.loginFailed'), response.data.message);
         }
       } catch (error) {
         console.error('API call error:', error);
-        Alert.alert('Login Error', 'Something went wrong. Please try again.');
+        Alert.alert(t('emailOtp.loginError'), t('emailOtp.somethingWrong'));
       }
       await new Promise(resolve => setTimeout(resolve, 2000));
       setLoading(false);
@@ -72,11 +74,11 @@ const EmailOtpScreen = ({navigation, route}) => {
         await AsyncStorage.setItem('token', res.data.token);
         navigation.navigate('DrawerNavigator');
       } else {
-        Alert.alert('Error', 'Invalid OTP. Please try again.');
+        Alert.alert(t('common.error'), t('otp.invalidTryAgain'));
       }
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Failed to verify OTP. Please try again.');
+      Alert.alert(t('common.error'), t('otp.failedVerify'));
     } finally {
       setLoading(false);
     }
@@ -112,10 +114,10 @@ const EmailOtpScreen = ({navigation, route}) => {
         barStyle="Light-content"
       />
 
-      <Text style={styles.Verifytitle}>OTP sent to your Email</Text>
+      <Text style={styles.Verifytitle}>{t('emailOtp.sentToEmail')}</Text>
       <View style={styles.OTptimeingView}>
         <Text style={styles.VerifyotpTimer}>
-          OTP expires in {formatTime(timer)}
+          {t('otp.expiresIn', {time: formatTime(timer)})}
         </Text>
       </View>
       <View style={styles.OtpInputView}>
@@ -136,13 +138,13 @@ const EmailOtpScreen = ({navigation, route}) => {
         {loading ? (
           <ActivityIndicator size="small" color={COLORS.AntiFlashWhite} />
         ) : (
-          <Text style={styles.VerifybuttonText}>Verify OTP</Text>
+          <Text style={styles.VerifybuttonText}>{t('otp.verifyBtn')}</Text>
         )}
       </TouchableOpacity>
       <View style={styles.VerifyResendOtpView}>
-        <Text style={styles.VerifyResendOtpTXt}>Didn't receive the OTP? </Text>
+        <Text style={styles.VerifyResendOtpTXt}>{t('otp.notReceived')}</Text>
         <TouchableOpacity onPress={handleResendOTP} disabled={loading}>
-          <Text style={styles.VerifyResendOtpTXt2}>Resend OTP</Text>
+          <Text style={styles.VerifyResendOtpTXt2}>{t('otp.resend')}</Text>
         </TouchableOpacity>
       </View>
     </View>

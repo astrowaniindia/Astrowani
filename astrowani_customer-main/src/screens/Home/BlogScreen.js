@@ -3,6 +3,7 @@ import { View, Text, Image, ScrollView, StyleSheet, useWindowDimensions } from '
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import RenderHTML from 'react-native-render-html'; // Import the RenderHTML component
+import { LanguageContext } from '../../context/LanguageContext';
 
 // Reset every tag to the same readable typography, no matter what formatting the
 // admin's rich-text editor baked into the pasted HTML (borders, monospace, etc.).
@@ -20,6 +21,7 @@ const HTML_TAGS_STYLES = {
 };
 
 const BlogScreen = ({ route }) => {
+  const { t } = React.useContext(LanguageContext);
   const { data = {} } = route.params || {};
   const { width } = useWindowDimensions();
 
@@ -101,7 +103,7 @@ const BlogScreen = ({ route }) => {
             <Text style={styles.content}>{contentHindi}</Text>
           )}
         </View>
-        <Text style={[styles.blogMeta, { paddingBottom: 10 }]}>Created At {formattedDate}</Text>
+        <Text style={[styles.blogMeta, { paddingBottom: 10 }]}>{t('blog.createdAt', { date: formattedDate })}</Text>
       </ScrollView>
     </View>
   );

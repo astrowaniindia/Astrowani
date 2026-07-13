@@ -7,8 +7,10 @@ import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import { supabase } from '../../api/SupabaseClient';
 import { ensureProfileComplete } from '../../utils/profileGate';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const Live = ({ navigation }) => {
+  const { t } = React.useContext(LanguageContext);
   const [liveAstro, setLiveAstro] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,7 +64,7 @@ const Live = ({ navigation }) => {
 
         <View style={styles.liveIndicator}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE</Text>
+          <Text style={styles.liveText}>{t('common.live').toUpperCase()}</Text>
         </View>
 
         <View style={styles.content}>
@@ -72,12 +74,12 @@ const Live = ({ navigation }) => {
             <Text style={styles.title} numberOfLines={1}>{item.specialties?.[0]?.name || 'Vedic Astrology'}</Text>
 
             <Text style={styles.time}>
-              <MaterialIcons name="visibility" size={moderateScale(12)} color={COLORS.AstroGold} /> {item.viewerCount || 0} watching
+              <MaterialIcons name="visibility" size={moderateScale(12)} color={COLORS.AstroGold} /> {item.viewerCount || 0} {t('live.watching')}
             </Text>
 
             <TouchableOpacity style={styles.joinButton} onPress={() => handlePress(item)}>
               <MaterialIcons name="play-circle-outline" size={moderateScale(16)} color="#fff" style={{marginRight: 4}} />
-              <Text style={styles.joinButtonText}>Join Now</Text>
+              <Text style={styles.joinButtonText}>{t('live.joinNow')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -91,7 +93,7 @@ const Live = ({ navigation }) => {
         <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
         <TextInput
            style={styles.searchInput}
-           placeholder="Search live sessions..."
+           placeholder={t('live.searchPlaceholder')}
            value={searchQuery}
            onChangeText={setSearchQuery}
            placeholderTextColor={COLORS.gray}
@@ -106,7 +108,7 @@ const Live = ({ navigation }) => {
           !loading && (
             <View style={styles.emptyBox}>
               <MaterialIcons name="live-tv" size={moderateScale(40)} color={COLORS.AstroMaroon} />
-              <Text style={styles.emptyText}>No astrologers are live right now.</Text>
+              <Text style={styles.emptyText}>{t('live.noneLive')}</Text>
             </View>
           )
         }

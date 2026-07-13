@@ -254,6 +254,7 @@ import {
   StyleSheet,
   TextInput,
   ScrollView,
+  Platform,
 } from 'react-native';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { COLORS } from '../../../Theme/Colors';
@@ -262,10 +263,12 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import DetailList from '../../component/DetailsList';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Geocoder from 'react-native-geocoding';
+import { LanguageContext } from '../../../context/LanguageContext';
 
 Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); // 
 
 const PanchangScreen = () => {
+  const { t } = React.useContext(LanguageContext);
   const [location, setLocation] = useState('New Delhi, NCT, India');
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -325,21 +328,21 @@ const PanchangScreen = () => {
   const formatPanchangData = () => {
     if (!panchangData) return [];
     return [
-      { label: 'Vaara', value: panchangData.vaara },
-      { label: 'Nakshatra', value: panchangData.nakshatra[0].name },
-      { label: 'Tithi', value: `${panchangData.tithi[0].name} (${panchangData.tithi[0].paksha})` },
-      { label: 'Karana', value: panchangData.karana[0].name },
-      { label: 'Yoga', value: panchangData.yoga[0].name },
+      { label: t('panchang.vaara'), value: panchangData.vaara },
+      { label: t('panchang.nakshatra'), value: panchangData.nakshatra[0].name },
+      { label: t('panchang.tithi'), value: `${panchangData.tithi[0].name} (${panchangData.tithi[0].paksha})` },
+      { label: t('panchang.karana'), value: panchangData.karana[0].name },
+      { label: t('panchang.yoga'), value: panchangData.yoga[0].name },
     ];
   };
 
   const formatAdditionalInfo = () => {
     if (!panchangData) return [];
     return [
-      { label: 'Sun Rise', value: new Date(panchangData.sunrise).toLocaleTimeString() },
-      { label: 'Sun Set', value: new Date(panchangData.sunset).toLocaleTimeString() },
-      { label: 'Moon Rise', value: new Date(panchangData.moonrise).toLocaleTimeString() },
-      { label: 'Moon Set', value: new Date(panchangData.moonset).toLocaleTimeString() },
+      { label: t('panchang.sunrise'), value: new Date(panchangData.sunrise).toLocaleTimeString() },
+      { label: t('panchang.sunset'), value: new Date(panchangData.sunset).toLocaleTimeString() },
+      { label: t('panchang.moonrise'), value: new Date(panchangData.moonrise).toLocaleTimeString() },
+      { label: t('panchang.moonset'), value: new Date(panchangData.moonset).toLocaleTimeString() },
     ];
   };
 
@@ -363,7 +366,7 @@ const PanchangScreen = () => {
     <View style={styles.container}>
       <View style={styles.headerContainer}>
       <GooglePlacesAutocomplete
-          placeholder="Enter your location"
+          placeholder={t('panchang.enterLocation')}
           onPress={(data, details = null) => {
             setLocation(data.description);
             const { lat, lng } = details.geometry.location;
@@ -426,15 +429,15 @@ const PanchangScreen = () => {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {loading ? (
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Text style={styles.loadingText}>{t('panchang.loading')}</Text>
         ) : error ? (
           <Text style={styles.errorText}>{error}</Text>
         ) : (
           <>
-            <DetailList title="Panchang" data={formatPanchangData()} />
-            <DetailList title="Additional Info" data={formatAdditionalInfo()} />
-            <DetailList title="Auspicious Time" data={formatAuspiciousTime()} />
-            <DetailList title="Inauspicious Time" data={formatInauspiciousTime()} />
+            <DetailList title={t('panchang.title')} data={formatPanchangData()} />
+            <DetailList title={t('panchang.additionalInfo')} data={formatAdditionalInfo()} />
+            <DetailList title={t('panchang.auspiciousTime')} data={formatAuspiciousTime()} />
+            <DetailList title={t('panchang.inauspiciousTime')} data={formatInauspiciousTime()} />
           </>
         )}
       </ScrollView>

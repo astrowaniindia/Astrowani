@@ -625,6 +625,7 @@ app.get('/api/banners/all', async (req, res) => {
         description: b.description,
         imageUrl: b.image,
         link: b.link,
+        hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
       })),
     });
   } catch (err) {
@@ -638,7 +639,7 @@ app.get('/api/thoughts/latest', async (req, res) => {
   try {
     const { data } = await supabase
       .from('thoughts')
-      .select('text, author')
+      .select('text, author, text_hi, author_hi')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(1);
@@ -646,6 +647,10 @@ app.get('/api/thoughts/latest', async (req, res) => {
     return res.status(200).json({
       thoughtText: latest?.text || 'Welcome to Astrowani!',
       author: latest?.author || '',
+      hindi: {
+        thoughtText: latest?.text_hi || latest?.text || 'एस्ट्रोवाणी में आपका स्वागत है!',
+        author: latest?.author_hi || latest?.author || '',
+      },
     });
   } catch (err) {
     console.error('GET /api/thoughts/latest error:', err.message);
@@ -662,7 +667,12 @@ app.get('/api/categories', async (req, res) => {
       .order('sort_order', { ascending: true });
     if (error) throw error;
     return res.status(200).json({
-      categories: (data || []).map((c) => ({ _id: c.id, name: c.name, image: c.image })),
+      categories: (data || []).map((c) => ({
+        _id: c.id,
+        name: c.name,
+        image: c.image,
+        hindi: { name: c.name_hi || c.name },
+      })),
     });
   } catch (err) {
     console.error('GET /api/categories error:', err.message);
@@ -728,6 +738,7 @@ app.get('/api/remedies', async (req, res) => {
         description: r.description,
         price: r.price,
         image: r.image,
+        hindi: { title: r.title_hi || r.title, description: r.description_hi || r.description },
       })),
     });
   } catch (err) {

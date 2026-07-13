@@ -147,19 +147,19 @@ module.exports = function registerAdminRoutes(app) {
   });
   crud('banners', 'banners', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['title', 'description', 'image', 'link', 'sort_order', 'is_active', 'app'],
+    allowed: ['title', 'title_hi', 'description', 'description_hi', 'image', 'link', 'sort_order', 'is_active', 'app'],
   });
   crud('thoughts', 'thoughts', {
-    allowed: ['text', 'author', 'is_active'],
+    allowed: ['text', 'text_hi', 'author', 'author_hi', 'is_active'],
   });
   crud('categories', 'categories', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['name', 'image', 'sort_order'],
+    allowed: ['name', 'name_hi', 'image', 'sort_order'],
   });
   // Remedy shop items (type = puja | gemstone | specific_puja). Admin UI filters by tab.
   crud('remedies', 'remedy_items', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['type', 'title', 'description', 'price', 'image', 'is_active', 'sort_order'],
+    allowed: ['type', 'title', 'title_hi', 'description', 'description_hi', 'price', 'image', 'is_active', 'sort_order'],
   });
   // Live-stream gift catalog.
   crud('gifts', 'gifts', {

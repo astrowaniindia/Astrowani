@@ -20,9 +20,11 @@ import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../api/SupabaseClient';
 import StarRating from '../../components/StarRating';
 import { SOCKET_URL } from '../../config/api';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
   const navigation = useNavigation();
+  const { t } = React.useContext(LanguageContext);
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitingAstroName, setWaitingAstroName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,28 +44,28 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr) {
-        Alert.alert('Error', 'Please login to continue.');
+        Alert.alert(t('common.error'), t('call.pleaseLogin'));
         return null;
       }
       const userEntireData = JSON.parse(userDataStr);
-      
+
       const { data: customer, error: customerError } = await supabase
         .from('customers')
         .select('wallet_balance')
         .eq('id', userEntireData.id)
         .single();
-        
+
       if (customerError) {
         console.error('Wallet Error:', customerError);
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return null;
       }
-      
+
       const pricePerMin = item.videoPrice || item.chargePerMinute || 40;
       const minRequired = pricePerMin * 5; // Require at least 5 mins balance
-      
+
       if (customer.wallet_balance < minRequired) {
-        Alert.alert('Insufficient Balance', `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`);
+        Alert.alert(t('alerts.insufficientBalance'), `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`);
         return null;
       }
       
@@ -85,7 +87,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
         
         if (callResponse.status !== 200) {
           setIsWaiting(false);
-          Alert.alert('Error', 'Failed to generate call room.');
+          Alert.alert(t('common.error'), t('alerts.failedGenerateRoom'));
           return null;
         }
 
@@ -109,7 +111,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
           
         if (requestError) {
           setIsWaiting(false);
-          Alert.alert('Error', 'Failed to send request to astrologer.');
+          Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
           return null;
         }
         
@@ -126,7 +128,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
               } else if (payload.new.status === 'rejected') {
                 supabase.removeChannel(channel);
                 setIsWaiting(false);
-                Alert.alert('Declined', `${item.name} is currently busy and declined the call.`);
+                Alert.alert(t('alerts.declined'), t('alerts.declinedBusy', { name: item.name }));
               }
             }
           )
@@ -135,7 +137,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
       } catch (err) {
         setIsWaiting(false);
         console.log(err?.response || err);
-        Alert.alert('Error', 'Failed to initiate call');
+        Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
       }
         
     } catch (error) {
@@ -171,11 +173,11 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
 
   // Show an "unavailable" message when a customer taps a service the astrologer
   // has turned off — the astrologer stays visible; only the button is disabled.
-  const showUnavailable = (item, serviceLabel) => {
-    Alert.alert(
-      'Unavailable',
-      `${item.name || 'This astrologer'} is not available for ${serviceLabel} right now.`,
-    );
+  const showUnavailable = (item, serviceKey) => {
+    const key = serviceKey === 'video' ? 'alerts.notAvailableVideo'
+      : serviceKey === 'call' ? 'alerts.notAvailableCall'
+      : 'alerts.notAvailableChat';
+    Alert.alert(t('alerts.unavailable'), t(key, { name: item.name || 'This astrologer' }));
   };
 
   const renderButton = (item) => {
@@ -188,10 +190,10 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             <TouchableOpacity
               style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
               activeOpacity={0.8}
-              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'video call'))}
+              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'video'))}
             >
               <MaterialIcons name={enabled ? 'videocam' : 'videocam-off'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
-              <Text style={styles.chatText}>{enabled ? 'Video' : 'Unavailable'}</Text>
+              <Text style={styles.chatText}>{enabled ? t('common.video') : t('alerts.unavailable')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -204,10 +206,10 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             <TouchableOpacity
               style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
               activeOpacity={0.8}
-              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'calls'))}
+              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'call'))}
             >
               <MaterialIcons name={enabled ? 'call' : 'phone-disabled'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
-              <Text style={styles.chatText}>{enabled ? 'Call' : 'Unavailable'}</Text>
+              <Text style={styles.chatText}>{enabled ? t('common.call') : t('alerts.unavailable')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -218,7 +220,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             style={styles.actionBtnProfile}
             onPress={() => actionButton(item)}
           >
-            <Text style={styles.actionBtnProfileText}>Profile</Text>
+            <Text style={styles.actionBtnProfileText}>{t('common.viewProfile')}</Text>
           </TouchableOpacity>
         );
       case 'chat':
@@ -232,7 +234,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
               onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'chat'))}
             >
               <MaterialIcons name={enabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
-              <Text style={styles.chatText}>{enabled ? 'Chat' : 'Unavailable'}</Text>
+              <Text style={styles.chatText}>{enabled ? t('common.chat') : t('alerts.unavailable')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -281,12 +283,12 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             </Text>
 
             <Text style={styles.experience}>
-              <MaterialIcons name="work-outline" size={moderateScale(12)} color={COLORS.AstroMaroon} /> Exp: {item.experience ?? '0'} yrs
+              <MaterialIcons name="work-outline" size={moderateScale(12)} color={COLORS.AstroMaroon} /> {t('common.exp')}: {item.experience ?? '0'} {t('common.yrs')}
             </Text>
 
             <View style={styles.priceRow}>
               <Text style={styles.offer}>
-                {item.pricing ? `₹${item.pricing}/min` : 'Free'}
+                {item.pricing ? `₹${item.pricing}/min` : t('common.free')}
               </Text>
             </View>
           </View>
@@ -301,9 +303,9 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     <View style={{ flex: 1, backgroundColor: COLORS.AstroSoftOrange }}>
       <View style={styles.searchContainer}>
         <MaterialIcons name="search" size={moderateScale(24)} color={COLORS.AstroMaroon} />
-        <TextInput 
+        <TextInput
            style={styles.searchInput}
-           placeholder="Search astrologer by name or skill..."
+           placeholder={t('common.searchAstrologer')}
            value={searchQuery}
            onChangeText={setSearchQuery}
            placeholderTextColor={COLORS.AshGray}
@@ -330,22 +332,22 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             borderColor: COLORS.AstroSoftOrange
           }}>
             <ActivityIndicator size="large" color={COLORS.AstroGold} />
-            <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.AstroGold, marginTop: 20, marginBottom: 10 }}>Request Sent</Text>
+            <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.AstroGold, marginTop: 20, marginBottom: 10 }}>{t('home.requestSent')}</Text>
             <Text style={{ fontSize: 16, color: COLORS.AstroSoftOrange, textAlign: 'center', marginBottom: 25, lineHeight: 22 }}>
-              Waiting for {waitingAstroName} to accept your request...
+              {t('home.waitingFor', { name: waitingAstroName })}
             </Text>
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: COLORS.AstroSoftOrange, 
-                paddingHorizontal: 30, 
-                paddingVertical: 12, 
+            <TouchableOpacity
+              style={{
+                backgroundColor: COLORS.AstroSoftOrange,
+                paddingHorizontal: 30,
+                paddingVertical: 12,
                 borderRadius: 25,
                 width: '100%',
                 alignItems: 'center'
               }}
               onPress={() => setIsWaiting(false)}
             >
-              <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>Cancel Request</Text>
+              <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>{t('home.cancelRequest')}</Text>
             </TouchableOpacity>
           </View>
         </View>

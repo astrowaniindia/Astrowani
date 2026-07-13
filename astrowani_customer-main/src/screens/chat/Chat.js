@@ -9,8 +9,10 @@ import Instance from '../../api/ApiCall';
 import { supabase } from '../../api/SupabaseClient';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const Chat = ({ navigation }) => {
+  const { t } = React.useContext(LanguageContext);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [specialAstro, setSpecialAstro] = useState([]);
@@ -72,7 +74,7 @@ const Chat = ({ navigation }) => {
   }
 
   if (error) {
-    return <Text style={styles.errorText}>Error: {error}</Text>;
+    return <Text style={styles.errorText}>{t('common.error')}: {error}</Text>;
   }
 
   return (

@@ -6,10 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import useAstroPurchase from './useAstroPurchase';
-
-const GENDER_OPTIONS = [
-  {label: 'Male', value: 'male'}, {label: 'Female', value: 'female'}, {label: 'Other', value: 'other'},
-];
+import {LanguageContext} from '../../../context/LanguageContext';
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -18,6 +15,10 @@ function toApiDate(d) {
 }
 
 export default function NumerologyInputScreen({navigation}) {
+  const {t} = React.useContext(LanguageContext);
+  const GENDER_OPTIONS = [
+    {label: t('register.male'), value: 'male'}, {label: t('register.female'), value: 'female'}, {label: t('register.other'), value: 'other'},
+  ];
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [gender, setGender] = useState(null);
@@ -34,25 +35,25 @@ export default function NumerologyInputScreen({navigation}) {
 
   return (
     <ScrollView style={styles.main} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Enter Your Details</Text>
+      <Text style={styles.title}>{t('kundali.enterDetails')}</Text>
       <TextInput
-        placeholder="Enter full name" placeholderTextColor={COLORS.placeholder}
+        placeholder={t('kundali.enterFullName')} placeholderTextColor={COLORS.placeholder}
         style={styles.input} value={name} onChangeText={setName}
       />
       <TextInput
-        placeholder="Enter mobile number" placeholderTextColor={COLORS.placeholder}
+        placeholder={t('astro.enterMobileNumber')} placeholderTextColor={COLORS.placeholder}
         style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad"
       />
       <View style={styles.dropdownContainer}>
         <Dropdown
           style={styles.dropdown} data={GENDER_OPTIONS} labelField="label" valueField="value"
-          placeholder="Select Gender" placeholderStyle={styles.dropdownText} selectedTextStyle={styles.dropdownText}
+          placeholder={t('kundali.selectGender')} placeholderStyle={styles.dropdownText} selectedTextStyle={styles.dropdownText}
           value={gender} onChange={(item) => setGender(item.value)}
           renderRightIcon={() => <Ionicons name="chevron-down-outline" color={COLORS.AstroMaroon} size={20} />}
         />
       </View>
       <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
-        <Text style={styles.dropdownText}>{dob ? dob.toLocaleDateString() : 'Select Date of Birth'}</Text>
+        <Text style={styles.dropdownText}>{dob ? dob.toLocaleDateString() : t('kundali.selectDob')}</Text>
         <Ionicons name="calendar" color={COLORS.AstroMaroon} size={22} />
       </TouchableOpacity>
       {showDatePicker && (
@@ -71,7 +72,7 @@ export default function NumerologyInputScreen({navigation}) {
         {submitting ? (
           <ActivityIndicator color={COLORS.black} />
         ) : (
-          <Text style={styles.buttonText}>Get Numerology Report{service ? ` — ₹${service.price}` : ''}</Text>
+          <Text style={styles.buttonText}>{t('astro.getNumerologyReport')}{service ? ` — ₹${service.price}` : ''}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

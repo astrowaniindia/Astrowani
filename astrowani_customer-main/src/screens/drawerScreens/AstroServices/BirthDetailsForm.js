@@ -14,14 +14,9 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {GooglePlacesAutocomplete} from 'react-native-google-places-autocomplete';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 const GOOGLE_PLACES_KEY = 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA';
-
-const GENDER_OPTIONS = [
-  {label: 'Male', value: 'male'},
-  {label: 'Female', value: 'female'},
-  {label: 'Other', value: 'other'},
-];
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -35,7 +30,14 @@ function toApiTime(d) {
   return `${hh}:${min}`;
 }
 
-export default function BirthDetailsForm({title = 'Enter Your Details', showName = true, showGender = false, onValuesChange}) {
+export default function BirthDetailsForm({title, showName = true, showGender = false, onValuesChange}) {
+  const {t} = React.useContext(LanguageContext);
+  const displayTitle = title || t('kundali.enterDetails');
+  const GENDER_OPTIONS = [
+    {label: t('register.male'), value: 'male'},
+    {label: t('register.female'), value: 'female'},
+    {label: t('register.other'), value: 'other'},
+  ];
   const [name, setName] = useState('');
   const [gender, setGender] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -65,11 +67,11 @@ export default function BirthDetailsForm({title = 'Enter Your Details', showName
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.title}>{displayTitle}</Text>
 
       {showName && (
         <TextInput
-          placeholder="Enter full name"
+          placeholder={t('kundali.enterFullName')}
           placeholderTextColor={COLORS.placeholder}
           style={styles.input}
           value={name}
@@ -84,7 +86,7 @@ export default function BirthDetailsForm({title = 'Enter Your Details', showName
             data={GENDER_OPTIONS}
             labelField="label"
             valueField="value"
-            placeholder="Select Gender"
+            placeholder={t('kundali.selectGender')}
             placeholderStyle={styles.dropdownText}
             selectedTextStyle={styles.dropdownText}
             value={gender}
@@ -95,19 +97,19 @@ export default function BirthDetailsForm({title = 'Enter Your Details', showName
       )}
 
       <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
-        <Text style={styles.dropdownText}>{dateOfBirth ? dateOfBirth.toLocaleDateString() : 'Select Date of Birth'}</Text>
+        <Text style={styles.dropdownText}>{dateOfBirth ? dateOfBirth.toLocaleDateString() : t('kundali.selectDob')}</Text>
         <Ionicons name="calendar" color={COLORS.AstroMaroon} size={22} />
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.input} onPress={() => setShowTimePicker(true)}>
         <Text style={styles.dropdownText}>
-          {timeOfBirth ? timeOfBirth.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : 'Select Time of Birth'}
+          {timeOfBirth ? timeOfBirth.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : t('kundali.selectTob')}
         </Text>
         <Ionicons name="alarm-outline" color={COLORS.AstroMaroon} size={22} />
       </TouchableOpacity>
 
       <GooglePlacesAutocomplete
-        placeholder="Enter Place of Birth"
+        placeholder={t('kundali.enterPlaceOfBirth')}
         onPress={(data, details = null) => {
           if (!details) return;
           const {lat, lng} = details.geometry.location;

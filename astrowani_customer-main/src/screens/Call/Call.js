@@ -518,8 +518,10 @@ import { supabase } from '../../api/SupabaseClient';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { SOCKET_URL } from '../../config/api';
 import io from 'socket.io-client';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const CallsList = ({navigation}) => {
+  const { t } = React.useContext(LanguageContext);
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filteredCalls, setFilteredCalls] = useState([]);
@@ -619,7 +621,7 @@ const CallsList = ({navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
-        Alert.alert('Error', 'Please login to continue.');
+        Alert.alert(t('common.error'), t('call.pleaseLogin'));
         return;
       }
       const userEntireData = JSON.parse(userDataStr);
@@ -634,12 +636,12 @@ const CallsList = ({navigation}) => {
         .single();
 
       if (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return;
       }
       if (customer.wallet_balance < minRequired) {
         Alert.alert(
-          'Insufficient Balance',
+          t('alerts.insufficientBalance'),
           `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
         );
         return;
@@ -657,7 +659,7 @@ const CallsList = ({navigation}) => {
 
       if (response.status !== 200) {
         setIsWaiting(false);
-        Alert.alert('Error', 'Failed to initiate call.');
+        Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
         return;
       }
 
@@ -687,7 +689,7 @@ const CallsList = ({navigation}) => {
 
       if (reqErr) {
         setIsWaiting(false);
-        Alert.alert('Error', 'Failed to send call request.');
+        Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
 
@@ -737,7 +739,7 @@ const CallsList = ({navigation}) => {
       // Socket listeners — mount-time socket is already connected and in customer's room
       socketRef.current?.once('call_accepted', data => goToCall(data.sessionId));
       socketRef.current?.on('call_rejected', () =>
-        cleanupAndAlert('Astrologer is busy right now. Please try again after some time.', 'rejected', 'Astrologer Busy'),
+        cleanupAndAlert(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy'),
       );
 
       // Supabase Realtime backup (catches acceptance even if socket misses it)
@@ -764,12 +766,12 @@ const CallsList = ({navigation}) => {
 
       // Auto-cancel after 1 minute if vendor doesn't respond → missed call
       setTimeout(() => {
-        cleanupAndAlert('Your audio call was not picked up. Please try again later.', 'missed', 'Not Answered');
+        cleanupAndAlert(t('alerts.notPickedUpAudio'), 'missed', 'Not Answered');
       }, 60000);
     } catch (err) {
       setIsWaiting(false);
       console.error('[CallScreen] getRoomTokenWebCall error:', err);
-      Alert.alert('Error', 'Failed to initiate call. Please try again.');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
     }
   };
   const fetchCalls = useCallback(async () => {
@@ -905,22 +907,22 @@ const CallsList = ({navigation}) => {
             borderColor: COLORS.AstroSoftOrange
           }}>
             <ActivityIndicator size="large" color={COLORS.AstroGold} />
-            <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.AstroGold, marginTop: 20, marginBottom: 10 }}>Request Sent</Text>
+            <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.AstroGold, marginTop: 20, marginBottom: 10 }}>{t('home.requestSent')}</Text>
             <Text style={{ fontSize: 16, color: COLORS.AstroSoftOrange, textAlign: 'center', marginBottom: 25, lineHeight: 22 }}>
-              Waiting for {waitingAstroName} to accept your request...
+              {t('home.waitingFor', { name: waitingAstroName })}
             </Text>
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: COLORS.AstroSoftOrange, 
-                paddingHorizontal: 30, 
-                paddingVertical: 12, 
+            <TouchableOpacity
+              style={{
+                backgroundColor: COLORS.AstroSoftOrange,
+                paddingHorizontal: 30,
+                paddingVertical: 12,
                 borderRadius: 25,
                 width: '100%',
                 alignItems: 'center'
               }}
               onPress={cancelCall}
             >
-              <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>Cancel Request</Text>
+              <Text style={{ color: COLORS.AstroMaroon, fontWeight: 'bold', fontSize: 16 }}>{t('home.cancelRequest')}</Text>
             </TouchableOpacity>
           </View>
         </View>

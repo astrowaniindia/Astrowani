@@ -10,8 +10,10 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const FaqScreen = () => {
+  const { t } = React.useContext(LanguageContext);
   const [activeIndex, setActiveIndex] = useState(null);
 
   const toggleSection = index => {
@@ -19,33 +21,15 @@ const FaqScreen = () => {
   };
 
   const sections = [
-    {
-      title: 'I want to chat with an Astrologer. How do I start?',
-      content:
-        'In order to chat with an Astrologer, all you need to do is login to your Astrowani account or sign up to create an account, add money to your wallet, and then simply choose the Astrologer you want to chat with and begin your session.',
-    },
-    {
-      title:
-        'Is there any requirement of minimum balance before I begin consulting an Astrologer?',
-      content:
-        'You need to have a minimum balance of $10 to start consulting an Astrologer on Astrowani.',
-    },
-    {
-      title: 'Are the Astrologers verified?',
-      content:
-        'Yes, all the Astrologers on Astrowani are verified professionals with years of experience.',
-    },
-    {
-      title:
-        'If I get a phone call in between a chat, will it automatically end my session?',
-      content:
-        'No, your session will not end automatically if you receive a phone call. The chat will be paused, and you can resume once the call ends.',
-    },
+    { title: t('faq.q1'), content: t('faq.a1') },
+    { title: t('faq.q2'), content: t('faq.a2') },
+    { title: t('faq.q3'), content: t('faq.a3') },
+    { title: t('faq.q4'), content: t('faq.a4') },
   ];
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Frequently Asked Questions</Text>
+      <Text style={styles.title}>{t('faq.title')}</Text>
       {sections.map((section, index) => {
         const isActive = activeIndex === index;
         return (

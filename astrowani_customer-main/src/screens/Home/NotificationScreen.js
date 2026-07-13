@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const dummyNotifications = [
   { id: '1', title: 'Welcome to Astrowani!', message: 'Thank you for joining our community.', time: 'Just now', read: false },
@@ -11,6 +12,7 @@ const dummyNotifications = [
 ];
 
 const NotificationScreen = ({ navigation }) => {
+  const { t } = React.useContext(LanguageContext);
   const renderNotification = ({ item }) => (
     <TouchableOpacity style={[styles.notificationCard, item.read ? styles.readCard : styles.unreadCard]}>
       <View style={styles.iconContainer}>
@@ -34,7 +36,7 @@ const NotificationScreen = ({ navigation }) => {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Icon name="notifications-off" size={60} color="gray" />
-            <Text style={styles.emptyText}>No new notifications</Text>
+            <Text style={styles.emptyText}>{t('notifications.none')}</Text>
           </View>
         }
       />

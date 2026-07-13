@@ -5,8 +5,10 @@ import React from 'react';
 import { Modal, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
+import { LanguageContext } from '../context/LanguageContext';
 
 const RequestingPopup = ({ visible, astro, onCancel }) => {
+  const { t } = React.useContext(LanguageContext);
   if (!visible) return null;
   const name = astro?.name || astro?.firstName || 'the astrologer';
   return (
@@ -14,10 +16,10 @@ const RequestingPopup = ({ visible, astro, onCancel }) => {
       <View style={styles.overlay}>
         <View style={styles.card}>
           <ActivityIndicator size="large" color={COLORS.AstroGold} />
-          <Text style={styles.title}>Request Sent</Text>
-          <Text style={styles.sub}>Waiting for {name} to accept your request...</Text>
+          <Text style={styles.title}>{t('home.requestSent')}</Text>
+          <Text style={styles.sub}>{t('home.waitingFor', { name })}</Text>
           <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
-            <Text style={styles.cancelText}>Cancel Request</Text>
+            <Text style={styles.cancelText}>{t('home.cancelRequest')}</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -4,8 +4,10 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import BirthDetailsForm from './BirthDetailsForm';
 import useAstroPurchase from './useAstroPurchase';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function MatchingInputScreen({navigation}) {
+  const {t} = React.useContext(LanguageContext);
   const [boy, setBoy] = useState({isComplete: false});
   const [girl, setGirl] = useState({isComplete: false});
   const {service, submitting, submit} = useAstroPurchase('matching');
@@ -22,9 +24,9 @@ export default function MatchingInputScreen({navigation}) {
 
   return (
     <ScrollView style={styles.main} contentContainerStyle={styles.content}>
-      <BirthDetailsForm title="Boy's Details" showName={false} onValuesChange={setBoy} />
+      <BirthDetailsForm title={t('match.boysDetails')} showName={false} onValuesChange={setBoy} />
       <View style={styles.divider} />
-      <BirthDetailsForm title="Girl's Details" showName={false} onValuesChange={setGirl} />
+      <BirthDetailsForm title={t('match.girlsDetails')} showName={false} onValuesChange={setGirl} />
       <TouchableOpacity
         style={[styles.button, (!isComplete || submitting) && styles.disabled]}
         disabled={!isComplete || submitting}
@@ -32,7 +34,7 @@ export default function MatchingInputScreen({navigation}) {
         {submitting ? (
           <ActivityIndicator color={COLORS.black} />
         ) : (
-          <Text style={styles.buttonText}>Match Kundli{service ? ` — ₹${service.price}` : ''}</Text>
+          <Text style={styles.buttonText}>{t('astro.matchKundli')}{service ? ` — ₹${service.price}` : ''}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

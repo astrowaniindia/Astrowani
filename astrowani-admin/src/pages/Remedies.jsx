@@ -9,7 +9,7 @@ const TABS = [
   { key: 'specific_puja', label: 'Specific Puja' },
 ];
 
-const EMPTY = { title: '', description: '', price: 0, image: '', is_active: true, sort_order: 0 };
+const EMPTY = { title: '', title_hi: '', description: '', description_hi: '', price: 0, image: '', is_active: true, sort_order: 0 };
 
 export default function Remedies() {
   const [tab, setTab] = useState('puja');
@@ -93,10 +93,14 @@ export default function Remedies() {
 
       {editing && (
         <Modal title={`${editing.id ? 'Edit' : 'New'} ${tabLabel} item`} onClose={() => setEditing(null)}>
-          <div className="field"><label>Title</label>
+          <div className="field"><label>Title (English)</label>
             <input type="text" value={editing.title} onChange={(e) => set('title', e.target.value)} /></div>
-          <div className="field"><label>Description</label>
+          <div className="field"><label>Title (Hindi)</label>
+            <input type="text" value={editing.title_hi || ''} onChange={(e) => set('title_hi', e.target.value)} placeholder="हिंदी में शीर्षक" /></div>
+          <div className="field"><label>Description (English)</label>
             <textarea value={editing.description || ''} onChange={(e) => set('description', e.target.value)} /></div>
+          <div className="field"><label>Description (Hindi)</label>
+            <textarea value={editing.description_hi || ''} onChange={(e) => set('description_hi', e.target.value)} placeholder="हिंदी में विवरण" /></div>
           <ImageField label="Item image (URL or upload)" value={editing.image} onChange={(v) => set('image', v)} />
           <div className="two-col">
             <div className="field"><label>Price (₹)</label>

@@ -7,6 +7,7 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import {supabase} from '../../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -18,6 +19,7 @@ const getCustomerId = async () => {
 
 const SessionList = ({callTypes, sessionTypeLabel}) => {
   const navigation = useNavigation();
+  const {t} = React.useContext(LanguageContext);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const channelRef = useRef(null);
@@ -35,6 +37,11 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
     return a || null;
   }, []);
 
+  // Stable English key for color lookup in SessionDetails — sessionTypeLabel is now
+  // translated for display, so it can't be used as a lookup key.
+  const typeKey = callTypes.includes('video') ? 'video' : callTypes.includes('live') ? 'live'
+    : callTypes.includes('chat') ? 'chat' : 'audio';
+
   const formatSession = useCallback(
     (item, astro) => {
       const start = new Date(item.started_at || item.created_at);
@@ -45,8 +52,8 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
       const deduction = Math.round(durationMins * (item.per_minute_charge || 0));
 
       const name = astro
-        ? `${astro.first_name || ''} ${astro.last_name || ''}`.trim() || 'Astrologer'
-        : 'Astrologer';
+        ? `${astro.first_name || ''} ${astro.last_name || ''}`.trim() || t('common.astrologer')
+        : t('common.astrologer');
       const image =
         astro?.profile_image ||
         astro?.profile_pic_url ||
@@ -57,6 +64,7 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
         referenceId: item.id || 'N/A',
         name,
         chatType: sessionTypeLabel,
+        typeKey,
         time: start.toLocaleString('en-IN', {
           day: '2-digit', month: 'short', year: 'numeric',
           hour: '2-digit', minute: '2-digit', hour12: true,
@@ -75,7 +83,7 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
         },
       };
     },
-    [sessionTypeLabel],
+    [sessionTypeLabel, typeKey],
   );
 
   useFocusEffect(
@@ -209,9 +217,9 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No {sessionTypeLabel} found</Text>
+          <Text style={styles.emptyText}>{t('session.noneFound', {type: sessionTypeLabel})}</Text>
           <Text style={styles.emptySubText}>
-            Sessions will appear here after they end
+            {t('session.willAppear')}
           </Text>
         </View>
       }
@@ -219,43 +227,58 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
   );
 };
 
-const ChatSession  = () => <SessionList callTypes={['chat']}           sessionTypeLabel="Chat Session" />;
-const CallSession  = () => <SessionList callTypes={['audio', 'voice']} sessionTypeLabel="Audio Call" />;
-const VideoSession = () => <SessionList callTypes={['video']}          sessionTypeLabel="Video Call" />;
-const LiveSession  = () => <SessionList callTypes={['live']}           sessionTypeLabel="Live Session" />;
+const ChatSession = () => {
+  const {t} = React.useContext(LanguageContext);
+  return <SessionList callTypes={['chat']} sessionTypeLabel={t('session.chatSession')} />;
+};
+const CallSession = () => {
+  const {t} = React.useContext(LanguageContext);
+  return <SessionList callTypes={['audio', 'voice']} sessionTypeLabel={t('session.audioCall')} />;
+};
+const VideoSession = () => {
+  const {t} = React.useContext(LanguageContext);
+  return <SessionList callTypes={['video']} sessionTypeLabel={t('session.videoCall')} />;
+};
+const LiveSession = () => {
+  const {t} = React.useContext(LanguageContext);
+  return <SessionList callTypes={['live']} sessionTypeLabel={t('session.liveSession')} />;
+};
 
-const MySessionsScreen = () => (
-  <Tab.Navigator
-    initialRouteName="ChatSession"
-    screenOptions={{
-      tabBarScrollEnabled: true,
-      tabBarLabelStyle: {
-        fontSize: moderateScale(13),
-        fontWeight: 'bold',
-        textTransform: 'none',
-      },
-      tabBarIndicatorStyle: {
-        backgroundColor: COLORS.AstroMaroon,
-        height: verticalScale(3),
-      },
-      tabBarActiveTintColor: COLORS.AstroMaroon,
-      tabBarInactiveTintColor: '#888',
-      tabBarStyle: {
-        backgroundColor: '#fff',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: {width: 0, height: 1},
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-      },
-      tabBarPressColor: COLORS.AstroSoftOrange,
-    }}>
-    <Tab.Screen name="ChatSession"  component={ChatSession}  options={{title: 'Chat'}} />
-    <Tab.Screen name="CallSession"  component={CallSession}  options={{title: 'Audio Call'}} />
-    <Tab.Screen name="VideoSession" component={VideoSession} options={{title: 'Video Call'}} />
-    <Tab.Screen name="LiveSession"  component={LiveSession}  options={{title: 'Live'}} />
-  </Tab.Navigator>
-);
+const MySessionsScreen = () => {
+  const {t} = React.useContext(LanguageContext);
+  return (
+    <Tab.Navigator
+      initialRouteName="ChatSession"
+      screenOptions={{
+        tabBarScrollEnabled: true,
+        tabBarLabelStyle: {
+          fontSize: moderateScale(13),
+          fontWeight: 'bold',
+          textTransform: 'none',
+        },
+        tabBarIndicatorStyle: {
+          backgroundColor: COLORS.AstroMaroon,
+          height: verticalScale(3),
+        },
+        tabBarActiveTintColor: COLORS.AstroMaroon,
+        tabBarInactiveTintColor: '#888',
+        tabBarStyle: {
+          backgroundColor: '#fff',
+          elevation: 2,
+          shadowColor: '#000',
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.06,
+          shadowRadius: 3,
+        },
+        tabBarPressColor: COLORS.AstroSoftOrange,
+      }}>
+      <Tab.Screen name="ChatSession"  component={ChatSession}  options={{title: t('session.tabChat')}} />
+      <Tab.Screen name="CallSession"  component={CallSession}  options={{title: t('session.audioCall')}} />
+      <Tab.Screen name="VideoSession" component={VideoSession} options={{title: t('session.videoCall')}} />
+      <Tab.Screen name="LiveSession"  component={LiveSession}  options={{title: t('session.tabLive')}} />
+    </Tab.Navigator>
+  );
+};
 
 export default MySessionsScreen;
 
