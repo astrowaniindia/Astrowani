@@ -1,109 +1,170 @@
-import React from 'react';
-import { View, Text, Image, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  useWindowDimensions,
+} from 'react-native';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
-import RenderHTML from 'react-native-render-html'; // Import the RenderHTML component
+import RenderHTML from 'react-native-render-html';
 import { LanguageContext } from '../../context/LanguageContext';
 
-// Reset every tag to the same readable typography, no matter what formatting the
-// admin's rich-text editor baked into the pasted HTML (borders, monospace, etc.).
 const HTML_TAGS_STYLES = {
-  body: { fontFamily: 'Lato-Regular', color: COLORS.black },
-  p: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), lineHeight: verticalScale(24), marginBottom: verticalScale(10) },
-  div: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), lineHeight: verticalScale(24) },
-  span: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15) },
-  li: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), lineHeight: verticalScale(24) },
-  h1: { fontFamily: 'Lato-Bold', fontSize: moderateScale(20), marginBottom: verticalScale(10) },
-  h2: { fontFamily: 'Lato-Bold', fontSize: moderateScale(18), marginBottom: verticalScale(8) },
-  h3: { fontFamily: 'Lato-Bold', fontSize: moderateScale(16), marginBottom: verticalScale(8) },
-  strong: { fontFamily: 'Lato-Bold' },
-  b: { fontFamily: 'Lato-Bold' },
+  body: { fontFamily: 'Lato-Regular', color: '#333333' },
+  p: {
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(15),
+    lineHeight: verticalScale(24),
+    marginBottom: verticalScale(10),
+    color: '#333333',
+  },
+  div: {
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(15),
+    lineHeight: verticalScale(24),
+    color: '#333333',
+  },
+  span: { fontFamily: 'Lato-Regular', fontSize: moderateScale(15), color: '#333333' },
+  li: {
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(15),
+    lineHeight: verticalScale(24),
+    color: '#333333',
+  },
+  h1: { fontFamily: 'Lato-Bold', fontSize: moderateScale(20), color: '#1A1A1A', marginBottom: verticalScale(10) },
+  h2: { fontFamily: 'Lato-Bold', fontSize: moderateScale(18), color: '#1A1A1A', marginBottom: verticalScale(8) },
+  h3: { fontFamily: 'Lato-Bold', fontSize: moderateScale(16), color: '#1A1A1A', marginBottom: verticalScale(8) },
+  strong: { fontFamily: 'Lato-Bold', color: '#1A1A1A' },
+  b: { fontFamily: 'Lato-Bold', color: '#1A1A1A' },
 };
 
-const BlogScreen = ({ route }) => {
-  const { t } = React.useContext(LanguageContext);
-  const { data = {} } = route.params || {};
-  const { width } = useWindowDimensions();
-
-  // console.log("data:", data);
-
-
-  const thumbnail = data.thumbnail || 'https://via.placeholder.com/150';
-  const title = data.title || 'No title';
-  const metaDescription = data.metaDescription || 'No description available';
-  const content = data?.english?.content || '<p>Content not available.</p>'; // Assuming content might be HTML
-  const contentHindi = data?.hindi?.content || '<p>Content not available.</p>'; // Assuming content might be HTML
-  const excerpt = data.excerpt || 'No excerpt available.';
-
-  const date = data.createdAt ? new Date(data.createdAt) : new Date();
-  const formattedDate = date.toLocaleDateString();
-
-  // Simple check for HTML content; you might need a more robust check depending on your use case
-  const isHTML = /<\/?[a-z][\s\S]*>/i.test(content);
-
-  const isHindiHTML = /<\/?[a-z][\s\S]*>/i.test(contentHindi);
-
-  // Strip <style> blocks, inline style="" attributes, and pre/code tags (some blog content is
-  // pasted from rich-text editors with inline monospace/bordered styling baked in) so every
-  // blog renders with consistent, readable typography regardless of how the admin authored it.
-  const cleanHTML = (html) => html
+const cleanHTML = (html) =>
+  html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/\sstyle="[^"]*"/gi, '')
     .replace(/<\/?(pre|code)[^>]*>/gi, '');
 
+const BlogScreen = ({ route }) => {
+  const { language } = React.useContext(LanguageContext);
+  const { data = {} } = route.params || {};
+  const { width } = useWindowDimensions();
+
+  const hasHindi = !!(data?.hindi?.title || data?.hindi?.content);
+  const hasEnglish = !!(data?.english?.title || data?.english?.content || data?.title);
+
+  const initialLang = language === 'Hindi' && hasHindi ? 'hi' : 'en';
+  const [activeLang, setActiveLang] = useState(initialLang);
+
+  const category = data.category?.name;
+  const date = data.createdAt ? new Date(data.createdAt) : new Date();
+  const formattedDate = date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const title =
+    activeLang === 'hi'
+      ? data?.hindi?.title || data?.title || 'No title'
+      : data?.english?.title || data?.title || 'No title';
+
+  const metaDesc =
+    activeLang === 'hi'
+      ? data?.hindi?.metaDescription || data?.metaDescription || ''
+      : data?.english?.metaDescription || data?.metaDescription || '';
+
+  const excerpt =
+    activeLang === 'hi'
+      ? data?.hindi?.excerpt || data?.excerpt || ''
+      : data?.english?.excerpt || data?.excerpt || '';
+
+  const rawContent =
+    activeLang === 'hi'
+      ? data?.hindi?.content || '<p>Content not available.</p>'
+      : data?.english?.content || '<p>Content not available.</p>';
+
+  const isHTML = /<\/?[a-z][\s\S]*>/i.test(rawContent);
 
   return (
     <View style={styles.container}>
-      <ScrollView>
-        {/* Image Section with Default Image */}
-        <Image source={{ uri: thumbnail }} style={styles.imageBackground} />
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Hero image */}
+        {data.thumbnail ? (
+          <Image source={{ uri: data.thumbnail }} style={styles.heroImage} resizeMode="cover" />
+        ) : (
+          <View style={styles.heroImagePlaceholder} />
+        )}
 
-        {/* Guidance Section */}
-        <View style={styles.guidanceContainer}>
-          <Text style={styles.guidanceSubtitle}>{data?.english?.metaDescription}</Text>
-          <Text style={styles.guidanceSubtitle}>{data?.hindi?.metaDescription}</Text>
-        </View>
+        <View style={styles.body}>
+          {/* Category badge + date */}
+          <View style={styles.metaRow}>
+            {category ? (
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryBadgeText}>{category}</Text>
+              </View>
+            ) : (
+              <View />
+            )}
+            <Text style={styles.dateText}>{formattedDate}</Text>
+          </View>
 
-        {/* Blog Description Section */}
-        <View style={styles.blogDescriptionContainer}>
-          <Text style={styles.langLabel}>English</Text>
-          <Text style={styles.blogTitle}>{data?.english?.title}</Text>
-        </View>
+          {/* Title */}
+          <Text style={styles.title}>{title}</Text>
 
-        {/* Blog Content Section */}
-        <View style={styles.contentView}>
-          <Text style={styles.blogheadline}>{data?.english?.excerpt}</Text>
+          {/* Meta description */}
+          {metaDesc ? <Text style={styles.metaDesc}>{metaDesc}</Text> : null}
 
+          {/* Language switcher — only shown when both languages are available */}
+          {hasEnglish && hasHindi ? (
+            <View style={styles.langTabRow}>
+              <TouchableOpacity
+                style={[styles.langTab, activeLang === 'en' && styles.langTabActive]}
+                onPress={() => setActiveLang('en')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.langTabText, activeLang === 'en' && styles.langTabTextActive]}>
+                  English
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.langTab, activeLang === 'hi' && styles.langTabActive]}
+                onPress={() => setActiveLang('hi')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.langTabText, activeLang === 'hi' && styles.langTabTextActive]}>
+                  हिन्दी
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <View style={styles.divider} />
+
+          {/* Excerpt / intro line */}
+          {excerpt ? <Text style={styles.excerpt}>{excerpt}</Text> : null}
+
+          {/* Main content */}
           {isHTML ? (
             <RenderHTML
-              contentWidth={width - moderateScale(30)}
-              source={{ html: cleanHTML(content) }}
+              contentWidth={width - scale(32)}
+              source={{ html: cleanHTML(rawContent) }}
               baseStyle={styles.htmlContent}
               tagsStyles={HTML_TAGS_STYLES}
               ignoredDomTags={['style', 'script']}
             />
           ) : (
-            <Text style={styles.content}>{content}</Text>
-          )}
-
-          <View style={styles.langDivider} />
-          <Text style={styles.langLabel}>हिन्दी</Text>
-          <Text style={styles.blogTitle}>{data?.hindi?.title}</Text>
-          <Text style={styles.blogheadline}>{data?.hindi?.excerpt}</Text>
-
-          {isHindiHTML ? (
-            <RenderHTML
-              contentWidth={width - moderateScale(30)}
-              source={{ html: cleanHTML(contentHindi) }}
-              baseStyle={styles.htmlContent}
-              tagsStyles={HTML_TAGS_STYLES}
-              ignoredDomTags={['style', 'script']}
-            />
-          ) : (
-            <Text style={styles.content}>{contentHindi}</Text>
+            <Text style={styles.plainContent}>{rawContent}</Text>
           )}
         </View>
-        <Text style={[styles.blogMeta, { paddingBottom: 10 }]}>{t('blog.createdAt', { date: formattedDate })}</Text>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerDate}>Published {formattedDate}</Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -114,68 +175,119 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
-  imageBackground: {
+  heroImage: {
     width: '100%',
-    height: verticalScale(200),
+    height: verticalScale(220),
+    backgroundColor: '#E8E8E8',
   },
-  guidanceContainer: {
-    padding: scale(20),
-    backgroundColor: '#FEECEC',
+  heroImagePlaceholder: {
+    width: '100%',
+    height: verticalScale(120),
+    backgroundColor: '#E8E8E8',
+  },
+  body: {
+    paddingHorizontal: scale(16),
+    paddingTop: verticalScale(18),
+  },
+  metaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: verticalScale(12),
   },
-  guidanceSubtitle: {
-    fontSize: moderateScale(15),
-    color: COLORS.gray,
-    fontFamily: 'Lato-Bold',
-    marginBottom: verticalScale(20),
+  categoryBadge: {
+    backgroundColor: '#FEF0F0',
+    borderRadius: moderateScale(4),
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(3),
   },
-  blogDescriptionContainer: {
-    padding: scale(20),
-    alignItems: 'center',
-  },
-  langLabel: {
-    fontSize: moderateScale(11),
-    fontFamily: 'Lato-Bold',
+  categoryBadgeText: {
+    fontSize: moderateScale(10),
     color: COLORS.AstroMaroon,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: verticalScale(6),
-  },
-  langDivider: {
-    height: 1,
-    backgroundColor: COLORS.lightBorder,
-    marginVertical: verticalScale(20),
-  },
-  blogTitle: {
-    fontSize: moderateScale(19),
     fontFamily: 'Lato-Bold',
-    color: COLORS.black,
-    textAlign: 'center',
-    marginBottom: verticalScale(10),
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  blogMeta: {
+  dateText: {
+    fontSize: moderateScale(12),
+    fontFamily: 'Lato-Regular',
+    color: '#999999',
+  },
+  title: {
+    fontSize: moderateScale(22),
+    fontFamily: 'Lato-Bold',
+    color: '#1A1A1A',
+    lineHeight: moderateScale(30),
+    marginBottom: verticalScale(8),
+  },
+  metaDesc: {
     fontSize: moderateScale(14),
     fontFamily: 'Lato-Regular',
-    color: COLORS.gray,
+    color: '#666666',
+    lineHeight: moderateScale(21),
+    marginBottom: verticalScale(14),
   },
-  blogheadline: {
-    color: COLORS.black,
+  langTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F2F2',
+    borderRadius: moderateScale(8),
+    padding: moderateScale(3),
+    alignSelf: 'flex-start',
+    marginBottom: verticalScale(4),
+  },
+  langTab: {
+    paddingHorizontal: scale(18),
+    paddingVertical: verticalScale(6),
+    borderRadius: moderateScale(6),
+  },
+  langTabActive: {
+    backgroundColor: COLORS.AstroMaroon,
+  },
+  langTabText: {
+    fontSize: moderateScale(13),
     fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(18),
-    marginVertical: verticalScale(15),
+    color: '#888888',
   },
-  contentView: {
-    padding: moderateScale(15),
+  langTabTextActive: {
+    color: COLORS.white,
   },
-  content: {
-    color: COLORS.black,
-    fontFamily: 'Lato-Regular',
+  divider: {
+    height: 1,
+    backgroundColor: '#EEEEEE',
+    marginVertical: verticalScale(16),
+  },
+  excerpt: {
     fontSize: moderateScale(15),
+    fontFamily: 'Lato-Regular',
+    color: '#444444',
+    lineHeight: moderateScale(23),
+    marginBottom: verticalScale(14),
   },
   htmlContent: {
     fontFamily: 'Lato-Regular',
     fontSize: moderateScale(15),
-    color: COLORS.black,
+    color: '#333333',
+    lineHeight: moderateScale(24),
+  },
+  plainContent: {
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(15),
+    color: '#333333',
+    lineHeight: moderateScale(24),
+  },
+  footer: {
+    paddingHorizontal: scale(16),
+    paddingTop: verticalScale(16),
+    paddingBottom: verticalScale(30),
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+    marginTop: verticalScale(16),
+    alignItems: 'center',
+  },
+  footerDate: {
+    fontSize: moderateScale(12),
+    fontFamily: 'Lato-Regular',
+    color: '#AAAAAA',
   },
 });
 

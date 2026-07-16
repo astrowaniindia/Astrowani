@@ -1,95 +1,4 @@
-/* import React from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image, } from 'react-native';
-import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
-import { COLORS } from '../../Theme/Colors';
-
-const BlogList = ({ navigation, route }) => {
-  const { data } = route.params;
-
-  // console.log('data', data);
-
-  const renderBlogItem = ({ item }) => {
-    const date = new Date(item.createdAt);
-    const formattedDate = date.toLocaleDateString();
-    return (
-      <TouchableOpacity onPress={() => navigation.navigate('BlogScreen', { data: item })} style={styles.card}>
-        <Image source={{ uri: item.thumbnail }} style={styles.image} resizeMode="cover" />
-        <View style={styles.textContainer}>
-          <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-          <Text style={styles.excerpt} numberOfLines={3}>{item.excerpt}</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.category}>{item.category?.name}</Text>
-            <Text style={styles.date}>{formattedDate}</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  return (
-    <View style={styles.container}>
-      <FlatList
-        data={data.data} // Access the 'data' array inside the route params
-        renderItem={renderBlogItem}
-        keyExtractor={(item) => item._id}
-        contentContainerStyle={styles.listContent}
-      />
-    </View>
-  );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  listContent: {
-    padding: scale(10),
-  },
-  card: {
-    marginBottom: verticalScale(15),
-    backgroundColor: COLORS.white,
-    borderRadius: moderateScale(10),
-    overflow: 'hidden',
-    elevation: 2,
-  },
-  image: {
-    height: verticalScale(160),
-    width: '100%',
-  },
-  textContainer: {
-    padding: scale(10),
-  },
-  title: {
-    fontSize: moderateScale(16),
-    fontWeight: 'bold',
-    color: COLORS.black,
-    marginBottom: verticalScale(5),
-  },
-  excerpt: {
-    fontSize: moderateScale(14),
-    color: COLORS.gray,
-    marginBottom: verticalScale(5),
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: verticalScale(5),
-  },
-  category: {
-    fontSize: moderateScale(12),
-    color: COLORS.AstroMaroon,
-    fontWeight: 'bold',
-  },
-  date: {
-    fontSize: moderateScale(12),
-    color: COLORS.AstroMaroon,
-  },
-});
-
-export default BlogList; */
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -108,14 +17,12 @@ import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
 
 const BlogList = ({ navigation }) => {
-  const { language } = React.useContext(LanguageContext);
+  const { language } = useContext(LanguageContext);
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-
-  // const token = 'YOUR_AUTH_TOKEN'; // Replace with dynamic token if needed
 
   const fetchBlogs = async (pageNum = 1, isRefresh = false) => {
     if (loading) return;
@@ -125,16 +32,13 @@ const BlogList = ({ navigation }) => {
       const response = await Instance.get(`/api/blogs?limit=10&page=${pageNum}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
       const fetchedBlogs = response?.data?.data || [];
       const total = response?.data?.totalPages || 1;
-
       if (isRefresh) {
         setBlogs(fetchedBlogs);
       } else {
         setBlogs(prev => [...prev, ...fetchedBlogs]);
       }
-
       setTotalPages(total);
       setPage(pageNum);
     } catch (err) {
@@ -149,22 +53,13 @@ const BlogList = ({ navigation }) => {
     fetchBlogs(1, true);
   }, []);
 
-  // Live sync — re-fetch the list when the admin publishes/edits a blog.
-  // Unique channel name per mount (app-wide rule: a fixed name makes
-  // supabase.channel() return an already-subscribed channel and .on() throws).
   useEffect(() => {
     const channelName = `blog-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const channel = supabase
       .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'blogs' },
-        () => fetchBlogs(1, true),
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'blogs' }, () => fetchBlogs(1, true))
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const handleLoadMore = () => {
@@ -179,22 +74,49 @@ const BlogList = ({ navigation }) => {
   };
 
   const renderBlogItem = ({ item }) => {
+    const isHindi = language === 'Hindi';
+    const title = isHindi ? (item.hindi?.title || item.title) : item.title;
+    const excerpt = isHindi ? (item.hindi?.excerpt || item.excerpt) : item.excerpt;
     const date = new Date(item.createdAt);
-    const formattedDate = date.toLocaleDateString();
-    const title = language === 'Hindi' ? (item.hindi?.title || item.title) : item.title;
+    const formattedDate = date.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
 
     return (
-      <TouchableOpacity onPress={() => navigation.navigate('BlogScreen', { data: item })} style={styles.card}>
-        <Image source={{ uri: item.thumbnail }} style={styles.image} resizeMode="cover" />
+      <TouchableOpacity
+        onPress={() => navigation.navigate('BlogScreen', { data: item })}
+        style={styles.card}
+        activeOpacity={0.85}
+      >
+        <Image
+          source={{ uri: item.thumbnail }}
+          style={styles.image}
+          resizeMode="cover"
+        />
         <View style={styles.textContainer}>
+          {item.category?.name ? (
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText}>{item.category.name}</Text>
+            </View>
+          ) : null}
           <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          <Text style={styles.excerpt} numberOfLines={3}>{item.excerpt}</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.category}>{item.category?.name}</Text>
-            <Text style={styles.date}>{formattedDate}</Text>
-          </View>
+          {excerpt ? (
+            <Text style={styles.excerpt} numberOfLines={2}>{excerpt}</Text>
+          ) : null}
+          <Text style={styles.date}>{formattedDate}</Text>
         </View>
       </TouchableOpacity>
+    );
+  };
+
+  const renderEmpty = () => {
+    if (loading) return null;
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No blogs available yet.</Text>
+      </View>
     );
   };
 
@@ -204,15 +126,23 @@ const BlogList = ({ navigation }) => {
         data={blogs}
         renderItem={renderBlogItem}
         keyExtractor={item => item._id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          blogs.length === 0 && { flex: 1 },
+        ]}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.AstroMaroon]}
+          />
         }
+        ListEmptyComponent={renderEmpty}
         ListFooterComponent={
           loading && !refreshing ? (
-            <View style={{ paddingVertical: verticalScale(20) }}>
+            <View style={styles.footerLoader}>
               <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
             </View>
           ) : null
@@ -225,49 +155,80 @@ const BlogList = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: '#F5F5F5',
   },
   listContent: {
-    padding: scale(10),
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(14),
+    paddingBottom: verticalScale(24),
   },
   card: {
-    marginBottom: verticalScale(15),
+    marginBottom: verticalScale(16),
     backgroundColor: COLORS.white,
-    borderRadius: moderateScale(10),
+    borderRadius: moderateScale(12),
     overflow: 'hidden',
-    elevation: 2,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
   image: {
-    height: verticalScale(160),
+    height: verticalScale(185),
     width: '100%',
+    backgroundColor: '#E8E8E8',
   },
   textContainer: {
-    padding: scale(10),
+    padding: scale(14),
+  },
+  categoryBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF0F0',
+    borderRadius: moderateScale(4),
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(3),
+    marginBottom: verticalScale(8),
+  },
+  categoryBadgeText: {
+    fontSize: moderateScale(10),
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   title: {
     fontSize: moderateScale(16),
-    fontWeight: 'bold',
-    color: COLORS.black,
-    marginBottom: verticalScale(5),
+    fontFamily: 'Lato-Bold',
+    color: '#1A1A1A',
+    lineHeight: moderateScale(23),
+    marginBottom: verticalScale(6),
   },
   excerpt: {
-    fontSize: moderateScale(14),
-    color: COLORS.gray,
-    marginBottom: verticalScale(5),
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: verticalScale(5),
-  },
-  category: {
-    fontSize: moderateScale(12),
-    color: COLORS.AstroMaroon,
-    fontWeight: 'bold',
+    fontSize: moderateScale(13),
+    fontFamily: 'Lato-Regular',
+    color: '#666666',
+    lineHeight: moderateScale(19),
+    marginBottom: verticalScale(10),
   },
   date: {
-    fontSize: moderateScale(12),
-    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(11),
+    fontFamily: 'Lato-Regular',
+    color: '#999999',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(60),
+  },
+  emptyText: {
+    fontSize: moderateScale(15),
+    fontFamily: 'Lato-Regular',
+    color: COLORS.gray,
+  },
+  footerLoader: {
+    paddingVertical: verticalScale(20),
+    alignItems: 'center',
   },
 });
 
