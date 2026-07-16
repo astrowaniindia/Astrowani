@@ -49,13 +49,16 @@ function formatAstrologer(astro, index, categoryMap = {}) {
     name: `${astro.first_name || ''} ${astro.last_name || ''}`.trim() || 'Astrologer',
     email: astro.email || '',
     gender: astro.gender || '',
-    // Prefer the lightweight Storage URL over the legacy base64 column — astrologers
-    // who never re-saved their profile through the fixed EditProfile flow still have
-    // a base64 blob sitting in profile_image, and serving that in list responses
+    // profile_pic_url is normally a Supabase Storage URL, but some legacy rows (written
+    // before EditProfile.js switched to uploading via /api/upload-image) have a raw
+    // base64 data-URI sitting directly in this column. Serving that in list responses
     // (potentially dozens of astrologers per request) bloats the payload to several MB
-    // and causes failures on slower connections/devices.
-    profileImage: astro.profile_pic_url || astro.profile_image
-      || `https://astrowani.onrender.com/public/images/astro${(index % 4) + 1}.png`,
+    // and causes "Network Error" on slower connections/devices — so a data: value is
+    // never trusted here, even if the one-time backfill (scripts/backfillAstrologerImages.js)
+    // hasn't reached this row yet.
+    profileImage: (astro.profile_pic_url && !astro.profile_pic_url.startsWith('data:'))
+      ? astro.profile_pic_url
+      : `https://astrowani.onrender.com/public/images/astro${(index % 4) + 1}.png`,
     chargePerMinute: astro.call_charge_per_minute || 15,
     pricing: astro.call_charge_per_minute || 15,
     chatPrice: astro.chat_charge_per_minute || 0,
