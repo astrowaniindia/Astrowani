@@ -91,6 +91,7 @@ const Video = ({navigation}) => {
         headers: {Authorization: token},
       });
       setAstrologer(response.data.data);
+      setError(null); // clear any stale error from a prior failed attempt
     } catch (err) {
       setError(err.message);
     } finally {

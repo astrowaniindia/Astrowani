@@ -641,6 +641,7 @@ const Home = ({navigation}) => {
         // Per-card Chat/Call buttons reflect each astrologer's toggles (red "Unavailable" when off).
         setAstrologerToShow(astroResponse);
         setAstrologer(astroResponse);
+        setErrorAstrologer(null); // clear any stale error from a prior failed attempt
       } catch (err) {
         setErrorAstrologer(err.message);
       } finally {

@@ -27,6 +27,7 @@ const Chat = ({ navigation }) => {
       // (red "Unavailable" when off) rather than hiding the astrologer.
       const response = await Instance.get(`/api/astrologers`);
       setSpecialAstro(response.data.data || []);
+      setError(null); // clear any stale error from a prior failed attempt
     } catch (err) {
       console.log('getAllAstrologers error:', err);
       setError('Failed to load astrologers');
