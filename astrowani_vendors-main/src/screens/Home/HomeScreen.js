@@ -80,6 +80,8 @@ const HomeScreen = () => {
   const [data, setData] = useState(null);
   const [charges, setCharges] = useState(null);
   const [isLive, setIsLive] = useState(false);
+  // Master online/offline switch — independent of GO LIVE (isLive) and the service toggles below.
+  const [isOnline, setIsOnline] = useState(true);
   const [user, setUser] = useState(null);
   // Profile-completion gate: when false the dashboard's actions are locked.
   const [profileComplete, setProfileComplete] = useState(true);
@@ -405,6 +407,7 @@ const HomeScreen = () => {
       .single();
     if (astroData) {
       setIsLive(astroData.is_available);
+      setIsOnline(astroData.is_online !== false);
       setUser(astroData);
       setProfileComplete(isVendorProfileComplete(astroData));
     }
@@ -445,6 +448,19 @@ const HomeScreen = () => {
     const astroId = await AsyncStorage.getItem('astroId');
     if (!astroId) return;
     await supabase.from('astrologers').update({ [field]: status }).eq('id', astroId);
+  };
+
+  // Master online/offline switch — makes the astrologer show as offline everywhere in the
+  // customer app (profile, Home, and every list screen), independent of GO LIVE and the
+  // individual chat/call/video toggles.
+  const toggleOnlineStatus = (v) => {
+    if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
+    setIsOnline(v);
+    updateToggleStatus('is_online', v);
+    ToastAndroid.show(
+      v ? "You're now Online" : "You're now Offline — customers can't reach you",
+      ToastAndroid.SHORT
+    );
   };
 
   const toggleLiveStatus = async () => {
@@ -513,6 +529,24 @@ const HomeScreen = () => {
           <Ionicons name="chevron-forward" size={22} color="#fff" />
         </TouchableOpacity>
       )}
+
+      {/* Master Online/Offline switch — overrides everything in the customer app */}
+      <View style={styles.cardContainer}>
+        <View style={styles.availabilityRow}>
+          <View style={styles.availabilityLeft}>
+            <View style={[styles.statusDot, { backgroundColor: isOnline ? COLORS.green : '#C0392B' }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.availabilityTitle}>{isOnline ? 'You are Online' : 'You are Offline'}</Text>
+              <Text style={styles.availabilitySub}>
+                {isOnline
+                  ? 'Customers can reach you for chat, call & video'
+                  : "You're hidden from new requests everywhere"}
+              </Text>
+            </View>
+          </View>
+          <ServiceToggle value={isOnline} onValueChange={toggleOnlineStatus} />
+        </View>
+      </View>
 
       {/* Toggles inside a unified premium card */}
       <View style={styles.cardContainer}>
@@ -686,11 +720,40 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(12),
     fontFamily: 'Lato-Bold',
   },
-  toggleRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    paddingVertical: verticalScale(8) 
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: verticalScale(8)
+  },
+  availabilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  availabilityLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: scale(12),
+  },
+  statusDot: {
+    width: scale(10),
+    height: scale(10),
+    borderRadius: scale(5),
+    marginRight: scale(10),
+  },
+  availabilityTitle: {
+    fontSize: moderateScale(16),
+    fontWeight: 'bold',
+    color: '#333',
+    fontFamily: 'Lato-Bold',
+  },
+  availabilitySub: {
+    fontSize: moderateScale(12),
+    color: '#777',
+    marginTop: verticalScale(2),
+    fontFamily: 'Lato-Regular',
   },
   divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: verticalScale(4) },
   toggleLeft: { flexDirection: 'row', alignItems: 'center', width: scale(80) },

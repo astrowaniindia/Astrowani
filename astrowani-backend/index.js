@@ -61,6 +61,9 @@ function formatAstrologer(astro, index, categoryMap = {}) {
     isCallEnabled: astro.is_call_enabled === true,
     isVideoEnabled: astro.is_video_call_enabled === true,
     isAvailable: astro.is_available === true,
+    // Master online/offline switch — independent of is_available (GO LIVE) and the
+    // per-service toggles above. null/undefined (pre-migration rows) treated as online.
+    isOnline: astro.is_online !== false,
     // Category/specialty — resolved names for display + ids for filtering
     specialties: catNames.length ? catNames.map((n) => ({ name: n })) : [{ name: 'Vedic Astrology' }],
     categoryIds: rawCats,

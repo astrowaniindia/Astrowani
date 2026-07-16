@@ -828,38 +828,50 @@ const Home = ({navigation}) => {
           <Text style={[styles.charge, {color: 'green'}]}>
             {item.isFree ? 'Free' : `₹${item.chargePerMinute || 0}/min`}
           </Text>
-          <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}>
+          {item.isOnline === false ? (
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() =>
-                item.isChatEnabled
-                  ? handleChatPress(item)
-                  : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
+                Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', {name: item.name || 'This astrologer'}))
               }
-              style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
-              <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('common.chat') : t('common.noChat')}</Text>
+              style={styles.offlineBtn}>
+              <MaterialIcons name="wifi-off" size={moderateScale(12)} color="white" style={{marginRight: 4}} />
+              <Text style={styles.unavailableBtnTxt}>{t('common.offline')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() =>
-                item.isCallEnabled
-                  ? getRoomTokenWebCall(item)
-                  : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableCall', {name: item.name || 'This astrologer'}))
-              }
-              style={item.isCallEnabled ? styles.callButton : styles.unavailableBtn}>
-              <Text style={item.isCallEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isCallEnabled ? t('common.call') : t('common.noCall')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() =>
-                item.isVideoEnabled
-                  ? initiateVideoCall(item)
-                  : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableVideo', {name: item.name || 'This astrologer'}))
-              }
-              style={item.isVideoEnabled ? styles.videoButton : styles.unavailableBtn}>
-              <Text style={item.isVideoEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isVideoEnabled ? t('common.video') : t('common.noVideo')}</Text>
-            </TouchableOpacity>
-          </View>
+          ) : (
+            <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() =>
+                  item.isChatEnabled
+                    ? handleChatPress(item)
+                    : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
+                }
+                style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
+                <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('common.chat') : t('common.noChat')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() =>
+                  item.isCallEnabled
+                    ? getRoomTokenWebCall(item)
+                    : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableCall', {name: item.name || 'This astrologer'}))
+                }
+                style={item.isCallEnabled ? styles.callButton : styles.unavailableBtn}>
+                <Text style={item.isCallEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isCallEnabled ? t('common.call') : t('common.noCall')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() =>
+                  item.isVideoEnabled
+                    ? initiateVideoCall(item)
+                    : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableVideo', {name: item.name || 'This astrologer'}))
+                }
+                style={item.isVideoEnabled ? styles.videoButton : styles.unavailableBtn}>
+                <Text style={item.isVideoEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isVideoEnabled ? t('common.video') : t('common.noVideo')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -1581,6 +1593,18 @@ const styles = StyleSheet.create({
     color: 'white',
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(10),
+  },
+  offlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#C0392B',
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(16),
+    borderWidth: 1,
+    borderColor: '#C0392B',
+    elevation: 1,
   },
   ReviewCard: {
     flexDirection: 'row',

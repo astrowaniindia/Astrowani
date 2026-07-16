@@ -587,9 +587,14 @@ const AstrologerInfo = ({route, navigation}) => {
   const chatEnabled = person.isChatEnabled !== false;
   const callEnabled = person.isCallEnabled !== false;
   const videoEnabled = person.isVideoEnabled !== false;
+  // Master offline switch — overrides all three service buttons with one unified state.
+  const isOffline = person.isOnline === false;
 
   const showUnavailable = key =>
     Alert.alert(t('alerts.unavailable'), t(key, { name: person.name || 'This astrologer' }));
+
+  const showOffline = () =>
+    Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: person.name || 'This astrologer' }));
 
   return (
     <View style={styles.container}>
@@ -619,6 +624,15 @@ const AstrologerInfo = ({route, navigation}) => {
               <Text style={styles.languages} numberOfLines={1}>{languages}</Text>
             </View>
           </View>
+
+          {isOffline && (
+            <View style={styles.offlineBanner}>
+              <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
+              <Text style={styles.offlineBannerText}>
+                {t('alerts.astrologerOffline', { name: person.name || 'This astrologer' })}
+              </Text>
+            </View>
+          )}
 
           {/* Stats Bar */}
           <View style={styles.statsBar}>
@@ -754,38 +768,50 @@ const AstrologerInfo = ({route, navigation}) => {
 
       {/* Floating Action Dock */}
       <View style={styles.floatingDock}>
-        <TouchableOpacity
-          style={chatEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
-          activeOpacity={0.8}
-          onPress={() => (chatEnabled ? sendChatRequest(person) : showUnavailable('alerts.notAvailableChat'))}>
-          <MaterialIcons name={chatEnabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(20)} color={chatEnabled ? COLORS.AstroMaroon : '#fff'} />
-          <View style={styles.actionBtnTextCol}>
-            <Text style={chatEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{chatEnabled ? t('common.chat') : t('profile.off')}</Text>
-            <Text style={chatEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.pricing ? `₹${person.pricing}/min` : t('common.free')}</Text>
-          </View>
-        </TouchableOpacity>
+        {isOffline ? (
+          <TouchableOpacity
+            style={styles.actionBtnOffline}
+            activeOpacity={0.8}
+            onPress={showOffline}>
+            <MaterialIcons name="wifi-off" size={moderateScale(20)} color="#fff" />
+            <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(8) }]}>{t('common.offline')}</Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={chatEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
+              activeOpacity={0.8}
+              onPress={() => (chatEnabled ? sendChatRequest(person) : showUnavailable('alerts.notAvailableChat'))}>
+              <MaterialIcons name={chatEnabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(20)} color={chatEnabled ? COLORS.AstroMaroon : '#fff'} />
+              <View style={styles.actionBtnTextCol}>
+                <Text style={chatEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{chatEnabled ? t('common.chat') : t('profile.off')}</Text>
+                <Text style={chatEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.pricing ? `₹${person.pricing}/min` : t('common.free')}</Text>
+              </View>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[callEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
-          activeOpacity={0.8}
-          onPress={() => (callEnabled ? initiateAudioCall() : showUnavailable('alerts.notAvailableCall'))}>
-          <MaterialIcons name={callEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color={callEnabled ? COLORS.AstroMaroon : '#fff'} />
-          <View style={styles.actionBtnTextCol}>
-            <Text style={callEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{callEnabled ? t('common.call') : t('profile.off')}</Text>
-            <Text style={callEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.chargePerMinute ? `₹${person.chargePerMinute}/min` : t('common.free')}</Text>
-          </View>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[callEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
+              activeOpacity={0.8}
+              onPress={() => (callEnabled ? initiateAudioCall() : showUnavailable('alerts.notAvailableCall'))}>
+              <MaterialIcons name={callEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color={callEnabled ? COLORS.AstroMaroon : '#fff'} />
+              <View style={styles.actionBtnTextCol}>
+                <Text style={callEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{callEnabled ? t('common.call') : t('profile.off')}</Text>
+                <Text style={callEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.chargePerMinute ? `₹${person.chargePerMinute}/min` : t('common.free')}</Text>
+              </View>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[videoEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
-          activeOpacity={0.8}
-          onPress={() => (videoEnabled ? initiateVideoCall() : showUnavailable('alerts.notAvailableVideo'))}>
-          <MaterialIcons name={videoEnabled ? 'videocam' : 'videocam-off'} size={moderateScale(20)} color={videoEnabled ? COLORS.AstroMaroon : '#fff'} />
-          <View style={styles.actionBtnTextCol}>
-            <Text style={videoEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{videoEnabled ? t('common.video') : t('profile.off')}</Text>
-            <Text style={videoEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.videoPrice ? `₹${person.videoPrice}/min` : t('common.free')}</Text>
-          </View>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[videoEnabled ? styles.actionBtn : styles.actionBtnUnavailable, { marginLeft: scale(8) }]}
+              activeOpacity={0.8}
+              onPress={() => (videoEnabled ? initiateVideoCall() : showUnavailable('alerts.notAvailableVideo'))}>
+              <MaterialIcons name={videoEnabled ? 'videocam' : 'videocam-off'} size={moderateScale(20)} color={videoEnabled ? COLORS.AstroMaroon : '#fff'} />
+              <View style={styles.actionBtnTextCol}>
+                <Text style={videoEnabled ? styles.actionBtnText : styles.actionBtnTextUnavailable}>{videoEnabled ? t('common.video') : t('profile.off')}</Text>
+                <Text style={videoEnabled ? styles.actionBtnPrice : styles.actionBtnPriceUnavailable}>{person.videoPrice ? `₹${person.videoPrice}/min` : t('common.free')}</Text>
+              </View>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       <GiftModal
@@ -842,6 +868,14 @@ const styles = StyleSheet.create({
   favBtn: { padding: scale(5) },
   specialization: { fontSize: moderateScale(13), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', marginTop: verticalScale(2) },
   languages: { fontSize: moderateScale(12), color: '#666', fontFamily: 'Lato-Regular', marginTop: verticalScale(2) },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#C0392B',
+    borderRadius: moderateScale(12), paddingVertical: verticalScale(8), paddingHorizontal: scale(12),
+    marginTop: verticalScale(12),
+  },
+  offlineBannerText: {
+    color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(12), marginLeft: scale(8), flex: 1,
+  },
   statsBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: verticalScale(15), paddingTop: verticalScale(15),
@@ -910,6 +944,10 @@ const styles = StyleSheet.create({
   actionBtnUnavailable: {
     flex: 1, flexDirection: 'row', backgroundColor: '#C0392B', borderRadius: moderateScale(25),
     justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(10), opacity: 0.9,
+  },
+  actionBtnOffline: {
+    flex: 1, flexDirection: 'row', backgroundColor: '#C0392B', borderRadius: moderateScale(25),
+    justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(12),
   },
   actionBtnTextCol: { marginLeft: scale(6) },
   actionBtnText: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },

@@ -180,7 +180,25 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     Alert.alert(t('alerts.unavailable'), t(key, { name: item.name || 'This astrologer' }));
   };
 
+  // Master offline switch overrides every per-service button with one unified red "Offline" pill.
+  const showOffline = (item) =>
+    Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || 'This astrologer' }));
+
   const renderButton = (item) => {
+    if (item.isOnline === false && buttonType !== 'view profile') {
+      return (
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.actionBtnUnavailableChat, styles.smallButton]}
+            activeOpacity={0.8}
+            onPress={() => showOffline(item)}
+          >
+            <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+            <Text style={styles.chatText}>{t('common.offline')}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     switch (buttonType) {
       case 'video': {
         // Same pill style as the Chat button (maroon, small) for a consistent look.

@@ -61,6 +61,9 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
   const showUnavailable = (item, label) =>
     Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for ${label} right now.`);
 
+  const showOffline = (item) =>
+    Alert.alert('Unavailable', `${item.name || 'This astrologer'} is offline right now. Please check back later.`);
+
   // Tell the vendor the customer abandoned the pending request (dismisses their popup).
   const notifyVendorCancelled = (status = 'cancelled') => {
     const active = activeCallRef.current;
@@ -301,9 +304,22 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           </View>
 
           <View style={styles.actionsCol}>
-            <ActionButton item={item} kind="chat" />
-            <ActionButton item={item} kind="call" />
-            <ActionButton item={item} kind="video" />
+            {item.isOnline === false ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.actionBtn, styles.offlineBtn]}
+                onPress={() => showOffline(item)}
+              >
+                <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
+                <Text style={styles.actionBtnText}>Offline</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <ActionButton item={item} kind="chat" />
+                <ActionButton item={item} kind="call" />
+                <ActionButton item={item} kind="video" />
+              </>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -388,6 +404,7 @@ const styles = StyleSheet.create({
     marginVertical: verticalScale(3), minWidth: scale(86),
   },
   actionBtnText: { color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(12.5), fontWeight: 'bold', marginLeft: scale(4) },
+  offlineBtn: { backgroundColor: '#C0392B', minWidth: scale(86) },
   emptyBox: { alignItems: 'center', marginTop: verticalScale(60) },
   emptyTxt: { color: COLORS.AstroMaroon, fontSize: moderateScale(15), marginTop: verticalScale(10), fontFamily: 'Lato-Regular' },
 });
