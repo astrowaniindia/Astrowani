@@ -49,7 +49,12 @@ function formatAstrologer(astro, index, categoryMap = {}) {
     name: `${astro.first_name || ''} ${astro.last_name || ''}`.trim() || 'Astrologer',
     email: astro.email || '',
     gender: astro.gender || '',
-    profileImage: astro.profile_image || astro.profile_pic_url
+    // Prefer the lightweight Storage URL over the legacy base64 column — astrologers
+    // who never re-saved their profile through the fixed EditProfile flow still have
+    // a base64 blob sitting in profile_image, and serving that in list responses
+    // (potentially dozens of astrologers per request) bloats the payload to several MB
+    // and causes failures on slower connections/devices.
+    profileImage: astro.profile_pic_url || astro.profile_image
       || `https://astrowani.onrender.com/public/images/astro${(index % 4) + 1}.png`,
     chargePerMinute: astro.call_charge_per_minute || 15,
     pricing: astro.call_charge_per_minute || 15,
