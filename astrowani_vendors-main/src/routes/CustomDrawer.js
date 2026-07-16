@@ -5,9 +5,6 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
-  Switch,
-  ToastAndroid,
-  Alert,
   StatusBar,
 } from 'react-native';
 import {DrawerContentScrollView, DrawerItem} from '@react-navigation/drawer';
@@ -20,12 +17,10 @@ import {COLORS} from '../Theme/Colors';
 import EvilIcons from 'react-native-vector-icons/EvilIcons';
 import Instance from '../api/ApiCall';
 import {useFocusEffect} from '@react-navigation/native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { supabase } from '../api/SupabaseClient';
 function CustomDrawer(props) {
   const [user, setUser] = useState(null);
   const [data, setData] = useState(null);
-  const [isOnline, setIsOnline] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ids, setIds] = useState('');
   const [missedCount, setMissedCount] = useState(0);
@@ -66,35 +61,11 @@ function CustomDrawer(props) {
           email: astrologerData.email,
           profileImage: astrologerData.profile_pic_url || astrologerData.profile_image
         });
-        setIsOnline(astrologerData.is_available);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleToggleOnlineStatus = async () => {
-    try {
-      const newStatus = !isOnline;
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (!astroId) return;
-
-      const { error } = await supabase
-        .from('astrologers')
-        .update({ is_available: newStatus })
-        .eq('id', astroId);
-
-      if (!error) {
-        setIsOnline(newStatus);
-        ToastAndroid.show(`You are now ${newStatus ? 'Online' : 'Offline'}.`, ToastAndroid.SHORT);
-      } else {
-        Alert.alert('Error', 'Failed to update status.');
-      }
-    } catch (error) {
-      console.error('Error updating status:', error);
-      Alert.alert('Error', 'An unexpected error occurred.');
     }
   };
 
@@ -226,25 +197,6 @@ function CustomDrawer(props) {
           icon={() => <Icon name="account-balance-wallet" size={24} color={COLORS.AstroMaroon} />}
           onPress={() => props.navigation.navigate('Wallet')}
         />
-        <View style={styles.onlineSwitchContainer}>
-          <View style={styles.switchMain}>
-            <MaterialIcons
-              name="online-prediction"
-              size={24}
-              color={COLORS.AstroMaroon}
-            />
-            <Text style={styles.onlineStatusText}>
-              Online
-            </Text>
-          </View>
-          <Switch
-            value={isOnline}
-            onValueChange={handleToggleOnlineStatus}
-            trackColor={{false: COLORS.AshGray, true: COLORS.AstroMaroon}}
-            thumbColor={isOnline ? COLORS.AstroMaroon : COLORS.white}
-            style={styles.switchControl}
-          />
-        </View>
         <DrawerItem
           label="Logout"
           icon={() => (
@@ -341,27 +293,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: scale(10),
-  },
-  onlineSwitchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: verticalScale(12),
-    paddingHorizontal: scale(20),
-    marginLeft: scale(2),
-  },
-  switchMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  onlineStatusText: {
-    fontSize: moderateScale(14),
-    fontWeight: '500',
-    color: '#333',
-    marginLeft: scale(32), // Align text with DrawerItem labels
-  },
-  switchControl: {
-    transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }], // Slightly enlarge switch to match design
   },
   missedLabelRow: {
     flexDirection: 'row',

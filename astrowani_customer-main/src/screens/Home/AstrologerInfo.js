@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Share,
   Dimensions,
+  Modal,
+  StatusBar,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
@@ -38,6 +40,7 @@ const AstrologerInfo = ({route, navigation}) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isFavorite, setIsFavorite] = useState(person.isFavorite || false);
   const [loading, setLoading] = useState(false);
+  const [imageModalVisible, setImageModalVisible] = useState(false);
   const [reviewloading, setReviewLoading] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [reviewError, setReviewError] = useState('');
@@ -605,10 +608,12 @@ const AstrologerInfo = ({route, navigation}) => {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.profileTopRow}>
-            <Image
-              source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
-              style={styles.avatar}
-            />
+            <TouchableOpacity onPress={() => setImageModalVisible(true)} activeOpacity={0.85}>
+              <Image
+                source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+                style={styles.avatar}
+              />
+            </TouchableOpacity>
             <View style={styles.profileDetails}>
               <View style={styles.nameRow}>
                 <Text style={styles.profileName} numberOfLines={1}>{person.name || 'Astrologer'}</Text>
@@ -832,6 +837,25 @@ const AstrologerInfo = ({route, navigation}) => {
         astro={requestAstro}
         onCancel={cancelRequest}
       />
+
+      <Modal
+        visible={imageModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageModalVisible(false)}
+        statusBarTranslucent>
+        <TouchableOpacity
+          style={styles.imageModalOverlay}
+          activeOpacity={1}
+          onPress={() => setImageModalVisible(false)}>
+          <StatusBar backgroundColor="rgba(0,0,0,0.95)" barStyle="light-content" />
+          <Image
+            source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+            style={styles.imageModalPhoto}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -954,6 +978,17 @@ const styles = StyleSheet.create({
   actionBtnPrice: { fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, opacity: 0.8 },
   actionBtnTextUnavailable: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: '#fff' },
   actionBtnPriceUnavailable: { fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: '#fff', opacity: 0.85 },
+  imageModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageModalPhoto: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').width,
+    borderRadius: moderateScale(8),
+  },
 });
 
 export default AstrologerInfo;
