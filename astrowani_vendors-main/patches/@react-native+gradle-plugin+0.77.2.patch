@@ -1,0 +1,13 @@
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/DependencyUtils.kt
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/DependencyUtils.kt
+@@ -33,10 +33,6 @@
+             repo.content { it.excludeGroup("org.webkit") }
+           }
+         }
+-        // We add the snapshot for users on nightlies.
+-        mavenRepoFromUrl("https://oss.sonatype.org/content/repositories/snapshots/") { repo ->
+-          repo.content { it.excludeGroup("org.webkit") }
+-        }
+         repositories.mavenCentral { repo ->
+           // We don't want to fetch JSC from Maven Central as there are older versions there.
+           repo.content { it.excludeGroup("org.webkit") }
