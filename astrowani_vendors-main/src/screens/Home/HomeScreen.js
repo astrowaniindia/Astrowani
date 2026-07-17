@@ -29,6 +29,7 @@ import { SOCKET_URL } from '../../config/api';
 import MissedSessionsHome from '../../components/MissedSessionsHome';
 import HomeBanner from '../../components/HomeBanner';
 import { isVendorProfileComplete, ensureVendorProfileComplete } from '../../utils/vendorProfile';
+import { requestUserPermission } from '../../utils/Firebase';
 
 // On-brand animated toggle (replaces the default RN Switch for a cleaner look).
 const ServiceToggle = ({ value, onValueChange }) => {
@@ -105,6 +106,12 @@ const HomeScreen = () => {
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
+  }, []);
+
+  // Re-sync the FCM token on every Home mount (app open) — Registration.js only ever
+  // saved it once, at signup, so long-lived sessions and token rotation were never reflected.
+  useEffect(() => {
+    requestUserPermission();
   }, []);
 
   // ─── Back handler ──────────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ const CustomHeader = ({title, showLanguage}) => {
   const [selectedLanguage, setSelectedLanguage] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
   let subscription = null;
 
   const fetchBalance = async () => {
@@ -58,6 +59,47 @@ const CustomHeader = ({title, showLanguage}) => {
     };
   }, []);
 
+  useEffect(() => {
+    let notifSubscription = null;
+    let cancelled = false;
+
+    const fetchCount = async (astroId) => {
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('astrologer_id', astroId)
+        .eq('is_read', false);
+      if (!cancelled) setUnreadCount(count || 0);
+    };
+
+    const setup = async () => {
+      const astroId = await AsyncStorage.getItem('astroId');
+      if (!astroId) return;
+
+      await fetchCount(astroId);
+
+      if (notifSubscription) {
+        supabase.removeChannel(notifSubscription);
+        notifSubscription = null;
+      }
+      notifSubscription = supabase
+        .channel(`vendor_notif_badge_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `astrologer_id=eq.${astroId}` }, () => {
+          fetchCount(astroId);
+        })
+        .subscribe();
+    };
+
+    setup();
+    const unsubscribe = navigation.addListener('focus', setup);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (notifSubscription) supabase.removeChannel(notifSubscription);
+    };
+  }, [navigation]);
+
   const toggleLanguageModal = () => {
     setLanguageModalVisible(!languageModalVisible);
   };
@@ -80,8 +122,13 @@ const CustomHeader = ({title, showLanguage}) => {
           <TouchableOpacity onPress={() => navigation.navigate('MyCustomers')} style={{ marginRight: 12 }}>
             <Ionicons name="people-outline" color="white" size={24} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Notification')} style={{ marginRight: 12 }}>
+          <TouchableOpacity onPress={() => navigation.navigate('Notification')} style={{ marginRight: 12, position: 'relative' }}>
             <MaterialIcons name="notifications-none" color="white" size={24} />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginRight: 12 }}>
             {profileImage ? (
@@ -192,6 +239,25 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(13),
     borderWidth: 1,
     borderColor: 'white',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    backgroundColor: '#E53935',
+    borderRadius: moderateScale(8),
+    minWidth: moderateScale(16),
+    height: moderateScale(16),
+    paddingHorizontal: scale(3),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: moderateScale(9),
+    fontFamily: 'Lato-Bold',
   },
   modalContainer: {
     flex: 1,

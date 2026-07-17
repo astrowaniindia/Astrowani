@@ -826,9 +826,6 @@ const Home = ({navigation}) => {
           <Text style={styles.language}>{languages || 'hindi'}</Text>
         </View>
         <View style={styles.btnView}>
-          <Text style={[styles.charge, {color: 'green'}]}>
-            {item.isFree ? 'Free' : `₹${item.chargePerMinute || 0}/min`}
-          </Text>
           {item.isOnline === false ? (
             <TouchableOpacity
               activeOpacity={0.8}
@@ -840,7 +837,7 @@ const Home = ({navigation}) => {
               <Text style={styles.unavailableBtnTxt}>{t('common.offline')}</Text>
             </TouchableOpacity>
           ) : (
-            <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}>
+            <View style={styles.actionRow}>
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() =>
@@ -1544,12 +1541,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: scale(5),
   },
+  btnView: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: scale(6),
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    gap: 4,
+  },
   chatBtn: {
     backgroundColor: 'white',
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(6),
-    paddingHorizontal: scale(12),
-    marginVertical: verticalScale(5),
+    paddingHorizontal: scale(8),
+    marginVertical: verticalScale(4),
     borderWidth: 1,
     borderColor: 'green',
     elevation: 1,
@@ -1558,8 +1568,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(6),
-    paddingHorizontal: scale(12),
-    marginVertical: verticalScale(5),
+    paddingHorizontal: scale(8),
+    marginVertical: verticalScale(4),
     borderWidth: 1,
     borderColor: COLORS.AstroMaroon,
     elevation: 1,
@@ -1568,8 +1578,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(6),
-    paddingHorizontal: scale(12),
-    marginVertical: verticalScale(5),
+    paddingHorizontal: scale(8),
+    marginVertical: verticalScale(4),
     borderWidth: 1,
     borderColor: 'red',
     elevation: 1,
@@ -1583,8 +1593,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#C0392B',
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(6),
-    paddingHorizontal: scale(12),
-    marginVertical: verticalScale(5),
+    paddingHorizontal: scale(8),
+    marginVertical: verticalScale(4),
     borderWidth: 1,
     borderColor: '#C0392B',
     opacity: 0.9,

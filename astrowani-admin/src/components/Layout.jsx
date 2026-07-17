@@ -15,7 +15,7 @@ const links = [
   { to: '/astro-services', label: 'Astro Services' },
   { to: '/live', label: 'Live Streams' },
   { to: '/missed', label: 'Missed Sessions' },
-  { to: '/push', label: 'Push Notifications' },
+  { to: '/notifications', label: 'Notifications' },
   { to: '/withdrawals', label: 'Withdrawals' },
   { to: '/astrologers', label: 'Astrologers' },
   { to: '/reviews', label: 'Reviews' },

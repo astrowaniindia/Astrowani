@@ -82,6 +82,7 @@ function formatAstrologer(astro, index, categoryMap = {}) {
     // with no reviews — the app shows an empty 5-star outline + "New".
     rating: Number(astro.average_rating) || 0,
     totalReviews: astro.total_reviews || 0,
+    bio: astro.bio || '',
   };
 }
 
@@ -121,6 +122,10 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' }
 });
+// Exposed so route modules (e.g. src/notificationRoutes.js) can emit to a user's
+// personal room without needing io threaded through as a constructor argument —
+// same app.locals convention already used for endLiveSession below.
+app.locals.io = io;
 
 const sessionManager = require('./src/sessionManager'); // Import the SessionManager
 
@@ -239,6 +244,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
+
+// Notification management (admin broadcast/personal send + history)
+require('./src/notificationRoutes')(app);
 
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);

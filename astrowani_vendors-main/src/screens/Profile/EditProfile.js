@@ -33,6 +33,7 @@ export default function EditProfile() {
   const [callCharge, setCallCharge] = useState('');
   const [videoCharge, setVideoCharge] = useState('');
   const [language, setLanguage] = useState('');
+  const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
 
@@ -125,6 +126,7 @@ export default function EditProfile() {
         setCallCharge(astroData.call_charge_per_minute == null ? '' : astroData.call_charge_per_minute.toString());
         setVideoCharge(astroData.video_charge_per_minute == null ? '' : astroData.video_charge_per_minute.toString());
         setLanguage(Array.isArray(astroData.languages) ? astroData.languages.join(', ') : (astroData.languages || ''));
+        setBio(astroData.bio || '');
         setProfileImage(astroData.profile_pic_url || astroData.profile_image || null);
       }
     } catch (error) {
@@ -176,6 +178,7 @@ export default function EditProfile() {
           call_charge_per_minute: parseInt(callCharge) || 0,
           video_charge_per_minute: parseInt(videoCharge) || 0,
           languages: langArray,
+          bio: bio,
           profile_pic_url: profilePicUrlToSave
         })
         .eq('id', astroId);
@@ -266,6 +269,21 @@ fetchData()
           value={gender}
           onChangeText={setGender}
           placeholder="e.g. Male, Female"
+        />
+
+        <View style={styles.divider} />
+        <Text style={styles.sectionTitle}>About You</Text>
+
+        <Text style={styles.label}>Description</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholderTextColor={COLORS.lightGrey}
+          value={bio}
+          onChangeText={setBio}
+          placeholder="Tell customers about your expertise and experience..."
+          multiline
+          numberOfLines={5}
+          textAlignVertical="top"
         />
 
         <View style={styles.divider} />
@@ -411,6 +429,10 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(15),
     color: COLORS.black,
     backgroundColor: '#FAFAFA',
+  },
+  textArea: {
+    height: verticalScale(110),
+    paddingTop: verticalScale(12),
   },
   submitButton: {
     backgroundColor: COLORS.AstroMaroon,

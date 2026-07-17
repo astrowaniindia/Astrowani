@@ -1,0 +1,1 @@
+ALTER TABLE astrologers ADD COLUMN IF NOT EXISTS bio text;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
+import ImageField from '../components/ImageField';
 
 function StatusBadge({ s }) {
   if (s === 'approved') return <span className="badge green">Approved</span>;
@@ -40,6 +41,12 @@ export default function Astrologers() {
         is_call_enabled: editing.is_call_enabled,
         is_video_call_enabled: editing.is_video_call_enabled,
         admin_notes: editing.admin_notes,
+        first_name: editing.first_name,
+        last_name: editing.last_name,
+        experience: Number(editing.experience) || 0,
+        languages: (editing.languages || '').split(',').map((s) => s.trim()).filter(Boolean),
+        bio: editing.bio || '',
+        profile_pic_url: editing.profile_pic_url || '',
       });
       setEditing(null);
     } catch (e) { alert(e.response?.data?.message || e.message); }
@@ -48,6 +55,10 @@ export default function Astrologers() {
 
   const name = (r) => `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Astrologer';
   const set = (k, v) => setEditing((p) => ({ ...p, [k]: v }));
+  const openEdit = (r) => setEditing({
+    ...r,
+    languages: Array.isArray(r.languages) ? r.languages.join(', ') : (r.languages || ''),
+  });
 
   return (
     <div>
@@ -76,7 +87,7 @@ export default function Astrologers() {
                   <button className="btn secondary sm" onClick={() => patch(r.id, { is_suspended: !r.is_suspended })}>
                     {r.is_suspended ? 'Unsuspend' : 'Suspend'}
                   </button>
-                  <button className="btn ghost sm" onClick={() => setEditing({ ...r })}>Edit</button>
+                  <button className="btn ghost sm" onClick={() => openEdit(r)}>Edit</button>
                 </div></td>
               </tr>
             ))}
@@ -86,6 +97,21 @@ export default function Astrologers() {
 
       {editing && (
         <Modal title={`Edit — ${name(editing)}`} onClose={() => setEditing(null)}>
+          <ImageField label="Profile photo (URL or upload)" value={editing.profile_pic_url} onChange={(v) => set('profile_pic_url', v)} />
+          <div className="two-col">
+            <div className="field"><label>First name</label>
+              <input type="text" value={editing.first_name || ''} onChange={(e) => set('first_name', e.target.value)} /></div>
+            <div className="field"><label>Last name</label>
+              <input type="text" value={editing.last_name || ''} onChange={(e) => set('last_name', e.target.value)} /></div>
+          </div>
+          <div className="two-col">
+            <div className="field"><label>Experience (years)</label>
+              <input type="number" value={editing.experience || 0} onChange={(e) => set('experience', e.target.value)} /></div>
+            <div className="field"><label>Languages (comma separated)</label>
+              <input type="text" value={editing.languages || ''} onChange={(e) => set('languages', e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Bio / About</label>
+            <textarea value={editing.bio || ''} onChange={(e) => set('bio', e.target.value)} placeholder="Shown on the astrologer's profile in the customer app" /></div>
           <div className="two-col">
             <div className="field"><label>Approval status</label>
               <select value={editing.approval_status} onChange={(e) => set('approval_status', e.target.value)}>

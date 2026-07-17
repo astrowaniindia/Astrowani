@@ -7,6 +7,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { NavigationContainer } from '@react-navigation/native';
+import { navigationRef } from '../utils/NavigationService';
 import Splash from '../screens/Splash/Splash';
 import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
@@ -103,7 +104,7 @@ const TopTab = createMaterialTopTabNavigator();
 export default function Navigation({ initialRoute }) {
   return (
     <>
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right' }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
         <Stack.Screen options={{ headerShown: false }} name="Login" component={Login} />

@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, PermissionsAndroid } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import Instance from '../api/ApiCall';
+import { navigate } from './NavigationService';
 
 const CHANNEL_ID = 'astrowani-default';
 
@@ -110,11 +111,17 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
 });
 
 
+function handleNotificationTap(remoteMessage) {
+  const type = remoteMessage?.data?.type;
+  if (type === 'admin_broadcast' || type === 'admin_personal') {
+    navigate('NotificationScreen');
+  }
+}
+
 messaging().getInitialNotification().then(remoteMessage => {
   if (remoteMessage) {
     console.log('Initial remoteMessage:', remoteMessage);
-    // Ensure the navigationRef is properly defined and used
-    // navigationRef.current?.navigate('Notification');
+    handleNotificationTap(remoteMessage);
   }
 })
 
@@ -122,9 +129,8 @@ messaging().getInitialNotification().then(remoteMessage => {
 messaging().onNotificationOpenedApp(remoteMessage => {
   console.log('Notification opened from background:', remoteMessage);
   if (remoteMessage?.data?.type === 'incoming_call') {
-    // Navigate to VoiceCallScreen with incoming call params
-    // This would need to be handled in the component that has navigation access
-    // For now, we'll log it and expect the app to handle it
     console.log('Incoming call notification opened');
+  } else {
+    handleNotificationTap(remoteMessage);
   }
 });

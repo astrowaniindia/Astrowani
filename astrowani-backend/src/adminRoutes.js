@@ -265,6 +265,7 @@ module.exports = function registerAdminRoutes(app) {
     const { data, error } = await db
       .from('astrologers')
       .select('id, first_name, last_name, email, phone_number, experience, specialties, ' +
+        'languages, profile_pic_url, bio, ' +
         'approval_status, is_suspended, is_available, is_chat_enabled, is_call_enabled, ' +
         'is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, ' +
         'video_charge_per_minute, wallet_balance, today_earnings, total_earnings, admin_notes')
@@ -276,7 +277,8 @@ module.exports = function registerAdminRoutes(app) {
   app.patch('/api/admin/astrologers/:id', requireAdmin, h(async (req, res) => {
     const allowed = ['approval_status', 'is_suspended', 'is_available', 'is_chat_enabled',
       'is_call_enabled', 'is_video_call_enabled', 'chat_charge_per_minute',
-      'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes'];
+      'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes',
+      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
     const { data, error } = await db.from('astrologers').update(body).eq('id', req.params.id).select().single();

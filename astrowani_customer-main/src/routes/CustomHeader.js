@@ -23,6 +23,7 @@ const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [walletBalance, setWalletBalance] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { language, changeLanguage } = React.useContext(LanguageContext);
 
   useEffect(() => {
@@ -80,6 +81,53 @@ const CustomHeader = ({title, showLanguage}) => {
     };
   }, [navigation]);
 
+  useEffect(() => {
+    let notifSubscription = null;
+    let cancelled = false;
+
+    const fetchCount = async (customerId) => {
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', customerId)
+        .eq('is_read', false);
+      if (!cancelled) setUnreadCount(count || 0);
+    };
+
+    const setup = async () => {
+      try {
+        const userDataStr = await AsyncStorage.getItem('userData');
+        if (!userDataStr) return;
+        const userData = JSON.parse(userDataStr);
+        if (!userData?.id) return;
+
+        await fetchCount(userData.id);
+
+        if (notifSubscription) {
+          supabase.removeChannel(notifSubscription);
+          notifSubscription = null;
+        }
+        notifSubscription = supabase
+          .channel(`customer_notif_badge_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `customer_id=eq.${userData.id}` }, () => {
+            fetchCount(userData.id);
+          })
+          .subscribe();
+      } catch (e) {
+        console.log('Error fetching unread notification count:', e.message);
+      }
+    };
+
+    setup();
+    const unsubscribe = navigation.addListener('focus', setup);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (notifSubscription) supabase.removeChannel(notifSubscription);
+    };
+  }, [navigation]);
+
   const toggleLanguage = () => {
     changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
   };
@@ -103,12 +151,17 @@ const CustomHeader = ({title, showLanguage}) => {
               <Text style={styles.langPillDivider}>|</Text>
               <Text style={[styles.langPillText, language === 'Hindi' && styles.langPillTextActive]}>हिं</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')}>
+            <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')} style={{position: 'relative'}}>
               <MaterialIcons
                 name="notifications-none"
                 color="white"
                 size={24}
               />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -169,6 +222,25 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     fontSize: moderateScale(11),
     marginHorizontal: scale(3),
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    backgroundColor: '#E53935',
+    borderRadius: moderateScale(8),
+    minWidth: moderateScale(16),
+    height: moderateScale(16),
+    paddingHorizontal: scale(3),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: moderateScale(9),
+    fontFamily: 'Lato-Bold',
   },
 });
 
