@@ -304,7 +304,7 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/customers', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('customers')
-      .select('id, name, mobile, email, wallet_balance, created_at')
+      .select('id, name, mobile, email, wallet_balance, created_at, fcm_token')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return res.json({ success: true, data: data || [] });
