@@ -6,10 +6,21 @@
 const path = require('path');
 const admin = require('firebase-admin');
 
+// TEMP diagnostic state — safe to inspect without leaking the actual secret
+// (only length + first/last char, never the credential content itself).
+const debugInfo = { hasEnvVar: false, envVarLength: 0, envVarFirstChar: null, envVarLastChar: null, initError: null };
+
 function initFirebaseAdmin() {
   try {
     const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
     const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+
+    debugInfo.hasEnvVar = !!serviceAccountJson;
+    if (serviceAccountJson) {
+      debugInfo.envVarLength = serviceAccountJson.length;
+      debugInfo.envVarFirstChar = serviceAccountJson[0];
+      debugInfo.envVarLastChar = serviceAccountJson[serviceAccountJson.length - 1];
+    }
 
     let credential;
     if (serviceAccountJson) {
@@ -26,6 +37,7 @@ function initFirebaseAdmin() {
     return true;
   } catch (err) {
     console.error('[push] Failed to initialize Firebase Admin:', err.message);
+    debugInfo.initError = err.message;
     return false;
   }
 }
@@ -59,4 +71,4 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
   }
 }
 
-module.exports = { sendPush, isPushReady: () => isReady };
+module.exports = { sendPush, isPushReady: () => isReady, getPushDebugInfo: () => debugInfo };

@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
-const { sendPush, isPushReady } = require('./push');
+const { sendPush, isPushReady, getPushDebugInfo } = require('./push');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -146,6 +146,7 @@ module.exports = function registerNotificationRoutes(app) {
       pushSuccess: successCount,
       pushFailure: failureCount,
       pushReady: isPushReady(), // TEMP diagnostic
+      pushDebug: getPushDebugInfo(), // TEMP diagnostic
       debugErrors, // TEMP diagnostic
     });
   }));
