@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
-const { sendPush } = require('./push');
+const { sendPush, isPushReady } = require('./push');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -111,11 +111,18 @@ module.exports = function registerNotificationRoutes(app) {
     const tokens = recipients.map((r) => r.fcm_token).filter(Boolean);
     let successCount = 0;
     let failureCount = 0;
+    const debugErrors = []; // TEMP diagnostic — remove once push delivery is confirmed working
     for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
       const chunk = tokens.slice(i, i + CHUNK_SIZE);
       const result = await sendPush(chunk, { title, body, data: { type } });
       successCount += result.successCount || 0;
       failureCount += result.failureCount || 0;
+      if (result.error) debugErrors.push(result.error);
+      if (Array.isArray(result.responses)) {
+        result.responses.forEach((r, idx) => {
+          if (!r.success) debugErrors.push(`token ${idx}: ${r.error?.code || r.error?.message || 'unknown error'}`);
+        });
+      }
     }
 
     // Compact admin history log. target_id only makes sense for a single-person send;
@@ -138,6 +145,8 @@ module.exports = function registerNotificationRoutes(app) {
       recipientCount: recipients.length,
       pushSuccess: successCount,
       pushFailure: failureCount,
+      pushReady: isPushReady(), // TEMP diagnostic
+      debugErrors, // TEMP diagnostic
     });
   }));
 
