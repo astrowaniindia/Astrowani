@@ -34,13 +34,19 @@ function callTypeFor(type) {
   return 'chat';
 }
 
+// Shared key so display and cancel always compute the same notification id for the same
+// request — calls key on roomId, chats (no room_id column) key on callerId.
+function idKeyFor(payload) {
+  return payload.roomId || payload.callerId;
+}
+
 // Returns the notification's id (also used as the notifee-side dedupe key, keyed to the
 // room/caller so a duplicate socket+push delivery of the same request doesn't double-post).
 export async function displayIncomingRequestNotification(payload) {
   await ensureChannel();
   const type = payload.type;
   const isChat = type === 'chat_request';
-  const notificationId = `incoming_${payload.roomId || payload.callerId || Date.now()}`;
+  const notificationId = `incoming_${idKeyFor(payload) || Date.now()}`;
 
   const requestData = {
     table: isChat ? 'chat_requests' : 'call_requests',
@@ -81,4 +87,13 @@ export async function cancelIncomingRequestNotification(notificationId) {
   } catch (_) {
     // best-effort
   }
+}
+
+// The customer gave up (timed out, cancelled, or the backend's own stale-request sweep
+// caught it) before the vendor acted — dismiss the matching heads-up notification so it
+// doesn't sit there indefinitely advertising a request nobody's waiting on anymore.
+export async function cancelIncomingRequestForKey(payload) {
+  const key = idKeyFor(payload);
+  if (!key) return;
+  await cancelIncomingRequestNotification(`incoming_${key}`);
 }

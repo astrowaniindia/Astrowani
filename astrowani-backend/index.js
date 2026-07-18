@@ -157,11 +157,25 @@ io.on('connection', (socket) => {
     io.to(data.customer_id).emit('call_rejected', data);
   });
 
-  // Customer cancelled/backed out before the vendor answered — dismiss the vendor's popup.
+  // Customer cancelled/backed out (manually, or the client-side ring timeout) before the
+  // vendor answered — dismiss the vendor's in-app popup AND its heads-up OS notification.
   socket.on('cancel_call', (data) => {
     if (!data || !data.astrologer_id) return;
     console.log('Call cancelled by customer, notifying vendor:', data.astrologer_id);
     io.to(data.astrologer_id).emit('call_cancelled', data);
+
+    // Push fallback — the socket above only reaches a vendor whose HomeScreen is currently
+    // mounted; without this, a backgrounded/killed vendor keeps showing a live "Incoming
+    // Call" notification with working Accept/Reject long after the customer has given up.
+    supabase.from('astrologers').select('fcm_token').eq('id', data.astrologer_id).single()
+      .then(({ data: astro }) => {
+        if (astro?.fcm_token) {
+          sendPush(astro.fcm_token, {
+            data: { type: 'cancel_incoming_request', roomId: data.roomId || '' },
+          }).catch((e) => console.error('[cancel_call] push send error:', e.message));
+        }
+      })
+      .catch((e) => console.error('[cancel_call] push lookup error:', e.message));
   });
 
   socket.on('signal_connection', async (data) => {
@@ -989,6 +1003,31 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
     return res.status(200).json({ success: true });
   } catch (e) {
     console.error('[push] notify-chat-request error:', e.message);
+    return res.status(200).json({ success: false });
+  }
+});
+
+// Customer cancelled/backed out of a pending chat request (manual cancel, or its own 60s
+// ring timeout) — dismiss the vendor's heads-up "New Chat Request" notification, same
+// reasoning as the call side's 'cancel_call' socket handler above. Chats have no backend
+// touchpoint at request time (customer inserts chat_requests directly into Supabase), so
+// this mirrors notify-chat-request as a fire-and-forget call from the customer app.
+app.post('/api/push/notify-chat-cancelled', async (req, res) => {
+  try {
+    const { vendorId, callerId } = req.body;
+    if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
+
+    const { data: vendorRow } = await supabaseService
+      .from('astrologers').select('fcm_token').eq('id', vendorId).limit(1).single();
+
+    if (vendorRow?.fcm_token) {
+      await sendPush(vendorRow.fcm_token, {
+        data: { type: 'cancel_incoming_request', callerId: callerId || '' },
+      });
+    }
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('[push] notify-chat-cancelled error:', e.message);
     return res.status(200).json({ success: false });
   }
 });

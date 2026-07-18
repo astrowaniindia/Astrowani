@@ -3,11 +3,12 @@ import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
 import { supabase } from '../api/SupabaseClient';
-import { displayIncomingRequestNotification } from './incomingRequestNotifications';
+import { displayIncomingRequestNotification, cancelIncomingRequestForKey } from './incomingRequestNotifications';
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
 
 const INCOMING_REQUEST_TYPES = ['incoming_call', 'incoming_video_call', 'chat_request'];
+const CANCEL_REQUEST_TYPE = 'cancel_incoming_request';
 
 // Registration.js saves fcm_token once, at signup — but it's never refreshed after that,
 // so most vendor devices end up with a stale/missing token by the time push actually
@@ -71,6 +72,9 @@ messaging().onMessage(async remoteMessage => {
     // mounted and foregrounded — this heads-up notification covers every other screen too
     // (e.g. vendor is on Profile/Wallet when a request comes in).
     await displayIncomingRequestNotification(data);
+  } else if (data.type === CANCEL_REQUEST_TYPE) {
+    // Customer gave up (timeout/cancel) before we acted — pull down the now-stale notification.
+    await cancelIncomingRequestForKey(data);
   }
 })
 
@@ -79,6 +83,8 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   const data = remoteMessage?.data || {};
   if (INCOMING_REQUEST_TYPES.includes(data.type)) {
     await displayIncomingRequestNotification(data);
+  } else if (data.type === CANCEL_REQUEST_TYPE) {
+    await cancelIncomingRequestForKey(data);
   }
 });
 

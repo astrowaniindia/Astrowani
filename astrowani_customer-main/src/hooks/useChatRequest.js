@@ -20,6 +20,21 @@ const useChatRequest = (navigation) => {
   const astroRef = useRef(null);
   const timeoutRef = useRef(null);
   const requestIdRef = useRef(null);
+  const callerIdRef = useRef(null);
+
+  // Tell the vendor's app to dismiss its heads-up "New Chat Request" notification — it
+  // otherwise sits there (with working Accept/Reject) long after we've stopped waiting.
+  // Fire-and-forget, same non-blocking style as the wallet check in sendChatRequest.
+  const notifyVendorRequestCancelled = () => {
+    const astro = astroRef.current;
+    const vendorId = astro?._id || astro?.id || astro?.userId;
+    if (!vendorId) return;
+    fetch(`${Instance.defaults.baseURL}/api/push/notify-chat-cancelled`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vendorId, callerId: callerIdRef.current }),
+    }).catch((e) => console.warn('notify-chat-cancelled skipped:', e.message));
+  };
 
   const sendChatRequest = async (item) => {
     try {
@@ -122,6 +137,7 @@ const useChatRequest = (navigation) => {
 
       astroRef.current = item;
       requestIdRef.current = requestId;
+      callerIdRef.current = supabaseCustomerId || callerId;
       setRequestAstro(item);
       setPendingRequestId(requestId);
       setRequesting(true);
@@ -172,6 +188,7 @@ const useChatRequest = (navigation) => {
         try {
           await supabase.from('chat_requests').update({ status: 'missed' }).eq('id', requestIdRef.current);
         } catch (_) {}
+        notifyVendorRequestCancelled();
         setRequesting(false);
         setPendingRequestId(null);
         if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
@@ -191,6 +208,7 @@ const useChatRequest = (navigation) => {
         .update({ status: 'cancelled' })
         .eq('id', pendingRequestId);
     }
+    notifyVendorRequestCancelled();
     setRequesting(false);
     setPendingRequestId(null);
     setRequestAstro(null);

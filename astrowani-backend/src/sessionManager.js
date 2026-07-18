@@ -107,7 +107,7 @@ class SessionManager {
         .update({ status: 'missed' })
         .eq('status', 'pending')
         .lt('created_at', cutoff)
-        .select('customer_id, astrologer_id');
+        .select('customer_id, astrologer_id, room_id');
       const { data: missedChats } = await supabase.from('chat_requests')
         .update({ status: 'missed' })
         .eq('status', 'pending')
@@ -124,7 +124,12 @@ class SessionManager {
   /**
    * Pushes a "missed" notification to the customer side of each flipped request
    * (backup path — the customer app itself may already show an inline alert if it's
-   * still open; this covers the case where it's backgrounded or killed).
+   * still open; this covers the case where it's backgrounded or killed) AND a
+   * cancel-notification push to the vendor side, so a heads-up "Incoming Call/Chat"
+   * notification doesn't keep sitting there — with working Accept/Reject — advertising
+   * a request the customer already gave up on. This sweep only catches requests whose
+   * customer never got to fire its own 60s timeout (e.g. its app died first); the fast
+   * path for a live customer app is the 'cancel_call' socket handler in index.js.
    */
   async notifyMissed(rows, customerKey, astrologerKey, kind) {
     if (!rows || !rows.length) return;
@@ -132,26 +137,40 @@ class SessionManager {
       const astroIds = [...new Set(rows.map((r) => r[astrologerKey]).filter(Boolean))];
       const custIds = [...new Set(rows.map((r) => r[customerKey]).filter(Boolean))];
       const [{ data: astros }, { data: customers }] = await Promise.all([
-        supabase.from('astrologers').select('id, first_name, last_name').in('id', astroIds),
+        supabase.from('astrologers').select('id, first_name, last_name, fcm_token').in('id', astroIds),
         supabase.from('customers').select('id, fcm_token').in('id', custIds),
       ]);
 
       const astroNameById = {};
+      const astroTokenById = {};
       (astros || []).forEach((a) => {
         astroNameById[a.id] = `${a.first_name || ''} ${a.last_name || ''}`.trim() || 'Astrologer';
+        astroTokenById[a.id] = a.fcm_token;
       });
       const tokenById = {};
       (customers || []).forEach((c) => { tokenById[c.id] = c.fcm_token; });
 
       for (const row of rows) {
         const token = tokenById[row[customerKey]];
-        if (!token) continue;
         const name = astroNameById[row[astrologerKey]] || 'Astrologer';
-        await sendPush(token, {
-          title: kind === 'call' ? 'Missed Call' : 'Missed Chat',
-          body: `${name} didn't pick up your ${kind} request.`,
-          data: { type: 'missed_session', kind },
-        });
+        if (token) {
+          await sendPush(token, {
+            title: kind === 'call' ? 'Missed Call' : 'Missed Chat',
+            body: `${name} didn't pick up your ${kind} request.`,
+            data: { type: 'missed_session', kind },
+          });
+        }
+
+        const vendorToken = astroTokenById[row[astrologerKey]];
+        if (vendorToken) {
+          await sendPush(vendorToken, {
+            data: {
+              type: 'cancel_incoming_request',
+              roomId: kind === 'call' ? row.room_id || '' : '',
+              callerId: kind === 'chat' ? row[customerKey] || '' : '',
+            },
+          });
+        }
       }
     } catch (err) {
       console.error('[SessionManager] notifyMissed error:', err.message);
