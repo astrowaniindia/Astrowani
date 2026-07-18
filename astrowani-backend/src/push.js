@@ -4,7 +4,11 @@
 // same "graceful until configured" pattern as the EnableX SMS integration in index.js.
 
 const path = require('path');
-const admin = require('firebase-admin');
+// firebase-admin v12+ dropped the old namespaced admin.credential/admin.messaging()
+// API from the default require('firebase-admin') export — cert/initializeApp and
+// messaging now live in their own modular subpaths.
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 
 // TEMP diagnostic state — safe to inspect without leaking the actual secret
 // (only length + first/last char, never the credential content itself).
@@ -24,15 +28,15 @@ function initFirebaseAdmin() {
 
     let credential;
     if (serviceAccountJson) {
-      credential = admin.credential.cert(JSON.parse(serviceAccountJson));
+      credential = cert(JSON.parse(serviceAccountJson));
     } else if (serviceAccountPath) {
-      credential = admin.credential.cert(require(path.resolve(serviceAccountPath)));
+      credential = cert(require(path.resolve(serviceAccountPath)));
     } else {
       console.log('[push] Firebase service account not configured — push notifications disabled.');
       return false;
     }
 
-    admin.initializeApp({ credential });
+    initializeApp({ credential });
     console.log('[push] Firebase Admin initialized — push notifications enabled.');
     return true;
   } catch (err) {
@@ -57,7 +61,7 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
   });
 
   try {
-    const response = await admin.messaging().sendEachForMulticast({
+    const response = await getMessaging().sendEachForMulticast({
       tokens: tokenList,
       notification: (title || body) ? { title, body } : undefined,
       data: stringData,
