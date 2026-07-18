@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
@@ -59,9 +59,13 @@ function NavigationScreen() {
     checkToken();
   }, []);
 
-  // Consumed once per cold start — written by the notification Accept action (see
-  // index.js's notifee.onBackgroundEvent) when tapped while the app was backgrounded/killed,
-  // so the vendor lands straight in the live call/chat instead of just the dashboard.
+  // Written by the notification Accept action (see index.js's notifee.onBackgroundEvent) so
+  // the vendor lands straight in the live call/chat instead of just the dashboard. Checked in
+  // two places because "tap Accept" can mean two different things to the OS: a genuine cold
+  // start (app was killed — NavigationContainer mounts fresh, onReady fires) or simply resuming
+  // an app that was only backgrounded (JS engine never died, NavigationContainer was already
+  // mounted, onReady does NOT fire again — only the AppState 'active' transition below catches
+  // this case).
   const consumePendingCallNavigation = async () => {
     try {
       const raw = await AsyncStorage.getItem('pendingCallNavigation');
@@ -75,6 +79,15 @@ function NavigationScreen() {
       console.log('Error consuming pending call navigation:', e);
     }
   };
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        consumePendingCallNavigation();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   const checkToken = async () => {
     try {
