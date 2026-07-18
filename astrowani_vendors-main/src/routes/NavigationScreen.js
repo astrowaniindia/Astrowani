@@ -65,25 +65,38 @@ function NavigationScreen() {
   // start (app was killed — NavigationContainer mounts fresh, onReady fires) or simply resuming
   // an app that was only backgrounded (JS engine never died, NavigationContainer was already
   // mounted, onReady does NOT fire again — only the AppState 'active' transition below catches
-  // this case).
+  // this case). Returns true if a pending navigation was found and consumed.
   const consumePendingCallNavigation = async () => {
     try {
       const raw = await AsyncStorage.getItem('pendingCallNavigation');
-      if (!raw) return;
+      if (!raw) return false;
       await AsyncStorage.removeItem('pendingCallNavigation');
       const { screen, params } = JSON.parse(raw);
       if (screen && navigationRef.current?.isReady()) {
         navigationRef.current.navigate(screen, params);
       }
+      return true;
     } catch (e) {
       console.log('Error consuming pending call navigation:', e);
+      return false;
+    }
+  };
+
+  // Verified on-device: the notifee background handler that writes the flag and the
+  // AppState 'active' transition below both fire right after an Accept tap, but not in a
+  // guaranteed order — the handler's Supabase round-trip can still be finishing when this
+  // check runs. Retry briefly rather than only checking once.
+  const consumePendingCallNavigationWithRetry = async (attempt = 0) => {
+    const found = await consumePendingCallNavigation();
+    if (!found && attempt < 6) {
+      setTimeout(() => consumePendingCallNavigationWithRetry(attempt + 1), 400);
     }
   };
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        consumePendingCallNavigation();
+        consumePendingCallNavigationWithRetry();
       }
     });
     return () => subscription.remove();
@@ -115,7 +128,7 @@ function NavigationScreen() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef} onReady={consumePendingCallNavigation}>
+    <NavigationContainer ref={navigationRef} onReady={() => consumePendingCallNavigationWithRetry()}>
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{ animation: 'slide_from_right' }}>
