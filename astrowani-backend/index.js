@@ -965,6 +965,34 @@ app.post('/api/push/notify-chat-message', async (req, res) => {
   }
 });
 
+// Chat *request* (not an in-conversation message) — customer app inserts chat_requests
+// directly into Supabase with no backend involvement, so it calls this right after as a
+// fire-and-forget push fallback for a backgrounded/killed vendor app. Data-only payload,
+// same accept/reject notification path as incoming_call.
+app.post('/api/push/notify-chat-request', async (req, res) => {
+  try {
+    const { vendorId, callerId, callerName } = req.body;
+    if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
+
+    const { data: vendorRow } = await supabaseService
+      .from('astrologers').select('fcm_token').eq('id', vendorId).limit(1).single();
+
+    if (vendorRow?.fcm_token) {
+      await sendPush(vendorRow.fcm_token, {
+        data: {
+          type: 'chat_request',
+          callerName: callerName || 'Customer',
+          callerId: callerId || '',
+        },
+      });
+    }
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('[push] notify-chat-request error:', e.message);
+    return res.status(200).json({ success: false });
+  }
+});
+
 // Reviews list for an astrologer — non-hidden, newest first, with reviewer first name.
 app.get('/api/reviews/astrologer/:id', async (req, res) => {
   try {
@@ -1222,6 +1250,26 @@ app.post('/api/call/initiate', async (req, res) => {
     });
 
     console.log(`[Call] Notified vendor ${receiverId} of incoming ${callType || 'audio'} call (WebRTC)`);
+
+    // Push fallback — the socket above only reaches a vendor whose HomeScreen is currently
+    // mounted; a backgrounded/killed app gets nothing without this. Data-only payload (no
+    // `notification` key) so the vendor app's own code renders the accept/reject notification
+    // instead of Android auto-displaying a plain one.
+    supabase.from('astrologers').select('fcm_token').eq('id', receiverId).single()
+      .then(({ data }) => {
+        if (data?.fcm_token) {
+          sendPush(data.fcm_token, {
+            data: {
+              type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
+              callerName: callerInfo.name,
+              callerId: callerInfo.id || '',
+              sessionId,
+              roomId,
+            },
+          }).catch((e) => console.error('[Call] push send error:', e.message));
+        }
+      })
+      .catch((e) => console.error('[Call] push lookup error:', e.message));
 
     return res.status(200).json({
       data: {

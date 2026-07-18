@@ -107,6 +107,19 @@ const useChatRequest = (navigation) => {
       const requestId = data?.[0]?.id;
       if (!requestId) throw new Error('No request ID returned');
 
+      // Push fallback for a backgrounded/killed vendor app — this insert alone only reaches
+      // the vendor via Supabase Realtime, which needs their app process alive. Fire-and-forget,
+      // same non-blocking style as the wallet check above.
+      fetch(`${Instance.defaults.baseURL}/api/push/notify-chat-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendorId: receiverId,
+          callerId: supabaseCustomerId || callerId,
+          callerName: user.name || user.firstName || 'Customer',
+        }),
+      }).catch((e) => console.warn('notify-chat-request skipped:', e.message));
+
       astroRef.current = item;
       requestIdRef.current = requestId;
       setRequestAstro(item);

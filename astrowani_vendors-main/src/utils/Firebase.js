@@ -3,8 +3,11 @@ import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
 import { supabase } from '../api/SupabaseClient';
+import { displayIncomingRequestNotification } from './incomingRequestNotifications';
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
+
+const INCOMING_REQUEST_TYPES = ['incoming_call', 'incoming_video_call', 'chat_request'];
 
 // Registration.js saves fcm_token once, at signup — but it's never refreshed after that,
 // so most vendor devices end up with a stale/missing token by the time push actually
@@ -62,18 +65,21 @@ export async function requestUserPermission() {
 }
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
-  if (Platform.OS === 'ios') {
-    /* PushNotification.localNotification({
-      title: remoteMessage.notification.title,
-      message: remoteMessage.notification.body,
-    }); */
+  const data = remoteMessage?.data || {};
+  if (INCOMING_REQUEST_TYPES.includes(data.type)) {
+    // HomeScreen's own socket/Realtime listener already shows the in-app popup while it's
+    // mounted and foregrounded — this heads-up notification covers every other screen too
+    // (e.g. vendor is on Profile/Wallet when a request comes in).
+    await displayIncomingRequestNotification(data);
   }
-  // updateNotificationCount();
 })
 
 messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
-  // updateNotificationCount();
+  const data = remoteMessage?.data || {};
+  if (INCOMING_REQUEST_TYPES.includes(data.type)) {
+    await displayIncomingRequestNotification(data);
+  }
 });
 
 

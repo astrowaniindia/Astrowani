@@ -30,6 +30,7 @@ import MissedSessionsHome from '../../components/MissedSessionsHome';
 import HomeBanner from '../../components/HomeBanner';
 import { isVendorProfileComplete, ensureVendorProfileComplete } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
+import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
 
 // On-brand animated toggle (replaces the default RN Switch for a cleaner look).
 const ServiceToggle = ({ value, onValueChange }) => {
@@ -250,6 +251,10 @@ const HomeScreen = () => {
   };
 
   // ─── Accept ───────────────────────────────────────────────────────────────
+  // Supabase-mutation core lives in utils/incomingRequestActions.js, shared with the
+  // notification Accept/Reject buttons (which fire from a background/killed-app context with
+  // no live socket or navigation of their own). This handler layers the socket emit +
+  // navigation on top, since HomeScreen has both.
   const handleAccept = async () => {
     setPopupVisible(false);
     const req = popupData;
@@ -260,131 +265,28 @@ const HomeScreen = () => {
     if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
 
     try {
-      const targetTable = req.table || 'chat_requests';
-      const astroId = await AsyncStorage.getItem('astroId');
-
-      // If popup came from socket (no requestId), look up the pending call_request by roomId
-      let resolvedRequestId = req.requestId;
-      if (!resolvedRequestId && req.roomId && targetTable === 'call_requests') {
-        const { data: pendingRow } = await supabase
-          .from('call_requests')
-          .select('id')
-          .eq('room_id', req.roomId)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-        resolvedRequestId = pendingRow?.id || null;
-      }
-
-      // Guard: for call requests, verify the row is still pending (only if we found it).
-      // If resolvedRequestId is null, the customer's call_requests row may not exist yet
-      // (backend sends incoming_call socket BEFORE customer inserts the row) — don't abort.
-      if (targetTable === 'call_requests' && resolvedRequestId) {
-        const { data: statusRow } = await supabase
-          .from('call_requests')
-          .select('status')
-          .eq('id', resolvedRequestId)
-          .single();
-        if (!statusRow || statusRow.status !== 'pending') {
-          ToastAndroid.show('Caller cancelled the request', ToastAndroid.SHORT);
-          return;
-        }
-      }
-
-      const { data: astroData } = await supabase
-        .from('astrologers')
-        .select('chat_charge_per_minute, call_charge_per_minute, video_charge_per_minute')
-        .eq('id', astroId)
-        .single();
-
-      const perMinuteCharge =
-        req.callType === 'chat'
-          ? astroData?.chat_charge_per_minute ?? 0
-          : req.callType === 'video'
-          ? astroData?.video_charge_per_minute ?? 0
-          : astroData?.call_charge_per_minute ?? 0;
-
-      // Create session using the pre-generated UUID from backend (req.sessionId).
-      // Using the same UUID the customer already has ensures billing RPC and socket
-      // events reference the same row on both sides.
-      const sessionInsertPayload = {
-        request_id: targetTable === 'chat_requests' ? resolvedRequestId : null,
-        per_minute_charge: perMinuteCharge,
-        vendor_id: astroId,
-        caller_id: req.callerId,
-        started_at: new Date().toISOString(),
-        call_type: req.callType || 'chat',
-        room_id: req.roomId || null,
-        call_request_id: targetTable === 'call_requests' ? resolvedRequestId : null,
-        is_active: false,
-        next_billing_at: null,
-      };
-      if (req.sessionId) {
-        sessionInsertPayload.id = req.sessionId;
-      }
-      const { data: sessionData, error: sessionErr } = await supabase
-        .from('chat_sessions')
-        .insert([sessionInsertPayload])
-        .select('id')
-        .single();
-
-      if (sessionErr) throw sessionErr;
-      const sessionId = sessionData?.id;
-
-      // (The customer's ChatSessionScreen posts the automatic "customer details" first
-      //  message on connect — see sendCustomerDetails there — so we don't insert it here
-      //  to avoid a duplicate.)
-
-      // Update status + session_id so customer's Supabase Realtime gets the real session UUID.
-      // Falls back to status-only if session_id column doesn't exist yet (pre-migration).
-      if (resolvedRequestId) {
-        const fullPayload = { status: 'accepted' };
-        if (targetTable === 'call_requests' && sessionId) {
-          fullPayload.session_id = sessionId;
-        }
-        const { error: updateErr } = await supabase
-          .from(targetTable)
-          .update(fullPayload)
-          .eq('id', resolvedRequestId);
-
-        if (updateErr) {
-          console.warn('[handleAccept] Update with session_id failed, retrying without:', updateErr.message);
-          await supabase
-            .from(targetTable)
-            .update({ status: 'accepted' })
-            .eq('id', resolvedRequestId);
-        }
+      const result = await acceptRequest(req);
+      if (!result.ok) {
+        ToastAndroid.show('Caller cancelled the request', ToastAndroid.SHORT);
+        return;
       }
 
       // Notify customer via socket (belt-and-suspenders alongside Supabase Realtime)
       if (socketRef.current) {
         socketRef.current.emit('accept_call', {
           customer_id: req.callerId,
-          requestId: resolvedRequestId,
-          sessionId: sessionId,
+          requestId: result.resolvedRequestId,
+          sessionId: result.sessionId,
           room_token: req.token,
         });
       }
 
-      // Navigate to appropriate session based on call type
-      const navigationParams = {
-        requestId: resolvedRequestId,
-        sessionId: sessionId,
-        callerName: req.callerName,
-        callerId: req.callerId,
-        perMinuteCharge,
-        token: req.token, // EnableX Token
-        callType: req.callType,
-      };
-
       if (req.callType === 'audio' || req.callType === 'voice') {
-        navigation.navigate('AudioCall', navigationParams);
+        navigation.navigate('AudioCall', result.navigationParams);
       } else if (req.callType === 'video') {
-        navigation.navigate('VideoCall', navigationParams);
+        navigation.navigate('VideoCall', result.navigationParams);
       } else {
-        // Default to chat session
-        navigation.navigate('VendorChatSession', navigationParams);
+        navigation.navigate('VendorChatSession', result.navigationParams);
       }
     } catch (e) {
       console.warn('handleAccept error:', e);
@@ -395,12 +297,8 @@ const HomeScreen = () => {
   // ─── Reject ───────────────────────────────────────────────────────────────
   const handleCancel = async () => {
     setPopupVisible(false);
-    if (!popupData?.requestId) return;
-    const targetTable = popupData.table || 'chat_requests';
-    await supabase
-      .from(targetTable)
-      .update({ status: 'rejected' })
-      .eq('id', popupData.requestId);
+    if (!popupData) return;
+    await rejectRequest(popupData);
   };
 
   // ─── Data fetchers ────────────────────────────────────────────────────────

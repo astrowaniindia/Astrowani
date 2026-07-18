@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -53,10 +53,28 @@ function NavigationScreen() {
   const [isLoading, setIsLoading] = useState(true);
   // Resolved landing route: 'Login' | 'PendingApproval' | 'DrawerNavigator'
   const [initialRoute, setInitialRoute] = useState('Login');
+  const navigationRef = useRef(null);
 
   useEffect(() => {
     checkToken();
   }, []);
+
+  // Consumed once per cold start — written by the notification Accept action (see
+  // index.js's notifee.onBackgroundEvent) when tapped while the app was backgrounded/killed,
+  // so the vendor lands straight in the live call/chat instead of just the dashboard.
+  const consumePendingCallNavigation = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('pendingCallNavigation');
+      if (!raw) return;
+      await AsyncStorage.removeItem('pendingCallNavigation');
+      const { screen, params } = JSON.parse(raw);
+      if (screen && navigationRef.current?.isReady()) {
+        navigationRef.current.navigate(screen, params);
+      }
+    } catch (e) {
+      console.log('Error consuming pending call navigation:', e);
+    }
+  };
 
   const checkToken = async () => {
     try {
@@ -84,7 +102,7 @@ function NavigationScreen() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef} onReady={consumePendingCallNavigation}>
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{ animation: 'slide_from_right' }}>
