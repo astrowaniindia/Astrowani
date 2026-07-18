@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "835775840755",
-    "project_id": "astrowani-vendor",
-    "storage_bucket": "astrowani-vendor.firebasestorage.app"
+    "project_number": "833793162844",
+    "project_id": "astrowani-b1845",
+    "storage_bucket": "astrowani-b1845.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:835775840755:android:4dc030af40e2358f48d286",
+        "mobilesdk_app_id": "1:833793162844:android:50635943b7bd205ca73099",
         "android_client_info": {
-          "package_name": "com.astrowanicustomer"
+          "package_name": "com.astrowaniVendor"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDwR3DN8laJ6TEg1NHIWn6XCQTVoFkjyqE"
+          "current_key": "AIzaSyDxrnQuYkXvnNcTg9NuRwQQcJlH9Euz3C8"
         }
       ],
       "services": {
@@ -26,15 +26,15 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:835775840755:android:d471d1dfaacc10d648d286",
+        "mobilesdk_app_id": "1:833793162844:android:85f2bfef54f3726aa73099",
         "android_client_info": {
-          "package_name": "com.astrowaniVendor"
+          "package_name": "com.astrowanicustomer"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDwR3DN8laJ6TEg1NHIWn6XCQTVoFkjyqE"
+          "current_key": "AIzaSyDxrnQuYkXvnNcTg9NuRwQQcJlH9Euz3C8"
         }
       ],
       "services": {

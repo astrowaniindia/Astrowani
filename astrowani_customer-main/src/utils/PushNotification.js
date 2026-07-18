@@ -30,6 +30,7 @@ function showLocalNotification(remoteMessage) {
   if (!message) return;
   PushNotification.localNotification({
     channelId: CHANNEL_ID,
+    smallIcon: 'ic_notification',
     title,
     message,
     userInfo: remoteMessage?.data || {},

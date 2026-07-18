@@ -46,6 +46,10 @@ yarn-error.log*
 *.keystore
 *.jks
 
+# Firebase service-account keys (keep secret — backend push credential)
+**/*firebase-adminsdk*.json
+**/firebase-service-account*.json
+
 # Metro bundler cache
 **/.metro-health-check*
 

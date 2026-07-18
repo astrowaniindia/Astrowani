@@ -78,5 +78,11 @@
       <action android:name="com.google.firebase.MESSAGING_EVENT" />
     </intent-filter>
   </service>
+  <!-- Status-bar icon FCM uses for notifications delivered while the app is backgrounded/killed
+       (Android always renders this as a plain white silhouette — this is the OS-mandated style,
+       not a design choice we can change). -->
+  <meta-data
+    android:name="com.google.firebase.messaging.default_notification_icon"
+    android:resource="@drawable/ic_notification" />
     </application>
 </manifest>
