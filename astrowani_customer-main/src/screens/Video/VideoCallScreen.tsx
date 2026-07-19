@@ -386,7 +386,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
 
       {/* Remote video — full screen when in_call */}
       {remoteStreamURL && isActive && (
-        <RTCView streamURL={remoteStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" />
+        <RTCView streamURL={remoteStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" zOrder={0} />
       )}
 
       {/* Background for connecting/ringing states */}
@@ -449,6 +449,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
             style={styles.localVideoPiP}
             objectFit="cover"
             mirror={true}
+            zOrder={1}
           />
           <View style={styles.localVideoPiPBorder} pointerEvents="none" />
         </>
@@ -558,7 +559,6 @@ const styles = StyleSheet.create({
     width: PIP_WIDTH,
     height: PIP_HEIGHT,
     zIndex: 20,
-    borderRadius: 10,
   },
   localVideoPiPBorder: {
     position: 'absolute',

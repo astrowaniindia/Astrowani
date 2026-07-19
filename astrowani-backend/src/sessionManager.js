@@ -40,7 +40,45 @@ class SessionManager {
     }, this.pollingInterval);
     // Run earnings reset check hourly, and immediately on startup
     this.checkEarningsResets();
-    this.resetTimer = setInterval(() => this.checkEarningsResets(), this.resetInterval);
+    this.endStaleLiveSessions();
+    this.resetTimer = setInterval(() => {
+      this.checkEarningsResets();
+      this.endStaleLiveSessions();
+    }, this.resetInterval);
+  }
+
+  /**
+   * Safety net for live_sessions left is_active=true forever — the normal end path
+   * (GoLiveScreen unmount → POST /api/live/:id/end) never runs if the vendor's app
+   * crashes or is force-killed mid-broadcast, and there's no heartbeat to detect that
+   * more precisely. A live stream realistically never runs for hours, so anything still
+   * "active" past a generous ceiling is almost certainly abandoned — auto-close it and
+   * clear the astrologer's is_live flag so it stops appearing in the customer Live list.
+   */
+  async endStaleLiveSessions() {
+    const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(); // 6 hours
+    try {
+      const { data: stale } = await supabase
+        .from('live_sessions')
+        .update({ is_active: false, ended_at: new Date().toISOString() })
+        .eq('is_active', true)
+        .lt('started_at', cutoff)
+        .select('id, astrologer_id');
+      if (!stale || !stale.length) return;
+
+      const astroIds = [...new Set(stale.map((s) => s.astrologer_id).filter(Boolean))];
+      if (astroIds.length) {
+        await supabase.from('astrologers').update({ is_live: false }).in('id', astroIds);
+      }
+      if (this.io) {
+        stale.forEach((s) =>
+          this.io.to('live_' + s.id).emit('live_ended', { sessionId: s.id, reason: 'stale_timeout' })
+        );
+      }
+      console.log(`[SessionManager] Auto-ended ${stale.length} stale live session(s)`);
+    } catch (err) {
+      console.error('[SessionManager] endStaleLiveSessions error:', err.message);
+    }
   }
 
   stop() {

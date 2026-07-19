@@ -343,7 +343,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
       {/* ── Header: name + timer + wallet ─────── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => endSession(null)} style={styles.backBtn}>
+        <TouchableOpacity onPress={manualEndSession} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         
@@ -368,7 +368,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
         <View style={styles.headerRight}>
           <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
-          <TouchableOpacity style={styles.endBtn} onPress={() => endSession(null)}>
+          <TouchableOpacity style={styles.endBtn} onPress={manualEndSession}>
             <Ionicons name="call" size={16} color="#fff" />
             <Text style={styles.endText}>End</Text>
           </TouchableOpacity>

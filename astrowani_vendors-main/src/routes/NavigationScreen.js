@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { navigationRef } from '../utils/navigationRef';
 import Registration from '../screens/Registration';
 import Login from '../screens/Login/Login';
 import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
@@ -53,7 +54,6 @@ function NavigationScreen() {
   const [isLoading, setIsLoading] = useState(true);
   // Resolved landing route: 'Login' | 'PendingApproval' | 'DrawerNavigator'
   const [initialRoute, setInitialRoute] = useState('Login');
-  const navigationRef = useRef(null);
 
   useEffect(() => {
     checkToken();

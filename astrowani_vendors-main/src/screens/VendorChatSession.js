@@ -249,13 +249,7 @@ const VendorChatSession = ({ route, navigation }) => {
 
       {/* ── Header ─────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => {
-          if (navigation.canGoBack()) {
-            navigation.goBack();
-          } else {
-            navigation.replace('DrawerNavigator');
-          }
-        }}>
+        <TouchableOpacity style={styles.backBtn} onPress={endSession}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         
