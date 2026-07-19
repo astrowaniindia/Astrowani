@@ -347,7 +347,7 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/withdrawals', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('withdrawal_requests')
-      .select('*, astrologers(first_name, last_name, mobile)')
+      .select('*, astrologers(first_name, last_name, phone_number)')
       .order('requested_at', { ascending: false })
       .limit(300);
     if (error) throw error;
@@ -405,7 +405,7 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/reports', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('astrologer_reports')
-      .select('*, customers(name, mobile), astrologers(first_name, last_name, mobile)')
+      .select('*, customers(name, mobile), astrologers(first_name, last_name, phone_number)')
       .order('created_at', { ascending: false })
       .limit(300);
     if (error) throw error;

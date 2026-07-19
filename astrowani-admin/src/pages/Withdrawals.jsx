@@ -55,7 +55,7 @@ export default function Withdrawals() {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.astrologers ? `${r.astrologers.first_name || ''} ${r.astrologers.last_name || ''}`.trim() : '—'}</td>
-                <td className="muted">{r.astrologers?.mobile || '—'}</td>
+                <td className="muted">{r.astrologers?.phone_number || '—'}</td>
                 <td><b>{r.amount}</b></td>
                 <td className="muted">
                   {r.bank_account_number ? (
