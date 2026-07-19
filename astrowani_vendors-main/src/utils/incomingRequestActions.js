@@ -117,6 +117,17 @@ export async function acceptRequest(req) {
       ? astroData?.video_charge_per_minute ?? 0
       : astroData?.call_charge_per_minute ?? 0;
 
+  // First-ever session for this customer (any astrologer, any type) — free for the
+  // opening few minutes, enforced by sessionManager.js's billing loop reading this flag.
+  let isFreeSession = false;
+  if (req.callerId) {
+    const { count } = await supabase
+      .from('chat_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('caller_id', req.callerId);
+    isFreeSession = (count || 0) === 0;
+  }
+
   // Create session using the pre-generated UUID from backend (req.sessionId) when present.
   // Using the same UUID the customer already has ensures billing RPC and socket events
   // reference the same row on both sides.
@@ -131,6 +142,7 @@ export async function acceptRequest(req) {
     call_request_id: targetTable === 'call_requests' ? resolvedRequestId : null,
     is_active: false,
     next_billing_at: null,
+    is_free_session: isFreeSession,
   };
   if (req.sessionId) {
     sessionInsertPayload.id = req.sessionId;
@@ -169,6 +181,7 @@ export async function acceptRequest(req) {
     resolvedRequestId,
     sessionId,
     perMinuteCharge,
+    isFreeSession,
     navigationParams: {
       requestId: resolvedRequestId,
       sessionId,
@@ -177,6 +190,7 @@ export async function acceptRequest(req) {
       perMinuteCharge,
       token: req.token,
       callType: req.callType,
+      isFreeSession,
     },
   };
 }

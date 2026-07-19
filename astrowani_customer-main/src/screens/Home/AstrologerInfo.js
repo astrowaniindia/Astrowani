@@ -12,6 +12,7 @@ import {
   Dimensions,
   Modal,
   StatusBar,
+  TextInput,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
@@ -30,6 +31,7 @@ import {SOCKET_URL} from '../../config/api';
 import {showStatusPopup} from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import {ensureProfileComplete} from '../../utils/profileGate';
+import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
 import {LanguageContext} from '../../context/LanguageContext';
 
 const { width } = Dimensions.get('window');
@@ -49,6 +51,55 @@ const AstrologerInfo = ({route, navigation}) => {
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
   const [isCallWaiting, setIsCallWaiting] = useState(false);
+  const [freeConsultEligible, setFreeConsultEligible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportNote, setReportNote] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  const REPORT_REASONS = [
+    'Inappropriate behavior',
+    'Fraud or scam',
+    'Poor service quality',
+    'Other',
+  ];
+
+  const submitReport = async () => {
+    if (!reportReason) {
+      Alert.alert(t('common.error'), 'Please select a reason.');
+      return;
+    }
+    setReportSubmitting(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.post(
+        '/api/reports',
+        { astrologerId: person.userId || person._id, reason: reportReason, note: reportNote },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data?.success) {
+        setReportModalVisible(false);
+        setReportReason('');
+        setReportNote('');
+        Alert.alert('Report submitted', 'Thank you — our team will review this.');
+      } else {
+        Alert.alert(t('common.error'), res.data?.message || 'Please try again.');
+      }
+    } catch (e) {
+      Alert.alert(t('common.error'), e.response?.data?.message || 'Please try again.');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      const userStr = await AsyncStorage.getItem('userData');
+      const user = userStr ? JSON.parse(userStr) : null;
+      const id = user?._id || user?.id || user?.userId;
+      if (id) setFreeConsultEligible(await isEligibleForFreeConsultation(id));
+    })();
+  }, []);
 
   const callSocketRef = useRef(null);
   // Tracks the in-flight call request so cancel/back can tell the vendor to dismiss its popup
@@ -114,22 +165,25 @@ const AstrologerInfo = ({route, navigation}) => {
       const pricePerMin = person.chargePerMinute || person.pricing || 15;
       const minRequired = pricePerMin * 5;
 
-      const {data: customer, error: walletErr} = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userEntireData.id)
-        .single();
+      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
+      if (!freeEligible) {
+        const {data: customer, error: walletErr} = await supabase
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', userEntireData.id)
+          .single();
 
-      if (walletErr) {
-        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-        return;
-      }
-      if (customer.wallet_balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
-        );
-        return;
+        if (walletErr) {
+          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+          return;
+        }
+        if (customer.wallet_balance < minRequired) {
+          Alert.alert(
+            t('alerts.insufficientBalance'),
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+          );
+          return;
+        }
       }
 
       setIsCallWaiting(true);
@@ -294,22 +348,25 @@ const AstrologerInfo = ({route, navigation}) => {
       const pricePerMin = person.videoPrice || person.chargePerMinute || person.pricing || 15;
       const minRequired = pricePerMin * 5;
 
-      const {data: customer, error: walletErr} = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userEntireData.id)
-        .single();
+      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
+      if (!freeEligible) {
+        const {data: customer, error: walletErr} = await supabase
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', userEntireData.id)
+          .single();
 
-      if (walletErr) {
-        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-        return;
-      }
-      if (customer.wallet_balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
-        );
-        return;
+        if (walletErr) {
+          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+          return;
+        }
+        if (customer.wallet_balance < minRequired) {
+          Alert.alert(
+            t('alerts.insufficientBalance'),
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+          );
+          return;
+        }
       }
 
       setIsCallWaiting(true);
@@ -639,6 +696,18 @@ const AstrologerInfo = ({route, navigation}) => {
             </View>
           )}
 
+          {freeConsultEligible && (
+            <View style={styles.freeConsultBanner}>
+              <MaterialIcons name="card-giftcard" size={moderateScale(18)} color="#7A5B00" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.freeConsultTitle}>Your First Consultation is Free!</Text>
+                <Text style={styles.freeConsultSubtitle}>
+                  Start a chat, call, or video with any astrologer — your very first session won't be charged.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Stats Bar */}
           <View style={styles.statsBar}>
             <View style={styles.statItem}>
@@ -660,6 +729,10 @@ const AstrologerInfo = ({route, navigation}) => {
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem} onPress={onShare}>
               <AntDesign name="sharealt" size={moderateScale(18)} color="#666" />
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity style={styles.statItem} onPress={() => setReportModalVisible(true)}>
+              <MaterialIcons name="flag" size={moderateScale(18)} color="#999" />
             </TouchableOpacity>
           </View>
         </View>
@@ -856,6 +929,55 @@ const AstrologerInfo = ({route, navigation}) => {
           />
         </TouchableOpacity>
       </Modal>
+
+      <Modal
+        visible={reportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReportModalVisible(false)}>
+        <View style={styles.reportModalOverlay}>
+          <View style={styles.reportModalCard}>
+            <Text style={styles.reportModalTitle}>Report {person.name || 'Astrologer'}</Text>
+            <Text style={styles.reportModalSubtitle}>Why are you reporting this astrologer?</Text>
+            {REPORT_REASONS.map((reason) => (
+              <TouchableOpacity
+                key={reason}
+                style={[styles.reportReasonRow, reportReason === reason && styles.reportReasonRowActive]}
+                onPress={() => setReportReason(reason)}>
+                <MaterialIcons
+                  name={reportReason === reason ? 'radio-button-checked' : 'radio-button-unchecked'}
+                  size={moderateScale(18)}
+                  color={reportReason === reason ? COLORS.AstroMaroon : '#999'}
+                />
+                <Text style={styles.reportReasonText}>{reason}</Text>
+              </TouchableOpacity>
+            ))}
+            <TextInput
+              style={styles.reportNoteInput}
+              placeholder="Additional details (optional)"
+              placeholderTextColor="#999"
+              value={reportNote}
+              onChangeText={setReportNote}
+              multiline
+              numberOfLines={3}
+            />
+            <View style={styles.reportModalButtons}>
+              <TouchableOpacity
+                style={styles.reportCancelBtn}
+                onPress={() => { setReportModalVisible(false); setReportReason(''); setReportNote(''); }}>
+                <Text style={styles.reportCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.reportSubmitBtn} onPress={submitReport} disabled={reportSubmitting}>
+                {reportSubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.reportSubmitText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -900,6 +1022,13 @@ const styles = StyleSheet.create({
   offlineBannerText: {
     color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(12), marginLeft: scale(8), flex: 1,
   },
+  freeConsultBanner: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF3CD',
+    borderRadius: moderateScale(12), paddingVertical: verticalScale(10), paddingHorizontal: scale(12),
+    marginTop: verticalScale(12), gap: scale(8),
+  },
+  freeConsultTitle: { color: '#7A5B00', fontFamily: 'Lato-Bold', fontSize: moderateScale(13) },
+  freeConsultSubtitle: { color: '#7A5B00', fontSize: moderateScale(11), marginTop: 2 },
   statsBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: verticalScale(15), paddingTop: verticalScale(15),
@@ -989,6 +1118,55 @@ const styles = StyleSheet.create({
     height: Dimensions.get('window').width,
     borderRadius: moderateScale(8),
   },
+  reportModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reportModalCard: {
+    width: '88%',
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(14),
+    padding: scale(20),
+  },
+  reportModalTitle: { fontSize: moderateScale(17), fontFamily: 'Lato-Bold', color: '#333', marginBottom: 4 },
+  reportModalSubtitle: { fontSize: moderateScale(13), color: '#777', marginBottom: verticalScale(14) },
+  reportReasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(10),
+    borderRadius: moderateScale(10),
+    marginBottom: verticalScale(6),
+    gap: scale(10),
+  },
+  reportReasonRowActive: { backgroundColor: 'rgba(107,31,42,0.06)' },
+  reportReasonText: { fontSize: moderateScale(14), color: '#333' },
+  reportNoteInput: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: moderateScale(10),
+    padding: scale(12),
+    fontSize: moderateScale(14),
+    color: '#333',
+    marginTop: verticalScale(8),
+    marginBottom: verticalScale(16),
+    textAlignVertical: 'top',
+    minHeight: verticalScale(70),
+  },
+  reportModalButtons: { flexDirection: 'row', justifyContent: 'flex-end' },
+  reportCancelBtn: { paddingVertical: verticalScale(10), paddingHorizontal: scale(16), marginRight: scale(8) },
+  reportCancelText: { color: '#777', fontSize: moderateScale(14) },
+  reportSubmitBtn: {
+    backgroundColor: COLORS.AstroMaroon,
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(20),
+    borderRadius: moderateScale(10),
+    minWidth: scale(80),
+    alignItems: 'center',
+  },
+  reportSubmitText: { color: '#fff', fontSize: moderateScale(14), fontFamily: 'Lato-Bold' },
 });
 
 export default AstrologerInfo;

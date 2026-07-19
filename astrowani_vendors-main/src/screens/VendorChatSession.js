@@ -31,7 +31,7 @@ const SCRIPTED_REPLIES = [
 ];
 
 const VendorChatSession = ({ route, navigation }) => {
-  const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId } = route.params;
+  const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId, isFreeSession } = route.params;
 
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -274,6 +274,13 @@ const VendorChatSession = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {isFreeSession && (
+        <View style={styles.freeBanner}>
+          <Ionicons name="gift-outline" size={16} color="#7A5B00" />
+          <Text style={styles.freeBannerText}>Customer's free first consultation — not billed for the opening minutes</Text>
+        </View>
+      )}
+
       {/* ── Chat + Input ────────────────────────── */}
       <KeyboardAvoidingView
         style={styles.flex}
@@ -374,6 +381,15 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   endText: { color: '#fff', marginLeft: 6, fontWeight: '700', fontSize: 14 },
+  freeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF3CD',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  freeBannerText: { color: '#7A5B00', fontSize: 12, fontWeight: '600', flexShrink: 1 },
 
   // Messages
   messagesList: {

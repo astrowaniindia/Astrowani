@@ -1131,6 +1131,26 @@ app.post('/api/favoriteAstrologer/remove', async (req, res) => {
   }
 });
 
+// Customer reports an astrologer (moderation) — visible to admin under Reports.
+app.post('/api/reports', async (req, res) => {
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer || !customer.id) return res.status(401).json({ success: false, message: 'Please log in.' });
+    const { astrologerId, reason, note } = req.body || {};
+    if (!astrologerId || !reason) {
+      return res.status(400).json({ success: false, message: 'astrologerId and reason are required' });
+    }
+    const { error } = await supabaseService
+      .from('astrologer_reports')
+      .insert([{ customer_id: customer.id, astrologer_id: astrologerId, reason, note: note || null }]);
+    if (error) throw error;
+    return res.status(200).json({ success: true, message: 'Report submitted' });
+  } catch (e) {
+    console.error('[reports] submit error:', e.message);
+    return res.status(500).json({ success: false, message: 'Failed to submit report' });
+  }
+});
+
 // Average rating — read the cached aggregate off the astrologer row.
 app.get('/api/reviews/astrologer/:id/average-rating', async (req, res) => {
   try {

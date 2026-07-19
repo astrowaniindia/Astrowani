@@ -27,6 +27,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
 import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
+import {supabase} from '../../api/SupabaseClient';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 
@@ -82,6 +83,18 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const ring2Anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
+
+  const [isFreeSession, setIsFreeSession] = useState(false);
+  useEffect(() => {
+    if (!initialSessionId) return;
+    supabase
+      .from('chat_sessions')
+      .select('is_free_session')
+      .eq('id', initialSessionId)
+      .single()
+      .then(({data}) => setIsFreeSession(!!data?.is_free_session))
+      .catch(() => {});
+  }, [initialSessionId]);
 
   // ─── Animations ────────────────────────────────────────────────────────────
   const startRipple = useCallback(() => {
@@ -427,6 +440,12 @@ const VideoCallScreen = ({route, navigation}: any) => {
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>{statusLabel}</Text>
           </View>
+          {isFreeSession && (
+            <View style={styles.freeBadge}>
+              <VectorIcon name="card-giftcard" type="MaterialIcons" size={13} color="#7A5B00" />
+              <Text style={styles.freeBadgeText}>Your free first consultation</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -438,6 +457,12 @@ const VideoCallScreen = ({route, navigation}: any) => {
             <View style={styles.statusDotGreen} />
             <Text style={styles.inCallTimer}>{formatTime(callDuration)}</Text>
           </View>
+          {isFreeSession && (
+            <View style={styles.freeBadge}>
+              <VectorIcon name="card-giftcard" type="MaterialIcons" size={13} color="#7A5B00" />
+              <Text style={styles.freeBadgeText}>Your free first consultation</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -552,6 +577,17 @@ const styles = StyleSheet.create({
   inCallName: {fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 4},
   statusPillSmall: {flexDirection: 'row', alignItems: 'center', gap: 6},
   inCallTimer: {fontSize: 14, color: '#34C759', fontWeight: '500', fontVariant: ['tabular-nums']},
+  freeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFF3CD',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  freeBadgeText: {fontSize: 12, color: '#7A5B00', fontWeight: '600'},
   localVideoPiP: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 120 : 110,

@@ -9,6 +9,7 @@ import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { ensureProfileComplete } from '../utils/profileGate';
+import { isEligibleForFreeConsultation } from '../utils/freeConsultation';
 import { LanguageContext } from '../context/LanguageContext';
 
 const useChatRequest = (navigation) => {
@@ -60,10 +61,29 @@ const useChatRequest = (navigation) => {
         return;
       }
 
-      // Non-blocking wallet check
+      // Get the real Supabase customer UUID for billing
+      let supabaseCustomerId = null;
+      try {
+        const mobile = user.phoneNumber || user.mobile;
+        const email = user.email;
+        let q = supabase.from('customers').select('id');
+        if (mobile) q = q.eq('mobile', mobile);
+        else if (email) q = q.eq('email', email);
+        const { data: custRows } = await q.limit(1);
+        if (custRows && custRows.length > 0) {
+          supabaseCustomerId = custRows[0].id;
+        }
+      } catch (e) {
+        console.warn('Could not fetch supabase customer id:', e.message);
+      }
+
+      // Non-blocking wallet check — skipped entirely for a customer's first-ever session
+      // (any astrologer, any type), which is free, so a brand-new ₹0-balance customer can
+      // still reach it.
+      const freeEligible = await isEligibleForFreeConsultation(supabaseCustomerId || callerId);
       try {
         const token = await AsyncStorage.getItem('token');
-        if (token) {
+        if (token && !freeEligible) {
           const resp = await fetch(`${Instance.defaults.baseURL}/api/wallet`, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -82,22 +102,6 @@ const useChatRequest = (navigation) => {
         }
       } catch (e) {
         console.warn('Wallet check skipped:', e.message);
-      }
-
-      // Get the real Supabase customer UUID for billing
-      let supabaseCustomerId = null;
-      try {
-        const mobile = user.phoneNumber || user.mobile;
-        const email = user.email;
-        let q = supabase.from('customers').select('id');
-        if (mobile) q = q.eq('mobile', mobile);
-        else if (email) q = q.eq('email', email);
-        const { data: custRows } = await q.limit(1);
-        if (custRows && custRows.length > 0) {
-          supabaseCustomerId = custRows[0].id;
-        }
-      } catch (e) {
-        console.warn('Could not fetch supabase customer id:', e.message);
       }
 
       // Insert chat request

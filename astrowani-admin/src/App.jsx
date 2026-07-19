@@ -16,6 +16,7 @@ import AstroServices from './pages/AstroServices';
 import Live from './pages/Live';
 import Missed from './pages/Missed';
 import Withdrawals from './pages/Withdrawals';
+import Reports from './pages/Reports';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="missed" element={<Missed />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="withdrawals" element={<Withdrawals />} />
+        <Route path="reports" element={<Reports />} />
         <Route path="new-entries" element={<NewEntries />} />
         <Route path="astrologers" element={<Astrologers />} />
         <Route path="reviews" element={<Reviews />} />

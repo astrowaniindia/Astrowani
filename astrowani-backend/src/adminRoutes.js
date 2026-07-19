@@ -400,6 +400,32 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, data });
   }));
 
+  // ── Astrologer reports (customer moderation flags) ────────────────────────
+  app.get('/api/admin/reports', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('astrologer_reports')
+      .select('*, customers(name, mobile), astrologers(first_name, last_name, mobile)')
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (error) throw error;
+    return res.json({ success: true, data: data || [] });
+  }));
+
+  app.patch('/api/admin/reports/:id', requireAdmin, h(async (req, res) => {
+    const { status, admin_note } = req.body || {};
+    if (!['reviewed', 'actioned'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+    const { data, error } = await db
+      .from('astrologer_reports')
+      .update({ status, admin_note: admin_note || null, reviewed_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return res.json({ success: true, data });
+  }));
+
   // ── Orders (view + update status) ─────────────────────────────────────────
   app.get('/api/admin/orders', requireAdmin, h(async (req, res) => {
     const { data, error } = await db

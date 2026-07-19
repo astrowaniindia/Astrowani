@@ -45,6 +45,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     sessionId = '',
     callerName = 'Customer',
     perMinuteCharge = 0,
+    isFreeSession = false,
   } = route.params || {};
 
   const [isConnected, setIsConnected] = useState(false);
@@ -389,7 +390,12 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
             <View style={styles.statusDotGreen} />
             <Text style={styles.statusTextSmall}>{formatTime(callDuration)}</Text>
           </View>
-          {perMinuteCharge > 0 && (
+          {isFreeSession ? (
+            <View style={styles.freeBadge}>
+              <Ionicons name="gift-outline" size={13} color="#7A5B00" />
+              <Text style={styles.freeBadgeText}>Customer's free first consultation</Text>
+            </View>
+          ) : perMinuteCharge > 0 && (
             <View style={styles.billingBadge}>
               <Ionicons name="timer-outline" size={13} color={COLORS.AstroGold} />
               <Text style={styles.billingText}>₹{perMinuteCharge}/min • billing active</Text>
@@ -522,6 +528,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,215,0,0.2)',
   },
   billingText: {fontSize: 12, color: COLORS.AstroGold, fontWeight: '500'},
+  freeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFF3CD',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  freeBadgeText: {fontSize: 12, color: '#7A5B00', fontWeight: '600'},
 
   // Plain container — NO overflow, NO borderRadius, NO elevation (ENX rule preserved for RTCView)
   localVideoPiP: {

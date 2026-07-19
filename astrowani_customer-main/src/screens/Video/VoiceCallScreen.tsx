@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
 import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
+import {supabase} from '../../api/SupabaseClient';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 
@@ -77,6 +78,18 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   useEffect(() => {
     callDurationRef.current = callDuration;
   }, [callDuration]);
+
+  const [isFreeSession, setIsFreeSession] = useState(false);
+  useEffect(() => {
+    if (!initialSessionId) return;
+    supabase
+      .from('chat_sessions')
+      .select('is_free_session')
+      .eq('id', initialSessionId)
+      .single()
+      .then(({data}) => setIsFreeSession(!!data?.is_free_session))
+      .catch(() => {});
+  }, [initialSessionId]);
 
   // ─── Animations ────────────────────────────────────────────────────────────
   const startRipple = useCallback(() => {
@@ -401,6 +414,13 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           <View style={[styles.statusDot, isActive && styles.statusDotGreen]} />
           <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
+
+        {isFreeSession && (
+          <View style={styles.freeBadge}>
+            <VectorIcon name="card-giftcard" type="MaterialIcons" size={13} color="#7A5B00" />
+            <Text style={styles.freeBadgeText}>Your free first consultation</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.controlsBar}>
@@ -466,6 +486,17 @@ const styles = StyleSheet.create({
   statusDot: {width: 7, height: 7, borderRadius: 4, backgroundColor: color.AstroSoftOrange},
   statusDotGreen: {backgroundColor: '#34C759'},
   statusText: {fontSize: 15, color: color.AstroSoftOrange, fontWeight: '500', fontVariant: ['tabular-nums']},
+  freeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFF3CD',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  freeBadgeText: {fontSize: 12, color: '#7A5B00', fontWeight: '600'},
   controlsBar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -38,6 +38,7 @@ import { SOCKET_URL } from '../../config/api';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
+import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 
 // Bundled fallback banners — shown until the admin adds real banners in the dashboard.
 const FALLBACK_BANNERS = [
@@ -257,24 +258,28 @@ const Home = ({navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
 
-      // Wallet check — need at least 5 minutes worth (matches Call.js)
+      // Wallet check — need at least 5 minutes worth (matches Call.js), skipped for a
+      // customer's free first-ever session so a ₹0 balance doesn't block them from it.
       const pricePerMin = Number(item.chargePerMinute || item.pricing || 0);
       const minRequired = pricePerMin * 5;
-      const { data: customer, error: walletErr } = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userEntireData.id)
-        .single();
-      if (walletErr) {
-        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-        return null;
-      }
-      if (customer.wallet_balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
-        );
-        return null;
+      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
+      if (!freeEligible) {
+        const { data: customer, error: walletErr } = await supabase
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', userEntireData.id)
+          .single();
+        if (walletErr) {
+          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+          return null;
+        }
+        if (customer.wallet_balance < minRequired) {
+          Alert.alert(
+            t('alerts.insufficientBalance'),
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+          );
+          return null;
+        }
       }
 
       navigatedRef.current = false;
@@ -401,24 +406,28 @@ const Home = ({navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
 
-      // Wallet check — need at least 5 minutes worth (video rate)
+      // Wallet check — need at least 5 minutes worth (video rate), skipped for a
+      // customer's free first-ever session.
       const pricePerMin = Number(item.videoPrice || item.chargePerMinute || item.pricing || 0);
       const minRequired = pricePerMin * 5;
-      const { data: customer, error: walletErr } = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userEntireData.id)
-        .single();
-      if (walletErr) {
-        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-        return null;
-      }
-      if (customer.wallet_balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
-        );
-        return null;
+      const videoFreeEligible = await isEligibleForFreeConsultation(userEntireData.id);
+      if (!videoFreeEligible) {
+        const { data: customer, error: walletErr } = await supabase
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', userEntireData.id)
+          .single();
+        if (walletErr) {
+          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+          return null;
+        }
+        if (customer.wallet_balance < minRequired) {
+          Alert.alert(
+            t('alerts.insufficientBalance'),
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+          );
+          return null;
+        }
       }
 
       navigatedRef.current = false;

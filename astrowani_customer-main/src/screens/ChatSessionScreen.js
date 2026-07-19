@@ -375,6 +375,13 @@ const ChatSessionScreen = ({ route, navigation }) => {
         </View>
       </View>
 
+      {session?.is_free_session && (
+        <View style={styles.freeBanner}>
+          <Ionicons name="gift-outline" size={16} color="#7A5B00" />
+          <Text style={styles.freeBannerText}>Your free first consultation — no charge for the opening minutes</Text>
+        </View>
+      )}
+
       {/* ── Messages ──────────────────────────── */}
       {connecting ? (
         <View style={styles.waiting}>
@@ -446,6 +453,15 @@ const styles = StyleSheet.create({
   endBtn: { backgroundColor: '#ff4444', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, elevation: 2 },
   endText: { color: '#fff', marginLeft: 4, fontWeight: '700', fontSize: 13 },
   walletBal: { color: '#ffd', fontSize: 12, marginTop: 2 },
+  freeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF3CD',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  freeBannerText: { color: '#7A5B00', fontSize: 12, fontWeight: '600', flexShrink: 1 },
   waiting: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
   waitingText: { color: '#888', fontSize: 15 },
   messagesList: { padding: 12, paddingBottom: 20 },

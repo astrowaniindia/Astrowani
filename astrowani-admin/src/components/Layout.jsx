@@ -17,6 +17,7 @@ const links = [
   { to: '/missed', label: 'Missed Sessions' },
   { to: '/notifications', label: 'Notifications' },
   { to: '/withdrawals', label: 'Withdrawals' },
+  { to: '/reports', label: 'Reports' },
   { to: '/astrologers', label: 'Astrologers' },
   { to: '/reviews', label: 'Reviews' },
   { to: '/customers', label: 'Customers' },

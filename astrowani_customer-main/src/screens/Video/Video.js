@@ -18,6 +18,7 @@ import {SOCKET_URL} from '../../config/api';
 import {supabase} from '../../api/SupabaseClient';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {ensureProfileComplete} from '../../utils/profileGate';
+import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
 import io from 'socket.io-client';
 import {LanguageContext} from '../../context/LanguageContext';
 
@@ -148,22 +149,25 @@ const Video = ({navigation}) => {
       const pricePerMin = item.videoPrice || item.chargePerMinute || item.pricing || 15;
       const minRequired = pricePerMin * 5;
 
-      const {data: customer, error: walletErr} = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userEntireData.id)
-        .single();
+      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
+      if (!freeEligible) {
+        const {data: customer, error: walletErr} = await supabase
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', userEntireData.id)
+          .single();
 
-      if (walletErr) {
-        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-        return;
-      }
-      if (customer.wallet_balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
-        );
-        return;
+        if (walletErr) {
+          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+          return;
+        }
+        if (customer.wallet_balance < minRequired) {
+          Alert.alert(
+            t('alerts.insufficientBalance'),
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+          );
+          return;
+        }
       }
 
       setIsWaiting(true);
