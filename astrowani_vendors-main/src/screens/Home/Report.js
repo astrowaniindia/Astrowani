@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Modal, TextInput, Alert, RefreshControl } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
@@ -20,6 +20,7 @@ export default function Wallet() {
   const [transactions, setTransactions] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -73,6 +74,7 @@ export default function Wallet() {
       console.warn('Wallet fetch error', e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -81,6 +83,11 @@ export default function Wallet() {
       fetchWallet();
     }, [])
   );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchWallet();
+  };
 
   const openWithdrawModal = () => {
     if (!hasPayoutDetails) {
@@ -155,6 +162,9 @@ export default function Wallet() {
         keyExtractor={(item) => item.id}
         renderItem={renderTransaction}
         contentContainerStyle={styles.transactionList}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
+        }
         ListHeaderComponent={
           <>
             {/* Wallet Balance Section */}
