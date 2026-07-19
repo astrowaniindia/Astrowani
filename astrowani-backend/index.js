@@ -1679,8 +1679,9 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
 
     return res.status(200).json({ success: true, newBalance, withdrawal });
   } catch (err) {
-    console.error('POST /vendor/wallet/withdraw error:', err.message);
-    return res.status(500).json({ success: false, message: 'Withdrawal request failed' });
+    console.error('POST /vendor/wallet/withdraw error:', err.message, err.details, err.hint);
+    // TEMP debug: surface the real error to the client while diagnosing.
+    return res.status(500).json({ success: false, message: `Withdrawal request failed: ${err.message}${err.details ? ' | ' + err.details : ''}${err.hint ? ' | ' + err.hint : ''}` });
   }
 });
 
