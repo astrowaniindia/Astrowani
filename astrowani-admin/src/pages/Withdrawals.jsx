@@ -9,19 +9,30 @@ function statusBadge(s) {
 export default function Withdrawals() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
-    const { data } = await client.get('/api/admin/withdrawals');
-    setRows(data.data || []);
-    setLoading(false);
+    setError('');
+    try {
+      const { data } = await client.get('/api/admin/withdrawals');
+      setRows(data.data || []);
+    } catch (e) {
+      setError(e.response?.data?.message || e.message || 'Failed to load withdrawal requests.');
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
 
   const act = async (r, status) => {
     const note = status === 'rejected' ? window.prompt('Reason for rejecting (optional):') || '' : '';
-    await client.patch(`/api/admin/withdrawals/${r.id}`, { status, admin_note: note });
-    await load();
+    try {
+      await client.patch(`/api/admin/withdrawals/${r.id}`, { status, admin_note: note });
+      await load();
+    } catch (e) {
+      window.alert(e.response?.data?.message || e.message || 'Failed to update request.');
+    }
   };
 
   return (
@@ -39,7 +50,8 @@ export default function Withdrawals() {
           </tr></thead>
           <tbody>
             {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8} className="empty">No withdrawal requests yet.</td></tr>}
+            {!loading && error && <tr><td colSpan={8} className="empty" style={{ color: '#c0392b' }}>{error}</td></tr>}
+            {!loading && !error && rows.length === 0 && <tr><td colSpan={8} className="empty">No withdrawal requests yet.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.astrologers ? `${r.astrologers.first_name || ''} ${r.astrologers.last_name || ''}`.trim() : '—'}</td>
