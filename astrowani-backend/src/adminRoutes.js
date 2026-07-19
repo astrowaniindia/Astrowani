@@ -366,7 +366,12 @@ module.exports = function registerAdminRoutes(app) {
       .eq('id', req.params.id)
       .single();
     if (fetchErr) throw fetchErr;
-    if (withdrawal.status !== 'pending') {
+
+    // Valid transitions: pending -> approved/rejected, approved -> paid. The old check
+    // (anything other than 'pending' is "already processed") blocked marking an approved
+    // request as paid, since by then its status is legitimately 'approved', not 'pending'.
+    const validFrom = status === 'paid' ? 'approved' : 'pending';
+    if (withdrawal.status !== validFrom) {
       return res.status(400).json({ success: false, message: 'Request already processed' });
     }
 
