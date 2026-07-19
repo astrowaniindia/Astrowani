@@ -429,6 +429,21 @@ module.exports = function registerAdminRoutes(app) {
       .select()
       .single();
     if (error) throw error;
+
+    // Let the reporting customer know their complaint is being handled — the admin_note
+    // written when resolving the report IS the message sent to them.
+    if (admin_note && data.customer_id) {
+      const { data: custRow } = await db
+        .from('customers').select('fcm_token').eq('id', data.customer_id).single();
+      if (custRow?.fcm_token) {
+        sendPush(custRow.fcm_token, {
+          title: 'Update on your report',
+          body: admin_note,
+          data: { type: 'report_update', reportId: data.id },
+        }).catch((e) => console.error('[reports] push send error:', e.message));
+      }
+    }
+
     return res.json({ success: true, data });
   }));
 
