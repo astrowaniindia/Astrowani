@@ -1,14 +1,24 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { supabase } from '../../api/SupabaseClient';
 
+const STATUS_COLORS = {
+  pending: '#F5A623',
+  approved: '#2196F3',
+  paid: '#4CAF50',
+  rejected: '#D32F2F',
+};
+
 export default function Wallet() {
+  const navigation = useNavigation();
   const [balance, setBalance] = useState(null);
+  const [hasPayoutDetails, setHasPayoutDetails] = useState(true);
   const [transactions, setTransactions] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState('');
@@ -19,15 +29,17 @@ export default function Wallet() {
       const astroId = await AsyncStorage.getItem('astroId');
       if (!astroId) return;
 
-      // 1. Fetch balance
+      // 1. Fetch balance + whether payout details are on file
       const { data: astroData, error: astroErr } = await supabase
         .from('astrologers')
-        .select('wallet_balance')
+        .select('wallet_balance, bank_account_holder, bank_account_number, bank_ifsc, upi_id')
         .eq('id', astroId)
         .single();
 
       if (!astroErr && astroData) {
         setBalance(astroData.wallet_balance ?? 0);
+        const hasBank = astroData.bank_account_holder && astroData.bank_account_number && astroData.bank_ifsc;
+        setHasPayoutDetails(!!(hasBank || astroData.upi_id));
       }
 
       // 2. Fetch transactions
@@ -46,6 +58,17 @@ export default function Wallet() {
           date: new Date(t.created_at).toLocaleDateString('en-IN'),
         })));
       }
+
+      // 3. Fetch withdrawal request status history
+      try {
+        const token = await AsyncStorage.getItem('token');
+        const res = await Instance.get('/vendor/wallet/withdrawals', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.data?.success) setWithdrawals(res.data.data || []);
+      } catch (e) {
+        console.warn('Withdrawal history fetch error', e);
+      }
     } catch (e) {
       console.warn('Wallet fetch error', e);
     } finally {
@@ -60,6 +83,17 @@ export default function Wallet() {
   );
 
   const openWithdrawModal = () => {
+    if (!hasPayoutDetails) {
+      Alert.alert(
+        'Payout Details Required',
+        'Please add your bank account or UPI ID in Edit Profile before requesting a withdrawal.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go to Edit Profile', onPress: () => navigation.navigate('EditProfile') },
+        ]
+      );
+      return;
+    }
     setAmount('');
     setModalVisible(true);
   };
@@ -116,22 +150,46 @@ export default function Wallet() {
 
   return (
     <View style={styles.container}>
-      {/* Wallet Balance Section */}
-      <View style={styles.walletCard}>
-        <Text style={styles.walletText}>Wallet Balance</Text>
-        <Text style={styles.walletBalance}>₹{balance}</Text>
-        <TouchableOpacity style={styles.topUpButton} onPress={openWithdrawModal}>
-          <Text style={styles.topUpButtonText}>Request Withdrawal</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Recent Transactions Section */}
-      <Text style={styles.sectionTitle}>Recent Transactions</Text>
       <FlatList
         data={transactions}
         keyExtractor={(item) => item.id}
         renderItem={renderTransaction}
         contentContainerStyle={styles.transactionList}
+        ListHeaderComponent={
+          <>
+            {/* Wallet Balance Section */}
+            <View style={styles.walletCard}>
+              <Text style={styles.walletText}>Wallet Balance</Text>
+              <Text style={styles.walletBalance}>₹{balance}</Text>
+              <TouchableOpacity style={styles.topUpButton} onPress={openWithdrawModal}>
+                <Text style={styles.topUpButtonText}>Request Withdrawal</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Withdrawal Requests Section */}
+            {withdrawals.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Withdrawal Requests</Text>
+                {withdrawals.map((w) => (
+                  <View key={w.id} style={styles.withdrawalCard}>
+                    <View style={styles.withdrawalRow}>
+                      <Text style={styles.withdrawalAmount}>₹{w.amount}</Text>
+                      <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[w.status] || '#999' }]}>
+                        <Text style={styles.statusPillText}>{w.status.toUpperCase()}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.transactionDate}>
+                      Requested {new Date(w.requested_at).toLocaleDateString('en-IN')}
+                    </Text>
+                    {w.admin_note ? <Text style={styles.withdrawalNote}>{w.admin_note}</Text> : null}
+                  </View>
+                ))}
+              </>
+            )}
+
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+          </>
+        }
       />
 
       <Modal transparent visible={modalVisible} animationType="fade" onRequestClose={() => setModalVisible(false)}>
@@ -203,6 +261,22 @@ const styles = StyleSheet.create({
   transactionDescription: { fontSize: 16, color: '#333', marginBottom: 4 },
   transactionAmount: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50', marginBottom: 4 },
   transactionDate: { fontSize: 14, color: '#777' },
+  withdrawalCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  withdrawalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  withdrawalAmount: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  statusPillText: { fontSize: 11, fontWeight: 'bold', color: '#FFF' },
+  withdrawalNote: { fontSize: 13, color: '#D32F2F', marginTop: 6, fontStyle: 'italic' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

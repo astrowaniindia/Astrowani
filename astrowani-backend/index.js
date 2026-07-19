@@ -1603,10 +1603,21 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
 
     const { data: astroRow, error: astroErr } = await supabase
       .from('astrologers')
-      .select('wallet_balance')
+      .select('wallet_balance, bank_account_holder, bank_account_number, bank_ifsc, bank_name, upi_id')
       .eq('id', vendorId)
       .single();
     if (astroErr) throw astroErr;
+
+    // Admin has no way to actually pay out without either a bank account or a UPI id —
+    // block the request at the source rather than accepting money-nowhere-to-go requests.
+    const hasBankDetails = astroRow?.bank_account_number && astroRow?.bank_ifsc && astroRow?.bank_account_holder;
+    const hasUpi = !!astroRow?.upi_id;
+    if (!hasBankDetails && !hasUpi) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please add your bank account or UPI details in Edit Profile before requesting a withdrawal.',
+      });
+    }
 
     const currentBalance = astroRow?.wallet_balance ?? 0;
     if (amount > currentBalance) {
@@ -1620,9 +1631,20 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       .eq('id', vendorId);
     if (updateErr) throw updateErr;
 
+    // Snapshot the payout details as they stand right now — a later profile edit
+    // shouldn't retroactively change what an already-processed request says was used.
     const { data: withdrawal, error: insertErr } = await supabase
       .from('withdrawal_requests')
-      .insert([{ astrologer_id: vendorId, amount, status: 'pending' }])
+      .insert([{
+        astrologer_id: vendorId,
+        amount,
+        status: 'pending',
+        bank_account_holder: astroRow.bank_account_holder || null,
+        bank_account_number: astroRow.bank_account_number || null,
+        bank_ifsc: astroRow.bank_ifsc || null,
+        bank_name: astroRow.bank_name || null,
+        upi_id: astroRow.upi_id || null,
+      }])
       .select()
       .single();
     if (insertErr) throw insertErr;

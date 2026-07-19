@@ -36,6 +36,11 @@ export default function EditProfile() {
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankIfsc, setBankIfsc] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [upiId, setUpiId] = useState('');
 
   const handleImagePicker = () => {
     if (Platform.OS === 'ios') {
@@ -128,6 +133,11 @@ export default function EditProfile() {
         setLanguage(Array.isArray(astroData.languages) ? astroData.languages.join(', ') : (astroData.languages || ''));
         setBio(astroData.bio || '');
         setProfileImage(astroData.profile_pic_url || astroData.profile_image || null);
+        setBankAccountHolder(astroData.bank_account_holder || '');
+        setBankAccountNumber(astroData.bank_account_number || '');
+        setBankIfsc(astroData.bank_ifsc || '');
+        setBankName(astroData.bank_name || '');
+        setUpiId(astroData.upi_id || '');
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -179,7 +189,12 @@ export default function EditProfile() {
           video_charge_per_minute: parseInt(videoCharge) || 0,
           languages: langArray,
           bio: bio,
-          profile_pic_url: profilePicUrlToSave
+          profile_pic_url: profilePicUrlToSave,
+          bank_account_holder: bankAccountHolder.trim() || null,
+          bank_account_number: bankAccountNumber.trim() || null,
+          bank_ifsc: bankIfsc.trim() || null,
+          bank_name: bankName.trim() || null,
+          upi_id: upiId.trim() || null,
         })
         .eq('id', astroId);
 
@@ -334,7 +349,61 @@ fetchData()
           onChangeText={setLanguage}
           placeholder="e.g. English, Hindi"
         />
-        
+
+        <View style={styles.divider} />
+        <Text style={styles.sectionTitle}>Payout Details</Text>
+        <Text style={styles.payoutHint}>
+          Required to request a withdrawal — add either a bank account or a UPI ID.
+        </Text>
+
+        <Text style={styles.label}>Account Holder Name</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={COLORS.lightGrey}
+          value={bankAccountHolder}
+          onChangeText={setBankAccountHolder}
+          placeholder="As per bank records"
+        />
+
+        <Text style={styles.label}>Account Number</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={COLORS.lightGrey}
+          value={bankAccountNumber}
+          onChangeText={setBankAccountNumber}
+          placeholder="Bank account number"
+          keyboardType="number-pad"
+        />
+
+        <Text style={styles.label}>IFSC Code</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={COLORS.lightGrey}
+          value={bankIfsc}
+          onChangeText={(t) => setBankIfsc(t.toUpperCase())}
+          placeholder="e.g. SBIN0001234"
+          autoCapitalize="characters"
+        />
+
+        <Text style={styles.label}>Bank Name</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={COLORS.lightGrey}
+          value={bankName}
+          onChangeText={setBankName}
+          placeholder="e.g. State Bank of India"
+        />
+
+        <Text style={styles.label}>UPI ID (alternative to bank details)</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={COLORS.lightGrey}
+          value={upiId}
+          onChangeText={setUpiId}
+          placeholder="e.g. name@upi"
+          autoCapitalize="none"
+        />
+
         <TouchableOpacity style={styles.submitButton} onPress={updateData}>
           <Text style={styles.submitButtonText}>Save Changes</Text>
         </TouchableOpacity>
@@ -412,6 +481,12 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#EEEEEE',
     marginVertical: verticalScale(15),
+  },
+  payoutHint: {
+    fontSize: moderateScale(12),
+    color: '#888',
+    marginBottom: verticalScale(15),
+    marginTop: verticalScale(-8),
   },
   label: {
     fontSize: moderateScale(14),

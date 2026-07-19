@@ -34,17 +34,28 @@ export default function Withdrawals() {
       <div className="table-wrap">
         <table>
           <thead><tr>
-            <th>Astrologer</th><th>Phone</th><th>Amount (₹)</th><th>Status</th>
+            <th>Astrologer</th><th>Phone</th><th>Amount (₹)</th><th>Payout To</th><th>Status</th>
             <th>Requested</th><th>Note</th><th>Actions</th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} className="empty">No withdrawal requests yet.</td></tr>}
+            {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={8} className="empty">No withdrawal requests yet.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.astrologers ? `${r.astrologers.first_name || ''} ${r.astrologers.last_name || ''}`.trim() : '—'}</td>
                 <td className="muted">{r.astrologers?.mobile || '—'}</td>
                 <td><b>{r.amount}</b></td>
+                <td className="muted">
+                  {r.bank_account_number ? (
+                    <div>
+                      <div>{r.bank_account_holder}</div>
+                      <div>{r.bank_name} · {r.bank_account_number}</div>
+                      <div>IFSC: {r.bank_ifsc}</div>
+                    </div>
+                  ) : r.upi_id ? (
+                    <div>UPI: {r.upi_id}</div>
+                  ) : '—'}
+                </td>
                 <td>{statusBadge(r.status)}</td>
                 <td className="muted">{new Date(r.requested_at).toLocaleString()}</td>
                 <td className="muted">{r.admin_note || '—'}</td>
