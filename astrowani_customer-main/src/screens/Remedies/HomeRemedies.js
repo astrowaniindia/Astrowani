@@ -8,6 +8,7 @@ const TITLE_KEYS = {
   Puja: 'remedies.puja',
   Gemstones: 'remedies.gemstones',
   'Specific Puja': 'remedies.specificPuja',
+  'Life Reports': 'remedies.lifeReports',
 };
 
 const data = [
@@ -31,6 +32,12 @@ const data = [
     description: 'Buy certified gemstones to balance energies and support your astrological goals.',
     image: require('../../assets/images/groupPuja.jpg'),
   },
+  {
+    id: '5',
+    title: 'Life Reports',
+    description: 'One-time detailed reports on your career, marriage, health, or finances.',
+    image: require('../../assets/images/specificPuja.jpg'),
+  },
 ];
 
 const HomeRemedies = ({ navigation }) => {
@@ -42,6 +49,8 @@ const HomeRemedies = ({ navigation }) => {
       navigation.navigate('RemedyShop', { type: 'gemstone', title: 'Gemstones' });
     } else if (item.title === 'Specific Puja') {
       navigation.navigate('RemedyShop', { type: 'specific_puja', title: 'Specific Puja' });
+    } else if (item.title === 'Life Reports') {
+      navigation.navigate('RemedyShop', { type: 'life_report', title: 'Life Reports' });
     }
   };
 

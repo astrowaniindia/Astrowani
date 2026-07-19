@@ -142,6 +142,18 @@ function CustomDrawerContent(props, navigation) {
             icon={() => renderIcon(Icon, 'favorite')}
             onPress={() => props.navigation.navigate('FavoriteScreen')}
           />
+          <DrawerItem
+            label={t('drawer.myOrders')}
+            labelStyle={styles.drawerLabel}
+            icon={() => renderIcon(Icon, 'shopping-bag')}
+            onPress={() => props.navigation.navigate('MyOrders')}
+          />
+          <DrawerItem
+            label={t('drawer.voiceNotes')}
+            labelStyle={styles.drawerLabel}
+            icon={() => renderIcon(Icon, 'mic')}
+            onPress={() => props.navigation.navigate('VoiceNotes')}
+          />
 
           <View style={styles.divider} />
 

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
+const { computeAstrologerMetrics } = require('./src/astrologerMetrics');
 
 const SUPABASE_URL = 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_iLfw8Co1PiXDyYJZvzCRKw_5hQBKn_O';
@@ -281,6 +282,14 @@ const ENABLEX_SMS_CAMPAIGN_ID = '1245560';
 const ENABLEX_SMS_TEMPLATE_ID = '463430427'; // "OTP for astrowani" (DLT 1207172007863021380): "Hi user, your OTP is {$var1} for Login on – Astrowaniindia"
 const ENABLEX_SMS_SENDER_ID = 'ASTRWI';
 
+// Referral codes — 7 chars, excludes visually-ambiguous characters (0/O, 1/I).
+function generateReferralCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 7; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
 // EnableX requires E.164 numbers (with country code). Assumes India (+91) for bare 10-digit numbers.
 function toE164(phoneNumber) {
   const digits = String(phoneNumber).replace(/\D/g, '');
@@ -382,7 +391,7 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
  * Endpoint to verify an OTP
  */
 app.post('/api/users/mobile-otp-verify', async (req, res) => {
-  const { phoneNumber, otp, fcmToken, role } = req.body;
+  const { phoneNumber, otp, fcmToken, role, referralCode } = req.body;
 
   if (!phoneNumber || !otp) {
     return res.status(400).json({ success: false, message: 'Phone number and OTP are required' });
@@ -448,14 +457,38 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
           if (updateError) console.error('Failed to update customer fcm_token:', updateError.message);
         }
       } else {
-        // Create a new customer row
+        // Create a new customer row — gets their own referral code to share, and (if they
+        // signed up using someone else's code) a pending referral row. The referrer isn't
+        // rewarded yet — that happens once this new customer completes their first session
+        // (see sessionManager.js's maybeRewardReferral), not just for signing up.
+        let referrerId = null;
+        if (referralCode) {
+          const { data: referrerRow } = await supabaseService
+            .from('customers').select('id').eq('referral_code', String(referralCode).toUpperCase()).limit(1).maybeSingle();
+          referrerId = referrerRow?.id || null;
+        }
+
         const { data: newCustomer, error: insertError } = await supabaseService
           .from('customers')
-          .insert([{ mobile: phoneNumber, wallet_balance: 0, fcm_token: fcmToken || null }])
+          .insert([{
+            mobile: phoneNumber,
+            wallet_balance: 0,
+            fcm_token: fcmToken || null,
+            referral_code: generateReferralCode(),
+          }])
           .select('id')
           .single();
         if (insertError) throw insertError;
         supabaseCustomerId = newCustomer?.id;
+
+        if (referrerId && supabaseCustomerId && referrerId !== supabaseCustomerId) {
+          await supabaseService.from('referrals').insert([{
+            referrer_customer_id: referrerId,
+            referred_customer_id: supabaseCustomerId,
+            referral_code: String(referralCode).toUpperCase(),
+            status: 'pending',
+          }]);
+        }
       }
     }
   } catch (e) {
@@ -825,6 +858,35 @@ app.post('/api/orders', async (req, res) => {
   } catch (err) {
     console.error('POST /api/orders error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to place order' });
+  }
+});
+
+// Customer's own order history — needed for life_report orders, where the finished
+// report_content (written by admin once prepared) is delivered here rather than shipped.
+app.get('/api/orders/mine', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+
+    let customerId = decoded.userId || decoded.id;
+    if (decoded.phone) {
+      const { data: cData } = await supabase
+        .from('customers').select('id').eq('mobile', decoded.phone).limit(1);
+      if (cData && cData.length > 0) customerId = cData[0].id;
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('GET /api/orders/mine error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch orders' });
   }
 });
 
@@ -1440,6 +1502,55 @@ app.get('/api/wallet', async (req, res) => {
   }
 });
 
+// Real referral program — replaces the customer app's old ReferAndEarnScreen.js mock
+// (identical hardcoded code for every user, dead reward button). Lazily generates a code
+// for customers who signed up before this feature existed.
+app.get('/api/customer/referral-info', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.userId || decoded._id || decoded.id;
+
+    let customerRow = null;
+    if (decoded.phone) {
+      const { data } = await supabaseService
+        .from('customers').select('id, referral_code').eq('mobile', decoded.phone).limit(1).maybeSingle();
+      customerRow = data;
+    }
+    if (!customerRow && String(userId).includes('-')) {
+      const { data } = await supabaseService
+        .from('customers').select('id, referral_code').eq('id', userId).maybeSingle();
+      customerRow = data;
+    }
+    if (!customerRow) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    let code = customerRow.referral_code;
+    if (!code) {
+      code = generateReferralCode();
+      await supabaseService.from('customers').update({ referral_code: code }).eq('id', customerRow.id);
+    }
+
+    const { data: referrals } = await supabaseService
+      .from('referrals').select('status, reward_amount').eq('referrer_customer_id', customerRow.id);
+
+    const totalReferred = (referrals || []).length;
+    const totalEarned = (referrals || [])
+      .filter((r) => r.status === 'rewarded')
+      .reduce((sum, r) => sum + Number(r.reward_amount || 0), 0);
+
+    return res.status(200).json({
+      success: true,
+      data: { code, totalReferred, totalEarned, rewardAmount: 50 },
+    });
+  } catch (err) {
+    console.error('GET /api/customer/referral-info error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch referral info' });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // WALLET: Deduct from customer AND credit to vendor (called every minute during chat/call)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1715,6 +1826,170 @@ app.get('/vendor/wallet/withdrawals', async (req, res) => {
   } catch (err) {
     console.error('GET /vendor/wallet/withdrawals error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch withdrawal history' });
+  }
+});
+
+// GET vendor's own performance metrics — response time, acceptance rate, repeat-customer rate.
+app.get('/vendor/performance', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const metrics = await computeAstrologerMetrics(supabaseService || supabase, [vendorId]);
+    return res.status(200).json({ success: true, data: metrics[vendorId] || null });
+  } catch (err) {
+    console.error('GET /vendor/performance error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch performance metrics' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VOICE NOTES — proactive check-ins from an astrologer to a past customer, no active
+// session required. Audio is uploaded client-side via the existing /api/upload-image
+// endpoint (which also accepts audio/* — see uploadRoutes.js) before calling this.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/vendor/voice-notes', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const { customerId, audioUrl, durationSeconds } = req.body || {};
+    if (!customerId || !audioUrl) {
+      return res.status(400).json({ success: false, message: 'customerId and audioUrl are required' });
+    }
+
+    const { data: note, error } = await supabaseService
+      .from('voice_notes')
+      .insert([{
+        astrologer_id: vendorId,
+        customer_id: customerId,
+        audio_url: audioUrl,
+        duration_seconds: durationSeconds || null,
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+
+    const [{ data: astro }, { data: cust }] = await Promise.all([
+      supabaseService.from('astrologers').select('first_name, last_name').eq('id', vendorId).single(),
+      supabaseService.from('customers').select('fcm_token').eq('id', customerId).single(),
+    ]);
+    const astroName = `${astro?.first_name || ''} ${astro?.last_name || ''}`.trim() || 'Your astrologer';
+
+    if (cust?.fcm_token) {
+      sendPush(cust.fcm_token, {
+        title: `${astroName} sent you a voice note`,
+        body: 'Tap to listen — checking in on how you\'re doing.',
+        data: { type: 'voice_note', noteId: note.id },
+      }).catch((e) => console.error('[voice-notes] push error:', e.message));
+    }
+
+    return res.status(200).json({ success: true, data: note });
+  } catch (err) {
+    console.error('POST /api/vendor/voice-notes error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to send voice note' });
+  }
+});
+
+// GET customer's own past customers this vendor has actually interacted with — powers the
+// vendor's "My Customers" picker for who a voice note can be sent to.
+app.get('/vendor/customers', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const { data: sessions, error } = await supabaseService
+      .from('chat_sessions')
+      .select('caller_id, call_type, started_at, ended_at')
+      .eq('vendor_id', vendorId)
+      .not('caller_id', 'is', null)
+      .order('started_at', { ascending: false });
+    if (error) throw error;
+
+    // Dedupe to the most recent session per customer.
+    const latestByCustomer = {};
+    (sessions || []).forEach((s) => {
+      if (!latestByCustomer[s.caller_id]) latestByCustomer[s.caller_id] = s;
+    });
+    const customerIds = Object.keys(latestByCustomer);
+    if (customerIds.length === 0) return res.status(200).json({ success: true, data: [] });
+
+    const { data: customers } = await supabaseService
+      .from('customers').select('id, name, profile_pic_url').in('id', customerIds);
+    const byId = {};
+    (customers || []).forEach((c) => { byId[c.id] = c; });
+
+    const data = customerIds.map((id) => ({
+      id,
+      name: byId[id]?.name || 'Customer',
+      profileImage: byId[id]?.profile_pic_url || null,
+      lastSessionType: latestByCustomer[id].call_type,
+      lastSessionAt: latestByCustomer[id].ended_at || latestByCustomer[id].started_at,
+    })).sort((a, b) => new Date(b.lastSessionAt) - new Date(a.lastSessionAt));
+
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('GET /vendor/customers error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch customers' });
+  }
+});
+
+// GET the current customer's received voice notes.
+app.get('/api/customer/voice-notes', async (req, res) => {
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { data: notes, error } = await supabase
+      .from('voice_notes')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const astroIds = [...new Set((notes || []).map((n) => n.astrologer_id))];
+    const { data: astros } = astroIds.length
+      ? await supabase.from('astrologers').select('id, first_name, last_name, profile_pic_url').in('id', astroIds)
+      : { data: [] };
+    const byId = {};
+    (astros || []).forEach((a) => { byId[a.id] = a; });
+
+    const data = (notes || []).map((n) => ({
+      ...n,
+      astrologerName: `${byId[n.astrologer_id]?.first_name || ''} ${byId[n.astrologer_id]?.last_name || ''}`.trim() || 'Astrologer',
+      astrologerImage: byId[n.astrologer_id]?.profile_pic_url || null,
+    }));
+
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('GET /api/customer/voice-notes error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch voice notes' });
+  }
+});
+
+app.post('/api/customer/voice-notes/:id/listened', async (req, res) => {
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    await supabaseService
+      .from('voice_notes')
+      .update({ listened_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('customer_id', customer.id);
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('POST /api/customer/voice-notes/:id/listened error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update' });
   }
 });
 

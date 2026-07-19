@@ -20,6 +20,7 @@ import Reports from './pages/Reports';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
+import Leaderboard from './pages/Leaderboard';
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="new-entries" element={<NewEntries />} />
         <Route path="astrologers" element={<Astrologers />} />
         <Route path="reviews" element={<Reviews />} />
+        <Route path="leaderboard" element={<Leaderboard />} />
         <Route path="customers" element={<Customers />} />
         <Route path="sessions" element={<Sessions />} />
       </Route>

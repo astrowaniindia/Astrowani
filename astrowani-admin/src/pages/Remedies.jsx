@@ -7,6 +7,7 @@ const TABS = [
   { key: 'puja', label: 'Puja' },
   { key: 'gemstone', label: 'Gemstones' },
   { key: 'specific_puja', label: 'Specific Puja' },
+  { key: 'life_report', label: 'Life Reports' },
 ];
 
 const EMPTY = { title: '', title_hi: '', description: '', description_hi: '', price: 0, image: '', is_active: true, sort_order: 0 };

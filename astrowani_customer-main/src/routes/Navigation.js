@@ -76,6 +76,8 @@ import PdfReportInputScreen from '../screens/drawerScreens/AstroServices/PdfRepo
 import PdfReportResultScreen from '../screens/drawerScreens/AstroServices/PdfReportResultScreen';
 import Home from '../screens/Home/Home';
 import ReferAndEarnScreen from '../screens/drawerScreens/ReferAndEarnScreen';
+import MyOrdersScreen from '../screens/drawerScreens/MyOrdersScreen';
+import VoiceNotesScreen from '../screens/drawerScreens/VoiceNotesScreen';
 import Settings from '../screens/drawerScreens/Settings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
 import FaqScreen from '../screens/drawerScreens/FaqScreen';
@@ -210,6 +212,26 @@ export default function Navigation({ initialRoute }) {
             headerTitleStyle: {
               fontSize: moderateScale(18),
             },
+          }}
+        />
+        <Stack.Screen
+          name="MyOrders"
+          component={MyOrdersScreen}
+          options={{
+            title: 'My Orders',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(18) },
+          }}
+        />
+        <Stack.Screen
+          name="VoiceNotes"
+          component={VoiceNotesScreen}
+          options={{
+            title: 'Voice Notes',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(18) },
           }}
         />
         <Stack.Screen

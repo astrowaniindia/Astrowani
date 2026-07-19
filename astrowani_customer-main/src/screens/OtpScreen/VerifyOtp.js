@@ -10,6 +10,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  TextInput,
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -28,6 +29,7 @@ const VerifyOtp = ({navigation, route}) => {
   const {phoneNumber, role = 'customer', profileData} = route?.params || {};
 
   const [code, setCode] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [timer, setTimer] = useState(RESEND_SECONDS);
@@ -68,6 +70,7 @@ const VerifyOtp = ({navigation, route}) => {
         otp: code,
         fcmToken,
         role,
+        referralCode: referralCode.trim() || undefined,
       });
       if (res?.data?.success && res?.data?.token) {
         await AsyncStorage.setItem('token', res.data.token);
@@ -175,6 +178,18 @@ const VerifyOtp = ({navigation, route}) => {
               }}
             />
           </View>
+
+          {!!profileData && (
+            <TextInput
+              style={styles.referralInput}
+              placeholder="Referral code (optional)"
+              placeholderTextColor="#999"
+              value={referralCode}
+              onChangeText={(t) => setReferralCode(t.toUpperCase())}
+              autoCapitalize="characters"
+              maxLength={10}
+            />
+          )}
 
           <TouchableOpacity
             style={[styles.verifyBtn, verifying && styles.disabledBtn]}
@@ -300,6 +315,18 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(20),
     fontWeight: '700',
     color: COLORS.textDark,
+  },
+  referralInput: {
+    width: '100%',
+    height: verticalScale(48),
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: moderateScale(14),
+    paddingHorizontal: scale(16),
+    marginBottom: verticalScale(16),
+    fontSize: moderateScale(14),
+    color: COLORS.textDark,
+    backgroundColor: '#FAFAFA',
   },
   verifyBtn: {
     width: '100%',

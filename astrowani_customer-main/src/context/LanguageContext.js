@@ -74,6 +74,8 @@ const translations = {
     'drawer.chatWithAstrologer': 'Chat With Astrologer',
     'drawer.blogs': 'Astrowani Blogs',
     'drawer.myFavorites': 'My Favorites',
+    'drawer.myOrders': 'My Orders',
+    'drawer.voiceNotes': 'Voice Notes',
     'drawer.referFriend': 'Refer A Friend',
     'drawer.settings': 'Settings',
     'drawer.support': 'Support',
@@ -121,6 +123,7 @@ const translations = {
     'remedies.puja': 'Puja',
     'remedies.gemstones': 'Gemstones',
     'remedies.specificPuja': 'Specific Puja',
+    'remedies.lifeReports': 'Life Reports',
     'remedies.buyNow': 'Buy Now',
 
     'call.pleaseLogin': 'Please login to continue.',
@@ -526,6 +529,8 @@ const translations = {
     'drawer.chatWithAstrologer': 'ज्योतिषी से चैट करें',
     'drawer.blogs': 'एस्ट्रोवाणी ब्लॉग',
     'drawer.myFavorites': 'मेरे पसंदीदा',
+    'drawer.myOrders': 'मेरे ऑर्डर',
+    'drawer.voiceNotes': 'वॉइस नोट्स',
     'drawer.referFriend': 'मित्र को आमंत्रित करें',
     'drawer.settings': 'सेटिंग्स',
     'drawer.support': 'सहायता',
@@ -573,6 +578,7 @@ const translations = {
     'remedies.puja': 'पूजा',
     'remedies.gemstones': 'रत्न',
     'remedies.specificPuja': 'विशिष्ट पूजा',
+    'remedies.lifeReports': 'जीवन रिपोर्ट',
     'remedies.buyNow': 'अभी खरीदें',
 
     'call.pleaseLogin': 'जारी रखने के लिए कृपया लॉगिन करें।',

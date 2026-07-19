@@ -159,7 +159,7 @@ export async function acceptRequest(req) {
   // Update status + session_id so the customer's Supabase Realtime gets the real session UUID.
   // Falls back to status-only if session_id column update fails (pre-migration).
   if (resolvedRequestId) {
-    const fullPayload = { status: 'accepted' };
+    const fullPayload = { status: 'accepted', responded_at: new Date().toISOString() };
     if (targetTable === 'call_requests' && sessionId) {
       fullPayload.session_id = sessionId;
     }
@@ -203,7 +203,7 @@ export async function rejectRequest(req) {
 
   await supabase
     .from(targetTable)
-    .update({ status: 'rejected' })
+    .update({ status: 'rejected', responded_at: new Date().toISOString() })
     .eq('id', resolvedRequestId);
 
   return { ok: true, resolvedRequestId };

@@ -43,6 +43,7 @@ import MissedSessions from '../screens/HIstory/MissedSessions';
 import TodayEarning from '../screens/Earning/TodayEarning';
 import TotalEarning from '../screens/Earning/TotalEarning';
 import RatingReview from '../screens/Review/RatingReview';
+import PerformanceDashboard from '../screens/Review/PerformanceDashboard';
 import VendorChatSession from '../screens/VendorChatSession';
 import Settings from '../screens/Settings';
 import AboutUsScreen from '../screens/AboutUsScreen';
@@ -342,6 +343,11 @@ function NavigationScreen() {
           name="RatingReview"
           component={RatingReview}
           options={({ route }) => ({ headerShown: true })}
+        />
+        <Stack.Screen
+          name="PerformanceDashboard"
+          component={PerformanceDashboard}
+          options={{ headerShown: true, title: 'Performance' }}
         />
            <Stack.Screen
           name="TotalEarning"

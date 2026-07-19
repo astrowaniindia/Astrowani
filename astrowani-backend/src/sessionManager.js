@@ -350,6 +350,65 @@ class SessionManager {
       this.io.to(session.vendor_id).emit('session_ended', { sessionId, reason });
       this.io.to(sessionId).emit('session_ended', { sessionId, reason });
     }
+
+    if (session?.caller_id) {
+      await this.maybeRewardReferral(session.caller_id);
+    }
+  }
+
+  /**
+   * Rewards a referrer the first time their referred customer completes a session — proof
+   * of genuine engagement, not just a signup. No-ops if there's no pending referral for this
+   * customer, or if this isn't their first-ever completed session (ended_at set).
+   */
+  async maybeRewardReferral(referredCustomerId) {
+    try {
+      const { data: referral } = await supabase
+        .from('referrals')
+        .select('*')
+        .eq('referred_customer_id', referredCustomerId)
+        .eq('status', 'pending')
+        .maybeSingle();
+      if (!referral) return;
+
+      const { count } = await supabase
+        .from('chat_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('caller_id', referredCustomerId)
+        .not('ended_at', 'is', null);
+      if ((count || 0) !== 1) return; // not their first completed session
+
+      const { data: referrer } = await supabase
+        .from('customers').select('wallet_balance, fcm_token').eq('id', referral.referrer_customer_id).single();
+      if (!referrer) return;
+
+      await supabase
+        .from('customers')
+        .update({ wallet_balance: (referrer.wallet_balance || 0) + Number(referral.reward_amount) })
+        .eq('id', referral.referrer_customer_id);
+
+      await supabase.from('wallet_transactions').insert([{
+        user_id: referral.referrer_customer_id,
+        type: 'credit',
+        amount: referral.reward_amount,
+        description: 'Referral reward — your friend completed their first session',
+      }]);
+
+      await supabase
+        .from('referrals')
+        .update({ status: 'rewarded', rewarded_at: new Date().toISOString() })
+        .eq('id', referral.id);
+
+      if (referrer.fcm_token) {
+        sendPush(referrer.fcm_token, {
+          title: 'Referral Reward!',
+          body: `You earned ₹${referral.reward_amount} because your friend completed their first session.`,
+          data: { type: 'referral_reward' },
+        }).catch((e) => console.error('[referral] push error:', e.message));
+      }
+    } catch (err) {
+      console.error('[SessionManager] maybeRewardReferral error:', err.message);
+    }
   }
 }
 

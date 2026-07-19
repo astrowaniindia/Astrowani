@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
+const { computeAstrologerMetrics } = require('./astrologerMetrics');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 
@@ -287,6 +288,39 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, data });
   }));
 
+  // ── Leaderboard — ranks astrologers by the same metrics the vendor performance ──
+  // dashboard shows them (response time, acceptance rate, repeat-customer rate), so
+  // admin sees exactly what astrologers see about themselves.
+  app.get('/api/admin/leaderboard', requireAdmin, h(async (req, res) => {
+    const { data: astros, error } = await db
+      .from('astrologers')
+      .select('id, first_name, last_name, average_rating, total_reviews, is_suspended, approval_status');
+    if (error) throw error;
+
+    const activeAstros = (astros || []).filter((a) => !a.is_suspended && a.approval_status !== 'rejected');
+    const metrics = await computeAstrologerMetrics(db, activeAstros.map((a) => a.id));
+
+    const rows = activeAstros.map((a) => ({
+      id: a.id,
+      name: `${a.first_name || ''} ${a.last_name || ''}`.trim() || 'Astrologer',
+      rating: a.average_rating || 0,
+      totalReviews: a.total_reviews || 0,
+      ...metrics[a.id],
+    }));
+
+    // Rank by a simple composite: acceptance rate and rating matter most, response time
+    // matters least (converted to a 0-100 scale, faster = higher, capped at 5 minutes).
+    const score = (r) => {
+      const acceptance = r.acceptanceRate ?? 0;
+      const rating = (r.rating || 0) * 20; // 0-5 stars -> 0-100
+      const responseScore = r.avgResponseSeconds == null ? 0 : Math.max(0, 100 - (r.avgResponseSeconds / 3));
+      return acceptance * 0.4 + rating * 0.4 + responseScore * 0.2;
+    };
+    rows.sort((a, b) => score(b) - score(a));
+
+    return res.json({ success: true, data: rows });
+  }));
+
   // ── New Entries (pending astrologer signups awaiting approval) ─────────────
   // Powers the admin "New Entries" screen. Returns pending applications with the
   // detail an admin needs to vet them. Approve/Reject reuse the PATCH above.
@@ -459,11 +493,29 @@ module.exports = function registerAdminRoutes(app) {
   }));
 
   app.patch('/api/admin/orders/:id', requireAdmin, h(async (req, res) => {
-    const allowed = ['status', 'payment_status'];
+    const allowed = ['status', 'payment_status', 'report_content'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+    // Writing the finished report content IS the delivery action for life_report orders.
+    const isDelivering = 'report_content' in body && body.report_content;
+    if (isDelivering) {
+      body.delivered_at = new Date().toISOString();
+      body.status = 'completed';
+    }
     const { data, error } = await db.from('orders').update(body).eq('id', req.params.id).select().single();
     if (error) throw error;
+
+    if (isDelivering && data.customer_id) {
+      const { data: cust } = await db.from('customers').select('fcm_token').eq('id', data.customer_id).single();
+      if (cust?.fcm_token) {
+        sendPush(cust.fcm_token, {
+          title: 'Your report is ready!',
+          body: `Your ${data.item_title} report has been delivered — open the app to view it.`,
+          data: { type: 'report_delivered', orderId: data.id },
+        }).catch((e) => console.error('[orders] push error:', e.message));
+      }
+    }
+
     return res.json({ success: true, data });
   }));
 

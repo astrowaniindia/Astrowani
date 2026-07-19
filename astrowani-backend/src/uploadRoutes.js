@@ -32,7 +32,9 @@ function requireAnyAuth(req, res, next) {
 }
 
 function parseDataUri(dataUri) {
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUri);
+  // Also accepts audio/* — reused by voice notes (POST /api/vendor/voice-notes) so both
+  // features share one upload path into Supabase Storage rather than duplicating it.
+  const match = /^data:((?:image|audio)\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUri);
   if (!match) return null;
   const mime = match[1];
   const ext = mime.split('/')[1].split('+')[0];
@@ -52,7 +54,7 @@ module.exports = function registerUploadRoutes(app) {
       }
       const parsed = parseDataUri(base64);
       if (!parsed) {
-        return res.status(400).json({ success: false, message: 'Invalid base64 image data' });
+        return res.status(400).json({ success: false, message: 'Invalid base64 data (expected image/* or audio/*)' });
       }
       const safeFolder = (folder || 'misc').replace(/[^a-z0-9_-]/gi, '');
       const filename = `${safeFolder}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${parsed.ext}`;

@@ -116,6 +116,10 @@ function handleNotificationTap(remoteMessage) {
   const type = remoteMessage?.data?.type;
   if (type === 'admin_broadcast' || type === 'admin_personal') {
     navigate('NotificationScreen');
+  } else if (type === 'voice_note') {
+    navigate('VoiceNotes');
+  } else if (type === 'report_delivered') {
+    navigate('MyOrders');
   }
 }
 
