@@ -1621,7 +1621,11 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Enter a valid amount' });
     }
 
-    const { data: astroRow, error: astroErr } = await supabase
+    // Service-role client — this endpoint is its own authorization boundary (JWT verified
+    // above), and withdrawal_requests has RLS enabled with no anon-key insert policy.
+    const db = supabaseService || supabase;
+
+    const { data: astroRow, error: astroErr } = await db
       .from('astrologers')
       .select('wallet_balance, bank_account_holder, bank_account_number, bank_ifsc, bank_name, upi_id')
       .eq('id', vendorId)
@@ -1644,16 +1648,10 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Amount exceeds wallet balance' });
     }
 
-    const newBalance = currentBalance - amount;
-    const { error: updateErr } = await supabase
-      .from('astrologers')
-      .update({ wallet_balance: newBalance })
-      .eq('id', vendorId);
-    if (updateErr) throw updateErr;
-
-    // Snapshot the payout details as they stand right now — a later profile edit
-    // shouldn't retroactively change what an already-processed request says was used.
-    const { data: withdrawal, error: insertErr } = await supabase
+    // Create the request row FIRST, before touching the balance — if this fails (as it did
+    // under RLS), nothing has moved yet. Deducting first and inserting second left a prior
+    // test run with money silently gone from wallet_balance and no request row to show for it.
+    const { data: withdrawal, error: insertErr } = await db
       .from('withdrawal_requests')
       .insert([{
         astrologer_id: vendorId,
@@ -1669,7 +1667,19 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       .single();
     if (insertErr) throw insertErr;
 
-    await supabase.from('vendor_wallet_transactions').insert([{
+    const newBalance = currentBalance - amount;
+    const { error: updateErr } = await db
+      .from('astrologers')
+      .update({ wallet_balance: newBalance })
+      .eq('id', vendorId);
+    if (updateErr) {
+      // Balance deduction failed after the request was created — pull the request back out
+      // rather than leave a "pending" row for money that was never actually put on hold.
+      await db.from('withdrawal_requests').delete().eq('id', withdrawal.id);
+      throw updateErr;
+    }
+
+    await db.from('vendor_wallet_transactions').insert([{
       vendor_id: vendorId,
       type: 'debit',
       amount,
@@ -1680,8 +1690,7 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
     return res.status(200).json({ success: true, newBalance, withdrawal });
   } catch (err) {
     console.error('POST /vendor/wallet/withdraw error:', err.message, err.details, err.hint);
-    // TEMP debug: surface the real error to the client while diagnosing.
-    return res.status(500).json({ success: false, message: `Withdrawal request failed: ${err.message}${err.details ? ' | ' + err.details : ''}${err.hint ? ' | ' + err.hint : ''}` });
+    return res.status(500).json({ success: false, message: 'Withdrawal request failed' });
   }
 });
 
@@ -1695,7 +1704,7 @@ app.get('/vendor/wallet/withdrawals', async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabaseService || supabase)
       .from('withdrawal_requests')
       .select('*')
       .eq('astrologer_id', vendorId)
