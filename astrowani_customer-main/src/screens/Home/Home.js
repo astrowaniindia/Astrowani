@@ -27,6 +27,7 @@ import Instance from '../../api/ApiCall';
 import {getAstroServices} from '../../api/astroApi';
 import FreeServicesScreen from '../drawerScreens/FreeSeviceScreen/FreeServicesScreen';
 import HomeRemedies from '../Remedies/HomeRemedies';
+import VoiceNotesBanner from './VoiceNotesBanner';
 import CustomerReview from './Review';
 import Remedies from '../Remedies/Remedies';
 import axios from 'axios';
@@ -971,6 +972,8 @@ const Home = ({navigation}) => {
             <Text style={styles.searchTxt}>{t('home.search')}</Text>
           </TouchableOpacity>
         </View>
+
+        <VoiceNotesBanner navigation={navigation} />
         <View
           style={{
             backgroundColor: COLORS.AstroMaroon,
