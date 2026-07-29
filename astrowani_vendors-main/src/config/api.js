@@ -1,2 +1,2 @@
-export const SOCKET_URL = 'https://astrowani.onrender.com';
+export const SOCKET_URL = 'https://backend.astrowani.com';
 

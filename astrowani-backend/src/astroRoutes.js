@@ -15,7 +15,7 @@ const { callJyotisham } = require('./jyotishamClient');
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://astrowani.onrender.com';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://backend.astrowani.com';
 
 // Service-role client — this module only ever runs behind JWT auth, so using the service role
 // for both reads and writes (rather than juggling an anon client too) keeps it self-contained,
