@@ -1,0 +1,12 @@
+--- a/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
++++ b/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
+@@ -414,8 +414,8 @@
+                           .directory(directory)
+                           .redirectErrorStream(true)
+                           .start()
+-          int exitCode = process.waitFor()
+           def output = process.inputStream.text.trim()
++          int exitCode = process.waitFor()
+           if (exitCode != 0) {
+               throw new Exception("Command '${command}' failed with exit code ${exitCode}.")
+           }

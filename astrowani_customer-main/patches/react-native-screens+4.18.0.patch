@@ -1,0 +1,9 @@
+--- a/node_modules/react-native-screens/android/CMakeLists.txt	2026-07-10 17:23:54.082614800 +0530
++++ b/node_modules/react-native-screens/android/CMakeLists.txt	2026-07-10 16:17:05.410631800 +0530
+@@ -76,5 +76,6 @@
+     target_link_libraries(rnscreens
+         ReactAndroid::jsi
+         android
++        c++
+     )
+ endif()

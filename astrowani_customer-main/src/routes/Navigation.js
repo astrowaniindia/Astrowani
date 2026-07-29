@@ -90,9 +90,6 @@ import PersonToPersonChat from '../screens/component/PersonToPersonChat';
 import GemstoneList from '../screens/Remedies/GemstoneList';
 import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails';
 
-// import AudioCall from '../screens/Call/AudioCall';
-// import InCallScreen from '../screens/Call/InCallScreen';
-// mport { ZegoUIKitPrebuiltCallFloatingMinimizedView } from '@zegocloud/zego-uikit-prebuilt-call-rn';
 import VoiceCallScreen from '../screens/Video/VoiceCallScreen';
 import VideoCallScreen from '../screens/Video/VideoCallScreen';
 import GemstoneDetails from '../screens/Home/GemStoneBuy';
@@ -625,20 +622,6 @@ export default function Navigation({ initialRoute }) {
             headerTintColor: '#fff',
           }}
         />
-        {/* <Stack.Screen
-          name="VideoCall"
-          component={VideoCall}
-          options={{
-            headerShown: false,
-          }}
-        /> */}
-        {/* <Stack.Screen
-          name="AudioCall"
-          component={AudioCall}
-          options={{
-            headerShown: false,
-          }}
-        /> */}
         <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="VideoCallScreen" component={VideoCallScreen} options={{ headerShown: false }} />
         <Stack.Screen
@@ -929,13 +912,6 @@ function CallStack() {
           header: () => <CustomHeader title="Talk To Experts" />,
         }}
       />
-      {/* <Stack.Screen
-        name="InCallScreen"
-        component={InCallScreen}
-        options={{
-          headerShown: false, 
-        }}
-      /> */}
     </Stack.Navigator>
   );
 }
