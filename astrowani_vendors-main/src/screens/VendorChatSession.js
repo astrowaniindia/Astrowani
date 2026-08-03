@@ -41,6 +41,7 @@ const VendorChatSession = ({ route, navigation }) => {
   const [customerTyping, setCustomerTyping] = useState(false);
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [astroId, setAstroId] = useState(null);
+  const [sentChip, setSentChip] = useState(null);
 
   const timerRef = useRef(null);
   const channelRef = useRef(null);
@@ -171,12 +172,21 @@ const VendorChatSession = ({ route, navigation }) => {
   };
 
   // ─── Send message ─────────────────────────────────────────────────────────
+  const lastSentRef = useRef({ text: null, time: 0 });
+
   const sendMessage = async (overrideText) => {
     // overrideText is a string when fired by a scripted-reply chip; the bare
     // onPress handler passes a press event (object), so only treat strings as overrides.
     const raw = typeof overrideText === 'string' ? overrideText : newMessage;
     if (!raw.trim() || !sessionIdRef.current || !astroIdRef.current) return;
     const msg = raw.trim();
+
+    // Scripted chips give no "sent" state, so a vendor unsure whether the tap registered
+    // will tap again — guard against the same chip text firing twice in quick succession.
+    const now = Date.now();
+    if (lastSentRef.current.text === msg && now - lastSentRef.current.time < 2000) return;
+    lastSentRef.current = { text: msg, time: now };
+
     if (typeof overrideText !== 'string') setNewMessage('');
 
     // Reset typing status on send
@@ -313,15 +323,20 @@ const VendorChatSession = ({ route, navigation }) => {
           {SCRIPTED_REPLIES.map((reply) => (
             <TouchableOpacity
               key={reply}
-              style={styles.quickChip}
+              style={[styles.quickChip, sentChip === reply && styles.quickChipSent]}
               activeOpacity={0.8}
-              onPress={() => sendMessage(reply)}>
+              onPress={() => {
+                sendMessage(reply);
+                setSentChip(reply);
+                setTimeout(() => setSentChip((c) => (c === reply ? null : c)), 1200);
+              }}>
+              {sentChip === reply && <Ionicons name="checkmark" size={14} color={COLORS.AstroMaroon} style={{ marginRight: 4 }} />}
               <Text style={styles.quickChipText} numberOfLines={1}>{reply}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        <View style={[styles.inputRow, {paddingBottom: Math.max(insets.bottom, 10)}]}>
+        <View style={[styles.inputRow, {paddingBottom: insets.bottom + 16}]}>
           <TextInput
             style={styles.input}
             placeholder="Message..."
@@ -445,6 +460,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   quickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(107,31,42,0.08)',
     borderWidth: 1,
     borderColor: COLORS.AstroMaroon,
@@ -452,6 +469,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     marginRight: 8,
+  },
+  quickChipSent: {
+    backgroundColor: 'rgba(107,31,42,0.18)',
   },
   quickChipText: {
     color: COLORS.AstroMaroon,

@@ -413,7 +413,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
       {/* ── Input ─────────────────────────────── */}
       {!connecting && (
-        <View style={[styles.inputRow, {paddingBottom: Math.max(insets.bottom, 10)}]}>
+        <View style={[styles.inputRow, {paddingBottom: insets.bottom + 16}]}>
           <TextInput
             style={styles.input}
             value={text}
