@@ -70,13 +70,12 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
- <service
-    android:name="com.dieam.reactnativepushnotification.modules.RNPushNotificationListenerService"
-    android:exported="false" >
-    <intent-filter>
-      <action android:name="com.google.firebase.MESSAGING_EVENT" />
-    </intent-filter>
-  </service>
+  <!-- react-native-push-notification's own native FCM listener (RNPushNotificationListenerService)
+       is deliberately NOT registered here. It would compete with @react-native-firebase/messaging
+       for the same com.google.firebase.MESSAGING_EVENT intent and intercept messages before our
+       own onMessage/setBackgroundMessageHandler (index.js) ever ran, silently swallowing every
+       push. We only use react-native-push-notification's local-notification display API
+       (PushNotification.localNotification in src/utils/PushNotification.js), not its FCM receiver. -->
   <!-- Status-bar icon FCM uses for notifications delivered while the app is backgrounded/killed
        (Android always renders this as a plain white silhouette — this is the OS-mandated style,
        not a design choice we can change). -->
