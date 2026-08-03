@@ -219,7 +219,11 @@ export default function Notifications() {
             Sent to {result.recipientCount} recipient(s)
             {result.targetNames?.length ? ` (${result.targetNames.join(', ')})` : ''} —
             {' '}{result.pushSuccess} push delivered, {result.pushFailure} failed
-            {result.pushSuccess === 0 && result.pushFailure === 0 ? ' (push disabled until Firebase is configured — in-app notification still sent).' : '.'}
+            {result.pushSuccess === 0 && result.pushFailure === 0
+              ? (result.pushReady
+                  ? ' (no recipients had a registered device token — in-app notification still sent).'
+                  : ' (push disabled until Firebase is configured — in-app notification still sent).')
+              : '.'}
           </p>
         )}
 
