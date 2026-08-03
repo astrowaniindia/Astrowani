@@ -321,7 +321,7 @@ const VendorChatSession = ({ route, navigation }) => {
           ))}
         </ScrollView>
 
-        <View style={styles.inputRow}>
+        <View style={[styles.inputRow, {paddingBottom: Math.max(insets.bottom, 10)}]}>
           <TextInput
             style={styles.input}
             placeholder="Message..."

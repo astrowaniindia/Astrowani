@@ -24,6 +24,7 @@ import { showReviewPrompt } from '../components/ReviewPrompt';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
+import { setActiveChatAstrologerId } from '../utils/PushNotification';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
@@ -297,8 +298,10 @@ const ChatSessionScreen = ({ route, navigation }) => {
     };
 
     init();
+    setActiveChatAstrologerId(person?._id || person?.userId);
 
     return () => {
+      setActiveChatAstrologerId(null);
       clearInterval(secondTimerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
@@ -410,7 +413,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
       {/* ── Input ─────────────────────────────── */}
       {!connecting && (
-        <View style={styles.inputRow}>
+        <View style={[styles.inputRow, {paddingBottom: Math.max(insets.bottom, 10)}]}>
           <TextInput
             style={styles.input}
             value={text}

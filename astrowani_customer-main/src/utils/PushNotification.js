@@ -8,6 +8,15 @@ import { navigate } from './NavigationService';
 
 const CHANNEL_ID = 'astrowani-default';
 
+// Tracks which astrologer's chat (if any) the customer currently has open, so a chat-message
+// push for that same conversation can be suppressed while they're already looking at it live
+// via Supabase Realtime — set/cleared by ChatSessionScreen.js on mount/unmount. Still shows the
+// notification normally for any other conversation, or once this chat is closed/backgrounded.
+let activeChatAstrologerId = null;
+export function setActiveChatAstrologerId(id) {
+  activeChatAstrologerId = id || null;
+}
+
 PushNotification.configure({
   // Local notifications built by showLocalNotification() (including the ones raised from
   // setBackgroundMessageHandler below) fire this on tap instead of FCM's own
@@ -100,6 +109,16 @@ messaging().onTokenRefresh(async token => {
 
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
+
+  // Customer is already looking at this exact conversation live via Realtime — a system
+  // notification for the same message on top of that is just noise. Any other chat, or once
+  // this one is closed/backgrounded, still notifies normally (setBackgroundMessageHandler
+  // below is unaffected — the app can't be foregrounded on this chat while backgrounded).
+  const isOpenChatMessage =
+    remoteMessage?.data?.type === 'chat_message' &&
+    activeChatAstrologerId &&
+    remoteMessage?.data?.astrologerId === activeChatAstrologerId;
+  if (isOpenChatMessage) return;
 
   // Android/iOS both need a manual local notification while the app is foregrounded —
   // FCM only auto-displays the system-tray notification when the app is backgrounded/killed.
