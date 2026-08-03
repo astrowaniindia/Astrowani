@@ -1,0 +1,29 @@
+name: Deploy admin dashboard to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'astrowani-admin/**'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /var/www/astrowani-monorepo
+            git fetch origin main
+            git reset --hard origin/main
+            cd astrowani-admin
+            npm install
+            npm run build
+            rm -rf /var/www/astrowani/admin/dist/*
+            cp -r dist/* /var/www/astrowani/admin/dist/
+            chown -R www-data:www-data /var/www/astrowani/admin
