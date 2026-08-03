@@ -69,6 +69,9 @@ export async function displayIncomingRequestNotification(payload) {
       category: isChat ? undefined : AndroidCategory.CALL,
       ongoing: !isChat,
       autoCancel: false,
+      // App logo in the notification's large-icon slot (top-right corner) — mipmap
+      // resource already bundled for the launcher icon, no extra asset needed.
+      largeIcon: 'ic_launcher',
       pressAction: { id: 'default', launchActivity: 'default' },
       actions: [
         { title: 'Reject', pressAction: { id: 'reject' } },
@@ -78,6 +81,23 @@ export async function displayIncomingRequestNotification(payload) {
   });
 
   return notificationId;
+}
+
+// Admin broadcast/personal notifications — sent from the admin dashboard with a freeform
+// title (e.g. an astrologer persona name like "Manju Ji") and body text. Distinct from the
+// incoming-request notifications above: no actions, no ongoing/ CALL category, plain tap-to-open.
+export async function displayGenericNotification({ title, body }) {
+  await ensureChannel();
+  await notifee.displayNotification({
+    title: title || 'Astrowani',
+    body,
+    android: {
+      channelId: CHANNEL_ID,
+      importance: AndroidImportance.HIGH,
+      largeIcon: 'ic_launcher',
+      pressAction: { id: 'default', launchActivity: 'default' },
+    },
+  });
 }
 
 export async function cancelIncomingRequestNotification(notificationId) {

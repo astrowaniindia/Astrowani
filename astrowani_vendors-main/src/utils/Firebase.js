@@ -3,7 +3,7 @@ import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
 import { supabase } from '../api/SupabaseClient';
-import { displayIncomingRequestNotification, cancelIncomingRequestForKey } from './incomingRequestNotifications';
+import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displayGenericNotification } from './incomingRequestNotifications';
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
 
@@ -64,6 +64,8 @@ export async function requestUserPermission() {
     }
   }
 }
+const ADMIN_NOTIFICATION_TYPES = ['admin_broadcast', 'admin_personal'];
+
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
   const data = remoteMessage?.data || {};
@@ -75,6 +77,10 @@ messaging().onMessage(async remoteMessage => {
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     // Customer gave up (timeout/cancel) before we acted — pull down the now-stale notification.
     await cancelIncomingRequestForKey(data);
+  } else if (ADMIN_NOTIFICATION_TYPES.includes(data.type)) {
+    // Sent as data-only (see backend notificationRoutes.js) specifically so it reaches this
+    // handler instead of being silently auto-displayed by the OS without our large icon.
+    await displayGenericNotification(data);
   }
 })
 
@@ -85,6 +91,8 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
     await displayIncomingRequestNotification(data);
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     await cancelIncomingRequestForKey(data);
+  } else if (ADMIN_NOTIFICATION_TYPES.includes(data.type)) {
+    await displayGenericNotification(data);
   }
 });
 

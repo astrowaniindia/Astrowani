@@ -146,15 +146,15 @@ const Home = ({navigation}) => {
   }, []);
 
   const ASTRO_SERVICE_ICONS = {
-    Kundli: 'https://cdn-icons-png.flaticon.com/128/9085/9085836.png',
-    Matching: 'https://cdn-icons-png.flaticon.com/128/2589/2589903.png',
-    Chart: 'https://cdn-icons-png.flaticon.com/128/1055/1055687.png',
-    Dasha: 'https://cdn-icons-png.flaticon.com/128/2784/2784489.png',
+    Kundli: 'https://img.icons8.com/color/128/scroll.png',
+    Matching: 'https://img.icons8.com/color/128/like.png',
+    Chart: 'https://img.icons8.com/color/128/combo-chart.png',
+    Dasha: 'https://img.icons8.com/color/128/planet.png',
     Dosh: 'https://cdn-icons-png.flaticon.com/128/564/564619.png',
-    Numerology: 'https://cdn-icons-png.flaticon.com/128/3132/3132693.png',
-    'Lal Kitab': 'https://cdn-icons-png.flaticon.com/128/2436/2436874.png',
-    'KP Astrology': 'https://cdn-icons-png.flaticon.com/128/1791/1791961.png',
-    Tarot: 'https://cdn-icons-png.flaticon.com/128/2951/2951587.png',
+    Numerology: 'https://img.icons8.com/color/128/123.png',
+    'Lal Kitab': 'https://img.icons8.com/color/128/book.png',
+    'KP Astrology': 'https://img.icons8.com/color/128/compass.png',
+    Tarot: 'https://img.icons8.com/color/128/tarot-cards.png',
     'PDF Reports': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
   };
 
@@ -1123,15 +1123,22 @@ const Home = ({navigation}) => {
           </TouchableOpacity>
         </View>
 
-        <FlatList
-          data={liveAstro}
-          renderItem={({item}) => <AstrologerItem astrologer={item} />}
-          keyExtractor={item => item.name}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.liveAstrologersView}
-        />
-        
+        {liveAstro && liveAstro.length > 0 ? (
+          <FlatList
+            data={liveAstro}
+            renderItem={({item}) => <AstrologerItem astrologer={item} />}
+            keyExtractor={item => item.name}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.liveAstrologersView}
+          />
+        ) : (
+          <View style={styles.noLiveContainer}>
+            <MaterialIcons name="videocam-off" size={moderateScale(28)} color={COLORS.lightGrey} />
+            <Text style={styles.noLiveText}>{t('home.noOneLive')}</Text>
+          </View>
+        )}
+
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
@@ -1186,7 +1193,6 @@ const Home = ({navigation}) => {
             contentContainerStyle={styles.BlogView}
           />
         )}
-        <CustomerReview />
         <Remedies />
 
         <View style={styles.reviewsBox}>
@@ -1486,6 +1492,8 @@ const styles = StyleSheet.create({
   },
   ReviewsList: {
     paddingVertical: verticalScale(3),
+    flexGrow: 1,
+    justifyContent: 'center',
   },
 
   AstroImage: {
@@ -1766,6 +1774,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(10),
     paddingVertical: verticalScale(5),
     marginVertical: verticalScale(5),
+  },
+  noLiveContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(20),
+  },
+  noLiveText: {
+    color: COLORS.lightGrey,
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(13),
+    marginTop: verticalScale(6),
   },
 
   AstroBackWrapper: {

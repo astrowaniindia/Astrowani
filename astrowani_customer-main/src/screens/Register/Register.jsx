@@ -13,6 +13,7 @@ import {
   PermissionsAndroid,
   SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { Dropdown } from 'react-native-element-dropdown';
@@ -25,6 +26,7 @@ import { LanguageContext } from '../../context/LanguageContext';
 
 export default function Register({ navigation }) {
   const { t } = React.useContext(LanguageContext);
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [gender, setGender] = useState('');
   const [dob, setDob] = useState(new Date());
@@ -185,7 +187,7 @@ export default function Register({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
       
       {/* Header with Back Button */}
-      <View style={styles.header}>
+      <View style={[styles.header, {paddingTop: insets.top + 15}]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Icon name="arrow-back" size={28} color="#333" />
         </TouchableOpacity>
@@ -325,7 +327,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 15 : 15,
     paddingBottom: 15,
     backgroundColor: '#f5f5f5',
   },

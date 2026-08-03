@@ -7,6 +7,22 @@ const CATEGORIES = [
   'Kundli', 'Matching', 'Chart', 'Dasha', 'Dosh', 'Numerology', 'Lal Kitab', 'KP Astrology', 'Tarot', 'PDF Reports',
 ];
 
+// Mirrors the customer app's ASTRO_SERVICE_ICONS (Home.js) — the fallback icon shown to
+// customers when a service has no admin-uploaded image. Kept in sync so this page previews
+// what customers actually see instead of a blank "—".
+const CATEGORY_FALLBACK_ICONS = {
+  Kundli: 'https://img.icons8.com/color/128/scroll.png',
+  Matching: 'https://img.icons8.com/color/128/like.png',
+  Chart: 'https://img.icons8.com/color/128/combo-chart.png',
+  Dasha: 'https://img.icons8.com/color/128/planet.png',
+  Dosh: 'https://cdn-icons-png.flaticon.com/128/564/564619.png',
+  Numerology: 'https://img.icons8.com/color/128/123.png',
+  'Lal Kitab': 'https://img.icons8.com/color/128/book.png',
+  'KP Astrology': 'https://img.icons8.com/color/128/compass.png',
+  Tarot: 'https://img.icons8.com/color/128/tarot-cards.png',
+  'PDF Reports': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
+};
+
 const EMPTY = { key: '', name: '', description: '', category: CATEGORIES[0], price: 0, image: '', is_active: true, sort_order: 0 };
 
 export default function AstroServices() {
@@ -83,7 +99,7 @@ export default function AstroServices() {
             {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={7} className="empty">No services in {tab} yet.</td></tr>}
             {visibleRows.map((r) => (
               <tr key={r.id}>
-                <td>{r.image ? <img src={r.image} alt="" className="thumb" /> : <span className="muted">—</span>}</td>
+                <td><img src={r.image || CATEGORY_FALLBACK_ICONS[r.category]} alt="" className="thumb" /></td>
                 <td><code>{r.key}</code></td>
                 <td>{r.name}</td>
                 <td>₹{r.price}</td>

@@ -108,13 +108,19 @@ module.exports = function registerNotificationRoutes(app) {
     }
 
     // 3. Real FCM push (no-op until FIREBASE_SERVICE_ACCOUNT_JSON is configured).
+    // title/body travel in `data`, NOT the top-level `notification` field — a notification-
+    // block FCM message is auto-displayed by the OS using the manifest's default small icon
+    // and skips our JS entirely (Android doesn't invoke setBackgroundMessageHandler at all for
+    // notification+data messages while backgrounded). Sending data-only means every state
+    // (foreground/background/killed) goes through our own handler, which sets the logo as the
+    // notification's large icon — see PushNotification.js / Firebase.js on each app.
     const tokens = recipients.map((r) => r.fcm_token).filter(Boolean);
     let successCount = 0;
     let failureCount = 0;
     const debugErrors = []; // TEMP diagnostic — remove once push delivery is confirmed working
     for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
       const chunk = tokens.slice(i, i + CHUNK_SIZE);
-      const result = await sendPush(chunk, { title, body, data: { type } });
+      const result = await sendPush(chunk, { data: { type, title, body } });
       successCount += result.successCount || 0;
       failureCount += result.failureCount || 0;
       if (result.error) debugErrors.push(result.error);

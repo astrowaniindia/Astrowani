@@ -9,7 +9,13 @@ import { navigate } from './NavigationService';
 const CHANNEL_ID = 'astrowani-default';
 
 PushNotification.configure({
-  onNotification: function () {},
+  // Local notifications built by showLocalNotification() (including the ones raised from
+  // setBackgroundMessageHandler below) fire this on tap instead of FCM's own
+  // onNotificationOpenedApp/getInitialNotification — those only cover notifications the OS
+  // auto-displayed, not ones our own JS constructed. userInfo carries the original data payload.
+  onNotification: function (notification) {
+    handleNotificationTap({ data: notification?.userInfo || {} });
+  },
   popInitialNotification: true,
   requestPermissions: false, // permission is requested explicitly via requestUserPermission()
 });
@@ -31,6 +37,9 @@ function showLocalNotification(remoteMessage) {
   PushNotification.localNotification({
     channelId: CHANNEL_ID,
     smallIcon: 'ic_notification',
+    // App logo in the notification's large-icon slot (top-right corner) — mipmap resource
+    // already bundled for the launcher icon, no extra asset needed.
+    largeIcon: 'ic_launcher',
     title,
     message,
     userInfo: remoteMessage?.data || {},
@@ -108,7 +117,12 @@ messaging().onMessage(async remoteMessage => {
 
 messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
-  // updateNotificationCount();
+  // Admin broadcasts/personal notifications arrive as data-only (see backend
+  // notificationRoutes.js) specifically so they land here even when the app is
+  // backgrounded/killed, showing our own notification (with the logo) instead of
+  // nothing — a notification-block message would auto-display via the OS but skip
+  // this handler entirely, and skip the large icon along with it.
+  showLocalNotification(remoteMessage);
 });
 
 
