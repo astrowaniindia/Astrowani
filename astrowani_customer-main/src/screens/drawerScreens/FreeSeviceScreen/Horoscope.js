@@ -11,6 +11,7 @@ import {
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import {LanguageContext} from '../../../context/LanguageContext';
+import {FREE_SERVICES_URL} from '../../../config/api';
 
 const ZODIAC_SIGNS = [
   {sign: 'aries', name: 'Aries', dateRange: {start: '2024-03-21', end: '2024-04-19'}},
@@ -42,7 +43,7 @@ const Horoscope = ({navigation}) => {
 
   const fetchHoroscope = async sign => {
     const response = await fetch(
-      `https://astrowani-fb6pi.ondigitalocean.app/api/free-services/horoscope?sign=${sign}`,
+      `${FREE_SERVICES_URL}/api/free-services/horoscope?sign=${sign}`,
       {method: 'POST', headers: {'Content-Type': 'application/json'}},
     );
     return response.json();

@@ -8,6 +8,7 @@ import {
   Image,
   Platform,
   Modal,
+  Alert,
 } from 'react-native';
 import React, {useState} from 'react';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
@@ -19,7 +20,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Geocoder from 'react-native-geocoding';
 import axios from 'axios';
-import { SOCKET_URL } from '../../../config/api';
+import { FREE_SERVICES_URL } from '../../../config/api';
 import { LanguageContext } from '../../../context/LanguageContext';
 
 Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); //
@@ -54,8 +55,6 @@ const KundaliMatchScreen = ({navigation}) => {
   const [girlBirthPlace, setGirlBirthPlace] = useState('');
   const [girlLatitude, setGirlLatitude] = useState(null);
   const [girlLongitude, setGirlLongitude] = useState(null);
-  console.log('boyLatitude', boyLatitude);
-  console.log('girlLatitude', girlLatitude);
 
   const getCoordinates = (place, setLatitude, setLongitude) => {
     Geocoder.from(place)
@@ -124,7 +123,7 @@ const KundaliMatchScreen = ({navigation}) => {
 
   const handleShowReport = async () => {
     if (!boydateOfBirth || !girldateOfBirth || !boyLatitude || !boyLongitude || !girlLatitude || !girlLongitude) {
-      alert(t('match.fillAllFields'));
+      Alert.alert(t('match.fillAllFields'));
       return;
     }
 
@@ -147,27 +146,20 @@ const KundaliMatchScreen = ({navigation}) => {
       }
     };
 
-    console.log("kundalllli matching payload", requestBody)
-
-
-    // console.log('Request Body:', requestBody);
-    //    navigation.navigate('KundaliMatchingReport');
-
     try {
       const response = await axios.post(
-        `${SOCKET_URL}/api/free-services/kundali-match?ayanamsa=1&language=en`,
+        `${FREE_SERVICES_URL}/api/free-services/kundali-match?ayanamsa=1&language=en`,
         requestBody
       );
-      console.log('API Response:', response.data, boyName,girlName);
       // Navigate to the report screen with the response data
-      navigation.navigate('KundaliMatchingReport', { 
-        reportData: response.data, 
-        boyName: boyName, 
-        girlName: girlName 
+      navigation.navigate('KundaliMatchingReport', {
+        reportData: response.data,
+        boyName: boyName,
+        girlName: girlName
       });
     } catch (error) {
-      console.error('API Error:', error);
-      alert(t('match.errorFetching'));
+      console.error('Kundali match API error:', error);
+      Alert.alert(t('match.errorFetching'));
     }
   };
 

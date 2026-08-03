@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../Theme/Colors';
@@ -18,6 +19,7 @@ import {supabase} from '../api/SupabaseClient';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
@@ -111,7 +113,7 @@ const CustomHeader = ({title, showLanguage}) => {
   return (
     <View>
       <StatusBar backgroundColor={COLORS.AstroMaroon}/>
-      <View style={styles.headerContainer}>
+      <View style={[styles.headerContainer, {paddingTop: insets.top + verticalScale(5)}]}>
         <View style={styles.titleContainer}>
           <TouchableOpacity onPress={() => navigation.openDrawer()}>
             <Ionicons name="menu" color="white" size={28} />
@@ -192,7 +194,6 @@ const CustomHeader = ({title, showLanguage}) => {
 
 const styles = StyleSheet.create({
   headerContainer: {
-    paddingTop: (StatusBar.currentHeight || 0) + verticalScale(5),
     paddingHorizontal: scale(15),
     paddingBottom: verticalScale(10),
     flexDirection: 'row',

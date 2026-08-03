@@ -17,6 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Geocoder from 'react-native-geocoding';
 import { LanguageContext } from '../../../context/LanguageContext';
+import { FREE_SERVICES_URL } from '../../../config/api';
 
 Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA");
 
@@ -81,7 +82,7 @@ const JanamKundaliScreen = ({navigation}) => {
 
     try {
       setLoading(true);
-      const url = `https://astrowani-fb6pi.ondigitalocean.app/api/free-services/janam-kundali?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=en`;
+      const url = `${FREE_SERVICES_URL}/api/free-services/janam-kundali?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=en`;
       
       const response = await fetch(url, {
         method: 'POST',
@@ -99,7 +100,6 @@ const JanamKundaliScreen = ({navigation}) => {
 
       const data = await response.json();
 
-      console.log("datata is", data)
       navigation.navigate('Kundali Details', { kundaliData: data.data , name});
     } catch (error) {
       Alert.alert(t('common.error'), error.message || t('login.somethingWrong'));

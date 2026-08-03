@@ -264,8 +264,9 @@ import DetailList from '../../component/DetailsList';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Geocoder from 'react-native-geocoding';
 import { LanguageContext } from '../../../context/LanguageContext';
+import { FREE_SERVICES_URL } from '../../../config/api';
 
-Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); // 
+Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); //
 
 const PanchangScreen = () => {
   const { t } = React.useContext(LanguageContext);
@@ -296,7 +297,7 @@ const PanchangScreen = () => {
       try {
         setLoading(true);
         const isoDate = date.toISOString();
-        const url = `https://astrowani-fb6pi.ondigitalocean.app/api/free-services/panchang?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=en`;
+        const url = `${FREE_SERVICES_URL}/api/free-services/panchang?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=en`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

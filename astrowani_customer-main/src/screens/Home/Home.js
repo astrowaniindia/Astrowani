@@ -885,6 +885,20 @@ const Home = ({navigation}) => {
     );
   };
 
+  const formatReviewDate = isoString => {
+    if (!isoString) return '';
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12 || 12;
+    return `${day}/${month}/${year} at ${hours}:${minutes} ${ampm}`;
+  };
+
   const renderReviewList = ({item}) => {
     return (
       <TouchableOpacity
@@ -908,7 +922,7 @@ const Home = ({navigation}) => {
             <Text style={styles.reviewer}>
               {item.user?.firstName || 'Anonymous'}
             </Text>
-            <Text style={styles.date}>{item?.createdAt || '3 may 2024'}</Text>
+            <Text style={styles.date}>{item?.createdAt ? formatReviewDate(item.createdAt) : '3 may 2024'}</Text>
           </View>
           <Text style={styles.review} numberOfLines={3} ellipsizeMode="tail">
             {item.comment || 'no comment'}
@@ -1193,7 +1207,7 @@ const Home = ({navigation}) => {
               <FlatList
                 data={topRatedReviews}
                 renderItem={renderReviewList}
-                keyExtractor={item => item._id.toString()}
+                keyExtractor={(item, index) => index.toString()}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.ReviewsList}
@@ -1659,7 +1673,6 @@ const styles = StyleSheet.create({
   review: {
     color: 'black',
     fontFamily: 'Lato-Regular',
-    width: scale(100),
     fontSize: moderateScale(12),
   },
   rating: {

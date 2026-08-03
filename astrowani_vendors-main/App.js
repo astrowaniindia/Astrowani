@@ -1,6 +1,7 @@
 import {StyleSheet, Text, View} from 'react-native';
 import React from 'react';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
 import NavigationScreen from './src/routes/NavigationScreen';
 import CustomAlert from './src/utils/CustomAlert';
 // Side-effect import — registers FCM foreground/background/token-refresh handlers.
@@ -9,10 +10,12 @@ import './src/utils/Firebase';
 
 const App = () => {
   return (
-    <GestureHandlerRootView style={{flex: 1}}>
-      <NavigationScreen />
-      <CustomAlert />
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{flex: 1}}>
+        <NavigationScreen />
+        <CustomAlert />
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 };
 

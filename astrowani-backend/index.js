@@ -266,6 +266,10 @@ require('./src/notificationRoutes')(app);
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
 
+// Free astrology services (JyotishamAstroAPI) — /api/free-services/* (panchang, horoscope,
+// janam-kundali, kundali-match). No auth, no wallet charge.
+require('./src/freeServicesRoutes')(app);
+
 // Image upload — base64 -> Supabase Storage URL (POST /api/upload-image)
 require('./src/uploadRoutes')(app);
 
