@@ -16,6 +16,7 @@ import {
   StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../api/SupabaseClient';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
@@ -26,6 +27,7 @@ import { SOCKET_URL } from '../config/api';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
+  const insets = useSafeAreaInsets();
 
   const [session, setSession] = useState(null);
   const [seconds, setSeconds] = useState(0);
@@ -338,7 +340,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, {paddingTop: insets.top}]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
       {/* ── Header: name + timer + wallet ─────── */}
@@ -427,10 +429,9 @@ const ChatSessionScreen = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: COLORS.AstroMaroon,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     backgroundColor: COLORS.AstroMaroon,

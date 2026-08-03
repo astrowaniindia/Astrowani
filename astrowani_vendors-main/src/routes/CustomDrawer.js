@@ -17,8 +17,10 @@ import {COLORS} from '../Theme/Colors';
 import EvilIcons from 'react-native-vector-icons/EvilIcons';
 import Instance from '../api/ApiCall';
 import {useFocusEffect} from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../api/SupabaseClient';
 function CustomDrawer(props) {
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -91,7 +93,7 @@ function CustomDrawer(props) {
       {/* Header Section */}
       <LinearGradient
         colors={['#3d1c11', COLORS.AstroMaroon]}
-        style={styles.headerSection}>
+        style={[styles.headerSection, {paddingTop: insets.top + verticalScale(20)}]}>
         <Text style={styles.appTitle}>Astrowani Vendors</Text>
         <TouchableOpacity
           style={styles.userInfoSection}
@@ -228,7 +230,6 @@ function CustomDrawer(props) {
 
 const styles = StyleSheet.create({
   headerSection: {
-    paddingTop: (StatusBar.currentHeight || 0) + verticalScale(20),
     paddingBottom: verticalScale(20),
     paddingHorizontal: scale(15),
     borderBottomWidth: 0,

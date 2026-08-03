@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
@@ -14,6 +15,7 @@ import { LanguageContext } from '../context/LanguageContext';
 
 function CustomDrawerContent(props, navigation) {
   const { t } = React.useContext(LanguageContext);
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -72,7 +74,7 @@ function CustomDrawerContent(props, navigation) {
   return (
     <View style={styles.container}>
       {/* Unified Header & Profile Section */}
-      <View style={styles.headerBlock}>
+      <View style={[styles.headerBlock, {paddingTop: insets.top + verticalScale(10)}]}>
         <View style={styles.headerTopRow}>
           <Text style={styles.drawerTitle}>Astrowani</Text>
           <TouchableOpacity onPress={() => props.navigation.closeDrawer()} style={styles.closeBtn}>
@@ -222,7 +224,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
   headerBlock: {
     backgroundColor: COLORS.AstroMaroon,
-    paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + verticalScale(10) : verticalScale(30),
     paddingBottom: verticalScale(25),
     paddingHorizontal: scale(20),
     borderBottomLeftRadius: moderateScale(30),

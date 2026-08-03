@@ -16,6 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../Theme/Colors';
@@ -32,6 +33,7 @@ const SCRIPTED_REPLIES = [
 
 const VendorChatSession = ({ route, navigation }) => {
   const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId, isFreeSession } = route.params;
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -244,7 +246,7 @@ const VendorChatSession = ({ route, navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, {paddingTop: insets.top}]}>
       <StatusBar backgroundColor={COLORS.AstroMaroon} barStyle="light-content" />
 
       {/* ── Header ─────────────────────────────── */}
@@ -342,7 +344,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.AstroMaroon,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   flex: { flex: 1 },
 
