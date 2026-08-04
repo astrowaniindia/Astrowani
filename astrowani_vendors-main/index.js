@@ -16,6 +16,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {acceptRequest, rejectRequest} from './src/utils/incomingRequestActions';
 import {cancelIncomingRequestNotification} from './src/utils/incomingRequestNotifications';
 import {navigationRef} from './src/utils/navigationRef';
+import {initCrashReporting} from './src/utils/CrashReporting';
+
+initCrashReporting();
 
 // Must be registered outside the component tree (Notifee requirement) so Accept/Reject
 // presses are handled even when the app process was killed and briefly woken to run this.

@@ -10,6 +10,9 @@ if (typeof global.TextDecoder === 'undefined') global.TextDecoder = TextDecoder;
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
+import { initCrashReporting } from './src/utils/CrashReporting';
+
+initCrashReporting();
 // Registers messaging().setBackgroundMessageHandler (and the other FCM listeners). Must be
 // imported directly from index.js, not just from App.js — when Android wakes the app for a
 // background/killed-state FCM message, it runs a minimal "headless JS" context that only

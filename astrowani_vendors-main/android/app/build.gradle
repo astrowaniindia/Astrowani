@@ -136,7 +136,8 @@ dependencies {
     }
 }
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
-apply plugin: 'com.google.gms.google-services' 
+apply plugin: 'com.google.gms.google-services'
+apply plugin: 'com.google.firebase.crashlytics'
 
 android {
     

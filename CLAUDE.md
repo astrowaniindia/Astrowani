@@ -769,3 +769,59 @@ vestigial. Live streaming reuses this same WebRTC stack as a **mesh** (see below
 6. `sql/favorites_schema.sql` (favorites)
 7. `sql/app_settings_schema.sql` + `sql/banner_app_separation.sql` (banner interval + per-app banners)
 Seed admin: `node astrowani-backend/scripts/seedAdmin.js`.
+
+---
+
+## Subsystem added 2026-08-04: Crash reporting + autonomous bug-scanning agent
+
+### K. Crash/error reporting (prerequisite — previously nothing existed)
+- Backend is deployed on a **Hostinger VPS**, reachable at `https://backend.astrowani.com`
+  (both apps' `src/config/api.js` `SOCKET_URL`) — not Render. (A few pre-existing fallback
+  image URLs still said `astrowani.onrender.com`, a stale domain from an earlier host; the
+  live one in `formatAstrologer`'s `profileImage` fallback was fixed to `backend.astrowani.com`.
+  The unreachable `MOCK_ASTROLOGERS` dead-code array near `/api/astrologers` still has the old
+  domain too, but it's never referenced by any route — harmless until someone deletes the dead
+  code.)
+- **Backend**: `astrowani-backend/src/errorLogger.js` — appends JSON-line entries to
+  `logs/errors.log` (gitignored; **wiped whenever the Node process restarts** — there's no
+  managed-platform persistence here, just whatever process manager runs it on the VPS).
+  Wired as the last Express error-handling middleware in `index.js`, plus
+  `process.on('uncaughtException'/'unhandledRejection')`. Neither handler changes prior
+  crash/restart behavior — errors are logged, not swallowed into a new `process.exit()`.
+  Read-only access for tooling: `GET /api/bug-agent/errors` (`src/bugAgentRoutes.js`),
+  guarded by a **separate, narrowly-scoped** `BUG_AGENT_TOKEN` env var — deliberately NOT
+  the admin JWT (`requireAdmin`), since that can reach wallet/billing writes and no scanning
+  tool should hold a credential capable of that even indirectly. Must be set wherever the
+  VPS process's env vars live (e.g. PM2 ecosystem file / `.env` / systemd unit — whatever
+  currently supplies `SUPABASE_SERVICE_ROLE_KEY` etc. to the running process) for the
+  endpoint to work (503s if unset).
+- **Both RN apps**: `@react-native-firebase/crashlytics` added (version pinned to exactly
+  match each app's resolved `@react-native-firebase/app` version — customer 22.2.1, vendor
+  21.12.0; the crashlytics package enforces this as a peer dependency). Native: Crashlytics
+  Gradle plugin classpath in `android/build.gradle` + `apply plugin:
+  'com.google.firebase.crashlytics'` in `android/app/build.gradle` (both apps) — captures
+  native crashes automatically. JS: `src/utils/CrashReporting.js` (both apps) —
+  `initCrashReporting()` enables collection, wraps `global.ErrorUtils` to call
+  `crashlytics().recordError()` on JS exceptions (preserves the previous handler), and uses
+  `promise/setimmediate/rejection-tracking` for unhandled promise rejections (RN doesn't
+  route those through `ErrorUtils`). Called at the very top of each app's `index.js` —
+  same reasoning as `PushNotification`'s headless-JS registration: must run before the
+  component tree so nothing early is missed.
+  - **Known gap**: reading Crashlytics issues programmatically (for the bug-scan agent below)
+    needs either BigQuery export enabled on the Firebase project (Blaze plan) or a service
+    account granted the Crashlytics API — neither is wired up yet. Crashes ARE being
+    captured and visible in Firebase Console → Crashlytics; there's just no automated pull
+    path yet. Bootstrapping that is a separate task, not implied by anything above.
+
+### L. Autonomous bug-scanning agent (`/bug-scan`)
+- `.claude/skills/bug-scan/SKILL.md` — full operating instructions for a scheduled agent that
+  pulls new backend errors (via the endpoint above) and (once wired) app crashes, triages
+  against `bug_agent_log.md` (repo root, its running dedup/status log), root-causes against
+  this file's documented invariants, and drafts a fix on a `fix/<description>` branch + PR —
+  **never** merges, deploys, or touches secrets/CI config, and flags any change touching
+  wallet/billing/session-finalization code with an explicit "⚠️ Money-affecting change"
+  warning at the top of the PR.
+- Intended to run on a recurring cloud schedule (not this local machine — needs `gh`/git
+  push access to `origin` independent of any single developer's machine being on).
+- `bug_agent_log.md` at the repo root is the dedup ledger — re-run the skill to see its
+  exact update rules rather than hand-editing status columns.

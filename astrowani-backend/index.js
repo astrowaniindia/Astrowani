@@ -7,6 +7,14 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
 const { computeAstrologerMetrics } = require('./src/astrologerMetrics');
+const { logError } = require('./src/errorLogger');
+
+// Last-resort capture so unexpected errors are visible to the bug-scanning
+// agent instead of only scrolling past in console output. Neither handler
+// changes existing crash/restart behavior — errors are logged, not swallowed
+// into a process.exit() that wasn't there before.
+process.on('uncaughtException', (err) => logError('uncaughtException', err));
+process.on('unhandledRejection', (reason) => logError('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason))));
 
 const SUPABASE_URL = 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_iLfw8Co1PiXDyYJZvzCRKw_5hQBKn_O';
@@ -59,7 +67,7 @@ function formatAstrologer(astro, index, categoryMap = {}) {
     // hasn't reached this row yet.
     profileImage: (astro.profile_pic_url && !astro.profile_pic_url.startsWith('data:'))
       ? astro.profile_pic_url
-      : `https://astrowani.onrender.com/public/images/astro${(index % 4) + 1}.png`,
+      : `https://backend.astrowani.com/public/images/astro${(index % 4) + 1}.png`,
     chargePerMinute: astro.call_charge_per_minute || 15,
     pricing: astro.call_charge_per_minute || 15,
     chatPrice: astro.chat_charge_per_minute || 0,
@@ -259,6 +267,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
+require('./src/bugAgentRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);
@@ -2182,6 +2191,15 @@ app.post('/api/gift/send', async (req, res) => {
 
 // Expose for admin force-stop (used in adminRoutes via app.locals)
 app.locals.endLiveSession = endLiveSession;
+
+// Catch-all Express error handler — must be registered last, after every route.
+// Routes that already catch their own errors (most do, via try/catch + res.status(500))
+// never reach this; it exists for anything that throws/rejects outside those blocks.
+app.use((err, req, res, next) => {
+  logError('express', err, { method: req.method, url: req.originalUrl });
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+});
 
 server.listen(PORT, () => {
   console.log(`🚀 Astrowani backend server is running on http://localhost:${PORT}`);
