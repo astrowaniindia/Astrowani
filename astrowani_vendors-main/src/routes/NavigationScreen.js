@@ -12,6 +12,7 @@ import Thankyou from '../screens/Thankyou';
 import PendingApproval from '../screens/PendingApproval';
 import { supabase } from '../api/SupabaseClient';
 import CustomDrawer from './CustomDrawer';
+import ErrorBoundary from '../components/ErrorBoundary';
 import Bottom from '../screens/Bottom/Bottom';
 import CustomHeader from './CustomHeader';
 import HomeScreen from '../screens/Home/HomeScreen';
@@ -408,7 +409,11 @@ function NavigationScreen() {
 function DrawerNavigator({ navigation }) {
   return (
     <Drawer.Navigator
-      drawerContent={props => <CustomDrawer {...props} />}
+      drawerContent={props => (
+        <ErrorBoundary name="CustomDrawer">
+          <CustomDrawer {...props} />
+        </ErrorBoundary>
+      )}
       screenOptions={{ headerShown: false }}>
       <Drawer.Screen
         name="HomeStack"
