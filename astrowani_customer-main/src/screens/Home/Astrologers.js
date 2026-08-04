@@ -78,27 +78,27 @@ export const services = [
   {
     id: 1,
     title: "Today's Panchang",
-    icon: 'https://astrowani.onrender.com/public/images/icon_panchang.png',
+    icon: 'https://backend.astrowani.com/public/images/icon_panchang.png',
   },
   {
     id: 2,
     title: 'Janam Kundali',
-    icon: 'https://astrowani.onrender.com/public/images/icon_kundali.png',
+    icon: 'https://backend.astrowani.com/public/images/icon_kundali.png',
   },
   {
     id: 3,
     title: 'Kundali Match',
-    icon: 'https://astrowani.onrender.com/public/images/icon_match.png',
+    icon: 'https://backend.astrowani.com/public/images/icon_match.png',
   },
   {
     id: 4,
     title: 'Free Horoscope',
-    icon: 'https://astrowani.onrender.com/public/images/icon_horoscope.png',
+    icon: 'https://backend.astrowani.com/public/images/icon_horoscope.png',
   },
   {
     id: 5,
     title: 'Shubh Muhurat',
-    icon: 'https://astrowani.onrender.com/public/images/icon_muhurat.png',
+    icon: 'https://backend.astrowani.com/public/images/icon_muhurat.png',
   },
 ];
 

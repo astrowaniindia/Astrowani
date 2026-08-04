@@ -55,7 +55,7 @@ const ReferAndEarnScreen = () => {
     }, [])
   );
 
-  const shareMessage = `Join me on Astrowani! Use my referral code ${code} when you sign up and we both earn rewards. Download: https://astrowani.onrender.com`;
+  const shareMessage = `Join me on Astrowani! Use my referral code ${code} when you sign up and we both earn rewards. Download: https://play.google.com/store/apps/details?id=com.astrowanicustomer`;
 
   const copyToClipboard = () => {
     if (!code) return;
