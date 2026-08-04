@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
-import crashlytics from '@react-native-firebase/crashlytics';
+import * as Sentry from '@sentry/react-native';
 import {COLORS} from '../Theme/Colors';
 
 // Catches render-time crashes in the wrapped subtree (e.g. a native module like
@@ -17,7 +17,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    crashlytics().recordError(error, 'ErrorBoundary: ' + (this.props.name || 'unknown'));
+    Sentry.captureException(error, {tags: {boundary: this.props.name || 'unknown'}});
     if (__DEV__) {
       console.error('[ErrorBoundary]', this.props.name, error, info);
     }

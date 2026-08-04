@@ -1,33 +1,14 @@
 /**
  * @format
  */
-// Sends JS-layer crashes/errors to Firebase Crashlytics. Native Android crashes are
-// captured automatically once the Crashlytics Gradle plugin is applied (see
-// android/build.gradle + android/app/build.gradle) — this file only covers the JS side,
-// which Crashlytics does not see by default.
-import crashlytics from '@react-native-firebase/crashlytics';
+// Sends JS + native crashes/errors to Sentry. Sentry.init() sets up the global JS error
+// handler, unhandled promise rejection tracking, and native (Java/NDK) crash capture on its
+// own — no manual ErrorUtils wrapping needed (unlike the old Crashlytics setup).
+import * as Sentry from '@sentry/react-native';
 
 export function initCrashReporting() {
-  crashlytics().setCrashlyticsCollectionEnabled(true).catch(() => {});
-
-  const previousHandler = global.ErrorUtils ? global.ErrorUtils.getGlobalHandler() : null;
-  if (global.ErrorUtils) {
-    global.ErrorUtils.setGlobalHandler((error, isFatal) => {
-      crashlytics().recordError(error, isFatal ? 'FatalJSError' : 'JSError');
-      if (previousHandler) previousHandler(error, isFatal);
-    });
-  }
-
-  // React Native doesn't route unhandled promise rejections through ErrorUtils.
-  const rejectionTracking = require('promise/setimmediate/rejection-tracking');
-  rejectionTracking.enable({
-    allRejections: true,
-    onUnhandled: (id, error) => {
-      crashlytics().recordError(
-        error instanceof Error ? error : new Error(String(error)),
-        'UnhandledPromiseRejection',
-      );
-    },
-    onHandled: () => {},
+  Sentry.init({
+    dsn: 'https://9b8ce1cc55ee633fee9640c5a8323bf9@o4511853415301120.ingest.us.sentry.io/4511853433323520',
+    tracesSampleRate: 0,
   });
 }

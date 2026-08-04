@@ -795,23 +795,53 @@ Seed admin: `node astrowani-backend/scripts/seedAdmin.js`.
   VPS process's env vars live (e.g. PM2 ecosystem file / `.env` / systemd unit — whatever
   currently supplies `SUPABASE_SERVICE_ROLE_KEY` etc. to the running process) for the
   endpoint to work (503s if unset).
-- **Both RN apps**: `@react-native-firebase/crashlytics` added (version pinned to exactly
-  match each app's resolved `@react-native-firebase/app` version — customer 22.2.1, vendor
-  21.12.0; the crashlytics package enforces this as a peer dependency). Native: Crashlytics
-  Gradle plugin classpath in `android/build.gradle` + `apply plugin:
-  'com.google.firebase.crashlytics'` in `android/app/build.gradle` (both apps) — captures
-  native crashes automatically. JS: `src/utils/CrashReporting.js` (both apps) —
-  `initCrashReporting()` enables collection, wraps `global.ErrorUtils` to call
-  `crashlytics().recordError()` on JS exceptions (preserves the previous handler), and uses
-  `promise/setimmediate/rejection-tracking` for unhandled promise rejections (RN doesn't
-  route those through `ErrorUtils`). Called at the very top of each app's `index.js` —
-  same reasoning as `PushNotification`'s headless-JS registration: must run before the
-  component tree so nothing early is missed.
-  - **Known gap**: reading Crashlytics issues programmatically (for the bug-scan agent below)
-    needs either BigQuery export enabled on the Firebase project (Blaze plan) or a service
-    account granted the Crashlytics API — neither is wired up yet. Crashes ARE being
-    captured and visible in Firebase Console → Crashlytics; there's just no automated pull
-    path yet. Bootstrapping that is a separate task, not implied by anything above.
+- **Both RN apps used Firebase Crashlytics initially, fully replaced by Sentry same day**
+  (see subsystem M below) — `@react-native-firebase/crashlytics` and its Gradle plugin are
+  **fully removed** from both apps. Do not re-add Crashlytics or suggest it as a fix for
+  anything crash-reporting related.
+
+### M. Crash reporting migrated: Crashlytics → Sentry (2026-08-04, later same day)
+- **Why**: Crashlytics has no free programmatic read API — reading issues needs either
+  BigQuery export (requires the Blaze pay-as-you-go billing plan, i.e. a card on file) or a
+  GCP service account granted the Crashlytics API, and the user explicitly didn't want to add
+  billing just to read crash logs. Sentry's free tier includes full REST API read access with
+  no card required, so the bug-scan agent (subsystem L) can pull real crash data
+  autonomously. Considered the free **Crashlytics → Slack integration** as an alternative
+  (keeps Crashlytics, posts alert-level summaries to Slack, still free/no-card) but went with
+  a full Sentry swap instead since it gives structured, queryable data rather than
+  message-parsing, at the cost of redoing the SDK wiring (already sunk since Crashlytics was
+  brand new that same day).
+- **Sentry org**: `astrowani` (https://astrowani.sentry.io). Three projects, one per signal
+  source: `react-native` (customer app), `astrowani-vendor` (vendor app), `astrowani-backend`
+  (created for future use, not currently wired into the backend — the backend already has its
+  own working `errorLogger.js` + `/api/bug-agent/errors` endpoint from subsystem K, so it
+  wasn't switched over; no need to duplicate a source that already works).
+- **Both RN apps**: `@sentry/react-native` (`^8.x`) replaces `@react-native-firebase/crashlytics`
+  entirely. `src/utils/CrashReporting.js` (both apps) now just calls `Sentry.init({dsn, ...})`
+  — unlike the old manual `ErrorUtils`/promise-rejection wrapping Crashlytics needed, Sentry's
+  `init()` sets up the global JS error handler, unhandled promise rejection tracking, and
+  native (Java/NDK) crash capture on its own. Native: the Crashlytics Gradle plugin classpath
+  (`android/build.gradle`) and `apply plugin: 'com.google.firebase.crashlytics'`
+  (`android/app/build.gradle`) were removed from both apps — Sentry's native linking is
+  handled by the RN package's autolinking, no manual Gradle plugin needed for basic crash
+  capture (source-map/debug-symbol upload for symbolicated stack traces is a possible future
+  addition, not done yet). Vendor app's `src/components/ErrorBoundary.js` (wraps
+  `CustomDrawer` — see the blank-screen-crash fix below) now calls
+  `Sentry.captureException(error, {tags: {boundary: name}})` instead of
+  `crashlytics().recordError()`.
+- **Bug-scan agent** (subsystem L): reads new issues via Sentry's REST API
+  (`GET https://sentry.io/api/0/projects/astrowani/<project-slug>/issues/?statsPeriod=24h&query=is:unresolved`),
+  auth'd with a **read-only Internal Integration token** scoped to `Issue & Event: Read` +
+  `Project: Read` only (named "bug-scan-agent (read-only)" in the Sentry org) — same
+  least-privilege reasoning as `BUG_AGENT_TOKEN`. Token is embedded in the cloud routine's
+  prompt as `$SENTRY_AUTH_TOKEN` (no separate secrets store existed for cloud routines at
+  setup time, same pattern as `BUG_AGENT_TOKEN`). Full instructions in
+  `.claude/skills/bug-scan/SKILL.md` section 1.
+- **Cloud environment network policy**: the routine's cloud environment (`bug-scan`, then
+  recreated as `bug-scan-v2` to add `sentry.io` to the Custom network allowlist — environments
+  can't be edited in place, only recreated, see subsystem L's original setup notes) must
+  include `sentry.io` or the agent's Sentry API calls will fail with a network-policy block,
+  the same failure mode the backend endpoint hit before its domain was allowlisted.
 
 ### L. Autonomous bug-scanning agent (`/bug-scan`)
 - `.claude/skills/bug-scan/SKILL.md` — full operating instructions for a scheduled agent that

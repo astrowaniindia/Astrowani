@@ -37,20 +37,32 @@ manager keeps it running there (e.g. PM2/systemd) — if that process restarts, 
 log resets, so this only ever covers "since the last process restart." Don't treat a short
 log as "no errors happened" without checking process uptime.
 
-**Customer & vendor app crashes (Firebase Crashlytics)** — SDK is wired
-(`src/utils/CrashReporting.js` in both apps, native plugin in both `android/build.gradle` +
-`android/app/build.gradle`), so crashes ARE being captured. But there is **no automated read
-path configured yet** — reading Crashlytics issues programmatically needs either BigQuery
-export enabled on the Firebase project (requires Blaze billing plan) or a service account
-granted the Crashlytics API. Until one of those exists in this agent's environment:
-**do not guess at app crashes from source code alone.** Say plainly "Crashlytics has no
-automated read access configured — check Firebase Console → Crashlytics manually for
-customer/vendor app crashes" and skip that source for this run. If asked to bootstrap that
-access, that's a separate task — don't attempt it as a side effect of a scan.
+**Customer & vendor app crashes (Sentry)** — both apps init `@sentry/react-native` in
+`src/utils/CrashReporting.js` (customer + vendor each have their own Sentry project; the
+vendor app's `ErrorBoundary.js` also reports caught render errors here). Pull new issues via
+Sentry's REST API, org slug `astrowani`:
+```
+GET https://sentry.io/api/0/projects/astrowani/react-native/issues/?statsPeriod=24h&query=is:unresolved
+GET https://sentry.io/api/0/projects/astrowani/astrowani-vendor/issues/?statsPeriod=24h&query=is:unresolved
+Authorization: Bearer $SENTRY_AUTH_TOKEN
+```
+(`react-native` = customer app project, `astrowani-vendor` = vendor app project.) This token
+is scoped read-only (`Issue & Event: Read`, `Project: Read` only — an Internal Integration
+named "bug-scan-agent (read-only)" in the Sentry org, not a personal token) — same
+least-privilege reasoning as `BUG_AGENT_TOKEN` below. Each issue in the response has a
+`title`, `culprit`, `count` (occurrences), `firstSeen`/`lastSeen`, and a `permalink` — open
+the permalink in triage notes so a human can see the full stack trace/breadcrumbs without you
+needing to fetch the full event payload separately. If `$SENTRY_AUTH_TOKEN` is missing, say so
+plainly and skip app-crash triage for this run rather than guessing from source.
 
-If neither source above yields anything usable (e.g. `BUG_AGENT_TOKEN` isn't set either),
-your job this run is to report that plainly and stop — do not re-read the whole codebase
-hunting for bugs with no signal.
+Firebase Crashlytics was the original plan for app crash reporting but was replaced with
+Sentry specifically because Crashlytics has no free programmatic read API (needs a paid
+Blaze plan + BigQuery export); Sentry's free tier includes full API read access. Don't
+re-add Crashlytics or suggest it as a fix for anything — it's fully removed from both apps.
+
+If neither source above yields anything usable (e.g. `BUG_AGENT_TOKEN` and
+`SENTRY_AUTH_TOKEN` are both missing), your job this run is to report that plainly and stop —
+do not re-read the whole codebase hunting for bugs with no signal.
 
 ## 2. Triage each new crash/error
 
@@ -97,7 +109,7 @@ row accordingly (`gh pr view <n>`).
 
 Short summary: new issues seen, how many investigated, how many PRs opened, how many skipped
 and why, and anything needing a human decision (ambiguous root cause, conflicting fixes,
-money-affecting change, missing `BUG_AGENT_TOKEN` / Crashlytics access). Never silently drop
+money-affecting change, missing `BUG_AGENT_TOKEN` / `SENTRY_AUTH_TOKEN`). Never silently drop
 something — always report what you didn't get to and why.
 
 ## Hard constraints — never violate
