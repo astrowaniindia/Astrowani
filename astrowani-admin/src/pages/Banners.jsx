@@ -3,9 +3,34 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 
-const EMPTY = { title: '', title_hi: '', description: '', description_hi: '', image: '', link: '', sort_order: 0, is_active: true, app: 'both' };
+const EMPTY = {
+  title: '', title_hi: '', description: '', description_hi: '', image: '',
+  sort_order: 0, is_active: true, app: 'both',
+  placement: 'home_primary', action_type: 'none', action_value: '',
+};
 
 const APP_LABELS = { customer: 'Customer App', vendor: 'Vendor App', both: 'Both Apps' };
+
+// Every spot in the apps a banner can be placed, with the exact image size to upload.
+// Widths/heights are in px — export at this ratio (or larger, same ratio) for a crisp image.
+const PLACEMENTS = {
+  home_primary: { label: 'Home screen — top banner (rotating)', width: 1200, height: 500, note: 'The big banner right under the header, e.g. "100% Cashback".' },
+  home_secondary: { label: 'Home screen — second banner (below the top one)', width: 1200, height: 300, note: 'A smaller banner shown right after the top one, before the astrologer list.' },
+  chat_top: { label: 'Chat with Astrologers — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Chat tab.' },
+  video_top: { label: 'Video with Experts — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Video tab.' },
+  call_top: { label: 'Talk to Experts (Audio) — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Call tab.' },
+};
+
+// Where "Go to a screen in the app" can send the customer when they tap the banner.
+const SCREEN_OPTIONS = [
+  { value: 'Wallet', label: 'Wallet / Recharge' },
+  { value: 'Chat', label: 'Chat with Astrologers' },
+  { value: 'Video', label: 'Video with Experts' },
+  { value: 'Call', label: 'Talk to Experts (Audio)' },
+  { value: 'Live', label: 'Live' },
+  { value: 'Remedies', label: 'Remedies' },
+  { value: 'Home', label: 'Home' },
+];
 
 export default function Banners() {
   const [rows, setRows] = useState([]);
@@ -108,20 +133,21 @@ export default function Banners() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th></th><th>Title</th><th>Shows in</th><th>Order</th><th>Active</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Title</th><th>Placement</th><th>Shows in</th><th>Order</th><th>Active</th><th></th></tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={6} className="empty">Loading…</td></tr>}
-            {!loading && loadError && <tr><td colSpan={6} className="empty" style={{ color: 'var(--red)' }}>Couldn't load banners: {loadError}</td></tr>}
-            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={6} className="empty">No banners for the {APP_LABELS[tab]} yet — click “+ New Banner” to add one.</td></tr>}
+            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
+            {!loading && loadError && <tr><td colSpan={7} className="empty" style={{ color: 'var(--red)' }}>Couldn't load banners: {loadError}</td></tr>}
+            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={7} className="empty">No banners for the {APP_LABELS[tab]} yet — click “+ New Banner” to add one.</td></tr>}
             {visibleRows.map((r) => (
               <tr key={r.id}>
                 <td>{r.image ? <img src={r.image} className="thumb" alt="" /> : null}</td>
                 <td>{r.title}</td>
+                <td><span className="badge gray">{PLACEMENTS[r.placement]?.label || r.placement || 'home_primary'}</span></td>
                 <td><span className="badge gray">{APP_LABELS[r.app || 'both']}</span></td>
                 <td>{r.sort_order}</td>
                 <td>{r.is_active ? <span className="badge green">Yes</span> : <span className="badge gray">No</span>}</td>
                 <td><div className="btn-group">
-                  <button className="btn secondary sm" onClick={() => setEditing({ ...r })}>Edit</button>
+                  <button className="btn secondary sm" onClick={() => setEditing({ ...EMPTY, ...r })}>Edit</button>
                   <button className="btn danger sm" onClick={() => remove(r)}>Delete</button>
                 </div></td>
               </tr>
@@ -140,9 +166,43 @@ export default function Banners() {
             <input type="text" value={editing.description || ''} onChange={(e) => set('description', e.target.value)} /></div>
           <div className="field"><label>Description (Hindi)</label>
             <input type="text" value={editing.description_hi || ''} onChange={(e) => set('description_hi', e.target.value)} placeholder="हिंदी में विवरण" /></div>
+
+          <div className="field">
+            <label>Where does this banner show?</label>
+            <select value={editing.placement || 'home_primary'} onChange={(e) => set('placement', e.target.value)}>
+              {Object.entries(PLACEMENTS).map(([key, p]) => (
+                <option key={key} value={key}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          {(() => { const p = PLACEMENTS[editing.placement || 'home_primary']; return p ? (
+            <div className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 13 }}>
+              Upload an image sized <strong>{p.width} × {p.height}px</strong> (or larger, same ratio) — {p.note}
+            </div>
+          ) : null; })()}
+
           <ImageField label="Banner image (URL or upload)" value={editing.image} onChange={(v) => set('image', v)} />
-          <div className="field"><label>Link (optional)</label>
-            <input type="text" value={editing.link || ''} onChange={(e) => set('link', e.target.value)} /></div>
+
+          <div className="field"><label>When tapped…</label>
+            <select value={editing.action_type || 'none'} onChange={(e) => set('action_type', e.target.value)}>
+              <option value="none">Do nothing</option>
+              <option value="screen">Go to a screen in the app</option>
+              <option value="url">Open a web link</option>
+            </select></div>
+          {editing.action_type === 'screen' && (
+            <div className="field"><label>Screen</label>
+              <select value={editing.action_value || ''} onChange={(e) => set('action_value', e.target.value)}>
+                <option value="">Choose a screen…</option>
+                {SCREEN_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select></div>
+          )}
+          {editing.action_type === 'url' && (
+            <div className="field"><label>Web link (https://…)</label>
+              <input type="text" value={editing.action_value || ''} onChange={(e) => set('action_value', e.target.value)} placeholder="https://example.com" /></div>
+          )}
+
           <div className="field"><label>Show in app</label>
             <select value={editing.app || 'both'} onChange={(e) => set('app', e.target.value)}>
               <option value="customer">Customer App only</option>

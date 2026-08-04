@@ -520,6 +520,7 @@ import { showStatusPopup } from '../../components/StatusPopup';
 import { SOCKET_URL } from '../../config/api';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
+import PlacementBanner from '../../components/PlacementBanner';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -893,6 +894,7 @@ const CallsList = ({navigation}) => {
 
   return (
     <View style={styles.container}>
+      <PlacementBanner placement="call_top" navigation={navigation} height={80} borderRadius={0} />
       <ReusableList
         data={calls}
         buttonType="call"

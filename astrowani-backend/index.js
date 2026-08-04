@@ -668,15 +668,19 @@ async function getSetting(key, fallback) {
 
 // Banners — admin-authored (table `banners`), shape preserved for both apps.
 // `?app=customer|vendor` returns banners targeted at that app plus any 'both';
-// no param returns all active (back-compat). `intervalSeconds` is the admin-set
-// rotation interval (default 4s).
+// no param returns all active (back-compat). `?placement=` selects which slot
+// (home_primary, home_secondary, chat_top, video_top, call_top, ...) — defaults
+// to 'home_primary' so existing callers that don't pass it keep working.
+// `intervalSeconds` is the admin-set rotation interval (default 4s).
 app.get('/api/banners/all', async (req, res) => {
   try {
     const app_ = req.query.app;
+    const placement = req.query.placement || 'home_primary';
     let bannerQuery = supabase
       .from('banners')
       .select('*')
       .eq('is_active', true)
+      .eq('placement', placement)
       .order('sort_order', { ascending: true });
     if (app_ === 'customer' || app_ === 'vendor') {
       bannerQuery = bannerQuery.or(`app.eq.${app_},app.eq.both`);
@@ -695,6 +699,9 @@ app.get('/api/banners/all', async (req, res) => {
         description: b.description,
         imageUrl: b.image,
         link: b.link,
+        placement: b.placement,
+        actionType: b.action_type,
+        actionValue: b.action_value,
         hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
       })),
     });

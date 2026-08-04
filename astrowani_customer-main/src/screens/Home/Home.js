@@ -40,55 +40,13 @@ import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
+import PlacementBanner from '../../components/PlacementBanner';
 
-// Bundled fallback banners — shown until the admin adds real banners in the dashboard.
+// Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
   require('../../assets/images/banner.jpeg'),
   require('../../assets/images/mainlogo.jpeg'),
 ];
-
-const FadeBanner = ({ banners, intervalMs = 4000 }) => {
-  const [currentIndex, setCurrentIndex] = React.useState(0);
-  const fadeAnim = React.useRef(new Animated.Value(1)).current;
-
-  // Use admin banners when available; otherwise the bundled fallbacks.
-  // Each entry is a valid RN Image source ({uri} for remote/base64, or a require() id).
-  const slides = (banners && banners.length > 0)
-    ? banners.filter(b => b?.imageUrl).map(b => ({ uri: b.imageUrl }))
-    : FALLBACK_BANNERS;
-
-  React.useEffect(() => {
-    if (!slides || slides.length <= 1) return;
-    const interval = setInterval(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0.2,
-        duration: 500,
-        useNativeDriver: true,
-      }).start(() => {
-        setCurrentIndex((prev) => (prev + 1) % slides.length);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }).start();
-      });
-    }, Math.max(1000, intervalMs));
-    return () => clearInterval(interval);
-  }, [slides.length, intervalMs]);
-
-  if (!slides || slides.length === 0) return null;
-  const safeIndex = currentIndex % slides.length;
-
-  return (
-    <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-      <Image
-        source={slides[safeIndex]}
-        style={{ width: '100%', height: '100%', borderRadius: 15 }}
-        resizeMode="cover"
-      />
-    </Animated.View>
-  );
-};
 
 const Home = ({navigation}) => {
   const { t, language } = React.useContext(LanguageContext);
@@ -108,8 +66,6 @@ const Home = ({navigation}) => {
   const [astrologerToShow, setAstrologerToShow] = useState(null);
   const [errorReview, setErrorReview] = useState(null);
   const [loadingReview, setLoadingReview] = useState(true);
-  const [banners, setBanners] = useState([]);
-  const [bannerIntervalMs, setBannerIntervalMs] = useState(4000);
   const [liveAstro, setLiveAstro] = useState([]);
   const [thought, setThought] = useState();
   const [user, setUser] = useState(null);
@@ -542,18 +498,6 @@ const Home = ({navigation}) => {
       return null;
     }
   };
-  const getBanner = async () => {
-    return await Instance(`/api/banners/all?app=customer`)
-      .then(response => {
-        // console.log("response: ", response?.data);
-        setBanners(response?.data?.data);
-        const secs = Number(response?.data?.intervalSeconds);
-        if (secs > 0) setBannerIntervalMs(secs * 1000);
-      })
-      .catch(error => {
-        console.log('error on getBanner: ', error);
-      });
-  };
   const fetchUserProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -698,7 +642,6 @@ const Home = ({navigation}) => {
     };
 
   const loadAllData = () => {
-    getBanner();
     getThoutsOfTheDay();
     fetchUserProfile();
     fetchAstrologer();
@@ -1017,9 +960,20 @@ const Home = ({navigation}) => {
           shadowOpacity: 0.1,
           shadowRadius: 5
         }}>
-          <View style={{height: 150, marginHorizontal: 15, borderRadius: 15, overflow: 'hidden'}}>
-            <FadeBanner banners={banners} intervalMs={bannerIntervalMs} />
-          </View>
+          <PlacementBanner
+            placement="home_primary"
+            navigation={navigation}
+            height={150}
+            style={{ marginHorizontal: 15 }}
+            fallbackImages={FALLBACK_BANNERS}
+          />
+
+          <PlacementBanner
+            placement="home_secondary"
+            navigation={navigation}
+            height={90}
+            style={{ marginHorizontal: 15, marginTop: 12 }}
+          />
 
           <View style={styles.topAstrologers}>
             <Text style={styles.topAstrologerTxt}>{t('home.bestAstrologers')}</Text>

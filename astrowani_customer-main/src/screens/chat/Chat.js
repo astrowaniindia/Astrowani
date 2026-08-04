@@ -9,6 +9,7 @@ import Instance from '../../api/ApiCall';
 import { supabase } from '../../api/SupabaseClient';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
+import PlacementBanner from '../../components/PlacementBanner';
 import { LanguageContext } from '../../context/LanguageContext';
 
 const Chat = ({ navigation }) => {
@@ -80,6 +81,12 @@ const Chat = ({ navigation }) => {
 
   return (
     <View style={styles.main}>
+      <PlacementBanner
+        placement="chat_top"
+        navigation={navigation}
+        height={80}
+        borderRadius={0}
+      />
       <Allastrologers
         actionButton={sendChatRequest}
         data={specialAstro}

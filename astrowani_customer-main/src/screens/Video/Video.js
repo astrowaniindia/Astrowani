@@ -18,6 +18,7 @@ import {SOCKET_URL} from '../../config/api';
 import {supabase} from '../../api/SupabaseClient';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {ensureProfileComplete} from '../../utils/profileGate';
+import PlacementBanner from '../../components/PlacementBanner';
 import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
 import io from 'socket.io-client';
 import {LanguageContext} from '../../context/LanguageContext';
@@ -316,6 +317,7 @@ const Video = ({navigation}) => {
 
   return (
     <View style={{flex: 1}}>
+      <PlacementBanner placement="video_top" navigation={navigation} height={80} borderRadius={0} />
       <ReusableList
         data={astrologer}
         handleAstrologer={handleAstrologer}
