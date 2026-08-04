@@ -84,7 +84,7 @@ const Chat = ({ navigation }) => {
       <PlacementBanner
         placement="chat_top"
         navigation={navigation}
-        height={80}
+        height={110}
         borderRadius={0}
       />
       <Allastrologers

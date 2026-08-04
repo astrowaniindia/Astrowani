@@ -317,7 +317,7 @@ const Video = ({navigation}) => {
 
   return (
     <View style={{flex: 1}}>
-      <PlacementBanner placement="video_top" navigation={navigation} height={80} borderRadius={0} />
+      <PlacementBanner placement="video_top" navigation={navigation} height={110} borderRadius={0} />
       <ReusableList
         data={astrologer}
         handleAstrologer={handleAstrologer}

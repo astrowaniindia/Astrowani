@@ -971,7 +971,7 @@ const Home = ({navigation}) => {
           <PlacementBanner
             placement="home_secondary"
             navigation={navigation}
-            height={90}
+            height={110}
             style={{ marginHorizontal: 15, marginTop: 12 }}
           />
 

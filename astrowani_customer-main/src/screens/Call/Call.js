@@ -894,7 +894,7 @@ const CallsList = ({navigation}) => {
 
   return (
     <View style={styles.container}>
-      <PlacementBanner placement="call_top" navigation={navigation} height={80} borderRadius={0} />
+      <PlacementBanner placement="call_top" navigation={navigation} height={110} borderRadius={0} />
       <ReusableList
         data={calls}
         buttonType="call"
