@@ -21,6 +21,8 @@ import { supabase } from '../../api/SupabaseClient';
 import StarRating from '../../components/StarRating';
 import { SOCKET_URL } from '../../config/api';
 import { LanguageContext } from '../../context/LanguageContext';
+import { formatBusyLabel } from '../../utils/busyLabel';
+import { requestNotifyMe } from '../../utils/notifyMe';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
   const navigation = useNavigation();
@@ -184,6 +186,17 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
   const showOffline = (item) =>
     Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || 'This astrologer' }));
 
+  // Busy overrides every per-service button too (chat/call/video are mutually exclusive —
+  // an astrologer already occupied with one customer can't take a second request of any kind).
+  const handleNotifyMeTap = async (item) => {
+    const requestType = buttonType === 'video' ? 'video' : buttonType === 'call' ? 'audio' : 'chat';
+    const { ok } = await requestNotifyMe(item.userId || item._id, requestType);
+    Alert.alert(
+      ok ? "We'll let you know" : t('common.error'),
+      ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+    );
+  };
+
   const renderButton = (item) => {
     if (item.isOnline === false && buttonType !== 'view profile') {
       return (
@@ -195,6 +208,23 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
           >
             <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
             <Text style={styles.chatText}>{t('common.offline')}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if (item.isBusy === true && buttonType !== 'view profile') {
+      const elapsed = item.busySince
+        ? Math.max(0, Math.floor((Date.now() - new Date(item.busySince).getTime()) / 1000))
+        : 0;
+      return (
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.actionBtnBusyChat, styles.smallButton]}
+            activeOpacity={0.8}
+            onPress={() => handleNotifyMeTap(item)}
+          >
+            <MaterialIcons name="schedule" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+            <Text style={styles.chatText}>{formatBusyLabel(elapsed)}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -543,6 +573,9 @@ const styles = StyleSheet.create({
   actionBtnUnavailableChat: {
     backgroundColor: '#C0392B',
     opacity: 0.85,
+  },
+  actionBtnBusyChat: {
+    backgroundColor: '#E67E22',
   },
   actionBtnProfile: {
     borderColor: COLORS.AstroMaroon,

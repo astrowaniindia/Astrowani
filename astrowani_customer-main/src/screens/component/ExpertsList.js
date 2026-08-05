@@ -23,6 +23,8 @@ import RequestingPopup from '../../components/RequestingPopup';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
+import { formatBusyLabel } from '../../utils/busyLabel';
+import { requestNotifyMe } from '../../utils/notifyMe';
 
 // Shared detailed astrologer card used by the category screens. Shows the full
 // profile (avatar, rating, name, specialty, languages, experience, price) plus
@@ -241,6 +243,10 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       }, 60000);
     } catch (err) {
       setIsCallWaiting(false);
+      if (err?.response?.status === 409) {
+        showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+        return;
+      }
       console.error('[ExpertsList] initiateCall error:', err);
       Alert.alert('Error', 'Failed to initiate call. Please try again.');
     }
@@ -312,6 +318,23 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
               >
                 <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
                 <Text style={styles.actionBtnText}>Offline</Text>
+              </TouchableOpacity>
+            ) : item.isBusy === true ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.actionBtn, styles.busyBtn]}
+                onPress={async () => {
+                  const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
+                  Alert.alert(
+                    ok ? "We'll let you know" : 'Error',
+                    ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+                  );
+                }}
+              >
+                <MaterialIcons name="schedule" size={moderateScale(16)} color="#fff" />
+                <Text style={styles.actionBtnText}>
+                  {formatBusyLabel(item.busySince ? Math.max(0, Math.floor((Date.now() - new Date(item.busySince).getTime()) / 1000)) : 0)}
+                </Text>
               </TouchableOpacity>
             ) : (
               <>
@@ -405,6 +428,7 @@ const styles = StyleSheet.create({
   },
   actionBtnText: { color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(12.5), fontWeight: 'bold', marginLeft: scale(4) },
   offlineBtn: { backgroundColor: '#C0392B', minWidth: scale(86) },
+  busyBtn: { backgroundColor: '#E67E22', minWidth: scale(86) },
   emptyBox: { alignItems: 'center', marginTop: verticalScale(60) },
   emptyTxt: { color: COLORS.AstroMaroon, fontSize: moderateScale(15), marginTop: verticalScale(10), fontFamily: 'Lato-Regular' },
 });
