@@ -11,6 +11,7 @@ const { logError } = require('./src/errorLogger');
 const { checkAstrologerBusy, buildBusyMap } = require('./src/busyStatus');
 const { notifyWaitlistIfFree } = require('./src/waitlist');
 const { initSentry } = require('./src/sentry');
+const razorpay = require('./src/razorpay');
 
 // No-op until SENTRY_DSN is set in the environment — see MD files/deployment-and-releases.md.
 initSentry();
@@ -1758,6 +1759,132 @@ app.post('/api/wallet/deduct-and-credit', async (req, res) => {
   } catch (err) {
     console.error('POST /api/wallet/deduct-and-credit error:', err.message);
     return res.status(500).json({ success: false, message: 'Transaction failed' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER WALLET RECHARGE (Razorpay) — server-verified, replaces the old
+// client-only RazorpayCheckout.open() call that never touched the backend at all.
+//
+// Flow: create-order (server creates the Razorpay Order, amount is server-trusted)
+//   → app pays against that order_id → verify-payment (HMAC signature check,
+//   idempotent on razorpay_payment_id) → only then is wallet_balance credited.
+// ─────────────────────────────────────────────────────────────────────────────
+const MIN_RECHARGE_RUPEES = 1;
+const MAX_RECHARGE_RUPEES = 100000; // sanity ceiling — adjust if a legitimate need arises
+
+app.post('/api/wallet/create-order', async (req, res) => {
+  try {
+    if (!razorpay.isConfigured()) {
+      return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
+    }
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const amount = Number(req.body?.amount);
+    if (!Number.isFinite(amount) || amount < MIN_RECHARGE_RUPEES || amount > MAX_RECHARGE_RUPEES) {
+      return res.status(400).json({ success: false, message: `Amount must be between ₹${MIN_RECHARGE_RUPEES} and ₹${MAX_RECHARGE_RUPEES}` });
+    }
+
+    const order = await razorpay.createOrder(amount, `wr_${Date.now()}`);
+
+    const { error: insertErr } = await supabaseService.from('wallet_recharges').insert([{
+      customer_id: customer.id,
+      amount,
+      razorpay_order_id: order.id,
+      status: 'created',
+    }]);
+    if (insertErr) throw insertErr;
+
+    return res.status(200).json({
+      success: true,
+      orderId: order.id,
+      amount,
+      currency: order.currency,
+      keyId: razorpay.RAZORPAY_KEY_ID,
+    });
+  } catch (err) {
+    console.error('POST /api/wallet/create-order error:', err.response?.data || err.message);
+    return res.status(500).json({ success: false, message: 'Could not start payment' });
+  }
+});
+
+app.post('/api/wallet/verify-payment', async (req, res) => {
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ success: false, message: 'Missing payment verification fields' });
+    }
+
+    const validSignature = razorpay.verifySignature({
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      signature: razorpay_signature,
+    });
+    if (!validSignature) {
+      await supabaseService.from('wallet_recharges')
+        .update({ status: 'failed' })
+        .eq('razorpay_order_id', razorpay_order_id)
+        .eq('customer_id', customer.id)
+        .eq('status', 'created');
+      return res.status(400).json({ success: false, message: 'Payment verification failed' });
+    }
+
+    // Atomic claim: only succeeds once per order, for the customer that created it. A second
+    // verify call for the same order (retry, double-tap, replay) finds 0 rows and is a no-op —
+    // NOT an error, since the first call may have already credited the wallet successfully.
+    const { data: claimed, error: claimErr } = await supabaseService
+      .from('wallet_recharges')
+      .update({ razorpay_payment_id, status: 'paid', paid_at: new Date().toISOString() })
+      .eq('razorpay_order_id', razorpay_order_id)
+      .eq('customer_id', customer.id)
+      .eq('status', 'created')
+      .select();
+    if (claimErr) throw claimErr;
+
+    if (!claimed || !claimed.length) {
+      const { data: existing } = await supabaseService
+        .from('wallet_recharges')
+        .select('status')
+        .eq('razorpay_order_id', razorpay_order_id)
+        .eq('customer_id', customer.id)
+        .single();
+      if (existing?.status === 'paid') {
+        const { data: cust } = await supabaseService.from('customers').select('wallet_balance').eq('id', customer.id).single();
+        return res.status(200).json({ success: true, alreadyProcessed: true, newBalance: cust?.wallet_balance ?? null });
+      }
+      return res.status(409).json({ success: false, message: 'Order not found or not payable' });
+    }
+
+    const rechargeRow = claimed[0];
+    const { data: custRow, error: custErr } = await supabaseService
+      .from('customers')
+      .select('wallet_balance')
+      .eq('id', customer.id)
+      .single();
+    if (custErr) throw custErr;
+
+    const newBalance = (custRow?.wallet_balance ?? 0) + rechargeRow.amount;
+    const { error: creditErr } = await supabaseService
+      .from('customers')
+      .update({ wallet_balance: newBalance })
+      .eq('id', customer.id);
+    if (creditErr) throw creditErr;
+
+    await supabaseService.from('wallet_transactions').insert([{
+      user_id: customer.id,
+      type: 'credit',
+      amount: rechargeRow.amount,
+      description: `Wallet recharge via Razorpay (payment ${razorpay_payment_id})`,
+    }]);
+
+    return res.status(200).json({ success: true, newBalance });
+  } catch (err) {
+    console.error('POST /api/wallet/verify-payment error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not verify payment' });
   }
 });
 

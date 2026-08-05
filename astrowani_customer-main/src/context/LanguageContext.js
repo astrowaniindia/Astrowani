@@ -230,6 +230,7 @@ const translations = {
     'wallet.recommendedAmounts': 'Recommended amounts',
     'wallet.totalPayable': 'Total Payable',
     'wallet.proceedToPay': 'Proceed to Pay',
+    'wallet.processing': 'Processing…',
 
     // Register screen
     'register.title': 'Register',
@@ -686,6 +687,7 @@ const translations = {
     'wallet.recommendedAmounts': 'अनुशंसित राशियाँ',
     'wallet.totalPayable': 'कुल देय राशि',
     'wallet.proceedToPay': 'भुगतान करने के लिए आगे बढ़ें',
+    'wallet.processing': 'प्रोसेस हो रहा है…',
 
     // Register screen
     'register.title': 'पंजीकरण',

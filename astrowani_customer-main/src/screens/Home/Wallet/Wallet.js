@@ -11,44 +11,79 @@ import {
   Platform,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import { COLORS } from '../../../Theme/Colors';
 import { LanguageContext } from '../../../context/LanguageContext';
+import { SOCKET_URL } from '../../../config/api';
 
 const presetAmounts = [50, 100, 200, 500, 1000, 2000];
 
 const Wallet = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
   const [amount, setAmount] = useState('');
+  const [processing, setProcessing] = useState(false);
 
-  const handleSubmit = () => {
-    const finalAmount = parseInt(amount);
+  // Server-verified flow: backend creates the Order (amount is server-trusted from
+  // that point on) → checkout pays against it → backend verifies the signature before
+  // crediting wallet_balance. Never credits anything based on a client-reported "success".
+  const handleSubmit = async () => {
+    const finalAmount = parseInt(amount, 10);
     if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) {
       Alert.alert(t('wallet.invalidAmount'), t('wallet.enterValidAmount'));
       return;
     }
-    const options = {
-      description: 'Wallet Recharge',
-      image: 'https://your-logo-url.com/logo.png',
-      currency: 'INR',
-      key: 'rzp_live_3PXDqZGmI6Zz4o', 
-      amount: finalAmount * 100,
-      name: 'Astrowani',
-      prefill: {
-        email: 'test@example.com',
-        contact: '+919829304067',
-        name: 'User',
-      },
-      theme: {color: COLORS.AstroMaroon},
-    };
-    RazorpayCheckout.open(options)
-      .then(data => {
-        Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
-      })
-      .catch(error => {
-        Alert.alert(t('wallet.paymentFailed'), error.description);
-      });
+    setProcessing(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const authHeader = {headers: {Authorization: `Bearer ${token}`}};
+
+      const orderRes = await axios.post(
+        `${SOCKET_URL}/api/wallet/create-order`,
+        {amount: finalAmount},
+        authHeader,
+      );
+      if (!orderRes.data?.success) {
+        throw new Error(orderRes.data?.message || 'Could not start payment');
+      }
+      const {orderId, amount: orderAmount, currency, keyId} = orderRes.data;
+
+      const options = {
+        description: 'Wallet Recharge',
+        image: 'https://your-logo-url.com/logo.png',
+        currency,
+        key: keyId,
+        amount: Math.round(orderAmount * 100),
+        order_id: orderId,
+        name: 'Astrowani',
+        theme: {color: COLORS.AstroMaroon},
+      };
+
+      const data = await RazorpayCheckout.open(options);
+
+      const verifyRes = await axios.post(
+        `${SOCKET_URL}/api/wallet/verify-payment`,
+        {
+          razorpay_order_id: data.razorpay_order_id,
+          razorpay_payment_id: data.razorpay_payment_id,
+          razorpay_signature: data.razorpay_signature,
+        },
+        authHeader,
+      );
+      if (!verifyRes.data?.success) {
+        throw new Error(verifyRes.data?.message || 'Payment verification failed');
+      }
+
+      setAmount('');
+      Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
+    } catch (error) {
+      const message = error?.response?.data?.message || error?.description || error?.message || 'Something went wrong';
+      Alert.alert(t('wallet.paymentFailed'), message);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const renderPreset = ({item}) => (
@@ -108,12 +143,14 @@ const Wallet = ({navigation}) => {
           <Text style={styles.billAmount}>₹{amount || '0'}</Text>
         </View>
         <TouchableOpacity
-          style={[styles.submitBtn, !amount && styles.disabledBtn]}
+          style={[styles.submitBtn, (!amount || processing) && styles.disabledBtn]}
           onPress={handleSubmit}
-          disabled={!amount}
+          disabled={!amount || processing}
         >
-          <Text style={styles.submitTxt}>{t('wallet.proceedToPay')}</Text>
-          <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />
+          <Text style={styles.submitTxt}>
+            {processing ? t('wallet.processing') : t('wallet.proceedToPay')}
+          </Text>
+          {!processing && <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
