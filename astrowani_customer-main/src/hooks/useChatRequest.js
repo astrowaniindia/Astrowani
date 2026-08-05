@@ -61,6 +61,27 @@ const useChatRequest = (navigation) => {
         return;
       }
 
+      // Availability pre-check — an astrologer already in a session or with another
+      // unanswered pending request must not receive a second one. Fails open (lets the
+      // request through) on a network error so a transient blip never blocks a legit chat.
+      try {
+        const availResp = await fetch(`${Instance.defaults.baseURL}/api/chat/check-availability`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ astrologerId: receiverId }),
+        });
+        if (availResp.status === 409) {
+          showStatusPopup({
+            variant: 'busy',
+            title: t('status.astrologerBusyTitle'),
+            message: t('alerts.astrologerBusy'),
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('Availability check skipped:', e.message);
+      }
+
       // Get the real Supabase customer UUID for billing
       let supabaseCustomerId = null;
       try {

@@ -521,6 +521,8 @@ import { SOCKET_URL } from '../../config/api';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
 import PlacementBanner from '../../components/PlacementBanner';
+import { formatBusyLabel } from '../../utils/busyLabel';
+import { requestNotifyMe } from '../../utils/notifyMe';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -775,6 +777,10 @@ const CallsList = ({navigation}) => {
       }, 60000);
     } catch (err) {
       setIsWaiting(false);
+      if (err?.response?.status === 409) {
+        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        return;
+      }
       console.error('[CallScreen] getRoomTokenWebCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
     }
@@ -847,19 +853,37 @@ const CallsList = ({navigation}) => {
           </View>
         </View>
         
-        <TouchableOpacity
-          style={item.isCallEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (item.isCallEnabled) {
-              getRoomTokenWebCall(item);
-            } else {
-              Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for calls right now.`);
-            }
-          }}>
-          <MaterialIcons name={item.isCallEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
-          <Text style={styles.actionBtnText}>{item.isCallEnabled ? 'Call' : 'Unavailable'}</Text>
-        </TouchableOpacity>
+        {item.isBusy === true ? (
+          <TouchableOpacity
+            style={styles.actionBtnBusy}
+            activeOpacity={0.8}
+            onPress={async () => {
+              const { ok } = await requestNotifyMe(item.userId || item._id, 'audio');
+              Alert.alert(
+                ok ? "We'll let you know" : 'Error',
+                ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+              );
+            }}>
+            <MaterialIcons name="schedule" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
+            <Text style={styles.actionBtnText}>
+              {formatBusyLabel(item.busySince ? Math.max(0, Math.floor((Date.now() - new Date(item.busySince).getTime()) / 1000)) : 0)}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={item.isCallEnabled ? styles.actionBtn : styles.actionBtnUnavailable}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (item.isCallEnabled) {
+                getRoomTokenWebCall(item);
+              } else {
+                Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for calls right now.`);
+              }
+            }}>
+            <MaterialIcons name={item.isCallEnabled ? 'call' : 'phone-disabled'} size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
+            <Text style={styles.actionBtnText}>{item.isCallEnabled ? 'Call' : 'Unavailable'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -1094,6 +1118,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.9,
+    elevation: 3,
+  },
+  actionBtnBusy: {
+    backgroundColor: '#E67E22',
+    borderRadius: moderateScale(25),
+    paddingHorizontal: scale(15),
+    paddingVertical: verticalScale(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     elevation: 3,
   },
 });

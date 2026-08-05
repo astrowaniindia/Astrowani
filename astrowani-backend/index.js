@@ -8,6 +8,12 @@ const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
 const { computeAstrologerMetrics } = require('./src/astrologerMetrics');
 const { logError } = require('./src/errorLogger');
+const { checkAstrologerBusy, buildBusyMap } = require('./src/busyStatus');
+const { notifyWaitlistIfFree } = require('./src/waitlist');
+const { initSentry } = require('./src/sentry');
+
+// No-op until SENTRY_DSN is set in the environment — see MD files/deployment-and-releases.md.
+initSentry();
 
 // Last-resort capture so unexpected errors are visible to the bug-scanning
 // agent instead of only scrolling past in console output. Neither handler
@@ -45,7 +51,7 @@ async function buildCategoryMap() {
   }
 }
 
-function formatAstrologer(astro, index, categoryMap = {}) {
+function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
   const rawCats = Array.isArray(astro.specialties)
     ? astro.specialties
     : (astro.specialties ? [astro.specialties] : []);
@@ -81,6 +87,10 @@ function formatAstrologer(astro, index, categoryMap = {}) {
     // Master online/offline switch — independent of is_available (GO LIVE) and the
     // per-service toggles above. null/undefined (pre-migration rows) treated as online.
     isOnline: astro.is_online !== false,
+    // Busy = already in an active session or an unanswered pending request with someone
+    // else. Independent of the toggles above (a fully-enabled astrologer can still be busy).
+    isBusy: busyMap[astro.id]?.isBusy === true,
+    busySince: busyMap[astro.id]?.busySince || null,
     // Category/specialty — resolved names for display + ids for filtering
     specialties: catNames.length ? catNames.map((n) => ({ name: n })) : [{ name: 'Vedic Astrology' }],
     categoryIds: rawCats,
@@ -540,6 +550,13 @@ app.get('/', (req, res) => {
   res.send('Astrowani Backend API is running!');
 });
 
+// Cheap, unauthenticated liveness check — polled by .github/workflows/uptime-check.yml.
+// Deliberately does no DB round-trip: this must answer even if Supabase itself is having
+// problems, so a slow/failing DB doesn't look identical to "the whole VPS is down."
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptimeSeconds: Math.floor(process.uptime()) });
+});
+
 // ==========================================
 // MOCK ENDPOINTS TO PREVENT 404 CRASHES
 // ==========================================
@@ -938,8 +955,8 @@ app.get('/api/astrologers', async (req, res) => {
     // Only approved, non-suspended, profile-complete astrologers reach customers.
     const visibleRows = (data || []).filter(astrologerVisibleToCustomers);
 
-    const categoryMap = await buildCategoryMap();
-    let formattedData = visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap));
+    const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
+    let formattedData = visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
 
     // Optional category filter — ?category=<categoryId|name>. Matches by category UUID
     // (what the vendor stores) or by resolved category name (case-insensitive).
@@ -986,8 +1003,8 @@ app.get('/api/astrologers/liveAstrologers', async (req, res) => {
     // Live section also respects the approval + profile-complete gates.
     const visibleRows = data.filter(astrologerVisibleToCustomers);
 
-    const categoryMap = await buildCategoryMap();
-    const formattedData = visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap));
+    const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
+    const formattedData = visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
 
     return res.status(200).json({ data: formattedData });
   } catch (err) {
@@ -1352,6 +1369,18 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
 app.post('/api/call/initiate', async (req, res) => {
   try {
     const { receiverId, callType } = req.body;
+    if (!receiverId) return res.status(400).json({ success: false, message: 'receiverId required' });
+
+    // Reject up front if the astrologer is already in a session or has an unanswered
+    // pending request — prevents a second customer from ringing/inserting a call_requests
+    // row for someone who's already occupied. Client call sites already check this
+    // response's status before inserting their own call_requests row (see ReusableList.js,
+    // Home.js, Call.js, AstrologerInfo.js, ExpertsList.js), so this is a real gate, not
+    // just informational.
+    const busyStatus = await checkAstrologerBusy(supabase, receiverId);
+    if (busyStatus.busy) {
+      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, message: 'Astrologer is busy right now' });
+    }
 
     // Resolve caller identity from JWT
     const authHeader = req.headers.authorization;
@@ -1422,6 +1451,48 @@ app.post('/api/call/initiate', async (req, res) => {
   } catch (error) {
     console.error('[Call] initiate error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to initiate call' });
+  }
+});
+
+// Chat has no backend request-creation route (the customer app inserts chat_requests
+// directly into Supabase — see useChatRequest.js) — this is the pre-check it calls
+// immediately before that insert, mirroring the gate built into /api/call/initiate above.
+app.post('/api/chat/check-availability', async (req, res) => {
+  try {
+    const { astrologerId } = req.body;
+    if (!astrologerId) return res.status(400).json({ success: false, message: 'astrologerId required' });
+    const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
+    if (busyStatus.busy) {
+      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, message: 'Astrologer is busy right now' });
+    }
+    return res.status(200).json({ success: true, busy: false });
+  } catch (error) {
+    console.error('[Chat] check-availability error:', error.message);
+    // Fail open — don't block a legitimate chat over a transient error here either.
+    return res.status(200).json({ success: true, busy: false });
+  }
+});
+
+// "Notify me" waitlist — join/leave. Writes via service role since the table has no
+// client-facing RLS policy (see sql/astrologer_waitlist_schema.sql).
+app.post('/api/astrologer/:id/notify-me', async (req, res) => {
+  try {
+    const astrologerId = req.params.id;
+    const { requestType } = req.body || {};
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer || !customer.id) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const { error } = await supabaseService
+      .from('astrologer_waitlist')
+      .upsert(
+        { astrologer_id: astrologerId, customer_id: customer.id, request_type: requestType || 'chat' },
+        { onConflict: 'astrologer_id,customer_id' }
+      );
+    if (error) throw error;
+    return res.status(200).json({ success: true, message: "We'll notify you when they're free." });
+  } catch (error) {
+    console.error('[waitlist] notify-me error:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not join waitlist' });
   }
 });
 

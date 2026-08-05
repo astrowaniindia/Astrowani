@@ -25,13 +25,18 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
 import { setActiveChatAstrologerId } from '../utils/PushNotification';
+import useElapsedSeconds from '../hooks/useElapsedSeconds';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
   const insets = useSafeAreaInsets();
 
   const [session, setSession] = useState(null);
-  const [seconds, setSeconds] = useState(0);
+  // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
+  // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
+  const [sessionStartMs, setSessionStartMs] = useState(null);
+  const [chatActive, setChatActive] = useState(false);
+  const seconds = useElapsedSeconds(sessionStartMs, chatActive);
   const [wallet, setWallet] = useState(0);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -39,7 +44,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const [connecting, setConnecting] = useState(true);
   const [vendorTyping, setVendorTyping] = useState(false);
 
-  const secondTimerRef = useRef(null);
   const sessionRef = useRef(null);
   const walletRef = useRef(0);
   const channelRef = useRef(null);
@@ -76,7 +80,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
 
-    clearInterval(secondTimerRef.current);
+    setChatActive(false);
     if (pollRef.current) clearInterval(pollRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
     if (channelRef.current) supabase.removeChannel(channelRef.current);
@@ -225,9 +229,10 @@ const ChatSessionScreen = ({ route, navigation }) => {
               endSession(termData.reason);
             });
 
-            // Start timers
+            // Start timer — anchored to the session's real start time so it can't drift.
             chatConnectedRef.current = true;
-            secondTimerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+            setSessionStartMs(data.started_at ? new Date(data.started_at).getTime() : Date.now());
+            setChatActive(true);
 
             // Load existing messages
             const { data: msgs } = await supabase
@@ -302,7 +307,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
     return () => {
       setActiveChatAstrologerId(null);
-      clearInterval(secondTimerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);

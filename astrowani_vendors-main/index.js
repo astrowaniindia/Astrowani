@@ -9,6 +9,7 @@ if (typeof global.TextEncoder === 'undefined') global.TextEncoder = TextEncoder;
 if (typeof global.TextDecoder === 'undefined') global.TextDecoder = TextDecoder;
 
 import {AppRegistry} from 'react-native';
+import {HotUpdater} from '@hot-updater/react-native';
 import App from './App';
 import {name as appName} from './app.json';
 import notifee, {EventType} from '@notifee/react-native';
@@ -61,4 +62,12 @@ notifee.onBackgroundEvent(async ({type, detail}) => {
   }
 });
 
-AppRegistry.registerComponent(appName, () => App);
+// OTA updates (JS-only fixes ship without a Play Store release) — see
+// "MD files/deployment-and-releases.md" for the one-time setup this still needs
+// (Supabase login + `npx hot-updater init`) before baseURL below is real.
+const WrappedApp = HotUpdater.wrap({
+  baseURL: 'REPLACE_ME_AFTER_HOT_UPDATER_INIT',
+  updateStrategy: 'appVersion',
+})(App);
+
+AppRegistry.registerComponent(appName, () => WrappedApp);

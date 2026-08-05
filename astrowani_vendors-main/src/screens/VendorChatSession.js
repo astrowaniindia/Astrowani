@@ -23,6 +23,7 @@ import { COLORS } from '../Theme/Colors';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
 import Instance from '../api/ApiCall';
+import useElapsedSeconds from '../utils/useElapsedSeconds';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -37,13 +38,16 @@ const VendorChatSession = ({ route, navigation }) => {
 
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [seconds, setSeconds] = useState(0);
+  // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
+  // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
+  const [sessionStartMs, setSessionStartMs] = useState(null);
+  const [timerActive, setTimerActive] = useState(false);
+  const seconds = useElapsedSeconds(sessionStartMs, timerActive);
   const [customerTyping, setCustomerTyping] = useState(false);
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [astroId, setAstroId] = useState(null);
   const [sentChip, setSentChip] = useState(null);
 
-  const timerRef = useRef(null);
   const channelRef = useRef(null);
   const flatListRef = useRef(null);
   const sessionIdRef = useRef(initialSessionId);
@@ -140,13 +144,13 @@ const VendorChatSession = ({ route, navigation }) => {
       }
 
       // Start timer
-      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      setSessionStartMs(Date.now());
+      setTimerActive(true);
     };
 
     init();
 
     return () => {
-      clearInterval(timerRef.current);
       if (pollMsgRef.current) clearInterval(pollMsgRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
@@ -155,7 +159,7 @@ const VendorChatSession = ({ route, navigation }) => {
   }, []);
 
   const endSessionLocal = (reason) => {
-    clearInterval(timerRef.current);
+    setTimerActive(false);
     if (pollMsgRef.current) clearInterval(pollMsgRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
     if (channelRef.current) supabase.removeChannel(channelRef.current);

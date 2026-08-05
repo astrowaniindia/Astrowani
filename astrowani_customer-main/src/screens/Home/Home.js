@@ -41,6 +41,8 @@ import StarRating from '../../components/StarRating';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import PlacementBanner from '../../components/PlacementBanner';
+import { formatBusyLabel } from '../../utils/busyLabel';
+import { requestNotifyMe } from '../../utils/notifyMe';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -350,6 +352,10 @@ const Home = ({navigation}) => {
       return response.data.token;
     } catch (error) {
       setIsWaiting(false);
+      if (error?.response?.status === 409) {
+        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        return null;
+      }
       Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
       return null;
     }
@@ -494,6 +500,10 @@ const Home = ({navigation}) => {
       return response.data.token;
     } catch (error) {
       setIsWaiting(false);
+      if (error?.response?.status === 409) {
+        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        return null;
+      }
       Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
       return null;
     }
@@ -788,6 +798,22 @@ const Home = ({navigation}) => {
               style={styles.offlineBtn}>
               <MaterialIcons name="wifi-off" size={moderateScale(12)} color="white" style={{marginRight: 4}} />
               <Text style={styles.unavailableBtnTxt}>{t('common.offline')}</Text>
+            </TouchableOpacity>
+          ) : item.isBusy === true ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={async () => {
+                const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
+                Alert.alert(
+                  ok ? "We'll let you know" : t('common.error'),
+                  ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+                );
+              }}
+              style={styles.busyBtn}>
+              <MaterialIcons name="schedule" size={moderateScale(12)} color="white" style={{marginRight: 4}} />
+              <Text style={styles.unavailableBtnTxt}>
+                {formatBusyLabel(item.busySince ? Math.max(0, Math.floor((Date.now() - new Date(item.busySince).getTime()) / 1000)) : 0)}
+              </Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.actionRow}>
@@ -1603,6 +1629,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
     borderWidth: 1,
     borderColor: '#C0392B',
+    elevation: 1,
+  },
+  busyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E67E22',
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(16),
+    borderWidth: 1,
+    borderColor: '#E67E22',
     elevation: 1,
   },
   ReviewCard: {

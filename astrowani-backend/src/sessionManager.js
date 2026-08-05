@@ -2,6 +2,9 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
+const { checkAstrologerBusy } = require('./busyStatus');
+const { notifyWaitlistIfFree } = require('./waitlist');
+const { logError } = require('./errorLogger');
 
 // Initialize Supabase Client with Service Role Key for administrative access
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -45,10 +48,57 @@ class SessionManager {
     // Run earnings reset check hourly, and immediately on startup
     this.checkEarningsResets();
     this.endStaleLiveSessions();
+    this.checkWalletHealth();
     this.resetTimer = setInterval(() => {
       this.checkEarningsResets();
       this.endStaleLiveSessions();
+      this.checkWalletHealth();
     }, this.resetInterval);
+  }
+
+  /**
+   * Wallet/billing reconciliation — catches silent financial anomalies that the bug-scan
+   * agent structurally can't see (it only reads crashes/errors, not data correctness).
+   * Deliberately detection-only: it never touches wallet_balance or chat_sessions rows
+   * itself. Anomalies go through logError() so they land in both the file-based log
+   * (/api/bug-agent/errors) and, once SENTRY_DSN is configured, the backend Sentry project —
+   * a human always makes the actual correction by hand. Runs on startup and hourly
+   * (same cadence as the earnings-reset check).
+   */
+  async checkWalletHealth() {
+    try {
+      const staleBillingCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const [{ data: negCustomers }, { data: negAstros }, { data: stuckSessions }] = await Promise.all([
+        supabase.from('customers').select('id, wallet_balance').lt('wallet_balance', 0),
+        supabase.from('astrologers').select('id, wallet_balance').lt('wallet_balance', 0),
+        supabase.from('chat_sessions')
+          .select('id, vendor_id, caller_id, next_billing_at')
+          .eq('is_active', true)
+          .lt('next_billing_at', staleBillingCutoff),
+      ]);
+
+      if (negCustomers && negCustomers.length) {
+        logError('wallet-reconciliation', new Error(
+          `${negCustomers.length} customer(s) with negative wallet_balance: ` +
+          negCustomers.map((c) => `${c.id}=${c.wallet_balance}`).join(', ')
+        ));
+      }
+      if (negAstros && negAstros.length) {
+        logError('wallet-reconciliation', new Error(
+          `${negAstros.length} astrologer(s) with negative wallet_balance: ` +
+          negAstros.map((a) => `${a.id}=${a.wallet_balance}`).join(', ')
+        ));
+      }
+      if (stuckSessions && stuckSessions.length) {
+        logError('wallet-reconciliation', new Error(
+          `${stuckSessions.length} chat_session(s) still is_active=true with next_billing_at ` +
+          `more than 5 minutes overdue — the 30s billing poll should never let this happen: ` +
+          stuckSessions.map((s) => s.id).join(', ')
+        ));
+      }
+    } catch (err) {
+      console.error('[SessionManager] checkWalletHealth error:', err.message);
+    }
   }
 
   /**
@@ -158,6 +208,19 @@ class SessionManager {
 
       await this.notifyMissed(missedCalls, 'customer_id', 'astrologer_id', 'call');
       await this.notifyMissed(missedChats, 'caller_id', 'receiver_id', 'chat');
+
+      // Requests that just timed out may have been an astrologer's only busy-source —
+      // check each distinct astrologer once and notify their waitlist if now free.
+      const freedAstroIds = new Set([
+        ...(missedCalls || []).map((r) => r.astrologer_id),
+        ...(missedChats || []).map((r) => r.receiver_id),
+      ].filter(Boolean));
+      for (const astroId of freedAstroIds) {
+        const stillBusy = await checkAstrologerBusy(supabase, astroId);
+        if (!stillBusy.busy) {
+          await notifyWaitlistIfFree(supabase, sendPush, astroId);
+        }
+      }
     } catch (err) {
       console.error('[SessionManager] markStaleRequestsMissed error:', err.message);
     }
@@ -353,6 +416,14 @@ class SessionManager {
 
     if (session?.caller_id) {
       await this.maybeRewardReferral(session.caller_id);
+    }
+
+    // If this was the astrologer's only busy-source, let anyone waiting for them know.
+    if (session?.vendor_id) {
+      const stillBusy = await checkAstrologerBusy(supabase, session.vendor_id);
+      if (!stillBusy.busy) {
+        await notifyWaitlistIfFree(supabase, sendPush, session.vendor_id);
+      }
     }
   }
 

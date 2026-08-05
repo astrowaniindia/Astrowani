@@ -7,9 +7,11 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "build": "dist ",
+    "lint": "eslint .",
     "postinstall": "node scripts/apply-native-patches.js"
   },
   "dependencies": {
+    "@hot-updater/react-native": "^0.35.10",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/datetimepicker": "^8.2.0",
     "@react-native-community/geolocation": "^3.4.0",
@@ -74,6 +76,7 @@
     "@types/react-test-renderer": "^18.0.0",
     "babel-jest": "^29.6.3",
     "eslint": "^8.19.0",
+    "hot-updater": "^0.35.10",
     "jest": "^29.6.3",
     "nodemon": "^3.1.4",
     "prettier": "2.8.8",

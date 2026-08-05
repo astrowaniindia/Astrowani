@@ -33,6 +33,9 @@ import StarRating from '../../components/StarRating';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
 import {LanguageContext} from '../../context/LanguageContext';
+import useElapsedSeconds from '../../hooks/useElapsedSeconds';
+import {formatBusyLabel} from '../../utils/busyLabel';
+import {requestNotifyMe} from '../../utils/notifyMe';
 
 const { width } = Dimensions.get('window');
 
@@ -329,6 +332,10 @@ const AstrologerInfo = ({route, navigation}) => {
       }, 60000);
     } catch (err) {
       setIsCallWaiting(false);
+      if (err?.response?.status === 409) {
+        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        return;
+      }
       console.error('[AstrologerInfo] initiateAudioCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
     }
@@ -512,6 +519,10 @@ const AstrologerInfo = ({route, navigation}) => {
       }, 60000);
     } catch (err) {
       setIsCallWaiting(false);
+      if (err?.response?.status === 409) {
+        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        return;
+      }
       console.error('[AstrologerInfo] initiateVideoCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
     }
@@ -649,12 +660,26 @@ const AstrologerInfo = ({route, navigation}) => {
   const videoEnabled = person.isVideoEnabled !== false;
   // Master offline switch — overrides all three service buttons with one unified state.
   const isOffline = person.isOnline === false;
+  // Busy — already in a session or has an unanswered pending request with someone else.
+  // Blocks all three service buttons at once (chat/call/video are mutually exclusive).
+  const isBusy = !isOffline && person.isBusy === true;
+  const busySinceMs = person.busySince ? new Date(person.busySince).getTime() : null;
+  const busyElapsed = useElapsedSeconds(busySinceMs, isBusy);
+  const [notifyMeSent, setNotifyMeSent] = useState(false);
 
   const showUnavailable = key =>
     Alert.alert(t('alerts.unavailable'), t(key, { name: person.name || 'This astrologer' }));
 
   const showOffline = () =>
     Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: person.name || 'This astrologer' }));
+
+  const handleNotifyMe = async () => {
+    const { ok } = await requestNotifyMe(person.userId || person._id, 'chat');
+    if (ok) {
+      setNotifyMeSent(true);
+      Alert.alert("We'll let you know", `We'll notify you when ${person.name || 'this astrologer'} is free.`);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -854,6 +879,21 @@ const AstrologerInfo = ({route, navigation}) => {
             <MaterialIcons name="wifi-off" size={moderateScale(20)} color="#fff" />
             <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(8) }]}>{t('common.offline')}</Text>
           </TouchableOpacity>
+        ) : isBusy ? (
+          <>
+            <View style={styles.actionBtnBusy}>
+              <MaterialIcons name="schedule" size={moderateScale(18)} color="#fff" />
+              <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(6) }]}>{formatBusyLabel(busyElapsed)}</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.actionBtnNotify, { marginLeft: scale(8) }]}
+              activeOpacity={0.8}
+              disabled={notifyMeSent}
+              onPress={handleNotifyMe}>
+              <MaterialIcons name={notifyMeSent ? 'notifications-active' : 'notifications-none'} size={moderateScale(18)} color={COLORS.AstroMaroon} />
+              <Text style={[styles.actionBtnText, { marginLeft: scale(4) }]}>{notifyMeSent ? 'Notified' : 'Notify Me'}</Text>
+            </TouchableOpacity>
+          </>
         ) : (
           <>
             <TouchableOpacity
@@ -1101,6 +1141,14 @@ const styles = StyleSheet.create({
   actionBtnOffline: {
     flex: 1, flexDirection: 'row', backgroundColor: '#C0392B', borderRadius: moderateScale(25),
     justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(12),
+  },
+  actionBtnBusy: {
+    flex: 2, flexDirection: 'row', backgroundColor: '#E67E22', borderRadius: moderateScale(25),
+    justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(12),
+  },
+  actionBtnNotify: {
+    flex: 1, flexDirection: 'row', backgroundColor: '#fff', borderWidth: 1.5, borderColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(25), justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(11),
   },
   actionBtnTextCol: { marginLeft: scale(6) },
   actionBtnText: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },

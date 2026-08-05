@@ -11,6 +11,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
+import com.hotupdater.HotUpdater
 
 class MainApplication : Application(), ReactApplication {
 
@@ -23,6 +24,10 @@ class MainApplication : Application(), ReactApplication {
             }
 
         override fun getJSMainModuleName(): String = "index"
+
+        // OTA: serve the latest downloaded bundle if hot-updater has one, else fall back to
+        // the bundle baked into the APK. See MD files/deployment-and-releases.md.
+        override fun getJSBundleFile(): String? = HotUpdater.getJSBundleFile(applicationContext)
 
         override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
 

@@ -28,6 +28,7 @@ import {showReviewPrompt} from '../../components/ReviewPrompt';
 import {supabase} from '../../api/SupabaseClient';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
+import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -54,7 +55,11 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const [callState, setCallState] = useState<CallState>('connecting');
   const [audioMuted, setAudioMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
+  // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
+  // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
+  const [callStartMs, setCallStartMs] = useState<number | null>(null);
+  const [timerActive, setTimerActive] = useState(false);
+  const callDuration = useElapsedSeconds(callStartMs, timerActive);
   const [ringCountdown, setRingCountdown] = useState(30);
 
   const callStateRef = useRef<CallState>('connecting');
@@ -67,7 +72,6 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const iceCandidateBufferRef = useRef<any[]>([]);
   const vendorReadyHandledRef = useRef(false);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<any>(null);
 
@@ -119,11 +123,12 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
   // ─── Timers ─────────────────────────────────────────────────────────────────
   const startCallTimer = useCallback(() => {
-    timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+    setCallStartMs(Date.now());
+    setTimerActive(true);
   }, []);
 
   const stopCallTimer = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setTimerActive(false);
   }, []);
 
   const stopRingCountdown = useCallback(() => {

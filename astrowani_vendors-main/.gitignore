@@ -74,3 +74,6 @@ android/app/src/main/assets/index.android.bundle
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# hot-updater CLI credentials (Supabase service role key) — never commit
+.env.hotupdater

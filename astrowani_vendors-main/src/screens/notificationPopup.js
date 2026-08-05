@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, Animated } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-const NotificationPopup = ({ visible, data, onAccept, onCancel }) => {
+const NotificationPopup = ({ visible, data, onAccept, onCancel, queueCount = 0 }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -39,6 +39,9 @@ const NotificationPopup = ({ visible, data, onAccept, onCancel }) => {
           
           <Text style={styles.callerName}>{data?.callerName || 'Customer'}</Text>
           <Text style={styles.message}>is requesting a consultation...</Text>
+          {queueCount > 0 && (
+            <Text style={styles.queueNote}>+{queueCount} more waiting</Text>
+          )}
 
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
@@ -106,6 +109,12 @@ const styles = StyleSheet.create({
     color: '#bbb',
     textAlign: 'center',
     marginBottom: 30,
+  },
+  queueNote: {
+    fontSize: 13,
+    color: '#FFD700',
+    marginTop: -22,
+    marginBottom: 22,
   },
   actions: {
     flexDirection: 'row',

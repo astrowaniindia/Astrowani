@@ -11,6 +11,7 @@
     "postinstall": "node scripts/apply-native-patches.js"
   },
   "dependencies": {
+    "@hot-updater/react-native": "^0.35.10",
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/datetimepicker": "^8.2.0",
@@ -67,6 +68,7 @@
     "@types/react-test-renderer": "^18.0.0",
     "babel-jest": "^29.6.3",
     "eslint": "^8.19.0",
+    "hot-updater": "^0.35.10",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
     "react-test-renderer": "18.3.1",

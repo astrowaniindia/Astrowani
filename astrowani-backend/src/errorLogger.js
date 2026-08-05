@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { captureError } = require('./sentry');
 
 // File-based error log the bug-scanning agent reads from. Render's disk is
 // ephemeral (wiped on each deploy/restart), so this is a short-lived buffer,
@@ -28,6 +29,7 @@ function logError(source, err, extra = {}) {
     // Logging must never itself crash the process.
   }
   console.error(`[${source}]`, entry.message);
+  captureError(err instanceof Error ? err : new Error(entry.message));
 }
 
 module.exports = { logError, LOG_FILE };
