@@ -855,3 +855,109 @@ Seed admin: `node astrowani-backend/scripts/seedAdmin.js`.
   push access to `origin` independent of any single developer's machine being on).
 - `bug_agent_log.md` at the repo root is the dedup ledger — re-run the skill to see its
   exact update rules rather than hand-editing status columns.
+
+---
+
+## Subsystem added 2026-08-05: Busy-astrologer gating + notify-me waitlist + timer-drift fix
+
+### N. Busy-astrologer gating (chat/call/video mutually exclusive)
+- **Problem**: nothing prevented a second customer from chatting/calling/video-calling an
+  astrologer who was already in a session (or already being rung by someone else) — the
+  vendor's `NotificationPopup` state was also a single value, so a second incoming request
+  silently overwrote/dropped the first with no trace beyond the 75s `markStaleRequestsMissed`
+  sweep.
+- **"Busy" definition** — `astrowani-backend/src/busyStatus.js` (`checkAstrologerBusy` for a
+  single id, `buildBusyMap` batched for list endpoints): astrologer has EITHER an active
+  `chat_sessions` row (`vendor_id = id AND is_active = true`) OR a `pending` `call_requests`
+  row (`astrologer_id`) OR a `pending` `chat_requests` row (`receiver_id`). Busy blocks chat
+  AND call AND video equally (mutually exclusive — matches "on the phone" semantics). Fails
+  open on any DB error (never blocks a legit request over a transient failure).
+- **Enforcement**: `POST /api/call/initiate` (audio+video, shared endpoint) now 409s with
+  `{busy:true, busySince}` before emitting `incoming_call` if busy. Chat has no backend
+  request-creation route (the customer app inserts `chat_requests` directly via Supabase) —
+  new `POST /api/chat/check-availability` is a pre-check `useChatRequest.js` calls immediately
+  before its insert, aborting (same busy UI) on 409. **All 5 duplicated call/chat-initiation
+  code paths** (`ReusableList.js`, `Home.js`, `Call.js`, `AstrologerInfo.js`, `ExpertsList.js`)
+  each catch a 409 from `/api/call/initiate` and show the existing `showStatusPopup({variant:
+  'busy', ...})` pattern instead of a generic error.
+- **List data**: `formatAstrologer()` takes a 4th `busyMap` param, adds `isBusy`/`busySince` to
+  every astrologer row. `/api/astrologers` and `/liveAstrologers` build the map once per
+  request (3 queries total, not per-row) via `Promise.all`.
+- **Customer UI**: busy overrides the per-service enabled/disabled buttons with a single
+  orange "Busy · Xm" state (color `#E67E22`, distinct from the red `#C0392B` "Unavailable"
+  toggle-off state) across all 5 button call sites + `AstrologerInfo`'s floating dock (which
+  additionally gets a live-ticking elapsed time via `useElapsedSeconds`, since it's a single
+  item — list cards use a cheaper render-time snapshot instead, since calling a ticking hook
+  per-row inside `renderItem`/`renderButton` would violate Rules of Hooks). Tapping the busy
+  pill offers "Notify Me" instead of the normal action.
+- **Not done**: no Postgres trigger/RLS-level enforcement — gating is application-level only
+  (the 5 call sites + the two check endpoints). A client that skipped these checks entirely
+  could still insert a `call_requests`/`chat_requests` row directly; considered and explicitly
+  deferred as out of scope given the risk of a novel DB trigger under time pressure — flag if
+  this ever needs hardening.
+
+### O. "Notify me" waitlist (fire-once, not a live queue)
+- `sql/astrologer_waitlist_schema.sql` — **not yet run against Supabase**, run it before this
+  feature will work (the endpoint fails closed/silently without the table; core busy-gating
+  above does NOT depend on it). `astrologer_waitlist` (astrologer_id, customer_id UNIQUE pair,
+  request_type). RLS: service-role only, no client-direct access.
+- `POST /api/astrologer/:id/notify-me` (upsert, requires customer JWT) — the only write path.
+- `astrowani-backend/src/waitlist.js` `notifyWaitlistIfFree(supabase, sendPush, astrologerId)`
+  — pushes the first 5 waiters (oldest first) then **deletes those rows** (fire-once, not
+  polling/live). Hooked into `sessionManager.js` at the two places the backend actually learns
+  an astrologer freed up: `terminateSession` (a session just ended) and
+  `markStaleRequestsMissed` (a pending request just timed out at 75s) — in both cases it
+  re-checks `checkAstrologerBusy` first and only notifies if genuinely free now. **Known gap**:
+  vendor-reject and customer-cancel paths are mostly client-driven Supabase writes with no
+  backend touchpoint, so the waitlist isn't notified on those (only on natural session end or
+  the 75s stale-request sweep) — deliberate scope cut, not an oversight.
+- This is intentionally NOT a real auto-connect queue (customer still has to tap to initiate
+  once notified) — modeled after Astrotalk's actual list-level "grey button + wait label"
+  pattern rather than building a full FIFO auto-connect system.
+
+### P. Vendor incoming-request popup: single value → queue
+- **Real pre-existing bug**, found while building the above: `HomeScreen.js` `popupData`/
+  `popupVisible` was a single value — `setPopupData({...})` from a second incoming request
+  (different customer, or a socket+Realtime race for the same one) silently overwrote the
+  first with no trace. Converted to `popupQueue` (array); `popupData`/`popupVisible` are now
+  derived (`popupQueue[0]`, `popupQueue.length > 0`). New `enqueuePopup()` dedupes by
+  requestId/roomId before appending. `dismissPopupIfMatches` now filters the whole queue, not
+  just the front item. `handleAccept`/`handleCancel` `slice(1)` off the front instead of
+  nulling a single value. `NotificationPopup` gets a `queueCount` prop → shows "+N more
+  waiting" (`notificationPopup.js`). With busy-gating (subsystem N) in place, a second request
+  to the same astrologer is normally rejected before it can even queue — this is defense in
+  depth for the remaining race window, and fixes a bug that could already happen for two
+  simultaneous requests to a genuinely idle astrologer.
+
+### Q. Timer-drift fix (all 6 call/chat duration timers)
+- **Bug**: every call/chat screen in both apps used
+  `setInterval(() => setSeconds(s => s + 1), 1000)` — an *accumulating* counter, not anchored
+  to a real timestamp. A delayed tick (JS thread throttled: backgrounded app, heavy re-render,
+  Android Doze) still only adds 1 regardless of real elapsed time, so the displayed timer
+  drifts behind and can appear "stuck" — this was a standing, user-reported bug independent of
+  the busy-gating work.
+  - Fix: `useElapsedSeconds(startMs, active)` — new hook (`astrowani_customer-main/src/hooks/
+    useElapsedSeconds.js`, `astrowani_vendors-main/src/utils/useElapsedSeconds.js`, identical
+    logic) recomputes `Date.now() - startMs` on every tick instead of incrementing state —
+    self-correcting, can't drift even if a tick lands late.
+  - Applied to all 6: customer `ChatSessionScreen.js` (anchors to `chat_sessions.started_at`
+    when available, else `Date.now()`), `VoiceCallScreen.tsx`, `VideoCallScreen.tsx`; vendor
+    `VendorChatSession.js`, `EnxScreenVoice.tsx`, `EnxScreenVideo.tsx`. Same hook also powers
+    the live-ticking "Busy · Xm" display in `AstrologerInfo.js` (subsystem N).
+  - Pattern for any *future* on-screen duration/countdown timer in this codebase: use this
+    hook, never a raw accumulating `setInterval`.
+
+### SQL to run for this subsystem
+- `sql/astrologer_waitlist_schema.sql` (notify-me — busy-gating itself needs no new tables,
+  it's computed from existing `chat_sessions`/`call_requests`/`chat_requests`).
+
+### Testing note
+- Verified via direct API calls against a locally-run backend (temporarily pointed both apps'
+  `SOCKET_URL` at `http://10.0.2.2:4500`, reverted before commit): `/api/chat/check-availability`
+  and `/api/call/initiate` both correctly 409 with `busySince` when a synthetic pending
+  `chat_requests` row exists, `/api/astrologers` reflects `isBusy`/`busySince` per row, and the
+  state cleanly reverts to `busy:false` after the row is removed. Both apps' debug builds
+  compile clean with all changes. Full two-emulator click-through (real OTP login + live
+  cross-app request) was not completed — blocked entirely by local Android-emulator/ADB
+  input-automation friction (see `emulator_headless_launch` memory), not by any app-level
+  issue found. Worth a manual click-through pass before shipping.
