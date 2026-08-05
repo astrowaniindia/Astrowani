@@ -63,10 +63,10 @@ notifee.onBackgroundEvent(async ({type, detail}) => {
 });
 
 // OTA updates (JS-only fixes ship without a Play Store release) — see
-// "MD files/deployment-and-releases.md" for the one-time setup this still needs
-// (Supabase login + `npx hot-updater init`) before baseURL below is real.
+// "MD files/deployment-and-releases.md". Edge function deployed via `npx hot-updater init`
+// on 2026-08-05, backed by the "hot-updater-storage-for-astrowani-vendor" Supabase bucket.
 const WrappedApp = HotUpdater.wrap({
-  baseURL: 'REPLACE_ME_AFTER_HOT_UPDATER_INIT',
+  baseURL: 'https://fxpoustnddrgumhwdcma.supabase.co/functions/v1/update-server',
   updateStrategy: 'appVersion',
 })(App);
 

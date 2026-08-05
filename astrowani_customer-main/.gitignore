@@ -76,3 +76,7 @@ yarn-error.log
 
 # hot-updater CLI credentials (Supabase service role key) — never commit
 .env.hotupdater
+# hot-updater
+.hot-updater/output
+.hot-updater/log
+supabase/.temp/
