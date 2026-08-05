@@ -330,10 +330,10 @@ const PanchangScreen = () => {
     if (!panchangData) return [];
     return [
       { label: t('panchang.vaara'), value: panchangData.vaara },
-      { label: t('panchang.nakshatra'), value: panchangData.nakshatra[0].name },
-      { label: t('panchang.tithi'), value: `${panchangData.tithi[0].name} (${panchangData.tithi[0].paksha})` },
-      { label: t('panchang.karana'), value: panchangData.karana[0].name },
-      { label: t('panchang.yoga'), value: panchangData.yoga[0].name },
+      { label: t('panchang.nakshatra'), value: panchangData.nakshatra?.[0]?.name },
+      { label: t('panchang.tithi'), value: `${panchangData.tithi?.[0]?.name} (${panchangData.tithi?.[0]?.paksha})` },
+      { label: t('panchang.karana'), value: panchangData.karana?.[0]?.name },
+      { label: t('panchang.yoga'), value: panchangData.yoga?.[0]?.name },
     ];
   };
 
@@ -348,19 +348,23 @@ const PanchangScreen = () => {
   };
 
   const formatAuspiciousTime = () => {
-    if (!panchangData) return [];
-    return (panchangData.auspicious_period || []).map(period => ({
-      label: period.name,
-      value: `${new Date(period.period[0].start).toLocaleTimeString()} - ${new Date(period.period[0].end).toLocaleTimeString()}`,
-    }));
+    if (!Array.isArray(panchangData?.auspicious_period)) return [];
+    return panchangData.auspicious_period
+      .filter(period => period?.period?.[0])
+      .map(period => ({
+        label: period.name,
+        value: `${new Date(period.period[0].start).toLocaleTimeString()} - ${new Date(period.period[0].end).toLocaleTimeString()}`,
+      }));
   };
 
   const formatInauspiciousTime = () => {
-    if (!panchangData) return [];
-    return (panchangData.inauspicious_period || []).map(period => ({
-      label: period.name,
-      value: `${new Date(period.period[0].start).toLocaleTimeString()} - ${new Date(period.period[0].end).toLocaleTimeString()}`,
-    }));
+    if (!Array.isArray(panchangData?.inauspicious_period)) return [];
+    return panchangData.inauspicious_period
+      .filter(period => period?.period?.[0])
+      .map(period => ({
+        label: period.name,
+        value: `${new Date(period.period[0].start).toLocaleTimeString()} - ${new Date(period.period[0].end).toLocaleTimeString()}`,
+      }));
   };
 
   return (
