@@ -349,7 +349,7 @@ const PanchangScreen = () => {
 
   const formatAuspiciousTime = () => {
     if (!panchangData) return [];
-    return panchangData.auspicious_period.map(period => ({
+    return (panchangData.auspicious_period || []).map(period => ({
       label: period.name,
       value: `${new Date(period.period[0].start).toLocaleTimeString()} - ${new Date(period.period[0].end).toLocaleTimeString()}`,
     }));
@@ -357,7 +357,7 @@ const PanchangScreen = () => {
 
   const formatInauspiciousTime = () => {
     if (!panchangData) return [];
-    return panchangData.inauspicious_period.map(period => ({
+    return (panchangData.inauspicious_period || []).map(period => ({
       label: period.name,
       value: `${new Date(period.period[0].start).toLocaleTimeString()} - ${new Date(period.period[0].end).toLocaleTimeString()}`,
     }));
