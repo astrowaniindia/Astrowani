@@ -27,6 +27,7 @@ import {SOCKET_URL} from '../config/api';
 import {COLORS} from '../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import useElapsedSeconds from './useElapsedSeconds';
 
 interface Props {
   route: any;
@@ -52,7 +53,11 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const [audioMuted, setAudioMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
-  const [callDuration, setCallDuration] = useState(0);
+  // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
+  // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
+  const [callStartMs, setCallStartMs] = useState<number | null>(null);
+  const [timerActive, setTimerActive] = useState(false);
+  const callDuration = useElapsedSeconds(callStartMs, timerActive);
   const [localStreamURL, setLocalStreamURL] = useState<string | null>(null);
   const [remoteStreamURL, setRemoteStreamURL] = useState<string | null>(null);
 
@@ -65,7 +70,6 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const iceCandidateBufferRef = useRef<any[]>([]);
   const readyRetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<any>(null);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -102,11 +106,12 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
 
   // ─── Timer ──────────────────────────────────────────────────────────────────
   const startCallTimer = useCallback(() => {
-    timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+    setCallStartMs(Date.now());
+    setTimerActive(true);
   }, []);
 
   const stopCallTimer = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setTimerActive(false);
   }, []);
 
   const formatTime = useCallback((secs: number) => {
