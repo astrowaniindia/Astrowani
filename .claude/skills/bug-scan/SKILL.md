@@ -66,9 +66,20 @@ do not re-read the whole codebase hunting for bugs with no signal.
 
 ## 2. Triage each new crash/error
 
-- Deduplicate against `bug_agent_log.md` (repo root) — your running log of everything you've
-  already investigated. Skip anything already listed as `investigating` / `fixed-pending-review`
-  / `skipped`.
+- **Deduplicate against OPEN PRS FIRST, not just the log file** — `bug_agent_log.md` only
+  reflects what's been *merged* into `main`. Since your own PRs sit unmerged awaiting human
+  review, a row you added on a PR branch is invisible to your next run (it starts from
+  `main`'s copy of the log, which doesn't have it) — this caused a real duplicate-PR incident
+  on 2026-08-05 (two separate PRs, `fix/panchang-auspicious-period-crash` and
+  `fix/panchang-screen-crash`, both fixing the exact same Sentry issue
+  `astrowani.sentry.io/issues/7653834455`, because the log was empty on `main` both times).
+  Before drafting a fix for an issue, check **open PRs** (`gh pr list --state open`, or the
+  GitHub API) for one whose title, branch name, or body already references the same crash
+  signature or Sentry issue link. If one exists, skip — leave a note in your end-of-run report
+  ("already covered by PR #N, not duplicating") instead of opening another.
+- Also deduplicate against `bug_agent_log.md` (repo root) — your running log of everything
+  already investigated, most useful once fix PRs start actually getting merged. Skip anything
+  already listed as `investigating` / `fixed-pending-review` / `skipped`.
 - Rank by frequency × severity.
 - Skip clear third-party-library issues with no workaround, or known noise. Note what you
   skipped and why in the report and the log.
