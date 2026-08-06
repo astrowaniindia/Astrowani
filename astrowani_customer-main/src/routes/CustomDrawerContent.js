@@ -12,6 +12,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
+import { resetAnalyticsIdentity } from '../utils/Analytics';
 
 function CustomDrawerContent(props, navigation) {
   const { t } = React.useContext(LanguageContext);
@@ -54,6 +55,7 @@ function CustomDrawerContent(props, navigation) {
 
   const handleLogout = async () => {
     try {
+      resetAnalyticsIdentity();
       await AsyncStorage.clear();
       props.navigation.reset({
         index: 0,

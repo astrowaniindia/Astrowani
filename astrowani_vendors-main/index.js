@@ -18,6 +18,10 @@ import {acceptRequest, rejectRequest} from './src/utils/incomingRequestActions';
 import {cancelIncomingRequestNotification} from './src/utils/incomingRequestNotifications';
 import {navigationRef} from './src/utils/navigationRef';
 import {initCrashReporting} from './src/utils/CrashReporting';
+// Importing this initializes the PostHog client as a module-level singleton (see
+// src/utils/Analytics.js) — no separate init call needed here, just ensures it's
+// constructed before the app tree mounts.
+import './src/utils/Analytics';
 
 initCrashReporting();
 

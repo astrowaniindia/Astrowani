@@ -36,6 +36,7 @@ import {LanguageContext} from '../../context/LanguageContext';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {formatBusyLabel} from '../../utils/busyLabel';
 import {requestNotifyMe} from '../../utils/notifyMe';
+import {captureEvent} from '../../utils/Analytics';
 
 const { width } = Dimensions.get('window');
 
@@ -202,6 +203,7 @@ const AstrologerInfo = ({route, navigation}) => {
         Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
         return;
       }
+      captureEvent('call_initiated', {call_type: 'audio', astrologer_id: person.userId});
 
       const callerToken =
         response.data.data?.token?.token ||
@@ -389,6 +391,7 @@ const AstrologerInfo = ({route, navigation}) => {
         Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
         return;
       }
+      captureEvent('call_initiated', {call_type: 'video', astrologer_id: person.userId});
 
       const callerToken =
         response.data.data?.token?.token ||

@@ -20,6 +20,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
+import {identifyCustomer} from '../../utils/Analytics';
 import {LanguageContext} from '../../context/LanguageContext';
 
 const RESEND_SECONDS = 60;
@@ -74,6 +75,10 @@ const VerifyOtp = ({navigation, route}) => {
       });
       if (res?.data?.success && res?.data?.token) {
         await AsyncStorage.setItem('token', res.data.token);
+        if (res.data.user?.id) {
+          await AsyncStorage.setItem('customerId', String(res.data.user.id));
+          identifyCustomer(res.data.user.id);
+        }
 
         // Signup flow (Register screen) — apply the details collected before OTP verify
         // now that we have a real auth token to call the profile endpoint with.

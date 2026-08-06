@@ -19,6 +19,7 @@ import {OtpInput} from 'react-native-otp-entry';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../../api/SupabaseClient';
+import {identifyVendor} from '../../utils/Analytics';
 
 const RESEND_SECONDS = 60;
 
@@ -80,6 +81,7 @@ const VerifyOtp = ({navigation, route}) => {
           // Existing astrologer — real login.
           await AsyncStorage.setItem('token', res.data.token);
           await AsyncStorage.setItem('astroId', String(res.data.user.id));
+          identifyVendor(res.data.user.id);
           navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
         } else {
           // New number — phone is now verified, create the actual account.

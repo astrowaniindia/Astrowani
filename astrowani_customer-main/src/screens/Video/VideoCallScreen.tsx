@@ -31,6 +31,7 @@ import {supabase} from '../../api/SupabaseClient';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
+import {captureEvent} from '../../utils/Analytics';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -164,6 +165,12 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const doEndCall = useCallback(async () => {
     stopCallTimer(); stopRingCountdown(); stopRipple(); cleanupWebRTC();
     const sid = sessionIdRef.current;
+    captureEvent('call_ended', {
+      call_type: 'video',
+      session_id: sid,
+      duration_seconds: callDurationRef.current,
+      connected: callDurationRef.current > 0,
+    });
     if (sid) {
       try {
         const jwt = await AsyncStorage.getItem('token');
@@ -285,6 +292,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
             callStateRef.current = 'in_call';
             isConnectedRef.current = true;
             setCallState('in_call');
+            captureEvent('call_connected', {call_type: 'video', session_id: sessionIdRef.current});
             stopRipple();
             stopRingCountdown();
             startCallTimer();

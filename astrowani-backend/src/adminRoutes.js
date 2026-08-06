@@ -652,3 +652,7 @@ module.exports = function registerAdminRoutes(app) {
 
   console.log('[admin] routes registered under /api/admin');
 };
+
+// Exported so other route modules (e.g. postHogRoutes.js) can guard admin-only
+// endpoints without duplicating the JWT-verification logic.
+module.exports.requireAdmin = requireAdmin;

@@ -523,6 +523,7 @@ import { LanguageContext } from '../../context/LanguageContext';
 import PlacementBanner from '../../components/PlacementBanner';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
+import { captureEvent } from '../../utils/Analytics';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -669,6 +670,7 @@ const CallsList = ({navigation}) => {
         Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
         return;
       }
+      captureEvent('call_initiated', {call_type: 'audio', astrologer_id: item.userId});
 
       const callerToken =
         response.data.data?.token?.token ||

@@ -18,6 +18,7 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import { COLORS } from '../../../Theme/Colors';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { SOCKET_URL } from '../../../config/api';
+import { captureEvent } from '../../../utils/Analytics';
 
 const presetAmounts = [50, 100, 200, 500, 1000, 2000];
 
@@ -76,6 +77,7 @@ const Wallet = ({navigation}) => {
         throw new Error(verifyRes.data?.message || 'Payment verification failed');
       }
 
+      captureEvent('wallet_recharged', { amount: finalAmount });
       setAmount('');
       Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
     } catch (error) {

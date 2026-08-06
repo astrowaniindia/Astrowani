@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { PostHogProvider } from 'posthog-react-native';
+import { posthog, applySessionReplaySetting } from '../utils/Analytics';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -104,6 +106,10 @@ function NavigationScreen() {
     return () => subscription.remove();
   }, []);
 
+  useEffect(() => {
+    applySessionReplaySetting();
+  }, []);
+
   const checkToken = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -131,6 +137,17 @@ function NavigationScreen() {
 
   return (
     <NavigationContainer ref={navigationRef} onReady={() => consumePendingCallNavigationWithRetry()}>
+      {/* Must be inside NavigationContainer — PostHog's screen-autocapture hook reads
+          navigation state via @react-navigation/native's own hooks, which only work
+          for descendants of NavigationContainer. Independent of the onReady above. */}
+      <PostHogProvider
+        client={posthog}
+        autocapture={{
+          captureScreens: true,
+          captureTouches: false,
+          navigation: { routeToProperties: (name, params) => ({ app: 'vendor' }) },
+        }}
+      >
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{ animation: 'slide_from_right' }}>
@@ -402,6 +419,7 @@ function NavigationScreen() {
           options={{ headerShown: false }}
         />
       </Stack.Navigator>
+      </PostHogProvider>
     </NavigationContainer>
   );
 }

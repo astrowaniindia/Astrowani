@@ -27,6 +27,7 @@
     "@supabase/supabase-js": "^2.108.1",
     "axios": "^1.7.5",
     "lodash": "^4.17.21",
+    "posthog-react-native": "^4.62.0",
     "react": "18.2.0",
     "react-delegate-component": "^1.0.0",
     "react-native": "0.77.2",

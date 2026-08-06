@@ -28,6 +28,7 @@ import {COLORS} from '../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
+import {captureEvent} from './Analytics';
 
 interface Props {
   route: any;
@@ -140,6 +141,12 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     stopCallTimer();
     stopRipple();
     cleanupWebRTC();
+    captureEvent('call_ended', {
+      call_type: 'video',
+      session_id: sessionId,
+      duration_seconds: callDurationRef.current,
+      connected: callDurationRef.current > 0,
+    });
     try {
       const jwt = await AsyncStorage.getItem('token');
       await axios.post(
@@ -249,6 +256,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
           if (!isConnectedRef.current) {
             isConnectedRef.current = true;
             setIsConnected(true);
+            captureEvent('call_connected', {call_type: 'video', session_id: sessionId});
             stopRipple();
             startCallTimer();
             if (socketRef.current && sessionId) {

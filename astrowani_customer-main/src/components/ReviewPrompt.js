@@ -17,6 +17,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from './StatusPopup';
+import { captureEvent } from '../utils/Analytics';
 
 let listener = null;
 export const showReviewPrompt = (opts) => {
@@ -61,6 +62,7 @@ export function ReviewPromptHost() {
         { rating, comment },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      captureEvent('review_submitted', { astrologer_id: target.astrologerId, rating });
       close();
       showStatusPopup({ variant: 'success', title: 'Thank you!', message: 'Your review has been submitted.' });
     } catch (err) {

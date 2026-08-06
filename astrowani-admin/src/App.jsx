@@ -21,6 +21,7 @@ import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
 import Leaderboard from './pages/Leaderboard';
+import Analytics from './pages/Analytics';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
+        <Route path="analytics" element={<Analytics />} />
         <Route path="blogs" element={<Blogs />} />
         <Route path="banners" element={<Banners />} />
         <Route path="thoughts" element={<Thoughts />} />

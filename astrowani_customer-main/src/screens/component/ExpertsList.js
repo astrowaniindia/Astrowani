@@ -21,6 +21,7 @@ import { SOCKET_URL } from '../../config/api';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import { showStatusPopup } from '../../components/StatusPopup';
+import { captureEvent } from '../../utils/Analytics';
 import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { formatBusyLabel } from '../../utils/busyLabel';
@@ -146,6 +147,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
         Alert.alert('Error', 'Failed to initiate call.');
         return;
       }
+      captureEvent('call_initiated', {call_type: type, astrologer_id: item.userId});
 
       const callerToken = response.data.data?.token?.token || response.data.token?.token || response.data.token;
       const vendorToken = response.data.data?.vendorToken || response.data.vendorToken;

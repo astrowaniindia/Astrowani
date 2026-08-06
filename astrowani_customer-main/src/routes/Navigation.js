@@ -7,6 +7,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { NavigationContainer } from '@react-navigation/native';
+import { PostHogProvider } from 'posthog-react-native';
+import { posthog, applySessionReplaySetting } from '../utils/Analytics';
 import { navigationRef } from '../utils/NavigationService';
 import Splash from '../screens/Splash/Splash';
 import Login from '../screens/Login/Login';
@@ -101,9 +103,24 @@ const Tab = createBottomTabNavigator();
 const TopTab = createMaterialTopTabNavigator();
 
 export default function Navigation({ initialRoute }) {
+  useEffect(() => {
+    applySessionReplaySetting();
+  }, []);
+
   return (
     <>
     <NavigationContainer ref={navigationRef}>
+      {/* Must be inside NavigationContainer — PostHog's screen-autocapture hook reads
+          navigation state via @react-navigation/native's own hooks, which only work
+          for descendants of NavigationContainer. */}
+      <PostHogProvider
+        client={posthog}
+        autocapture={{
+          captureScreens: true,
+          captureTouches: false,
+          navigation: { routeToProperties: (name, params) => ({ app: 'customer' }) },
+        }}
+      >
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right' }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
         <Stack.Screen options={{ headerShown: false }} name="Login" component={Login} />
@@ -630,6 +647,7 @@ export default function Navigation({ initialRoute }) {
           options={{ headerShown: false }}
         />
       </Stack.Navigator>
+      </PostHogProvider>
     </NavigationContainer>
     <StatusPopupHost />
     <ReviewPromptHost />

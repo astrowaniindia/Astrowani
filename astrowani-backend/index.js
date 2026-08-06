@@ -279,6 +279,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
 require('./src/bugAgentRoutes')(app);
+require('./src/postHogRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);

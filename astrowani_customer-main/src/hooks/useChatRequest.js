@@ -11,6 +11,7 @@ import { showStatusPopup } from '../components/StatusPopup';
 import { ensureProfileComplete } from '../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../utils/freeConsultation';
 import { LanguageContext } from '../context/LanguageContext';
+import { captureEvent } from '../utils/Analytics';
 
 const useChatRequest = (navigation) => {
   const { t } = useContext(LanguageContext);
@@ -146,6 +147,7 @@ const useChatRequest = (navigation) => {
 
       const requestId = data?.[0]?.id;
       if (!requestId) throw new Error('No request ID returned');
+      captureEvent('chat_initiated', { astrologer_id: receiverId });
 
       // Push fallback for a backgrounded/killed vendor app — this insert alone only reaches
       // the vendor via Supabase Realtime, which needs their app process alive. Fire-and-forget,

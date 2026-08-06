@@ -24,6 +24,7 @@ import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
 import Instance from '../api/ApiCall';
 import useElapsedSeconds from '../utils/useElapsedSeconds';
+import { captureEvent } from '../utils/Analytics';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -146,6 +147,7 @@ const VendorChatSession = ({ route, navigation }) => {
       // Start timer
       setSessionStartMs(Date.now());
       setTimerActive(true);
+      captureEvent('chat_started', { session_id: sessionIdRef.current });
     };
 
     init();
@@ -159,6 +161,10 @@ const VendorChatSession = ({ route, navigation }) => {
   }, []);
 
   const endSessionLocal = (reason) => {
+    captureEvent('chat_ended', {
+      session_id: sessionIdRef.current,
+      duration_seconds: sessionStartMs ? Math.round((Date.now() - sessionStartMs) / 1000) : 0,
+    });
     setTimerActive(false);
     if (pollMsgRef.current) clearInterval(pollMsgRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);

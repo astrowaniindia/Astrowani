@@ -1,0 +1,146 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Product-analytics (PostHog) proxy for the admin dashboard.
+//
+// The admin dashboard (astrowani-admin) never talks to PostHog directly — it
+// hits these routes with the normal admin JWT, and this file holds the
+// PostHog Personal API Key server-side (read-only, Project+Query scope only).
+// Mirrors the least-privilege pattern already used for BUG_AGENT_TOKEN
+// (bugAgentRoutes.js) and the Sentry DSN (sentry.js): a narrowly-scoped
+// secret, never the admin JWT, and a graceful no-op (not a crash) when the
+// env vars aren't configured yet.
+//
+// Screen views are auto-captured by both RN apps as PostHog's standard
+// `$screen` event, with a custom `app` property ('customer' | 'vendor') so
+// the two apps can be told apart inside one shared PostHog project.
+// ─────────────────────────────────────────────────────────────────────────────
+const axios = require('axios');
+const { requireAdmin } = require('./adminRoutes');
+
+const POSTHOG_HOST = process.env.POSTHOG_HOST; // e.g. https://us.i.posthog.com
+const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
+const POSTHOG_PERSONAL_API_KEY = process.env.POSTHOG_PERSONAL_API_KEY;
+
+function isConfigured() {
+  return !!(POSTHOG_HOST && POSTHOG_PROJECT_ID && POSTHOG_PERSONAL_API_KEY);
+}
+
+// Small in-memory cache so a 30-60s dashboard auto-refresh doesn't re-hit
+// PostHog's Query API on every poll. Same TTL-cache shape as astroRoutes.js's
+// PDF cache.
+const CACHE_TTL_MS = 60 * 1000;
+const queryCache = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of queryCache) if (entry.expires < now) queryCache.delete(key);
+}, 5 * 60 * 1000);
+
+async function runHogQL(hogql) {
+  const cached = queryCache.get(hogql);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  const { data } = await axios.post(
+    `${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`,
+    { query: { kind: 'HogQLQuery', query: hogql } },
+    { headers: { Authorization: `Bearer ${POSTHOG_PERSONAL_API_KEY}` }, timeout: 15000 }
+  );
+  const rows = data.results || [];
+  queryCache.set(hogql, { data: rows, expires: Date.now() + CACHE_TTL_MS });
+  return rows;
+}
+
+function clampDays(raw, fallback, max) {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(n, max);
+}
+
+const h = (fn) => (req, res) => fn(req, res).catch((err) => {
+  console.error(`[postHogRoutes] ${req.method} ${req.path} error:`, err.response?.data || err.message);
+  res.status(502).json({ success: false, message: 'PostHog query failed' });
+});
+
+function requireConfigured(req, res, next) {
+  if (!isConfigured()) {
+    return res.status(503).json({ success: false, message: 'Analytics not configured (missing POSTHOG_* env vars)' });
+  }
+  next();
+}
+
+module.exports = function registerPostHogRoutes(app) {
+  // ── Summary stat cards: total screen views + unique users over the period ──
+  app.get('/api/admin/analytics/summary', requireAdmin, requireConfigured, h(async (req, res) => {
+    const days = clampDays(req.query.days, 7, 90);
+    const rows = await runHogQL(`
+      SELECT count() AS views, count(DISTINCT person_id) AS uniques
+      FROM events
+      WHERE event = '$screen' AND timestamp >= now() - INTERVAL ${days} DAY
+    `);
+    const [views, uniques] = rows[0] || [0, 0];
+    return res.json({ success: true, days, views: Number(views) || 0, uniques: Number(uniques) || 0 });
+  }));
+
+  // ── Daily screen-view trend, split by app, for a line chart ──
+  app.get('/api/admin/analytics/trend', requireAdmin, requireConfigured, h(async (req, res) => {
+    const days = clampDays(req.query.days, 30, 180);
+    const rows = await runHogQL(`
+      SELECT toDate(timestamp) AS day, properties.app AS app, count() AS views
+      FROM events
+      WHERE event = '$screen' AND timestamp >= now() - INTERVAL ${days} DAY
+      GROUP BY day, app
+      ORDER BY day ASC
+    `);
+    const points = rows.map(([day, appName, views]) => ({
+      day: String(day),
+      app: appName || 'unknown',
+      views: Number(views) || 0,
+    }));
+    return res.json({ success: true, days, points });
+  }));
+
+  // ── Top screens by view count, for one app, over the period ──
+  app.get('/api/admin/analytics/top-screens', requireAdmin, requireConfigured, h(async (req, res) => {
+    const days = clampDays(req.query.days, 7, 90);
+    const appName = req.query.app === 'vendor' ? 'vendor' : 'customer';
+    const rows = await runHogQL(`
+      SELECT properties.$screen_name AS screen, count() AS views
+      FROM events
+      WHERE event = '$screen' AND properties.app = '${appName}' AND timestamp >= now() - INTERVAL ${days} DAY
+      GROUP BY screen
+      ORDER BY views DESC
+      LIMIT 20
+    `);
+    const screens = rows.map(([screen, views]) => ({ screen: screen || '(unknown)', views: Number(views) || 0 }));
+    return res.json({ success: true, days, app: appName, screens });
+  }));
+
+  // ── Call/chat funnel: initiated → actually connected ──
+  // Customer-only by nature — `call_initiated`/`chat_initiated` only fire on the customer
+  // side (the vendor only ever accepts/rejects, never initiates), so there's no equivalent
+  // "vendor funnel" to toggle to. "Ended" isn't a useful third stage — doEndCall()/
+  // endSessionLocal() fire on every call/chat regardless of whether it connected, so it
+  // wouldn't represent further drop-off the way a real funnel stage should. Connected vs
+  // not-connected is the real conversion question ("of everyone who tried, how many
+  // actually got through").
+  app.get('/api/admin/analytics/funnel', requireAdmin, requireConfigured, h(async (req, res) => {
+    const days = clampDays(req.query.days, 7, 90);
+    const rows = await runHogQL(`
+      SELECT event, count() AS n
+      FROM events
+      WHERE event IN ('call_initiated', 'call_connected', 'chat_initiated', 'chat_started')
+        AND properties.app = 'customer'
+        AND timestamp >= now() - INTERVAL ${days} DAY
+      GROUP BY event
+    `);
+    const counts = Object.fromEntries(rows.map(([event, n]) => [event, Number(n) || 0]));
+    return res.json({
+      success: true,
+      days,
+      call: { initiated: counts.call_initiated || 0, connected: counts.call_connected || 0 },
+      chat: { initiated: counts.chat_initiated || 0, connected: counts.chat_started || 0 },
+    });
+  }));
+
+  console.log(isConfigured()
+    ? '[postHogRoutes] Analytics routes registered under /api/admin/analytics'
+    : '[postHogRoutes] Analytics routes registered but POSTHOG_* env vars are unset — will 503 until configured');
+};

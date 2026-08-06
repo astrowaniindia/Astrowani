@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
+import {captureEvent} from '../../utils/Analytics';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -92,6 +93,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
           Alert.alert(t('common.error'), t('alerts.failedGenerateRoom'));
           return null;
         }
+        captureEvent('call_initiated', {call_type: 'voice', astrologer_id: item.userId});
 
         const roomTokenData = callResponse.data.data?.token?.token || callResponse.data.token?.token || callResponse.data.token;
         const roomId = callResponse.data.data?.roomId || callResponse.data.roomId;

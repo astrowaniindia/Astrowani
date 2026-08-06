@@ -18,6 +18,7 @@ import EvilIcons from 'react-native-vector-icons/EvilIcons';
 import Instance from '../api/ApiCall';
 import {useFocusEffect} from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {resetAnalyticsIdentity} from '../utils/Analytics';
 import { supabase } from '../api/SupabaseClient';
 function CustomDrawer(props) {
   const insets = useSafeAreaInsets();
@@ -79,6 +80,7 @@ function CustomDrawer(props) {
   );
   const handleLogout = async () => {
     try {
+      resetAnalyticsIdentity();
       await AsyncStorage.clear();
       props.navigation.navigate('Login');
     } catch (error) {

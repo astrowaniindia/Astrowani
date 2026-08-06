@@ -26,6 +26,7 @@ import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
 import { setActiveChatAstrologerId } from '../utils/PushNotification';
 import useElapsedSeconds from '../hooks/useElapsedSeconds';
+import { captureEvent } from '../utils/Analytics';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
@@ -79,6 +80,12 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const endSession = (message) => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
+
+    captureEvent('chat_ended', {
+      session_id: sessionRef.current?.id,
+      duration_seconds: sessionStartMs ? Math.round((Date.now() - sessionStartMs) / 1000) : 0,
+      connected: chatConnectedRef.current,
+    });
 
     setChatActive(false);
     if (pollRef.current) clearInterval(pollRef.current);
@@ -233,6 +240,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
             chatConnectedRef.current = true;
             setSessionStartMs(data.started_at ? new Date(data.started_at).getTime() : Date.now());
             setChatActive(true);
+            captureEvent('chat_started', { session_id: data.id });
 
             // Load existing messages
             const { data: msgs } = await supabase

@@ -12,6 +12,10 @@ import { HotUpdater } from '@hot-updater/react-native';
 import App from './App';
 import { name as appName } from './app.json';
 import { initCrashReporting } from './src/utils/CrashReporting';
+// Importing this initializes the PostHog client as a module-level singleton (see
+// src/utils/Analytics.js) — no separate init call needed here, just ensures it's
+// constructed before the app tree mounts.
+import './src/utils/Analytics';
 
 initCrashReporting();
 // Registers messaging().setBackgroundMessageHandler (and the other FCM listeners). Must be

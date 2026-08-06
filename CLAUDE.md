@@ -17,6 +17,8 @@
 > popup), see **"Subsystems added 2026-06-21 → 06-22"** near the end of this file. For the latest
 > work (real reviews & ratings, real favorites, per-app banners + admin rotation interval, vendor
 > home missed-sessions widget, UI polish), see **"Subsystems added 2026-06-22 (session 2)"**.
+> For product analytics (PostHog screen-view tracking + admin Analytics page), see
+> **"Subsystem added 2026-08-06: Product analytics (PostHog)"** near the end of this file.
 > Per-feature deep notes also live in the auto-memory index (`memory/MEMORY.md`).
 
 ### Backend (`astrowani-backend/`)
@@ -961,3 +963,183 @@ Seed admin: `node astrowani-backend/scripts/seedAdmin.js`.
   cross-app request) was not completed — blocked entirely by local Android-emulator/ADB
   input-automation friction (see `emulator_headless_launch` memory), not by any app-level
   issue found. Worth a manual click-through pass before shipping.
+
+---
+
+## Subsystem added 2026-08-06: Product analytics (PostHog)
+
+### R. Screen-view tracking (both apps) + admin Analytics page
+
+- **Why PostHog, not Firebase Analytics**: real query access to Firebase Analytics data
+  (beyond the stock console) requires BigQuery export, which requires the paid Blaze plan —
+  the same "need a card on file just to read data" wall this project already hit and walked
+  away from with Crashlytics → Sentry (subsystem M). PostHog's free tier (1M events/month, no
+  card) includes full API read access, so the same narrowly-scoped-token pattern used for
+  Sentry/`BUG_AGENT_TOKEN` applies directly.
+- **Scope of this pass**: auto-tracked **screen views** only, surfaced as charts in a new
+  admin page. Custom business events (wallet recharge, call started, etc.), session replay,
+  and feature flags are deliberately **not** built yet — future work, not an oversight.
+- **Architecture**: both RN apps send events straight to PostHog Cloud (its Project API Key
+  is safe client-side — write-only for ingestion). The admin dashboard never talks to
+  PostHog directly; `astrowani-admin` calls `astrowani-backend`'s `/api/admin/analytics/*`
+  (behind the normal admin JWT), which holds a separate, read-only **Personal API Key**
+  server-side and proxies to PostHog's HogQL Query API. Same shape as `sentry.js`/
+  `bugAgentRoutes.js`: narrowly-scoped secret, never the admin JWT, graceful 503 (not a
+  crash) if unconfigured.
+- **Client SDK** (`posthog-react-native`): `src/utils/Analytics.js` in each app constructs a
+  module-level `PostHog` singleton (`disabled: true` while the API key is still the
+  `REPLACE_WITH_...` placeholder — see "Outstanding setup" below) and exports
+  `identifyCustomer`/`identifyVendor` + `resetAnalyticsIdentity`. Imported for its side effect
+  at the top of each `index.js`, same spot as `initCrashReporting()`.
+- **Screen-view autocapture** uses PostHog's built-in navigation hook via `<PostHogProvider
+  client={posthog} autocapture={{captureScreens: true, ...}}>` — for `@react-navigation/native`
+  v6 (both apps are on `^6.1.18`) this **must be rendered as a child of `NavigationContainer`**,
+  not wrapped around it, because the hook reads navigation state through
+  `@react-navigation/native`'s own React hooks. Wired inside `<Stack.Navigator>` in
+  `astrowani_customer-main/src/routes/Navigation.js` and
+  `astrowani_vendors-main/src/routes/NavigationScreen.js` (independent of and non-conflicting
+  with the vendor app's pre-existing `onReady` on the same `NavigationContainer`). Each
+  screen event is tagged `{app: 'customer' | 'vendor'}` via the `routeToProperties` option so
+  the two apps are distinguishable inside one shared PostHog project.
+- **Identify/reset**: `identifyCustomer`/`identifyVendor(realUserId)` called right after OTP
+  verify succeeds (`VerifyOtp.js`, both apps) — ties pre-login anonymous activity to the real
+  Supabase UUID. `resetAnalyticsIdentity()` called on logout (`CustomDrawerContent.js`
+  customer, `CustomDrawer.js` vendor). The customer app previously never persisted its own
+  `customers.id` locally (only the vendor app stored `astroId`) — added
+  `AsyncStorage.setItem('customerId', ...)` alongside the existing `identify()` call, a small
+  necessary addition, not scope creep.
+- **Backend** (`astrowani-backend/src/postHogRoutes.js`, registered in `index.js` next to
+  `adminRoutes`/`bugAgentRoutes`): reads `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`,
+  `POSTHOG_PERSONAL_API_KEY` from env; every route 503s with a clear message if any are unset
+  rather than crashing. `requireAdmin` is now exported from `adminRoutes.js`
+  (`module.exports.requireAdmin = requireAdmin`) specifically so this file could reuse it
+  instead of duplicating the JWT-verification logic. Three GET endpoints under
+  `/api/admin/analytics/`: `summary` (views + unique users), `trend` (daily views split by
+  app, for the line chart), `top-screens` (per-app screen breakdown). Small in-memory 60s TTL
+  cache per query (same shape as `astroRoutes.js`'s PDF cache) so the admin page's 60s
+  auto-refresh doesn't hammer PostHog's API.
+- **Admin** (`astrowani-admin/src/pages/Analytics.jsx`, new `recharts` dependency — no chart
+  library existed in this app before): stat cards (reuses `Dashboard.jsx`'s `.stat-grid` CSS),
+  a 30-day line chart (one line per app), and a Customer/Vendor-tabbed top-screens table (tab
+  pattern from `Reviews.jsx`). Registered as `/analytics` in `App.jsx` + a sidebar entry in
+  `Layout.jsx`. When the backend 503s (not yet configured), the page shows an explanatory
+  card instead of an error — no separate "is it configured" check needed on the frontend.
+
+### S. Business events + admin-controlled session replay (2026-08-06, same day)
+
+- **Business events** — the "screen views only" MVP above only shows *where* users go, not
+  *what they do*. Both apps' `src/utils/Analytics.js` now export `captureEvent(name, props)`
+  (auto-tags `{app: 'customer'|'vendor'}`, same as screen views) and it's wired at the
+  existing state-transition points that were already single, canonical choke points — not
+  the 5-duplicated call/chat-*initiation* entry points (`ReusableList.js`/`Home.js`/`Call.js`/
+  `AstrologerInfo.js`/`ExpertsList.js`) that busy-gating (subsystem N) had to touch
+  individually. Connected/ended events fire regardless of which entry point started the call,
+  so instrumenting the one shared call/chat *screen* per type was sufficient:
+  - `call_connected` / `call_ended` (`{call_type: 'voice'|'video', session_id, duration_seconds,
+    connected}`) — customer `VoiceCallScreen.tsx` / `VideoCallScreen.tsx`, vendor
+    `EnxScreenVoice.tsx` / `EnxScreenVideo.tsx`, at the same ICE-connected-state and
+    `doEndCall()` chokepoints documented in the "ENX Screen Architecture Pattern" section above.
+  - `chat_started` / `chat_ended` — customer `ChatSessionScreen.js`, vendor
+    `VendorChatSession.js`.
+  - `wallet_recharged` (`{amount}`) — customer `Wallet.js`, fired only after the backend's
+    signature-verified `/api/wallet/verify-payment` succeeds (never on a client-reported
+    Razorpay callback alone, consistent with that flow's existing trust boundary).
+  - `review_submitted` (`{astrologer_id, rating}`) — `ReviewPromptHost` in
+    `components/ReviewPrompt.js`, the single shared post-session prompt used everywhere
+    (call/chat end + SessionDetails "Rate this session"), so one instrumentation point covers
+    every review path.
+  - `call_initiated` / `chat_initiated` — see subsystem T below (added later the same day).
+  - Still not instrumented: vendor-side accept/reject actions — future addition if needed.
+- **Admin-controlled session replay** — the user explicitly wants every analytics control
+  living in `astrowani-admin`, not PostHog's own project settings. Reused the existing
+  `app_settings` key/value table (already powers the banner rotation interval) rather than
+  adding new backend routes: `sql/app_settings_schema.sql` now also seeds
+  `session_replay_enabled` ('false') and `session_replay_sample_rate` ('0.1'). The generic
+  `/api/admin/settings` GET/PATCH (`adminRoutes.js`) already handled arbitrary keys, so no
+  backend code changes were needed — only a new "Session Replay" card at the top of
+  `Analytics.jsx` (checkbox + sample-rate input, same save pattern as `Banners.jsx`'s interval
+  field). Both apps' `applySessionReplaySetting()` (in `Analytics.js`) reads those two keys
+  **directly from Supabase** (public-read RLS, same pattern as `Navigation.js`'s wallet-balance
+  read) once per app launch — via a `useEffect` in the root `Navigation.js` /
+  `NavigationScreen.js` — does a local `Math.random() < sampleRate` coin-flip, and only then
+  calls `posthog.startSessionRecording()`. Off by default; toggling in the admin only affects
+  *new* app sessions going forward (same eventual-consistency model as the banner interval).
+  SDK's default masking (`maskAllTextInputs`/`maskAllImages: true`) already protects OTP entry
+  and profile photos without extra config.
+  - **One caveat that can't be avoided**: PostHog's `startSessionRecording()` is a no-op if
+    session replay is disabled at the *PostHog project* level — so turning it on once in the
+    PostHog project settings is a one-time prerequisite done during account setup (alongside
+    getting the API keys), not something the admin dashboard can control. Everything
+    afterward — on/off, sample rate, day-to-day — is 100% from `astrowani-admin`.
+
+### T. Call/chat initiation events + funnel view (2026-08-06, later still)
+
+- **`call_initiated` / `chat_initiated`** — the piece subsystem S deliberately deferred,
+  because it meant touching the duplicated entry points instead of one shared screen. Done
+  now via `captureEvent` right after each request is confirmed to have gone out (not on tap —
+  after the wallet check + `POST /api/call/initiate` returns 200, or after the
+  `chat_requests` insert returns a real row id), so a failed/blocked attempt doesn't
+  pollute the funnel:
+  - `call_initiated` (`{call_type, astrologer_id}`) — customer `Video.js`, `Call.js`,
+    `ExpertsList.js`, `AstrologerInfo.js` (both its audio and video call sites),
+    `ReusableList.js`, `Home.js` (both its audio and video call sites). `call_type` reflects
+    whatever string that specific call site actually sends the backend — the codebase isn't
+    consistent about `'audio'` vs `'voice'` across these files (pre-existing inconsistency,
+    not introduced here) — so don't assume a single canonical value when querying.
+  - `chat_initiated` (`{astrologer_id}`) — **one** location: `src/hooks/useChatRequest.js`,
+    the shared hook "for ANY screen that has a Chat button" (its own header comment). Every
+    chat entry point already funnels through this hook, so instrumenting it once covers all
+    of them — unlike calls, which have no equivalent shared hook. `src/api/ChatApi.js`'s
+    `chat_requests` insert is dead code (nothing imports it, confirmed via grep) and was
+    deliberately left uninstrumented.
+  - Customer-only — there is no vendor-side "initiated" event; the vendor app only ever
+    accepts/rejects an incoming request, it never originates one.
+- **Funnel endpoint** — `GET /api/admin/analytics/funnel` (`postHogRoutes.js`), same
+  `requireAdmin` + `requireConfigured` + 60s-cache pattern as the other three routes. Returns
+  `{call: {initiated, connected}, chat: {initiated, connected}}`, always for `app='customer'`
+  (hardcoded, no query param — a `?app=vendor` funnel would be meaningless since vendor has
+  no `initiated` counterpart). Deliberately two stages, not three: `call_ended`/chat's end
+  event fire on **every** call/chat regardless of whether it connected, so "Ended" doesn't
+  represent further drop-off the way a real funnel stage should — Initiated → Connected is
+  the actual conversion question.
+- **Admin UI** — new "Call & Chat Funnel" card on `Analytics.jsx`, between the trend chart and
+  top-screens table. Two side-by-side mini-funnels (Call, Chat), each a plain CSS bar
+  (`FunnelRow`) rather than a recharts `Funnel` component — simpler and matches the
+  card/table styling already on the page. No app-tab toggle on this card (see "customer-only"
+  above) — the existing Customer/Vendor tabs are still there for the unrelated Top Screens
+  table below it.
+
+### Outstanding setup (blocks real data, not the code)
+
+The PostHog account itself has **not been created yet** — account creation isn't something
+Claude can do on the user's behalf. Both apps' `src/utils/Analytics.js` currently ship a
+`REPLACE_WITH_POSTHOG_PROJECT_API_KEY` placeholder (SDK stays `disabled: true` until it's
+swapped), and the backend 503s until its three `POSTHOG_*` env vars are set. To turn real data
+on:
+1. Sign up free at posthog.com (no card), create one project.
+2. Get the **Project API Key** → paste into both apps' `Analytics.js` (safe to hardcode,
+   write-only, same trust level as the Sentry DSN already hardcoded there).
+3. Create a **read-only** Personal API Key (Project: Read, Query: Read only — least privilege,
+   matching `BUG_AGENT_TOKEN`) → set as `POSTHOG_PERSONAL_API_KEY` wherever the backend's other
+   env vars live (VPS process env — see subsystem K).
+4. Set `POSTHOG_PROJECT_ID` and `POSTHOG_HOST` (`https://us.i.posthog.com` or
+   `https://eu.i.posthog.com` depending on the Cloud region chosen at signup) the same way.
+5. If session replay will ever be used (subsystem S), turn on "Record user sessions" once in
+   the PostHog project's own settings — required by the SDK regardless of our own admin
+   toggle, see subsystem S's caveat. Everything else about replay (on/off, sample rate) stays
+   in `astrowani-admin` from then on.
+6. Re-run `sql/app_settings_schema.sql` in the Supabase SQL editor — it's additive/idempotent
+   and now also seeds `session_replay_enabled` / `session_replay_sample_rate` (subsystem S).
+No other code changes are needed once these values exist — the admin page starts rendering
+real numbers automatically, and the Session Replay toggle starts working.
+
+### Testing note
+- Verified end-to-end against a locally-run backend (temporarily pointed the admin dashboard's
+  `VITE_API_URL` at `http://localhost:4500` via a gitignored `.env.local`, reverted before
+  finishing): the three `/api/admin/analytics/*` endpoints correctly 503 with the "not
+  configured" message when hit with a valid admin JWT, and the admin `/analytics` page renders
+  the same friendly message end-to-end (sidebar link → route → chart-library import → API call
+  → graceful unconfigured state), confirmed via browser with no console errors beyond the
+  expected 503s. Both RN apps lint clean and the admin app's production build (`npm run
+  build`) succeeds. Real on-device screen-view capture was not verified — blocked on the
+  outstanding PostHog account creation above, not on any code issue found.

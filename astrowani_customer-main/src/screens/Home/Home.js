@@ -19,6 +19,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+import {captureEvent} from '../../utils/Analytics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FastImage from 'react-native-fast-image';
 import Swiper from 'react-native-swiper';
@@ -256,6 +257,7 @@ const Home = ({navigation}) => {
         Alert.alert(t('common.error'), response.data.error || 'Unexpected Error');
         return null;
       }
+      captureEvent('call_initiated', {call_type: 'audio', astrologer_id: item.userId});
 
       const callerToken = response.data.data?.token?.token || response.data.token?.token || response.data.token;
       const vendorToken = response.data.data?.vendorToken || response.data.vendorToken || callerToken;
@@ -408,6 +410,7 @@ const Home = ({navigation}) => {
         Alert.alert(t('common.error'), response.data.error || 'Unexpected Error');
         return null;
       }
+      captureEvent('call_initiated', {call_type: 'video', astrologer_id: item.userId});
 
       const callerToken = response.data.data?.token?.token || response.data.token?.token || response.data.token;
       const vendorToken = response.data.data?.vendorToken || response.data.vendorToken || callerToken;

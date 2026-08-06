@@ -13,6 +13,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+import {captureEvent} from '../../utils/Analytics';
 import {COLORS} from '../../Theme/Colors';
 import {SOCKET_URL} from '../../config/api';
 import {supabase} from '../../api/SupabaseClient';
@@ -186,6 +187,7 @@ const Video = ({navigation}) => {
         Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
         return;
       }
+      captureEvent('call_initiated', {call_type: 'video', astrologer_id: item.userId});
 
       const callerToken =
         response.data.data?.token?.token ||
