@@ -18,7 +18,7 @@ import { COLORS } from '../Theme/Colors';
 import ImagePicker from 'react-native-image-crop-picker';
 import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
-import messaging from '@react-native-firebase/messaging';
+import { getFCMToken } from '../utils/Firebase';
 
 const Registration = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
@@ -27,16 +27,14 @@ const Registration = ({ navigation }) => {
   const [skillsOptions, setSkillsOptions] = useState([]);
   const [error, setError] = useState('');
 
-
-  const getFCMToken = async () => {
-    // Silence the modular deprecation warning from Firebase
-    globalThis.RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
-    let token = await messaging().getToken();
-    setFcmToken(token);
-  };
-
   useEffect(() => {
-    getFCMToken();
+    // Use the shared, cached getFCMToken (utils/Firebase.js) instead of calling
+    // messaging().getToken() directly — it reads AsyncStorage first and only hits
+    // Firebase when no token is cached yet, and it already catches/logs errors
+    // instead of letting a rejected getToken() promise go unhandled.
+    getFCMToken().then(token => {
+      if (token) setFcmToken(token);
+    });
   }, []);
   
   const [user, setUser] = useState({
