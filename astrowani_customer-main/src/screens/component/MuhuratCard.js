@@ -336,6 +336,7 @@ import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplet
 import Geolocation from '@react-native-community/geolocation';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { FREE_SERVICES_URL } from '../../config/api';
 
 const MuhuratCard = ({ title }) => {
   const [location, setLocation] = useState('');
@@ -494,11 +495,8 @@ const MuhuratCard = ({ title }) => {
         }
       };
 
-      console.log("Fetching data for:", currentEndpoint);
-      console.log("Request body:", JSON.stringify(requestBody, null, 2));
-
       const response = await fetch(
-        `https://astrowani-fb6pi.ondigitalocean.app/api/free-services/shubh-muhurat${currentEndpoint}`,
+        `${FREE_SERVICES_URL}/api/free-services/shubh-muhurat${currentEndpoint}`,
         {
           method: 'POST',
           headers: {
