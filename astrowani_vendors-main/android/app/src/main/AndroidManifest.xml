@@ -19,6 +19,10 @@
     <!-- To use Foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Required (Android 14+) for the incoming-call notification's fullScreenAction to
+         actually launch the app over the lock screen / other apps instead of silently
+         degrading to a normal tap-to-open notification. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
     <!-- Remove merged location permissions that are injected by dependencies -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />

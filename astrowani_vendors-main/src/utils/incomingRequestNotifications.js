@@ -3,9 +3,27 @@
 // HomeScreen.js, which only works while that screen is mounted). Data-only FCM payloads
 // from the backend land here via Firebase.js's onMessage/setBackgroundMessageHandler.
 import notifee, { AndroidImportance, AndroidVisibility, AndroidCategory } from '@notifee/react-native';
+import { startRinging, stopRinging } from './incomingRingtone';
 
-const CHANNEL_ID = 'astrowani-incoming-requests';
+// v2: the v1 channel had sound:'default' + vibration:true, which made Android play its own
+// one-shot notification ping/buzz the instant the notification posted — a beat before
+// incomingRingtone.js's continuous ringtone kicked in ("ping then ring"). Channel sound/
+// vibration are immutable once created on a device (Android platform restriction — Notifee
+// can't override them post-creation), so silencing v1 in code wouldn't have applied to an
+// already-installed app; bumping the id forces a fresh channel with the corrected settings.
+const CHANNEL_ID = 'astrowani-incoming-requests-v2';
 let channelReady = null;
+
+// The ringtone used to be started only from HomeScreen.js's popupQueue effect — which
+// requires the React app to actually be mounted. That's fine while the app is open, but a
+// killed-app push runs through Firebase's headless background handler (setBackgroundMessageHandler
+// in Firebase.js), which calls displayIncomingRequestNotification() directly and never mounts
+// HomeScreen — so the OS notification appeared but nothing ever rang (confirmed on a real
+// device: notification shown, zero ringing). Starting/stopping the ringtone here instead, keyed
+// to notification display/cancel, covers every app state uniformly. Tracked as a Set (not a
+// single boolean) because more than one request can be queued — see HomeScreen.js's popupQueue
+// — and ringing should only stop once none of them are still outstanding.
+const activeNotificationIds = new Set();
 
 async function ensureChannel() {
   if (!channelReady) {
@@ -14,8 +32,11 @@ async function ensureChannel() {
       name: 'Incoming Calls & Chats',
       importance: AndroidImportance.HIGH,
       visibility: AndroidVisibility.PUBLIC,
-      sound: 'default',
-      vibration: true,
+      // No channel sound/vibration — incomingRingtone.js (InCallManager + Vibration) is the
+      // sole source of both, so the notification post itself stays silent and the ringtone is
+      // the first and only thing the vendor hears.
+      sound: undefined,
+      vibration: false,
     });
   }
   return channelReady;
@@ -66,9 +87,15 @@ export async function displayIncomingRequestNotification(payload) {
     android: {
       channelId: CHANNEL_ID,
       importance: AndroidImportance.HIGH,
-      category: isChat ? undefined : AndroidCategory.CALL,
-      ongoing: !isChat,
+      category: AndroidCategory.CALL,
+      ongoing: true,
       autoCancel: false,
+      // Makes Android treat this as a genuine incoming-call notification — can launch the
+      // app full-screen even over a locked screen, instead of sitting as a passive heads-up
+      // banner. Combined with the continuous ringtone (started right below, independent of
+      // whether the app is open, backgrounded, or killed) this is what actually makes it
+      // "ring" rather than buzz once.
+      fullScreenAction: { id: 'default', launchActivity: 'default' },
       // App logo in the notification's large-icon slot (top-right corner) — mipmap
       // resource already bundled for the launcher icon, no extra asset needed.
       largeIcon: 'ic_launcher',
@@ -79,6 +106,9 @@ export async function displayIncomingRequestNotification(payload) {
       ],
     },
   });
+
+  activeNotificationIds.add(notificationId);
+  startRinging();
 
   return notificationId;
 }
@@ -102,6 +132,10 @@ export async function displayGenericNotification({ title, body }) {
 
 export async function cancelIncomingRequestNotification(notificationId) {
   if (!notificationId) return;
+  activeNotificationIds.delete(notificationId);
+  if (activeNotificationIds.size === 0) {
+    stopRinging();
+  }
   try {
     await notifee.cancelNotification(notificationId);
   } catch (_) {

@@ -1,0 +1,7 @@
+<en-US>
+What's New:
+
+- Incoming calls, video calls & chat requests now ring like a real call — continuous ringtone + vibration until you accept or reject, even when the app is closed and your screen is locked
+- Fixed: incoming requests could previously show as a silent one-time notification instead of ringing
+- Bug fixes & improvements
+</en-US>

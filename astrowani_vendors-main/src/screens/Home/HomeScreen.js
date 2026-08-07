@@ -31,6 +31,15 @@ import HomeBanner from '../../components/HomeBanner';
 import { isVendorProfileComplete, ensureVendorProfileComplete } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
+import { startRinging, stopRinging } from '../../utils/incomingRingtone';
+import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
+
+// Same key scheme as incomingRequestNotifications.js's idKeyFor — must match so accept/reject/
+// dismiss here also cancels the OS notification (and its ringtone tracking) for the same request.
+const notifIdFor = (item) => {
+  const key = item?.roomId || item?.callerId;
+  return key ? `incoming_${key}` : null;
+};
 
 // On-brand animated toggle (replaces the default RN Switch for a cleaner look).
 const ServiceToggle = ({ value, onValueChange }) => {
@@ -97,6 +106,20 @@ const HomeScreen = () => {
   const popupData = popupQueue[0] || null;
   const popupVisible = popupQueue.length > 0;
 
+  // Ring continuously (re-triggered ringtone + vibration, see incomingRingtone.js) for as long
+  // as there's anything in the queue — covers audio/video calls and chat requests uniformly
+  // since they all funnel into popupQueue, and stops automatically on accept/reject/cancel-
+  // dismiss since those all go through setPopupQueue too. This is the single chokepoint; no
+  // per-call-site wiring needed.
+  useEffect(() => {
+    if (popupQueue.length > 0) {
+      startRinging();
+    } else {
+      stopRinging();
+    }
+    return () => stopRinging();
+  }, [popupQueue.length]);
+
   // Add an incoming request to the queue, de-duped by requestId/roomId (the same request
   // can arrive via both the socket fast-path and the Supabase Realtime INSERT).
   const enqueuePopup = (item) => {
@@ -157,6 +180,7 @@ const HomeScreen = () => {
           (reqId && p.requestId && reqId === p.requestId) ||
           (roomId && p.roomId && roomId === p.roomId) ||
           (callerId && p.callerId && callerId === p.callerId);
+        if (matches) cancelIncomingRequestNotification(notifIdFor(p));
         return !matches;
       });
       if (next.length !== prev.length) {
@@ -264,7 +288,74 @@ const HomeScreen = () => {
           }
         }
       )
+      .on(
+        // Same cancellation backup as above, for chat_requests — previously missing, which
+        // meant a customer-cancelled or backend-timed-out chat request never dismissed the
+        // vendor's popup (or, now, stopped the ringtone) on its own.
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_requests',
+          filter: `receiver_id=eq.${astroId}`,
+        },
+        (payload) => {
+          const req = payload.new;
+          if (req && req.status && req.status !== 'pending' && req.status !== 'accepted') {
+            dismissPopupIfMatches({ requestId: req.id, callerId: req.caller_id });
+          }
+        }
+      )
       .subscribe();
+
+    // Catch-up fetch — covers a cold start triggered by the notification's fullScreenAction
+    // (e.g. app was killed): the listeners above only see requests that arrive *after* they
+    // subscribe, so without this, a cold-launched app wouldn't show/ring for the very request
+    // that woke it up. Only the newest pending request per table is enough — enqueuePopup's
+    // de-dupe means a subsequent Realtime/socket event for the same row is a harmless no-op.
+    try {
+      const [{ data: pendingCalls }, { data: pendingChats }] = await Promise.all([
+        supabase
+          .from('call_requests')
+          .select('id, call_type, customer_name, customer_id, room_token, room_id, session_id')
+          .eq('astrologer_id', astroId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1),
+        supabase
+          .from('chat_requests')
+          .select('id, request_type, caller_name, caller_id')
+          .eq('receiver_id', astroId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1),
+      ]);
+      const call = pendingCalls?.[0];
+      if (call) {
+        enqueuePopup({
+          requestId: call.id,
+          callType: call.call_type || 'audio',
+          callerName: call.customer_name || 'Customer',
+          callerId: call.customer_id,
+          token: call.room_token,
+          table: 'call_requests',
+          roomId: call.room_id,
+          sessionId: call.session_id || null,
+        });
+      }
+      const chat = pendingChats?.[0];
+      if (chat) {
+        enqueuePopup({
+          requestId: chat.id,
+          callType: chat.request_type || 'chat',
+          callerName: chat.caller_name || 'Customer',
+          callerId: chat.caller_id,
+          table: 'chat_requests',
+        });
+      }
+    } catch (e) {
+      console.warn('[Vendor] pending-request catch-up fetch failed:', e?.message);
+    }
   };
 
   // ─── Accept ───────────────────────────────────────────────────────────────
@@ -276,6 +367,7 @@ const HomeScreen = () => {
     const req = popupData;
     setPopupQueue((prev) => prev.slice(1)); // dismiss this one; the rest of the queue stays
     if (!req) return;
+    cancelIncomingRequestNotification(notifIdFor(req));
 
     // Safety net: an incomplete profile shouldn't be visible to customers, but
     // guard acceptance too so a stray request can't start a session.
@@ -316,6 +408,7 @@ const HomeScreen = () => {
     const req = popupData;
     setPopupQueue((prev) => prev.slice(1));
     if (!req) return;
+    cancelIncomingRequestNotification(notifIdFor(req));
     await rejectRequest(req);
   };
 
