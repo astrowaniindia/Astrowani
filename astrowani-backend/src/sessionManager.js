@@ -365,23 +365,37 @@ class SessionManager {
   }
 
   /**
-   * Activates a session when a client signals connection
+   * Activates a session when a client signals connection.
+   *
+   * SECURITY (fixed 2026-08-08 — see security-audit-2026-08-08.md): this used to update by
+   * id alone, with no check that the session hadn't already ended. The `signal_connection`
+   * socket event that calls this has no auth of its own, so a stray or deliberately replayed
+   * signal for a sessionId that already finished (real hangup, insufficient balance, admin
+   * force-end) would resurrect it and restart the 60s billing clock — silently re-billing a
+   * customer for a call that isn't happening. Now only activates a session that has never
+   * been ended (`ended_at IS NULL`); a replay against an already-terminated session is a no-op.
    */
   async activateSession(sessionId) {
     console.log(`[SessionManager] Activating session ${sessionId}`);
     const nextBilling = new Date(Date.now() + 60000).toISOString(); // First billing in 1 minute
-    
-    const { error } = await supabase
+
+    const { data, error } = await supabase
       .from('chat_sessions')
       .update({
         is_active: true,
         next_billing_at: nextBilling,
         started_at: new Date().toISOString()
       })
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .is('ended_at', null)
+      .select('id');
 
     if (error) {
       console.error(`[SessionManager] Activation failed for ${sessionId}:`, error.message);
+      return false;
+    }
+    if (!data || data.length === 0) {
+      console.warn(`[SessionManager] Activation no-op for ${sessionId} — session already ended or missing.`);
       return false;
     }
     return true;

@@ -107,15 +107,23 @@ const GoLiveScreen = ({route, navigation}: any) => {
     }
   }, []);
 
+  const authHeaders = useCallback(async () => {
+    const token = await AsyncStorage.getItem('token');
+    return token ? {Authorization: `Bearer ${token}`} : {};
+  }, []);
+
   const endLive = useCallback(async () => {
     if (endingRef.current) return;
     endingRef.current = true;
     const sessionId = sessionIdRef.current;
     socketRef.current?.emit('end_live', {sessionId, astrologerId: astroIdRef.current});
-    try { await axios.post(`${SOCKET_URL}/api/live/${sessionId}/end`); } catch (_) {}
+    try {
+      const headers = await authHeaders();
+      await axios.post(`${SOCKET_URL}/api/live/${sessionId}/end`, {}, {headers});
+    } catch (_) {}
     cleanup();
     navigation.goBack();
-  }, [cleanup, navigation]);
+  }, [cleanup, navigation, authHeaders]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +166,8 @@ const GoLiveScreen = ({route, navigation}: any) => {
       // Start the live session on the backend
       let sessionId = '';
       try {
-        const resp = await axios.post(`${SOCKET_URL}/api/live/start`, {astrologerId: astroIdRef.current});
+        const headers = await authHeaders();
+        const resp = await axios.post(`${SOCKET_URL}/api/live/start`, {astrologerId: astroIdRef.current}, {headers});
         sessionId = resp.data?.sessionId;
       } catch (e) {
         Alert.alert('Error', 'Could not start live session.');
@@ -196,8 +205,17 @@ const GoLiveScreen = ({route, navigation}: any) => {
     };
 
     setup();
-    return () => { cancelled = true; if (!endingRef.current) { socketRef.current?.emit('end_live', {sessionId: sessionIdRef.current, astrologerId: astroIdRef.current}); axios.post(`${SOCKET_URL}/api/live/${sessionIdRef.current}/end`).catch(() => {}); } cleanup(); };
-  }, [addViewer, removeViewer, cleanup, navigation]);
+    return () => {
+      cancelled = true;
+      if (!endingRef.current) {
+        socketRef.current?.emit('end_live', {sessionId: sessionIdRef.current, astrologerId: astroIdRef.current});
+        authHeaders()
+          .then((headers) => axios.post(`${SOCKET_URL}/api/live/${sessionIdRef.current}/end`, {}, {headers}))
+          .catch(() => {});
+      }
+      cleanup();
+    };
+  }, [addViewer, removeViewer, cleanup, navigation, authHeaders]);
 
   const toggleMute = () => {
     const next = !muted;

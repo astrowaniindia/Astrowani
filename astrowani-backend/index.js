@@ -1704,62 +1704,39 @@ async function resolveVendorIdFromReq(req) {
   }
 }
 
-async function resolvePendingChatRequestId(astroId, callerId) {
-  if (!astroId || !callerId) return null;
-  const { data } = await supabaseService
-    .from('chat_requests')
-    .select('id')
-    .eq('receiver_id', astroId)
-    .eq('caller_id', callerId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-  return data?.id || null;
-}
+// SECURITY (fixed 2026-08-08 — see security-audit-2026-08-08.md): this used to trust
+// req.requestId/req.roomId as sufficient proof of ownership on their own, and fell through
+// to creating a session with ZERO matching request row when neither was supplied. Both were
+// a direct wallet-theft path — any authenticated vendor could accept/create a session against
+// an arbitrary customer id. Every lookup below now filters by the CALLING astrologer's own id
+// (astrologer_id / receiver_id) as well, and the caller (below) refuses to proceed at all when
+// no owned row is found — there is no longer a "no request, but safe to proceed anyway" branch.
+// Confirmed safe against the legitimate flow: both /api/call/initiate and /api/chat/initiate
+// insert the request row and return its id BEFORE the vendor is notified by any channel
+// (socket, push, or Realtime), so a real pending row always exists by the time accept/reject
+// can be called for a genuine request.
+async function resolveOwnedRequestRow(astroId, targetTable, reqBody) {
+  const ownerColumn = targetTable === 'call_requests' ? 'astrologer_id' : 'receiver_id';
+  // call_requests' customer column is `customer_id`; chat_requests' is `caller_id` — the
+  // real caller for billing MUST come from this column on the resolved row, never from
+  // reqBody.callerId, or a vendor with one legitimate pending request could swap in an
+  // arbitrary victim's id while still passing the ownership/row-exists check above.
+  const callerColumn = targetTable === 'call_requests' ? 'customer_id' : 'caller_id';
+  let query = supabaseService.from(targetTable).select(`id, status, ${callerColumn}`).eq(ownerColumn, astroId);
 
-async function resolveSessionRequestId(req, astroId, targetTable) {
-  if (req.requestId) return req.requestId;
-  if (targetTable === 'call_requests' && req.roomId) {
-    const { data } = await supabaseService
-      .from('call_requests')
-      .select('id')
-      .eq('room_id', req.roomId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-    return data?.id || null;
+  if (reqBody.requestId) {
+    query = query.eq('id', reqBody.requestId);
+  } else if (targetTable === 'call_requests' && reqBody.roomId) {
+    query = query.eq('room_id', reqBody.roomId).order('created_at', { ascending: false }).limit(1);
+  } else if (targetTable === 'chat_requests' && reqBody.callerId) {
+    query = query.eq('caller_id', reqBody.callerId).order('created_at', { ascending: false }).limit(1);
+  } else {
+    return null;
   }
-  if (targetTable === 'chat_requests') {
-    return resolvePendingChatRequestId(astroId, req.callerId);
-  }
-  return null;
-}
 
-async function findLatestSessionRequestStatus(req, astroId, targetTable) {
-  if (targetTable === 'call_requests' && req.roomId) {
-    const { data } = await supabaseService
-      .from('call_requests')
-      .select('status')
-      .eq('room_id', req.roomId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data?.status || null;
-  }
-  if (targetTable === 'chat_requests' && req.callerId) {
-    const { data } = await supabaseService
-      .from('chat_requests')
-      .select('status')
-      .eq('receiver_id', astroId)
-      .eq('caller_id', req.callerId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data?.status || null;
-  }
-  return null;
+  const { data } = await query.maybeSingle();
+  if (!data) return null;
+  return { id: data.id, status: data.status, callerId: data[callerColumn] };
 }
 
 app.post('/api/session/accept', async (req, res) => {
@@ -1769,24 +1746,19 @@ app.post('/api/session/accept', async (req, res) => {
 
     const reqBody = req.body || {};
     const targetTable = reqBody.table || 'chat_requests';
-    const resolvedRequestId = await resolveSessionRequestId(reqBody, astroId, targetTable);
-
-    if (resolvedRequestId) {
-      if (reqBody.requestId) {
-        const { data: statusRow } = await supabaseService
-          .from(targetTable)
-          .select('status')
-          .eq('id', resolvedRequestId)
-          .single();
-        if (!statusRow || statusRow.status !== 'pending') {
-          return res.status(200).json({ ok: false, reason: 'cancelled' });
-        }
-      }
-    } else {
-      const latestStatus = await findLatestSessionRequestStatus(reqBody, astroId, targetTable);
-      if (latestStatus && latestStatus !== 'pending') {
-        return res.status(200).json({ ok: false, reason: 'cancelled' });
-      }
+    const ownedRow = await resolveOwnedRequestRow(astroId, targetTable, reqBody);
+    if (!ownedRow) {
+      return res.status(200).json({ ok: false, reason: 'not_found' });
+    }
+    if (ownedRow.status !== 'pending') {
+      return res.status(200).json({ ok: false, reason: 'cancelled' });
+    }
+    const resolvedRequestId = ownedRow.id;
+    // Real caller, taken from the owned request row itself — never from the client-supplied
+    // reqBody.callerId (see resolveOwnedRequestRow's comment on why that field can't be trusted).
+    const realCallerId = ownedRow.callerId;
+    if (!realCallerId) {
+      return res.status(200).json({ ok: false, reason: 'not_found' });
     }
 
     const { data: astroData } = await supabaseService
@@ -1802,20 +1774,17 @@ app.post('/api/session/accept', async (req, res) => {
         ? astroData?.video_charge_per_minute ?? 0
         : astroData?.call_charge_per_minute ?? 0;
 
-    let isFreeSession = false;
-    if (reqBody.callerId) {
-      const { count } = await supabaseService
-        .from('chat_sessions')
-        .select('id', { count: 'exact', head: true })
-        .eq('caller_id', reqBody.callerId);
-      isFreeSession = (count || 0) === 0;
-    }
+    const { count } = await supabaseService
+      .from('chat_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('caller_id', realCallerId);
+    const isFreeSession = (count || 0) === 0;
 
     const sessionInsertPayload = {
       request_id: targetTable === 'chat_requests' ? resolvedRequestId : null,
       per_minute_charge: perMinuteCharge,
       vendor_id: astroId,
-      caller_id: reqBody.callerId,
+      caller_id: realCallerId,
       started_at: new Date().toISOString(),
       call_type: reqBody.callType || 'chat',
       room_id: reqBody.roomId || null,
@@ -1864,7 +1833,7 @@ app.post('/api/session/accept', async (req, res) => {
         requestId: resolvedRequestId,
         sessionId,
         callerName: reqBody.callerName,
-        callerId: reqBody.callerId,
+        callerId: realCallerId,
         perMinuteCharge,
         token: reqBody.token,
         callType: reqBody.callType,
@@ -1884,15 +1853,15 @@ app.post('/api/session/reject', async (req, res) => {
 
     const reqBody = req.body || {};
     const targetTable = reqBody.table || 'chat_requests';
-    const resolvedRequestId = await resolveSessionRequestId(reqBody, astroId, targetTable);
-    if (!resolvedRequestId) return res.status(200).json({ ok: false });
+    const ownedRow = await resolveOwnedRequestRow(astroId, targetTable, reqBody);
+    if (!ownedRow) return res.status(200).json({ ok: false, reason: 'not_found' });
 
     await supabaseService
       .from(targetTable)
       .update({ status: 'rejected', responded_at: new Date().toISOString() })
-      .eq('id', resolvedRequestId);
+      .eq('id', ownedRow.id);
 
-    return res.status(200).json({ ok: true, resolvedRequestId });
+    return res.status(200).json({ ok: true, resolvedRequestId: ownedRow.id });
   } catch (error) {
     console.error('[session/reject] error:', error.message);
     return res.status(500).json({ ok: false, message: 'Failed to reject request' });
@@ -2693,10 +2662,14 @@ app.get('/api/live/active', async (req, res) => {
 });
 
 // Vendor starts broadcasting.
+// SECURITY (fixed 2026-08-08): had zero auth — astrologerId came straight from the body, so
+// anyone could start (or repeatedly restart) a "live" broadcast impersonating any astrologer.
+// astroId is now taken only from the vendor's own JWT, never from the request body.
 app.post('/api/live/start', async (req, res) => {
   try {
-    const { astrologerId, title } = req.body || {};
-    if (!astrologerId) return res.status(400).json({ success: false, message: 'astrologerId required' });
+    const astrologerId = await resolveVendorIdFromReq(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const { title } = req.body || {};
     // Close any stale active session for this astrologer first.
     await supabaseService.from('live_sessions')
       .update({ is_active: false, ended_at: new Date().toISOString() })
@@ -2726,8 +2699,23 @@ async function endLiveSession(sessionId, reason) {
   io.to('live_' + sessionId).emit('live_ended', { sessionId, reason: reason || 'ended' });
 }
 
+// SECURITY (fixed 2026-08-08): had zero auth — anyone who read a sessionId off the public
+// GET /api/live/active list could force-end any astrologer's broadcast on demand. Now
+// requires the vendor's own JWT and checks the session actually belongs to that vendor.
+// Admin force-stop bypasses this route entirely (calls endLiveSession() directly via
+// app.locals.endLiveSession — see adminRoutes.js), so admin behavior is unaffected.
 app.post('/api/live/:id/end', async (req, res) => {
   try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const { data: sess } = await supabaseService
+      .from('live_sessions')
+      .select('astrologer_id')
+      .eq('id', req.params.id)
+      .single();
+    if (!sess || sess.astrologer_id !== astroId) {
+      return res.status(403).json({ success: false, message: 'Not your broadcast' });
+    }
     await endLiveSession(req.params.id, 'broadcaster_ended');
     return res.status(200).json({ success: true });
   } catch (err) {
