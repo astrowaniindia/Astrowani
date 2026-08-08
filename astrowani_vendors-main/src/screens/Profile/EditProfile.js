@@ -18,7 +18,6 @@ import { COLORS } from '../../Theme/Colors'; // Replace with your color scheme
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling'; // Replace with your scaling utils
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { supabase } from '../../api/SupabaseClient';
 import { fetchAstrologerRow } from '../../utils/vendorProfile';
 import Instance from '../../api/ApiCall';
 
@@ -173,9 +172,14 @@ export default function EditProfile() {
         profilePicUrlToSave = uploadRes.data.url;
       }
 
-      const { error } = await supabase
-        .from('astrologers')
-        .update({
+      // Via the backend, not a direct `astrologers` write — see
+      // sql/hardening_02_access_control.sql. A direct anon-key write let anyone rewrite
+      // ANY astrologer's charge rates (not just their own), since column-level grants have
+      // no concept of row ownership; the backend derives astroId from the vendor's own JWT.
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.put(
+        '/api/vendor/profile',
+        {
           first_name: firstName,
           last_name: lastName,
           email: email,
@@ -193,10 +197,11 @@ export default function EditProfile() {
           bank_ifsc: bankIfsc.trim() || null,
           bank_name: bankName.trim() || null,
           upi_id: upiId.trim() || null,
-        })
-        .eq('id', astroId);
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-      if (!error) {
+      if (res.data?.success) {
         ToastAndroid.showWithGravity(
           'Profile updated successfully!',
           ToastAndroid.SHORT,
@@ -204,7 +209,7 @@ export default function EditProfile() {
         );
         Navigation.goBack();
       } else {
-        throw error;
+        throw new Error(res.data?.message || 'Update failed');
       }
     } catch (error) {
       console.error('Error updating profile:', error);

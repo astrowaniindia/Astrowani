@@ -2556,6 +2556,39 @@ app.get('/api/vendor/profile', async (req, res) => {
   }
 });
 
+// SECURITY (2026-08-08): EditProfile.js used to write these columns directly via the
+// anon-key Supabase client — sql/hardening_02_access_control.sql's column-level GRANT
+// deliberately still allows it (comment: "the vendor app DOES write this table directly...
+// EditProfile"), but that meant ANY holder of the public key could rewrite ANY astrologer's
+// charge rates (not just their own), since column grants have no row-ownership concept.
+// Moving the write here closes that: astroId comes only from the vendor's own JWT.
+app.put('/api/vendor/profile', writeLimiter, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    if (!vendorId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const allowed = [
+      'first_name', 'last_name', 'email', 'phone_number', 'gender', 'experience',
+      'chat_charge_per_minute', 'call_charge_per_minute', 'video_charge_per_minute',
+      'languages', 'bio', 'profile_pic_url',
+      'bank_account_holder', 'bank_account_number', 'bank_ifsc', 'bank_name', 'upi_id',
+    ];
+    const body = {};
+    for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+
+    const { data, error } = await supabaseService
+      .from('astrologers').update(body).eq('id', vendorId).select().single();
+    if (error) throw error;
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('PUT /api/vendor/profile error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update vendor profile' });
+  }
+});
+
 app.get('/api/vendor/wallet', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
