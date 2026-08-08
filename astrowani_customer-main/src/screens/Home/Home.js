@@ -658,10 +658,13 @@ const Home = ({navigation}) => {
     loadAllData();
   }, []);
 
-  // Refresh the astrologer carousel whenever Home regains focus (catches vendor toggle changes)
+  // Refresh the astrologer carousel AND the live strip whenever Home regains focus (catches
+  // vendor toggle changes, and someone starting/ending a broadcast while this screen wasn't
+  // focused).
   useFocusEffect(
     useCallback(() => {
       fetchAstrologer();
+      getLiveAstro();
     }, []),
   );
 
@@ -672,7 +675,11 @@ const Home = ({navigation}) => {
   // Was a per-screen Supabase Realtime subscription to the whole astrologers
   // table. Now a debounced socket signal fanned out by the backend — see
   // hooks/useAstrologerListSync.js for why that matters at scale.
-  useAstrologerListSync(fetchAstrologer);
+  // Also re-fetches the "Live Astrologers" strip — going live/ending a broadcast is a write
+  // to this same astrologers row (is_live), so the same signal covers both; previously only
+  // the carousel refreshed, leaving the live strip stuck showing "No one live" until the
+  // customer manually pulled to refresh or reopened the app (reported 2026-08-08).
+  useAstrologerListSync(() => { fetchAstrologer(); getLiveAstro(); });
 
   // Live sync — re-fetch the blog carousel when the admin publishes/edits a blog.
   // Unique channel name per mount (same rule as the astrologer subscription above).
