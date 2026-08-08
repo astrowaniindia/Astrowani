@@ -137,6 +137,9 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
     // else. Independent of the toggles above (a fully-enabled astrologer can still be busy).
     isBusy: busyMap[astro.id]?.isBusy === true,
     busySince: busyMap[astro.id]?.busySince || null,
+    // 'live' = currently broadcasting (see Live Streaming), 'session' = an ordinary
+    // active/pending chat or call — apps show a distinct "Live now" state for the former.
+    busyReason: busyMap[astro.id]?.reason || null,
     // Category/specialty — resolved names for display + ids for filtering
     specialties: catNames.length ? catNames.map((n) => ({ name: n })) : [{ name: 'Vedic Astrology' }],
     categoryIds: rawCats,
@@ -1549,7 +1552,7 @@ app.post('/api/call/initiate', writeLimiter, async (req, res) => {
     // just informational.
     const busyStatus = await checkAstrologerBusy(supabase, receiverId);
     if (busyStatus.busy) {
-      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, message: 'Astrologer is busy right now' });
+      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
     }
 
     // Resolve caller identity from JWT
@@ -1654,7 +1657,7 @@ app.post('/api/chat/check-availability', async (req, res) => {
     if (!astrologerId) return res.status(400).json({ success: false, message: 'astrologerId required' });
     const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
     if (busyStatus.busy) {
-      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, message: 'Astrologer is busy right now' });
+      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
     }
     return res.status(200).json({ success: true, busy: false });
   } catch (error) {
@@ -1678,7 +1681,7 @@ app.post('/api/chat/initiate', async (req, res) => {
 
     const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
     if (busyStatus.busy) {
-      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, message: 'Astrologer is busy right now' });
+      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
     }
 
     const { data: row, error } = await supabase
@@ -2571,9 +2574,35 @@ app.get('/api/vendor/wallet', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(20);
 
+    // Enrich with the real customer name + session type behind each transaction — the raw
+    // row only has a generic "Automated chat earning" description and a session_id, which
+    // read as vague/untrustworthy to a vendor trying to reconcile "who paid me what and
+    // when" (reported 2026-08-08). One batched lookup, not per-row.
+    const sessionIds = [...new Set((txns || []).map((t) => t.session_id).filter(Boolean))];
+    let sessionMap = {};
+    if (sessionIds.length) {
+      const { data: sessions } = await supabaseService
+        .from('chat_sessions').select('id, caller_id, call_type').in('id', sessionIds);
+      const callerIds = [...new Set((sessions || []).map((s) => s.caller_id).filter(Boolean))];
+      let nameMap = {};
+      if (callerIds.length) {
+        const { data: customers } = await supabaseService
+          .from('customers').select('id, name').in('id', callerIds);
+        (customers || []).forEach((c) => { nameMap[c.id] = c.name || 'Customer'; });
+      }
+      (sessions || []).forEach((s) => {
+        sessionMap[s.id] = { customerName: nameMap[s.caller_id] || 'Customer', callType: s.call_type || null };
+      });
+    }
+    const enrichedTxns = (txns || []).map((t) => ({
+      ...t,
+      customerName: sessionMap[t.session_id]?.customerName || null,
+      callType: sessionMap[t.session_id]?.callType || null,
+    }));
+
     return res.status(200).json({
       success: true,
-      data: { ...astro, transactions: txns || [] },
+      data: { ...astro, transactions: enrichedTxns },
     });
   } catch (err) {
     console.error('GET /api/vendor/wallet error:', err.message);
@@ -2808,6 +2837,10 @@ async function endLiveSession(sessionId, reason) {
     .update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', sessionId);
   if (sess?.astrologer_id) {
     await supabaseService.from('astrologers').update({ is_live: false }).eq('id', sess.astrologer_id);
+    // Same "just freed up" hook used on session end / stale-request timeout — an astrologer
+    // ending their broadcast is another moment busyStatus flips back to free.
+    notifyWaitlistIfFree(supabaseService, sendPush, sess.astrologer_id).catch((e) =>
+      console.error('[live] notifyWaitlistIfFree error:', e.message));
   }
   io.to('live_' + sessionId).emit('live_ended', { sessionId, reason: reason || 'ended' });
 }

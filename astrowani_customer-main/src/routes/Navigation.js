@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthog, applySessionReplaySetting } from '../utils/Analytics';
 import { navigationRef } from '../utils/NavigationService';
@@ -465,7 +465,7 @@ export default function Navigation({ initialRoute }) {
         <Stack.Screen
           name="LiveViewerScreen"
           component={LiveViewerScreen}
-          options={{ headerShown: false }}
+          options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
         />
         <Stack.Screen
           name="CategoryAstrologers"
@@ -769,21 +769,28 @@ function BottomTabNavigator() {
         },
         tabBarActiveTintColor: COLORS.AstroMaroon,
         tabBarInactiveTintColor: 'gray',
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderRadius: 30,
-          position: 'absolute',
-          bottom: verticalScale(12),
-          marginHorizontal: scale(12),
-          elevation: 15,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -5 },
-          shadowOpacity: 0.15,
-          shadowRadius: 10,
-          borderTopWidth: 0,
-          height: verticalScale(70),
-          paddingBottom: verticalScale(8),
-        },
+        // The Live tab's nested stack pushes LiveViewerScreen (the full-screen live video +
+        // chat + gifting overlay) on top of LiveStack — being a NESTED stack screen (not a
+        // sibling of DrawerNavigator in the root stack), it does not automatically cover the
+        // tab bar the way most other full-screen routes in this app do, so the bar was left
+        // floating over the live viewer's chat box. Hide it only for that one nested route.
+        tabBarStyle: getFocusedRouteNameFromRoute(route) === 'LiveViewerScreen'
+          ? { display: 'none' }
+          : {
+            backgroundColor: '#fff',
+            borderRadius: 30,
+            position: 'absolute',
+            bottom: verticalScale(12),
+            marginHorizontal: scale(12),
+            elevation: 15,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -5 },
+            shadowOpacity: 0.15,
+            shadowRadius: 10,
+            borderTopWidth: 0,
+            height: verticalScale(70),
+            paddingBottom: verticalScale(8),
+          },
       })}>
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Chat" component={ChatStack} />

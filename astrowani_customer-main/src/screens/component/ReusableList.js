@@ -61,6 +61,11 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     );
   };
 
+  // A live broadcast is a distinct, more visible state than an ordinary busy session —
+  // shown as "Live now" rather than a timer, since a viewer cares that they're streaming,
+  // not exactly how long. Still offers Notify Me — the waitlist fires once the broadcast ends.
+  const isLiveBusy = (item) => item.isBusy === true && item.busyReason === 'live';
+
   const renderButton = (item) => {
     if (item.isOnline === false && buttonType !== 'view profile') {
       return (
@@ -72,6 +77,20 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
           >
             <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
             <Text style={styles.chatText}>{t('common.offline')}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if (isLiveBusy(item) && buttonType !== 'view profile') {
+      return (
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.actionBtnLive, styles.smallButton]}
+            activeOpacity={0.8}
+            onPress={() => handleNotifyMeTap(item)}
+          >
+            <MaterialIcons name="live-tv" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+            <Text style={styles.chatText}>Live now</Text>
           </TouchableOpacity>
         </View>
       );
@@ -440,6 +459,9 @@ const styles = StyleSheet.create({
   },
   actionBtnBusyChat: {
     backgroundColor: '#E67E22',
+  },
+  actionBtnLive: {
+    backgroundColor: '#C0392B',
   },
   actionBtnProfile: {
     borderColor: COLORS.AstroMaroon,

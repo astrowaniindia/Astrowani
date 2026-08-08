@@ -773,6 +773,20 @@ const Home = ({navigation}) => {
               <MaterialIcons name="wifi-off" size={moderateScale(12)} color="white" style={{marginRight: 4}} />
               <Text style={styles.unavailableBtnTxt}>{t('common.offline')}</Text>
             </TouchableOpacity>
+          ) : item.isBusy === true && item.busyReason === 'live' ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={async () => {
+                const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
+                Alert.alert(
+                  ok ? "We'll let you know" : t('common.error'),
+                  ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+                );
+              }}
+              style={styles.liveBtn}>
+              <MaterialIcons name="live-tv" size={moderateScale(12)} color="white" style={{marginRight: 4}} />
+              <Text style={styles.unavailableBtnTxt}>Live now</Text>
+            </TouchableOpacity>
           ) : item.isBusy === true ? (
             <TouchableOpacity
               activeOpacity={0.8}
@@ -1621,6 +1635,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
     borderWidth: 1,
     borderColor: '#E67E22',
+    elevation: 1,
+  },
+  liveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#C0392B',
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(16),
+    borderWidth: 1,
+    borderColor: '#C0392B',
     elevation: 1,
   },
   ReviewCard: {

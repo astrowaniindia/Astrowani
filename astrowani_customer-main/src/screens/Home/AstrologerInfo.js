@@ -645,6 +645,7 @@ const AstrologerInfo = ({route, navigation}) => {
   // Busy — already in a session or has an unanswered pending request with someone else.
   // Blocks all three service buttons at once (chat/call/video are mutually exclusive).
   const isBusy = !isOffline && person.isBusy === true;
+  const isLive = isBusy && person.busyReason === 'live';
   const busySinceMs = person.busySince ? new Date(person.busySince).getTime() : null;
   const busyElapsed = useElapsedSeconds(busySinceMs, isBusy);
   const [notifyMeSent, setNotifyMeSent] = useState(false);
@@ -863,9 +864,11 @@ const AstrologerInfo = ({route, navigation}) => {
           </TouchableOpacity>
         ) : isBusy ? (
           <>
-            <View style={styles.actionBtnBusy}>
-              <MaterialIcons name="schedule" size={moderateScale(18)} color="#fff" />
-              <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(6) }]}>{formatBusyLabel(busyElapsed)}</Text>
+            <View style={isLive ? styles.actionBtnLive : styles.actionBtnBusy}>
+              <MaterialIcons name={isLive ? 'live-tv' : 'schedule'} size={moderateScale(18)} color="#fff" />
+              <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(6) }]}>
+                {isLive ? 'Live now — no calls or chats' : formatBusyLabel(busyElapsed)}
+              </Text>
             </View>
             <TouchableOpacity
               style={[styles.actionBtnNotify, { marginLeft: scale(8) }]}
@@ -1126,6 +1129,10 @@ const styles = StyleSheet.create({
   },
   actionBtnBusy: {
     flex: 2, flexDirection: 'row', backgroundColor: '#E67E22', borderRadius: moderateScale(25),
+    justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(12),
+  },
+  actionBtnLive: {
+    flex: 2, flexDirection: 'row', backgroundColor: '#C0392B', borderRadius: moderateScale(25),
     justifyContent: 'center', alignItems: 'center', paddingVertical: verticalScale(12),
   },
   actionBtnNotify: {

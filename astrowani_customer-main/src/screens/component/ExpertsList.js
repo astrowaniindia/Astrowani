@@ -318,6 +318,21 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
                 <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
                 <Text style={styles.actionBtnText}>Offline</Text>
               </TouchableOpacity>
+            ) : item.isBusy === true && item.busyReason === 'live' ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.actionBtn, styles.liveBtn]}
+                onPress={async () => {
+                  const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
+                  Alert.alert(
+                    ok ? "We'll let you know" : 'Error',
+                    ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+                  );
+                }}
+              >
+                <MaterialIcons name="live-tv" size={moderateScale(16)} color="#fff" />
+                <Text style={styles.actionBtnText}>Live now</Text>
+              </TouchableOpacity>
             ) : item.isBusy === true ? (
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -428,6 +443,7 @@ const styles = StyleSheet.create({
   actionBtnText: { color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(12.5), fontWeight: 'bold', marginLeft: scale(4) },
   offlineBtn: { backgroundColor: '#C0392B', minWidth: scale(86) },
   busyBtn: { backgroundColor: '#E67E22', minWidth: scale(86) },
+  liveBtn: { backgroundColor: '#C0392B', minWidth: scale(86) },
   emptyBox: { alignItems: 'center', marginTop: verticalScale(60) },
   emptyTxt: { color: COLORS.AstroMaroon, fontSize: moderateScale(15), marginTop: verticalScale(10), fontFamily: 'Lato-Regular' },
 });

@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Modal, TextInput, Alert, RefreshControl } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 
@@ -10,6 +11,25 @@ const STATUS_COLORS = {
   approved: '#2196F3',
   paid: '#4CAF50',
   rejected: '#D32F2F',
+};
+
+// Same icon language as SessionHistory.js so a vendor sees the same call-type visuals in
+// both places — a "Chat with Ansh Sharma" row here should look like the chat tab there.
+const CALL_TYPE_ICONS = {
+  chat: { name: 'chatbubble', color: '#5C6BC0', label: 'Chat' },
+  audio: { name: 'call', color: '#2E7D32', label: 'Call' },
+  voice: { name: 'call', color: '#2E7D32', label: 'Call' },
+  video: { name: 'videocam', color: '#6A1B9A', label: 'Video call' },
+};
+
+// Exact date AND time — the vague date-only stamp this replaced was the #1 complaint
+// ("not the exact time was written, I was very confused when did I get this amount").
+const formatDateTime = (iso) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
 };
 
 export default function Wallet() {
@@ -23,6 +43,11 @@ export default function Wallet() {
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Recent Transactions used to sit BELOW the entire Withdrawal Requests list — with
+  // enough withdrawal history that pushed it far down the screen, hard to find (reported
+  // 2026-08-08). Split into tabs so each list gets its own dedicated scroll area instead
+  // of competing for space in one long column.
+  const [activeTab, setActiveTab] = useState('transactions');
 
   const fetchWallet = async () => {
     try {
@@ -44,8 +69,11 @@ export default function Wallet() {
         setTransactions((w.transactions || []).map(t => ({
           id: t.id,
           description: t.description || 'Consultation Earning',
-          amount: t.type === 'credit' ? t.amount : -t.amount,
-          date: new Date(t.created_at).toLocaleDateString('en-IN'),
+          isCredit: t.type === 'credit',
+          amount: t.amount,
+          dateTime: formatDateTime(t.created_at),
+          customerName: t.customerName || null,
+          callType: t.callType || null,
         })));
       }
 
@@ -125,15 +153,48 @@ export default function Wallet() {
     }
   };
 
-  const renderTransaction = ({ item }) => (
-    <View style={styles.transactionCard}>
-      <Text style={styles.transactionDescription}>{item.description}</Text>
-      <Text style={styles.transactionAmount}>
-        {item.amount > 0 ? `+₹${item.amount}` : `-₹${Math.abs(item.amount)}`}
+  const renderWithdrawal = ({ item: w }) => (
+    <View style={styles.withdrawalCard}>
+      <View style={styles.withdrawalRow}>
+        <Text style={styles.withdrawalAmount}>₹{w.amount}</Text>
+        <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[w.status] || '#999' }]}>
+          <Text style={styles.statusPillText}>{w.status.toUpperCase()}</Text>
+        </View>
+      </View>
+      <Text style={styles.transactionDate}>
+        Requested {new Date(w.requested_at).toLocaleDateString('en-IN')}
       </Text>
-      <Text style={styles.transactionDate}>{item.date}</Text>
+      {w.admin_note ? <Text style={styles.withdrawalNote}>{w.admin_note}</Text> : null}
     </View>
   );
+
+  const renderTransaction = ({ item }) => {
+    const typeIcon = CALL_TYPE_ICONS[item.callType] || null;
+    // A real session earning reads "Chat with Ansh Sharma" instead of the generic
+    // "Automated chat earning" — falls back to the raw description for non-session
+    // transactions (withdrawals, refunds, admin corrections) which have no linked session.
+    const title = item.customerName && typeIcon
+      ? `${typeIcon.label} with ${item.customerName}`
+      : item.description;
+    const icon = typeIcon || (item.isCredit
+      ? { name: 'add-circle', color: '#2E7D32' }
+      : { name: 'remove-circle', color: '#D32F2F' });
+
+    return (
+      <View style={[styles.transactionCard, { borderLeftColor: icon.color }]}>
+        <View style={[styles.transactionIconBadge, { backgroundColor: icon.color + '18' }]}>
+          <Ionicons name={icon.name} size={18} color={icon.color} />
+        </View>
+        <View style={styles.transactionTextCol}>
+          <Text style={styles.transactionDescription} numberOfLines={1}>{title}</Text>
+          <Text style={styles.transactionDate}>{item.dateTime}</Text>
+        </View>
+        <Text style={[styles.transactionAmount, { color: item.isCredit ? '#2E7D32' : '#D32F2F' }]}>
+          {item.isCredit ? `+₹${item.amount}` : `-₹${item.amount}`}
+        </Text>
+      </View>
+    );
+  };
 
   if (loading) {
     return (
@@ -143,15 +204,22 @@ export default function Wallet() {
     );
   }
 
+  const activeList = activeTab === 'transactions' ? transactions : withdrawals;
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={transactions}
+        data={activeList}
         keyExtractor={(item) => item.id}
-        renderItem={renderTransaction}
+        renderItem={activeTab === 'transactions' ? renderTransaction : renderWithdrawal}
         contentContainerStyle={styles.transactionList}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
+        }
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>
+            {activeTab === 'transactions' ? 'No transactions yet.' : 'No withdrawal requests yet.'}
+          </Text>
         }
         ListHeaderComponent={
           <>
@@ -164,28 +232,26 @@ export default function Wallet() {
               </TouchableOpacity>
             </View>
 
-            {/* Withdrawal Requests Section */}
-            {withdrawals.length > 0 && (
-              <>
-                <Text style={styles.sectionTitle}>Withdrawal Requests</Text>
-                {withdrawals.map((w) => (
-                  <View key={w.id} style={styles.withdrawalCard}>
-                    <View style={styles.withdrawalRow}>
-                      <Text style={styles.withdrawalAmount}>₹{w.amount}</Text>
-                      <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[w.status] || '#999' }]}>
-                        <Text style={styles.statusPillText}>{w.status.toUpperCase()}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.transactionDate}>
-                      Requested {new Date(w.requested_at).toLocaleDateString('en-IN')}
-                    </Text>
-                    {w.admin_note ? <Text style={styles.withdrawalNote}>{w.admin_note}</Text> : null}
-                  </View>
-                ))}
-              </>
-            )}
-
-            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            {/* Each list gets its own tab instead of stacking in one column, so a long
+                withdrawal history can never bury Recent Transactions (or vice versa). */}
+            <View style={styles.tabBar}>
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'transactions' && styles.tabItemActive]}
+                onPress={() => setActiveTab('transactions')}
+                activeOpacity={0.75}>
+                <Text style={[styles.tabLabel, activeTab === 'transactions' && styles.tabLabelActive]}>
+                  Transactions
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'withdrawals' && styles.tabItemActive]}
+                onPress={() => setActiveTab('withdrawals')}
+                activeOpacity={0.75}>
+                <Text style={[styles.tabLabel, activeTab === 'withdrawals' && styles.tabLabelActive]}>
+                  Withdrawals{withdrawals.length ? ` (${withdrawals.length})` : ''}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </>
         }
       />
@@ -244,21 +310,57 @@ const styles = StyleSheet.create({
   topUpButton: { backgroundColor: '#FFF', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 5 },
   topUpButtonText: { fontSize: 16, color: '#4CAF50', fontWeight: '600' },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginBottom: 14,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  tabItemActive: {
+    backgroundColor: COLORS.AstroMaroon,
+  },
+  tabLabel: { fontSize: 13, fontWeight: '600', color: '#888' },
+  tabLabelActive: { color: '#fff' },
+  emptyText: { textAlign: 'center', color: '#999', fontSize: 14, marginTop: 30 },
   transactionList: { paddingBottom: 20 },
   transactionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFF',
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    padding: 14,
     marginBottom: 10,
+    gap: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
-  transactionDescription: { fontSize: 16, color: '#333', marginBottom: 4 },
-  transactionAmount: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50', marginBottom: 4 },
-  transactionDate: { fontSize: 14, color: '#777' },
+  transactionIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transactionTextCol: { flex: 1 },
+  transactionDescription: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  transactionAmount: { fontSize: 16, fontWeight: 'bold' },
+  transactionDate: { fontSize: 12, color: '#888', marginTop: 2 },
   withdrawalCard: {
     backgroundColor: '#FFF',
     borderRadius: 8,
