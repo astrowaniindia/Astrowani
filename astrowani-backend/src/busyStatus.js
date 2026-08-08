@@ -15,12 +15,14 @@
 async function checkAstrologerBusy(supabase, astrologerId) {
   try {
     const [{ data: liveSession }, { data: activeSession }, { data: pendingCall }, { data: pendingChat }] = await Promise.all([
-      supabase.from('live_sessions').select('started_at').eq('astrologer_id', astrologerId).eq('is_active', true).limit(1),
+      supabase.from('live_sessions').select('id, started_at').eq('astrologer_id', astrologerId).eq('is_active', true).limit(1),
       supabase.from('chat_sessions').select('started_at').eq('vendor_id', astrologerId).eq('is_active', true).limit(1),
       supabase.from('call_requests').select('created_at').eq('astrologer_id', astrologerId).eq('status', 'pending').limit(1),
       supabase.from('chat_requests').select('created_at').eq('receiver_id', astrologerId).eq('status', 'pending').limit(1),
     ]);
-    if (liveSession && liveSession.length) return { busy: true, busySince: liveSession[0].started_at, reason: 'live' };
+    if (liveSession && liveSession.length) {
+      return { busy: true, busySince: liveSession[0].started_at, reason: 'live', liveSessionId: liveSession[0].id };
+    }
     if (activeSession && activeSession.length) return { busy: true, busySince: activeSession[0].started_at, reason: 'session' };
     if (pendingCall && pendingCall.length) return { busy: true, busySince: pendingCall[0].created_at, reason: 'session' };
     if (pendingChat && pendingChat.length) return { busy: true, busySince: pendingChat[0].created_at, reason: 'session' };
@@ -38,13 +40,13 @@ async function buildBusyMap(supabase) {
   const busyMap = {};
   try {
     const [{ data: liveSessions }, { data: activeSessions }, { data: pendingCalls }, { data: pendingChats }] = await Promise.all([
-      supabase.from('live_sessions').select('astrologer_id, started_at').eq('is_active', true),
+      supabase.from('live_sessions').select('id, astrologer_id, started_at').eq('is_active', true),
       supabase.from('chat_sessions').select('vendor_id, started_at').eq('is_active', true),
       supabase.from('call_requests').select('astrologer_id, created_at').eq('status', 'pending'),
       supabase.from('chat_requests').select('receiver_id, created_at').eq('status', 'pending'),
     ]);
     (liveSessions || []).forEach((s) => {
-      if (s.astrologer_id) busyMap[s.astrologer_id] = { isBusy: true, busySince: s.started_at, reason: 'live' };
+      if (s.astrologer_id) busyMap[s.astrologer_id] = { isBusy: true, busySince: s.started_at, reason: 'live', liveSessionId: s.id };
     });
     (activeSessions || []).forEach((s) => {
       if (s.vendor_id && !busyMap[s.vendor_id]) busyMap[s.vendor_id] = { isBusy: true, busySince: s.started_at, reason: 'session' };

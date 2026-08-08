@@ -19,6 +19,7 @@ import StarRating from '../../components/StarRating';
 import { LanguageContext } from '../../context/LanguageContext';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
+import { ensureProfileComplete } from '../../utils/profileGate';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
   const navigation = useNavigation();
@@ -63,8 +64,20 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
 
   // A live broadcast is a distinct, more visible state than an ordinary busy session —
   // shown as "Live now" rather than a timer, since a viewer cares that they're streaming,
-  // not exactly how long. Still offers Notify Me — the waitlist fires once the broadcast ends.
+  // not exactly how long.
   const isLiveBusy = (item) => item.isBusy === true && item.busyReason === 'live';
+
+  // Tapping "Live now" should jump straight into the broadcast, not open a waitlist —
+  // waiting to be notified makes no sense for something happening right now. Falls back to
+  // the Live tab if liveSessionId hasn't landed yet (a stale card mid-refresh).
+  const goToLive = async (item) => {
+    if (!(await ensureProfileComplete(navigation))) return;
+    if (item.liveSessionId) {
+      navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
+    } else {
+      navigation.navigate('Live');
+    }
+  };
 
   const renderButton = (item) => {
     if (item.isOnline === false && buttonType !== 'view profile') {
@@ -87,7 +100,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
           <TouchableOpacity
             style={[styles.actionBtnLive, styles.smallButton]}
             activeOpacity={0.8}
-            onPress={() => handleNotifyMeTap(item)}
+            onPress={() => goToLive(item)}
           >
             <MaterialIcons name="live-tv" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
             <Text style={styles.chatText}>Live now</Text>

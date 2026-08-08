@@ -323,11 +323,12 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
                 activeOpacity={0.85}
                 style={[styles.actionBtn, styles.liveBtn]}
                 onPress={async () => {
-                  const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
-                  Alert.alert(
-                    ok ? "We'll let you know" : 'Error',
-                    ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
-                  );
+                  if (!(await ensureProfileComplete(navigation))) return;
+                  if (item.liveSessionId) {
+                    navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
+                  } else {
+                    navigation.navigate('Live');
+                  }
                 }}
               >
                 <MaterialIcons name="live-tv" size={moderateScale(16)} color="#fff" />

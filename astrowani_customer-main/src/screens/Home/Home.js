@@ -784,11 +784,12 @@ const Home = ({navigation}) => {
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={async () => {
-                const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
-                Alert.alert(
-                  ok ? "We'll let you know" : t('common.error'),
-                  ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
-                );
+                if (!(await ensureProfileComplete(navigation))) return;
+                if (item.liveSessionId) {
+                  navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
+                } else {
+                  navigation.navigate('Live');
+                }
               }}
               style={styles.liveBtn}>
               <MaterialIcons name="live-tv" size={moderateScale(12)} color="white" style={{marginRight: 4}} />

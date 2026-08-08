@@ -140,6 +140,9 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
     // 'live' = currently broadcasting (see Live Streaming), 'session' = an ordinary
     // active/pending chat or call — apps show a distinct "Live now" state for the former.
     busyReason: busyMap[astro.id]?.reason || null,
+    // Lets the "Live now" pill navigate straight into LiveViewerScreen instead of just
+    // announcing the state — only present when busyReason is 'live'.
+    liveSessionId: busyMap[astro.id]?.liveSessionId || null,
     // Category/specialty — resolved names for display + ids for filtering
     specialties: catNames.length ? catNames.map((n) => ({ name: n })) : [{ name: 'Vedic Astrology' }],
     categoryIds: rawCats,

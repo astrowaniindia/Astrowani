@@ -839,11 +839,12 @@ const CallsList = ({navigation}) => {
             style={styles.actionBtnLive}
             activeOpacity={0.8}
             onPress={async () => {
-              const { ok } = await requestNotifyMe(item.userId || item._id, 'audio');
-              Alert.alert(
-                ok ? "We'll let you know" : 'Error',
-                ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
-              );
+              if (!(await ensureProfileComplete(navigation))) return;
+              if (item.liveSessionId) {
+                navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
+              } else {
+                navigation.navigate('Live');
+              }
             }}>
             <MaterialIcons name="live-tv" size={moderateScale(20)} color="#fff" style={{marginRight: 4}} />
             <Text style={styles.actionBtnText}>Live now</Text>

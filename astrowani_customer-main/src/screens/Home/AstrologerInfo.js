@@ -862,12 +862,31 @@ const AstrologerInfo = ({route, navigation}) => {
             <MaterialIcons name="wifi-off" size={moderateScale(20)} color="#fff" />
             <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(8) }]}>{t('common.offline')}</Text>
           </TouchableOpacity>
+        ) : isLive ? (
+          // Live is a "happening right now" state, not a wait — tapping jumps straight into
+          // the broadcast instead of offering Notify Me (which makes no sense here).
+          <TouchableOpacity
+            style={[styles.actionBtnLive, { flex: 3 }]}
+            activeOpacity={0.8}
+            onPress={async () => {
+              if (!(await ensureProfileComplete(navigation))) return;
+              if (person.liveSessionId) {
+                navigation.navigate('LiveViewerScreen', { sessionId: person.liveSessionId, astrologer: person });
+              } else {
+                navigation.navigate('Live');
+              }
+            }}>
+            <MaterialIcons name="live-tv" size={moderateScale(18)} color="#fff" />
+            <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(6) }]}>
+              Live now — tap to watch
+            </Text>
+          </TouchableOpacity>
         ) : isBusy ? (
           <>
-            <View style={isLive ? styles.actionBtnLive : styles.actionBtnBusy}>
-              <MaterialIcons name={isLive ? 'live-tv' : 'schedule'} size={moderateScale(18)} color="#fff" />
+            <View style={styles.actionBtnBusy}>
+              <MaterialIcons name="schedule" size={moderateScale(18)} color="#fff" />
               <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(6) }]}>
-                {isLive ? 'Live now — no calls or chats' : formatBusyLabel(busyElapsed)}
+                {formatBusyLabel(busyElapsed)}
               </Text>
             </View>
             <TouchableOpacity
