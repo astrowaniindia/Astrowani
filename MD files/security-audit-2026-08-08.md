@@ -268,6 +268,112 @@ insertion-order iteration).
 - Rate limiters (`httpHardening.js`) use the default in-memory store, which self-prunes per
   window and is appropriate for a single process.
 
+## Part 3 — Realtime connection-count capacity (same day, after user clarified plan tier)
+
+The concurrency audit above was itself missing the single biggest capacity number: **how
+many direct Supabase Realtime connections does one active device actually hold**, and how
+that multiplies across concurrent users against Supabase's free-tier 200-connection cap.
+Confirmed with the user: **the project is on the free tier**, so this is an active constraint,
+not a hypothetical.
+
+**Inventory**: 16 files in the customer app and 7 in the vendor app open direct
+`supabase.channel(...)` Realtime subscriptions. All of them are correctly row/user-filtered
+(no data-leak concern) except four low-frequency admin-content tables (`blogs`,
+`live_sessions`, `remedy_items` — intentionally not migrated, cheap/rare writes). No screen
+shared a connection with another the way `useAstrologerListSync` already consolidated the
+astrologer list — every screen opened its own.
+
+**Per-device estimate** (realistic navigation, not a worst-case "every screen open at once"):
+customer ≈ 2–4 concurrent connections, occasionally 5 during an accept-wait window; vendor ≈
+2–3, occasionally 4. Blended average ≈ 3 per device.
+
+**Capacity math**: `200 ÷ 3 ≈ 65–70 concurrent users` before the free-tier cap is hit — even
+at an optimistic 2 per device, only ≈100. **1,000 concurrent users would exceed the Realtime
+connection cap at roughly 1/10th to 1/15th of that target.**
+
+### User decision
+
+Presented three options (migrate the highest-impact channels to the backend relay pattern,
+upgrade the Supabase plan, or just document it as a known limit). **User chose to migrate to
+the backend relay pattern** — same no-cost architecture already proven for the astrologer
+list, extended to the connections that matter most.
+
+### Fixed: notification badges (the always-on connections)
+
+The `CustomHeader.js` notification badge in both apps is mounted on nearly every screen, so
+it was effectively an **always-on Realtime connection for every single logged-in user, not
+just one screen's worth** — the single highest-impact target in the whole inventory.
+`NotificationScreen.js` (customer) / `Notification.js` (vendor) each additionally opened a
+**second, fully duplicate** subscription on the same table while open.
+
+Investigated whether these actually need a Supabase Realtime subscription at all, and found
+they don't: `notifications` has exactly **one writer** across the whole codebase —
+`astrowani-backend/src/notificationRoutes.js`'s admin send route — which already does
+`io.to(recipientId).emit('new_notification', ...)` synchronously right after the insert
+(pre-existing code, written for a live in-app toast). The backend already knows the moment a
+notification is created; there was never a need for a client-side Realtime subscription to
+"discover" it, unlike the astrologers table (many writers, hence `astrologerFanout.js`
+holding one server-side subscription and relaying it). No backend change was needed at all —
+only removing the redundant client-side subscriptions.
+
+**Fix, mirrored in both apps**:
+- New `useSharedSocket.js` (customer: `src/hooks/`, vendor: `src/utils/` — matching each
+  app's existing convention) — a single ref-counted Socket.io connection shared by every
+  hook that needs live backend signals, so a second consumer doesn't open a second physical
+  socket. `useAstrologerListSync.js` (customer) refactored to use this shared module instead
+  of its own private copy of the same acquire/release logic — behavior unchanged.
+- New `useNotificationBadgeSync.js` (both apps) — joins the user's own socket room
+  (`join_room`, the same room `new_notification` is already emitted to) and listens for that
+  event, debounce-free since it's a single per-user event, not a table-wide broadcast.
+- `CustomHeader.js` (both apps): direct `supabase.channel(...)` subscription on `notifications`
+  removed entirely, replaced with `useNotificationBadgeSync`.
+- `NotificationScreen.js` (customer) / `Notification.js` (vendor): same replacement, and the
+  duplicate-with-the-header subscription is gone — one shared socket now covers both.
+- Verified: `node --check` was unreliable for JSX files in this environment (confirmed via a
+  controlled test — an isolated JSX snippet correctly failed, but the same content in-place
+  in the full file inconsistently reported success; not trusted for this pass). Verified
+  instead with `npx eslint` against each app's real Babel-based config: **0 errors** on every
+  changed file. The one pre-existing `react-hooks/exhaustive-deps` error in `GoLiveScreen.tsx`
+  was confirmed present in the commit *before* today's changes (diffed against `HEAD~2`) —
+  not introduced by this pass.
+
+**Impact**: removes one always-on Realtime connection per logged-in device in both apps,
+taking the blended average from ≈3 down to ≈2 per device — capacity improves from ≈65–70 to
+≈100 concurrent users before the free-tier cap. A real improvement, but **not sufficient
+alone to reach 1,000 concurrent users** — see below.
+
+### Confirmed, not fixed — the remaining gap to reach 1,000 users
+
+Migrating the always-on notification badge was the single highest-impact, lowest-risk item.
+What's left is lower-impact-per-item (screen-scoped, not always-on) or carries a real
+reliability trade-off:
+
+- **Vendor `HomeScreen.js`'s incoming call/chat request listener** — deliberately NOT
+  touched. This subscribes to `call_requests`/`chat_requests` INSERT+UPDATE and is the
+  backup path for detecting a new incoming request if the primary `incoming_call` socket
+  event is missed (app backgrounded/killed, socket reconnect race) — the exact reliability
+  pattern documented throughout this codebase's call-cancellation-sync history. It's the
+  single most consequential channel for revenue (a missed incoming call is lost business),
+  so removing it needs a deliberate reliability review, not a capacity-driven removal under
+  time pressure. Flagged for a dedicated pass, not done here.
+- **Screen-scoped chat/session channels** (`ChatSessionScreen.js`, `PersonToPersonChat.js`,
+  `VendorChatSession.js`, `MySessionScreen.js`, `FavoriteScreen.js`, `SessionHistory.js`,
+  `MissedSessions.js`, etc.) — each only open while that specific screen is focused, so they
+  contribute less to steady-state peak concurrency than an always-on connection, but still
+  add up. Not migrated in this pass; a candidate for a follow-up once the always-on ones are
+  fully addressed.
+- **Transient waiting-for-accept channels** (`useChatRequest.js`, `ExpertsList.js`,
+  `AstrologerInfo.js`, `Video.js`, `Call.js`, `Home.js`) — self-limiting (only open for a few
+  seconds while waiting on a call/chat request), lowest priority of everything in the
+  inventory.
+- **Bottom line**: reaching 1,000 concurrent users on the free Realtime tier is not realistic
+  even with every remaining screen-scoped channel migrated, given how many genuinely-live
+  per-session connections (active chat/call screens) are inherent to the product. Getting to
+  1,000 will very likely need the paid Supabase Realtime tier's higher connection ceiling
+  *in addition to* this migration work, not instead of it — the migration reduces waste, the
+  plan upgrade raises the ceiling itself. Worth revisiting the "upgrade the plan" option
+  before any real user-acquisition push, even after all client-side migration work is done.
+
 ## What this pass did not cover
 
 - Dependency vulnerability audit (`npm audit` flagged "15 vulnerabilities, 8 high" during an

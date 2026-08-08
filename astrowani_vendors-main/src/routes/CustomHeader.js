@@ -17,6 +17,7 @@ import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../api/SupabaseClient';
 import {fetchAstrologerRow} from '../utils/vendorProfile';
+import useNotificationBadgeSync from '../utils/useNotificationBadgeSync';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
@@ -26,6 +27,7 @@ const CustomHeader = ({title, showLanguage}) => {
   const [walletBalance, setWalletBalance] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [astroId, setAstroId] = useState(null);
 
   // Via the backend, not a direct `astrologers` read — wallet_balance is not in
   // the anon SELECT grant (it excludes anything money-related), so this table
@@ -47,34 +49,22 @@ const CustomHeader = ({title, showLanguage}) => {
   }, []);
 
   useEffect(() => {
-    let notifSubscription = null;
     let cancelled = false;
 
-    const fetchCount = async (astroId) => {
+    const fetchCount = async (id) => {
       const { count } = await supabase
         .from('notifications')
         .select('id', { count: 'exact', head: true })
-        .eq('astrologer_id', astroId)
+        .eq('astrologer_id', id)
         .eq('is_read', false);
       if (!cancelled) setUnreadCount(count || 0);
     };
 
     const setup = async () => {
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (!astroId) return;
-
-      await fetchCount(astroId);
-
-      if (notifSubscription) {
-        supabase.removeChannel(notifSubscription);
-        notifSubscription = null;
-      }
-      notifSubscription = supabase
-        .channel(`vendor_notif_badge_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `astrologer_id=eq.${astroId}` }, () => {
-          fetchCount(astroId);
-        })
-        .subscribe();
+      const id = await AsyncStorage.getItem('astroId');
+      if (!id) return;
+      if (!cancelled) setAstroId(id);
+      await fetchCount(id);
     };
 
     setup();
@@ -83,9 +73,22 @@ const CustomHeader = ({title, showLanguage}) => {
     return () => {
       cancelled = true;
       unsubscribe();
-      if (notifSubscription) supabase.removeChannel(notifSubscription);
     };
   }, [navigation]);
+
+  // Live badge updates via the backend's existing socket event (see
+  // utils/useNotificationBadgeSync.js) instead of this component's own direct,
+  // per-mount Supabase Realtime subscription — this header mounts on nearly every
+  // screen, so that pattern meant an always-on Realtime connection per vendor.
+  useNotificationBadgeSync(astroId, () => {
+    if (!astroId) return;
+    supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('astrologer_id', astroId)
+      .eq('is_read', false)
+      .then(({ count }) => setUnreadCount(count || 0));
+  });
 
   const toggleLanguageModal = () => {
     setLanguageModalVisible(!languageModalVisible);

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,6 +6,7 @@ import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import useNotificationBadgeSync from '../../hooks/useNotificationBadgeSync';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -23,8 +24,7 @@ const NotificationScreen = () => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const customerIdRef = useRef(null);
-  const channelRef = useRef(null);
+  const [customerId, setCustomerId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -32,7 +32,7 @@ const NotificationScreen = () => {
       if (!userDataStr) { setLoading(false); return; }
       const userData = JSON.parse(userDataStr);
       if (!userData?.id) { setLoading(false); return; }
-      customerIdRef.current = userData.id;
+      setCustomerId(userData.id);
 
       const { data, error } = await supabase
         .from('notifications')
@@ -51,27 +51,13 @@ const NotificationScreen = () => {
 
   useEffect(() => {
     load();
-    return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-    };
   }, [load]);
 
-  useEffect(() => {
-    const setupChannel = async () => {
-      const userDataStr = await AsyncStorage.getItem('userData');
-      if (!userDataStr) return;
-      const userData = JSON.parse(userDataStr);
-      if (!userData?.id) return;
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      channelRef.current = supabase
-        .channel(`customer_notifications_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `customer_id=eq.${userData.id}` }, () => {
-          load();
-        })
-        .subscribe();
-    };
-    setupChannel();
-  }, [load]);
+  // Live refresh via the backend's existing socket event (see
+  // hooks/useNotificationBadgeSync.js) instead of this screen's own direct
+  // Supabase Realtime subscription — see that hook's header comment for why no
+  // backend Realtime subscription is needed at all for this table.
+  useNotificationBadgeSync(customerId, load);
 
   const onRefresh = () => {
     setRefreshing(true);

@@ -32,39 +32,10 @@
 // the socket drops entirely, opening the screen still shows current data.
 
 import { useEffect, useRef } from 'react';
-import io from 'socket.io-client';
-import { SOCKET_URL } from '../config/api';
+import { acquireSharedSocket, releaseSharedSocket } from './useSharedSocket';
 
 const DEBOUNCE_MS = 1500;
 const MAX_JITTER_MS = 2500;
-
-// One socket shared by every screen using this hook. Opening four sockets to
-// carry one broadcast would just move the fan-out problem down a layer.
-let sharedSocket = null;
-let refCount = 0;
-
-function acquireSocket() {
-  if (!sharedSocket) {
-    sharedSocket = io(SOCKET_URL, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-    });
-  }
-  refCount += 1;
-  return sharedSocket;
-}
-
-function releaseSocket() {
-  refCount -= 1;
-  if (refCount <= 0) {
-    refCount = 0;
-    if (sharedSocket) {
-      sharedSocket.disconnect();
-      sharedSocket = null;
-    }
-  }
-}
 
 /**
  * Call `onChanged` (debounced + jittered) whenever any astrologer row changes.
@@ -81,7 +52,7 @@ export default function useAstrologerListSync(onChanged, enabled = true) {
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const socket = acquireSocket();
+    const socket = acquireSharedSocket();
     let timer = null;
 
     const onSignal = () => {
@@ -104,7 +75,7 @@ export default function useAstrologerListSync(onChanged, enabled = true) {
     return () => {
       if (timer) clearTimeout(timer);
       socket.off('astrologers_changed', onSignal);
-      releaseSocket();
+      releaseSharedSocket();
     };
   }, [enabled]);
 }

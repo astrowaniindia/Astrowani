@@ -16,6 +16,7 @@ import { supabase } from '../api/SupabaseClient';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import Instance from '../api/ApiCall';
+import useNotificationBadgeSync from '../hooks/useNotificationBadgeSync';
 
 import { LanguageContext } from '../context/LanguageContext';
 
@@ -24,6 +25,7 @@ const CustomHeader = ({title, showLanguage}) => {
   const insets = useSafeAreaInsets();
   const [walletBalance, setWalletBalance] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [customerId, setCustomerId] = useState(null);
   const { language, changeLanguage } = React.useContext(LanguageContext);
 
   useEffect(() => {
@@ -63,14 +65,13 @@ const CustomHeader = ({title, showLanguage}) => {
   }, [navigation]);
 
   useEffect(() => {
-    let notifSubscription = null;
     let cancelled = false;
 
-    const fetchCount = async (customerId) => {
+    const fetchCount = async (id) => {
       const { count } = await supabase
         .from('notifications')
         .select('id', { count: 'exact', head: true })
-        .eq('customer_id', customerId)
+        .eq('customer_id', id)
         .eq('is_read', false);
       if (!cancelled) setUnreadCount(count || 0);
     };
@@ -81,19 +82,8 @@ const CustomHeader = ({title, showLanguage}) => {
         if (!userDataStr) return;
         const userData = JSON.parse(userDataStr);
         if (!userData?.id) return;
-
+        if (!cancelled) setCustomerId(userData.id);
         await fetchCount(userData.id);
-
-        if (notifSubscription) {
-          supabase.removeChannel(notifSubscription);
-          notifSubscription = null;
-        }
-        notifSubscription = supabase
-          .channel(`customer_notif_badge_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `customer_id=eq.${userData.id}` }, () => {
-            fetchCount(userData.id);
-          })
-          .subscribe();
       } catch (e) {
         console.log('Error fetching unread notification count:', e.message);
       }
@@ -105,9 +95,22 @@ const CustomHeader = ({title, showLanguage}) => {
     return () => {
       cancelled = true;
       unsubscribe();
-      if (notifSubscription) supabase.removeChannel(notifSubscription);
     };
   }, [navigation]);
+
+  // Live badge updates via the backend's existing socket event (see
+  // hooks/useNotificationBadgeSync.js) instead of this component's own direct,
+  // per-mount Supabase Realtime subscription — this header mounts on nearly every
+  // screen, so that pattern meant an always-on Realtime connection per customer.
+  useNotificationBadgeSync(customerId, () => {
+    if (!customerId) return;
+    supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', customerId)
+      .eq('is_read', false)
+      .then(({ count }) => setUnreadCount(count || 0));
+  });
 
   const toggleLanguage = () => {
     changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');

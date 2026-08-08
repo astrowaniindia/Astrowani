@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
+import useNotificationBadgeSync from '../../utils/useNotificationBadgeSync';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -20,17 +21,18 @@ export default function Notification() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const channelRef = useRef(null);
+  const [astroId, setAstroId] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (!astroId) return;
+      const id = await AsyncStorage.getItem('astroId');
+      if (!id) return;
+      setAstroId(id);
 
       const { data: notificationsData, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('astrologer_id', astroId)
+        .eq('astrologer_id', id)
         .order('created_at', { ascending: false });
 
       if (error) console.log('Supabase error:', error.message);
@@ -45,25 +47,12 @@ export default function Notification() {
 
   useEffect(() => {
     fetchData();
-    return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-    };
   }, [fetchData]);
 
-  useEffect(() => {
-    const setupChannel = async () => {
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (!astroId) return;
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      channelRef.current = supabase
-        .channel(`vendor_notifications_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `astrologer_id=eq.${astroId}` }, () => {
-          fetchData();
-        })
-        .subscribe();
-    };
-    setupChannel();
-  }, [fetchData]);
+  // Live refresh via the backend's existing socket event (see
+  // utils/useNotificationBadgeSync.js) instead of this screen's own direct
+  // Supabase Realtime subscription.
+  useNotificationBadgeSync(astroId, fetchData);
 
   const onRefresh = () => {
     setRefreshing(true);
