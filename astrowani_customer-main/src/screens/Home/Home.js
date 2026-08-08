@@ -41,9 +41,11 @@ import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
+import { getWalletBalance } from '../../utils/wallet';
 import PlacementBanner from '../../components/PlacementBanner';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
+import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -224,19 +226,17 @@ const Home = ({navigation}) => {
       const minRequired = pricePerMin * 5;
       const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
       if (!freeEligible) {
-        const { data: customer, error: walletErr } = await supabase
-          .from('customers')
-          .select('wallet_balance')
-          .eq('id', userEntireData.id)
-          .single();
-        if (walletErr) {
+        let balance;
+        try {
+          balance = await getWalletBalance();
+        } catch (walletErr) {
           Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
           return null;
         }
-        if (customer.wallet_balance < minRequired) {
+        if (balance < minRequired) {
           Alert.alert(
             t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
           );
           return null;
         }
@@ -264,25 +264,16 @@ const Home = ({navigation}) => {
       const roomId = response.data.data?.roomId || response.data.roomId;
       const backendSessionId = response.data.data?.sessionId || response.data.sessionId;
 
-      const { data: requestData, error: requestError } = await supabase
-        .from('call_requests')
-        .insert([{
-          customer_id: userEntireData.id,
-          astrologer_id: item.userId,
-          customer_name: userEntireData.name || 'Customer',
-          call_type: 'audio',
-          status: 'pending',
-          room_id: roomId,
-          room_token: vendorToken,
-        }])
-        .select()
-        .single();
-
-      if (requestError) {
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. /api/call/initiate above already inserted
+      // it and returns its id.
+      const requestId = response.data.data?.requestId || response.data.requestId;
+      if (!requestId) {
         setIsWaiting(false);
         Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return null;
       }
+      const requestData = {id: requestId};
 
       // Remember the in-flight request so cancel/back can notify the vendor
       activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
@@ -377,19 +368,17 @@ const Home = ({navigation}) => {
       const minRequired = pricePerMin * 5;
       const videoFreeEligible = await isEligibleForFreeConsultation(userEntireData.id);
       if (!videoFreeEligible) {
-        const { data: customer, error: walletErr } = await supabase
-          .from('customers')
-          .select('wallet_balance')
-          .eq('id', userEntireData.id)
-          .single();
-        if (walletErr) {
+        let balance;
+        try {
+          balance = await getWalletBalance();
+        } catch (walletErr) {
           Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
           return null;
         }
-        if (customer.wallet_balance < minRequired) {
+        if (balance < minRequired) {
           Alert.alert(
             t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
           );
           return null;
         }
@@ -417,25 +406,16 @@ const Home = ({navigation}) => {
       const roomId = response.data.data?.roomId || response.data.roomId;
       const backendSessionId = response.data.data?.sessionId || response.data.sessionId;
 
-      const { data: requestData, error: requestError } = await supabase
-        .from('call_requests')
-        .insert([{
-          customer_id: userEntireData.id,
-          astrologer_id: item.userId,
-          customer_name: userEntireData.name || 'Customer',
-          call_type: 'video',
-          status: 'pending',
-          room_id: roomId,
-          room_token: vendorToken,
-        }])
-        .select()
-        .single();
-
-      if (requestError) {
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. /api/call/initiate above already inserted
+      // it and returns its id.
+      const requestId = response.data.data?.requestId || response.data.requestId;
+      if (!requestId) {
         setIsWaiting(false);
         Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return null;
       }
+      const requestData = {id: requestId};
 
       // Remember the in-flight request so cancel/back can notify the vendor
       activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
@@ -679,22 +659,10 @@ const Home = ({navigation}) => {
   // Unique channel name per mount: a fixed name makes supabase.channel() return an
   // already-subscribed channel, and chaining .on() after subscribe() throws
   // ("cannot add postgres_changes callbacks ... after subscribe()").
-  const astroChannelName = React.useRef(
-    `home-astro-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-  ).current;
-  useEffect(() => {
-    const channel = supabase
-      .channel(astroChannelName)
-      .on(
-        'postgres_changes',
-        {event: '*', schema: 'public', table: 'astrologers'},
-        () => fetchAstrologer(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  // Was a per-screen Supabase Realtime subscription to the whole astrologers
+  // table. Now a debounced socket signal fanned out by the backend — see
+  // hooks/useAstrologerListSync.js for why that matters at scale.
+  useAstrologerListSync(fetchAstrologer);
 
   // Live sync — re-fetch the blog carousel when the admin publishes/edits a blog.
   // Unique channel name per mount (same rule as the astrologer subscription above).

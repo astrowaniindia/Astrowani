@@ -511,6 +511,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
+import { getWalletBalance } from '../../utils/wallet';
 import axios from 'axios';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
@@ -524,6 +525,7 @@ import PlacementBanner from '../../components/PlacementBanner';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { captureEvent } from '../../utils/Analytics';
+import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -636,20 +638,17 @@ const CallsList = ({navigation}) => {
 
       const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
       if (!freeEligible) {
-        const {data: customer, error: walletErr} = await supabase
-          .from('customers')
-          .select('wallet_balance')
-          .eq('id', userEntireData.id)
-          .single();
-
-        if (walletErr) {
+        let balance;
+        try {
+          balance = await getWalletBalance();
+        } catch (walletErr) {
           Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
           return;
         }
-        if (customer.wallet_balance < minRequired) {
+        if (balance < minRequired) {
           Alert.alert(
             t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
           );
           return;
         }
@@ -682,25 +681,17 @@ const CallsList = ({navigation}) => {
       const backendSessionId =
         response.data.data?.sessionId || response.data.sessionId;
 
-      const {data: requestData, error: reqErr} = await supabase
-        .from('call_requests')
-        .insert([{
-          customer_id: userEntireData.id,
-          astrologer_id: item.userId,
-          customer_name: userEntireData.name || 'Customer',
-          call_type: 'audio',
-          status: 'pending',
-          room_id: roomId,
-          room_token: vendorToken,
-        }])
-        .select()
-        .single();
-
-      if (reqErr) {
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. /api/call/initiate above already inserted
+      // it and returns its id.
+      const requestId =
+        response.data.data?.requestId || response.data.requestId;
+      if (!requestId) {
         setIsWaiting(false);
         Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
+      const requestData = {id: requestId};
 
       // Track the pending request so cancel/timeout can notify the vendor to dismiss its popup
       activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
@@ -810,22 +801,9 @@ const CallsList = ({navigation}) => {
     }, [fetchCalls]),
   );
 
-  useEffect(() => {
-    // Unique name per run — a fixed name makes supabase.channel() return an already-
-    // subscribed channel and .on()-after-subscribe() throws.
-    const channel = supabase
-      .channel(`talk-astro-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
-      .on(
-        'postgres_changes',
-        {event: '*', schema: 'public', table: 'astrologers'},
-        () => fetchCalls(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchCalls]);
-
+  // Was a per-screen Supabase Realtime subscription to the whole astrologers
+  // table; now a debounced socket signal fanned out once by the backend.
+  useAstrologerListSync(fetchCalls);
 
   const renderItem = ({item}) => (
     <TouchableOpacity style={styles.card} activeOpacity={0.9}>

@@ -1,0 +1,10 @@
+--- a/node_modules/@react-navigation/native-stack/src/views/NativeStackView.native.tsx
++++ b/node_modules/@react-navigation/native-stack/src/views/NativeStackView.native.tsx
+@@ -303,7 +303,6 @@
+       stackAnimation={animation}
+       screenOrientation={orientation}
+       sheetAllowedDetents={sheetAllowedDetents}
+-      sheetLargestUndimmedDetent={sheetLargestUndimmedDetent}
+       sheetGrabberVisible={sheetGrabberVisible}
+       sheetCornerRadius={sheetCornerRadius}
+       sheetExpandsWhenScrolledToEdge={sheetExpandsWhenScrolledToEdge}

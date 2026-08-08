@@ -25,17 +25,16 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
-
-	<key>NSCameraUsageDescription</key>
-  <string>We need to use the camera</string>
-  <key>NSMicrophoneUsageDescription</key>
-  <string>We need to use the microphone</string>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>We need to use the camera</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need to use the microphone</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string/>
 	<key>UILaunchStoryboardName</key>

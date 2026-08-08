@@ -13,14 +13,9 @@ import {
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
-import {captureEvent} from '../../utils/Analytics';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { supabase } from '../../api/SupabaseClient';
 import StarRating from '../../components/StarRating';
-import { SOCKET_URL } from '../../config/api';
 import { LanguageContext } from '../../context/LanguageContext';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
@@ -41,139 +36,6 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
       return nameMatch || specMatch;
     });
   }, [data, searchQuery]);
-
-  const getRoomTokenWebCall = async (item) => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const userDataStr = await AsyncStorage.getItem('userData');
-      if (!userDataStr) {
-        Alert.alert(t('common.error'), t('call.pleaseLogin'));
-        return null;
-      }
-      const userEntireData = JSON.parse(userDataStr);
-
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userEntireData.id)
-        .single();
-
-      if (customerError) {
-        console.error('Wallet Error:', customerError);
-        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-        return null;
-      }
-
-      const pricePerMin = item.videoPrice || item.chargePerMinute || 40;
-      const minRequired = pricePerMin * 5; // Require at least 5 mins balance
-
-      if (customer.wallet_balance < minRequired) {
-        Alert.alert(t('alerts.insufficientBalance'), `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`);
-        return null;
-      }
-      
-      setIsWaiting(true);
-      setWaitingAstroName(item.name);
-      
-      try {
-        // 1. Generate the call room FIRST
-        const callResponse = await axios.post(
-          `${SOCKET_URL}/api/call/initiate`,
-          {
-            receiverId: item.userId,
-            callType: "voice",
-            callerRole: "customer",
-            name: item.name
-          },
-          { headers: {Authorization: `Bearer ${token}`} }
-        );
-        
-        if (callResponse.status !== 200) {
-          setIsWaiting(false);
-          Alert.alert(t('common.error'), t('alerts.failedGenerateRoom'));
-          return null;
-        }
-        captureEvent('call_initiated', {call_type: 'voice', astrologer_id: item.userId});
-
-        const roomTokenData = callResponse.data.data?.token?.token || callResponse.data.token?.token || callResponse.data.token;
-        const roomId = callResponse.data.data?.roomId || callResponse.data.roomId;
-
-        // 2. Create the call request with the token
-        const { data: requestData, error: requestError } = await supabase
-          .from('call_requests')
-          .insert([{
-            customer_id: userEntireData.id,
-            astrologer_id: item.userId,
-            customer_name: userEntireData.name || 'Customer',
-            call_type: 'video', // or 'audio' based on buttonType
-            status: 'pending',
-            room_id: roomId,
-            room_token: roomTokenData
-          }])
-          .select()
-          .single();
-          
-        if (requestError) {
-          setIsWaiting(false);
-          Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
-          return null;
-        }
-        
-        // 3. Subscribe to realtime updates for this specific request
-        const channel = supabase.channel(`call_request_${requestData.id}`)
-          .on(
-            'postgres_changes',
-            { event: 'UPDATE', schema: 'public', table: 'call_requests', filter: `id=eq.${requestData.id}` },
-            async (payload) => {
-              if (payload.new.status === 'accepted') {
-                supabase.removeChannel(channel);
-                setIsWaiting(false);
-                navigation.navigate("EnxConferenceScreen", { token: roomTokenData });
-              } else if (payload.new.status === 'rejected') {
-                supabase.removeChannel(channel);
-                setIsWaiting(false);
-                Alert.alert(t('alerts.declined'), t('alerts.declinedBusy', { name: item.name }));
-              }
-            }
-          )
-          .subscribe();
-          
-      } catch (err) {
-        setIsWaiting(false);
-        console.log(err?.response || err);
-        Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
-      }
-        
-    } catch (error) {
-      setIsWaiting(false);
-      console.log(error?.response);
-      console.log(error.response?.data, "*************");
-      console.log("here call breaks....123");
-      Alert.alert('Error', 'Failed to initiate call');
-      return null;
-    }
-  };
-  
-  const handleCall = async (item) => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
-
-      navigation.navigate('EnxJoinScreen', {
-        userId: item.userId,
-        name: userEntireData?.name || 'User',
-        astroId: item.userId,
-        callType: 'voice',
-        receiverId: item.userId,
-        callingCondition: 'outgoing',
-        callerRole: 'customer',
-        userToken: token,
-      });
-    } catch (error) {
-      console.log('Error initiating call:', error);
-      Alert.alert('Error', 'Failed to initiate call');
-    }
-  };
 
   // Show an "unavailable" message when a customer taps a service the astrologer
   // has turned off — the astrologer stays visible; only the button is disabled.

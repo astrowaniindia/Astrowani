@@ -5,21 +5,31 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "health": "node --env-file=.env scripts/dbHealthCheck.js",
+    "test:wallet": "node --env-file=.env scripts/testWallet.js",
+    "test:fanout": "node --env-file=.env scripts/testFanout.js",
+    "test:hardening": "node --env-file=.env scripts/testHardening.js",
+    "test:billing": "node --env-file=.env scripts/verifyBillingRpc.js",
+    "test": "npm run test:wallet && npm run test:billing && npm run test:fanout && npm run test:hardening"
   },
   "dependencies": {
     "@sentry/node": "^10.69.0",
     "@supabase/supabase-js": "^2.108.2",
     "axios": "^1.6.0",
     "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.6.2",
     "firebase-admin": "^14.1.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "socket.io-client": "^4.8.3"
   }
 }

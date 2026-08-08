@@ -10,8 +10,10 @@ const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
+const wallet = require('./wallet');
+const { authLimiter } = require('./httpHardening');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -48,7 +50,7 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
 
 module.exports = function registerAdminRoutes(app) {
   // ── Login ────────────────────────────────────────────────────────────────
-  app.post('/api/admin/login', h(async (req, res) => {
+  app.post('/api/admin/login', authLimiter, h(async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Email and password required' });
@@ -351,19 +353,20 @@ module.exports = function registerAdminRoutes(app) {
     if (!amount || amount === 0) {
       return res.status(400).json({ success: false, message: 'Invalid amount' });
     }
-    const { data: cust, error: cErr } = await db
-      .from('customers').select('wallet_balance').eq('id', req.params.id).single();
-    if (cErr) throw cErr;
-    const newBalance = (Number(cust.wallet_balance) || 0) + amount;
-    const { error: uErr } = await db
-      .from('customers').update({ wallet_balance: newBalance }).eq('id', req.params.id);
-    if (uErr) throw uErr;
-    await db.from('wallet_transactions').insert([{
-      user_id: req.params.id,
-      type: amount > 0 ? 'credit' : 'debit',
-      amount: Math.abs(amount),
-      description: req.body?.description || 'Admin wallet adjustment',
-    }]);
+    // allowNegative: an admin correcting a bad balance may legitimately need to
+    // take it below zero; every other path in the system must not.
+    let newBalance;
+    try {
+      newBalance = await wallet.adjustCustomerWallet(req.params.id, amount, {
+        description: req.body?.description || 'Admin wallet adjustment',
+        allowNegative: true,
+      });
+    } catch (err) {
+      if (/NO_SUCH_CUSTOMER/.test(err.message || '')) {
+        return res.status(404).json({ success: false, message: 'Customer not found' });
+      }
+      throw err;
+    }
     return res.json({ success: true, newBalance });
   }));
 
@@ -411,24 +414,16 @@ module.exports = function registerAdminRoutes(app) {
     }
 
     // Rejecting refunds the amount that was put on hold when the vendor requested it.
+    // countEarnings:false — this is returning held money, not new income, and the
+    // original hold did not decrement the earnings counters either.
+    // Keyed on the withdrawal id so a double-tap on Reject cannot refund twice.
     if (status === 'rejected') {
-      const { data: astroRow, error: astroErr } = await db
-        .from('astrologers')
-        .select('wallet_balance')
-        .eq('id', withdrawal.astrologer_id)
-        .single();
-      if (astroErr) throw astroErr;
-      await db
-        .from('astrologers')
-        .update({ wallet_balance: (astroRow?.wallet_balance ?? 0) + Number(withdrawal.amount) })
-        .eq('id', withdrawal.astrologer_id);
-      await db.from('vendor_wallet_transactions').insert([{
-        vendor_id: withdrawal.astrologer_id,
-        type: 'credit',
-        amount: withdrawal.amount,
+      await wallet.adjustVendorWallet(withdrawal.astrologer_id, Number(withdrawal.amount), {
         description: 'Withdrawal request rejected — refunded',
-        request_id: withdrawal.id,
-      }]);
+        requestId: withdrawal.id,
+        idempotencyKey: `withdrawal-refund:${withdrawal.id}`,
+        countEarnings: false,
+      });
     }
 
     const { data, error } = await db

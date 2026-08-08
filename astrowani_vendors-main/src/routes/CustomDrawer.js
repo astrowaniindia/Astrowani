@@ -20,6 +20,7 @@ import {useFocusEffect} from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {resetAnalyticsIdentity} from '../utils/Analytics';
 import { supabase } from '../api/SupabaseClient';
+import { fetchAstrologerRow } from '../utils/vendorProfile';
 function CustomDrawer(props) {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
@@ -52,11 +53,9 @@ function CustomDrawer(props) {
       const astroId = await AsyncStorage.getItem('astroId');
       if (!astroId) return;
 
-      const { data: astrologerData, error } = await supabase
-        .from('astrologers')
-        .select('*')
-        .eq('id', astroId)
-        .single();
+      // Via the backend, not a direct `astrologers` read — see
+      // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2, sql/hardening_02_access_control.sql.
+      const astrologerData = await fetchAstrologerRow();
 
       if (astrologerData) {
         setData({

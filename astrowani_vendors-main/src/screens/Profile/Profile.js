@@ -17,7 +17,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
-import { supabase } from '../../api/SupabaseClient';
+import { fetchAstrologerRow } from '../../utils/vendorProfile';
 
 export default function Profile({ navigation }) {
   const [data, setData] = useState(null);
@@ -33,13 +33,10 @@ export default function Profile({ navigation }) {
         return;
       }
 
-      const { data: astroData, error } = await supabase
-        .from('astrologers')
-        .select('*')
-        .eq('id', astroId)
-        .single();
-
-      if (error) throw error;
+      // Via the backend, not a direct `astrologers` read — see
+      // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2, sql/hardening_02_access_control.sql.
+      const astroData = await fetchAstrologerRow();
+      if (!astroData) throw new Error('Failed to fetch profile');
 
       if (astroData) {
         setData({

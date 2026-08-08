@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { supabase } from '../../api/SupabaseClient';
+import { resolveCustomerNames } from '../../utils/customerNames';
 import { COLORS } from '../../Theme/Colors';
 
 const ChatHistory = ({ navigation }) => {
@@ -32,13 +33,10 @@ const ChatHistory = ({ navigation }) => {
       }
       
       if (records) {
-        const { data: customers } = await supabase.from('customers').select('id, first_name, last_name, profile_pic');
-        const custMap = {};
-        if (customers) customers.forEach(c => custMap[c.id] = c);
+        const custMap = await resolveCustomerNames(records.map(r => r.caller_id));
 
         const formatted = records.map(item => {
           const cust = custMap[item.caller_id];
-          const name = cust ? `${cust.first_name || ''} ${cust.last_name || ''}`.trim() : 'Customer';
           const end = new Date(item.ended_at || item.created_at);
           const start = new Date(item.created_at);
           const durationMins = Math.max(1, Math.ceil((end - start) / 60000));
@@ -47,8 +45,8 @@ const ChatHistory = ({ navigation }) => {
           return {
             id: item.id?.toString(),
             session_id: item.request_id || item.id || 'N/A',
-            client_name: name || 'Customer',
-            client_avatar: cust?.profile_pic || 'https://via.placeholder.com/100',
+            client_name: cust?.name || 'Customer',
+            client_avatar: cust?.profileImage || 'https://via.placeholder.com/100',
             last_message_time: item.created_at,
             rate: item.per_minute_charge || 0,
             duration: durationMins,

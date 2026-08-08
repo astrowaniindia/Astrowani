@@ -83,17 +83,20 @@ const useChatRequest = (navigation) => {
         console.warn('Availability check skipped:', e.message);
       }
 
-      // Get the real Supabase customer UUID for billing
+      // Get the real Supabase customer UUID for billing — via the backend, not a
+      // direct read of `customers` (that table carries every user's PII and Postgres
+      // GRANT is not row-scoped; see DATABASE_HARDENING_HANDOFF.md §3.1/§3.2).
       let supabaseCustomerId = null;
       try {
-        const mobile = user.phoneNumber || user.mobile;
-        const email = user.email;
-        let q = supabase.from('customers').select('id');
-        if (mobile) q = q.eq('mobile', mobile);
-        else if (email) q = q.eq('email', email);
-        const { data: custRows } = await q.limit(1);
-        if (custRows && custRows.length > 0) {
-          supabaseCustomerId = custRows[0].id;
+        const token = await AsyncStorage.getItem('token');
+        if (token) {
+          const res = await fetch(`${Instance.defaults.baseURL}/api/users/profile`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            supabaseCustomerId = json?.data?.id || null;
+          }
         }
       } catch (e) {
         console.warn('Could not fetch supabase customer id:', e.message);
@@ -126,27 +129,32 @@ const useChatRequest = (navigation) => {
         console.warn('Wallet check skipped:', e.message);
       }
 
-      // Insert chat request
-      const { data, error } = await supabase
-        .from('chat_requests')
-        .insert([
-          {
-            caller_id: supabaseCustomerId || callerId,
-            receiver_id: receiverId,
-            status: 'pending',
-            request_type: 'chat',
-            caller_name: user.name || user.firstName || 'Customer',
-          },
-        ])
-        .select();
-
-      if (error) {
-        console.log('Supabase error:', JSON.stringify(error));
-        throw error;
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. The endpoint re-resolves the caller's
+      // real customer UUID from the JWT itself rather than trusting supabaseCustomerId.
+      const token = await AsyncStorage.getItem('token');
+      const initRes = await fetch(`${Instance.defaults.baseURL}/api/chat/initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ astrologerId: receiverId }),
+      });
+      if (initRes.status === 409) {
+        showStatusPopup({
+          variant: 'busy',
+          title: t('status.astrologerBusyTitle'),
+          message: t('alerts.astrologerBusy'),
+        });
+        return;
       }
-
-      const requestId = data?.[0]?.id;
-      if (!requestId) throw new Error('No request ID returned');
+      const initJson = await initRes.json();
+      if (!initRes.ok || !initJson?.requestId) {
+        throw new Error(initJson?.message || 'No request ID returned');
+      }
+      const requestId = initJson.requestId;
+      if (initJson.callerId) supabaseCustomerId = initJson.callerId;
       captureEvent('chat_initiated', { astrologer_id: receiverId });
 
       // Push fallback for a backgrounded/killed vendor app — this insert alone only reaches

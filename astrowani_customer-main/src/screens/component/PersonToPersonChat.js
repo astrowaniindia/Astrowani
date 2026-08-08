@@ -210,21 +210,21 @@ const ChatScreen = ({route}) => {
     }
 
     try {
-      const payload = {
-        room_id: roomId,
-        session_id: session._id,
-        sender_id: currentUserId,
-        receiver_id: person.userId,
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. Realtime (unchanged) still delivers it to
+      // both sides once inserted.
+      const msgToken = await AsyncStorage.getItem('token');
+      const res = await Instance.post('/api/chat/message', {
+        roomId: roomId,
+        sessionId: session._id,
+        receiverId: person.userId,
         message: newMessage.trim(),
-      };
+      }, {
+        headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
+      });
 
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .insert([payload])
-        .select()
-        .single();
-
-      if (error) throw error;
+      if (!res.data?.success) throw new Error(res.data?.message || 'Failed to send message');
+      const data = res.data.data;
 
       // Local optimistic UI isn't strictly necessary since Supabase Realtime will bounce it back instantly,
       // but if we do it, we use the returned DB id to prevent duplicates.

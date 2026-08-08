@@ -111,7 +111,7 @@
 - **Invisible Dropdown Items:** In `UserProfileScreen.js` and `ChatIntakeForm.js`, the Dropdown components did not explicitly style the popover option items. On target Android devices/configurations, options were rendering as white text on a white background, making them invisible.
 
 ## 3. Change Summary
-- **Signed JWT Bypass Token:** Generated a valid JWT token signed with the backend's secret key (`super_secret_astrowani_key_123`) and swapped `'bypass_token'` in `Login.js` with this valid JWT token.
+- **Signed JWT Bypass Token:** Generated a valid JWT token signed with the backend's secret key (value redacted — see JWT_SECRET env var) and swapped `'bypass_token'` in `Login.js` with this valid JWT token.
 - **Dropdown Menu Styling:** Added `containerStyle`, `itemTextStyle` and `activeColor` styles to the Dropdown components in `UserProfileScreen.js` and `ChatIntakeForm.js` to enforce a white background and black text on dropdown selection lists.
 
 ## 4. Validation Results

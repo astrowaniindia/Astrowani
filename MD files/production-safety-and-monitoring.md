@@ -5,23 +5,17 @@ step for a human. See also: [bug-scan-agent.md](bug-scan-agent.md) (crash/error 
 [recurring-bugs-playbook.md](recurring-bugs-playbook.md) (bug patterns, including the
 JWT_SECRET issue below).
 
-## 🔴 JWT_SECRET — action required (as of this writing, unresolved)
+## ✅ JWT_SECRET — resolved 2026-08-08
 
-Confirmed live on `backend.astrowani.com`: the backend is running on the **hardcoded default**
-JWT secret (`astrowani-backend/index.js`), not a real one from the environment. Anyone reading
-this repo can forge a valid login token for any customer or astrologer UUID — no password, no
-OTP. See [recurring-bugs-playbook.md #7](recurring-bugs-playbook.md#7-hardcoded-default-secret-used-as-a-fallback-processenvx--hardcoded-value)
+Was confirmed live on `backend.astrowani.com` running on the **hardcoded default** JWT secret
+(`astrowani-backend/index.js`), letting anyone reading this repo forge a valid login token for
+any customer or astrologer UUID. See [recurring-bugs-playbook.md #7](recurring-bugs-playbook.md#7-hardcoded-default-secret-used-as-a-fallback-processenvx--hardcoded-value)
 for how this was found and the general pattern.
 
-**Fix** (needs VPS access — not something this agent/session can do):
-1. Set a strong random `JWT_SECRET` in the backend's env vars on the VPS (PM2 ecosystem file
-   / `.env` / systemd unit, wherever `SUPABASE_SERVICE_ROLE_KEY` etc. already live).
-2. `pm2 restart astrowani-backend --update-env`.
-3. Expected side effect: every currently-logged-in customer/astrologer gets logged out and
-   has to log in again — this is desired (it also invalidates any already-forged tokens).
-
-**Until this is done, treat it as the top-priority production issue** — ahead of anything
-else in this file.
+**Fixed**: a strong random secret was generated and set directly on the VPS via SSH, the
+backend restarted, and the boot-time guard (refuses to start on the old hardcoded value or
+anything under 32 chars) confirmed active. Every previously-logged-in customer/astrologer was
+signed out as an expected side effect (also invalidates any already-forged tokens).
 
 ## Liveness / uptime monitoring
 
@@ -80,7 +74,4 @@ do them from here (the Sentry token in use is deliberately read-only and correct
   for a daily digest email): Sentry dashboard → Alerts → Create Alert Rule → pick a severity
   threshold → add a Slack/notification action. Needs an org member with write access to
   Sentry, not just the bug-scan agent's read-only token.
-- **Supabase backups**: confirm Point-in-Time-Recovery or scheduled daily backups are enabled
-  in the Supabase dashboard (Project Settings → Database → Backups). Not verified as of this
-  writing — if it's off, a bad migration or bug could permanently corrupt wallet data with no
-  way back.
+- **Supabase backups**: still open — see [database-hardening-deferred-decisions.md](database-hardening-deferred-decisions.md#todo-2--supabase-backups--point-in-time-recovery).

@@ -5,6 +5,7 @@ const { sendPush } = require('./push');
 const { checkAstrologerBusy } = require('./busyStatus');
 const { notifyWaitlistIfFree } = require('./waitlist');
 const { logError } = require('./errorLogger');
+const wallet = require('./wallet');
 
 // Initialize Supabase Client with Service Role Key for administrative access
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -450,20 +451,19 @@ class SessionManager {
       if ((count || 0) !== 1) return; // not their first completed session
 
       const { data: referrer } = await supabase
-        .from('customers').select('wallet_balance, fcm_token').eq('id', referral.referrer_customer_id).single();
+        .from('customers').select('fcm_token').eq('id', referral.referrer_customer_id).single();
       if (!referrer) return;
 
-      await supabase
-        .from('customers')
-        .update({ wallet_balance: (referrer.wallet_balance || 0) + Number(referral.reward_amount) })
-        .eq('id', referral.referrer_customer_id);
-
-      await supabase.from('wallet_transactions').insert([{
-        user_id: referral.referrer_customer_id,
-        type: 'credit',
-        amount: referral.reward_amount,
-        description: 'Referral reward — your friend completed their first session',
-      }]);
+      // Keyed on the referral row, so this sweep running twice — or two sessions
+      // ending close together — cannot pay the same referral bonus twice.
+      await wallet.adjustCustomerWallet(
+        referral.referrer_customer_id,
+        Number(referral.reward_amount),
+        {
+          description: 'Referral reward — your friend completed their first session',
+          idempotencyKey: `referral:${referral.id}`,
+        },
+      );
 
       await supabase
         .from('referrals')

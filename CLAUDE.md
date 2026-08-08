@@ -26,7 +26,9 @@
 - **Session billing**: `src/sessionManager.js` — polls `chat_sessions` every 30 s, calls Supabase RPC `process_session_billing`
 - **Earnings resets**: `src/sessionManager.js` also runs `checkEarningsResets()` every hour — resets `today_earnings = 0` daily (new calendar day detected), resets `total_earnings = 0` every 30 days. Tracking is in-memory (`lastDailyResetDate`, `lastMonthlyResetMs`); on server start, daily reset always fires once (initialised to `null`), monthly fires if 30+ days have elapsed (initialised to 31 days ago).
 - **Database**: Supabase (PostgreSQL). Uses anon key for most reads, service role key for billing RPC
-- **Auth**: JWT signed with `super_secret_astrowani_key_123` (override via `JWT_SECRET` env var)
+- **Auth**: JWT signed with the `JWT_SECRET` env var. There is **no fallback** — the server
+  refuses to boot if it is unset, under 32 chars, or equal to the old hardcoded default.
+  Never write the actual value into this file, source, or a deploy script.
 - **Video/Voice**: EnableX (enx-rtc) — rooms and tokens created server-side via EnableX REST API
 - **Key env vars**: `ENABLEX_APP_ID`, `ENABLEX_APP_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`
 
@@ -1143,3 +1145,72 @@ real numbers automatically, and the Session Replay toggle starts working.
   expected 503s. Both RN apps lint clean and the admin app's production build (`npm run
   build`) succeeds. Real on-device screen-view capture was not verified — blocked on the
   outstanding PostHog account creation above, not on any code issue found.
+
+---
+
+## Data-layer audit 2026-08-07 — READ THIS BEFORE TOUCHING THE DATABASE
+
+### U. Current state of the database (measured against production, not inferred)
+
+Full report: https://claude.ai/code/artifact/21051385-473d-43db-b353-121aae67c3dc
+Deep notes: `memory/database_audit_20260807.md`. Overall data-layer rating **3/10**.
+
+**The one structural fact to carry forward:** every table created via a schema file in
+`astrowani-backend/sql/` (wallet_recharges, reviews, favorites, waitlist, …) is properly
+built — foreign keys, CHECK constraints, UNIQUE idempotency guards, RLS. Every table created
+ad-hoc in the Supabase dashboard at the start of the project — `customers`, `astrologers`,
+`chat_sessions`, `chat_requests`, `call_requests`, `chat_messages`, `wallet_transactions`,
+`vendor_wallet_transactions` — has **none** of it. Those eight carry all the money and all
+the session state. When adding to them, bring them up to the newer standard rather than
+matching what is already there.
+
+**Open issues (NOT yet fixed — do not assume any of these are handled):**
+- **RLS is OFF on the core tables.** The publishable key shipped in both APKs can INSERT and
+  UPDATE `customers`, `astrologers`, `chat_sessions`, `call_requests` — including
+  `wallet_balance` and `*_charge_per_minute` — and can READ astrologer bank details, customer
+  birth data, and every `chat_messages` transcript. Verified by probe.
+- **RLS cannot simply be enabled.** The apps authenticate with our own Express JWT, not
+  Supabase Auth, so `auth.uid()` inside a policy is always NULL and no ownership policy is
+  expressible. Turning RLS on today breaks every direct-from-app query without securing
+  anything. The working path is column-level `GRANT`/`REVOKE` on the `anon` role — see
+  `sql/hardening_02_access_control.sql`, which is sequenced and commented.
+- **Every wallet mutation is a non-atomic read-modify-write** (`SELECT wallet_balance` → add in
+  Node → `UPDATE`) with the ledger insert as a *separate* statement. ₹5,865 of drift across 3
+  accounts already exists. Any new money code must instead do the balance change and the ledger
+  write in one transaction / one Postgres function — copy the `wallet_recharges` pattern.
+- **Zero indexes** beyond primary keys on all 8 hot tables. `sql/hardening_01_core_tables.sql`
+  has the 16 that the current query patterns need. Add the index with the query from now on.
+- **Realtime amplifier**: `Home.js`, `Chat.js`, `Video.js`, `Call.js` each subscribe to
+  `{event:'*', table:'astrologers'}` **unfiltered** and refetch the whole list on any change.
+  This scales as users × astrologer-activity and is the most likely cause of a sudden outage.
+  Never add another unfiltered table-wide subscription.
+- **Zombie-session trap**: `is_active = true` with `next_billing_at = NULL` is invisible to
+  `sessionManager.checkActiveSessions` (which filters `next_billing_at <= now`) but still counts
+  as busy in `busyStatus.js` — so the astrologer is locked out of all work, silently and
+  indefinitely. Two such rows had been live since 2026-06-18. Any code that sets `is_active`
+  must set `next_billing_at` in the same write.
+- `process_session_billing` exists **only in the Supabase dashboard** — it is not in the repo,
+  has never been reviewed, and cannot be restored. Export and commit it before changing billing.
+- No rate limiting, no `helmet`, no compression; `cors()` is fully open.
+
+### V. Things that are now enforced — do not undo them
+
+- **`JWT_SECRET` has no fallback.** The old hardcoded default (`super_secret…`) was in six
+  source files, in this document, and in `vps-deployment/scripts/deploy.sh`, and production was
+  actually running on it. `index.js` now **exits at boot** if the secret is unset, under 32
+  characters, or equal to that default. Do not reintroduce a fallback "to make local dev
+  easier" — generate one and put it in `.env`.
+- **The backend's main Supabase client uses the service-role key**, not the anon key
+  (`index.js`). It runs on a trusted VPS; using the anon key there was what made it impossible
+  to revoke anon privileges without breaking our own API. `supabaseService` is now an alias of
+  the same client.
+- **`scripts/dbHealthCheck.js`** — read-only, exits non-zero on any critical finding, so it can
+  be scheduled and alerted on. Run it after any schema or billing change:
+  `node --env-file=.env scripts/dbHealthCheck.js`
+
+### SQL to run (written, NOT yet applied)
+1. `sql/hardening_01_core_tables.sql` — audit queries, cleanup, uuid conversion + 8 missing FKs,
+   CHECK constraints, one-active-session-per-astrologer unique index, 16 indexes.
+2. `sql/hardening_02_access_control.sql` — sequenced lockdown of the `anon` role.
+Both are sectioned and idempotent. Read the notes before each section; several sections require
+a coordinated app change first and say so explicitly.

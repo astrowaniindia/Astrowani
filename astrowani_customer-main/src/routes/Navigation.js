@@ -1,15 +1,13 @@
 import React, {useState, useEffect} from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {supabase} from '../api/SupabaseClient';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthog, applySessionReplaySetting } from '../utils/Analytics';
 import { navigationRef } from '../utils/NavigationService';
+import { getWalletBalance } from '../utils/wallet';
 import Splash from '../screens/Splash/Splash';
 import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
@@ -100,7 +98,6 @@ import Register from '../screens/Register/Register';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
-const TopTab = createMaterialTopTabNavigator();
 
 export default function Navigation({ initialRoute }) {
   useEffect(() => {
@@ -699,37 +696,29 @@ function BottomTabNavigator() {
   const [walletBalance, setWalletBalance] = useState(null);
 
   useEffect(() => {
-    let channel = null;
-    const setup = async () => {
-      const userDataStr = await AsyncStorage.getItem('userData');
-      const user = userDataStr ? JSON.parse(userDataStr) : null;
-      if (!user?.id) return;
+    // Polls the backend instead of a direct Supabase Realtime subscription on
+    // `customers` — that table carries every user's PII and Postgres GRANT is not
+    // row-scoped, so there is no anon column grant that exposes "your own" balance
+    // without exposing everyone's. See DATABASE_HARDENING_HANDOFF.md §3.1/§3.2.
+    // 20s means this display can lag a live per-minute billing tick briefly,
+    // which is an acceptable trade for closing that leak.
+    let cancelled = false;
+    let timer = null;
 
-      const {data} = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', user.id)
-        .single();
-      if (data) setWalletBalance(data.wallet_balance);
-
-      // Unique channel name per setup run — a fixed name makes supabase.channel() return
-      // an already-subscribed channel and .on()-after-subscribe() throws.
-      channel = supabase
-        .channel(`wallet_nav_${user.id}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-        .on(
-          'postgres_changes',
-          {event: 'UPDATE', schema: 'public', table: 'customers', filter: `id=eq.${user.id}`},
-          payload => {
-            if (payload.new?.wallet_balance !== undefined) {
-              setWalletBalance(payload.new.wallet_balance);
-            }
-          },
-        )
-        .subscribe();
+    const poll = async () => {
+      try {
+        const balance = await getWalletBalance();
+        if (!cancelled) setWalletBalance(balance);
+      } catch (_) {
+        // Silent — the tab label just keeps showing the last known balance.
+      }
     };
-    setup();
+
+    poll();
+    timer = setInterval(poll, 20000);
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      cancelled = true;
+      if (timer) clearInterval(timer);
     };
   }, []);
 

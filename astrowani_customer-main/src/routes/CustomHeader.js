@@ -27,42 +27,23 @@ const CustomHeader = ({title, showLanguage}) => {
   const { language, changeLanguage } = React.useContext(LanguageContext);
 
   useEffect(() => {
-    let subscription = null;
+    // No more direct Realtime subscription on `customers` — that table carries every
+    // user's PII and Postgres GRANT is not row-scoped, so there is no anon column
+    // grant that exposes "your own" balance without exposing everyone's. See
+    // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2. Refresh-on-focus (below) plus a 20s
+    // poll while this header is mounted keeps the display fresh enough.
+    let cancelled = false;
+    let timer = null;
+
     const fetchBalance = async () => {
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) return;
-        
-        // 1. Initial fetch via backend API
         const res = await Instance.get('/api/wallet', {
           headers: { Authorization: `Bearer ${token}` }
         });
-        if (res.data?.success) {
+        if (!cancelled && res.data?.success) {
           setWalletBalance(res.data.data.balance || 0);
-        }
-
-        // 2. Setup Real-time listener for live wallet updates.
-        // fetchBalance runs again on every focus — tear down the previous channel and use a
-        // unique name, else supabase.channel() returns the already-subscribed channel and
-        // .on()-after-subscribe() throws ("cannot add postgres_changes ... after subscribe()").
-        const userDataStr = await AsyncStorage.getItem('userData');
-        if (userDataStr) {
-          const userData = JSON.parse(userDataStr);
-          const mobile = userData.phoneNumber || userData.mobile;
-          if (mobile) {
-            if (subscription) {
-              supabase.removeChannel(subscription);
-              subscription = null;
-            }
-            subscription = supabase
-              .channel(`customers_header_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-              .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers', filter: `mobile=eq.${mobile}` }, payload => {
-                if (payload.new && payload.new.wallet_balance !== undefined) {
-                  setWalletBalance(payload.new.wallet_balance);
-                }
-              })
-              .subscribe();
-          }
         }
       } catch (e) {
         console.log('Error fetching wallet balance:', e.message);
@@ -70,14 +51,14 @@ const CustomHeader = ({title, showLanguage}) => {
     };
 
     fetchBalance();
+    timer = setInterval(fetchBalance, 20000);
 
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchBalance();
-    });
+    const unsubscribe = navigation.addListener('focus', fetchBalance);
 
     return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
       unsubscribe();
-      if (subscription) supabase.removeChannel(subscription);
     };
   }, [navigation]);
 

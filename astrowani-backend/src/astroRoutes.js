@@ -11,8 +11,9 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
+const wallet = require('./wallet');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
+const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://backend.astrowani.com';
@@ -405,17 +406,18 @@ module.exports = function registerAstroRoutes(app) {
     }
 
     // Charge only after a successful external call — nothing is charged for a failed report.
+    let newBalance = balance - price;
     try {
-      await db.from('customers').update({ wallet_balance: balance - price }).eq('id', customer.id);
-      await db.from('wallet_transactions').insert([{
-        user_id: customer.id, type: 'debit', amount: price, description: `Astro Report: ${service.name}`,
-      }]);
+      newBalance = await wallet.adjustCustomerWallet(customer.id, -price, {
+        description: `Astro Report: ${service.name}`,
+        idempotencyKey: `astro-report:${customer.id}:${key}:${Date.now()}`,
+      });
 
-      const { data: wallet } = await db.from('admin_wallet').select('id, balance').limit(1).single();
+      const { data: adminWallet } = await db.from('admin_wallet').select('id, balance').limit(1).single();
       await db.from('admin_wallet').update({
-        balance: (Number(wallet?.balance) || 0) + price,
+        balance: (Number(adminWallet?.balance) || 0) + price,
         updated_at: new Date().toISOString(),
-      }).eq('id', wallet.id);
+      }).eq('id', adminWallet.id);
       await db.from('admin_wallet_transactions').insert([{
         type: 'credit', amount: price, description: `Astro Report purchased: ${service.name}`,
         service_key: key, customer_id: customer.id,
@@ -426,7 +428,7 @@ module.exports = function registerAstroRoutes(app) {
       console.error(`POST /api/astro/${key} billing error (report already generated):`, err.message);
     }
 
-    return res.status(200).json({ success: true, data: payload, newBalance: balance - price });
+    return res.status(200).json({ success: true, data: payload, newBalance });
   });
 
   console.log('[astro] routes registered: GET /api/astro-services, POST /api/astro/:key');

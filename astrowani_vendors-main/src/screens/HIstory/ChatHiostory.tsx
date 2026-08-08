@@ -2,6 +2,7 @@ import { StyleSheet, Text, View, FlatList, ActivityIndicator } from 'react-nativ
 import React, { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
+import { resolveCustomerNames } from '../../utils/customerNames';
 
 export default function ChatHistorys() {
   const [chatData, setChatData] = useState([]);
@@ -22,13 +23,10 @@ export default function ChatHistorys() {
           .order('created_at', { ascending: false });
         
         if (records) {
-          const { data: customers } = await supabase.from('customers').select('id, first_name, last_name');
-          const custMap = {};
-          if (customers) customers.forEach(c => custMap[c.id] = c);
+          const custMap = await resolveCustomerNames(records.map((r: any) => r.caller_id));
 
           const formatted = records.map(item => {
-            const cust = custMap[item.caller_id];
-            const name = cust ? `${cust.first_name || ''} ${cust.last_name || ''}`.trim() : 'Customer';
+            const name = custMap[item.caller_id]?.name || 'Customer';
             const start = new Date(item.created_at);
             const end = item.ended_at ? new Date(item.ended_at) : new Date();
             const durationMins = Math.max(1, Math.ceil((end - start) / 60000));

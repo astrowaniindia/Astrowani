@@ -28,7 +28,7 @@ import io from 'socket.io-client';
 import { SOCKET_URL } from '../../config/api';
 import MissedSessionsHome from '../../components/MissedSessionsHome';
 import HomeBanner from '../../components/HomeBanner';
-import { isVendorProfileComplete, ensureVendorProfileComplete } from '../../utils/vendorProfile';
+import { isVendorProfileComplete, ensureVendorProfileComplete, fetchAstrologerRow } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
 import { startRinging, stopRinging } from '../../utils/incomingRingtone';
@@ -414,13 +414,9 @@ const HomeScreen = () => {
 
   // ─── Data fetchers ────────────────────────────────────────────────────────
   const getUserDetails = async () => {
-    const astroId = await AsyncStorage.getItem('astroId');
-    if (!astroId) return;
-    const { data: astroData } = await supabase
-      .from('astrologers')
-      .select('*')
-      .eq('id', astroId)
-      .single();
+    // Via the backend, not a direct `astrologers` read — see
+    // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2, sql/hardening_02_access_control.sql.
+    const astroData = await fetchAstrologerRow();
     if (astroData) {
       setIsLive(astroData.is_available);
       setIsOnline(astroData.is_online !== false);

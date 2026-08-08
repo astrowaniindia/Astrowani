@@ -1,0 +1,25 @@
+--- a/node_modules/react-native-image-crop-picker/android/build.gradle
++++ b/node_modules/react-native-image-crop-picker/android/build.gradle
+@@ -22,5 +22,6 @@
+ dependencies {
+     implementation 'com.facebook.react:react-native:+'
+     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+-    implementation 'com.github.yalantis:ucrop:2.2.6-native'
++    implementation 'com.github.yalantis:ucrop:2.2.11-native'
++    implementation 'androidx.exifinterface:exifinterface:1.3.3'
+ }
+--- a/node_modules/react-native-image-crop-picker/android/src/main/java/com/reactnative/ivpusic/imagepicker/PickerModule.java
++++ b/node_modules/react-native-image-crop-picker/android/src/main/java/com/reactnative/ivpusic/imagepicker/PickerModule.java
+@@ -729,9 +729,9 @@
+             options.setToolbarColor(Color.parseColor(cropperToolbarColor));
+         }
+ 
+-        if (cropperStatusBarColor != null) {
+-            options.setStatusBarColor(Color.parseColor(cropperStatusBarColor));
+-        }
++        // ucrop 2.2.11 removed Options.setStatusBarColor() (edge-to-edge now controls the
++        // status bar); setStatusBarLight is the closest replacement but takes a boolean, not
++        // a color, so there is no direct equivalent — cropperStatusBarColor is now a no-op.
+ 
+         if (cropperToolbarWidgetColor != null) {
+             options.setToolbarWidgetColor(Color.parseColor(cropperToolbarWidgetColor));

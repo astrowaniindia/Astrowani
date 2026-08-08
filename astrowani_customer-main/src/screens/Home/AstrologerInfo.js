@@ -32,6 +32,7 @@ import {showStatusPopup} from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
+import {getWalletBalance} from '../../utils/wallet';
 import {LanguageContext} from '../../context/LanguageContext';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {formatBusyLabel} from '../../utils/busyLabel';
@@ -171,20 +172,17 @@ const AstrologerInfo = ({route, navigation}) => {
 
       const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
       if (!freeEligible) {
-        const {data: customer, error: walletErr} = await supabase
-          .from('customers')
-          .select('wallet_balance')
-          .eq('id', userEntireData.id)
-          .single();
-
-        if (walletErr) {
+        let balance;
+        try {
+          balance = await getWalletBalance();
+        } catch (walletErr) {
           Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
           return;
         }
-        if (customer.wallet_balance < minRequired) {
+        if (balance < minRequired) {
           Alert.alert(
             t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
           );
           return;
         }
@@ -215,25 +213,17 @@ const AstrologerInfo = ({route, navigation}) => {
       const backendSessionId =
         response.data.data?.sessionId || response.data.sessionId;
 
-      const {data: requestData, error: reqErr} = await supabase
-        .from('call_requests')
-        .insert([{
-          customer_id: userEntireData.id,
-          astrologer_id: person.userId,
-          customer_name: userEntireData.name || 'Customer',
-          call_type: 'audio',
-          status: 'pending',
-          room_id: roomId,
-          room_token: vendorToken,
-        }])
-        .select()
-        .single();
-
-      if (reqErr) {
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. /api/call/initiate above already inserted
+      // it and returns its id.
+      const requestId =
+        response.data.data?.requestId || response.data.requestId;
+      if (!requestId) {
         setIsCallWaiting(false);
         Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
+      const requestData = {id: requestId};
 
       // Track pending request so cancel/back/timeout can dismiss the vendor's popup
       activeCallRef.current = { requestId: requestData.id, astrologerId: person.userId, roomId };
@@ -359,20 +349,17 @@ const AstrologerInfo = ({route, navigation}) => {
 
       const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
       if (!freeEligible) {
-        const {data: customer, error: walletErr} = await supabase
-          .from('customers')
-          .select('wallet_balance')
-          .eq('id', userEntireData.id)
-          .single();
-
-        if (walletErr) {
+        let balance;
+        try {
+          balance = await getWalletBalance();
+        } catch (walletErr) {
           Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
           return;
         }
-        if (customer.wallet_balance < minRequired) {
+        if (balance < minRequired) {
           Alert.alert(
             t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
           );
           return;
         }
@@ -403,25 +390,17 @@ const AstrologerInfo = ({route, navigation}) => {
       const backendSessionId =
         response.data.data?.sessionId || response.data.sessionId;
 
-      const {data: requestData, error: reqErr} = await supabase
-        .from('call_requests')
-        .insert([{
-          customer_id: userEntireData.id,
-          astrologer_id: person.userId,
-          customer_name: userEntireData.name || 'Customer',
-          call_type: 'video',
-          status: 'pending',
-          room_id: roomId,
-          room_token: vendorToken,
-        }])
-        .select()
-        .single();
-
-      if (reqErr) {
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. /api/call/initiate above already inserted
+      // it and returns its id.
+      const requestId =
+        response.data.data?.requestId || response.data.requestId;
+      if (!requestId) {
         setIsCallWaiting(false);
         Alert.alert(t('common.error'), t('alerts.failedRequestAstrologer'));
         return;
       }
+      const requestData = {id: requestId};
 
       // Track pending request so cancel/back/timeout can dismiss the vendor's popup
       activeCallRef.current = { requestId: requestData.id, astrologerId: person.userId, roomId };

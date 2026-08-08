@@ -208,16 +208,18 @@ const VendorChatSession = ({ route, navigation }) => {
         });
       }
     
-    // Send to Supabase — Realtime will update the UI
-    await supabase.from('chat_messages').insert([
-      {
-        room_id: requestId,
-        session_id: sessionIdRef.current,
-        sender_id: astroIdRef.current,
-        receiver_id: callerId,
-        message: msg,
-      },
-    ]);
+    // Row is created server-side now, not by the client — see
+    // DATABASE_HARDENING_HANDOFF.md STEP 3. Realtime (unchanged) still delivers it to
+    // both sides once inserted.
+    const msgToken = await AsyncStorage.getItem('token');
+    await Instance.post('/api/chat/message', {
+      roomId: requestId,
+      sessionId: sessionIdRef.current,
+      receiverId: callerId,
+      message: msg,
+    }, {
+      headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
+    }).catch((e) => console.warn('chat message send error:', e?.message));
 
     // Fire-and-forget push notification for when the customer's app is backgrounded/killed.
     Instance.post('/api/push/notify-chat-message', {

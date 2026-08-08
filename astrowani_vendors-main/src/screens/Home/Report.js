@@ -4,7 +4,6 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
-import { supabase } from '../../api/SupabaseClient';
 
 const STATUS_COLORS = {
   pending: '#F5A623',
@@ -27,32 +26,22 @@ export default function Wallet() {
 
   const fetchWallet = async () => {
     try {
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (!astroId) return;
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
 
-      // 1. Fetch balance + whether payout details are on file
-      const { data: astroData, error: astroErr } = await supabase
-        .from('astrologers')
-        .select('wallet_balance, bank_account_holder, bank_account_number, bank_ifsc, upi_id')
-        .eq('id', astroId)
-        .single();
-
-      if (!astroErr && astroData) {
-        setBalance(astroData.wallet_balance ?? 0);
-        const hasBank = astroData.bank_account_holder && astroData.bank_account_number && astroData.bank_ifsc;
-        setHasPayoutDetails(!!(hasBank || astroData.upi_id));
-      }
-
-      // 2. Fetch transactions
-      const { data: txns, error: txnErr } = await supabase
-        .from('vendor_wallet_transactions')
-        .select('*')
-        .eq('vendor_id', astroId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!txnErr && txns) {
-        setTransactions(txns.map(t => ({
+      // Via the backend, not direct `astrologers`/`vendor_wallet_transactions` reads —
+      // neither is in the anon grant (bank details and wallet_balance are excluded from
+      // astrologers' SELECT grant; vendor_wallet_transactions gets no grant at all). See
+      // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2.
+      const walletRes = await Instance.get('/api/vendor/wallet', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (walletRes.data?.success) {
+        const w = walletRes.data.data;
+        setBalance(w.wallet_balance ?? 0);
+        const hasBank = w.bank_account_holder && w.bank_account_number && w.bank_ifsc;
+        setHasPayoutDetails(!!(hasBank || w.upi_id));
+        setTransactions((w.transactions || []).map(t => ({
           id: t.id,
           description: t.description || 'Consultation Earning',
           amount: t.type === 'credit' ? t.amount : -t.amount,
@@ -60,9 +49,8 @@ export default function Wallet() {
         })));
       }
 
-      // 3. Fetch withdrawal request status history
+      // Withdrawal request status history
       try {
-        const token = await AsyncStorage.getItem('token');
         const res = await Instance.get('/vendor/wallet/withdrawals', {
           headers: { Authorization: `Bearer ${token}` },
         });

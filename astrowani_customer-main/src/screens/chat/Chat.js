@@ -1,16 +1,16 @@
 // Chat.js — Customer side (uses shared useChatRequest hook)
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../../Theme/Colors';
 import { verticalScale } from '../../utils/Scaling';
 import Allastrologers from './Allastrologers';
 import Instance from '../../api/ApiCall';
-import { supabase } from '../../api/SupabaseClient';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import PlacementBanner from '../../components/PlacementBanner';
 import { LanguageContext } from '../../context/LanguageContext';
+import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 
 const Chat = ({ navigation }) => {
   const { t } = React.useContext(LanguageContext);
@@ -44,22 +44,10 @@ const Chat = ({ navigation }) => {
     }, [getAllAstrologers]),
   );
 
-  // Live sync — re-fetch when any astrologer row changes (toggles, charges, availability)
-  useEffect(() => {
-    // Unique name per run — a fixed name makes supabase.channel() return an already-
-    // subscribed channel and .on()-after-subscribe() throws.
-    const channel = supabase
-      .channel(`chat-astro-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'astrologers' },
-        () => getAllAstrologers(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [getAllAstrologers]);
+  // Live sync — re-fetch when any astrologer row changes (toggles, charges, availability).
+  // Was a per-screen Supabase Realtime subscription to the whole astrologers table;
+  // now a debounced socket signal fanned out once by the backend. See the hook.
+  useAstrologerListSync(getAllAstrologers);
 
   const onRefresh = async () => {
     setRefreshing(true);

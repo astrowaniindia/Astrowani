@@ -1,6 +1,5 @@
 import React, {useState, useCallback, useRef} from 'react';
-import {View, Text, FlatList, ActivityIndicator, StyleSheet} from 'react-native';
-import {createMaterialTopTabNavigator} from '@react-navigation/material-top-tabs';
+import {View, Text, FlatList, ActivityIndicator, StyleSheet, TouchableOpacity, ScrollView} from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import SessionDetails from '../component/SessionDetails';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -8,8 +7,6 @@ import {COLORS} from '../../Theme/Colors';
 import {supabase} from '../../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {LanguageContext} from '../../context/LanguageContext';
-
-const Tab = createMaterialTopTabNavigator();
 
 const getCustomerId = async () => {
   const userStr = await AsyncStorage.getItem('userData');
@@ -30,7 +27,10 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
     if (astroMapRef.current[vendorId]) return astroMapRef.current[vendorId];
     const {data: a} = await supabase
       .from('astrologers')
-      .select('id, first_name, last_name, profile_pic_url, profile_image')
+      // `profile_image` dropped — not in the anon SELECT grant on astrologers
+      // (sql/hardening_02_access_control.sql); profile_pic_url is granted and is
+      // the fallback this screen already reads first below anyway.
+      .select('id, first_name, last_name, profile_pic_url')
       .eq('id', vendorId)
       .single();
     if (a) astroMapRef.current[vendorId] = a;
@@ -111,7 +111,10 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
           if (vendorIds.length) {
             const {data: astros} = await supabase
               .from('astrologers')
-              .select('id, first_name, last_name, profile_pic_url, profile_image')
+              // `profile_image` dropped — not in the anon SELECT grant on astrologers
+      // (sql/hardening_02_access_control.sql); profile_pic_url is granted and is
+      // the fallback this screen already reads first below anyway.
+      .select('id, first_name, last_name, profile_pic_url')
               .in('id', vendorIds);
             if (astros) astros.forEach(a => (astroMapRef.current[a.id] = a));
           }
@@ -244,41 +247,85 @@ const LiveSession = () => {
   return <SessionList callTypes={['live']} sessionTypeLabel={t('session.liveSession')} />;
 };
 
+// Hand-built tab bar instead of @react-navigation/material-top-tabs — that library's
+// TabBar (via react-native-tab-view's PagerViewAdapter) crashes with "TypeError:
+// undefined is not a function" in release/Hermes builds (this was the only screen in
+// either app using it, confirmed via a live device reproduction + logcat, 2026-08-08).
+// Same 4 tabs, same SessionList/data logic untouched — just without the buggy
+// third-party pager-based tab bar. No swipe-between-tabs gesture, tap-to-switch only.
+const SESSION_TABS = [
+  {key: 'ChatSession', Component: ChatSession, labelKey: 'session.tabChat'},
+  {key: 'CallSession', Component: CallSession, labelKey: 'session.audioCall'},
+  {key: 'VideoSession', Component: VideoSession, labelKey: 'session.videoCall'},
+  {key: 'LiveSession', Component: LiveSession, labelKey: 'session.tabLive'},
+];
+
 const MySessionsScreen = () => {
   const {t} = React.useContext(LanguageContext);
+  const [activeKey, setActiveKey] = useState(SESSION_TABS[0].key);
+  const ActiveComponent =
+    SESSION_TABS.find(tab => tab.key === activeKey)?.Component ?? ChatSession;
+
   return (
-    <Tab.Navigator
-      initialRouteName="ChatSession"
-      screenOptions={{
-        tabBarScrollEnabled: true,
-        tabBarLabelStyle: {
-          fontSize: moderateScale(13),
-          fontWeight: 'bold',
-          textTransform: 'none',
-        },
-        tabBarIndicatorStyle: {
-          backgroundColor: COLORS.AstroMaroon,
-          height: verticalScale(3),
-        },
-        tabBarActiveTintColor: COLORS.AstroMaroon,
-        tabBarInactiveTintColor: '#888',
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          elevation: 2,
-          shadowColor: '#000',
-          shadowOffset: {width: 0, height: 1},
-          shadowOpacity: 0.06,
-          shadowRadius: 3,
-        },
-        tabBarPressColor: COLORS.AstroSoftOrange,
-      }}>
-      <Tab.Screen name="ChatSession"  component={ChatSession}  options={{title: t('session.tabChat')}} />
-      <Tab.Screen name="CallSession"  component={CallSession}  options={{title: t('session.audioCall')}} />
-      <Tab.Screen name="VideoSession" component={VideoSession} options={{title: t('session.videoCall')}} />
-      <Tab.Screen name="LiveSession"  component={LiveSession}  options={{title: t('session.tabLive')}} />
-    </Tab.Navigator>
+    <View style={{flex: 1, backgroundColor: '#fff'}}>
+      <View style={tabBarStyles.tabBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {SESSION_TABS.map(tab => {
+            const isActive = tab.key === activeKey;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={tabBarStyles.tabItem}
+                activeOpacity={0.7}
+                onPress={() => setActiveKey(tab.key)}>
+                <Text
+                  style={[
+                    tabBarStyles.tabLabel,
+                    isActive && tabBarStyles.tabLabelActive,
+                  ]}>
+                  {t(tab.labelKey)}
+                </Text>
+                {isActive && <View style={tabBarStyles.tabIndicator} />}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+      <ActiveComponent />
+    </View>
   );
 };
+
+const tabBarStyles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: '#fff',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+  },
+  tabItem: {
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(12),
+    alignItems: 'center',
+  },
+  tabLabel: {
+    fontSize: moderateScale(13),
+    fontWeight: 'bold',
+    color: '#888',
+  },
+  tabLabelActive: {
+    color: COLORS.AstroMaroon,
+  },
+  tabIndicator: {
+    marginTop: verticalScale(6),
+    height: verticalScale(3),
+    width: '100%',
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: 2,
+  },
+});
 
 export default MySessionsScreen;
 

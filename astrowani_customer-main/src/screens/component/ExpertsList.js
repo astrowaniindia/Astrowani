@@ -22,6 +22,7 @@ import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
+import { getWalletBalance } from '../../utils/wallet';
 import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { formatBusyLabel } from '../../utils/busyLabel';
@@ -120,16 +121,17 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
         : (item.chargePerMinute || item.pricing || 15);
       const minRequired = pricePerMin * 5;
 
-      const { data: customer, error: walletErr } = await supabase
-        .from('customers').select('wallet_balance').eq('id', userEntireData.id).single();
-      if (walletErr) {
+      let balance;
+      try {
+        balance = await getWalletBalance();
+      } catch (walletErr) {
         Alert.alert('Error', 'Failed to verify wallet balance.');
         return;
       }
-      if (customer.wallet_balance < minRequired) {
+      if (balance < minRequired) {
         Alert.alert(
           'Insufficient Balance',
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${customer.wallet_balance}. Please recharge.`,
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
         );
         return;
       }
@@ -154,21 +156,16 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       const roomId = response.data.data?.roomId || response.data.roomId;
       const backendSessionId = response.data.data?.sessionId || response.data.sessionId;
 
-      const { data: requestData, error: reqErr } = await supabase
-        .from('call_requests').insert([{
-          customer_id: userEntireData.id,
-          astrologer_id: item.userId,
-          customer_name: userEntireData.name || 'Customer',
-          call_type: type,
-          status: 'pending',
-          room_id: roomId,
-          room_token: vendorToken,
-        }]).select().single();
-      if (reqErr) {
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. /api/call/initiate above already inserted
+      // it and returns its id.
+      const requestId = response.data.data?.requestId || response.data.requestId;
+      if (!requestId) {
         setIsCallWaiting(false);
         Alert.alert('Error', 'Failed to send call request.');
         return;
       }
+      const requestData = {id: requestId};
 
       activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
 

@@ -5,7 +5,7 @@
 // profile photo, at least one language, and at least one per-minute charge (>0).
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
-import { supabase } from '../api/SupabaseClient';
+import Instance from '../api/ApiCall';
 
 const s = (v) => (v == null ? '' : String(v)).trim();
 
@@ -24,11 +24,23 @@ export const isVendorProfileComplete = (row) => {
   return !!(name && emailOk && s(row.gender) && expOk && hasPhoto && hasLang && hasCharge);
 };
 
-export const fetchAstrologerRow = async (astroId) => {
-  const id = astroId || (await AsyncStorage.getItem('astroId'));
-  if (!id) return null;
-  const { data } = await supabase.from('astrologers').select('*').eq('id', id).single();
-  return data || null;
+// Via the backend, not a direct `astrologers` read — the SELECT grant a public
+// anon key can safely hold on that table excludes bank details, wallet_balance,
+// and other fields this gate (and its callers) need. See
+// DATABASE_HARDENING_HANDOFF.md §3.1/§3.2. `astroId` is accepted for API
+// compatibility but ignored — GET /api/vendor/profile always resolves the
+// caller's own row from the JWT, same as every other caller of this function.
+export const fetchAstrologerRow = async (_astroId) => {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) return null;
+    const res = await Instance.get('/api/vendor/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data?.data || null;
+  } catch (_) {
+    return null;
+  }
 };
 
 // Returns true if the vendor may proceed; otherwise prompts them to finish the profile.

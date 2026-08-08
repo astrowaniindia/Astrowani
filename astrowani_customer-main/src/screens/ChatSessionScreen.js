@@ -127,12 +127,26 @@ const ChatSessionScreen = ({ route, navigation }) => {
   // ─── Auto first message: customer birth details → astrologer ───────────────
   const sendCustomerDetails = async (sessionData, senderId) => {
     try {
-      // Pull the latest profile straight from the source of truth.
-      const { data: prof } = await supabase
-        .from('customers')
-        .select('name, dob, time_of_birth, place_of_birth')
-        .eq('id', senderId)
-        .single();
+      // Pull the latest profile from the backend, not a direct `customers` read —
+      // that table carries every user's PII and Postgres GRANT is not row-scoped.
+      // See DATABASE_HARDENING_HANDOFF.md §3.1/§3.2. senderId here is always the
+      // logged-in customer's own id, so GET /api/users/profile (always "my own"
+      // profile, resolved from the JWT) is the right replacement.
+      let prof = null;
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (token) {
+          const res = await fetch(`${Instance.defaults.baseURL}/api/users/profile`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            prof = json?.data
+              ? { name: json.data.name, dob: json.data.dob, time_of_birth: json.data.timeOfBirth, place_of_birth: json.data.placeOfBirth }
+              : null;
+          }
+        }
+      } catch (_) {}
 
       const fmtDate = (d) => {
         if (!d) return 'Not provided';
@@ -150,15 +164,22 @@ const ChatSessionScreen = ({ route, navigation }) => {
         `Time of Birth: ${prof?.time_of_birth || 'Not provided'}\n` +
         `Place of Birth: ${prof?.place_of_birth || 'Not provided'}`;
 
-      await supabase.from('chat_messages').insert([
-        {
-          room_id: requestId,
-          session_id: sessionData.id,
-          sender_id: senderId,
-          receiver_id: person?._id || person?.id || person?.userId,
-          message: details,
+      // Row is created server-side now, not by the client — see
+      // DATABASE_HARDENING_HANDOFF.md STEP 3.
+      const msgToken = await AsyncStorage.getItem('token');
+      await fetch(`${Instance.defaults.baseURL}/api/chat/message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(msgToken ? { Authorization: `Bearer ${msgToken}` } : {}),
         },
-      ]);
+        body: JSON.stringify({
+          roomId: requestId,
+          sessionId: sessionData.id,
+          receiverId: person?._id || person?.id || person?.userId,
+          message: details,
+        }),
+      });
     } catch (e) {
       console.warn('sendCustomerDetails error:', e.message);
     }
@@ -179,16 +200,23 @@ const ChatSessionScreen = ({ route, navigation }) => {
       });
     }
 
-    // Send to Supabase — Realtime will update UI
-    await supabase.from('chat_messages').insert([
-      {
-        room_id: requestId,
-        session_id: sessionRef.current.id,
-        sender_id: myId,
-        receiver_id: person?._id || person?.id || person?.userId,
-        message: msg,
+    // Row is created server-side now, not by the client — see
+    // DATABASE_HARDENING_HANDOFF.md STEP 3. Realtime (unchanged) still delivers it to
+    // both sides once inserted.
+    const msgToken = await AsyncStorage.getItem('token');
+    await fetch(`${Instance.defaults.baseURL}/api/chat/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(msgToken ? { Authorization: `Bearer ${msgToken}` } : {}),
       },
-    ]);
+      body: JSON.stringify({
+        roomId: requestId,
+        sessionId: sessionRef.current.id,
+        receiverId: person?._id || person?.id || person?.userId,
+        message: msg,
+      }),
+    });
   };
 
   // ─── Initialise ───────────────────────────────────────────────────────────

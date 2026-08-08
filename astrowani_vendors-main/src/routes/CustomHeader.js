@@ -16,6 +16,7 @@ import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../api/SupabaseClient';
+import {fetchAstrologerRow} from '../utils/vendorProfile';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
@@ -25,40 +26,24 @@ const CustomHeader = ({title, showLanguage}) => {
   const [walletBalance, setWalletBalance] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  let subscription = null;
 
+  // Via the backend, not a direct `astrologers` read — wallet_balance is not in
+  // the anon SELECT grant (it excludes anything money-related), so this table
+  // can no longer be read directly for it. See
+  // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2. Polling replaces the old Realtime
+  // subscription on the same grounds.
   const fetchBalance = async () => {
-    const astroId = await AsyncStorage.getItem('astroId');
-    if (!astroId) return;
-    if (subscription) {
-      supabase.removeChannel(subscription);
-      subscription = null;
-    }
-    const {data} = await supabase
-      .from('astrologers')
-      .select('wallet_balance, profile_pic_url, profile_image')
-      .eq('id', astroId)
-      .single();
+    const data = await fetchAstrologerRow();
     if (data) {
       setWalletBalance(data.wallet_balance);
       setProfileImage(data.profile_pic_url || data.profile_image || null);
     }
-
-    subscription = supabase
-      .channel(`vendor_wallet_header_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-      .on('postgres_changes', {event: 'UPDATE', schema: 'public', table: 'astrologers', filter: `id=eq.${astroId}`}, payload => {
-        if (payload.new?.wallet_balance !== undefined) {
-          setWalletBalance(payload.new.wallet_balance);
-        }
-      })
-      .subscribe();
   };
 
   useEffect(() => {
     fetchBalance();
-    return () => {
-      if (subscription) supabase.removeChannel(subscription);
-    };
+    const timer = setInterval(fetchBalance, 20000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {

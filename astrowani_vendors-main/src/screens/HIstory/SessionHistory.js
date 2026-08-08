@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {supabase} from '../../api/SupabaseClient';
+import {resolveCustomerNames} from '../../utils/customerNames';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 
@@ -104,17 +105,10 @@ const TabContent = ({tabKey, types, astroId}) => {
   const resolveName = useCallback(async (callerId) => {
     if (!callerId) return 'Customer';
     if (custMapRef.current[callerId]) return custMapRef.current[callerId];
-    const {data} = await supabase
-      .from('customers')
-      .select('id, name, first_name, last_name')
-      .eq('id', callerId)
-      .single();
-    if (data) {
-      const name = data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || 'Customer';
-      custMapRef.current[callerId] = name;
-      return name;
-    }
-    return 'Customer';
+    const map = await resolveCustomerNames([callerId]);
+    const name = map[callerId]?.name || 'Customer';
+    custMapRef.current[callerId] = name;
+    return name;
   }, []);
 
   useFocusEffect(
@@ -140,15 +134,10 @@ const TabContent = ({tabKey, types, astroId}) => {
           // Bulk-fetch customer names
           const callerIds = [...new Set(data.map(s => s.caller_id).filter(Boolean))];
           if (callerIds.length) {
-            const {data: custs} = await supabase
-              .from('customers')
-              .select('id, name, first_name, last_name')
-              .in('id', callerIds);
-            if (custs) {
-              custs.forEach(c => {
-                custMapRef.current[c.id] = c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Customer';
-              });
-            }
+            const map = await resolveCustomerNames(callerIds);
+            Object.entries(map).forEach(([id, c]) => {
+              custMapRef.current[id] = c.name || 'Customer';
+            });
           }
 
           const enriched = data.map(s => ({

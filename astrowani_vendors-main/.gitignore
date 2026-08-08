@@ -81,3 +81,4 @@ android/app/src/main/assets/index.android.bundle
 .hot-updater/output
 .hot-updater/log
 supabase/.temp/
+dist/

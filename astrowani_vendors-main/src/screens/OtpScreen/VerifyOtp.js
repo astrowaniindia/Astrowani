@@ -18,7 +18,6 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {OtpInput} from 'react-native-otp-entry';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {supabase} from '../../api/SupabaseClient';
 import {identifyVendor} from '../../utils/Analytics';
 
 const RESEND_SECONDS = 60;
@@ -52,15 +51,24 @@ const VerifyOtp = ({navigation, route}) => {
 
   // Runs only for a brand-new number (no astrologer row found during verify) — creates
   // the account now that the phone number is actually proven, using the details collected
-  // on the Registration screen.
-  const finishRegistration = async () => {
+  // on the Registration screen. `preRegToken` is the token issued by the OTP-verify call
+  // just above — it carries the verified phone number, which the backend uses as the
+  // account's phone_number instead of trusting the client-submitted registrationData.
+  const finishRegistration = async (preRegToken) => {
     if (!registrationData) {
       Alert.alert('Error', 'Missing registration details. Please fill the form again.');
       navigation.navigate('Registration');
       return;
     }
-    const {error} = await supabase.from('astrologers').insert([registrationData]);
-    if (error) throw error;
+    const res = await Instance.post('/api/vendor/register', registrationData, {
+      headers: {Authorization: `Bearer ${preRegToken}`},
+    });
+    if (!res?.data?.success) {
+      throw new Error(res?.data?.message || 'Registration failed');
+    }
+    await AsyncStorage.setItem('token', res.data.token);
+    await AsyncStorage.setItem('astroId', String(res.data.user.id));
+    identifyVendor(res.data.user.id);
     navigation.reset({index: 0, routes: [{name: 'Thankyou'}]});
   };
 
@@ -85,7 +93,7 @@ const VerifyOtp = ({navigation, route}) => {
           navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
         } else {
           // New number — phone is now verified, create the actual account.
-          await finishRegistration();
+          await finishRegistration(res.data.token);
         }
       } else {
         Alert.alert('Verification Failed', res?.data?.message || 'Invalid OTP. Please try again.');

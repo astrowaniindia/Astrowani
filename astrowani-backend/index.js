@@ -12,6 +12,13 @@ const { checkAstrologerBusy, buildBusyMap } = require('./src/busyStatus');
 const { notifyWaitlistIfFree } = require('./src/waitlist');
 const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
+// Every rupee moves through this module — see src/wallet.js for why.
+const wallet = require('./src/wallet');
+const { TtlCache } = require('./src/ttlCache');
+const { startAstrologerFanout } = require('./src/astrologerFanout');
+const {
+  applyHttpHardening, otpLimiter, authLimiter, writeLimiter,
+} = require('./src/httpHardening');
 
 // No-op until SENTRY_DSN is set in the environment — see MD files/deployment-and-releases.md.
 initSentry();
@@ -25,13 +32,28 @@ process.on('unhandledRejection', (reason) => logError('unhandledRejection', reas
 
 const SUPABASE_URL = 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_iLfw8Co1PiXDyYJZvzCRKw_5hQBKn_O';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Service-role client for server-trusted writes that must bypass RLS (e.g. orders).
-// Falls back to the anon client if the service key isn't configured.
-const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
+// This process runs on our own trusted VPS, so every query it makes should go out
+// as the service role — the anon key exists for the two apps, not for us. Using it
+// here was the thing blocking anon privileges from being tightened at all: any
+// REVOKE aimed at a malicious client also hit our own backend. See
+// sql/hardening_02_access_control.sql STEP 1. The anon client is kept only as a
+// boot-time fallback so a missing env var degrades to today's behaviour rather
+// than taking the API down.
+const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn(
+    '[startup] SUPABASE_SERVICE_ROLE_KEY is not set — falling back to the anon key. ' +
+    'Anon privileges cannot be locked down while this is the case.',
+  );
+}
+const supabase = process.env.SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-  : supabase;
+  : supabaseAnon;
+
+// Kept as a distinct name because ~40 call sites already reference it for
+// server-trusted writes; it is now the same client as `supabase` above.
+const supabaseService = supabase;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Astrologer formatting — single source of truth for what the customer app sees.
@@ -41,6 +63,29 @@ const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
 //   - category/specialties: Registration writes `specialties` as an ARRAY OF category UUIDs
 //     (from the `categories` table) — we resolve those to names + expose categoryIds.
 // ─────────────────────────────────────────────────────────────────────────────
+// Exactly the columns formatAstrologer + astrologerVisibleToCustomers read.
+// SELECT * was pulling every column including bank details and admin_notes,
+// which the customer app has no business receiving and which bloat the row.
+const ASTROLOGER_LIST_COLUMNS = [
+  'id', 'first_name', 'last_name', 'email', 'gender', 'experience',
+  // NOTE: `languages` and `profile_pic_url` only. formatAstrologer also reads
+  // `astro.language` and astrologerProfileComplete reads `row.profile_image`,
+  // but neither column exists on this table — they are legacy fallbacks that
+  // always evaluate undefined. Naming them here would make PostgREST 400.
+  'languages', 'specialties', 'bio', 'profile_pic_url',
+  'call_charge_per_minute', 'chat_charge_per_minute', 'video_charge_per_minute',
+  'audio_price', 'chat_price', 'video_price',
+  'is_call_enabled', 'is_chat_enabled', 'is_video_call_enabled',
+  'is_available', 'is_online', 'is_live',
+  'average_rating', 'total_reviews',
+  'approval_status', 'is_suspended',
+].join(', ');
+
+// 10s is a deliberate trade: availability can lag by up to that, but a stale
+// list cannot cause an incorrect call because /api/call/initiate re-checks busy
+// state and 409s. See src/ttlCache.js.
+const astrologerListCache = new TtlCache({ ttlMs: 10_000, maxEntries: 50 });
+
 async function buildCategoryMap() {
   try {
     const { data } = await supabase.from('categories').select('id, name');
@@ -265,7 +310,9 @@ io.on('connection', (socket) => {
   });
 });
 
-app.use(cors());
+// helmet + compression + CORS allowlist + a general per-IP rate limit.
+// Must run before any route is registered. See src/httpHardening.js.
+applyHttpHardening(app);
 app.use(express.json({ limit: '10mb' })); // blog/banner images may be base64 data-URIs
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
@@ -274,7 +321,24 @@ app.use('/admin', express.static(path.join(__dirname, 'admin-dist')));
 app.get('/admin/*', (_req, res) => res.sendFile(path.join(__dirname, 'admin-dist', 'index.html')));
 
 const PORT = process.env.PORT || 4500;
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_astrowani_key_123';
+
+// Refuse to boot on a weak or publicly-known signing secret. The old fallback
+// ('super_secret_astrowani_key_123') was hardcoded here AND written out in
+// CLAUDE.md, so anyone with repo access could mint a valid token for any
+// customer, any astrologer, or the admin dashboard — and production was in fact
+// running on exactly that value. Rotating it signs everyone out once (tokens are
+// 30d); that is the intended effect, not a regression.
+const JWT_SECRET = process.env.JWT_SECRET;
+const WEAK_SECRETS = new Set(['super_secret_astrowani_key_123', 'secret', 'changeme']);
+if (!JWT_SECRET || JWT_SECRET.length < 32 || WEAK_SECRETS.has(JWT_SECRET)) {
+  console.error(
+    '[startup] FATAL: JWT_SECRET must be set to a random value of at least 32 characters ' +
+    'and must not be the old hardcoded default. Generate one with:\n' +
+    "  node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\"\n" +
+    'then set it in the backend process environment and restart.',
+  );
+  process.exit(1);
+}
 
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
@@ -326,7 +390,7 @@ function toE164(phoneNumber) {
 /**
  * Endpoint to request an OTP
  */
-app.post('/api/users/mobile-otp-request', async (req, res) => {
+app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
   const { phoneNumber, role, intent } = req.body;
 
   if (!phoneNumber) {
@@ -415,7 +479,7 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
 /**
  * Endpoint to verify an OTP
  */
-app.post('/api/users/mobile-otp-verify', async (req, res) => {
+app.post('/api/users/mobile-otp-verify', authLimiter, async (req, res) => {
   const { phoneNumber, otp, fcmToken, role, referralCode } = req.body;
 
   if (!phoneNumber || !otp) {
@@ -940,25 +1004,41 @@ const MOCK_ASTROLOGERS = [
   { _id: 8, userId: "astro_8", name: 'Devi Singh', profileImage: 'https://astrowani.onrender.com/public/images/astro4.png', chargePerMinute: 22, isFree: false, specialties: [{name: 'Face Reading'}], experience: 11, language: ['Hindi', 'Punjabi'], rating: 4.8 },
 ];
 
-// Mock Astrologers
 app.get('/api/astrologers', async (req, res) => {
   try {
-    // Optional service filter — section screens pass ?service=chat|audio|video
-    // to get only astrologers who have that toggle enabled.
-    let query = supabase.from('astrologers').select('*');
     const { service } = req.query;
-    if (service === 'chat')  query = query.eq('is_chat_enabled', true);
-    if (service === 'audio') query = query.eq('is_call_enabled', true);
-    if (service === 'video') query = query.eq('is_video_call_enabled', true);
+    const cacheKey = `astrologers:${service || 'all'}`;
 
-    const { data, error } = await query;
-    if (error) throw error;
+    // Cached + single-flighted: the four customer list screens all refetch this
+    // on any astrologers-table change, so under load hundreds of identical
+    // requests arrive at once. See src/ttlCache.js for why that is safe here.
+    let formattedData = await astrologerListCache.get(cacheKey, async () => {
+      // Push the cheap, high-selectivity predicates into SQL instead of pulling
+      // the whole table and filtering in Node. approval_status/is_suspended
+      // eliminate most rows and are covered by idx_astrologers_visible.
+      let query = supabase
+        .from('astrologers')
+        .select(ASTROLOGER_LIST_COLUMNS)
+        .eq('approval_status', 'approved')
+        .not('is_suspended', 'is', true)
+        .gt('experience', 0);
 
-    // Only approved, non-suspended, profile-complete astrologers reach customers.
-    const visibleRows = (data || []).filter(astrologerVisibleToCustomers);
+      // Optional service filter — section screens pass ?service=chat|audio|video
+      // to get only astrologers who have that toggle enabled.
+      if (service === 'chat')  query = query.eq('is_chat_enabled', true);
+      if (service === 'audio') query = query.eq('is_call_enabled', true);
+      if (service === 'video') query = query.eq('is_video_call_enabled', true);
 
-    const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
-    let formattedData = visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // The rest of "visible" (email shape, photo, languages, has-a-charge) is
+      // not expressible in PostgREST, but it now runs over a far smaller set.
+      const visibleRows = (data || []).filter(astrologerVisibleToCustomers);
+
+      const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
+      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
+    });
 
     // Optional category filter — ?category=<categoryId|name>. Matches by category UUID
     // (what the vendor stores) or by resolved category name (case-insensitive).
@@ -1022,7 +1102,7 @@ async function resolveCustomerFromReq(req) {
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super_secret_astrowani_key_123');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     let id = decoded.userId || decoded.id;
     let name = decoded.name || 'User';
     if (decoded.phone) {
@@ -1368,7 +1448,7 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
 });
 
 // WebRTC Call Initiate — no third-party room server needed; signaling goes through socket.io
-app.post('/api/call/initiate', async (req, res) => {
+app.post('/api/call/initiate', writeLimiter, async (req, res) => {
   try {
     const { receiverId, callType } = req.body;
     if (!receiverId) return res.status(400).json({ success: false, message: 'receiverId required' });
@@ -1390,7 +1470,7 @@ app.post('/api/call/initiate', async (req, res) => {
     let callerInfo = { name: 'User', id: null };
     if (token_jwt) {
       try {
-        const decoded = jwt.verify(token_jwt, process.env.JWT_SECRET || 'super_secret_astrowani_key_123');
+        const decoded = jwt.verify(token_jwt, process.env.JWT_SECRET);
         callerInfo.id = decoded.userId || decoded.id;
 
         // Always resolve to real Supabase UUID by phone — stale JWTs may carry a
@@ -1411,6 +1491,26 @@ app.post('/api/call/initiate', async (req, res) => {
 
     const sessionId = crypto.randomUUID();
     const roomId = crypto.randomUUID();
+
+    // The row itself, not just the socket/push notifications — moved server-side so the
+    // anon key no longer needs a direct INSERT grant on call_requests. See
+    // DATABASE_HARDENING_HANDOFF.md STEP 3. room_token stays null: it was already
+    // vestigial (this endpoint never returned a real vendorToken for clients to store).
+    const { data: requestRow, error: requestErr } = await supabase
+      .from('call_requests')
+      .insert([{
+        customer_id: callerInfo.id,
+        astrologer_id: receiverId,
+        customer_name: callerInfo.name,
+        call_type: callType || 'audio',
+        status: 'pending',
+        room_id: roomId,
+        room_token: null,
+      }])
+      .select('id')
+      .single();
+    if (requestErr) throw requestErr;
+    const requestId = requestRow.id;
 
     // Notify vendor via socket — no ENX tokens, WebRTC signaling happens via socket.io
     io.to(receiverId).emit('incoming_call', {
@@ -1447,6 +1547,7 @@ app.post('/api/call/initiate', async (req, res) => {
       data: {
         sessionId: sessionId,
         roomId: roomId,
+        requestId: requestId,
         receiver: { name: 'Astrologer', image: '' },
       }
     });
@@ -1475,6 +1576,86 @@ app.post('/api/chat/check-availability', async (req, res) => {
   }
 });
 
+// Creates the chat_requests row server-side — moved off the anon key's direct INSERT
+// grant (see DATABASE_HARDENING_HANDOFF.md STEP 3). Re-checks busy status (the client
+// already called /api/chat/check-availability, this closes the last-moment race) and
+// resolves the caller's real customer UUID from the JWT instead of trusting the client.
+app.post('/api/chat/initiate', async (req, res) => {
+  try {
+    const { astrologerId } = req.body;
+    if (!astrologerId) return res.status(400).json({ success: false, message: 'astrologerId required' });
+
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer || !customer.id) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
+    if (busyStatus.busy) {
+      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, message: 'Astrologer is busy right now' });
+    }
+
+    const { data: row, error } = await supabase
+      .from('chat_requests')
+      .insert([{
+        caller_id: customer.id,
+        receiver_id: astrologerId,
+        status: 'pending',
+        request_type: 'chat',
+        caller_name: customer.name || 'Customer',
+      }])
+      .select('id')
+      .single();
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, requestId: row.id, callerId: customer.id });
+  } catch (error) {
+    console.error('[Chat] initiate error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to send chat request' });
+  }
+});
+
+// Creates a chat_messages row server-side — moved off the anon key's direct INSERT
+// grant (see DATABASE_HARDENING_HANDOFF.md STEP 3). Used by both apps' live chat
+// screens; the actual message delivery to the other party still happens via the
+// existing Supabase Realtime subscription on this table, unchanged — this endpoint
+// only replaces how the row gets created, not how it's read.
+app.post('/api/chat/message', async (req, res) => {
+  try {
+    const { roomId, sessionId, receiverId, message } = req.body;
+    if (!roomId || !message) {
+      return res.status(400).json({ success: false, message: 'roomId and message are required' });
+    }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Works for both customer and vendor tokens. Vendor tokens carry astroId/vendorId
+    // or role='astrologer' and their real UUID is already decoded.id/userId; customer
+    // tokens need the usual phone -> real UUID resolution.
+    let senderId = decoded.userId || decoded.id;
+    const isVendor = decoded.role === 'astrologer' || decoded.role === 'vendor' || !!decoded.astroId || !!decoded.vendorId;
+    if (!isVendor && decoded.phone) {
+      const { data } = await supabase.from('customers').select('id').eq('mobile', decoded.phone).limit(1);
+      if (data && data.length) senderId = data[0].id;
+    }
+
+    const { data, error } = await supabaseService.from('chat_messages').insert([{
+      room_id: roomId,
+      session_id: sessionId || null,
+      sender_id: senderId,
+      receiver_id: receiverId || null,
+      message,
+    }]).select().single();
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('[Chat] message send error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to send message' });
+  }
+});
+
 // "Notify me" waitlist — join/leave. Writes via service role since the table has no
 // client-facing RLS policy (see sql/astrologer_waitlist_schema.sql).
 app.post('/api/astrologer/:id/notify-me', async (req, res) => {
@@ -1495,6 +1676,226 @@ app.post('/api/astrologer/:id/notify-me', async (req, res) => {
   } catch (error) {
     console.error('[waitlist] notify-me error:', error.message);
     return res.status(500).json({ success: false, message: 'Could not join waitlist' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vendor accept/reject — moved server-side from astrowani_vendors-main's
+// incomingRequestActions.js (see DATABASE_HARDENING_HANDOFF.md STEP 3, the
+// deliberately-deferred "risky" migration). Ported function-for-function to
+// preserve the exact race-condition handling that file's own comments describe:
+// resolving a request id two different ways (live in-app popup vs a
+// backgrounded/killed-app notification action, which only carries
+// callerId/callerName), and disambiguating "not inserted yet — safe to proceed"
+// from "already handled elsewhere — must not proceed" before creating a session.
+// astroId is resolved from the vendor's JWT here rather than trusted from the
+// client, unlike the original client-side version which read it from AsyncStorage.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function resolveVendorIdFromReq(req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded.astroId || decoded.vendorId || decoded.id || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function resolvePendingChatRequestId(astroId, callerId) {
+  if (!astroId || !callerId) return null;
+  const { data } = await supabaseService
+    .from('chat_requests')
+    .select('id')
+    .eq('receiver_id', astroId)
+    .eq('caller_id', callerId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  return data?.id || null;
+}
+
+async function resolveSessionRequestId(req, astroId, targetTable) {
+  if (req.requestId) return req.requestId;
+  if (targetTable === 'call_requests' && req.roomId) {
+    const { data } = await supabaseService
+      .from('call_requests')
+      .select('id')
+      .eq('room_id', req.roomId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    return data?.id || null;
+  }
+  if (targetTable === 'chat_requests') {
+    return resolvePendingChatRequestId(astroId, req.callerId);
+  }
+  return null;
+}
+
+async function findLatestSessionRequestStatus(req, astroId, targetTable) {
+  if (targetTable === 'call_requests' && req.roomId) {
+    const { data } = await supabaseService
+      .from('call_requests')
+      .select('status')
+      .eq('room_id', req.roomId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.status || null;
+  }
+  if (targetTable === 'chat_requests' && req.callerId) {
+    const { data } = await supabaseService
+      .from('chat_requests')
+      .select('status')
+      .eq('receiver_id', astroId)
+      .eq('caller_id', req.callerId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.status || null;
+  }
+  return null;
+}
+
+app.post('/api/session/accept', async (req, res) => {
+  try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ ok: false, message: 'Unauthorized' });
+
+    const reqBody = req.body || {};
+    const targetTable = reqBody.table || 'chat_requests';
+    const resolvedRequestId = await resolveSessionRequestId(reqBody, astroId, targetTable);
+
+    if (resolvedRequestId) {
+      if (reqBody.requestId) {
+        const { data: statusRow } = await supabaseService
+          .from(targetTable)
+          .select('status')
+          .eq('id', resolvedRequestId)
+          .single();
+        if (!statusRow || statusRow.status !== 'pending') {
+          return res.status(200).json({ ok: false, reason: 'cancelled' });
+        }
+      }
+    } else {
+      const latestStatus = await findLatestSessionRequestStatus(reqBody, astroId, targetTable);
+      if (latestStatus && latestStatus !== 'pending') {
+        return res.status(200).json({ ok: false, reason: 'cancelled' });
+      }
+    }
+
+    const { data: astroData } = await supabaseService
+      .from('astrologers')
+      .select('chat_charge_per_minute, call_charge_per_minute, video_charge_per_minute')
+      .eq('id', astroId)
+      .single();
+
+    const perMinuteCharge =
+      reqBody.callType === 'chat'
+        ? astroData?.chat_charge_per_minute ?? 0
+        : reqBody.callType === 'video'
+        ? astroData?.video_charge_per_minute ?? 0
+        : astroData?.call_charge_per_minute ?? 0;
+
+    let isFreeSession = false;
+    if (reqBody.callerId) {
+      const { count } = await supabaseService
+        .from('chat_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('caller_id', reqBody.callerId);
+      isFreeSession = (count || 0) === 0;
+    }
+
+    const sessionInsertPayload = {
+      request_id: targetTable === 'chat_requests' ? resolvedRequestId : null,
+      per_minute_charge: perMinuteCharge,
+      vendor_id: astroId,
+      caller_id: reqBody.callerId,
+      started_at: new Date().toISOString(),
+      call_type: reqBody.callType || 'chat',
+      room_id: reqBody.roomId || null,
+      call_request_id: targetTable === 'call_requests' ? resolvedRequestId : null,
+      is_active: false,
+      next_billing_at: null,
+      is_free_session: isFreeSession,
+    };
+    if (reqBody.sessionId) {
+      sessionInsertPayload.id = reqBody.sessionId;
+    }
+    const { data: sessionData, error: sessionErr } = await supabaseService
+      .from('chat_sessions')
+      .insert([sessionInsertPayload])
+      .select('id')
+      .single();
+
+    if (sessionErr) throw sessionErr;
+    const sessionId = sessionData?.id;
+
+    if (resolvedRequestId) {
+      const fullPayload = { status: 'accepted', responded_at: new Date().toISOString() };
+      if (targetTable === 'call_requests' && sessionId) {
+        fullPayload.session_id = sessionId;
+      }
+      const { error: updateErr } = await supabaseService
+        .from(targetTable)
+        .update(fullPayload)
+        .eq('id', resolvedRequestId);
+
+      if (updateErr) {
+        await supabaseService
+          .from(targetTable)
+          .update({ status: 'accepted' })
+          .eq('id', resolvedRequestId);
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      resolvedRequestId,
+      sessionId,
+      perMinuteCharge,
+      isFreeSession,
+      navigationParams: {
+        requestId: resolvedRequestId,
+        sessionId,
+        callerName: reqBody.callerName,
+        callerId: reqBody.callerId,
+        perMinuteCharge,
+        token: reqBody.token,
+        callType: reqBody.callType,
+        isFreeSession,
+      },
+    });
+  } catch (error) {
+    console.error('[session/accept] error:', error.message);
+    return res.status(500).json({ ok: false, message: 'Failed to accept request' });
+  }
+});
+
+app.post('/api/session/reject', async (req, res) => {
+  try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ ok: false, message: 'Unauthorized' });
+
+    const reqBody = req.body || {};
+    const targetTable = reqBody.table || 'chat_requests';
+    const resolvedRequestId = await resolveSessionRequestId(reqBody, astroId, targetTable);
+    if (!resolvedRequestId) return res.status(200).json({ ok: false });
+
+    await supabaseService
+      .from(targetTable)
+      .update({ status: 'rejected', responded_at: new Date().toISOString() })
+      .eq('id', resolvedRequestId);
+
+    return res.status(200).json({ ok: true, resolvedRequestId });
+  } catch (error) {
+    console.error('[session/reject] error:', error.message);
+    return res.status(500).json({ ok: false, message: 'Failed to reject request' });
   }
 });
 
@@ -1645,123 +2046,20 @@ app.get('/api/customer/referral-info', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WALLET: Deduct from customer AND credit to vendor (called every minute during chat/call)
+// REMOVED 2026-08-07: POST /api/wallet/deduct-and-credit
+//
+// Dead code that was still live. No screen in either app called it (verified by
+// grep across both src trees), yet it accepted an arbitrary `amount` from any
+// authenticated customer and moved it from that customer to whichever vendor
+// owned the supplied sessionId — with no session-membership check at all.
+//
+// It also wrote its ledger row using the raw JWT userId instead of the resolved
+// customer UUID, which is where the 11 orphaned wallet_transactions rows
+// belonging to "user_1781452835500" came from.
+//
+// Per-minute billing does not go through here — it runs server-side in
+// sessionManager.processBilling() via the process_session_billing RPC.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/wallet/deduct-and-credit', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
-
-    const token = authHeader.replace('Bearer ', '');
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.userId || decoded._id || decoded.id;
-
-    const { sessionId, requestId, amount } = req.body;
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Invalid amount' });
-    }
-
-    let userRow = null;
-    let actualUserId = userId;
-
-    if (decoded.phone) {
-      const { data: cData } = await supabase
-        .from('customers')
-        .select('id, wallet_balance')
-        .eq('mobile', decoded.phone)
-        .limit(1);
-      if (cData && cData.length > 0) {
-        userRow = cData[0];
-        actualUserId = cData[0].id;
-      }
-    }
-
-    if (!userRow && String(userId).includes('-')) {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', userId)
-        .single();
-      if (!error) userRow = data;
-    }
-
-    if (!userRow) {
-      return res.status(400).json({ success: false, message: 'Customer not found' });
-    }
-
-    const currentBalance = userRow.wallet_balance ?? 0;
-    if (currentBalance < amount) {
-      return res.status(400).json({ success: false, message: 'Insufficient balance' });
-    }
-
-    // 2. Deduct from customer
-    const { error: deductErr } = await supabase
-      .from('customers')
-      .update({ wallet_balance: currentBalance - amount })
-      .eq('id', actualUserId);
-    if (deductErr) throw deductErr;
-
-    // 3. Log customer deduction transaction
-    await supabase.from('wallet_transactions').insert([{
-      user_id: userId,
-      type: 'debit',
-      amount: amount,
-      description: 'Chat/Call charge (per minute)',
-      session_id: sessionId,
-      request_id: requestId,
-    }]);
-
-    // 4. Find vendor from chat_sessions
-    const { data: sessionRow, error: sessErr } = await supabase
-      .from('chat_sessions')
-      .select('vendor_id')
-      .eq('id', sessionId)
-      .single();
-
-    if (!sessErr && sessionRow?.vendor_id) {
-      const vendorId = sessionRow.vendor_id;
-
-      // 5. Get vendor current wallet balance (from astrologers table)
-      const { data: astroRow } = await supabase
-        .from('astrologers')
-        .select('wallet_balance, today_earnings, total_earnings')
-        .eq('id', vendorId)
-        .single();
-
-      const vendorBalance = astroRow?.wallet_balance ?? 0;
-      const todayEarnings = astroRow?.today_earnings ?? 0;
-      const totalEarnings = astroRow?.total_earnings ?? 0;
-
-      // 6. Credit vendor wallet
-      await supabase
-        .from('astrologers')
-        .update({
-          wallet_balance: vendorBalance + amount,
-          today_earnings: todayEarnings + amount,
-          total_earnings: totalEarnings + amount,
-        })
-        .eq('id', vendorId);
-
-      // 7. Log vendor credit transaction
-      await supabase.from('vendor_wallet_transactions').insert([{
-        vendor_id: vendorId,
-        type: 'credit',
-        amount: amount,
-        description: 'Earnings from chat/call (per minute)',
-        session_id: sessionId,
-        request_id: requestId,
-      }]);
-    }
-
-    return res.status(200).json({
-      success: true,
-      newBalance: currentBalance - amount,
-    });
-  } catch (err) {
-    console.error('POST /api/wallet/deduct-and-credit error:', err.message);
-    return res.status(500).json({ success: false, message: 'Transaction failed' });
-  }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CUSTOMER WALLET RECHARGE (Razorpay) — server-verified, replaces the old
@@ -1774,7 +2072,7 @@ app.post('/api/wallet/deduct-and-credit', async (req, res) => {
 const MIN_RECHARGE_RUPEES = 1;
 const MAX_RECHARGE_RUPEES = 100000; // sanity ceiling — adjust if a legitimate need arises
 
-app.post('/api/wallet/create-order', async (req, res) => {
+app.post('/api/wallet/create-order', writeLimiter, async (req, res) => {
   try {
     if (!razorpay.isConfigured()) {
       return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
@@ -1810,7 +2108,7 @@ app.post('/api/wallet/create-order', async (req, res) => {
   }
 });
 
-app.post('/api/wallet/verify-payment', async (req, res) => {
+app.post('/api/wallet/verify-payment', writeLimiter, async (req, res) => {
   try {
     const customer = await resolveCustomerFromReq(req);
     if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
@@ -1861,26 +2159,14 @@ app.post('/api/wallet/verify-payment', async (req, res) => {
     }
 
     const rechargeRow = claimed[0];
-    const { data: custRow, error: custErr } = await supabaseService
-      .from('customers')
-      .select('wallet_balance')
-      .eq('id', customer.id)
-      .single();
-    if (custErr) throw custErr;
 
-    const newBalance = (custRow?.wallet_balance ?? 0) + rechargeRow.amount;
-    const { error: creditErr } = await supabaseService
-      .from('customers')
-      .update({ wallet_balance: newBalance })
-      .eq('id', customer.id);
-    if (creditErr) throw creditErr;
-
-    await supabaseService.from('wallet_transactions').insert([{
-      user_id: customer.id,
-      type: 'credit',
-      amount: rechargeRow.amount,
+    // Balance change + ledger row in one transaction. Keyed on the Razorpay
+    // payment id, so even if the status claim above were somehow bypassed the
+    // credit still cannot be applied twice.
+    const newBalance = await wallet.adjustCustomerWallet(customer.id, Number(rechargeRow.amount), {
       description: `Wallet recharge via Razorpay (payment ${razorpay_payment_id})`,
-    }]);
+      idempotencyKey: `razorpay:${razorpay_payment_id}`,
+    });
 
     return res.status(200).json({ success: true, newBalance });
   } catch (err) {
@@ -1937,7 +2223,7 @@ app.get('/vendor/wallet', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // VENDOR WALLET: Request a withdrawal (deducts balance immediately, pending admin payout)
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/vendor/wallet/withdraw', async (req, res) => {
+app.post('/vendor/wallet/withdraw', writeLimiter, async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -1997,25 +2283,28 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       .single();
     if (insertErr) throw insertErr;
 
-    const newBalance = currentBalance - amount;
-    const { error: updateErr } = await db
-      .from('astrologers')
-      .update({ wallet_balance: newBalance })
-      .eq('id', vendorId);
-    if (updateErr) {
-      // Balance deduction failed after the request was created — pull the request back out
-      // rather than leave a "pending" row for money that was never actually put on hold.
+    // Put the money on hold. countEarnings:false — a withdrawal reduces the
+    // balance but must not reduce today_earnings/total_earnings, which are
+    // reporting figures on their own reset schedule.
+    // The balance check above is advisory only; the authoritative one is inside
+    // the function's UPDATE, so two withdrawal taps cannot both pass it.
+    let newBalance;
+    try {
+      newBalance = await wallet.adjustVendorWallet(vendorId, -amount, {
+        description: 'Withdrawal requested',
+        requestId: withdrawal.id,
+        idempotencyKey: `withdrawal:${withdrawal.id}`,
+        countEarnings: false,
+      });
+    } catch (holdErr) {
+      // Nothing moved — pull the request back out rather than leave a "pending"
+      // row for money that was never actually held.
       await db.from('withdrawal_requests').delete().eq('id', withdrawal.id);
-      throw updateErr;
+      if (holdErr instanceof wallet.InsufficientFunds) {
+        return res.status(400).json({ success: false, message: 'Amount exceeds wallet balance' });
+      }
+      throw holdErr;
     }
-
-    await db.from('vendor_wallet_transactions').insert([{
-      vendor_id: vendorId,
-      type: 'debit',
-      amount,
-      description: 'Withdrawal requested',
-      request_id: withdrawal.id,
-    }]);
 
     return res.status(200).json({ success: true, newBalance, withdrawal });
   } catch (err) {
@@ -2116,6 +2405,143 @@ app.post('/api/vendor/voice-notes', async (req, res) => {
   }
 });
 
+// Resolves a bounded set of customer ids to display name + photo — replaces the
+// vendor app's session-history screens' direct reads of `customers` (some of
+// which had no filter at all, dumping the whole table just to build a lookup
+// map). `customers` gets REVOKE ALL with no grant back under hardening_02 since
+// it carries every user's PII — see DATABASE_HARDENING_HANDOFF.md §3.1/§3.2.
+// Any authenticated caller may resolve any id here (this only returns a display
+// name and a public photo URL, not PII), but the request must supply the exact
+// ids it wants — this is not a way to enumerate/dump the table.
+app.post('/api/customers/names', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+
+    const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(Boolean))] : [];
+    if (!ids.length) return res.status(200).json({ success: true, data: {} });
+
+    const { data, error } = await supabaseService
+      .from('customers')
+      .select('id, name, profile_image')
+      .in('id', ids);
+    if (error) throw error;
+
+    const byId = {};
+    (data || []).forEach((c) => {
+      byId[c.id] = {
+        name: c.name || 'Customer',
+        profileImage: c.profile_image || null,
+      };
+    });
+    return res.status(200).json({ success: true, data: byId });
+  } catch (err) {
+    console.error('POST /api/customers/names error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch customer names' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vendor's own profile / wallet — replaces the vendor app's direct anon-key reads
+// of the astrologers table (bank details, wallet_balance, full profile) so that
+// table's anon SELECT grant can be restricted to public-facing columns only.
+// See DATABASE_HARDENING_HANDOFF.md §3.1/§3.2, sql/hardening_02_access_control.sql.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/vendor/profile', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const { data, error } = await supabaseService
+      .from('astrologers')
+      .select('*')
+      .eq('id', vendorId)
+      .single();
+    if (error) throw error;
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('GET /api/vendor/profile error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch vendor profile' });
+  }
+});
+
+app.get('/api/vendor/wallet', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    const { data: astro, error } = await supabaseService
+      .from('astrologers')
+      .select('wallet_balance, today_earnings, total_earnings, bank_account_holder, bank_account_number, bank_ifsc, bank_name, upi_id')
+      .eq('id', vendorId)
+      .single();
+    if (error) throw error;
+
+    const { data: txns } = await supabaseService
+      .from('vendor_wallet_transactions')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    return res.status(200).json({
+      success: true,
+      data: { ...astro, transactions: txns || [] },
+    });
+  } catch (err) {
+    console.error('GET /api/vendor/wallet error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch vendor wallet' });
+  }
+});
+
+// Vendor registration — replaces the vendor app's direct client-side INSERT into
+// astrologers (VerifyOtp.js). The phone number comes from the JWT issued by the
+// preceding /api/users/mobile-otp-verify call, not from the request body, so a
+// verified-number's identity can't be spoofed. Returns a fresh token carrying the
+// real astroId, matching what mobile-otp-verify's own comment already expected
+// ("app completes registration next and gets a real token from that step instead").
+app.post('/api/vendor/register', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    if (!decoded.phone) {
+      return res.status(401).json({ success: false, message: 'Phone verification required' });
+    }
+
+    const { data: existing } = await supabaseService
+      .from('astrologers').select('id').eq('phone_number', decoded.phone).limit(1);
+    if (existing && existing.length > 0) {
+      return res.status(409).json({ success: false, message: 'This number is already registered' });
+    }
+
+    const registrationData = { ...(req.body || {}), phone_number: decoded.phone };
+    const { data: created, error } = await supabaseService
+      .from('astrologers').insert([registrationData]).select('id').single();
+    if (error) throw error;
+
+    const token = jwt.sign(
+      { id: created.id, userId: created.id, astroId: created.id, phone: decoded.phone, role: 'astrologer' },
+      JWT_SECRET,
+      { expiresIn: '30d' },
+    );
+
+    return res.status(200).json({
+      success: true,
+      token,
+      user: { id: created.id, phoneNumber: decoded.phone, role: 'astrologer' },
+    });
+  } catch (err) {
+    console.error('POST /api/vendor/register error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to complete registration' });
+  }
+});
+
 // GET customer's own past customers this vendor has actually interacted with — powers the
 // vendor's "My Customers" picker for who a voice note can be sent to.
 app.get('/vendor/customers', async (req, res) => {
@@ -2141,15 +2567,19 @@ app.get('/vendor/customers', async (req, res) => {
     const customerIds = Object.keys(latestByCustomer);
     if (customerIds.length === 0) return res.status(200).json({ success: true, data: [] });
 
+    // `profile_pic_url` is an astrologers column, not a customers one — customers'
+    // photo field is `profile_image`. Pre-existing bug (this SELECT would have
+    // failed outright with "column does not exist"), fixed in passing while
+    // touching adjacent customer-photo-lookup code for the hardening_02 pass.
     const { data: customers } = await supabaseService
-      .from('customers').select('id, name, profile_pic_url').in('id', customerIds);
+      .from('customers').select('id, name, profile_image').in('id', customerIds);
     const byId = {};
     (customers || []).forEach((c) => { byId[c.id] = c; });
 
     const data = customerIds.map((id) => ({
       id,
       name: byId[id]?.name || 'Customer',
-      profileImage: byId[id]?.profile_pic_url || null,
+      profileImage: byId[id]?.profile_image || null,
       lastSessionType: latestByCustomer[id].call_type,
       lastSessionAt: latestByCustomer[id].ended_at || latestByCustomer[id].started_at,
     })).sort((a, b) => new Date(b.lastSessionAt) - new Date(a.lastSessionAt));
@@ -2308,7 +2738,7 @@ app.post('/api/live/:id/end', async (req, res) => {
 
 // Customer sends a gift (live or profile). Money: customer wallet → astrologer wallet
 // (50%); the rest is platform revenue, recorded in gift_transactions.
-app.post('/api/gift/send', async (req, res) => {
+app.post('/api/gift/send', writeLimiter, async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -2345,24 +2775,24 @@ app.post('/api/gift/send', async (req, res) => {
     const vendorCredit = Math.round(amount * GIFT_VENDOR_SHARE);
     const platformCut = amount - vendorCredit;
 
-    // 1. Debit customer
-    await supabaseService.from('customers').update({ wallet_balance: balance - amount }).eq('id', customer.id);
-    await supabaseService.from('wallet_transactions').insert([{
-      user_id: customer.id, type: 'debit', amount, description: `Gift: ${gift.name}`, session_id: sessionId || null,
-    }]);
-
-    // 2. Credit astrologer (50%)
-    const { data: astro } = await supabase.from('astrologers')
-      .select('wallet_balance, today_earnings, total_earnings').eq('id', astrologerId).single();
-    await supabaseService.from('astrologers').update({
-      wallet_balance: (astro?.wallet_balance ?? 0) + vendorCredit,
-      today_earnings: (astro?.today_earnings ?? 0) + vendorCredit,
-      total_earnings: (astro?.total_earnings ?? 0) + vendorCredit,
-    }).eq('id', astrologerId);
-    await supabaseService.from('vendor_wallet_transactions').insert([{
-      vendor_id: astrologerId, type: 'credit', amount: vendorCredit,
-      description: `Gift received: ${gift.name}`, session_id: sessionId || null,
-    }]);
+    // 1+2. Debit the customer and credit the astrologer as one transaction.
+    // Previously these were four separate statements, so a failure between them
+    // could take money from the customer and never credit the astrologer — or
+    // credit the astrologer for a debit that never landed.
+    let giftBalances;
+    try {
+      giftBalances = await wallet.transferCustomerToVendor(customer.id, astrologerId, amount, {
+        vendorAmount: vendorCredit,
+        description: `Gift: ${gift.name}`,
+        sessionId: sessionId || null,
+        idempotencyKey: `gift:${customer.id}:${giftId}:${Date.now()}`,
+      });
+    } catch (giftErr2) {
+      if (giftErr2 instanceof wallet.InsufficientFunds) {
+        return res.status(400).json({ success: false, message: 'Insufficient balance' });
+      }
+      throw giftErr2;
+    }
 
     // 3. Record the gift (platform_cut = platform revenue)
     await supabaseService.from('gift_transactions').insert([{
@@ -2381,7 +2811,7 @@ app.post('/api/gift/send', async (req, res) => {
       });
     }
 
-    return res.status(200).json({ success: true, newBalance: balance - amount });
+    return res.status(200).json({ success: true, newBalance: giftBalances.customerBalance });
   } catch (err) {
     console.error('POST /api/gift/send error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to send gift' });
@@ -2402,6 +2832,31 @@ app.use((err, req, res, next) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Astrowani backend server is running on http://localhost:${PORT}`);
+
+  // DISABLE_SESSION_MANAGER=1 boots the HTTP API without the background loops.
+  // Those loops write to the shared database the moment they start —
+  // checkEarningsResets() zeroes today_earnings across every astrologer, and
+  // markStaleRequestsMissed() flips pending requests to 'missed'. Running a
+  // local instance against production credentials to test an endpoint would
+  // otherwise silently corrupt live data. Never set this on the real server.
+  // One Realtime subscription for the whole system, rebroadcast over Socket.io,
+  // replacing the four per-user subscriptions the customer app used to open.
+  // Starts regardless of DISABLE_SESSION_MANAGER below: this is read-only — it
+  // observes changes and emits socket events, and never writes to the database.
+  // See src/astrologerFanout.js.
+  startAstrologerFanout({
+    io,
+    supabaseUrl: SUPABASE_URL,
+    supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY,
+    onChange: () => astrologerListCache.invalidate('astrologers:'),
+  });
+
+  // DISABLE_SESSION_MANAGER gates only the loops that WRITE.
+  if (process.env.DISABLE_SESSION_MANAGER === '1') {
+    console.warn('[startup] DISABLE_SESSION_MANAGER=1 — billing, earnings resets and the ' +
+      'stale-request sweep are OFF. This must never be set in production.');
+    return;
+  }
   sessionManager.start(io); // Start the SessionManager with io instance
 });
 
