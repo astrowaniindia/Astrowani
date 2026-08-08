@@ -84,16 +84,19 @@ GRANT SELECT (
   is_call_enabled, is_chat_enabled, is_video_call_enabled,
   is_available, is_online, is_live, approval_status, is_suspended
 ) ON public.astrologers TO anon;
+-- UPDATED 2026-08-08: EditProfile.js (name, contact, experience, languages, bio, photo,
+-- charges, bank details) now goes through PUT /api/vendor/profile (astroId from the
+-- vendor's own JWT), because column-level grants have no row-ownership concept — anyone
+-- holding the anon key could otherwise rewrite ANY astrologer's charge rates, not just
+-- their own. Only the columns still written directly by other screens remain grantable:
+-- fcm_token (Firebase.js) and the two toggle groups (HomeScreen.js).
 GRANT UPDATE (
-  first_name, last_name, email, phone_number, gender, experience, languages,
-  specialties, bio, profile_pic_url, fcm_token,
-  call_charge_per_minute, chat_charge_per_minute, video_charge_per_minute,
-  is_call_enabled, is_chat_enabled, is_video_call_enabled, is_available, is_online,
-  bank_account_holder, bank_account_number, bank_ifsc, bank_name, upi_id
+  fcm_token,
+  is_call_enabled, is_chat_enabled, is_video_call_enabled, is_available, is_online
 ) ON public.astrologers TO anon;
--- Bank details stay writable (EditProfile writes them) but are NO LONGER
--- readable by anon — they are absent from the GRANT SELECT list above. Only the
--- backend and admin dashboard, both service-role, can read them.
+-- Bank details are writable only via the backend now, and were never readable by
+-- anon — absent from the GRANT SELECT list above. Only the backend and admin
+-- dashboard, both service-role, can read or write them.
 --
 -- NOTE: astrologer registration (VerifyOtp.js) currently INSERTs into this table
 -- from the app; INSERT is intentionally not granted back. Move registration to a
