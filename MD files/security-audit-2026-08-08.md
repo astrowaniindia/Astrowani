@@ -1,5 +1,12 @@
 # Backend Endpoint Authorization Audit — 2026-08-08
 
+> **Update, same day**: after the authorization pass below, the audit series' actual goal was
+> clarified — the point of both the database hardening pass and this one is that the app
+> behaves the *same* whether 10 or 1000 people are using it at once, not authorization
+> correctness as an end in itself (see `memory/audit_program_goal.md`). A second,
+> concurrency/load-scaling-focused pass followed; its findings and fixes are in the new
+> section near the end of this file.
+
 Full pass over every HTTP route and socket handler in `astrowani-backend` (`index.js` +
 `src/adminRoutes.js`, `astroRoutes.js`, `notificationRoutes.js`, `freeServicesRoutes.js`,
 `uploadRoutes.js`, `postHogRoutes.js`, `bugAgentRoutes.js`), plus the supporting modules that
@@ -175,6 +182,91 @@ work, not a one-line fix — tracked here rather than fixed reflexively.
   fail-open/fail-safe choices are deliberate and documented.
 - **`sessionManager.js`'s `checkWalletHealth` / `markStaleRequestsMissed`** — genuinely
   detection-only, never mutate `wallet_balance` or active session state themselves.
+
+## Part 2 — Concurrency / load-scaling audit (same day)
+
+Explicitly scoped around "does this get worse specifically as concurrent users scale up,"
+not general code quality. One issue in this family was already found and fixed earlier this
+project — see `astrowani-backend/src/astrologerFanout.js`'s own header comment: four customer
+screens each held an unfiltered `{event:'*', table:'astrologers'}` Supabase Realtime
+subscription and refetched the full astrologer list on any change, which scaled Realtime
+connections as *users × screens* and refetch storms as *users × astrologer activity* —
+Supabase's free tier caps concurrent Realtime connections at 200 and messages at 100/s, so
+at 1,000 users this was exceeded before anyone touched a toggle. That fix (single backend
+subscription → coalesced `astrologers_changed` socket broadcast → debounced + jittered client
+refetch, backed by the existing 10s TTL/single-flight list cache) was already live in
+`Home.js`, `Chat.js`, `Video.js`, and `Call.js`. **`CategoryAstrologers.js` was missed** —
+still had the old direct, unfiltered subscription. Migrated to the shared
+`useAstrologerListSync` hook, closing the last gap.
+
+### Fixed
+
+**1. `sessionManager.js`'s 30-second billing poll — serial N+1 loop, dead per-session query,
+no re-entrancy guard.** This is the one finding in this pass that threatens *correctness*
+under load, not just latency — the function that moves real money every 30 seconds.
+- `checkActiveSessions()` processed each due session with `await` inside a `for` loop —
+  cost scaled linearly with concurrently-active paid sessions. At low traffic, invisible; at
+  hundreds of simultaneous active calls/chats, one tick's wall-clock time stretches out.
+- Each iteration also did a second, completely unused round-trip: fetched the customer's
+  `wallet_balance` into `session.customers`, which nothing downstream ever read. Deleted.
+- The `setInterval` driving this never checked whether the previous tick had finished — a
+  tick running long (more likely exactly when it matters, under load) could overlap the next
+  one processing the same sessions concurrently.
+- **Fix**: dropped the dead customer fetch; due sessions are now billed concurrently via
+  `Promise.all` (safe because `process_session_billing`'s own row-level `FOR UPDATE` lock
+  makes concurrent calls for *different* sessions independent — see
+  `sql/process_session_billing.sql`); added an `isCheckingSessions` guard so an overrunning
+  tick skips the next one instead of double-processing.
+- Verified with `scripts/testCheckActiveSessionsFix.js` (14/14): three concurrent due
+  sessions each billed exactly once, a free-session-window session correctly skipped and
+  rescheduled without an RPC call, and an immediate re-run confirmed no double-billing.
+
+**2. Unbounded in-memory `pdfCache` in `astroRoutes.js`.** Held full generated-PDF byte
+buffers with only a 5-minute TTL sweep and no cap on how many could accumulate in between —
+unlike `src/ttlCache.js`, which caps `maxEntries` on every insert. Memory held scaled
+linearly with paid-report purchase rate in any given window, no ceiling. Added the same
+`maxEntries`-on-insert discipline (200 entries, oldest evicted first via `Map`'s natural
+insertion-order iteration).
+
+### Confirmed, not fixed — lower urgency
+
+- **`notifyMissed` / `markStaleRequestsMissed`** (same 30s poll as the billing fix, smaller
+  magnitude) — sequential `await sendPush()`/`checkAstrologerBusy()` per row instead of
+  batched. `notificationRoutes.js` already has the batching pattern for FCM
+  (`CHUNK_SIZE = 500`) that this doesn't reuse. Worth doing in the same pass as #1 above, but
+  bounded by stale-request count rather than active-session count, so lower priority.
+- **Global 10MB JSON body limit applies to every route**, not just image/audio uploads —
+  parsing a large body and base64-decoding it are synchronous, so they block the single
+  Node process's event loop for every other concurrent request while running. No
+  endpoint-specific tighter limit exists. Matters more as concurrent upload traffic grows.
+- **`GET /vendor/performance` has no date range** — pulls a vendor's entire lifetime
+  call/chat/session history every time. Grows with total historical data regardless of
+  concurrency, and compounds if many vendors check it around the same time.
+- **Admin broadcast (`notificationRoutes.js`) fans out one `io.to(id).emit()` per recipient**
+  in an unchunked `forEach` — scales with total registered users, not concurrent connections,
+  and is only triggered by a rare admin action. Low urgency, but the FCM send two lines below
+  it is already chunked; the socket fan-out isn't.
+- **Backend runs as a single pm2 process, no cluster mode.** Correct tradeoff today — the
+  in-memory singletons this codebase relies on (`ttlCache.js`, `astrologerFanout.js`'s single
+  subscription, `sessionManager`'s poll state) would need a shared store (Redis) to be safe
+  under multiple processes, and that's a bigger architecture change than anything in this
+  pass. Flagged as the actual ceiling on vertical throughput once everything above is fixed —
+  a single process is still bound by one CPU core.
+
+### Verified already fine (not just assumed)
+
+- No other N+1 patterns in `index.js`'s list/read endpoints — `formatAstrologer`,
+  `buildCategoryMap`, `buildBusyMap` are all properly batched regardless of astrologer count.
+- `ttlCache.js` — `maxEntries` eviction genuinely runs on every `set()`, single-flight
+  coalescing genuinely dedupes concurrent cache misses. No gap between intent and code.
+- No per-request Supabase client construction anywhere audited — every module builds its
+  client once at load time.
+- Every other socket emit in `index.js`/`sessionManager.js` targets a specific room
+  (`io.to(id)`), not a broadcast to all connected sockets — `astrologerFanout.js`'s
+  (necessarily) broadcast event is the only one, and it carries no payload beyond a change
+  count by design.
+- Rate limiters (`httpHardening.js`) use the default in-memory store, which self-prunes per
+  window and is appropriate for a single process.
 
 ## What this pass did not cover
 

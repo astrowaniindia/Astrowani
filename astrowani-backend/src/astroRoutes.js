@@ -32,9 +32,20 @@ const COMPANY = {
 };
 
 // In-memory cache for generated PDF bytes (10 min TTL) — see the pdf-report handler for why.
+// LOAD-SCALING FIX (2026-08-08 — see security-audit-2026-08-08.md): this only evicted on
+// the 5-minute TTL sweep, with no cap on how many full PDF buffers could accumulate in
+// between. Memory held scaled linearly with purchase rate in any given ~10-15 minute window,
+// with no ceiling — unlike src/ttlCache.js, which caps maxEntries on every insert. Added the
+// same discipline here: insert order is a Map's natural iteration order, so once over the
+// cap the oldest entry (first in iteration order) is evicted immediately, not just on sweep.
+const PDF_CACHE_MAX_ENTRIES = 200;
 const pdfCache = new Map();
 function cachePdf(buf) {
   const id = crypto.randomUUID();
+  if (pdfCache.size >= PDF_CACHE_MAX_ENTRIES) {
+    const oldestKey = pdfCache.keys().next().value;
+    if (oldestKey !== undefined) pdfCache.delete(oldestKey);
+  }
   pdfCache.set(id, { buf, expires: Date.now() + 10 * 60 * 1000 });
   return id;
 }

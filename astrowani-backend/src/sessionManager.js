@@ -35,6 +35,8 @@ class SessionManager {
     this.lastDailyResetDate = null;
     // Initialize lastMonthlyResetMs to 31 days ago so the first run checks if a monthly reset is due.
     this.lastMonthlyResetMs = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    // Re-entrancy guard for the 30s billing poll — see checkActiveSessions().
+    this.isCheckingSessions = false;
     console.log('SessionManager Instance Created.');
   }
 
@@ -286,11 +288,29 @@ class SessionManager {
   /**
    * Authoritative Polling Loop
    * Finds sessions where is_active=true AND next_billing_at <= NOW
+   *
+   * LOAD-SCALING FIX (2026-08-08 — see security-audit-2026-08-08.md): this used to process
+   * every due session sequentially (await-in-a-for-loop), and each iteration did a second,
+   * completely unused round-trip fetching the customer's wallet_balance (set onto
+   * session.customers, which nothing downstream ever read — dead code, pure waste). At low
+   * concurrent-session counts the serial cost is invisible; at scale (hundreds of
+   * simultaneously active paid calls/chats) it stretches one 30s tick's wall-clock time
+   * linearly with active-session count. Worse, the setInterval driving this never checked
+   * whether the previous tick had finished, so a tick that ran long could overlap the next
+   * one processing the SAME sessions concurrently. Fixed by: dropping the dead customer
+   * fetch, running each due session's billing concurrently (process_session_billing's own
+   * row-level FOR UPDATE lock makes concurrent calls for DIFFERENT sessions safe — see
+   * sql/process_session_billing.sql), and an isCheckingSessions guard so an overlap-prone
+   * long tick skips the next one instead of double-processing.
    */
   async checkActiveSessions() {
+    if (this.isCheckingSessions) {
+      console.warn('[SessionManager] Previous checkActiveSessions tick still running — skipping this one.');
+      return;
+    }
+    this.isCheckingSessions = true;
     const now = new Date();
     try {
-      // Fetch active sessions first without joining customers
       const { data: sessions, error } = await supabase
         .from('chat_sessions')
         .select('*')
@@ -302,7 +322,7 @@ class SessionManager {
 
       console.log(`[SessionManager] Found ${sessions.length} sessions due for billing.`);
 
-      for (const session of sessions) {
+      await Promise.all(sessions.map(async (session) => {
         // First-ever session for this customer — free for the opening window; skip
         // charging (and skip the opaque billing RPC entirely) while still inside it.
         // Once the window elapses, normal per-minute billing resumes for what's left.
@@ -313,25 +333,16 @@ class SessionManager {
               .from('chat_sessions')
               .update({ next_billing_at: new Date(now.getTime() + 60000).toISOString() })
               .eq('id', session.id);
-            continue;
+            return;
           }
         }
 
-        // Fetch customer data manually using caller_id
-        const { data: customerData, error: customerError } = await supabase
-          .from('customers')
-          .select('wallet_balance')
-          .eq('id', session.caller_id)
-          .single();
-
-        if (!customerError && customerData) {
-          session.customers = customerData;
-        }
-
         await this.processBilling(session);
-      }
+      }));
     } catch (err) {
       console.error('[SessionManager] Error in checkActiveSessions:', err.message);
+    } finally {
+      this.isCheckingSessions = false;
     }
   }
 

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
-import { supabase } from '../../api/SupabaseClient';
 import ExpertsList from '../component/ExpertsList';
+import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 
 // Lists astrologers belonging to one category (e.g. Vedic Astrology, Tarot Reading,
 // Numerology, Palmistry). The category is whatever the vendor picked at signup
@@ -36,20 +36,11 @@ const CategoryAstrologers = ({ route }) => {
     }, [fetchAstrologers]),
   );
 
-  // Live sync — re-fetch when any astrologer row changes (unique channel per mount).
-  useEffect(() => {
-    const channel = supabase
-      .channel(`category-astro-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'astrologers' },
-        () => fetchAstrologers(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchAstrologers]);
+  // Live sync — via the backend's single coalesced broadcast (see
+  // hooks/useAstrologerListSync.js) instead of this screen's own direct, unfiltered
+  // Supabase Realtime subscription — that pattern scales Realtime connections and
+  // refetch storms as users x screens, which is exactly what broke at volume.
+  useAstrologerListSync(fetchAstrologers);
 
   const onRefresh = async () => {
     setRefreshing(true);
