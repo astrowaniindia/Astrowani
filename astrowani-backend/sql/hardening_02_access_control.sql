@@ -108,26 +108,35 @@ GRANT UPDATE (
 REVOKE ALL ON public.wallet_transactions        FROM anon;
 REVOKE ALL ON public.vendor_wallet_transactions FROM anon;
 
--- ── Sessions: per_minute_charge lives here, and the vendor app inserts the row.
---    Until that insert moves behind the backend (STEP 3) we cannot revoke
---    INSERT, but we can stop anon rewriting the rate or the billing clock on an
---    existing session.
+-- ── Sessions: UPDATED 2026-08-08 — STEP 3 is done. chat_sessions rows are now
+--    created by backend endpoints (session-accept flow) using the service-role
+--    client, not by the vendor app inserting directly. anon keeps SELECT
+--    (apps read session status/realtime) and the narrow UPDATE it always had;
+--    INSERT is no longer granted. Verified via scripts/testAccessControlHardening.js
+--    that no app code path still calls supabase.from('chat_sessions').insert(...).
 REVOKE ALL ON public.chat_sessions FROM anon;
-GRANT SELECT, INSERT ON public.chat_sessions TO anon;
+GRANT SELECT ON public.chat_sessions TO anon;
 GRANT UPDATE (is_active, ended_at) ON public.chat_sessions TO anon;
 
--- ── Requests: apps legitimately insert and update status. Nothing else.
+-- ── Requests: UPDATED 2026-08-08 — STEP 3 is done. call_requests rows are now
+--    created by POST /api/call/initiate; chat_requests rows by POST
+--    /api/chat/initiate. Both use the service-role client. anon no longer
+--    needs INSERT on either table — only SELECT (status polling/realtime) and
+--    the narrow UPDATE it always had.
 REVOKE ALL ON public.call_requests FROM anon;
-GRANT SELECT, INSERT ON public.call_requests TO anon;
+GRANT SELECT ON public.call_requests TO anon;
 GRANT UPDATE (status, responded_at, session_id) ON public.call_requests TO anon;
 
 REVOKE ALL ON public.chat_requests FROM anon;
-GRANT SELECT, INSERT ON public.chat_requests TO anon;
+GRANT SELECT ON public.chat_requests TO anon;
 GRANT UPDATE (status, responded_at) ON public.chat_requests TO anon;
 
--- ── Messages: insert + read only; never editable or deletable after the fact.
+-- ── Messages: UPDATED 2026-08-08 — STEP 3 is done. Messages are now inserted
+--    via POST /api/chat/message (service-role). anon keeps SELECT only (both
+--    apps still read/subscribe to their own chat history directly) — no
+--    INSERT, no UPDATE, no DELETE.
 REVOKE ALL ON public.chat_messages FROM anon;
-GRANT SELECT, INSERT ON public.chat_messages TO anon;
+GRANT SELECT ON public.chat_messages TO anon;
 
 -- ── Read-only content the apps display. Writes belong to the admin dashboard.
 REVOKE ALL ON public.banners, public.blogs, public.categories, public.thoughts,
