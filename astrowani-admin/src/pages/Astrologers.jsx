@@ -14,6 +14,8 @@ export default function Astrologers() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [topup, setTopup] = useState(null); // astrologer being wallet-adjusted
+  const [amount, setAmount] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -53,6 +55,19 @@ export default function Astrologers() {
     finally { setBusy(false); }
   };
 
+  const submitTopup = async () => {
+    const amt = Number(amount);
+    if (!amt) return;
+    setBusy(true);
+    try {
+      await client.post(`/api/admin/astrologers/${topup.id}/wallet`, { amount: amt });
+      setTopup(null);
+      setAmount('');
+      await load();
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setBusy(false); }
+  };
+
   const name = (r) => `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Astrologer';
   const set = (k, v) => setEditing((p) => ({ ...p, [k]: v }));
   const openEdit = (r) => setEditing({
@@ -67,11 +82,11 @@ export default function Astrologers() {
         <table>
           <thead><tr>
             <th>Name</th><th>Phone</th><th>Status</th><th>Suspended</th>
-            <th>Charges (chat/call/video)</th><th></th>
+            <th>Charges (chat/call/video)</th><th>Wallet (₹)</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={6} className="empty">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} className="empty">No astrologers.</td></tr>}
+            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} className="empty">No astrologers.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{name(r)}</td>
@@ -79,6 +94,7 @@ export default function Astrologers() {
                 <td><StatusBadge s={r.approval_status} /></td>
                 <td>{r.is_suspended ? <span className="badge red">Suspended</span> : <span className="badge gray">No</span>}</td>
                 <td className="muted">{r.chat_charge_per_minute || 0} / {r.call_charge_per_minute || 0} / {r.video_charge_per_minute || 0}</td>
+                <td><b>{r.wallet_balance ?? 0}</b></td>
                 <td><div className="btn-group">
                   {r.approval_status !== 'approved' &&
                     <button className="btn sm" onClick={() => patch(r.id, { approval_status: 'approved' })}>Approve</button>}
@@ -88,6 +104,7 @@ export default function Astrologers() {
                     {r.is_suspended ? 'Unsuspend' : 'Suspend'}
                   </button>
                   <button className="btn ghost sm" onClick={() => openEdit(r)}>Edit</button>
+                  <button className="btn ghost sm" onClick={() => { setTopup(r); setAmount(''); }}>Adjust wallet</button>
                 </div></td>
               </tr>
             ))}
@@ -141,6 +158,22 @@ export default function Astrologers() {
           <div className="actions">
             <button className="btn secondary" onClick={() => setEditing(null)}>Cancel</button>
             <button className="btn" onClick={saveEdit} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </Modal>
+      )}
+
+      {topup && (
+        <Modal title={`Adjust wallet — ${name(topup)}`} onClose={() => setTopup(null)}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Current balance: <b>₹{topup.wallet_balance ?? 0}</b>. Enter a positive amount to credit,
+            negative to debit. Use this only for verified mishap corrections — it is logged in
+            vendor_wallet_transactions and does not count toward earnings.
+          </p>
+          <div className="field"><label>Amount (₹)</label>
+            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></div>
+          <div className="actions">
+            <button className="btn secondary" onClick={() => setTopup(null)}>Cancel</button>
+            <button className="btn" onClick={submitTopup} disabled={busy || !amount}>{busy ? 'Applying…' : 'Apply'}</button>
           </div>
         </Modal>
       )}

@@ -42,7 +42,6 @@ import BookPujaScreen from '../screens/Remedies/BookPujaScreen';
 import PujaDetails from '../screens/Remedies/PujaDetails';
 import RemedyShop from '../screens/Remedies/RemedyShop';
 import CategoryAstrologers from '../screens/Category/CategoryAstrologers';
-import ChatIntakeForm from '../screens/component/ChatIntakeForm';
 import MySessionScreen from '../screens/drawerScreens/MySessionScreen';
 import MyPackages from '../screens/drawerScreens/MyPackages';
 import FavoriteScreen from '../screens/drawerScreens/FavoriteScreen';
@@ -85,7 +84,6 @@ import SupportScreen from '../screens/drawerScreens/SupportScreen';
 import RefundAndCancel from '../screens/drawerScreens/RefundAndCancel';
 import PrivacyPolicy from '../screens/drawerScreens/PrivacyPolicy';
 import TermsOfUse from '../screens/drawerScreens/TermsOfUse';
-import PersonToPersonChat from '../screens/component/PersonToPersonChat';
 // import GemstoneDetails from '../screens/Remedies/GemstoneDetails';
 import GemstoneList from '../screens/Remedies/GemstoneList';
 import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails';
@@ -447,34 +445,6 @@ export default function Navigation({ initialRoute }) {
               fontSize: moderateScale(18),
             },
             tabBarStyle: { display: 'none' },
-          })}
-        />
-        <Stack.Screen
-          name="ChatIntakeForm"
-          component={ChatIntakeForm}
-          options={({ route }) => ({
-            title: 'Chat Intake Form',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-          })}
-        />
-        <Stack.Screen
-          name="PersonToPersonChat"
-          component={PersonToPersonChat}
-          options={({ route }) => ({
-            headerShown: false,
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
           })}
         />
         <Stack.Screen

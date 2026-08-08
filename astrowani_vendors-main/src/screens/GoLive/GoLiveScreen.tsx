@@ -179,7 +179,8 @@ const GoLiveScreen = ({route, navigation}: any) => {
       setIsLive(true);
 
       // Socket — broadcaster joins its personal room (for targeted signalling) + the live room.
-      const socket = io(SOCKET_URL);
+      const socketToken = await AsyncStorage.getItem('token');
+      const socket = io(SOCKET_URL, { auth: { token: socketToken } });
       socketRef.current = socket;
       socket.on('connect', () => {
         socket.emit('join_room', astroIdRef.current);

@@ -227,7 +227,8 @@ const ChatSessionScreen = ({ route, navigation }) => {
       await loadWallet();
 
       // Socket setup
-      socketRef.current = io(SOCKET_URL);
+      const authToken = await AsyncStorage.getItem('token');
+      socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
 
       // Poll until session is created by vendor
       let isFetching = false;

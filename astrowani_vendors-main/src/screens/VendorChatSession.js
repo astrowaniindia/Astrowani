@@ -68,8 +68,9 @@ const VendorChatSession = ({ route, navigation }) => {
       astroIdRef.current = id;
 
       // Socket setup
-      socketRef.current = io(SOCKET_URL);
-      
+      const authToken = await AsyncStorage.getItem('token');
+      socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
+
       let finalSessionId = initialSessionId;
 
       // Get session if not passed
@@ -209,6 +210,8 @@ const VendorChatSession = ({ route, navigation }) => {
       customerId: callerId,
       astrologerId: astroIdRef.current,
       message: msg,
+    }, {
+      headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
     }).catch(() => {});
   };
 

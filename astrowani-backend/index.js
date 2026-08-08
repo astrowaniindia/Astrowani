@@ -194,17 +194,71 @@ app.locals.io = io;
 
 const sessionManager = require('./src/sessionManager'); // Import the SessionManager
 
+// SECURITY (2026-08-08 — see MD files/security-audit-2026-08-08.md): join_room(userId) used
+// to trust the client-supplied id with zero verification — anyone who obtained/guessed a
+// customer or astrologer UUID could join that user's personal room and silently eavesdrop on
+// their incoming_call/call_accepted/session_ended/new_notification/new_chat_message events.
+// Every join now requires the same JWT used for HTTP auth; the claimed id is only used for
+// logging a mismatch, never trusted for the actual socket.join().
+async function resolveSocketIdentity(token) {
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.astroId || decoded.vendorId || decoded.role === 'astrologer') {
+      return decoded.astroId || decoded.vendorId || decoded.id || null;
+    }
+    // Customer token — reconcile by phone the same way resolveCustomerFromReq does, since
+    // older tokens can carry a stale user_<timestamp> id instead of the real UUID.
+    let id = decoded.userId || decoded.id || null;
+    if (decoded.phone) {
+      const { data } = await supabaseService.from('customers').select('id').eq('mobile', decoded.phone).limit(1);
+      if (data && data.length) id = data[0].id;
+    }
+    return id;
+  } catch (_) {
+    return null;
+  }
+}
+
 io.on('connection', (socket) => {
   console.log('A user connected via Socket.io:', socket.id);
 
-  socket.on('join_room', (userId) => {
-    socket.join(userId);
-    console.log(`User ${userId} joined their personal room.`);
+  socket.on('join_room', async (userId) => {
+    const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+    if (!realId) {
+      console.warn(`[socket] join_room rejected for claimed id ${userId} — missing/invalid auth token`);
+      return;
+    }
+    if (String(realId) !== String(userId)) {
+      console.warn(`[socket] join_room: claimed id ${userId} did not match verified id ${realId} — joining the verified room only`);
+    }
+    socket.join(realId);
+    console.log(`User ${realId} joined their personal room (verified).`);
   });
 
-  socket.on('join_session', (sessionId) => {
+  // SECURITY (2026-08-08 — see MD files/security-audit-2026-08-08.md, "chat room-membership
+  // injection"): previously any authenticated (or unauthenticated) socket could join ANY
+  // session's room by guessing/enumerating its sessionId, and — combined with
+  // /api/chat/message's lack of a matching check — could inject a message into a session
+  // they are not part of, or silently eavesdrop on its live message/signaling events. Both
+  // sides of this are now closed: joining requires a verified identity that is actually
+  // caller_id or vendor_id on the session row.
+  socket.on('join_session', async (sessionId) => {
+    if (!sessionId) return;
+    const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+    if (!realId) {
+      console.warn(`[socket] join_session rejected for ${sessionId} — missing/invalid auth token`);
+      return;
+    }
+    const { data: sessionRow } = await supabaseService
+      .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+    if (!sessionRow
+      || (String(sessionRow.caller_id) !== String(realId) && String(sessionRow.vendor_id) !== String(realId))) {
+      console.warn(`[socket] join_session rejected — ${realId} is not a participant of session ${sessionId}`);
+      return;
+    }
     socket.join(sessionId);
-    console.log(`Socket ${socket.id} joined session room: ${sessionId}`);
+    console.log(`Socket ${socket.id} joined session room: ${sessionId} (verified participant ${realId})`);
   });
 
   socket.on('initiate_call', (data) => {
@@ -1145,9 +1199,19 @@ app.post('/api/users/fcm-token', async (req, res) => {
 // Called by the vendor app right after it inserts a chat_messages row, so the customer
 // gets a push if their app is backgrounded/killed (chat itself runs over Supabase Realtime,
 // which the Node backend has no visibility into).
+//
+// SECURITY (2026-08-08 — see MD files/security-audit-2026-08-08.md): this had NO auth at
+// all — anyone could POST an arbitrary customerId + fabricated message text and trigger a
+// real push notification (spam/phishing under an astrologer's name) to that customer's
+// phone. Now requires a valid vendor JWT, and astrologerId comes from the token — the
+// client-supplied astrologerId (used only for the push's display name lookup) can no
+// longer be spoofed to impersonate a different astrologer.
 app.post('/api/push/notify-chat-message', async (req, res) => {
   try {
-    const { customerId, astrologerId, message } = req.body;
+    const astrologerId = await resolveVendorIdFromReq(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { customerId, message } = req.body;
     if (!customerId || !message) return res.status(400).json({ success: false, message: 'customerId and message are required' });
 
     const [{ data: customerRow }, { data: astroRow }] = await Promise.all([
@@ -1174,9 +1238,16 @@ app.post('/api/push/notify-chat-message', async (req, res) => {
 // directly into Supabase with no backend involvement, so it calls this right after as a
 // fire-and-forget push fallback for a backgrounded/killed vendor app. Data-only payload,
 // same accept/reject notification path as incoming_call.
+// SECURITY (2026-08-08): had no auth — anyone could POST an arbitrary vendorId and trigger
+// a fake "New Chat Request" push to that astrologer's phone (griefing / social engineering,
+// e.g. luring them to open the app expecting a paying customer). Now requires a valid
+// customer JWT; callerId/callerName come from the resolved customer, not the request body.
 app.post('/api/push/notify-chat-request', async (req, res) => {
   try {
-    const { vendorId, callerId, callerName } = req.body;
+    const caller = await resolveCustomerFromReq(req);
+    if (!caller?.id) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { vendorId } = req.body;
     if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
 
     const { data: vendorRow } = await supabaseService
@@ -1186,8 +1257,8 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
       await sendPush(vendorRow.fcm_token, {
         data: {
           type: 'chat_request',
-          callerName: callerName || 'Customer',
-          callerId: callerId || '',
+          callerName: caller.name || 'Customer',
+          callerId: caller.id,
         },
       });
     }
@@ -1203,9 +1274,16 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
 // reasoning as the call side's 'cancel_call' socket handler above. Chats have no backend
 // touchpoint at request time (customer inserts chat_requests directly into Supabase), so
 // this mirrors notify-chat-request as a fire-and-forget call from the customer app.
+// SECURITY (2026-08-08): had no auth — anyone could POST an arbitrary vendorId and fire a
+// fake "request cancelled" push, e.g. to dismiss a real astrologer's heads-up for a request
+// that is actually still pending. Now requires a valid customer JWT; callerId comes from
+// the resolved customer, not the request body.
 app.post('/api/push/notify-chat-cancelled', async (req, res) => {
   try {
-    const { vendorId, callerId } = req.body;
+    const caller = await resolveCustomerFromReq(req);
+    if (!caller?.id) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { vendorId } = req.body;
     if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
 
     const { data: vendorRow } = await supabaseService
@@ -1213,7 +1291,7 @@ app.post('/api/push/notify-chat-cancelled', async (req, res) => {
 
     if (vendorRow?.fcm_token) {
       await sendPush(vendorRow.fcm_token, {
-        data: { type: 'cancel_incoming_request', callerId: callerId || '' },
+        data: { type: 'cancel_incoming_request', callerId: caller.id },
       });
     }
     return res.status(200).json({ success: true });
@@ -1657,6 +1735,20 @@ app.post('/api/chat/message', async (req, res) => {
     if (!isVendor && decoded.phone) {
       const { data } = await supabase.from('customers').select('id').eq('mobile', decoded.phone).limit(1);
       if (data && data.length) senderId = data[0].id;
+    }
+
+    // SECURITY (2026-08-08): previously nothing checked that senderId is actually a
+    // participant of sessionId — any authenticated user could inject a message into ANY
+    // session by guessing/enumerating its id. The row is only trusted for real sessions;
+    // messages sent without a sessionId (a stale/legacy caller) are still inserted as
+    // before but obviously cannot be relayed into a session room they don't identify.
+    if (sessionId) {
+      const { data: sessionRow } = await supabaseService
+        .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+      if (!sessionRow
+        || (String(sessionRow.caller_id) !== String(senderId) && String(sessionRow.vendor_id) !== String(senderId))) {
+        return res.status(403).json({ success: false, message: 'Not a participant of this session' });
+      }
     }
 
     const { data, error } = await supabaseService.from('chat_messages').insert([{

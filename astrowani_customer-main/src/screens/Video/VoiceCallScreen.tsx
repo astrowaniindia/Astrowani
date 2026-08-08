@@ -283,7 +283,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     };
 
     const setupSocket = async () => {
-      const socket = io(SOCKET_URL);
+      const authToken = await AsyncStorage.getItem('token');
+      const socket = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current = socket;
 
       const userStr = await AsyncStorage.getItem('userData');

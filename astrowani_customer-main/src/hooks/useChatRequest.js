@@ -31,11 +31,13 @@ const useChatRequest = (navigation) => {
     const astro = astroRef.current;
     const vendorId = astro?._id || astro?.id || astro?.userId;
     if (!vendorId) return;
-    fetch(`${Instance.defaults.baseURL}/api/push/notify-chat-cancelled`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vendorId, callerId: callerIdRef.current }),
-    }).catch((e) => console.warn('notify-chat-cancelled skipped:', e.message));
+    AsyncStorage.getItem('token').then((token) => {
+      fetch(`${Instance.defaults.baseURL}/api/push/notify-chat-cancelled`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ vendorId }),
+      }).catch((e) => console.warn('notify-chat-cancelled skipped:', e.message));
+    });
   };
 
   const sendChatRequest = async (item) => {
@@ -162,12 +164,8 @@ const useChatRequest = (navigation) => {
       // same non-blocking style as the wallet check above.
       fetch(`${Instance.defaults.baseURL}/api/push/notify-chat-request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vendorId: receiverId,
-          callerId: supabaseCustomerId || callerId,
-          callerName: user.name || user.firstName || 'Customer',
-        }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ vendorId: receiverId }),
       }).catch((e) => console.warn('notify-chat-request skipped:', e.message));
 
       astroRef.current = item;

@@ -32,10 +32,8 @@ export default function useNotificationBadgeSync(userId, onNewNotification) {
 
   useEffect(() => {
     if (!userId) return undefined;
-
-    const socket = acquireSharedSocket();
-    // `new_notification` is emitted to io.to(recipientId) — must be in that room to receive it.
-    socket.emit('join_room', userId);
+    let cancelled = false;
+    let socketInstance = null;
 
     const onSignal = () => {
       try {
@@ -45,11 +43,21 @@ export default function useNotificationBadgeSync(userId, onNewNotification) {
       }
     };
 
-    socket.on('new_notification', onSignal);
+    (async () => {
+      const socket = await acquireSharedSocket();
+      if (cancelled) { releaseSharedSocket(); return; }
+      socketInstance = socket;
+      // `new_notification` is emitted to io.to(recipientId) — must be in that room to receive it.
+      socket.emit('join_room', userId);
+      socket.on('new_notification', onSignal);
+    })();
 
     return () => {
-      socket.off('new_notification', onSignal);
-      releaseSharedSocket();
+      cancelled = true;
+      if (socketInstance) {
+        socketInstance.off('new_notification', onSignal);
+        releaseSharedSocket();
+      }
     };
   }, [userId]);
 }

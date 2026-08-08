@@ -137,16 +137,22 @@ const HomeScreen = () => {
   const channelRef = useRef(null);
 
   useEffect(() => {
-    console.log('[Vendor] Connecting socket to:', SOCKET_URL);
-    socketRef.current = io(SOCKET_URL);
-    socketRef.current.on('connect', () => {
-      console.log('[Vendor] Socket connected:', socketRef.current.id);
-    });
-    socketRef.current.on('connect_error', (err) => {
-      // Transient (e.g. backend waking up) — log as warning so it doesn't throw a dev redbox.
-      console.log('[Vendor] Socket connection error (will retry):', err.message);
-    });
+    let cancelled = false;
+    (async () => {
+      const authToken = await AsyncStorage.getItem('token');
+      if (cancelled) return;
+      console.log('[Vendor] Connecting socket to:', SOCKET_URL);
+      socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
+      socketRef.current.on('connect', () => {
+        console.log('[Vendor] Socket connected:', socketRef.current.id);
+      });
+      socketRef.current.on('connect_error', (err) => {
+        // Transient (e.g. backend waking up) — log as warning so it doesn't throw a dev redbox.
+        console.log('[Vendor] Socket connection error (will retry):', err.message);
+      });
+    })();
     return () => {
+      cancelled = true;
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
@@ -194,6 +200,14 @@ const HomeScreen = () => {
   const initRequestListener = async () => {
     const astroId = await AsyncStorage.getItem('astroId');
     if (!astroId) return;
+
+    // Socket setup is now async (it fetches the auth token before connecting) — this
+    // effect can otherwise run before socketRef.current lands.
+    let waited = 0;
+    while (!socketRef.current && waited < 5000) {
+      await new Promise((r) => setTimeout(r, 100));
+      waited += 100;
+    }
 
     if (socketRef.current) {
       console.log('Emitting join_room for vendor/astrologer:', astroId);

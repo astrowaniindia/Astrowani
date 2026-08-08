@@ -74,8 +74,8 @@ async function main() {
     const customerToken = jwt.sign({ id: customer.id, userId: customer.id, phone: 'n/a' }, JWT_SECRET, { expiresIn: '1h' });
     const vendorToken = jwt.sign({ id: astro.id, astroId: astro.id, role: 'astrologer' }, JWT_SECRET, { expiresIn: '1h' });
 
-    customerSocket = ioClient(BASE_URL, { transports: ['websocket'] });
-    vendorSocket = ioClient(BASE_URL, { transports: ['websocket'] });
+    customerSocket = ioClient(BASE_URL, { transports: ['websocket'], auth: { token: customerToken } });
+    vendorSocket = ioClient(BASE_URL, { transports: ['websocket'], auth: { token: vendorToken } });
     await Promise.all([
       new Promise((r) => customerSocket.on('connect', r)),
       new Promise((r) => vendorSocket.on('connect', r)),

@@ -23,10 +23,8 @@ export default function useNotificationBadgeSync(astroId, onNewNotification) {
 
   useEffect(() => {
     if (!astroId) return undefined;
-
-    const socket = acquireSharedSocket();
-    // `new_notification` is emitted to io.to(recipientId) — must be in that room to receive it.
-    socket.emit('join_room', astroId);
+    let cancelled = false;
+    let socketInstance = null;
 
     const onSignal = () => {
       try {
@@ -36,11 +34,21 @@ export default function useNotificationBadgeSync(astroId, onNewNotification) {
       }
     };
 
-    socket.on('new_notification', onSignal);
+    (async () => {
+      const socket = await acquireSharedSocket();
+      if (cancelled) { releaseSharedSocket(); return; }
+      socketInstance = socket;
+      // `new_notification` is emitted to io.to(recipientId) — must be in that room to receive it.
+      socket.emit('join_room', astroId);
+      socket.on('new_notification', onSignal);
+    })();
 
     return () => {
-      socket.off('new_notification', onSignal);
-      releaseSharedSocket();
+      cancelled = true;
+      if (socketInstance) {
+        socketInstance.off('new_notification', onSignal);
+        releaseSharedSocket();
+      }
     };
   }, [astroId]);
 }

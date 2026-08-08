@@ -279,16 +279,41 @@ module.exports = function registerAdminRoutes(app) {
   }));
 
   app.patch('/api/admin/astrologers/:id', requireAdmin, h(async (req, res) => {
+    // wallet_balance is intentionally NOT in this list — it must go through the ledgered
+    // POST /wallet endpoint below (wallet.adjustVendorWallet), never a raw column overwrite,
+    // so every admin balance correction leaves a vendor_wallet_transactions row.
     const allowed = ['approval_status', 'is_suspended', 'is_available', 'is_chat_enabled',
       'is_call_enabled', 'is_video_call_enabled', 'chat_charge_per_minute',
       'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes',
-      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages',
-      'wallet_balance'];
+      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
     const { data, error } = await db.from('astrologers').update(body).eq('id', req.params.id).select().single();
     if (error) throw error;
     return res.json({ success: true, data });
+  }));
+
+  // Ledgered wallet correction for an astrologer — mirrors POST /api/admin/customers/:id/wallet.
+  // Used for mishap corrections (e.g. a disputed session) reported to and verified by an admin.
+  app.post('/api/admin/astrologers/:id/wallet', requireAdmin, h(async (req, res) => {
+    const amount = Number(req.body?.amount);
+    if (!amount || amount === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid amount' });
+    }
+    let newBalance;
+    try {
+      newBalance = await wallet.adjustVendorWallet(req.params.id, amount, {
+        description: req.body?.description || 'Admin wallet adjustment',
+        allowNegative: true,
+        countEarnings: false, // a correction is not real earned income
+      });
+    } catch (err) {
+      if (/NO_SUCH_ASTROLOGER/.test(err.message || '')) {
+        return res.status(404).json({ success: false, message: 'Astrologer not found' });
+      }
+      throw err;
+    }
+    return res.json({ success: true, newBalance });
   }));
 
   // ── Leaderboard — ranks astrologers by the same metrics the vendor performance ──

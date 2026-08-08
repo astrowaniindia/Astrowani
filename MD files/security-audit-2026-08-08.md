@@ -433,3 +433,121 @@ flagged for its own investigation rather than touched under this pass's time bud
 - WebRTC/media-layer security (ICE/TURN credentials, SDP handling) — out of scope, this was
   strictly the HTTP/socket authorization surface.
 - VPS/infra-level hardening (firewall rules, SSH config, `pm2`/systemd process isolation).
+
+---
+
+## Part 5 — Follow-up pass (same day, later): remaining flagged items closed
+
+Done autonomously in one sitting, each verified with a dedicated regression script run
+against a locally-run server backed by the production database (throwaway rows only,
+cleaned up in `finally`), then the FULL suite re-run after every subsequent change to catch
+cross-fix regressions. All 6 scripts, 53 assertions, passed clean at the end of the pass.
+
+### 1. Un-ledgered admin astrologer wallet route
+`PATCH /api/admin/astrologers/:id` accepted a raw `wallet_balance` overwrite with no ledger
+entry — the same class of bug already fixed for the customer wallet route, just missed on
+the astrologer side. Removed `wallet_balance` from the PATCH allow-list; added
+`POST /api/admin/astrologers/:id/wallet` using `wallet.adjustVendorWallet` (ledgered,
+`countEarnings:false` since a correction isn't real income), mirroring the existing customer
+route exactly. Added an "Adjust wallet" button + modal to the admin dashboard's Astrologers
+page (was previously only on the Customers page) so the admin-editable-balance feature the
+user explicitly wants (correcting disputed sessions after manual review) still works, just
+through the ledgered path.
+
+### 2. Socket-level auth gap — join_room(userId) impersonation
+The single biggest structural gap flagged throughout this whole audit: join_room trusted
+the client-supplied id with zero verification. Anyone who obtained/guessed a customer or
+astrologer UUID (visible in API responses, deep links, etc.) could join that user's personal
+room and silently receive their incoming_call/call_accepted/session_ended/new_notification/
+new_chat_message events.
+
+Fix: join_room now resolves the real identity from a JWT sent in the socket's connection
+auth handshake (same verification path as HTTP — jwt.verify + phone-based UUID
+reconciliation for customer tokens) and joins that resolved id's room, ignoring whatever id
+the client claims. Required threading an auth token into every io(SOCKET_URL, ...)
+connection site in both apps (10 in the customer app, 6 in the vendor app, plus both shared
+useSharedSocket.js hooks) — mechanical but broad; each site already had the token available
+nearby (or one AsyncStorage.getItem('token') away). HomeScreen.js (vendor)'s socket setup
+became async (fetches the token before connecting), so initRequestListener now waits up to
+5s for socketRef.current to land before emitting join_room.
+
+Verified with scripts/testJoinRoomAuthFix.js against the real incoming_call production
+code path (not a synthetic event): a legit astrologer with a valid token still receives it;
+a socket with no token, and a socket holding a real-but-unrelated customer's token claiming
+the astrologer's id, both receive nothing. 4/4.
+
+### 3. Chat/session room-membership injection
+join_session(sessionId) had the same zero-check problem, and /api/chat/message never
+verified the authenticated sender was actually caller_id or vendor_id on the target
+session — any logged-in user could inject a message into (and live-broadcast to) a session
+between two other people by guessing/enumerating its id.
+
+Fix: join_session now requires the same verified identity as join_room AND checks that
+identity is a real participant on the chat_sessions row before joining; /api/chat/message
+does the identical ownership check before inserting, returning 403 otherwise. This closes
+both the injection (HTTP) and the eavesdrop (socket) sides of the same bug. Required adding
+auth tokens to EnxScreenVoice.tsx/EnxScreenVideo.tsx (vendor call screens) too, since they
+call join_session and previously had no token on their socket at all.
+
+Verified with scripts/testChatRoomMembershipFix.js: an attacker with a real account cannot
+POST a message into a session they're not part of (403, nothing persisted), cannot eavesdrop
+via join_session on that session's live messages, while the two real participants are
+unaffected. 6/6. The existing testChatSocketRelay.js was updated to attach tokens to its
+test sockets (previously untested against this new requirement) and re-verified 9/9.
+
+### 4. Three unauthenticated push-notification endpoints
+notify-chat-message, notify-chat-request, and notify-chat-cancelled had no auth at all —
+anyone could POST an arbitrary customerId/vendorId plus fabricated message/caller-name text
+and trigger a real push notification under a spoofed identity, or falsely dismiss a real
+pending request's notification. Fixed by requiring a valid JWT on each
+(resolveVendorIdFromReq / resolveCustomerFromReq, the same helpers already used elsewhere in
+this file) and deriving the identity fields (astrologerId / callerId / callerName) from the
+resolved token instead of the request body. Updated all client call sites
+(useChatRequest.js x2, VendorChatSession.js x1) to attach the token. Verified with
+scripts/testPushEndpointAuthFix.js: no token or a garbage token gives 401 on all three; a
+valid token gives 200. 9/9.
+
+### 5. Dependency audit (npm audit)
+Backend: 15 to 6 (all 8 highs eliminated via non-breaking npm audit fix; the remaining 6
+moderate are a uuid bounds-check issue only reachable through firebase-admin's Google Cloud
+Storage dependency chain, and fixing it needs --force to firebase-admin 10.3.0, a breaking
+downgrade — left alone since push notifications already have their own "not configured"
+degrade path). Admin dashboard: 6 to 4 (nanoid/postcss fixed; esbuild-to-vite-8 and
+react-router-to-v7 both need major bumps, deferred). Customer app: 41 to 15, vendor app: 44
+to 19 (both drops entirely from non-breaking transitive bumps; package.json direct
+dependencies unchanged in both, confirmed via diff; metro/react-native versions still
+correctly paired afterward — the remaining vulnerabilities in both apps are exclusively in
+the Metro/React Native CLI toolchain itself, which would require replacing react-native's
+own pinned version to fix, far too risky to force blind). Full backend regression suite (67
+assertions across 7 scripts) re-run clean after the backend dependency bump; RN CLI responds
+and Metro version pairing confirmed correct for both apps, but a full native build/bundle
+was not run (no live device available this pass).
+
+### 6. PersonToPersonChat.js — investigated, found to be a LIVE bug, not just dead code
+This was flagged as "possibly already broken." It's worse than that: handCreateSession
+POSTs to /api/sessions, which does not exist anywhere in index.js (confirmed via grep) —
+every use of this screen would fail immediately. And it was NOT dead code: Home.js's Chat
+button (on every astrologer carousel card on the Home screen — one of the most prominent
+surfaces in the app) navigated straight to it, meaning this specific Chat entry point has
+been silently broken for real users. ChatIntakeForm.js (the only other screen that
+navigated to it) was itself confirmed unreachable — no navigation call to it exists
+anywhere.
+
+Fix: Home.js's Chat button now uses the same useChatRequest shared hook every other working
+Chat entry point already uses (Chat.js, ExpertsList.js, AstrologerInfo.js, SearchScreen.js)
+— profile gate, availability check, wallet check, real /api/chat/initiate call, push
+fallback, and the RequestingPopup UI, all already proven. Both PersonToPersonChat.js and
+ChatIntakeForm.js were then deleted along with their route registrations in Navigation.js,
+since nothing reaches either anymore. Verified the replacement end-to-end against the real
+/api/chat/initiate endpoint on the local test server (200, real requestId + callerId
+returned) and via eslint (no new errors, warning count dropped since the replacement is
+simpler than the code it replaced).
+
+### Deliberately left for later (per explicit user direction)
+- No database backups on the Supabase free tier.
+- Real load testing (all capacity estimates remain estimates, never empirically measured).
+- Real-RLS-via-Supabase-Auth vs. the current column-GRANT approach.
+- Remaining screen-scoped Realtime channels (MySessionScreen.js, FavoriteScreen.js,
+  SessionHistory.js, MissedSessions.js) and the vendor HomeScreen.js incoming-call Realtime
+  backup (kept deliberately — reliability backup, not pure waste).
+- Vendor Chating/Chat.js legacy path — not investigated this pass.

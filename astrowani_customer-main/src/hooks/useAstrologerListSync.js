@@ -52,7 +52,8 @@ export default function useAstrologerListSync(onChanged, enabled = true) {
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const socket = acquireSharedSocket();
+    let cancelled = false;
+    let socketInstance = null;
     let timer = null;
 
     const onSignal = () => {
@@ -70,12 +71,20 @@ export default function useAstrologerListSync(onChanged, enabled = true) {
       }, delay);
     };
 
-    socket.on('astrologers_changed', onSignal);
+    (async () => {
+      const socket = await acquireSharedSocket();
+      if (cancelled) { releaseSharedSocket(); return; }
+      socketInstance = socket;
+      socket.on('astrologers_changed', onSignal);
+    })();
 
     return () => {
+      cancelled = true;
       if (timer) clearTimeout(timer);
-      socket.off('astrologers_changed', onSignal);
-      releaseSharedSocket();
+      if (socketInstance) {
+        socketInstance.off('astrologers_changed', onSignal);
+        releaseSharedSocket();
+      }
     };
   }, [enabled]);
 }

@@ -46,6 +46,8 @@ import PlacementBanner from '../../components/PlacementBanner';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
+import useChatRequest from '../../hooks/useChatRequest';
+import RequestingPopup from '../../components/RequestingPopup';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -100,6 +102,13 @@ const Home = ({navigation}) => {
   // Tracks the in-flight call request so cancel/back can mark it cancelled + notify the vendor
   const activeCallRef = React.useRef(null);
 
+  // Chat — same shared hook every other Chat button in the app already uses. This card's
+  // Chat button used to navigate to PersonToPersonChat.js, which calls a POST /api/sessions
+  // endpoint that does not exist anywhere in the backend (confirmed via grep) — every tap
+  // failed silently. Real Chat entry points (Chat.js, ExpertsList.js, AstrologerInfo.js,
+  // SearchScreen.js) all use this hook; Home's card button now matches them.
+  const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
+
   React.useEffect(() => {
     getAstroServices()
       .then(list => setAstroServices(list))
@@ -139,7 +148,8 @@ const Home = ({navigation}) => {
 
   React.useEffect(() => {
     const setup = async () => {
-      socketRef.current = io(SOCKET_URL);
+      const authToken = await AsyncStorage.getItem('token');
+      socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current.on('connect', async () => {
         const userStr = await AsyncStorage.getItem('userData');
         const u = userStr ? JSON.parse(userStr) : null;
@@ -713,14 +723,7 @@ const Home = ({navigation}) => {
   // Shared profile-gate check (name, valid email, gender, dob, place of birth).
   const isProfileComplete = () => checkProfileComplete(user);
 
-  const handleChatPress = async (item) => {
-    if (!(await ensureProfileComplete(navigation))) return;
-    console.log("Starting chat from Home with astrologer:", item._id);
-    console.log(item,"this is items")
-    navigation.navigate('PersonToPersonChat', {
-      person: item,
-    });
-  };
+  const handleChatPress = (item) => sendChatRequest(item);
 
   const handleServiceSelect = service => {
     if (service.title === "Today's Panchang") {
@@ -1283,6 +1286,12 @@ const Home = ({navigation}) => {
           </View>
         </View>
       </Modal>
+
+      <RequestingPopup
+        visible={requesting}
+        astro={requestAstro}
+        onCancel={cancelRequest}
+      />
     </View>
   );
 };

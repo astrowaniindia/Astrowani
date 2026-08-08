@@ -169,7 +169,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
 
       activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
 
-      const sock = io(SOCKET_URL);
+      const sock = io(SOCKET_URL, { auth: { token } });
       callSocketRef.current = sock;
       sock.on('connect', () => {
         sock.emit('join_room', userEntireData.id);

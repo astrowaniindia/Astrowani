@@ -238,7 +238,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     };
 
     const setupSocket = async () => {
-      const socket = io(SOCKET_URL);
+      const authToken = await AsyncStorage.getItem('token');
+      const socket = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current = socket;
 
       // Join session room only — HomeScreen socket owns the personal room

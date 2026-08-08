@@ -569,7 +569,8 @@ const CallsList = ({navigation}) => {
 
   useEffect(() => {
     const setup = async () => {
-      socketRef.current = io(SOCKET_URL);
+      const authToken = await AsyncStorage.getItem('token');
+      socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current.on('connect', async () => {
         console.log('[CallScreen] Socket connected:', socketRef.current.id);
         const userStr = await AsyncStorage.getItem('userData');

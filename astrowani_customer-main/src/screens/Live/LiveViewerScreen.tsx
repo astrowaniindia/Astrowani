@@ -90,7 +90,8 @@ const LiveViewerScreen = ({route, navigation}: any) => {
         }
       };
 
-      const socket = io(SOCKET_URL);
+      const authToken = await AsyncStorage.getItem('token');
+      const socket = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current = socket;
       socket.on('connect', () => {
         socket.emit('join_room', viewerIdRef.current);

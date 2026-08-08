@@ -228,7 +228,7 @@ const AstrologerInfo = ({route, navigation}) => {
       // Track pending request so cancel/back/timeout can dismiss the vendor's popup
       activeCallRef.current = { requestId: requestData.id, astrologerId: person.userId, roomId };
 
-      const sock = io(SOCKET_URL);
+      const sock = io(SOCKET_URL, { auth: { token } });
       callSocketRef.current = sock;
       sock.on('connect', () => {
         sock.emit('join_room', userEntireData.id);
@@ -405,7 +405,7 @@ const AstrologerInfo = ({route, navigation}) => {
       // Track pending request so cancel/back/timeout can dismiss the vendor's popup
       activeCallRef.current = { requestId: requestData.id, astrologerId: person.userId, roomId };
 
-      const sock = io(SOCKET_URL);
+      const sock = io(SOCKET_URL, { auth: { token } });
       callSocketRef.current = sock;
       sock.on('connect', () => {
         sock.emit('join_room', userEntireData.id);
