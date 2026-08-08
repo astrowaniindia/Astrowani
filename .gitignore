@@ -56,3 +56,10 @@ yarn-error.log*
 # Temporary files
 tmp/
 temp/
+
+# Python venv for the self-hosted background-removal service
+# (astrowani-backend/bg-removal-service/) — created on the VPS by the deploy
+# workflow, never committed. requirements.txt + the .tflite model ARE committed.
+**/bg-removal-service/venv/
+**/__pycache__/
+*.pyc

@@ -24,3 +24,18 @@ jobs:
             cd astrowani-backend
             npm install --production
             pm2 restart astrowani-backend --update-env
+
+            # Self-hosted background-removal service (astrologer profile photos —
+            # see bg-removal-service/README.md). One-time venv setup on the first
+            # deploy after this file's addition; subsequent deploys just reinstall
+            # (fast no-op if requirements.txt hasn't changed) and restart.
+            cd bg-removal-service
+            if [ ! -d venv ]; then
+              sudo apt-get update -y && sudo apt-get install -y python3-venv python3-pip
+              python3 -m venv venv
+            fi
+            ./venv/bin/pip install -r requirements.txt
+            pm2 describe bg-removal >/dev/null 2>&1 \
+              && pm2 restart bg-removal --update-env \
+              || pm2 start "venv/bin/uvicorn app:app --host 127.0.0.1 --port 5001" --name bg-removal
+            pm2 save

@@ -74,6 +74,9 @@ ENABLEX_APP_ID_otp_message=YOUR_ENABLEX_APP_ID
 ENABLEX_APP_KEY_otp_message=YOUR_ENABLEX_APP_KEY
 JYOTISHAM_API_KEY=YOUR_JYOTISHAM_API_KEY
 JYOTISHAM_API_BASE_URL=https://api.jyotishamastroapi.com
+# Optional — background-removal service (astrologer profile photos). Default
+# below matches where step 4b runs it; only set this if you moved it elsewhere.
+# BG_REMOVAL_URL=http://127.0.0.1:5001
 EOF
     echo "-> Please edit $BACKEND_DIR/.env with your production credentials!"
 fi
@@ -87,6 +90,28 @@ if command -v pm2 &> /dev/null; then
     echo "PM2 process 'astrowani-backend' is now running."
 else
     echo "Warning: PM2 is not installed. Install it using 'sudo npm install -g pm2' and run 'pm2 start index.js --name astrowani-backend' inside $BACKEND_DIR"
+fi
+
+# 4b. Background-removal service for astrologer profile photos (self-hosted, see
+# astrowani-backend/bg-removal-service/README.md). Own venv, own PM2 process.
+echo "Setting up background-removal service..."
+BG_REMOVAL_DIR="$BACKEND_DIR/bg-removal-service"
+if [ -d "$BG_REMOVAL_DIR" ]; then
+    cd "$BG_REMOVAL_DIR"
+    if [ ! -d venv ]; then
+        sudo apt-get update -y && sudo apt-get install -y python3-venv python3-pip
+        python3 -m venv venv
+    fi
+    ./venv/bin/pip install -r requirements.txt
+    if command -v pm2 &> /dev/null; then
+        pm2 delete bg-removal 2>/dev/null || true
+        pm2 start "venv/bin/uvicorn app:app --host 127.0.0.1 --port 5001" --name bg-removal
+        pm2 save
+        echo "PM2 process 'bg-removal' is now running."
+    fi
+    cd "$BACKEND_DIR"
+else
+    echo "Warning: bg-removal-service/ not found under $BACKEND_DIR — skipping."
 fi
 
 # 5. Configure Nginx Server Blocks
