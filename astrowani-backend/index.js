@@ -1202,6 +1202,34 @@ app.post('/api/users/fcm-token', async (req, res) => {
   }
 });
 
+// The customer app's SupportScreen.js has always posted here for "Refund Request" /
+// technical/account/feedback tickets — this route never existed, so every submission
+// silently failed (generic Error alert, nothing reached anyone). Found during the
+// pre-launch readiness pass, 2026-08-08. See sql/support_tickets_schema.sql.
+app.post('/api/support/create-support', writeLimiter, async (req, res) => {
+  try {
+    const { name, email, issueType, message, mobile } = req.body || {};
+    if (!name || !email || !issueType || !message) {
+      return res.status(400).json({ success: false, message: 'name, email, issueType and message are required' });
+    }
+    const customer = await resolveCustomerFromReq(req);
+    const { data: ticket, error } = await supabaseService
+      .from('support_tickets')
+      .insert([{
+        customer_id: customer?.id || null,
+        name, email, mobile: mobile || null,
+        issue_type: issueType, message,
+      }])
+      .select('id')
+      .single();
+    if (error) throw error;
+    return res.status(200).json({ success: true, ticketId: ticket.id });
+  } catch (e) {
+    console.error('[support] create-support error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not submit support request' });
+  }
+});
+
 // Called by the vendor app right after it inserts a chat_messages row, so the customer
 // gets a push if their app is backgrounded/killed (chat itself runs over Supabase Realtime,
 // which the Node backend has no visibility into).
@@ -1603,7 +1631,16 @@ app.post('/api/call/initiate', writeLimiter, async (req, res) => {
       }])
       .select('id')
       .single();
-    if (requestErr) throw requestErr;
+    if (requestErr) {
+      // 23505 = unique_violation on uq_one_pending_call_per_astrologer (hardening_04) —
+      // another request for this astrologer landed between our busy-check read and this
+      // insert (confirmed race under concurrency via scripts/testConcurrency.js). Treat it
+      // exactly like the pre-check finding the astrologer busy, not a server error.
+      if (requestErr.code === '23505') {
+        return res.status(409).json({ success: false, busy: true, busySince: new Date().toISOString(), reason: 'session', message: 'Astrologer is busy right now' });
+      }
+      throw requestErr;
+    }
     const requestId = requestRow.id;
 
     // Notify vendor via socket — no ENX tokens, WebRTC signaling happens via socket.io
@@ -1698,7 +1735,14 @@ app.post('/api/chat/initiate', async (req, res) => {
       }])
       .select('id')
       .single();
-    if (error) throw error;
+    if (error) {
+      // 23505 = unique_violation on uq_one_pending_chat_per_astrologer (hardening_04) —
+      // same race as /api/call/initiate, closed the same way.
+      if (error.code === '23505') {
+        return res.status(409).json({ success: false, busy: true, busySince: new Date().toISOString(), reason: 'session', message: 'Astrologer is busy right now' });
+      }
+      throw error;
+    }
 
     return res.status(200).json({ success: true, requestId: row.id, callerId: customer.id });
   } catch (error) {

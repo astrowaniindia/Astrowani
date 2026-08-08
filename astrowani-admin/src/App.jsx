@@ -22,6 +22,7 @@ import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
 import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
+import Support from './pages/Support';
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="support" element={<Support />} />
         <Route path="new-entries" element={<NewEntries />} />
         <Route path="astrologers" element={<Astrologers />} />
         <Route path="reviews" element={<Reviews />} />

@@ -19,6 +19,7 @@ const links = [
   { to: '/notifications', label: 'Notifications' },
   { to: '/withdrawals', label: 'Withdrawals' },
   { to: '/reports', label: 'Reports' },
+  { to: '/support', label: 'Support Tickets' },
   { to: '/astrologers', label: 'Astrologers' },
   { to: '/leaderboard', label: 'Leaderboard' },
   { to: '/reviews', label: 'Reviews' },

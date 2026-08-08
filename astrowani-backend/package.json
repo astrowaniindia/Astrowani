@@ -11,7 +11,8 @@
     "test:fanout": "node --env-file=.env scripts/testFanout.js",
     "test:hardening": "node --env-file=.env scripts/testHardening.js",
     "test:billing": "node --env-file=.env scripts/verifyBillingRpc.js",
-    "test": "npm run test:wallet && npm run test:billing && npm run test:fanout && npm run test:hardening"
+    "test:concurrency": "node --env-file=.env scripts/testConcurrency.js",
+    "test": "npm run test:wallet && npm run test:billing && npm run test:fanout && npm run test:hardening && npm run test:concurrency"
   },
   "dependencies": {
     "@sentry/node": "^10.69.0",

@@ -132,6 +132,7 @@ module.exports = function registerAdminRoutes(app) {
     app.put(`/api/admin/${resource}/:id`, requireAdmin, h(async (req, res) => {
       const body = pick(req.body || {});
       if (table === 'blogs') body.updated_at = new Date().toISOString();
+      if (table === 'support_tickets' && body.status === 'resolved') body.resolved_at = new Date().toISOString();
       const { data, error } = await db.from(table).update(body).eq('id', req.params.id).select().single();
       if (error) throw error;
       return res.json({ success: true, data });
@@ -174,6 +175,12 @@ module.exports = function registerAdminRoutes(app) {
   crud('astro-services', 'astro_services', {
     orderBy: 'sort_order', ascending: true,
     allowed: ['key', 'name', 'description', 'category', 'price', 'image', 'is_active', 'sort_order'],
+  });
+
+  // Customer support tickets (POST /api/support/create-support in index.js writes here).
+  // Admin only reads/updates status+note — creation happens on the customer-facing route.
+  crud('support-tickets', 'support_tickets', {
+    allowed: ['status', 'admin_note'],
   });
 
   // ── Live moderation ───────────────────────────────────────────────────────
