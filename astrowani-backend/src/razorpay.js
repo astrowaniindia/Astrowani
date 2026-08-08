@@ -11,11 +11,11 @@
 const axios = require('axios');
 const crypto = require('crypto');
 
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_3PXDqZGmI6Zz4o';
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 
 function isConfigured() {
-  return Boolean(RAZORPAY_KEY_SECRET);
+  return Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
 }
 
 // amountRupees: integer/decimal rupee amount (converted to paise for the Razorpay API).
