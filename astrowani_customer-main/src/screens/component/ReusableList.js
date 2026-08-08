@@ -370,8 +370,8 @@ const styles = StyleSheet.create({
     width: scale(70),
     height: scale(70),
     borderRadius: scale(35),
-    borderWidth: 2,
-    borderColor: COLORS.AstroGold,
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
   },
   details: {
     flex: 1,

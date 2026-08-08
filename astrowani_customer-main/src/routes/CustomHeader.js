@@ -115,12 +115,22 @@ const CustomHeader = ({title, showLanguage}) => {
   const toggleLanguage = () => {
     changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
   };
+
+  // This header is shared between bottom-tab screens (Chat/Video/Call/Live — no back
+  // needed, they're tab roots) and the SAME screens reached as a drawer detour
+  // (DrawerChat/DrawerRemedies — a back button IS needed there, since the user came
+  // from somewhere and had no way back before this fix). Detected by checking whether
+  // the immediate parent navigator is the Drawer, rather than a prop, since both
+  // routes render the exact same component with no way to tell them apart otherwise.
+  const parentState = navigation.getParent()?.getState?.();
+  const isDrawerDetour = parentState?.type === 'drawer';
+
   return (
     <View style={{backgroundColor: COLORS.AstroMaroon, paddingTop: insets.top}}>
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
-          <TouchableOpacity onPress={() => navigation.openDrawer()}>
-            <Ionicons name="menu" color="white" size={28} />
+          <TouchableOpacity onPress={() => (isDrawerDetour ? navigation.getParent().goBack() : navigation.openDrawer())}>
+            <Ionicons name={isDrawerDetour ? 'arrow-back' : 'menu'} color="white" size={28} />
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
         </View>

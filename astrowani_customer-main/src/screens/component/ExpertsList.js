@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   imageCol: { alignItems: 'center', width: scale(72), marginRight: scale(6) },
   avatar: {
     width: scale(64), height: scale(64), borderRadius: scale(32),
-    borderWidth: 2, borderColor: COLORS.AstroGold,
+    borderWidth: 1, borderColor: COLORS.AstroMaroon,
   },
   starsContainer: { flexDirection: 'row', marginTop: verticalScale(4) },
   details: { flex: 1, justifyContent: 'center' },

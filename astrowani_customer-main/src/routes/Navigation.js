@@ -937,10 +937,10 @@ function SessionStack() {
       <Stack.Screen
         name="SessionScreen"
         component={MySessionScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'My Sessions',
-
           headerBackTitleVisible: true,
+          headerTitleAlign: 'center',
           headerStyle: {
             backgroundColor: COLORS.AstroMaroon,
           },
@@ -948,7 +948,17 @@ function SessionStack() {
           headerTitleStyle: {
             fontSize: moderateScale(18),
           },
-        }}
+          // SessionStack is a Drawer.Screen directly (see DrawerNavigator below) —
+          // this screen is the first (and only) one in its own nested stack, so
+          // React Navigation's default header never shows a back button on its own.
+          // The drawer itself still remembers what was open before, so goBack() on
+          // the PARENT (drawer) navigator returns there correctly.
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => navigation.getParent()?.goBack()} style={{ marginLeft: scale(12) }}>
+              <MaterialIcons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+          ),
+        })}
       />
     </Stack.Navigator>
   );

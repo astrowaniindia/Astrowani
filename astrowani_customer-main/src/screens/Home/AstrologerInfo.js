@@ -1050,7 +1050,7 @@ const styles = StyleSheet.create({
   avatar: {
     width: scale(80), height: scale(80),
     borderRadius: moderateScale(40),
-    borderWidth: 3, borderColor: COLORS.AstroSoftOrange,
+    borderWidth: 1, borderColor: COLORS.AstroMaroon,
   },
   profileDetails: { flex: 1, marginLeft: scale(15) },
   nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
