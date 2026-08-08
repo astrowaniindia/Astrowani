@@ -49,7 +49,6 @@ const VendorChatSession = ({ route, navigation }) => {
   const [astroId, setAstroId] = useState(null);
   const [sentChip, setSentChip] = useState(null);
 
-  const channelRef = useRef(null);
   const flatListRef = useRef(null);
   const sessionIdRef = useRef(initialSessionId);
   const astroIdRef = useRef(null);
@@ -104,31 +103,20 @@ const VendorChatSession = ({ route, navigation }) => {
           .order('created_at', { ascending: true });
         if (msgs) setMessages(msgs);
 
-        // Subscribe to new messages & broadcasts
-        channelRef.current = supabase.channel(`chat_session_${finalSessionId}`, {
-          config: { broadcast: { self: true } },
+        // Live message delivery + typing indicator over the socket's session room
+        // (already joined above for signal_connection/session_ended) instead of a
+        // direct Supabase Realtime subscription — see /api/chat/message's comment
+        // in the backend for why no Realtime subscription is structurally needed.
+        socketRef.current.on('new_chat_message', (msg) => {
+          setMessages((prev) => {
+            if (prev.find((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
         });
-        channelRef.current
-          .on('broadcast', { event: 'typing' }, (payload) => {
-            setCustomerTyping(payload.payload.isTyping);
-          })
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'chat_messages',
-              filter: `session_id=eq.${finalSessionId}`,
-            },
-            (payload) => {
-              setMessages((prev) => {
-                if (prev.find((m) => m.id === payload.new.id)) return prev;
-                return [...prev, payload.new];
-              });
-              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-            }
-          )
-          .subscribe();
+        socketRef.current.on('chat_typing', ({ isTyping }) => {
+          setCustomerTyping(isTyping);
+        });
 
           // Check if Customer ended the chat
           pollEndRef.current = setInterval(async () => {
@@ -155,7 +143,6 @@ const VendorChatSession = ({ route, navigation }) => {
     return () => {
       if (pollMsgRef.current) clearInterval(pollMsgRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
@@ -168,8 +155,7 @@ const VendorChatSession = ({ route, navigation }) => {
     setTimerActive(false);
     if (pollMsgRef.current) clearInterval(pollMsgRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
-    
+
     if (reason) {
        Alert.alert('Session Ended', reason);
     }
@@ -200,14 +186,11 @@ const VendorChatSession = ({ route, navigation }) => {
     if (typeof overrideText !== 'string') setNewMessage('');
 
     // Reset typing status on send
-    if (channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'typing',
-          payload: { isTyping: false },
-        });
-      }
-    
+    if (socketRef.current && sessionIdRef.current) {
+      socketRef.current.emit('chat_typing', { sessionId: sessionIdRef.current, isTyping: false });
+    }
+
+
     // Row is created server-side now, not by the client — see
     // DATABASE_HARDENING_HANDOFF.md STEP 3. Realtime (unchanged) still delivers it to
     // both sides once inserted.
@@ -239,12 +222,8 @@ const VendorChatSession = ({ route, navigation }) => {
 
   const handleTyping = (text) => {
     setNewMessage(text);
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'typing',
-        payload: { isTyping: text.length > 0 },
-      });
+    if (socketRef.current && sessionIdRef.current) {
+      socketRef.current.emit('chat_typing', { sessionId: sessionIdRef.current, isTyping: text.length > 0 });
     }
   };
 

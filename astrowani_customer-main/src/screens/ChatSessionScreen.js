@@ -47,7 +47,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
   const sessionRef = useRef(null);
   const walletRef = useRef(0);
-  const channelRef = useRef(null);
   const flatListRef = useRef(null);
   const hasEndedRef = useRef(false);
   const chatConnectedRef = useRef(false);
@@ -90,7 +89,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
     setChatActive(false);
     if (pollRef.current) clearInterval(pollRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
     if (socketRef.current) socketRef.current.disconnect();
 
     const goBackOrHome = () => {
@@ -192,12 +190,8 @@ const ChatSessionScreen = ({ route, navigation }) => {
     setText('');
     
     // Reset typing status on send
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'typing',
-        payload: { isTyping: false },
-      });
+    if (socketRef.current && sessionRef.current) {
+      socketRef.current.emit('chat_typing', { sessionId: sessionRef.current.id, isTyping: false });
     }
 
     // Row is created server-side now, not by the client — see
@@ -278,32 +272,20 @@ const ChatSessionScreen = ({ route, navigation }) => {
               .order('created_at', { ascending: true });
             if (msgs) setMessages(msgs);
 
-            // Subscribe to new messages & broadcasts
-            channelRef.current = supabase.channel(`chat_session_${data.id}`, {
-              config: { broadcast: { self: true } },
+            // Live message delivery + typing indicator over the socket's session room
+            // (already joined above for signal_connection/session_ended) instead of a
+            // direct Supabase Realtime subscription — see /api/chat/message's comment
+            // in the backend for why no Realtime subscription is structurally needed.
+            socketRef.current.on('new_chat_message', (msg) => {
+              setMessages((prev) => {
+                if (prev.find((m) => m.id === msg.id)) return prev;
+                return [...prev, msg];
+              });
+              flatListRef.current?.scrollToEnd({ animated: true });
             });
-            channelRef.current
-              .on('broadcast', { event: 'typing' }, (payload) => {
-                setVendorTyping(payload.payload.isTyping);
-              })
-              .on(
-                'postgres_changes',
-                {
-                  event: 'INSERT',
-                  schema: 'public',
-                  table: 'chat_messages',
-                  filter: `session_id=eq.${data.id}`,
-                },
-                (payload) => {
-                  setMessages((prev) => {
-                    // Avoid duplicates
-                    if (prev.find((m) => m.id === payload.new.id)) return prev;
-                    return [...prev, payload.new];
-                  });
-                  flatListRef.current?.scrollToEnd({ animated: true });
-                }
-              )
-              .subscribe();
+            socketRef.current.on('chat_typing', ({ isTyping }) => {
+              setVendorTyping(isTyping);
+            });
 
             // On the very first connect (no prior messages), auto-send the customer's
             // birth details so the astrologer has them up front. Sent after subscribing
@@ -345,19 +327,14 @@ const ChatSessionScreen = ({ route, navigation }) => {
       setActiveChatAstrologerId(null);
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
 
   const handleTyping = (text) => {
     setText(text);
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'typing',
-        payload: { isTyping: text.length > 0 },
-      });
+    if (socketRef.current && sessionRef.current) {
+      socketRef.current.emit('chat_typing', { sessionId: sessionRef.current.id, isTyping: text.length > 0 });
     }
   };
 

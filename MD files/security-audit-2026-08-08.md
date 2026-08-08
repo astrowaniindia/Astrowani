@@ -374,6 +374,56 @@ reliability trade-off:
   plan upgrade raises the ceiling itself. Worth revisiting the "upgrade the plan" option
   before any real user-acquisition push, even after all client-side migration work is done.
 
+## Part 4 — Active chat message/typing delivery (same day, continuing the connection-count work)
+
+Continuing the "migrate the highest-impact remaining screen-scoped channels" work after the
+user said to keep going. The active-chat screens (`ChatSessionScreen.js` customer,
+`VendorChatSession.js` vendor) were the next clear target: unlike the transient
+waiting-for-accept channels, a paid chat session can run many minutes, so each one held a
+Supabase Realtime connection open for as long as the conversation lasted — real
+connection-*time*, not just connection-count, contributing to the free-tier cap.
+
+**Why no Realtime subscription was structurally needed here either**: `POST
+/api/chat/message` (added in the STEP 3 hardening pass) is the only writer of
+`chat_messages` for both of these screens — the legacy `PersonToPersonChat.js` path was
+deliberately left untouched (see below). The backend already knows the instant a message is
+created; it just hadn't been relaying it anywhere. Both screens already hold a Socket.io
+connection and already `join_session(sessionId)` for the existing `signal_connection`/
+`session_ended` events — the exact room needed already existed.
+
+**Fix**:
+- `POST /api/chat/message` (`index.js`) now does `io.to(sessionId).emit('new_chat_message',
+  data)` right after the insert succeeds.
+- New `chat_typing` socket handler — a plain passthrough (`socket.to(sessionId).emit(...)`,
+  deliberately excluding the sender) replacing the typing indicator that previously used a
+  Supabase Realtime **broadcast** channel (not `postgres_changes`, but still a Realtime
+  connection). Using `socket.to()` instead of `io.to()` also fixes a latent bug in the old
+  implementation: the Supabase broadcast channel was configured `{broadcast: {self: true}}`
+  with no sender field in the payload, so each side could receive an echo of **their own**
+  typing event and misattribute it to the other party. Not something worth a separate fix on
+  its own, but free to correct while replacing the transport.
+- Both screens: the `supabase.channel('chat_session_<id>', ...)` subscription (which handled
+  both message delivery and the typing broadcast) is gone entirely — replaced with
+  `socketRef.current.on('new_chat_message', ...)` / `.on('chat_typing', ...)` on the socket
+  connection each screen already had.
+- Verified end-to-end with `scripts/testChatSocketRelay.js` (9/9) using real socket.io-client
+  connections against a locally-run server (backed by the production database): a message
+  sent by one real throwaway account is received by the other party over the socket with
+  correct content and sender, the typing relay correctly reaches the other party and
+  correctly does NOT echo back to the sender (confirming the bug-fix above), and the
+  underlying `chat_messages` rows are still persisted correctly.
+- Two pre-existing `eslint react-hooks/exhaustive-deps` errors were found in both files
+  during verification — confirmed via diff against the pre-change commit that both predate
+  this change entirely (same errors, unrelated to the lines touched here).
+
+**Not touched**: `PersonToPersonChat.js` — this screen showed signs of being stale
+independent of the Realtime question (it POSTs to `/api/sessions`/`PUT /api/sessions/:id`,
+endpoints that don't obviously exist in the current `index.js`, and its Call button still
+navigates to `EnxJoinScreen`, documented elsewhere in this codebase as dead code). Migrating
+its Realtime usage without first confirming the screen's underlying session flow even works
+today would be fixing a symptom on code that may already be broken by a different cause —
+flagged for its own investigation rather than touched under this pass's time budget.
+
 ## What this pass did not cover
 
 - Dependency vulnerability audit (`npm audit` flagged "15 vulnerabilities, 8 high" during an

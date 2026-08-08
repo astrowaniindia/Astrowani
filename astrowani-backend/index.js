@@ -257,6 +257,16 @@ io.on('connection', (socket) => {
     io.to(data.sessionId).emit('session_ended', { sessionId: data.sessionId, reason: 'User ended session' });
   });
 
+  // Typing indicator relay for the active chat screens (ChatSessionScreen.js,
+  // VendorChatSession.js) — replaces a Supabase Realtime broadcast channel with a plain
+  // passthrough over the session room both sides already join for signal_connection/
+  // session_ended. No DB write, no persistence — purely ephemeral, same as the broadcast
+  // channel it replaces.
+  socket.on('chat_typing', (data) => {
+    if (!data || !data.sessionId) return;
+    socket.to(data.sessionId).emit('chat_typing', { isTyping: !!data.isTyping });
+  });
+
   // ── LIVE STREAMING (WebRTC mesh: one broadcaster → many viewers) ────────────
   // Viewer joins a stream: subscribe to the live room (comments/gifts) + tell the
   // broadcaster (in their personal room) so it can open a peer connection for them.
@@ -1614,10 +1624,19 @@ app.post('/api/chat/initiate', async (req, res) => {
 });
 
 // Creates a chat_messages row server-side — moved off the anon key's direct INSERT
-// grant (see DATABASE_HARDENING_HANDOFF.md STEP 3). Used by both apps' live chat
-// screens; the actual message delivery to the other party still happens via the
-// existing Supabase Realtime subscription on this table, unchanged — this endpoint
-// only replaces how the row gets created, not how it's read.
+// grant (see DATABASE_HARDENING_HANDOFF.md STEP 3).
+//
+// LOAD-SCALING FIX (2026-08-08 — see security-audit-2026-08-08.md): message delivery to
+// the other party used to happen via each screen's own direct Supabase Realtime
+// subscription on this table — one more per-screen Realtime connection alongside the
+// notification badge fix in the same pass, and unlike that fix this one is often
+// long-lived (a paid chat session can run many minutes). Since this endpoint is the
+// ONLY writer of chat_messages for the two main chat screens (ChatSessionScreen.js,
+// VendorChatSession.js — the legacy PersonToPersonChat.js path is untouched, see that
+// file), the backend already knows the instant a message is created — no Realtime
+// subscription was ever structurally necessary, same reasoning as notifications. Now
+// relays over the session's socket room (already joined via 'join_session' for
+// signal_connection/session_ended) instead.
 app.post('/api/chat/message', async (req, res) => {
   try {
     const { roomId, sessionId, receiverId, message } = req.body;
@@ -1648,6 +1667,8 @@ app.post('/api/chat/message', async (req, res) => {
       message,
     }]).select().single();
     if (error) throw error;
+
+    if (sessionId) io.to(sessionId).emit('new_chat_message', data);
 
     return res.status(200).json({ success: true, data });
   } catch (error) {
