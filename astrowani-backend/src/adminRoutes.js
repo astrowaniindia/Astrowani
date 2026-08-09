@@ -323,6 +323,54 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, newBalance });
   }));
 
+  // Delete an astrologer. Real deletion when it's safe (no financial/session
+  // history to protect); otherwise falls back to a full soft-removal that hides
+  // them everywhere the apps read astrologer data — never a silent no-op.
+  //
+  // `chat_sessions.vendor_id` and `vendor_wallet_transactions.vendor_id` both carry
+  // ON DELETE RESTRICT (hardening_01_core_tables.sql) precisely so a row with real
+  // session/earnings history can never be hard-deleted — that's the DB protecting
+  // the money trail, not a bug. `call_requests`/`chat_messages` have no FK at all,
+  // so they're cleaned up explicitly here first; everything else referencing an
+  // astrologer (favorites, reviews, live_sessions, astrologer_waitlist,
+  // astrologer_reports, voice_notes, withdrawal_requests) is ON DELETE CASCADE and
+  // is removed automatically the moment the astrologer row itself is deleted.
+  app.delete('/api/admin/astrologers/:id', requireAdmin, h(async (req, res) => {
+    const id = req.params.id;
+
+    const { data: astro } = await db.from('astrologers').select('id, first_name, last_name').eq('id', id).single();
+    if (!astro) return res.status(404).json({ success: false, message: 'Astrologer not found' });
+
+    await db.from('call_requests').delete().eq('astrologer_id', id);
+    await db.from('chat_messages').delete().eq('receiver_id', id);
+
+    const { error: delErr } = await db.from('astrologers').delete().eq('id', id);
+
+    if (!delErr) {
+      return res.json({ success: true, mode: 'deleted' });
+    }
+
+    // 23503 = foreign_key_violation. Anything else is a real error, not a "has history" signal.
+    if (delErr.code !== '23503') throw delErr;
+
+    // Has session/earnings history the DB refuses to let us destroy — fall back to
+    // hiding the account completely instead of just returning an error.
+    const { error: softErr } = await db.from('astrologers').update({
+      approval_status: 'rejected',
+      is_suspended: true,
+      is_available: false,
+      is_chat_enabled: false,
+      is_call_enabled: false,
+      is_video_call_enabled: false,
+      admin_notes: `Delete requested via admin dashboard on ${new Date().toISOString().slice(0, 10)} — kept in the ` +
+        `database because it has session or earnings history the ledger must not lose; ` +
+        `rejected + suspended + all services disabled instead, which hides it everywhere the apps read astrologer data.`,
+    }).eq('id', id);
+    if (softErr) throw softErr;
+
+    return res.json({ success: true, mode: 'hidden', reason: 'has_financial_history' });
+  }));
+
   // ── Leaderboard — ranks astrologers by the same metrics the vendor performance ──
   // dashboard shows them (response time, acceptance rate, repeat-customer rate), so
   // admin sees exactly what astrologers see about themselves.

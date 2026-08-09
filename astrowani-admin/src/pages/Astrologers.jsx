@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
+import ActionMenu from '../components/ActionMenu';
 
 function StatusBadge({ s }) {
   if (s === 'approved') return <span className="badge green">Approved</span>;
@@ -55,6 +56,22 @@ export default function Astrologers() {
     finally { setBusy(false); }
   };
 
+  const remove = async (r) => {
+    const label = name(r);
+    if (!confirm(`Delete ${label}? This cannot be undone.\n\nIf they have session or earnings history, the database won't allow permanently deleting them — instead they'll be rejected, suspended, and hidden everywhere in the app.`)) return;
+    setBusy(true);
+    try {
+      const { data } = await client.delete(`/api/admin/astrologers/${r.id}`);
+      if (data.mode === 'deleted') {
+        alert(`${label} was permanently deleted.`);
+      } else {
+        alert(`${label} has session or earnings history, so they weren't permanently deleted — instead they've been rejected, suspended, and hidden everywhere in the app.`);
+      }
+      await load();
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setBusy(false); }
+  };
+
   const submitTopup = async () => {
     const amt = Number(amount);
     if (!amt) return;
@@ -95,17 +112,18 @@ export default function Astrologers() {
                 <td>{r.is_suspended ? <span className="badge red">Suspended</span> : <span className="badge gray">No</span>}</td>
                 <td className="muted">{r.chat_charge_per_minute || 0} / {r.call_charge_per_minute || 0} / {r.video_charge_per_minute || 0}</td>
                 <td><b>{r.wallet_balance ?? 0}</b></td>
-                <td><div className="btn-group">
-                  {r.approval_status !== 'approved' &&
-                    <button className="btn sm" onClick={() => patch(r.id, { approval_status: 'approved' })}>Approve</button>}
-                  {r.approval_status !== 'rejected' &&
-                    <button className="btn danger sm" onClick={() => patch(r.id, { approval_status: 'rejected' })}>Reject</button>}
-                  <button className="btn secondary sm" onClick={() => patch(r.id, { is_suspended: !r.is_suspended })}>
-                    {r.is_suspended ? 'Unsuspend' : 'Suspend'}
-                  </button>
-                  <button className="btn ghost sm" onClick={() => openEdit(r)}>Edit</button>
-                  <button className="btn ghost sm" onClick={() => { setTopup(r); setAmount(''); }}>Adjust wallet</button>
-                </div></td>
+                <td>
+                  <ActionMenu items={[
+                    r.approval_status !== 'approved' &&
+                      { label: 'Approve', onClick: () => patch(r.id, { approval_status: 'approved' }) },
+                    r.approval_status !== 'rejected' &&
+                      { label: 'Reject', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
+                    { label: r.is_suspended ? 'Unsuspend' : 'Suspend', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
+                    { label: 'Edit', onClick: () => openEdit(r) },
+                    { label: 'Adjust wallet', onClick: () => { setTopup(r); setAmount(''); } },
+                    { label: 'Delete', danger: true, onClick: () => remove(r) },
+                  ]} />
+                </td>
               </tr>
             ))}
           </tbody>
