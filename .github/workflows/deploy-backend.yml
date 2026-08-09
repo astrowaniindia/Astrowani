@@ -11,41 +11,62 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -e
-            cd /var/www/astrowani-monorepo
-            # git fetch has failed intermittently against a transient network blip
-            # (observed 2026-08-09/10, root cause unconfirmed — repo is public, so it
-            # isn't a credential issue). Retry a few times before giving up so a
-            # one-off hiccup doesn't require manually re-running the deploy steps.
-            for i in 1 2 3 4 5; do
-              git fetch origin main && break
-              echo "git fetch failed (attempt $i/5), retrying in 5s..."
-              sleep 5
-            done
-            git fetch origin main
-            git reset --hard origin/main
-            cd astrowani-backend
-            npm install --production
-            pm2 restart astrowani-backend --update-env
+      - name: SSH and deploy (retries the whole connection, not just commands)
+        # Switched from appleboy/ssh-action to a raw ssh call in a retry loop
+        # 2026-08-10: two consecutive deploys failed with
+        # "dial tcp <VPS_HOST>:22: i/o timeout" — the SSH connection itself never
+        # completed, so nothing inside the remote script ever ran (git fetch,
+        # npm install, pm2 restart all never executed). A retry INSIDE the remote
+        # script (what was tried first) can't help with that — the connection has
+        # to be retried from here, on the runner side, before the script even
+        # starts. Root cause on the VPS side was never confirmed (fail2ban/ufw
+        # aren't even installed there, so it isn't a local ban list); this
+        # assumes it's a transient network blip and retries around it instead of
+        # depending on the VPS side being fixed.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
 
-            # Self-hosted background-removal service (astrologer profile photos —
-            # see bg-removal-service/README.md). One-time venv setup on the first
-            # deploy after this file's addition; subsequent deploys just reinstall
-            # (fast no-op if requirements.txt hasn't changed) and restart.
-            cd bg-removal-service
-            if [ ! -d venv ]; then
-              sudo apt-get update -y && sudo apt-get install -y python3-venv python3-pip
-              python3 -m venv venv
+          cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
+          set -e
+          cd /var/www/astrowani-monorepo
+          git fetch origin main
+          git reset --hard origin/main
+          cd astrowani-backend
+          npm install --production
+          pm2 restart astrowani-backend --update-env
+
+          # Self-hosted background-removal service (astrologer profile photos —
+          # see bg-removal-service/README.md). One-time venv setup on the first
+          # deploy after this file's addition; subsequent deploys just reinstall
+          # (fast no-op if requirements.txt hasn't changed) and restart.
+          cd bg-removal-service
+          if [ ! -d venv ]; then
+            sudo apt-get update -y && sudo apt-get install -y python3-venv python3-pip
+            python3 -m venv venv
+          fi
+          ./venv/bin/pip install -r requirements.txt
+          pm2 describe bg-removal >/dev/null 2>&1 \
+            && pm2 restart bg-removal --update-env \
+            || pm2 start "venv/bin/uvicorn app:app --host 127.0.0.1 --port 5001" --name bg-removal
+          pm2 save
+          REMOTE_SCRIPT
+
+          attempt=1
+          max_attempts=5
+          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key \
+            "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "SSH deploy failed after $max_attempts attempts — giving up."
+              exit 1
             fi
-            ./venv/bin/pip install -r requirements.txt
-            pm2 describe bg-removal >/dev/null 2>&1 \
-              && pm2 restart bg-removal --update-env \
-              || pm2 start "venv/bin/uvicorn app:app --host 127.0.0.1 --port 5001" --name bg-removal
-            pm2 save
+            echo "SSH deploy attempt $attempt/$max_attempts failed, retrying in 20s..."
+            attempt=$((attempt + 1))
+            sleep 20
+          done
