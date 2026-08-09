@@ -54,7 +54,7 @@ export default function ChatHistorys() {
     <View style={styles.container}>
       <Text style={styles.header}>Chat History</Text>
       {loading ? (
-        <ActivityIndicator size="large" color="#800000" />
+        <ActivityIndicator size="large" color="#592a19" />
       ) : (
         <FlatList
           data={chatData}

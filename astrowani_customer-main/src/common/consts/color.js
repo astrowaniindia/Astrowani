@@ -32,7 +32,7 @@ const color = {
   RobinBlue: '#08BEC9',
   locoblue: '#4995AF',
   lightTurquoise: '#D7F0FF',
-  Maroon: '#800000',
+  Maroon: '#592a19',
   AstroMaroon: '#592a19',
   AstroSoftOrange: '#f4d8bc',
   AstroGold: '#FFD700',

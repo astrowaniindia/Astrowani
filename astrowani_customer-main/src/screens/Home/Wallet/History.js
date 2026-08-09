@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(15),
   },
   addMoneyButton: {
-    backgroundColor: '#800000',
+    backgroundColor: '#592a19',
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(20),
     borderRadius: moderateScale(25),

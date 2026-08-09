@@ -85,7 +85,7 @@ const SearchScreen = ({navigation, route}) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.searchBtn}>
-          <MaterialIcons name="search" size={24} color="#800000" />
+          <MaterialIcons name="search" size={24} color="#592a19" />
           <TextInput
             style={styles.searchInput}
             placeholder={t('home.search')}
@@ -112,7 +112,7 @@ const SearchScreen = ({navigation, route}) => {
             <MaterialIcons
               name="sentiment-dissatisfied"
               size={60}
-              color="#800000"
+              color="#592a19"
             />
             <Text style={styles.noDataText}>{t('search.noAstrologerFound')}</Text>
           </View>

@@ -29,7 +29,7 @@ const NotificationPopup = ({ visible, data, onAccept, onCancel, queueCount = 0 }
       <View style={styles.overlay}>
         <View style={styles.popup}>
           <View style={styles.header}>
-            <Ionicons name="videocam" size={24} color="#800000" />
+            <Ionicons name="videocam" size={24} color="#592a19" />
             <Text style={styles.title}>{data?.callType === 'video' ? 'Incoming Video Call' : 'Incoming Call'}</Text>
           </View>
           
