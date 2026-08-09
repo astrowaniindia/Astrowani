@@ -414,6 +414,7 @@ if (!JWT_SECRET || JWT_SECRET.length < 32 || WEAK_SECRETS.has(JWT_SECRET)) {
 require('./src/adminRoutes')(app);
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
+require('./src/sentryRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);

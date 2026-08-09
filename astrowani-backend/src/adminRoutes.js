@@ -693,6 +693,107 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, days, totalSessions, totalMinutes, points });
   }));
 
+  // ── Revenue by service type (chat / call / video) ──────────────────────────
+  // Joined in JS, not a Postgres join — wallet_transactions.session_id has no declared
+  // FK to chat_sessions.id (see the "Data-layer audit" notes on the original core
+  // tables), so PostgREST embedding isn't available; two queries + a JS Map is simple
+  // and correct at this scale. Only debit rows tied to a real session count as service
+  // revenue — this deliberately excludes wallet top-ups, admin adjustments, gifts, and
+  // the historical drift-reconciliation rows (none of those have a session_id), so this
+  // is a clean measure of "money customers actually spent talking to an astrologer."
+  // 'audio' and 'voice' are the same thing (a pre-existing inconsistency in what
+  // different call sites write to chat_sessions.call_type — see CLAUDE.md subsystem T)
+  // and are merged into one 'call' bucket here.
+  app.get('/api/admin/analytics/revenue-by-type', requireAdmin, h(async (req, res) => {
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+
+    const { data: txns, error: txErr } = await db
+      .from('wallet_transactions')
+      .select('amount, session_id')
+      .eq('type', 'debit')
+      .not('session_id', 'is', null)
+      .gte('created_at', since);
+    if (txErr) throw txErr;
+
+    const sessionIds = [...new Set((txns || []).map((t) => t.session_id))];
+    if (sessionIds.length === 0) return res.json({ success: true, days, chat: 0, call: 0, video: 0, total: 0 });
+
+    const { data: sessions, error: sessErr } = await db
+      .from('chat_sessions')
+      .select('id, call_type')
+      .in('id', sessionIds);
+    if (sessErr) throw sessErr;
+
+    const typeById = new Map((sessions || []).map((s) => [s.id, s.call_type]));
+    const totals = { chat: 0, call: 0, video: 0 };
+    for (const t of txns || []) {
+      const rawType = typeById.get(t.session_id);
+      const bucket = rawType === 'video' ? 'video' : rawType === 'chat' ? 'chat' : (rawType === 'audio' || rawType === 'voice') ? 'call' : null;
+      if (bucket) totals[bucket] += Number(t.amount || 0);
+    }
+    const total = totals.chat + totals.call + totals.video;
+    return res.json({ success: true, days, ...totals, total });
+  }));
+
+  // ── Payment funnel: recharge started → actually paid ────────────────────────
+  // Every failed/abandoned Razorpay checkout is invisible without this — a customer
+  // who taps "Add Money", picks an amount, and then the payment fails or they back out
+  // never shows up anywhere else in the admin dashboard.
+  app.get('/api/admin/analytics/payment-funnel', requireAdmin, h(async (req, res) => {
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { data, error } = await db
+      .from('wallet_recharges')
+      .select('status')
+      .gte('created_at', since);
+    if (error) throw error;
+
+    const counts = { created: 0, paid: 0, failed: 0 };
+    for (const row of data || []) {
+      if (row.status in counts) counts[row.status] += 1;
+    }
+    return res.json({ success: true, days, ...counts, total: (data || []).length });
+  }));
+
+  // ── New vs. returning customer revenue split ────────────────────────────────
+  // "New" = this is the customer's first EVER paid recharge (their whole history is
+  // checked, not just the requested window) — a repeat customer whose latest recharge
+  // happens to fall in this window is still "returning", which is the point: this
+  // answers "is revenue coming from people who keep coming back, or a constant churn
+  // of first-timers."
+  app.get('/api/admin/analytics/customer-revenue-split', requireAdmin, h(async (req, res) => {
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+
+    const { data, error } = await db
+      .from('wallet_recharges')
+      .select('customer_id, amount, paid_at')
+      .eq('status', 'paid')
+      .not('paid_at', 'is', null)
+      .order('paid_at', { ascending: true });
+    if (error) throw error;
+
+    const firstPaidAt = new Map();
+    for (const row of data || []) {
+      if (!firstPaidAt.has(row.customer_id)) firstPaidAt.set(row.customer_id, row.paid_at);
+    }
+
+    let newRevenue = 0, returningRevenue = 0, newCount = 0, returningCount = 0;
+    for (const row of data || []) {
+      if (row.paid_at < since) continue; // outside the requested window
+      const isFirstEver = firstPaidAt.get(row.customer_id) === row.paid_at;
+      if (isFirstEver) { newRevenue += Number(row.amount || 0); newCount += 1; }
+      else { returningRevenue += Number(row.amount || 0); returningCount += 1; }
+    }
+
+    return res.json({
+      success: true, days,
+      new: { revenue: newRevenue, count: newCount },
+      returning: { revenue: returningRevenue, count: returningCount },
+    });
+  }));
+
   // Audience segmentation by signup date — 'new' = joined within the last N days,
   // 'old' = joined before that, 'all' = no date filter.
   function applyAudienceFilter(query, audience, cutoffIso) {

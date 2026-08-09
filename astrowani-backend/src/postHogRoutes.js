@@ -184,6 +184,56 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── D1/D7 retention (customer app) ──
+  // "Of everyone whose FIRST screen view fell on day X, what fraction came back on
+  // day X+1 (D1) / day X+7 (D7)." Verified against real (test-tagged) data before
+  // shipping — see git history for the manual HogQL test run. Cohorts are excluded
+  // once they haven't had enough time to reach the D1/D7 mark yet (e.g. a D7 cohort
+  // needs day0 to be at least 7 days ago), same reasoning as the WHERE clause below.
+  app.get('/api/admin/analytics/retention', requireAdmin, requireConfigured, h(async (req, res) => {
+    const days = clampDays(req.query.days, 30, 90);
+    const [d1Rows, d7Rows] = await Promise.all([
+      runHogQL(`
+        WITH first_seen AS (
+          SELECT person_id, min(toDate(timestamp)) AS day0
+          FROM events WHERE event = '$screen' AND properties.app = 'customer' AND ${ENV_FILTER}
+          GROUP BY person_id
+        ),
+        active_days AS (
+          SELECT DISTINCT person_id, toDate(timestamp) AS active_day
+          FROM events WHERE event = '$screen' AND properties.app = 'customer' AND ${ENV_FILTER}
+        )
+        SELECT count(DISTINCT f.person_id) AS cohort_size, count(DISTINCT a.person_id) AS returned
+        FROM first_seen f
+        LEFT JOIN active_days a ON a.person_id = f.person_id AND a.active_day = f.day0 + 1
+        WHERE f.day0 <= today() - 1 AND f.day0 >= today() - ${days}
+      `),
+      runHogQL(`
+        WITH first_seen AS (
+          SELECT person_id, min(toDate(timestamp)) AS day0
+          FROM events WHERE event = '$screen' AND properties.app = 'customer' AND ${ENV_FILTER}
+          GROUP BY person_id
+        ),
+        active_days AS (
+          SELECT DISTINCT person_id, toDate(timestamp) AS active_day
+          FROM events WHERE event = '$screen' AND properties.app = 'customer' AND ${ENV_FILTER}
+        )
+        SELECT count(DISTINCT f.person_id) AS cohort_size, count(DISTINCT a.person_id) AS returned
+        FROM first_seen f
+        LEFT JOIN active_days a ON a.person_id = f.person_id AND a.active_day = f.day0 + 7
+        WHERE f.day0 <= today() - 7 AND f.day0 >= today() - ${days}
+      `),
+    ]);
+    const [d1Cohort, d1Returned] = d1Rows[0] || [0, 0];
+    const [d7Cohort, d7Returned] = d7Rows[0] || [0, 0];
+    return res.json({
+      success: true,
+      days,
+      d1: { cohortSize: Number(d1Cohort) || 0, returned: Number(d1Returned) || 0 },
+      d7: { cohortSize: Number(d7Cohort) || 0, returned: Number(d7Returned) || 0 },
+    });
+  }));
+
   console.log(isConfigured()
     ? '[postHogRoutes] Analytics routes registered under /api/admin/analytics'
     : '[postHogRoutes] Analytics routes registered but POSTHOG_* env vars are unset — will 503 until configured');

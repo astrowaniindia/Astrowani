@@ -52,6 +52,12 @@ export default function Analytics() {
   const [funnelRange, setFunnelRange] = useState('week');
   const [revenue, setRevenue] = useState(null);
   const [sessionVolume, setSessionVolume] = useState(null);
+  const [revenueByType, setRevenueByType] = useState(null);
+  const [paymentFunnel, setPaymentFunnel] = useState(null);
+  const [customerSplit, setCustomerSplit] = useState(null);
+  const [retention, setRetention] = useState(null);
+  const [appHealth, setAppHealth] = useState(null);
+  const [appHealthNotConfigured, setAppHealthNotConfigured] = useState(false);
   const [appTab, setAppTab] = useState('customer');
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
@@ -125,13 +131,19 @@ export default function Analytics() {
 
   const load = useCallback(async () => {
     try {
-      const [summaryRes, trendRes, screensRes, funnelRes, revenueRes, sessionsRes] = await Promise.all([
+      const [summaryRes, trendRes, screensRes, funnelRes, revenueRes, sessionsRes, retentionRes,
+        revByTypeRes, paymentFunnelRes, customerSplitRes] = await Promise.all([
         client.get('/api/admin/analytics/summary', { params: { days: 7 } }),
         client.get('/api/admin/analytics/trend', { params: { days: 30 } }),
         client.get('/api/admin/analytics/top-screens', { params: { days: 7, app: appTab } }),
         client.get('/api/admin/analytics/funnel', { params: { range: funnelRange } }),
         client.get('/api/admin/analytics/revenue', { params: { days: 30 } }),
         client.get('/api/admin/analytics/session-volume', { params: { days: 30 } }),
+        client.get('/api/admin/analytics/retention', { params: { days: 30 } }),
+        // Supabase-backed — no POSTHOG_* dependency, so these never trip notConfigured.
+        client.get('/api/admin/analytics/revenue-by-type', { params: { days: 30 } }),
+        client.get('/api/admin/analytics/payment-funnel', { params: { days: 30 } }),
+        client.get('/api/admin/analytics/customer-revenue-split', { params: { days: 30 } }),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -139,6 +151,10 @@ export default function Analytics() {
       setFunnel(funnelRes.data);
       setRevenue(revenueRes.data);
       setSessionVolume(sessionsRes.data);
+      setRetention(retentionRes.data);
+      setRevenueByType(revByTypeRes.data);
+      setPaymentFunnel(paymentFunnelRes.data);
+      setCustomerSplit(customerSplitRes.data);
       setNotConfigured(false);
       setError('');
     } catch (e) {
@@ -152,11 +168,29 @@ export default function Analytics() {
     }
   }, [appTab, funnelRange]);
 
+  // Independent fetch — Sentry not being configured yet is expected and shouldn't 503
+  // the rest of the page the way a missing POSTHOG_* var does above.
+  const loadAppHealth = useCallback(async () => {
+    try {
+      const { data } = await client.get('/api/admin/analytics/app-health', { params: { days: 7 } });
+      setAppHealth(data);
+      setAppHealthNotConfigured(false);
+    } catch (e) {
+      if (e.response?.status === 503) setAppHealthNotConfigured(true);
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const t = setInterval(load, 60000); // auto-refresh every 60s
     return () => clearInterval(t);
   }, [load]);
+
+  useEffect(() => {
+    loadAppHealth();
+    const t = setInterval(loadAppHealth, 60000);
+    return () => clearInterval(t);
+  }, [loadAppHealth]);
 
   const envCard = (
     <div className="card" style={{ marginBottom: 18, borderLeft: `4px solid ${analyticsEnv === 'production' ? 'var(--maroon)' : 'var(--amber)'}` }}>
@@ -273,6 +307,59 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>App Health</h3>
+        {appHealthNotConfigured ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Not configured yet — create a read-only Sentry Internal Integration token
+            (Issue &amp; Event: Read + Project: Read only) and set <code>SENTRY_AUTH_TOKEN</code> in
+            the backend's environment. Same least-privilege pattern as the other analytics keys —
+            never reuse the bug-scan routine's token for this.
+          </p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+            {['customer', 'vendor'].map((appName) => (
+              <div key={appName}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>{appName === 'customer' ? 'Customer App' : 'Vendor App'}</div>
+                <div className="row-between"><span className="muted">Unresolved issues</span><span>{appHealth?.[appName]?.unresolved ?? '…'}</span></div>
+                <div className="row-between"><span className="muted">New issues (7d)</span><span>{appHealth?.[appName]?.newIssues ?? '…'}</span></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>D1 / D7 Retention (customer app)</h3>
+        <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
+          Of everyone whose first-ever screen view fell on a given day, what fraction came back
+          the next day (D1) or a week later (D7). The more trustworthy "are people actually
+          coming back" number — screen-view counts alone can't tell you that.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>D1 Retention</div>
+            <FunnelRow
+              label="Returned next day"
+              count={retention?.d1?.returned ?? 0}
+              total={retention?.d1?.cohortSize ?? 0}
+              color="var(--maroon)"
+            />
+            <span className="muted">Cohort size: {retention?.d1?.cohortSize ?? 0}</span>
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>D7 Retention</div>
+            <FunnelRow
+              label="Returned after a week"
+              count={retention?.d7?.returned ?? 0}
+              total={retention?.d7?.cohortSize ?? 0}
+              color="var(--amber)"
+            />
+            <span className="muted">Cohort size: {retention?.d7?.cohortSize ?? 0}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>Daily Revenue (30d)</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
           From paid wallet recharges — Supabase, not PostHog, so this is real money regardless
@@ -288,6 +375,67 @@ export default function Analytics() {
               <Bar dataKey="revenue" name="Revenue (₹)" fill="var(--maroon)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+          <div>
+            <div className="muted" style={{ fontSize: 12 }}>Chat</div>
+            <div style={{ fontSize: 20, fontWeight: 600 }}>₹{(revenueByType?.chat ?? 0).toLocaleString('en-IN')}</div>
+          </div>
+          <div>
+            <div className="muted" style={{ fontSize: 12 }}>Call</div>
+            <div style={{ fontSize: 20, fontWeight: 600 }}>₹{(revenueByType?.call ?? 0).toLocaleString('en-IN')}</div>
+          </div>
+          <div>
+            <div className="muted" style={{ fontSize: 12 }}>Video</div>
+            <div style={{ fontSize: 20, fontWeight: 600 }}>₹{(revenueByType?.video ?? 0).toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ marginBottom: 4 }}>
+          <h3 style={{ margin: 0 }}>Payment Funnel (30d)</h3>
+        </div>
+        <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
+          Every recharge a customer started, and how many actually completed. A failed/abandoned
+          Razorpay checkout is otherwise invisible — this is the only place it shows up.
+        </p>
+        <FunnelRow
+          label="Started"
+          count={paymentFunnel?.total ?? 0}
+          total={paymentFunnel?.total ?? 0}
+          color="var(--maroon)"
+        />
+        <FunnelRow
+          label="Paid"
+          count={paymentFunnel?.paid ?? 0}
+          total={paymentFunnel?.total ?? 0}
+          color="var(--maroon)"
+        />
+        <div className="row-between" style={{ marginTop: 8 }}>
+          <span className="muted">Failed</span>
+          <span>{paymentFunnel?.failed ?? 0}</span>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>New vs. Returning Customer Revenue (30d)</h3>
+        <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
+          "New" = this was that customer's first paid recharge ever. Revenue coming mostly from
+          returning customers means people are sticking around; mostly-new means you're
+          constantly acquiring but not retaining.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <div>
+            <div className="muted" style={{ fontSize: 12 }}>New customers</div>
+            <div style={{ fontSize: 22, fontWeight: 600 }}>₹{(customerSplit?.new?.revenue ?? 0).toLocaleString('en-IN')}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{customerSplit?.new?.count ?? 0} recharge(s)</div>
+          </div>
+          <div>
+            <div className="muted" style={{ fontSize: 12 }}>Returning customers</div>
+            <div style={{ fontSize: 22, fontWeight: 600 }}>₹{(customerSplit?.returning?.revenue ?? 0).toLocaleString('en-IN')}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{customerSplit?.returning?.count ?? 0} recharge(s)</div>
+          </div>
         </div>
       </div>
 
