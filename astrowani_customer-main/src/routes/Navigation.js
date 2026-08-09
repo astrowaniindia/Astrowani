@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { PostHogProvider } from 'posthog-react-native';
-import { posthog, applySessionReplaySetting } from '../utils/Analytics';
+import { posthog, applySessionReplaySetting, loadAnalyticsEnvironment, getAnalyticsEnvironment } from '../utils/Analytics';
 import { navigationRef } from '../utils/NavigationService';
 import { getWalletBalance } from '../utils/wallet';
 import Splash from '../screens/Splash/Splash';
@@ -100,6 +100,7 @@ const Tab = createBottomTabNavigator();
 export default function Navigation({ initialRoute }) {
   useEffect(() => {
     applySessionReplaySetting();
+    loadAnalyticsEnvironment();
   }, []);
 
   return (
@@ -113,7 +114,7 @@ export default function Navigation({ initialRoute }) {
         autocapture={{
           captureScreens: true,
           captureTouches: false,
-          navigation: { routeToProperties: (name, params) => ({ app: 'customer' }) },
+          navigation: { routeToProperties: (name, params) => ({ app: 'customer', environment: getAnalyticsEnvironment() }) },
         }}
       >
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right' }}>

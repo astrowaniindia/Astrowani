@@ -1,12 +1,19 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import client from '../api/client';
 
 const APP_TABS = [
   { key: 'customer', label: 'Customer App' },
   { key: 'vendor', label: 'Vendor App' },
+];
+
+const FUNNEL_RANGES = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This Week' },
+  { key: 'month', label: 'This Month' },
 ];
 
 // PostHog's /trend rows come back as [{ day, app, views }, ...] — pivot into one row per
@@ -42,10 +49,24 @@ export default function Analytics() {
   const [trend, setTrend] = useState([]);
   const [topScreens, setTopScreens] = useState([]);
   const [funnel, setFunnel] = useState(null);
+  const [funnelRange, setFunnelRange] = useState('week');
+  const [revenue, setRevenue] = useState(null);
+  const [sessionVolume, setSessionVolume] = useState(null);
   const [appTab, setAppTab] = useState('customer');
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
   const [error, setError] = useState('');
+
+  // Analytics environment ('test' | 'production') — every event either app captures is
+  // tagged with this at launch, and every PostHog-backed query above filters to
+  // 'production' only. Pre-launch testing with friends/family astrologers is tagged
+  // 'test' by default, so it never shows up here — flip this to 'production' when you
+  // actually go live. Switching it doesn't touch or delete any already-captured data;
+  // it just changes what gets tagged on *new* events from that point on, and the
+  // dashboard's own filtering does the rest.
+  const [analyticsEnv, setAnalyticsEnv] = useState('test');
+  const [envBusy, setEnvBusy] = useState(false);
+  const [envLoaded, setEnvLoaded] = useState(false);
 
   // Session replay — controlled entirely from here. Both RN apps read these two
   // app_settings keys directly (public-read table) at launch; toggling here changes
@@ -56,16 +77,18 @@ export default function Analytics() {
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayLoaded, setReplayLoaded] = useState(false);
 
-  const loadReplaySettings = useCallback(async () => {
+  const loadSettings = useCallback(async () => {
     try {
       const { data } = await client.get('/api/admin/settings');
       const s = data.settings || {};
       setReplayEnabled(s.session_replay_enabled === 'true');
       setReplaySampleRate(s.session_replay_sample_rate ?? '0.1');
+      setAnalyticsEnv(s.analytics_environment === 'production' ? 'production' : 'test');
     } catch (e) {
-      console.error('load replay settings failed (run app_settings_schema.sql):', e.message);
+      console.error('load settings failed (run app_settings_schema.sql):', e.message);
     } finally {
       setReplayLoaded(true);
+      setEnvLoaded(true);
     }
   }, []);
 
@@ -86,20 +109,36 @@ export default function Analytics() {
     }
   };
 
-  useEffect(() => { loadReplaySettings(); }, [loadReplaySettings]);
+  const saveAnalyticsEnv = async (next) => {
+    setEnvBusy(true);
+    try {
+      await client.patch('/api/admin/settings', { key: 'analytics_environment', value: next });
+      setAnalyticsEnv(next);
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setEnvBusy(false);
+    }
+  };
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
   const load = useCallback(async () => {
     try {
-      const [summaryRes, trendRes, screensRes, funnelRes] = await Promise.all([
+      const [summaryRes, trendRes, screensRes, funnelRes, revenueRes, sessionsRes] = await Promise.all([
         client.get('/api/admin/analytics/summary', { params: { days: 7 } }),
         client.get('/api/admin/analytics/trend', { params: { days: 30 } }),
         client.get('/api/admin/analytics/top-screens', { params: { days: 7, app: appTab } }),
-        client.get('/api/admin/analytics/funnel', { params: { days: 7 } }),
+        client.get('/api/admin/analytics/funnel', { params: { range: funnelRange } }),
+        client.get('/api/admin/analytics/revenue', { params: { days: 30 } }),
+        client.get('/api/admin/analytics/session-volume', { params: { days: 30 } }),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
       setTopScreens(screensRes.data.screens || []);
       setFunnel(funnelRes.data);
+      setRevenue(revenueRes.data);
+      setSessionVolume(sessionsRes.data);
       setNotConfigured(false);
       setError('');
     } catch (e) {
@@ -111,13 +150,39 @@ export default function Analytics() {
     } finally {
       setLoading(false);
     }
-  }, [appTab]);
+  }, [appTab, funnelRange]);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 60000); // auto-refresh every 60s
     return () => clearInterval(t);
   }, [load]);
+
+  const envCard = (
+    <div className="card" style={{ marginBottom: 18, borderLeft: `4px solid ${analyticsEnv === 'production' ? 'var(--maroon)' : 'var(--amber)'}` }}>
+      <div className="row-between">
+        <div>
+          <h3 style={{ margin: 0 }}>Analytics Environment</h3>
+          <p className="muted" style={{ margin: '4px 0 0' }}>
+            {analyticsEnv === 'production'
+              ? 'Live — every dashboard number below reflects real users only.'
+              : 'Test mode — screens/events from testers are tagged ‘test’ and excluded from every chart below. Nothing here is real traffic yet.'}
+          </p>
+        </div>
+        <button
+          className="btn"
+          disabled={!envLoaded || envBusy}
+          onClick={() => {
+            const next = analyticsEnv === 'production' ? 'test' : 'production';
+            if (next === 'production' && !window.confirm('Switch to production? All new screen views/events will start counting toward real numbers.')) return;
+            saveAnalyticsEnv(next);
+          }}
+        >
+          {envBusy ? 'Saving…' : analyticsEnv === 'production' ? 'Switch to Test' : 'Go Live (Switch to Production)'}
+        </button>
+      </div>
+    </div>
+  );
 
   const replayCard = (
     <div className="card" style={{ marginBottom: 18 }}>
@@ -162,6 +227,7 @@ export default function Analytics() {
     return (
       <div>
         <h1 className="page-title">Analytics</h1>
+        {envCard}
         {replayCard}
         <div className="card">
           <p style={{ margin: 0 }}>
@@ -178,6 +244,12 @@ export default function Analytics() {
   const cards = [
     { label: 'Screen Views (7d)', value: summary?.views },
     { label: 'Unique Users (7d)', value: summary?.uniques },
+    { label: 'DAU', value: summary?.dau },
+    { label: 'WAU', value: summary?.wau },
+    { label: 'MAU', value: summary?.mau },
+    { label: 'Revenue (30d)', value: revenue ? `₹${revenue.total.toLocaleString('en-IN')}` : undefined },
+    { label: 'Sessions (30d)', value: sessionVolume?.totalSessions },
+    { label: 'Session Minutes (30d)', value: sessionVolume?.totalMinutes },
   ];
 
   return (
@@ -188,6 +260,7 @@ export default function Analytics() {
       </div>
       {error && <div className="error-text">{error}</div>}
 
+      {envCard}
       {replayCard}
 
       <div className="stat-grid">
@@ -197,6 +270,45 @@ export default function Analytics() {
             <div className="value">{loading ? '…' : (c.value ?? 0)}</div>
           </div>
         ))}
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Daily Revenue (30d)</h3>
+        <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
+          From paid wallet recharges — Supabase, not PostHog, so this is real money regardless
+          of the environment toggle above (a paid recharge is never "test" data).
+        </p>
+        <div style={{ width: '100%', height: 240 }}>
+          <ResponsiveContainer>
+            <BarChart data={revenue?.points || []}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v) => `₹${v}`} />
+              <Bar dataKey="revenue" name="Revenue (₹)" fill="var(--maroon)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Daily Session Volume (30d)</h3>
+        <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
+          Call + chat sessions per day and total minutes — also Supabase-sourced, real data.
+        </p>
+        <div style={{ width: '100%', height: 240 }}>
+          <ResponsiveContainer>
+            <LineChart data={sessionVolume?.points || []}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="sessions" name="Sessions" stroke="var(--maroon)" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="minutes" name="Minutes" stroke="var(--amber)" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
@@ -217,8 +329,19 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h3 style={{ marginTop: 0 }}>Call &amp; Chat Funnel (7d, customer app)</h3>
-        <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
+        <div className="row-between">
+          <h3 style={{ margin: 0 }}>Call &amp; Chat Funnel (customer app)</h3>
+          <div className="btn-group">
+            {FUNNEL_RANGES.map((r) => (
+              <button
+                key={r.key}
+                className={`btn sm ${funnelRange === r.key ? '' : 'ghost'}`}
+                onClick={() => setFunnelRange(r.key)}
+              >{r.label}</button>
+            ))}
+          </div>
+        </div>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
           Of everyone who tapped Call or Chat, how many actually connected. (Customer-only —
           the vendor app only ever accepts, never initiates, so there's no equivalent funnel
           there.)

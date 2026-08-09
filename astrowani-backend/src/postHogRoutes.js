@@ -12,6 +12,14 @@
 // Screen views are auto-captured by both RN apps as PostHog's standard
 // `$screen` event, with a custom `app` property ('customer' | 'vendor') so
 // the two apps can be told apart inside one shared PostHog project.
+//
+// EVERY query below filters `properties.environment = 'production'` — both
+// apps tag every event (screen views + business events) with the
+// app_settings.analytics_environment value read at launch ('test' until an
+// admin flips it in the toggle on the Analytics page). This means pre-launch
+// testing with friends/family standing in as astrologers structurally never
+// shows up here — no data deletion needed, and switching back to 'test' later
+// (e.g. a QA pass) can't pollute real numbers either.
 // ─────────────────────────────────────────────────────────────────────────────
 const axios = require('axios');
 const { requireAdmin } = require('./adminRoutes');
@@ -54,6 +62,25 @@ function clampDays(raw, fallback, max) {
   return Math.min(n, max);
 }
 
+// Named ranges for the funnel's Today/Yesterday/Week/Month selector. Returns a HogQL
+// boolean expression for `timestamp`. "Today"/"Yesterday" need calendar-day boundaries,
+// not a rolling INTERVAL N DAY window, so this is separate from clampDays above.
+function rangeToWhere(range) {
+  switch (range) {
+    case 'today':
+      return `toDate(timestamp) = today()`;
+    case 'yesterday':
+      return `toDate(timestamp) = today() - 1`;
+    case 'month':
+      return `timestamp >= now() - INTERVAL 30 DAY`;
+    case 'week':
+    default:
+      return `timestamp >= now() - INTERVAL 7 DAY`;
+  }
+}
+
+const ENV_FILTER = `properties.environment = 'production'`;
+
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   console.error(`[postHogRoutes] ${req.method} ${req.path} error:`, err.response?.data || err.message);
   res.status(502).json({ success: false, message: 'PostHog query failed' });
@@ -67,16 +94,28 @@ function requireConfigured(req, res, next) {
 }
 
 module.exports = function registerPostHogRoutes(app) {
-  // ── Summary stat cards: total screen views + unique users over the period ──
+  // ── Summary stat cards: views + unique/DAU/WAU/MAU over the period ──
   app.get('/api/admin/analytics/summary', requireAdmin, requireConfigured, h(async (req, res) => {
     const days = clampDays(req.query.days, 7, 90);
     const rows = await runHogQL(`
-      SELECT count() AS views, count(DISTINCT person_id) AS uniques
+      SELECT
+        count() AS views,
+        count(DISTINCT person_id) AS uniques,
+        count(DISTINCT if(timestamp >= now() - INTERVAL 1 DAY, person_id, NULL)) AS dau,
+        count(DISTINCT if(timestamp >= now() - INTERVAL 7 DAY, person_id, NULL)) AS wau,
+        count(DISTINCT if(timestamp >= now() - INTERVAL 30 DAY, person_id, NULL)) AS mau
       FROM events
-      WHERE event = '$screen' AND timestamp >= now() - INTERVAL ${days} DAY
+      WHERE event = '$screen' AND ${ENV_FILTER} AND timestamp >= now() - INTERVAL ${Math.max(days, 30)} DAY
     `);
-    const [views, uniques] = rows[0] || [0, 0];
-    return res.json({ success: true, days, views: Number(views) || 0, uniques: Number(uniques) || 0 });
+    const [views, uniques, dau, wau, mau] = rows[0] || [0, 0, 0, 0, 0];
+    return res.json({
+      success: true, days,
+      views: Number(views) || 0,
+      uniques: Number(uniques) || 0,
+      dau: Number(dau) || 0,
+      wau: Number(wau) || 0,
+      mau: Number(mau) || 0,
+    });
   }));
 
   // ── Daily screen-view trend, split by app, for a line chart ──
@@ -85,7 +124,7 @@ module.exports = function registerPostHogRoutes(app) {
     const rows = await runHogQL(`
       SELECT toDate(timestamp) AS day, properties.app AS app, count() AS views
       FROM events
-      WHERE event = '$screen' AND timestamp >= now() - INTERVAL ${days} DAY
+      WHERE event = '$screen' AND ${ENV_FILTER} AND timestamp >= now() - INTERVAL ${days} DAY
       GROUP BY day, app
       ORDER BY day ASC
     `);
@@ -104,7 +143,7 @@ module.exports = function registerPostHogRoutes(app) {
     const rows = await runHogQL(`
       SELECT properties.$screen_name AS screen, count() AS views
       FROM events
-      WHERE event = '$screen' AND properties.app = '${appName}' AND timestamp >= now() - INTERVAL ${days} DAY
+      WHERE event = '$screen' AND properties.app = '${appName}' AND ${ENV_FILTER} AND timestamp >= now() - INTERVAL ${days} DAY
       GROUP BY screen
       ORDER BY views DESC
       LIMIT 20
@@ -121,20 +160,25 @@ module.exports = function registerPostHogRoutes(app) {
   // wouldn't represent further drop-off the way a real funnel stage should. Connected vs
   // not-connected is the real conversion question ("of everyone who tried, how many
   // actually got through").
+  //
+  // Accepts `range` (today|yesterday|week|month, default week) instead of `days` — the
+  // Today/Yesterday buckets need calendar-day boundaries that a rolling day-count can't
+  // express.
   app.get('/api/admin/analytics/funnel', requireAdmin, requireConfigured, h(async (req, res) => {
-    const days = clampDays(req.query.days, 7, 90);
+    const range = ['today', 'yesterday', 'week', 'month'].includes(req.query.range) ? req.query.range : 'week';
     const rows = await runHogQL(`
       SELECT event, count() AS n
       FROM events
       WHERE event IN ('call_initiated', 'call_connected', 'chat_initiated', 'chat_started')
         AND properties.app = 'customer'
-        AND timestamp >= now() - INTERVAL ${days} DAY
+        AND ${ENV_FILTER}
+        AND ${rangeToWhere(range)}
       GROUP BY event
     `);
     const counts = Object.fromEntries(rows.map(([event, n]) => [event, Number(n) || 0]));
     return res.json({
       success: true,
-      days,
+      range,
       call: { initiated: counts.call_initiated || 0, connected: counts.call_connected || 0 },
       chat: { initiated: counts.chat_initiated || 0, connected: counts.chat_started || 0 },
     });

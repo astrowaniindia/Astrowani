@@ -627,6 +627,72 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true });
   }));
 
+  // ── Analytics: revenue + session volume ─────────────────────────────────────
+  // Sourced from Supabase directly, not PostHog — wallet_recharges/chat_sessions are the
+  // accurate ground truth for money and session counts, whereas PostHog's business events
+  // are a product-analytics proxy (and subject to the same test/production environment
+  // split the PostHog-backed routes below use). No environment filtering needed here since
+  // this data isn't tagged that way — this pass explicitly scopes the analytics rebuild to
+  // real, unfaked money movement, and every wallet_recharges/chat_sessions row already IS
+  // real (it only exists if a real payment or session happened) — there is no "test" row to
+  // exclude here the way there is with product-analytics events from friends/family testers.
+  app.get('/api/admin/analytics/revenue', requireAdmin, h(async (req, res) => {
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { data, error } = await db
+      .from('wallet_recharges')
+      .select('amount, paid_at')
+      .eq('status', 'paid')
+      .gte('paid_at', since);
+    if (error) throw error;
+
+    const byDay = new Map();
+    for (const row of data || []) {
+      const day = (row.paid_at || '').slice(0, 10);
+      if (!day) continue;
+      byDay.set(day, (byDay.get(day) || 0) + Number(row.amount || 0));
+    }
+    const points = Array.from(byDay.entries())
+      .map(([day, revenue]) => ({ day, revenue }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+    const total = points.reduce((sum, p) => sum + p.revenue, 0);
+
+    return res.json({ success: true, days, total, points });
+  }));
+
+  app.get('/api/admin/analytics/session-volume', requireAdmin, h(async (req, res) => {
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    // No duration_minutes column exists on chat_sessions — duration is derived from
+    // ended_at - started_at (still-active sessions with no ended_at yet count toward
+    // the session total for their day, just contribute 0 minutes until they finish).
+    const { data, error } = await db
+      .from('chat_sessions')
+      .select('call_type, started_at, ended_at')
+      .not('started_at', 'is', null)
+      .gte('started_at', since);
+    if (error) throw error;
+
+    const byDay = new Map();
+    for (const row of data || []) {
+      const day = (row.started_at || '').slice(0, 10);
+      if (!day) continue;
+      if (!byDay.has(day)) byDay.set(day, { day, sessions: 0, minutes: 0 });
+      const entry = byDay.get(day);
+      entry.sessions += 1;
+      if (row.ended_at) {
+        entry.minutes += Math.max(0, (new Date(row.ended_at) - new Date(row.started_at)) / 60000);
+      }
+    }
+    const points = Array.from(byDay.values())
+      .map((p) => ({ ...p, minutes: Math.round(p.minutes) }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+    const totalSessions = points.reduce((sum, p) => sum + p.sessions, 0);
+    const totalMinutes = points.reduce((sum, p) => sum + p.minutes, 0);
+
+    return res.json({ success: true, days, totalSessions, totalMinutes, points });
+  }));
+
   // Audience segmentation by signup date — 'new' = joined within the last N days,
   // 'old' = joined before that, 'all' = no date filter.
   function applyAudienceFilter(query, audience, cutoffIso) {

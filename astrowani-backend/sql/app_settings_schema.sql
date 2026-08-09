@@ -27,6 +27,17 @@ INSERT INTO public.app_settings (key, value)
 SELECT 'session_replay_sample_rate', '0.1'
 WHERE NOT EXISTS (SELECT 1 FROM public.app_settings WHERE key = 'session_replay_sample_rate');
 
+-- Analytics environment — 'test' | 'production'. Both apps read this at launch and tag
+-- EVERY PostHog event (screen views + business events) with it. The admin analytics
+-- dashboard's HogQL queries always filter to environment = 'production', so anything
+-- captured while this is 'test' (all pre-launch testing with friends/family "astrologers")
+-- never shows up on the real dashboard — no data deletion needed, and nothing prevents
+-- switching back to 'test' later (e.g. for a QA pass) without polluting production numbers.
+-- Defaults to 'test' since that's what's true before the actual public launch.
+INSERT INTO public.app_settings (key, value)
+SELECT 'analytics_environment', 'test'
+WHERE NOT EXISTS (SELECT 1 FROM public.app_settings WHERE key = 'analytics_environment');
+
 -- ── RLS: public read (anon-key reads); writes via service role ──────────────────
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 DO $$

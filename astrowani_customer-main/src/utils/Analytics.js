@@ -31,11 +31,35 @@ export function resetAnalyticsIdentity() {
   } catch (_) {}
 }
 
+// 'test' | 'production' — read once at launch from app_settings (see
+// loadAnalyticsEnvironment below), tagged onto every event. The admin dashboard's HogQL
+// queries always filter to 'production', so pre-launch testing (friends/family acting as
+// astrologers) never contaminates real launch numbers — flip this in the admin Analytics
+// page's toggle when you actually go live. Defaults to 'test' until that fetch resolves,
+// which matches reality for anyone running a debug/dev build.
+let currentEnvironment = 'test';
+export function getAnalyticsEnvironment() {
+  return currentEnvironment;
+}
+
+export async function loadAnalyticsEnvironment() {
+  try {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'analytics_environment')
+      .limit(1);
+    if (data && data.length) currentEnvironment = data[0].value === 'production' ? 'production' : 'test';
+  } catch (_) {
+    // Analytics must never crash the app — stays 'test' on failure, which is the safe default.
+  }
+}
+
 // Business events — the starter set. Always tags `app: 'customer'` so events are
 // distinguishable from the vendor app inside one shared PostHog project.
 export function captureEvent(name, properties = {}) {
   try {
-    posthog.capture(name, { app: 'customer', ...properties });
+    posthog.capture(name, { app: 'customer', environment: currentEnvironment, ...properties });
   } catch (_) {}
 }
 

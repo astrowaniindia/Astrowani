@@ -31,11 +31,31 @@ export function resetAnalyticsIdentity() {
   } catch (_) {}
 }
 
+// 'test' | 'production' — see the matching comment in the customer app's Analytics.js.
+// Same admin toggle (app_settings.analytics_environment) drives both apps.
+let currentEnvironment = 'test';
+export function getAnalyticsEnvironment() {
+  return currentEnvironment;
+}
+
+export async function loadAnalyticsEnvironment() {
+  try {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'analytics_environment')
+      .limit(1);
+    if (data && data.length) currentEnvironment = data[0].value === 'production' ? 'production' : 'test';
+  } catch (_) {
+    // Analytics must never crash the app — stays 'test' on failure, which is the safe default.
+  }
+}
+
 // Business events — the starter set. Always tags `app: 'vendor'` so events are
 // distinguishable from the customer app inside one shared PostHog project.
 export function captureEvent(name, properties = {}) {
   try {
-    posthog.capture(name, { app: 'vendor', ...properties });
+    posthog.capture(name, { app: 'vendor', environment: currentEnvironment, ...properties });
   } catch (_) {}
 }
 
