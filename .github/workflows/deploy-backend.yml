@@ -18,7 +18,17 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /var/www/astrowani-monorepo
+            # git fetch has failed intermittently against a transient network blip
+            # (observed 2026-08-09/10, root cause unconfirmed — repo is public, so it
+            # isn't a credential issue). Retry a few times before giving up so a
+            # one-off hiccup doesn't require manually re-running the deploy steps.
+            for i in 1 2 3 4 5; do
+              git fetch origin main && break
+              echo "git fetch failed (attempt $i/5), retrying in 5s..."
+              sleep 5
+            done
             git fetch origin main
             git reset --hard origin/main
             cd astrowani-backend
