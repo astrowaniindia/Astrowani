@@ -11,19 +11,44 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /var/www/astrowani-monorepo
-            git fetch origin main
-            git reset --hard origin/main
-            cd astrowani-admin
-            npm install
-            npm run build
-            rm -rf /var/www/astrowani/admin/dist/*
-            cp -r dist/* /var/www/astrowani/admin/dist/
-            chown -R www-data:www-data /var/www/astrowani/admin
+      - name: SSH and deploy (retries the whole connection, not just commands)
+        # Same fix as deploy-backend.yml (2026-08-10) — a raw ssh call in a retry
+        # loop instead of a single appleboy/ssh-action attempt, so a transient
+        # "dial tcp <host>:22: i/o timeout" (observed on deploy-backend.yml twice
+        # that day) doesn't leave the admin dashboard stuck on stale code with no
+        # automatic recovery. See MD files/vps-git-deploy-guide.md.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
+          set -e
+          cd /var/www/astrowani-monorepo
+          git fetch origin main
+          git reset --hard origin/main
+          cd astrowani-admin
+          npm install
+          npm run build
+          rm -rf /var/www/astrowani/admin/dist/*
+          cp -r dist/* /var/www/astrowani/admin/dist/
+          chown -R www-data:www-data /var/www/astrowani/admin
+          REMOTE_SCRIPT
+
+          attempt=1
+          max_attempts=5
+          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key \
+            "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "SSH deploy failed after $max_attempts attempts — giving up."
+              exit 1
+            fi
+            echo "SSH deploy attempt $attempt/$max_attempts failed, retrying in 20s..."
+            attempt=$((attempt + 1))
+            sleep 20
+          done

@@ -5,21 +5,25 @@ The two halves of this app ship very differently. This file explains both, plus 
 changes once OTA updates are added.
 
 See also: [bug-scan-agent.md](bug-scan-agent.md) (opens PRs, never ships them),
-[recurring-bugs-playbook.md](recurring-bugs-playbook.md).
+[recurring-bugs-playbook.md](recurring-bugs-playbook.md),
+[vps-git-deploy-guide.md](vps-git-deploy-guide.md) (step-by-step — how to verify a deploy
+landed, the exact manual fallback commands, and a known SSH-connection flakiness issue and
+its mitigation).
 
 ## Backend (`astrowani-backend/`) — auto-deploys on merge
 
 `.github/workflows/deploy-backend.yml` runs automatically whenever `main` changes **and**
 the change touches something under `astrowani-backend/**`:
 
-1. SSHes into the Hostinger VPS.
+1. SSHes into the Hostinger VPS (as of 2026-08-10, retries the connection itself up to 5
+   times — see [vps-git-deploy-guide.md](vps-git-deploy-guide.md) for why).
 2. `git fetch origin main && git reset --hard origin/main`.
 3. `npm install --production`.
 4. `pm2 restart astrowani-backend --update-env`.
 
 So: **merge a backend PR → it's live within a minute or two.** No separate deploy step.
 (There's also `.github/workflows/deploy-admin.yml` for the admin dashboard — same idea,
-different target.)
+different target: it builds on the VPS itself and copies the output to Nginx's static dir.)
 
 ## Customer & Vendor apps (React Native) — merge is NOT enough
 
@@ -41,38 +45,39 @@ ship as a compiled bundle baked into the APK at build time.
 This means a JS-only bug fix — even a trivial 2-line one — currently takes a full store
 release cycle to actually reach users, same as a major feature.
 
-## OTA updates for JS-only fixes — code wired, one setup step left (2026-08-05)
+## OTA updates for JS-only fixes — fully set up and verified working (2026-08-05, confirmed live 2026-08-10)
 
-**Hot Updater** (self-hosted, Supabase-backed) is now wired into both apps' code:
+**Hot Updater** (self-hosted, Supabase-backed) is wired into both apps' code and the one-time
+setup (`hot-updater init` per app — Supabase storage bucket + DB table + Edge Function) is
+done; both apps' `index.js` point at a real Edge Function URL, not a placeholder.
+
 - `@hot-updater/react-native` (runtime) + `hot-updater` (CLI, devDependency) installed in
   both `astrowani_customer-main/` and `astrowani_vendors-main/`.
-- Android: both apps' `MainApplication.kt` now serve `HotUpdater.getJSBundleFile(...)` as the
-  JS bundle (falls back to the bundle baked into the APK if no OTA update has been
-  downloaded yet).
+- Android: both apps' `MainApplication.kt` serve `HotUpdater.getJSBundleFile(...)` as the JS
+  bundle (falls back to the bundle baked into the APK if no OTA update has been downloaded
+  yet).
 - JS: both apps' `index.js` wrap the root component in `HotUpdater.wrap({ baseURL, ... })`
   before registering it.
 
-**What's still a manual, one-time step** (needs your Supabase login — not something this
-session can do):
-1. `npx -y supabase login` (from either app's directory).
-2. `npx hot-updater init` — pick "Bare/React Native CLI" as the build system and **Supabase**
-   as the provider. This creates the storage bucket + database table in your existing
-   Supabase project, deploys a Supabase Edge Function that serves the update-check endpoint,
-   and writes `hot-updater.config.ts` + `.env.hotupdater` (the latter holds your Supabase
-   service role key — already added to `.gitignore`, **never commit it**).
-3. The init step prints the Edge Function URL
-   (`https://<project-ref>.supabase.co/functions/v1/update-server`). Replace the placeholder
-   string `'REPLACE_ME_AFTER_HOT_UPDATER_INIT'` in both apps' `index.js` with that URL.
-4. Repeat steps 2–3 for the **other** app (each app needs its own bucket/table — run `init`
-   separately in each directory, or point both at the same provider project with distinct
-   bucket names — your call).
-5. To ship a JS-only fix from then on: `npx hot-updater deploy -p android` from the changed
-   app's directory, instead of a full versionCode bump + Play Store release.
+**To ship a JS-only fix**, from the changed app's directory:
+```bash
+NODE_OPTIONS="--max-old-space-size=8192" npx hot-updater deploy -p android
+```
+The extra heap is not optional in practice — a plain `npx hot-updater deploy -p android` ran
+out of memory mid-bundle on this project's size on 2026-08-10; the larger heap fixed it on the
+first retry. Also give it real time to finish (5–10 minutes, mostly the Hermes bundle build) —
+don't wrap it in a short shell `timeout`, a premature kill mid-build looks like a different,
+unrelated failure (a killed Metro/jest worker process).
+
+**Confirmed working end-to-end on 2026-08-10**: both `astrowani_customer-main` (targeting
+installed version `24.x`) and `astrowani_vendors-main` (targeting `6.5.x`) deployed
+successfully — build → Hermes compile → Supabase upload → DB record, each returning a real
+deployment ID. A signup-flow fix (missing photo-picker modal + a backend OTP bug) shipped this
+way and was verified working in a running app afterward.
 
 - **Native changes** (new native module, permissions, Gradle/manifest edits, new native
   library) still require the full build-and-Play-Store-release process above — OTA cannot
   touch native code, only the JS bundle.
-- **Not yet tested end-to-end** — the native `MainApplication.kt` edits haven't been verified
-  against a real Gradle build in this session (Android builds hit tooling friction earlier
-  today unrelated to this change). Do a real build + install after finishing the setup steps
-  above, before relying on this for a production fix.
+- **`updateStrategy: 'appVersion'`** means an OTA update only reaches devices already running
+  a matching installed app version — it does not reach users on an older version who haven't
+  updated via the Play Store at least once since Hot Updater was added.
