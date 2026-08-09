@@ -95,6 +95,17 @@ export default function Banners() {
     await load();
   };
 
+  // Pause/resume without deleting — flips is_active only, no other fields touched.
+  const toggleActive = async (r) => {
+    setRows((prev) => prev.map((row) => (row.id === r.id ? { ...row, is_active: !row.is_active } : row)));
+    try {
+      await client.put(`/api/admin/banners/${r.id}`, { ...r, is_active: !r.is_active });
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+      await load(); // revert the optimistic flip on failure
+    }
+  };
+
   const set = (k, v) => setEditing((p) => ({ ...p, [k]: v }));
 
   // A banner shows in the current tab if it targets that app or 'both'.
@@ -147,6 +158,9 @@ export default function Banners() {
                 <td>{r.sort_order}</td>
                 <td>{r.is_active ? <span className="badge green">Yes</span> : <span className="badge gray">No</span>}</td>
                 <td><div className="btn-group">
+                  <button className="btn secondary sm" onClick={() => toggleActive(r)}>
+                    {r.is_active ? 'Stop' : 'Activate'}
+                  </button>
                   <button className="btn secondary sm" onClick={() => setEditing({ ...EMPTY, ...r })}>Edit</button>
                   <button className="btn danger sm" onClick={() => remove(r)}>Delete</button>
                 </div></td>
