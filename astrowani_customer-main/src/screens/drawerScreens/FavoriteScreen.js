@@ -1,4 +1,4 @@
-import {StyleSheet, Text, View, ActivityIndicator} from 'react-native';
+import {StyleSheet, Text, View, ActivityIndicator, RefreshControl} from 'react-native';
 import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {useFocusEffect} from '@react-navigation/native';
 import ReusableList from '../component/ReusableList';
@@ -12,6 +12,7 @@ const FavoriteScreen = ({navigation}) => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
   const channelRef = useRef(null);
 
   const fetchFavorites = useCallback(async () => {
@@ -72,6 +73,12 @@ const FavoriteScreen = ({navigation}) => {
     navigation.navigate('AstrologerInfo', {person: item});
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchFavorites();
+    setRefreshing(false);
+  };
+
   return (
     <View style={{flex: 1, backgroundColor: COLORS.AstroSoftOrange}}>
       {loading ? (
@@ -86,6 +93,8 @@ const FavoriteScreen = ({navigation}) => {
           handleAstrologer={handleViewprofile}
           actionButton={handleViewprofile}
           buttonType="view profile"
+          refreshing={refreshing}
+          onRefresh={onRefresh}
         />
       ) : (
         <Text style={styles.notext}>No Favorites yet.{'\n'}Tap the heart on an astrologer's profile to add them here.</Text>

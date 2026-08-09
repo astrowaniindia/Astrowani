@@ -947,7 +947,7 @@ const Home = ({navigation}) => {
       >
         <View style={styles.searchBtnView}>
           <TouchableOpacity onPress={handleSearch} style={styles.searchBtn}>
-            <MaterialIcons name="search" size={24} color="#800000" />
+            <MaterialIcons name="search" size={24} color="#592a19" />
             <Text style={styles.searchTxt}>{t('home.search')}</Text>
           </TouchableOpacity>
         </View>

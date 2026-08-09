@@ -33,6 +33,7 @@ const Video = ({navigation}) => {
   const [error, setError] = useState(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitingAstroName, setWaitingAstroName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   // Mount-time socket — stays connected for the component lifetime so
   // call_accepted arrives reliably even if vendor accepts within seconds.
@@ -115,6 +116,12 @@ const Video = ({navigation}) => {
   // Was a per-screen Supabase Realtime subscription to the whole astrologers
   // table; now a debounced socket signal fanned out once by the backend.
   useAstrologerListSync(fetchAstrologers);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchAstrologers();
+    setRefreshing(false);
+  };
 
   const cancelCall = () => {
     navigatedRef.current = true;
@@ -305,6 +312,8 @@ const Video = ({navigation}) => {
         handleAstrologer={handleAstrologer}
         actionButton={initiateVideoCall}
         buttonType="video"
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       />
       <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={cancelCall}>
         <View style={styles.modalOverlay}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, Image, ImageBackground, TouchableOpacity, FlatList, StyleSheet, TextInput } from 'react-native';
+import { View, Text, Image, ImageBackground, TouchableOpacity, FlatList, StyleSheet, TextInput, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
@@ -13,6 +13,7 @@ const Live = ({ navigation }) => {
   const { t } = React.useContext(LanguageContext);
   const [liveAstro, setLiveAstro] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredData = React.useMemo(() => {
@@ -47,6 +48,12 @@ const Live = ({ navigation }) => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [getLiveAstro]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await getLiveAstro();
+    setRefreshing(false);
+  };
 
   const handlePress = async (item) => {
     if (!(await ensureProfileComplete(navigation))) return;
@@ -104,6 +111,9 @@ const Live = ({ navigation }) => {
         renderItem={renderItem}
         keyExtractor={item => String(item.sessionId || item._id)}
         contentContainerStyle={{paddingBottom: verticalScale(85), paddingTop: verticalScale(5)}}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
+        }
         ListEmptyComponent={
           !loading && (
             <View style={styles.emptyBox}>

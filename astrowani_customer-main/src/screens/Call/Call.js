@@ -536,6 +536,7 @@ const CallsList = ({navigation}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitingAstroName, setWaitingAstroName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   // Mount-time socket — stays connected for the component's lifetime so
   // call_accepted arrives reliably even if vendor accepts within seconds.
@@ -802,6 +803,12 @@ const CallsList = ({navigation}) => {
     }, [fetchCalls]),
   );
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchCalls();
+    setRefreshing(false);
+  };
+
   // Was a per-screen Supabase Realtime subscription to the whole astrologers
   // table; now a debounced socket signal fanned out once by the backend.
   useAstrologerListSync(fetchCalls);
@@ -920,6 +927,8 @@ const CallsList = ({navigation}) => {
         buttonType="call"
         actionButton={getRoomTokenWebCall}
         handleAstrologer={(item) => navigation.navigate('AstrologerInfo', { person: item })}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       />
       <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={cancelCall}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
