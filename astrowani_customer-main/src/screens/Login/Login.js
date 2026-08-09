@@ -78,7 +78,7 @@ const Login = ({navigation}) => {
           );
         } else {
           console.log('Login error:', error);
-          showAlert(t('common.error'), t('login.somethingWrong'), 'error');
+          showAlert(t('common.error'), error?.response?.data?.message || t('login.somethingWrong'), 'error');
         }
       } finally {
         SetLoading(false);

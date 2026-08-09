@@ -235,6 +235,8 @@ const translations = {
     // Register screen
     'register.title': 'Register',
     'register.tapToAddPhoto': 'Tap to add photo',
+    'register.takePhoto': 'Take Photo',
+    'register.chooseFromLibrary': 'Choose from Library',
     'register.fullName': 'Enter your full name',
     'register.male': 'Male',
     'register.female': 'Female',
@@ -692,6 +694,8 @@ const translations = {
     // Register screen
     'register.title': 'पंजीकरण',
     'register.tapToAddPhoto': 'फ़ोटो जोड़ने के लिए टैप करें',
+    'register.takePhoto': 'फ़ोटो लें',
+    'register.chooseFromLibrary': 'लाइब्रेरी से चुनें',
     'register.fullName': 'अपना पूरा नाम दर्ज करें',
     'register.male': 'पुरुष',
     'register.female': 'महिला',

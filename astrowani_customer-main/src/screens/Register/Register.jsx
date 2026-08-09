@@ -10,6 +10,7 @@ import {
   Platform,
   Image,
   Alert,
+  Modal,
   PermissionsAndroid,
   SafeAreaView,
 } from 'react-native';
@@ -175,7 +176,7 @@ export default function Register({ navigation }) {
         );
       } else {
         console.error(error);
-        showAlert(t('common.error'), t('login.somethingWrong'), 'error');
+        showAlert(t('common.error'), error?.response?.data?.message || t('login.somethingWrong'), 'error');
       }
     } finally {
       setSubmitting(false);
@@ -310,6 +311,31 @@ export default function Register({ navigation }) {
               <Text style={styles.submitButtonText}>{submitting ? t('register.sendingOtp') : t('register.submit')}</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <Modal
+            transparent
+            visible={showImagePickerModal}
+            animationType="fade"
+            onRequestClose={() => setShowImagePickerModal(false)}>
+            <TouchableOpacity
+              style={styles.imagePickerOverlay}
+              activeOpacity={1}
+              onPress={() => setShowImagePickerModal(false)}>
+              <View style={styles.imagePickerSheet}>
+                <TouchableOpacity style={styles.imagePickerOption} onPress={handleCameraLaunch}>
+                  <Icon name="photo-camera" size={22} color={COLORS.AstroMaroon} />
+                  <Text style={styles.imagePickerOptionText}>{t('register.takePhoto')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.imagePickerOption} onPress={handleImageLibraryLaunch}>
+                  <Icon name="photo-library" size={22} color={COLORS.AstroMaroon} />
+                  <Text style={styles.imagePickerOptionText}>{t('register.chooseFromLibrary')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.imagePickerCancel} onPress={() => setShowImagePickerModal(false)}>
+                  <Text style={styles.imagePickerCancelText}>{t('common.cancel')}</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
         </SafeAreaView>
       );
     }
@@ -433,5 +459,41 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 16,
     color: '#333',
+  },
+  imagePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  imagePickerSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
+  imagePickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+  },
+  imagePickerOptionText: {
+    fontSize: 16,
+    color: '#333',
+    marginLeft: 14,
+  },
+  imagePickerCancel: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  imagePickerCancelText: {
+    fontSize: 16,
+    color: COLORS.AstroMaroon,
+    fontWeight: 'bold',
   },
 });

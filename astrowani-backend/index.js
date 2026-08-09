@@ -530,8 +530,16 @@ app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
       });
       console.log('EnableX SMS sent successfully. job_id:', enxResponse.data?.job_id);
     } catch (error) {
+      // Previously swallowed: the app was told success:true even when no SMS was
+      // actually sent, so a real delivery failure looked identical to a working
+      // request — the OTP screen would open and nothing would ever arrive. Undo
+      // the stored OTP and tell the app the truth instead.
       console.error('Failed to send SMS via EnableX:', error?.response?.data || error.message);
-      // Even if SMS fails, you might want to return an error, but for testing we continue
+      otpStore.delete(phoneNumber);
+      return res.status(502).json({
+        success: false,
+        message: 'Could not send the OTP SMS right now. Please try again in a moment.',
+      });
     }
   } else {
     console.log('EnableX keys not configured. Skipping actual SMS sending. OTP is:', otp);
