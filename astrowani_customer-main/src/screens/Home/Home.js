@@ -27,10 +27,8 @@ import Astrologers, {LiveAstrologers, Reviews, services} from './Astrologers';
 import Instance from '../../api/ApiCall';
 import {getAstroServices} from '../../api/astroApi';
 import FreeServicesScreen from '../drawerScreens/FreeSeviceScreen/FreeServicesScreen';
-import HomeRemedies from '../Remedies/HomeRemedies';
 import VoiceNotesBanner from './VoiceNotesBanner';
 import CustomerReview from './Review';
-import Remedies from '../Remedies/Remedies';
 import axios from 'axios';
 import { showAlert } from '../../Component/CustomAlert';
 import { supabase } from '../../api/SupabaseClient';
@@ -1116,14 +1114,6 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>{t('home.remedies')}</Text>
-        </View>
-
-        <HomeRemedies navigation={navigation} />
-
-        <View style={styles.separator} />
-
-        <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>{t('home.liveAstrologers')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
@@ -1202,7 +1192,6 @@ const Home = ({navigation}) => {
             contentContainerStyle={styles.BlogView}
           />
         )}
-        <Remedies />
 
         <View style={styles.reviewsBox}>
           <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>
