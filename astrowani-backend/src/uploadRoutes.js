@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const { createClient } = require('@supabase/supabase-js');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -88,6 +89,21 @@ module.exports = function registerUploadRoutes(app) {
       }
       const safeFolder = (folder || 'misc').replace(/[^a-z0-9_-]/gi, '');
       let { buffer: outBuffer, ext: outExt, mime: outMime } = { buffer: parsed.buffer, ext: parsed.ext, mime: parsed.mime };
+
+      // AVIF/HEIC decode support is inconsistent across Android/iOS versions and
+      // devices — React Native's <Image> can render one such file fine and show a
+      // silent blank for another (seen with an admin-uploaded tarot card image:
+      // small AVIF worked, larger one didn't). Normalize to JPEG at upload time so
+      // this can never happen again, regardless of what format was picked.
+      if (['image/avif', 'image/heic', 'image/heif'].includes(outMime)) {
+        try {
+          outBuffer = await sharp(outBuffer).jpeg({ quality: 85 }).toBuffer();
+          outExt = 'jpeg';
+          outMime = 'image/jpeg';
+        } catch (e) {
+          console.error('[upload-image] AVIF/HEIC-to-JPEG conversion failed, uploading original:', e.message);
+        }
+      }
 
       if (safeFolder === 'astrologer-profiles') {
         const whitened = await whitenAstrologerProfilePhoto(parsed.buffer, parsed.mime);
