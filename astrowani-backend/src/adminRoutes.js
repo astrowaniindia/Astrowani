@@ -428,6 +428,50 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, data: data || [] });
   }));
 
+  // A customer can never be hard-deleted while financial history references them —
+  // `chat_sessions.caller_id` and `wallet_transactions.user_id` both carry ON DELETE
+  // RESTRICT (hardening_01_core_tables.sql) precisely so the money trail can't be lost.
+  // `call_requests.customer_id` and `chat_messages.sender_id`/`receiver_id` have no FK at
+  // all, so they're cleaned up explicitly here first; everything else referencing a
+  // customer (favorites, reviews, referrals, wallet_recharges, voice_notes,
+  // astrologer_waitlist, astrologer_reports, support_tickets) is ON DELETE CASCADE/SET
+  // NULL and is handled automatically the moment the customer row itself is deleted.
+  // Mirrors DELETE /api/admin/astrologers/:id.
+  app.delete('/api/admin/customers/:id', requireAdmin, h(async (req, res) => {
+    const id = req.params.id;
+
+    const { data: customer } = await db.from('customers').select('id, name, mobile').eq('id', id).single();
+    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    await db.from('call_requests').delete().eq('customer_id', id);
+    await db.from('chat_messages').delete().eq('sender_id', id);
+    await db.from('chat_messages').delete().eq('receiver_id', id);
+
+    const { error: delErr } = await db.from('customers').delete().eq('id', id);
+
+    if (!delErr) {
+      return res.json({ success: true, mode: 'deleted' });
+    }
+
+    // 23503 = foreign_key_violation. Anything else is a real error, not a "has history" signal.
+    if (delErr.code !== '23503') throw delErr;
+
+    // Has session/wallet history the DB refuses to let us destroy — fall back to hiding
+    // the account completely instead of just returning an error. There's no
+    // approval_status/is_suspended pair on customers like there is on astrologers, so we
+    // clear the phone number and mark it, which both frees the number for re-signup
+    // (mobile-otp-request only matches on an exact phone_number) and hides the account
+    // from any UI that looks up a customer by mobile.
+    const deletedTag = `deleted:${id}:${Date.now()}`;
+    const { error: softErr } = await db.from('customers').update({
+      mobile: deletedTag,
+      name: customer.name ? `${customer.name} (deleted)` : 'Deleted user',
+    }).eq('id', id);
+    if (softErr) throw softErr;
+
+    return res.json({ success: true, mode: 'hidden', reason: 'has_financial_history' });
+  }));
+
   app.post('/api/admin/customers/:id/wallet', requireAdmin, h(async (req, res) => {
     const amount = Number(req.body?.amount);
     if (!amount || amount === 0) {
