@@ -434,8 +434,33 @@ require('./src/freeServicesRoutes')(app);
 // Image upload — base64 -> Supabase Storage URL (POST /api/upload-image)
 require('./src/uploadRoutes')(app);
 
-// In-memory store for OTPs (In production, use Redis or Database)
-const otpStore = new Map();
+// OTPs are persisted in Supabase (table: otp_codes), not an in-memory Map —
+// a plain Map is wiped on every process restart, and `pm2 restart` runs on
+// every single deploy. A user mid-login when that happens would have their
+// just-sent OTP silently vanish server-side (the SMS still arrives, but
+// verify fails with "No OTP requested for this number"), and only a fresh
+// Resend issued after the restart would actually work. See
+// sql/otp_codes_schema.sql. Same failure class as the earnings-reset restart
+// bug fixed earlier this project.
+const otpStore = {
+  async set(phoneNumber, { otp, sessionId, expiresAt }) {
+    await supabaseService.from('otp_codes').upsert({
+      phone_number: phoneNumber,
+      otp,
+      session_id: sessionId,
+      expires_at: new Date(expiresAt).toISOString(),
+    });
+  },
+  async get(phoneNumber) {
+    const { data } = await supabaseService
+      .from('otp_codes').select('otp, session_id, expires_at').eq('phone_number', phoneNumber).maybeSingle();
+    if (!data) return null;
+    return { otp: data.otp, sessionId: data.session_id, expiresAt: new Date(data.expires_at).getTime() };
+  },
+  async delete(phoneNumber) {
+    await supabaseService.from('otp_codes').delete().eq('phone_number', phoneNumber);
+  },
+};
 
 // EnableX Credentials for the SMS/OTP project specifically ("OTP Atrowani").
 // Distinct from ENABLEX_APP_ID/ENABLEX_APP_KEY, which belong to a different EnableX project.
@@ -513,7 +538,7 @@ app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
   const sessionId = Date.now().toString(); // Simple session ID
 
   // Store the OTP
-  otpStore.set(phoneNumber, {
+  await otpStore.set(phoneNumber, {
     otp,
     sessionId,
     expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
@@ -549,7 +574,7 @@ app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
       // request — the OTP screen would open and nothing would ever arrive. Undo
       // the stored OTP and tell the app the truth instead.
       console.error('Failed to send SMS via EnableX:', error?.response?.data || error.message);
-      otpStore.delete(phoneNumber);
+      await otpStore.delete(phoneNumber);
       return res.status(502).json({
         success: false,
         message: 'Could not send the OTP SMS right now. Please try again in a moment.',
@@ -579,14 +604,14 @@ app.post('/api/users/mobile-otp-verify', authLimiter, async (req, res) => {
     return res.status(400).json({ success: false, message: 'Phone number and OTP are required' });
   }
 
-  const storedData = otpStore.get(phoneNumber);
+  const storedData = await otpStore.get(phoneNumber);
 
   if (!storedData) {
     return res.status(400).json({ success: false, message: 'No OTP requested for this number' });
   }
 
   if (Date.now() > storedData.expiresAt) {
-    otpStore.delete(phoneNumber);
+    await otpStore.delete(phoneNumber);
     return res.status(400).json({ success: false, message: 'OTP has expired' });
   }
 
@@ -595,7 +620,7 @@ app.post('/api/users/mobile-otp-verify', authLimiter, async (req, res) => {
   }
 
   // OTP is valid!
-  otpStore.delete(phoneNumber); // Clear OTP after successful use
+  await otpStore.delete(phoneNumber); // Clear OTP after successful use
 
   const isVendor = role === 'astrologer' || role === 'vendor';
   let supabaseCustomerId = null;
