@@ -9,17 +9,89 @@ const APP_TABS = [
   { key: 'vendor', label: 'Vendor App' },
 ];
 
-const FUNNEL_RANGES = [
+const AUTH_FUNNEL_TYPES = [
+  { key: 'signup', label: 'Signup' },
+  { key: 'login', label: 'Login' },
+];
+
+const DATE_PRESETS = [
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
   { key: 'week', label: 'This Week' },
   { key: 'month', label: 'This Month' },
 ];
 
-const AUTH_FUNNEL_TYPES = [
-  { key: 'signup', label: 'Signup' },
-  { key: 'login', label: 'Login' },
-];
+// Local calendar date as YYYY-MM-DD — NOT d.toISOString().slice(0,10), which shifts to
+// UTC first and can land on the wrong day depending on the admin's timezone (e.g. IST
+// midnight is still the previous day in UTC).
+function toLocalISODate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function computePresetRange(preset) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (preset === 'today') return { from: toLocalISODate(today), to: toLocalISODate(today) };
+  if (preset === 'yesterday') {
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    return { from: toLocalISODate(y), to: toLocalISODate(y) };
+  }
+  if (preset === 'month') {
+    const from = new Date(today); from.setDate(from.getDate() - 29);
+    return { from: toLocalISODate(from), to: toLocalISODate(today) };
+  }
+  // week (default)
+  const from = new Date(today); from.setDate(from.getDate() - 6);
+  return { from: toLocalISODate(from), to: toLocalISODate(today) };
+}
+
+function formatDateLabel(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+// One shared control for every date-dependent card on the page — quick presets plus a
+// fully custom From/To range, instead of each card having its own separate selector.
+function DateRangeControl({ preset, from, to, onPreset, onCustom }) {
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="row-between" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <div className="btn-group">
+          {DATE_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              className={`btn sm ${preset === p.key ? '' : 'ghost'}`}
+              onClick={() => onPreset(p.key)}
+            >{p.label}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="muted" style={{ fontSize: 13 }}>Custom:</span>
+          <input
+            type="date" value={from} max={to}
+            onChange={(e) => onCustom(e.target.value, to)}
+            style={{ padding: '6px 8px', width: 150 }}
+          />
+          <span className="muted">to</span>
+          <input
+            type="date" value={to} min={from} max={toLocalISODate(new Date())}
+            onChange={(e) => onCustom(from, e.target.value)}
+            style={{ padding: '6px 8px', width: 150 }}
+          />
+        </div>
+      </div>
+      <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>
+        Showing <b>{formatDateLabel(from)} – {formatDateLabel(to)}</b> — every card below
+        (except D1/D7 Retention, which is a rolling 30-day cohort window by its nature)
+        reflects this range.
+      </p>
+    </div>
+  );
+}
 
 // PostHog's /trend rows come back as [{ day, app, views }, ...] — pivot into one row per
 // day with a column per app so recharts can plot both as separate lines.
@@ -96,10 +168,15 @@ export default function Analytics() {
   const [trend, setTrend] = useState([]);
   const [topScreens, setTopScreens] = useState([]);
   const [funnel, setFunnel] = useState(null);
-  const [funnelRange, setFunnelRange] = useState('week');
   const [authFunnel, setAuthFunnel] = useState(null);
   const [authFunnelType, setAuthFunnelType] = useState('signup');
-  const [authFunnelRange, setAuthFunnelRange] = useState('week');
+
+  // Shared date range for every card on the page (except D1/D7 Retention, a rolling
+  // cohort window that doesn't fit a simple from/to filter).
+  const [datePreset, setDatePreset] = useState('week');
+  const [dateRange, setDateRange] = useState(() => computePresetRange('week'));
+  const applyPreset = (preset) => { setDatePreset(preset); setDateRange(computePresetRange(preset)); };
+  const applyCustom = (from, to) => { setDatePreset('custom'); setDateRange({ from, to }); };
   const [revenue, setRevenue] = useState(null);
   const [sessionVolume, setSessionVolume] = useState(null);
   const [revenueByType, setRevenueByType] = useState(null);
@@ -181,19 +258,22 @@ export default function Analytics() {
 
   const load = useCallback(async () => {
     try {
+      const dateParams = { from: dateRange.from, to: dateRange.to };
       const [summaryRes, trendRes, screensRes, funnelRes, revenueRes, sessionsRes, retentionRes,
         revByTypeRes, paymentFunnelRes, customerSplitRes] = await Promise.all([
-        client.get('/api/admin/analytics/summary', { params: { days: 7 } }),
-        client.get('/api/admin/analytics/trend', { params: { days: 30 } }),
-        client.get('/api/admin/analytics/top-screens', { params: { days: 7, app: appTab } }),
-        client.get('/api/admin/analytics/funnel', { params: { range: funnelRange } }),
-        client.get('/api/admin/analytics/revenue', { params: { days: 30 } }),
-        client.get('/api/admin/analytics/session-volume', { params: { days: 30 } }),
+        client.get('/api/admin/analytics/summary', { params: dateParams }),
+        client.get('/api/admin/analytics/trend', { params: dateParams }),
+        client.get('/api/admin/analytics/top-screens', { params: { ...dateParams, app: appTab } }),
+        client.get('/api/admin/analytics/funnel', { params: dateParams }),
+        client.get('/api/admin/analytics/revenue', { params: dateParams }),
+        client.get('/api/admin/analytics/session-volume', { params: dateParams }),
+        // Retention is a rolling 30-day cohort window by nature (not "events between two
+        // dates") — deliberately not wired to the shared date-range control above.
         client.get('/api/admin/analytics/retention', { params: { days: 30 } }),
         // Supabase-backed — no POSTHOG_* dependency, so these never trip notConfigured.
-        client.get('/api/admin/analytics/revenue-by-type', { params: { days: 30 } }),
-        client.get('/api/admin/analytics/payment-funnel', { params: { days: 30 } }),
-        client.get('/api/admin/analytics/customer-revenue-split', { params: { days: 30 } }),
+        client.get('/api/admin/analytics/revenue-by-type', { params: dateParams }),
+        client.get('/api/admin/analytics/payment-funnel', { params: dateParams }),
+        client.get('/api/admin/analytics/customer-revenue-split', { params: dateParams }),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -216,21 +296,21 @@ export default function Analytics() {
     } finally {
       setLoading(false);
     }
-  }, [appTab, funnelRange]);
+  }, [appTab, dateRange]);
 
   // Independent fetch, keyed on its own selector state — separate from the main load()
-  // so switching Signup/Login or the range doesn't re-fetch every other card on the page.
+  // so switching Signup/Login doesn't re-fetch every other card on the page.
   const loadAuthFunnel = useCallback(async () => {
     try {
       const { data } = await client.get('/api/admin/analytics/auth-funnel', {
-        params: { type: authFunnelType, range: authFunnelRange },
+        params: { type: authFunnelType, from: dateRange.from, to: dateRange.to },
       });
       setAuthFunnel(data);
     } catch (e) {
       // A missing/misconfigured POSTHOG_* var already shows the page-level "not
       // configured" state via the main load() call — nothing extra to show here.
     }
-  }, [authFunnelType, authFunnelRange]);
+  }, [authFunnelType, dateRange]);
 
   useEffect(() => { loadAuthFunnel(); }, [loadAuthFunnel]);
 
@@ -342,14 +422,14 @@ export default function Analytics() {
   }
 
   const cards = [
-    { label: 'Screen Views (7d)', value: summary?.views },
-    { label: 'Unique Users (7d)', value: summary?.uniques },
+    { label: 'Screen Views', value: summary?.views },
+    { label: 'Unique Users', value: summary?.uniques },
     { label: 'DAU', value: summary?.dau },
     { label: 'WAU', value: summary?.wau },
     { label: 'MAU', value: summary?.mau },
-    { label: 'Revenue (30d)', value: revenue ? `₹${revenue.total.toLocaleString('en-IN')}` : undefined },
-    { label: 'Sessions (30d)', value: sessionVolume?.totalSessions },
-    { label: 'Session Minutes (30d)', value: sessionVolume?.totalMinutes },
+    { label: 'Revenue', value: revenue ? `₹${revenue.total.toLocaleString('en-IN')}` : undefined },
+    { label: 'Sessions', value: sessionVolume?.totalSessions },
+    { label: 'Session Minutes', value: sessionVolume?.totalMinutes },
   ];
 
   return (
@@ -359,6 +439,14 @@ export default function Analytics() {
         <button className="btn secondary" onClick={load}>Refresh</button>
       </div>
       {error && <div className="error-text">{error}</div>}
+
+      <DateRangeControl
+        preset={datePreset}
+        from={dateRange.from}
+        to={dateRange.to}
+        onPreset={applyPreset}
+        onCustom={applyCustom}
+      />
 
       {envCard}
       {replayCard}
@@ -426,7 +514,7 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h3 style={{ marginTop: 0 }}>Daily Revenue (30d)</h3>
+        <h3 style={{ marginTop: 0 }}>Daily Revenue</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
           From paid wallet recharges — Supabase, not PostHog, so this is real money regardless
           of the environment toggle above (a paid recharge is never "test" data).
@@ -460,7 +548,7 @@ export default function Analytics() {
 
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ marginBottom: 4 }}>
-          <h3 style={{ margin: 0 }}>Payment Funnel (30d)</h3>
+          <h3 style={{ margin: 0 }}>Payment Funnel</h3>
         </div>
         <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
           Every recharge a customer started, and how many actually completed. A failed/abandoned
@@ -485,7 +573,7 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h3 style={{ marginTop: 0 }}>New vs. Returning Customer Revenue (30d)</h3>
+        <h3 style={{ marginTop: 0 }}>New vs. Returning Customer Revenue</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
           "New" = this was that customer's first paid recharge ever. Revenue coming mostly from
           returning customers means people are sticking around; mostly-new means you're
@@ -506,7 +594,7 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h3 style={{ marginTop: 0 }}>Daily Session Volume (30d)</h3>
+        <h3 style={{ marginTop: 0 }}>Daily Session Volume</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
           Call + chat sessions per day and total minutes — also Supabase-sourced, real data.
         </p>
@@ -526,7 +614,7 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h3 style={{ marginTop: 0 }}>Daily Screen Views (30d)</h3>
+        <h3 style={{ marginTop: 0 }}>Daily Screen Views</h3>
         <div style={{ width: '100%', height: 280 }}>
           <ResponsiveContainer>
             <LineChart data={trend}>
@@ -554,15 +642,6 @@ export default function Analytics() {
               >{f.label}</button>
             ))}
           </div>
-          <div className="btn-group">
-            {FUNNEL_RANGES.map((r) => (
-              <button
-                key={r.key}
-                className={`btn sm ${authFunnelRange === r.key ? '' : 'ghost'}`}
-                onClick={() => setAuthFunnelRange(r.key)}
-              >{r.label}</button>
-            ))}
-          </div>
         </div>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
           Where new customers actually drop off — every arrow below is a real leak, not just
@@ -578,15 +657,6 @@ export default function Analytics() {
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between">
           <h3 style={{ margin: 0 }}>Call &amp; Chat Funnel (customer app)</h3>
-          <div className="btn-group">
-            {FUNNEL_RANGES.map((r) => (
-              <button
-                key={r.key}
-                className={`btn sm ${funnelRange === r.key ? '' : 'ghost'}`}
-                onClick={() => setFunnelRange(r.key)}
-              >{r.label}</button>
-            ))}
-          </div>
         </div>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
           Of everyone who tapped Call or Chat, how many actually connected. (Customer-only —
@@ -609,7 +679,7 @@ export default function Analytics() {
 
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between">
-          <h3 style={{ margin: 0 }}>Top Screens (7d)</h3>
+          <h3 style={{ margin: 0 }}>Top Screens</h3>
           <div className="btn-group">
             {APP_TABS.map((t) => (
               <button

@@ -675,6 +675,20 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true });
   }));
 
+  // Shared by every Supabase-backed analytics route below — same date-range control
+  // (preset buttons + custom From/To) as the PostHog-backed routes in postHogRoutes.js.
+  // `from`/`to` (YYYY-MM-DD, inclusive) take priority; `days` (a rolling window ending
+  // now) stays as a fallback for any caller that hasn't been updated.
+  const ANALYTICS_ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  function resolveDateBounds(req, { defaultDays = 30, maxDays = 180 } = {}) {
+    const { from, to } = req.query;
+    if (ANALYTICS_ISO_DATE.test(from || '') && ANALYTICS_ISO_DATE.test(to || '')) {
+      return { since: `${from}T00:00:00.000Z`, until: `${to}T23:59:59.999Z` };
+    }
+    const days = Math.min(parseInt(req.query.days, 10) || defaultDays, maxDays);
+    return { since: new Date(Date.now() - days * 86400000).toISOString(), until: null };
+  }
+
   // ── Analytics: revenue + session volume ─────────────────────────────────────
   // Sourced from Supabase directly, not PostHog — wallet_recharges/chat_sessions are the
   // accurate ground truth for money and session counts, whereas PostHog's business events
@@ -685,13 +699,10 @@ module.exports = function registerAdminRoutes(app) {
   // real (it only exists if a real payment or session happened) — there is no "test" row to
   // exclude here the way there is with product-analytics events from friends/family testers.
   app.get('/api/admin/analytics/revenue', requireAdmin, h(async (req, res) => {
-    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    const { data, error } = await db
-      .from('wallet_recharges')
-      .select('amount, paid_at')
-      .eq('status', 'paid')
-      .gte('paid_at', since);
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
+    let query = db.from('wallet_recharges').select('amount, paid_at').eq('status', 'paid').gte('paid_at', since);
+    if (until) query = query.lte('paid_at', until);
+    const { data, error } = await query;
     if (error) throw error;
 
     const byDay = new Map();
@@ -705,20 +716,17 @@ module.exports = function registerAdminRoutes(app) {
       .sort((a, b) => a.day.localeCompare(b.day));
     const total = points.reduce((sum, p) => sum + p.revenue, 0);
 
-    return res.json({ success: true, days, total, points });
+    return res.json({ success: true, total, points });
   }));
 
   app.get('/api/admin/analytics/session-volume', requireAdmin, h(async (req, res) => {
-    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
     // No duration_minutes column exists on chat_sessions — duration is derived from
     // ended_at - started_at (still-active sessions with no ended_at yet count toward
     // the session total for their day, just contribute 0 minutes until they finish).
-    const { data, error } = await db
-      .from('chat_sessions')
-      .select('call_type, started_at, ended_at')
-      .not('started_at', 'is', null)
-      .gte('started_at', since);
+    let sessQuery = db.from('chat_sessions').select('call_type, started_at, ended_at').not('started_at', 'is', null).gte('started_at', since);
+    if (until) sessQuery = sessQuery.lte('started_at', until);
+    const { data, error } = await sessQuery;
     if (error) throw error;
 
     const byDay = new Map();
@@ -738,7 +746,7 @@ module.exports = function registerAdminRoutes(app) {
     const totalSessions = points.reduce((sum, p) => sum + p.sessions, 0);
     const totalMinutes = points.reduce((sum, p) => sum + p.minutes, 0);
 
-    return res.json({ success: true, days, totalSessions, totalMinutes, points });
+    return res.json({ success: true, totalSessions, totalMinutes, points });
   }));
 
   // ── Revenue by service type (chat / call / video) ──────────────────────────
@@ -753,19 +761,15 @@ module.exports = function registerAdminRoutes(app) {
   // different call sites write to chat_sessions.call_type — see CLAUDE.md subsystem T)
   // and are merged into one 'call' bucket here.
   app.get('/api/admin/analytics/revenue-by-type', requireAdmin, h(async (req, res) => {
-    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
 
-    const { data: txns, error: txErr } = await db
-      .from('wallet_transactions')
-      .select('amount, session_id')
-      .eq('type', 'debit')
-      .not('session_id', 'is', null)
-      .gte('created_at', since);
+    let txQuery = db.from('wallet_transactions').select('amount, session_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since);
+    if (until) txQuery = txQuery.lte('created_at', until);
+    const { data: txns, error: txErr } = await txQuery;
     if (txErr) throw txErr;
 
     const sessionIds = [...new Set((txns || []).map((t) => t.session_id))];
-    if (sessionIds.length === 0) return res.json({ success: true, days, chat: 0, call: 0, video: 0, total: 0 });
+    if (sessionIds.length === 0) return res.json({ success: true, chat: 0, call: 0, video: 0, total: 0 });
 
     const { data: sessions, error: sessErr } = await db
       .from('chat_sessions')
@@ -781,7 +785,7 @@ module.exports = function registerAdminRoutes(app) {
       if (bucket) totals[bucket] += Number(t.amount || 0);
     }
     const total = totals.chat + totals.call + totals.video;
-    return res.json({ success: true, days, ...totals, total });
+    return res.json({ success: true, ...totals, total });
   }));
 
   // ── Payment funnel: recharge started → actually paid ────────────────────────
@@ -789,19 +793,17 @@ module.exports = function registerAdminRoutes(app) {
   // who taps "Add Money", picks an amount, and then the payment fails or they back out
   // never shows up anywhere else in the admin dashboard.
   app.get('/api/admin/analytics/payment-funnel', requireAdmin, h(async (req, res) => {
-    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    const { data, error } = await db
-      .from('wallet_recharges')
-      .select('status')
-      .gte('created_at', since);
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
+    let query = db.from('wallet_recharges').select('status').gte('created_at', since);
+    if (until) query = query.lte('created_at', until);
+    const { data, error } = await query;
     if (error) throw error;
 
     const counts = { created: 0, paid: 0, failed: 0 };
     for (const row of data || []) {
       if (row.status in counts) counts[row.status] += 1;
     }
-    return res.json({ success: true, days, ...counts, total: (data || []).length });
+    return res.json({ success: true, ...counts, total: (data || []).length });
   }));
 
   // ── New vs. returning customer revenue split ────────────────────────────────
@@ -811,9 +813,11 @@ module.exports = function registerAdminRoutes(app) {
   // answers "is revenue coming from people who keep coming back, or a constant churn
   // of first-timers."
   app.get('/api/admin/analytics/customer-revenue-split', requireAdmin, h(async (req, res) => {
-    const days = Math.min(parseInt(req.query.days, 10) || 30, 180);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
 
+    // Deliberately fetches the customer's FULL history (no date filter on the query
+    // itself) — "first ever" has to be checked against everything, not just this
+    // window — then filters to the requested window in JS below.
     const { data, error } = await db
       .from('wallet_recharges')
       .select('customer_id, amount, paid_at')
@@ -829,14 +833,14 @@ module.exports = function registerAdminRoutes(app) {
 
     let newRevenue = 0, returningRevenue = 0, newCount = 0, returningCount = 0;
     for (const row of data || []) {
-      if (row.paid_at < since) continue; // outside the requested window
+      if (row.paid_at < since || (until && row.paid_at > until)) continue; // outside the requested window
       const isFirstEver = firstPaidAt.get(row.customer_id) === row.paid_at;
       if (isFirstEver) { newRevenue += Number(row.amount || 0); newCount += 1; }
       else { returningRevenue += Number(row.amount || 0); returningCount += 1; }
     }
 
     return res.json({
-      success: true, days,
+      success: true,
       new: { revenue: newRevenue, count: newCount },
       returning: { revenue: returningRevenue, count: returningCount },
     });
