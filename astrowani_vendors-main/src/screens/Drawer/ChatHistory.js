@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert, } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
@@ -10,14 +10,14 @@ import { COLORS } from '../../Theme/Colors';
 const ChatHistory = ({ navigation }) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Fetch chat data from API
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       const astroId = await AsyncStorage.getItem('astroId');
       if (!astroId) {
-        setLoading(false);
         return;
       }
 
@@ -56,14 +56,14 @@ const ChatHistory = ({ navigation }) => {
         });
         setData(formatted);
       }
-
-      setLoading(false);
-
     } catch (error) {
       console.error('Error fetching data:', error);
-      setLoading(false);
+    } finally {
+      if (isRefresh) setRefreshing(false); else setLoading(false);
     }
   };
+
+  const onRefresh = () => fetchData(true);
 
   // useEffect for initial data load
   useEffect(() => {
@@ -144,6 +144,9 @@ const ChatHistory = ({ navigation }) => {
         renderItem={renderChatItem}
         contentContainerStyle={{ padding: scale(15), paddingBottom: verticalScale(30) }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} tintColor={COLORS.AstroMaroon} />
+        }
         ListEmptyComponent={<View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 50 }}><Text style={styles.emptyText}>No chat history available.</Text></View>}
       />
     </View>

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -99,6 +100,7 @@ const SessionCard = ({item, tabKey}) => {
 const TabContent = ({tabKey, types, astroId}) => {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const channelRef = useRef(null);
   const custMapRef = useRef({});
 
@@ -111,6 +113,46 @@ const TabContent = ({tabKey, types, astroId}) => {
     return name;
   }, []);
 
+  // Shared by the focus-effect load and pull-to-refresh — fetches + enriches
+  // sessions without touching the realtime subscription (that's focus-scoped).
+  const fetchSessions = useCallback(async (id, active = {current: true}) => {
+    const {data, error} = await supabase
+      .from('chat_sessions')
+      .select('*')
+      .eq('vendor_id', id)
+      .in('call_type', types)
+      .order('started_at', {ascending: false})
+      .limit(100);
+
+    if (error || !data || !active.current) return;
+
+    const callerIds = [...new Set(data.map(s => s.caller_id).filter(Boolean))];
+    if (callerIds.length) {
+      const map = await resolveCustomerNames(callerIds);
+      Object.entries(map).forEach(([id, c]) => {
+        custMapRef.current[id] = c.name || 'Customer';
+      });
+    }
+
+    const enriched = data.map(s => ({
+      ...s,
+      customerName: custMapRef.current[s.caller_id] || 'Customer',
+    }));
+
+    if (active.current) setSessions(enriched);
+  }, [types.join(',')]);
+
+  const onRefresh = useCallback(async () => {
+    const id = astroId || (await AsyncStorage.getItem('astroId'));
+    if (!id) return;
+    setRefreshing(true);
+    try {
+      await fetchSessions(id);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [astroId, fetchSessions]);
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -121,31 +163,8 @@ const TabContent = ({tabKey, types, astroId}) => {
           const id = astroId || (await AsyncStorage.getItem('astroId'));
           if (!id) return;
 
-          const {data, error} = await supabase
-            .from('chat_sessions')
-            .select('*')
-            .eq('vendor_id', id)
-            .in('call_type', types)
-            .order('started_at', {ascending: false})
-            .limit(100);
-
-          if (error || !data || !active) return;
-
-          // Bulk-fetch customer names
-          const callerIds = [...new Set(data.map(s => s.caller_id).filter(Boolean))];
-          if (callerIds.length) {
-            const map = await resolveCustomerNames(callerIds);
-            Object.entries(map).forEach(([id, c]) => {
-              custMapRef.current[id] = c.name || 'Customer';
-            });
-          }
-
-          const enriched = data.map(s => ({
-            ...s,
-            customerName: custMapRef.current[s.caller_id] || 'Customer',
-          }));
-
-          if (active) setSessions(enriched);
+          await fetchSessions(id, {current: active});
+          if (!active) return;
 
           // ── Realtime subscription ──────────────────────────────────────────
           if (channelRef.current) {
@@ -233,6 +252,9 @@ const TabContent = ({tabKey, types, astroId}) => {
       renderItem={({item}) => <SessionCard item={item} tabKey={tabKey} />}
       contentContainerStyle={sessions.length === 0 ? styles.emptyContainer : styles.listContent}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} tintColor={COLORS.AstroMaroon} />
+      }
       ListEmptyComponent={
         <View style={styles.emptyState}>
           <Ionicons name="time-outline" size={52} color="#ccc" />

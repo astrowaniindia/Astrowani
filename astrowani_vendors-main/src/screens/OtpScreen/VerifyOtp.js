@@ -60,9 +60,30 @@ const VerifyOtp = ({navigation, route}) => {
       navigation.navigate('Registration');
       return;
     }
-    const res = await Instance.post('/api/vendor/register', registrationData, {
-      headers: {Authorization: `Bearer ${preRegToken}`},
-    });
+
+    // Registration.js couldn't upload the picked photo itself (no auth token
+    // exists before OTP verification) — do it now that preRegToken is usable,
+    // then send the resulting URL instead of the raw base64.
+    const {profile_pic_base64, ...restRegistrationData} = registrationData;
+    let profile_pic_url;
+    if (profile_pic_base64) {
+      try {
+        const uploadRes = await Instance.post(
+          '/api/upload-image',
+          {base64: profile_pic_base64, folder: 'astrologer-profiles'},
+          {headers: {Authorization: `Bearer ${preRegToken}`}},
+        );
+        profile_pic_url = uploadRes?.data?.url;
+      } catch (uploadErr) {
+        console.log('Profile photo upload failed, continuing without it:', uploadErr.message);
+      }
+    }
+
+    const res = await Instance.post(
+      '/api/vendor/register',
+      {...restRegistrationData, ...(profile_pic_url ? {profile_pic_url} : {})},
+      {headers: {Authorization: `Bearer ${preRegToken}`}},
+    );
     if (!res?.data?.success) {
       throw new Error(res?.data?.message || 'Registration failed');
     }

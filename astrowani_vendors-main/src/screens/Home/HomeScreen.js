@@ -14,6 +14,7 @@ import {
   BackHandler,
   Animated,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
@@ -85,6 +86,7 @@ const HomeScreen = () => {
   const navigation = useNavigation();
   const socketRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [callEnabled, setCallEnabled] = useState(true);
   const [videoCallEnabled, setVideoCallEnabled] = useState(true);
   const [chatEnabled, setChatEnabled] = useState(true);
@@ -511,6 +513,12 @@ const HomeScreen = () => {
     }, [])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchData(), rateData(), getUserDetails()]);
+    setRefreshing(false);
+  }, []);
+
   useEffect(() => {
     initRequestListener();
     return () => {
@@ -525,7 +533,12 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} tintColor={COLORS.AstroMaroon} />
+        }>
       {/* Banner — admin-managed, rotates on the admin-set interval */}
       <HomeBanner />
 

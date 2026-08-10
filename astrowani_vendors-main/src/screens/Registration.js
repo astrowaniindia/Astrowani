@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { Dropdown } from 'react-native-element-dropdown';
+import { Dropdown, MultiSelect } from 'react-native-element-dropdown';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { COLORS } from '../Theme/Colors';
@@ -80,8 +80,18 @@ const Registration = ({ navigation }) => {
 
   const handleImageUpload = async () => {
     try {
-      const image = await ImagePicker.openPicker({ width: 300, height: 300, cropping: true, });
-      handleInputChange('profilePic', image.path);
+      const image = await ImagePicker.openPicker({
+        width: 300,
+        height: 300,
+        cropping: true,
+        includeBase64: true,
+      });
+      // A local file:// path is only valid on this device and this screen has no
+      // auth token yet (signup isn't OTP-verified), so it can't be uploaded here —
+      // base64 data URI travels through registrationData and VerifyOtp.js uploads
+      // it once OTP verification hands back a usable token.
+      const base64Uri = `data:${image.mime || 'image/jpeg'};base64,${image.data}`;
+      handleInputChange('profilePic', base64Uri);
     } catch (error) {
       console.log('Image picking error: ', error);
     }
@@ -133,10 +143,10 @@ const Registration = ({ navigation }) => {
           experience: parseInt(user.experience) || 0,
           languages: user.languages,
           fcm_token: fcmToken,
-          specialties: user.skills.map(skillLabel => {
-            const skill = skillsOptions.find(opt => opt.label === skillLabel);
-            return skill ? skill.value : skillLabel;
-          }),
+          specialties: user.skills,
+          // Uploaded to Supabase Storage in VerifyOtp.js's finishRegistration, once
+          // OTP verification has produced a token this screen doesn't have yet.
+          profile_pic_base64: user.profilePic || null,
           // New signups await admin approval before reaching their dashboard.
           approval_status: 'pending',
           // Service toggles + charges — start disabled/zero so the astrologer is hidden
@@ -167,16 +177,6 @@ const Registration = ({ navigation }) => {
   };
   console.log("Dropdown Options:", skillsOptions);
 
-  const toggleSelection = (field, item) => {
-    const selectedValues = user[field];
-
-    const updatedValues = selectedValues.includes(item.label)
-      ? selectedValues.filter(val => val !== item.label)
-      : [...selectedValues, item.label];
-
-    handleInputChange(field, updatedValues);
-  };
-
   const genderOptions = [
     { label: 'Male', value: 'male' },
     { label: 'Female', value: 'female' },
@@ -184,8 +184,8 @@ const Registration = ({ navigation }) => {
   ];
 
   const languageOptions = [
-    { label: 'Hindi', value: 'hindi' },
-    { label: 'English', value: 'english' },
+    { label: 'Hindi', value: 'Hindi' },
+    { label: 'English', value: 'English' },
   ];
 
   const mobileOptions = [
@@ -226,24 +226,16 @@ const Registration = ({ navigation }) => {
             onChangeText={text => handleInputChange('fullName', text)}
           />
           <View style={styles.dropdownContainer}>
-            <Dropdown
+            <MultiSelect
               style={styles.dropdown}
               data={skillsOptions}
               labelField="label"
               valueField="value"
-              placeholder={
-                user.skills.length > 0
-                  ? user.skills.join(', ')
-                  : 'Select Skills'
-              }
-              placeholderStyle={
-                user.skills.length > 0
-                  ? styles.dropdownTextSelected
-                  : styles.dropdownText
-              }
+              placeholder="Select Skills"
+              placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
-              value={user.skills} // Ensure this is an array of selected values
-              onChange={item => toggleSelection('skills', item)}
+              value={user.skills}
+              onChange={value => handleInputChange('skills', value)}
               renderRightIcon={() => (
                 <Ionicons
                   name="chevron-down-outline"
@@ -251,15 +243,12 @@ const Registration = ({ navigation }) => {
                   size={24}
                 />
               )}
-              renderItem={item => (
-                <TouchableOpacity
-                  onPress={() => toggleSelection('skills', item)}>
-                  <View style={styles.item}>
-                    <Text style={styles.itemText}>
-                      {item.label} {user.skills.includes(item.value) ? '✔️' : ''}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+              renderItem={(item, selected) => (
+                <View style={styles.item}>
+                  <Text style={styles.itemText}>
+                    {item.label} {selected ? '✔️' : ''}
+                  </Text>
+                </View>
               )}
             />
           </View>
@@ -298,24 +287,16 @@ const Registration = ({ navigation }) => {
 
           {/* Multiselect for Languages */}
           <View style={styles.dropdownContainer}>
-            <Dropdown
+            <MultiSelect
               style={styles.dropdown}
               data={languageOptions}
               labelField="label"
               valueField="value"
-              placeholder={
-                user.languages.length > 0
-                  ? user.languages.join(', ')
-                  : 'Select Languages'
-              }
-              placeholderStyle={
-                user.languages.length > 0
-                  ? styles.dropdownTextSelected
-                  : styles.dropdownText
-              }
+              placeholder="Select Languages"
+              placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={user.languages}
-              onChange={item => toggleSelection('languages', item)}
+              onChange={value => handleInputChange('languages', value)}
               renderRightIcon={() => (
                 <Ionicons
                   name="chevron-down-outline"
@@ -323,21 +304,15 @@ const Registration = ({ navigation }) => {
                   size={24}
                 />
               )}
-              renderItem={item => (
-                <TouchableOpacity
-                  onPress={() => toggleSelection('languages', item)}>
-                  <View style={styles.item}>
-                    <Text style={styles.itemText}>
-                      {item.label}{' '}
-                      {user.languages.includes(item.label) ? '✔️' : ''}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+              renderItem={(item, selected) => (
+                <View style={styles.item}>
+                  <Text style={styles.itemText}>
+                    {item.label} {selected ? '✔️' : ''}
+                  </Text>
+                </View>
               )}
             />
           </View>
-
-          {/* Multiselect for Skills */}
 
           <TextInput
             placeholder="Enter Email ID"
