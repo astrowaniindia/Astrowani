@@ -32,8 +32,13 @@ import { captureEvent } from '../../utils/Analytics';
 
 const CHAT_DURATION_SECONDS = 300;
 
-const FreeBotChatScreen = ({ navigation }) => {
+const FreeBotChatScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  // Admin-editable persona passed from Home.js's FreeChatOfferPopup — falls
+  // back to the bundled default if navigated to without it.
+  const persona = route?.params?.persona;
+  const personaName = persona?.name || FREE_CHAT_PERSONA.name;
+  const personaImage = persona?.image ? { uri: persona.image } : FREE_CHAT_PERSONA.image;
   const [sessionStartMs] = useState(Date.now());
   const [chatActive, setChatActive] = useState(true);
   const seconds = useElapsedSeconds(sessionStartMs, chatActive);
@@ -143,10 +148,10 @@ const FreeBotChatScreen = ({ navigation }) => {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
 
-        <Image source={FREE_CHAT_PERSONA.image} style={styles.headerAvatar} />
+        <Image source={personaImage} style={styles.headerAvatar} />
 
         <View style={styles.headerCenter}>
-          <Text style={styles.astroName} numberOfLines={1}>{FREE_CHAT_PERSONA.name}</Text>
+          <Text style={styles.astroName} numberOfLines={1}>{personaName}</Text>
           {botTyping ? (
             <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>typing...</Text>
           ) : (

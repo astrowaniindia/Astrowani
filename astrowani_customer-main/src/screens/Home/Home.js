@@ -81,6 +81,7 @@ const Home = ({navigation}) => {
   const [astroServices, setAstroServices] = useState([]);
   const [freeChatOfferVisible, setFreeChatOfferVisible] = useState(false);
   const [freeChatOfferDismissed, setFreeChatOfferDismissed] = useState(false);
+  const [freeChatPersona, setFreeChatPersona] = useState(null);
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -548,7 +549,19 @@ const Home = ({navigation}) => {
         const alreadySeen = await hasSeenFreeBotChatOffer(userData.id);
         if (!alreadySeen) {
           const eligible = await isEligibleForFreeConsultation(userData.id);
-          if (eligible) setFreeChatOfferVisible(true);
+          if (eligible) {
+            // Card content (name/photo/experience/text) is admin-editable —
+            // fetched only once we actually intend to show the popup, so
+            // ineligible/already-seen customers never make this extra call.
+            try {
+              const personaRes = await Instance.get('/api/free-bot-chat/persona');
+              if (personaRes.data?.enabled === false) return;
+              setFreeChatPersona(personaRes.data);
+            } catch (_) {
+              // Falls back to FreeChatOfferPopup's own bundled default persona.
+            }
+            setFreeChatOfferVisible(true);
+          }
         }
       }
       }
@@ -1337,6 +1350,7 @@ const Home = ({navigation}) => {
 
       <FreeChatOfferPopup
         visible={freeChatOfferVisible}
+        persona={freeChatPersona}
         onDismiss={() => {
           setFreeChatOfferVisible(false);
           setFreeChatOfferDismissed(true);
@@ -1346,7 +1360,7 @@ const Home = ({navigation}) => {
           setFreeChatOfferVisible(false);
           setFreeChatOfferDismissed(true);
           if (user?.id) markFreeBotChatOfferSeen(user.id);
-          navigation.navigate('FreeBotChatScreen');
+          navigation.navigate('FreeBotChatScreen', { persona: freeChatPersona });
         }}
       />
     </View>

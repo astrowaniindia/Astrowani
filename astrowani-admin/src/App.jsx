@@ -23,6 +23,7 @@ import Notifications from './pages/Notifications';
 import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
 import Support from './pages/Support';
+import FreeBotChat from './pages/FreeBotChat';
 
 export default function App() {
   return (
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="leaderboard" element={<Leaderboard />} />
         <Route path="customers" element={<Customers />} />
         <Route path="sessions" element={<Sessions />} />
+        <Route path="free-bot-chat" element={<FreeBotChat />} />
       </Route>
     </Routes>
   );

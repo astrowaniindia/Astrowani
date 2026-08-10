@@ -9,8 +9,18 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { FREE_CHAT_PERSONA } from '../data/freeBotChatPersona';
 
-const FreeChatOfferPopup = ({ visible, onStart, onDismiss }) => {
+// `persona` comes from GET /api/free-bot-chat/persona (admin-editable via the
+// dashboard's Free Bot Chat page) — this bundled FREE_CHAT_PERSONA is only the
+// fallback used before that fetch resolves or if it ever fails.
+const FreeChatOfferPopup = ({ visible, persona, onStart, onDismiss }) => {
   if (!visible) return null;
+
+  const name = persona?.name || FREE_CHAT_PERSONA.name;
+  const experience = persona?.experience || FREE_CHAT_PERSONA.experience;
+  const specialities = persona?.specialities || FREE_CHAT_PERSONA.specialities;
+  const headerText = persona?.headerText || "🎁 Here's your free chat for 5 minutes with an astrologer!";
+  const ctaText = persona?.ctaText || 'Start Free Chat Now';
+  const imageSource = persona?.image ? { uri: persona.image } : FREE_CHAT_PERSONA.image;
 
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onDismiss}>
@@ -23,15 +33,15 @@ const FreeChatOfferPopup = ({ visible, onStart, onDismiss }) => {
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
 
-          <Text style={styles.header}>🎁 Here's your free chat for 5 minutes with an astrologer!</Text>
+          <Text style={styles.header}>{headerText}</Text>
 
-          <Image source={FREE_CHAT_PERSONA.image} style={styles.avatar} />
-          <Text style={styles.name}>{FREE_CHAT_PERSONA.name}</Text>
-          <Text style={styles.meta}>{FREE_CHAT_PERSONA.experience} experience</Text>
-          <Text style={styles.specialities}>{FREE_CHAT_PERSONA.specialities}</Text>
+          <Image source={imageSource} style={styles.avatar} />
+          <Text style={styles.name}>{name}</Text>
+          <Text style={styles.meta}>{experience} experience</Text>
+          <Text style={styles.specialities}>{specialities}</Text>
 
           <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={onStart}>
-            <Text style={styles.ctaText}>Start Free Chat Now</Text>
+            <Text style={styles.ctaText}>{ctaText}</Text>
           </TouchableOpacity>
         </View>
       </View>

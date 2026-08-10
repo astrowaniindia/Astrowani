@@ -2372,6 +2372,33 @@ app.post('/api/free-bot-chat/credit', async (req, res) => {
   }
 });
 
+// Persona/card shown in the free-bot-chat welcome popup — admin-editable via
+// PATCH /api/admin/settings (key: free_bot_chat_persona, a JSON string), same
+// key/value app_settings table already used for the banner interval and
+// session-replay toggle, so no new migration is needed. Falls back to the
+// original hardcoded demo persona if never configured or on any error, so an
+// unconfigured/misconfigured value can never break the popup for customers.
+const FREE_BOT_CHAT_PERSONA_DEFAULT = {
+  enabled: true,
+  name: 'Acharya Priya',
+  image: '',
+  experience: '12 years',
+  specialities: 'Love & Relationship, Career, Vedic Astrology',
+  headerText: "🎁 Here's your free chat for 5 minutes with an astrologer!",
+  ctaText: 'Start Free Chat Now',
+};
+app.get('/api/free-bot-chat/persona', async (req, res) => {
+  try {
+    const raw = await getSetting('free_bot_chat_persona', null);
+    if (!raw) return res.status(200).json(FREE_BOT_CHAT_PERSONA_DEFAULT);
+    const parsed = JSON.parse(raw);
+    return res.status(200).json({ ...FREE_BOT_CHAT_PERSONA_DEFAULT, ...parsed });
+  } catch (err) {
+    console.error('GET /api/free-bot-chat/persona error:', err.message);
+    return res.status(200).json(FREE_BOT_CHAT_PERSONA_DEFAULT);
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // VENDOR WALLET: Get vendor wallet balance + transactions
 // ─────────────────────────────────────────────────────────────────────────────
