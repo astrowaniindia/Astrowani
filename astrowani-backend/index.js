@@ -480,8 +480,17 @@ app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
   if (intent === 'login' || intent === 'signup') {
     const table = role === 'astrologer' || role === 'vendor' ? 'astrologers' : 'customers';
     const idColumn = table === 'astrologers' ? 'phone_number' : 'mobile';
-    const { data: existing } = await supabase.from(table).select('id').eq(idColumn, phoneNumber).limit(1);
-    const accountExists = !!(existing && existing.length);
+    const selectCols = table === 'astrologers' ? 'id, approval_status, is_suspended' : 'id';
+    const { data: existingRows } = await supabase.from(table).select(selectCols).eq(idColumn, phoneNumber);
+    // Admin "delete" soft-deletes astrologers with session/earnings history by setting
+    // approval_status='rejected' + is_suspended=true together (see DELETE
+    // /api/admin/astrologers/:id) — that specific combination means the account is meant
+    // to be gone from the product's perspective, so it must not block the phone number
+    // from signing up again. A plain suspension alone (is_suspended without the reject)
+    // still counts as an existing account.
+    const isSoftDeleted = (row) => table === 'astrologers' && row.approval_status === 'rejected' && row.is_suspended === true;
+    const existing = (existingRows || []).filter((row) => !isSoftDeleted(row));
+    const accountExists = existing.length > 0;
 
     if (intent === 'login' && !accountExists) {
       return res.status(404).json({
