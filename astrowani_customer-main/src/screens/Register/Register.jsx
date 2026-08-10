@@ -204,15 +204,26 @@ export default function Register({ navigation }) {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Image Upload Section */}
-        <TouchableOpacity style={styles.imageContainer} onPress={selectImage}>
-          {image ? (
-            <Image source={{ uri: image }} style={styles.image} />
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Text style={styles.imagePlaceholderText}>{t('register.tapToAddPhoto')}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.uploadRow}>
+          <View style={styles.guideAvatarWrap}>
+            <Text style={styles.guideNoteText}>{t('register.fillInfoNote')}</Text>
+            <Image
+              source={require('../../assets/images/guideAvatarLogin.png')}
+              style={styles.guideAvatarImg}
+              resizeMode="contain"
+            />
+          </View>
+
+          <TouchableOpacity style={styles.imageContainer} onPress={selectImage}>
+            {image ? (
+              <Image source={{ uri: image }} style={styles.image} />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <Text style={styles.imagePlaceholderText}>{t('register.tapToAddPhoto')}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <TextInput
           style={styles.input}
@@ -420,9 +431,32 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  uploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  guideAvatarWrap: {
+    alignItems: 'center',
+    marginRight: 24,
+    marginLeft: -16,
+    maxWidth: 170,
+  },
+  guideAvatarImg: {
+    width: 110,
+    height: 110,
+  },
+  guideNoteText: {
+    marginBottom: 4,
+    fontSize: 14,
+    color: COLORS.AstroMaroon,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   imageContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginLeft: 16,
   },
   image: {
     width: 150,

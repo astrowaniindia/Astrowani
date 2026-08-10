@@ -119,6 +119,7 @@ const translations = {
     'login.noAccountTitle': 'No Account Found',
     'login.noAccountMsg': "We couldn't find an account for this number. Please sign up first.",
     'login.somethingWrong': 'Something went wrong. Please try again.',
+    'login.guideHint': 'First time here? Tap Register to sign up!',
 
     // Remedies (static home tiles)
     'remedies.puja': 'Puja',
@@ -235,6 +236,7 @@ const translations = {
     // Register screen
     'register.title': 'Register',
     'register.tapToAddPhoto': 'Tap to add photo',
+    'register.fillInfoNote': 'Fill the Information for Astrologer',
     'register.takePhoto': 'Take Photo',
     'register.chooseFromLibrary': 'Choose from Library',
     'register.fullName': 'Enter your full name',
@@ -578,6 +580,7 @@ const translations = {
     'login.noAccountTitle': 'खाता नहीं मिला',
     'login.noAccountMsg': 'हमें इस नंबर के लिए कोई खाता नहीं मिला। कृपया पहले साइन अप करें।',
     'login.somethingWrong': 'कुछ गलत हो गया। कृपया पुनः प्रयास करें।',
+    'login.guideHint': 'पहली बार यहाँ आए हैं? पंजीकरण करने के लिए टैप करें!',
 
     // Remedies (static home tiles)
     'remedies.puja': 'पूजा',
@@ -694,6 +697,7 @@ const translations = {
     // Register screen
     'register.title': 'पंजीकरण',
     'register.tapToAddPhoto': 'फ़ोटो जोड़ने के लिए टैप करें',
+    'register.fillInfoNote': 'ज्योतिषी के लिए जानकारी भरें',
     'register.takePhoto': 'फ़ोटो लें',
     'register.chooseFromLibrary': 'लाइब्रेरी से चुनें',
     'register.fullName': 'अपना पूरा नाम दर्ज करें',

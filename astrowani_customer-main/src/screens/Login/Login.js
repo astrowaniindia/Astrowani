@@ -23,6 +23,7 @@ import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import GuideAvatar from '../../components/GuideAvatar';
 
 const Login = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -167,7 +168,6 @@ const Login = ({navigation}) => {
           </View>
 
           <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>{t('login.noAccount')}</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
               <Text style={styles.registerText}>{t('login.register')}</Text>
             </TouchableOpacity>
@@ -206,6 +206,20 @@ const Login = ({navigation}) => {
           </View>
         </Modal>
       </ScrollView>
+
+      <GuideAvatar
+        storageKey="login"
+        message={t('login.guideHint')}
+        alwaysShow
+        layout="row"
+        position="center"
+        bottomOffset={verticalScale(75)}
+        avatarSize={scale(115)}
+        offsetX={-scale(55)}
+        avatarOffsetY={verticalScale(53)}
+        boxOffsetY={verticalScale(18)}
+        onPress={() => navigation.navigate('Register')}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -390,7 +404,7 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
   },
   registerText: {
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(18),
     color: COLORS.AstroMaroon,
     fontWeight: '700',
   },
