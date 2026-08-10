@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   StyleSheet,
   Image,
@@ -35,6 +35,18 @@ const Login = ({navigation}) => {
   const [isPickerVisible, setPickerVisible] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, SetLoading] = useState(false);
+  // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config) —
+  // null while loading, so the hint stays hidden rather than flashing the bundled
+  // default text before the real config arrives.
+  const [guideAvatarConfig, setGuideAvatarConfig] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Instance.get('/api/guide-avatar/config')
+      .then((res) => { if (!cancelled) setGuideAvatarConfig(res.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const togglePicker = () => {
     setPickerVisible(!isPickerVisible);
@@ -219,19 +231,24 @@ const Login = ({navigation}) => {
         </Modal>
       </ScrollView>
 
-      <GuideAvatar
-        storageKey="login"
-        message={t('login.guideHint')}
-        alwaysShow
-        layout="row"
-        position="center"
-        bottomOffset={verticalScale(75)}
-        avatarSize={scale(115)}
-        offsetX={-scale(43)}
-        avatarOffsetY={verticalScale(53)}
-        boxOffsetY={verticalScale(18)}
-        onPress={() => navigation.navigate('Register')}
-      />
+      {guideAvatarConfig?.login?.enabled !== false && (
+        <GuideAvatar
+          storageKey="login"
+          message={
+            (language === 'Hindi' ? guideAvatarConfig?.login?.textHi : guideAvatarConfig?.login?.textEn)
+            || t('login.guideHint')
+          }
+          alwaysShow
+          layout="row"
+          position="center"
+          bottomOffset={verticalScale(75)}
+          avatarSize={scale(115)}
+          offsetX={-scale(43)}
+          avatarOffsetY={verticalScale(53)}
+          boxOffsetY={verticalScale(18)}
+          onPress={() => navigation.navigate('Register')}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 };

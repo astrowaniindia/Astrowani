@@ -27,7 +27,16 @@ import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 
 export default function Register({ navigation }) {
-  const { t } = React.useContext(LanguageContext);
+  const { t, language } = React.useContext(LanguageContext);
+  // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config).
+  const [guideAvatarConfig, setGuideAvatarConfig] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    Instance.get('/api/guide-avatar/config')
+      .then((res) => { if (!cancelled) setGuideAvatarConfig(res.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [gender, setGender] = useState('');
@@ -205,14 +214,19 @@ export default function Register({ navigation }) {
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Image Upload Section */}
         <View style={styles.uploadRow}>
-          <View style={styles.guideAvatarWrap}>
-            <Text style={styles.guideNoteText}>{t('register.fillInfoNote')}</Text>
-            <Image
-              source={require('../../assets/images/guideAvatarLogin.png')}
-              style={styles.guideAvatarImg}
-              resizeMode="contain"
-            />
-          </View>
+          {guideAvatarConfig?.register?.enabled !== false && (
+            <View style={styles.guideAvatarWrap}>
+              <Text style={styles.guideNoteText}>
+                {(language === 'Hindi' ? guideAvatarConfig?.register?.textHi : guideAvatarConfig?.register?.textEn)
+                  || t('register.fillInfoNote')}
+              </Text>
+              <Image
+                source={require('../../assets/images/guideAvatarLogin.png')}
+                style={styles.guideAvatarImg}
+                resizeMode="contain"
+              />
+            </View>
+          )}
 
           <TouchableOpacity style={styles.imageContainer} onPress={selectImage}>
             {image ? (

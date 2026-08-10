@@ -18,6 +18,7 @@ const links = [
   { to: '/missed', label: 'Missed Sessions' },
   { to: '/notifications', label: 'Notifications' },
   { to: '/free-bot-chat', label: 'Free Bot Chat' },
+  { to: '/guide-avatar', label: 'Guide Avatar' },
   { to: '/withdrawals', label: 'Withdrawals' },
   { to: '/reports', label: 'Reports' },
   { to: '/support', label: 'Support Tickets' },

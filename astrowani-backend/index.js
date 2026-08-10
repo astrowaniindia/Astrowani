@@ -2424,6 +2424,39 @@ app.get('/api/free-bot-chat/persona', async (req, res) => {
   }
 });
 
+// Customer-app "guide avatar" hint (Login + Register screens) — admin-editable
+// via PATCH /api/admin/settings (key: guide_avatar_config, a JSON string), same
+// app_settings table as the free-bot-chat persona above. Falls back to the
+// original hardcoded copy so an unconfigured/misconfigured value never breaks
+// either screen. Only enabled/text is admin-controlled — position/animation
+// stay hardcoded per screen, not sensible to expose as raw pixel offsets.
+const GUIDE_AVATAR_CONFIG_DEFAULT = {
+  login: {
+    enabled: true,
+    textEn: 'First time here? Tap Register to sign up!',
+    textHi: 'पहली बार यहाँ आए हैं? पंजीकरण करने के लिए टैप करें!',
+  },
+  register: {
+    enabled: true,
+    textEn: 'Fill the Information for Astrologer',
+    textHi: 'ज्योतिषी के लिए जानकारी भरें',
+  },
+};
+app.get('/api/guide-avatar/config', async (req, res) => {
+  try {
+    const raw = await getSetting('guide_avatar_config', null);
+    if (!raw) return res.status(200).json(GUIDE_AVATAR_CONFIG_DEFAULT);
+    const parsed = JSON.parse(raw);
+    return res.status(200).json({
+      login: { ...GUIDE_AVATAR_CONFIG_DEFAULT.login, ...parsed.login },
+      register: { ...GUIDE_AVATAR_CONFIG_DEFAULT.register, ...parsed.register },
+    });
+  } catch (err) {
+    console.error('GET /api/guide-avatar/config error:', err.message);
+    return res.status(200).json(GUIDE_AVATAR_CONFIG_DEFAULT);
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // VENDOR WALLET: Get vendor wallet balance + transactions
 // ─────────────────────────────────────────────────────────────────────────────
