@@ -2715,10 +2715,31 @@ app.put('/api/vendor/profile', writeLimiter, async (req, res) => {
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
 
+    // Charges can only be self-set ONCE — after that, only the admin dashboard
+    // (PATCH /api/admin/astrologers/:id, unaffected by this lock) or an explicit
+    // admin unlock (POST /api/admin/astrologers/:id/unlock-charges) can change
+    // them. All three charge fields lock together as a single event.
+    const CHARGE_FIELDS = ['chat_charge_per_minute', 'call_charge_per_minute', 'video_charge_per_minute'];
+    const touchesCharges = CHARGE_FIELDS.some((f) => f in body);
+    let chargesRejected = false;
+    if (touchesCharges) {
+      const { data: existing, error: readErr } = await supabaseService
+        .from('astrologers').select('charges_locked_at').eq('id', vendorId).single();
+      if (readErr) throw readErr;
+      if (existing?.charges_locked_at) {
+        // Already locked — drop the charge fields from this write but still save
+        // everything else the vendor sent (e.g. bio/photo edited at the same time).
+        CHARGE_FIELDS.forEach((f) => delete body[f]);
+        chargesRejected = true;
+      } else {
+        body.charges_locked_at = new Date().toISOString();
+      }
+    }
+
     const { data, error } = await supabaseService
       .from('astrologers').update(body).eq('id', vendorId).select().single();
     if (error) throw error;
-    return res.status(200).json({ success: true, data });
+    return res.status(200).json({ success: true, data, chargesLocked: chargesRejected });
   } catch (err) {
     console.error('PUT /api/vendor/profile error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update vendor profile' });

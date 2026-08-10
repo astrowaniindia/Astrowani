@@ -279,7 +279,7 @@ module.exports = function registerAdminRoutes(app) {
         'languages, profile_pic_url, bio, ' +
         'approval_status, is_suspended, is_available, is_chat_enabled, is_call_enabled, ' +
         'is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, ' +
-        'video_charge_per_minute, wallet_balance, today_earnings, total_earnings, admin_notes')
+        'video_charge_per_minute, charges_locked_at, wallet_balance, today_earnings, total_earnings, admin_notes')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return res.json({ success: true, data: data || [] });
@@ -298,6 +298,18 @@ module.exports = function registerAdminRoutes(app) {
     const { data, error } = await db.from('astrologers').update(body).eq('id', req.params.id).select().single();
     if (error) throw error;
     return res.json({ success: true, data });
+  }));
+
+  // An astrologer can self-set chat/call/video charges via the vendor app only
+  // ONCE (see PUT /api/vendor/profile in index.js, which sets charges_locked_at
+  // on their first save and refuses to touch charges after that). This lets an
+  // admin grant them one more self-edit — e.g. after agreeing to a rate change
+  // request made outside the app — by clearing the lock; it re-locks the next
+  // time the vendor saves a charge from EditProfile.js, same as the first time.
+  app.post('/api/admin/astrologers/:id/unlock-charges', requireAdmin, h(async (req, res) => {
+    const { error } = await db.from('astrologers').update({ charges_locked_at: null }).eq('id', req.params.id);
+    if (error) throw error;
+    return res.json({ success: true });
   }));
 
   // Ledgered wallet correction for an astrologer — mirrors POST /api/admin/customers/:id/wallet.

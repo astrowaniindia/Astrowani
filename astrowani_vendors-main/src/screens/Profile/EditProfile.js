@@ -41,6 +41,10 @@ export default function EditProfile() {
   const [bankIfsc, setBankIfsc] = useState('');
   const [bankName, setBankName] = useState('');
   const [upiId, setUpiId] = useState('');
+  // Charges can be self-set only once (see PUT /api/vendor/profile) — after
+  // that, only the admin dashboard can change them, unless an admin grants a
+  // one-time unlock. `charges_locked_at` comes straight from the profile row.
+  const [chargesLocked, setChargesLocked] = useState(false);
 
   const handleImagePicker = () => {
     if (Platform.OS === 'ios') {
@@ -127,6 +131,7 @@ export default function EditProfile() {
         setChatCharge(astroData.chat_charge_per_minute == null ? '' : astroData.chat_charge_per_minute.toString());
         setCallCharge(astroData.call_charge_per_minute == null ? '' : astroData.call_charge_per_minute.toString());
         setVideoCharge(astroData.video_charge_per_minute == null ? '' : astroData.video_charge_per_minute.toString());
+        setChargesLocked(!!astroData.charges_locked_at);
         setLanguage(Array.isArray(astroData.languages) ? astroData.languages.join(', ') : (astroData.languages || ''));
         setBio(astroData.bio || '');
         setProfileImage(astroData.profile_pic_url || astroData.profile_image || null);
@@ -202,11 +207,19 @@ export default function EditProfile() {
       );
 
       if (res.data?.success) {
-        ToastAndroid.showWithGravity(
-          'Profile updated successfully!',
-          ToastAndroid.SHORT,
-          ToastAndroid.CENTER,
-        );
+        if (res.data?.chargesLocked) {
+          Alert.alert(
+            'Profile Updated',
+            'Your other details were saved, but your chat/call/video charges are locked and can only be changed by the admin team now — contact them if you need a change.',
+          );
+        } else {
+          ToastAndroid.showWithGravity(
+            'Profile updated successfully!',
+            ToastAndroid.SHORT,
+            ToastAndroid.CENTER,
+          );
+        }
+        setChargesLocked(true);
         Navigation.goBack();
       } else {
         throw new Error(res.data?.message || 'Update failed');
@@ -317,31 +330,43 @@ fetchData()
           keyboardType="numeric"
         />
 
+        {chargesLocked && (
+          <View style={styles.lockedNotice}>
+            <Icon name="lock-outline" size={16} color="#8a6d00" />
+            <Text style={styles.lockedNoticeText}>
+              Your charges are locked — you set them once already. Contact the admin team if you need a change.
+            </Text>
+          </View>
+        )}
+
         <Text style={styles.label}>Chat Charges (₹/min)</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, chargesLocked && styles.inputDisabled]}
           placeholderTextColor={COLORS.lightGrey}
           value={chatCharge}
           onChangeText={setChatCharge}
           keyboardType="numeric"
+          editable={!chargesLocked}
         />
 
         <Text style={styles.label}>Call Charges (₹/min)</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, chargesLocked && styles.inputDisabled]}
           placeholderTextColor={COLORS.lightGrey}
           value={callCharge}
           onChangeText={setCallCharge}
           keyboardType="numeric"
+          editable={!chargesLocked}
         />
 
         <Text style={styles.label}>Video Charges (₹/min)</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, chargesLocked && styles.inputDisabled]}
           placeholderTextColor={COLORS.lightGrey}
           value={videoCharge}
           onChangeText={setVideoCharge}
           keyboardType="numeric"
+          editable={!chargesLocked}
         />
 
         <Text style={styles.label}>Languages (comma separated)</Text>
@@ -511,6 +536,24 @@ const styles = StyleSheet.create({
   textArea: {
     height: verticalScale(110),
     paddingTop: verticalScale(12),
+  },
+  inputDisabled: {
+    backgroundColor: '#F0EDE8',
+    color: '#999',
+  },
+  lockedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3CD',
+    borderRadius: moderateScale(10),
+    padding: scale(10),
+    marginBottom: verticalScale(15),
+    gap: scale(8),
+  },
+  lockedNoticeText: {
+    flex: 1,
+    fontSize: moderateScale(12.5),
+    color: '#7A5B00',
   },
   submitButton: {
     backgroundColor: COLORS.AstroMaroon,

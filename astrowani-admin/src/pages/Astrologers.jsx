@@ -72,6 +72,21 @@ export default function Astrologers() {
     finally { setBusy(false); }
   };
 
+  // Astrologers can self-set chat/call/video charges via the vendor app only
+  // once (charges_locked_at gets set on their first save there); admin edits
+  // above are never affected by this. This lets an admin grant one more
+  // self-edit — e.g. after agreeing to a rate change requested outside the
+  // app — without having to manually enter the new rates themselves.
+  const unlockCharges = async (r) => {
+    if (!confirm(`Let ${name(r)} set their own chat/call/video charges again? It will lock again after their next save.`)) return;
+    setBusy(true);
+    try {
+      await client.post(`/api/admin/astrologers/${r.id}/unlock-charges`);
+      await load();
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setBusy(false); }
+  };
+
   const submitTopup = async () => {
     const amt = Number(amount);
     if (!amt) return;
@@ -110,7 +125,13 @@ export default function Astrologers() {
                 <td className="muted">{r.phone_number || '—'}</td>
                 <td><StatusBadge s={r.approval_status} /></td>
                 <td>{r.is_suspended ? <span className="badge red">Suspended</span> : <span className="badge gray">No</span>}</td>
-                <td className="muted">{r.chat_charge_per_minute || 0} / {r.call_charge_per_minute || 0} / {r.video_charge_per_minute || 0}</td>
+                <td className="muted">
+                  {r.chat_charge_per_minute || 0} / {r.call_charge_per_minute || 0} / {r.video_charge_per_minute || 0}
+                  {' '}
+                  {r.charges_locked_at
+                    ? <span className="badge gray" title="Astrologer has already set these once and can't self-edit anymore">Locked</span>
+                    : <span className="badge amber" title="Astrologer can still set these once via their app">Not set yet</span>}
+                </td>
                 <td><b>{r.wallet_balance ?? 0}</b></td>
                 <td>
                   <ActionMenu items={[
@@ -120,6 +141,8 @@ export default function Astrologers() {
                       { label: 'Reject', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
                     { label: r.is_suspended ? 'Unsuspend' : 'Suspend', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
                     { label: 'Edit', onClick: () => openEdit(r) },
+                    r.charges_locked_at &&
+                      { label: 'Allow charge self-edit (one-time)', onClick: () => unlockCharges(r) },
                     { label: 'Adjust wallet', onClick: () => { setTopup(r); setAmount(''); } },
                     { label: 'Delete', danger: true, onClick: () => remove(r) },
                   ]} />
@@ -157,6 +180,11 @@ export default function Astrologers() {
             <div className="field checkbox-row" style={{ marginTop: 28 }}>
               <input id="susp" type="checkbox" checked={!!editing.is_suspended} onChange={(e) => set('is_suspended', e.target.checked)} />
               <label htmlFor="susp" style={{ margin: 0 }}>Suspended</label></div>
+          </div>
+          <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+            {editing.charges_locked_at
+              ? 'This astrologer has already set these once via their app and can no longer self-edit — you can still change them here anytime.'
+              : 'This astrologer has not set these yet — the first time they save charges themselves, it locks for them (editable here regardless).'}
           </div>
           <div className="two-col">
             <div className="field"><label>Chat charge / min</label>
