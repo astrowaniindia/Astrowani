@@ -11,18 +11,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and deploy (retries the whole connection, not just commands)
-        # Switched from appleboy/ssh-action to a raw ssh call in a retry loop
-        # 2026-08-10: two consecutive deploys failed with
-        # "dial tcp <VPS_HOST>:22: i/o timeout" — the SSH connection itself never
-        # completed, so nothing inside the remote script ever ran (git fetch,
-        # npm install, pm2 restart all never executed). A retry INSIDE the remote
-        # script (what was tried first) can't help with that — the connection has
-        # to be retried from here, on the runner side, before the script even
-        # starts. Root cause on the VPS side was never confirmed (fail2ban/ufw
-        # aren't even installed there, so it isn't a local ban list); this
-        # assumes it's a transient network blip and retries around it instead of
-        # depending on the VPS side being fixed.
+      - name: SSH and deploy (retries the connection, serializes against deploy-admin)
+        # Two separate failure modes hit this workflow within the same day
+        # (2026-08-09/10):
+        #   1. "dial tcp <VPS_HOST>:22: i/o timeout" — the SSH connection itself
+        #      never completed. Mitigated below by retrying the whole connection
+        #      attempt, not just a command after connecting.
+        #   2. A commit that touches BOTH astrowani-backend/** and
+        #      astrowani-admin/** triggers this workflow AND deploy-admin.yml at
+        #      the same time — and both `git reset --hard` the SAME shared
+        #      checkout (/var/www/astrowani-monorepo). Confirmed via the Actions
+        #      tab: both runs started in the same minute, admin finished in 16s,
+        #      backend failed after 3m15s of retries hitting git-level
+        #      contention. Fixed with `flock` around the git+install+restart
+        #      block so the two workflows can never touch the shared directory
+        #      at the same time — the second one just waits its turn instead of
+        #      racing. See MD files/vps-git-deploy-guide.md.
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -35,6 +39,9 @@ jobs:
 
           cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
           set -e
+          exec 9>/tmp/astrowani-deploy.lock
+          flock -w 300 9 || { echo "Timed out waiting for the other deploy to finish"; exit 1; }
+
           cd /var/www/astrowani-monorepo
           git fetch origin main
           git reset --hard origin/main
@@ -60,8 +67,8 @@ jobs:
 
           attempt=1
           max_attempts=5
-          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key \
-            "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
+            -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "SSH deploy failed after $max_attempts attempts — giving up."
               exit 1

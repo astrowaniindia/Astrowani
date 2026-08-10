@@ -171,6 +171,45 @@ commands above — they've worked instantly every time this was hit so far.
 
 ---
 
+## Known issue (fixed 2026-08-10): the two deploy workflows raced each other
+
+**Symptom:** `deploy-backend.yml` fails, but not with the ~30s connection
+timeout above — it runs for 2-3+ minutes and still fails, and on the VPS
+`git log --oneline -1` shows the code was *already* updated to the right
+commit. This means git succeeded and something *after* it failed
+repeatedly, which the connection retry above can't help with (the
+connection worked fine — it just didn't matter).
+
+**Root cause, confirmed via the Actions tab:** a single commit that touches
+both `astrowani-backend/**` and `astrowani-admin/**` triggers **both**
+workflows on the same push, and both of them run `git fetch` +
+`git reset --hard` against the exact same shared checkout
+(`/var/www/astrowani-monorepo`) at the same time. Two concurrent SSH
+sessions resetting/checking out the same git working tree race each other
+— confirmed directly by comparing timestamps: both runs started in the
+same minute, `deploy-admin.yml` (faster — it's just a Vite build) finished
+in 16s, `deploy-backend.yml` then spent 3m15s retrying and failing against
+git-level contention left behind.
+
+**Fix:** both workflows now wrap their remote script in
+```bash
+exec 9>/tmp/astrowani-deploy.lock
+flock -w 300 9 || { echo "Timed out waiting for the other deploy to finish"; exit 1; }
+```
+using the *same* lock file path in both, so whichever workflow's SSH session
+gets there first runs normally and the other one simply **waits its turn**
+(up to 5 minutes) instead of racing it. `flock` is a standard Linux utility
+(`/usr/bin/flock` — already present on this VPS, nothing to install).
+
+**Practical effect:** if a single commit touches both folders, you'll now
+just see one deploy visibly take a bit longer than usual (waiting behind the
+other) instead of failing outright. If you want to avoid the wait
+entirely, split such a change into two commits/pushes — one per folder —
+though it's no longer necessary for correctness, only for shaving a few
+seconds off one of the two runs.
+
+---
+
 ## Things that will NOT auto-deploy no matter what you push
 
 - **Anything in `astrowani_customer-main/` or `astrowani_vendors-main/`** —

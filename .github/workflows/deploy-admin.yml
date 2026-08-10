@@ -11,12 +11,15 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and deploy (retries the whole connection, not just commands)
-        # Same fix as deploy-backend.yml (2026-08-10) — a raw ssh call in a retry
-        # loop instead of a single appleboy/ssh-action attempt, so a transient
-        # "dial tcp <host>:22: i/o timeout" (observed on deploy-backend.yml twice
-        # that day) doesn't leave the admin dashboard stuck on stale code with no
-        # automatic recovery. See MD files/vps-git-deploy-guide.md.
+      - name: SSH and deploy (retries the connection, serializes against deploy-backend)
+        # Same lock as deploy-backend.yml, same reason: a commit touching both
+        # astrowani-admin/** and astrowani-backend/** triggers both workflows
+        # at once, and both `git reset --hard` the SAME shared checkout
+        # (/var/www/astrowani-monorepo) — confirmed via the Actions tab racing
+        # each other on 2026-08-10. The `flock` below on the same lock file
+        # path as deploy-backend.yml means whichever one gets there first runs,
+        # the other just waits its turn instead of corrupting the shared repo
+        # mid-checkout. See MD files/vps-git-deploy-guide.md.
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -29,6 +32,9 @@ jobs:
 
           cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
           set -e
+          exec 9>/tmp/astrowani-deploy.lock
+          flock -w 300 9 || { echo "Timed out waiting for the other deploy to finish"; exit 1; }
+
           cd /var/www/astrowani-monorepo
           git fetch origin main
           git reset --hard origin/main
@@ -42,8 +48,8 @@ jobs:
 
           attempt=1
           max_attempts=5
-          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key \
-            "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
+            -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "SSH deploy failed after $max_attempts attempts — giving up."
               exit 1
