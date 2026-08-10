@@ -184,6 +184,60 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Signup / Login funnels — where new customers actually drop off ──
+  // Deliberately a SMALL, curated set of named events (not "track every tap") — each
+  // stage below is a real decision point in the flow, not decorative. `_tapped` events
+  // fire on the tap itself (so a dead/fake button — see the 2026-08-10 signup bug where
+  // the photo picker did nothing — shows up as a real stage with a real count instead of
+  // being invisible); every other event fires on a confirmed outcome (an OTP actually
+  // sent, actually verified), matching the existing call_initiated/chat_initiated
+  // convention above rather than inventing a new one.
+  const AUTH_FUNNELS = {
+    signup: {
+      label: 'Signup',
+      stages: [
+        { key: 'viewed', label: 'Viewed Signup Screen', screenName: 'Register' },
+        { key: 'photo_tapped', label: 'Tapped Upload Photo', event: 'signup_photo_tapped' },
+        { key: 'submitted', label: 'Tapped Submit', event: 'signup_submit_tapped' },
+        { key: 'otp_sent', label: 'OTP Sent', event: 'signup_otp_sent' },
+        { key: 'otp_verified', label: 'OTP Verified', event: 'signup_otp_verified' },
+        { key: 'completed', label: 'Account Created', event: 'signup_completed' },
+      ],
+    },
+    login: {
+      label: 'Login',
+      stages: [
+        { key: 'viewed', label: 'Viewed Login Screen', screenName: 'Login' },
+        { key: 'submitted', label: 'Tapped Get OTP', event: 'login_submit_tapped' },
+        { key: 'otp_sent', label: 'OTP Sent', event: 'login_otp_sent' },
+        { key: 'completed', label: 'Logged In', event: 'login_completed' },
+      ],
+    },
+  };
+
+  app.get('/api/admin/analytics/auth-funnel', requireAdmin, requireConfigured, h(async (req, res) => {
+    const type = AUTH_FUNNELS[req.query.type] ? req.query.type : 'signup';
+    const range = ['today', 'yesterday', 'week', 'month'].includes(req.query.range) ? req.query.range : 'week';
+    const def = AUTH_FUNNELS[type];
+
+    const selects = def.stages.map((s) => s.screenName
+      ? `count(DISTINCT if(event = '$screen' AND properties.$screen_name = '${s.screenName}', person_id, NULL)) AS ${s.key}`
+      : `count(DISTINCT if(event = '${s.event}', person_id, NULL)) AS ${s.key}`
+    ).join(',\n        ');
+    const eventList = def.stages.map((s) => `'${s.event || '$screen'}'`).join(', ');
+
+    const rows = await runHogQL(`
+      SELECT
+        ${selects}
+      FROM events
+      WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${rangeToWhere(range)}
+        AND event IN (${eventList})
+    `);
+    const values = rows[0] || def.stages.map(() => 0);
+    const stages = def.stages.map((s, i) => ({ key: s.key, label: s.label, count: Number(values[i]) || 0 }));
+    return res.json({ success: true, type, range, label: def.label, stages });
+  }));
+
   // ── D1/D7 retention (customer app) ──
   // "Of everyone whose FIRST screen view fell on day X, what fraction came back on
   // day X+1 (D1) / day X+7 (D7)." Verified against real (test-tagged) data before

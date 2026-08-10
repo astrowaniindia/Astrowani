@@ -24,6 +24,7 @@ import { COLORS } from '../../Theme/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 export default function Register({ navigation }) {
   const { t } = React.useContext(LanguageContext);
@@ -86,6 +87,7 @@ export default function Register({ navigation }) {
   const [showImagePickerModal, setShowImagePickerModal] = useState(false);
 
   const selectImage = () => {
+    captureEvent('signup_photo_tapped');
     setShowImagePickerModal(true);
   };
 
@@ -141,6 +143,7 @@ export default function Register({ navigation }) {
       return;
     }
 
+    captureEvent('signup_submit_tapped');
     setSubmitting(true);
     try {
       const res = await Instance.post('/api/users/mobile-otp-request', {
@@ -149,6 +152,7 @@ export default function Register({ navigation }) {
         intent: 'signup',
       });
       if (res?.data?.success) {
+        captureEvent('signup_otp_sent');
         navigation.navigate('VerifyOtp', {
           phoneNumber: mobile,
           role: 'customer',
@@ -164,10 +168,12 @@ export default function Register({ navigation }) {
           },
         });
       } else {
+        captureEvent('signup_failed', { reason: res?.data?.code || 'otp_send_failed' });
         showAlert(t('common.error'), res?.data?.message || t('login.otpFailed'), 'error');
       }
     } catch (error) {
       if (error?.response?.data?.code === 'ACCOUNT_EXISTS') {
+        captureEvent('signup_failed', { reason: 'account_exists' });
         showAlert(
           t('register.accountExists'),
           t('register.accountExistsMsg'),
@@ -176,6 +182,7 @@ export default function Register({ navigation }) {
         );
       } else {
         console.error(error);
+        captureEvent('signup_failed', { reason: error?.response?.data?.code || 'other' });
         showAlert(t('common.error'), error?.response?.data?.message || t('login.somethingWrong'), 'error');
       }
     } finally {

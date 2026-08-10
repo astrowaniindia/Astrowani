@@ -16,6 +16,11 @@ const FUNNEL_RANGES = [
   { key: 'month', label: 'This Month' },
 ];
 
+const AUTH_FUNNEL_TYPES = [
+  { key: 'signup', label: 'Signup' },
+  { key: 'login', label: 'Login' },
+];
+
 // PostHog's /trend rows come back as [{ day, app, views }, ...] — pivot into one row per
 // day with a column per app so recharts can plot both as separate lines.
 function pivotTrend(points) {
@@ -44,12 +49,57 @@ function FunnelRow({ label, count, total, color }) {
   );
 }
 
+// A multi-stage funnel drawn as boxes connected by ↓ arrows, each arrow labeled with the
+// drop-off from the stage above it — not just names, the actual shape of where people
+// leave. `pctOfFirst` under each box is conversion relative to the very first stage
+// (usually "viewed the screen at all"), so both "where's the biggest single leak" (the
+// arrow labels) and "what fraction ever gets there" (the box labels) are visible at once.
+function StepFunnel({ stages }) {
+  const first = stages[0]?.count || 0;
+  return (
+    <div>
+      {stages.map((s, i) => {
+        const prev = i > 0 ? stages[i - 1].count : null;
+        const pctOfFirst = first > 0 ? Math.round((s.count / first) * 100) : 0;
+        const dropFromPrev = prev !== null && prev > 0 ? Math.round(((prev - s.count) / prev) * 100) : null;
+        return (
+          <div key={s.key}>
+            {i > 0 && (
+              <div style={{ textAlign: 'center', margin: '2px 0 2px 22px' }}>
+                <span style={{ color: dropFromPrev > 0 ? 'var(--red)' : 'var(--green)', fontSize: 12, fontWeight: 600 }}>
+                  ↓ {dropFromPrev !== null ? (dropFromPrev > 0 ? `${dropFromPrev}% dropped off here` : 'no drop-off') : ''}
+                </span>
+              </div>
+            )}
+            <div
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '10px 14px', borderRadius: 8, background: '#fafbfc',
+                border: '1px solid var(--border)', borderLeft: '4px solid var(--maroon)',
+              }}
+            >
+              <span>{s.label}</span>
+              <span>
+                <b>{s.count}</b>{' '}
+                <span className="muted" style={{ fontSize: 12 }}>({pctOfFirst}% of viewed)</span>
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Analytics() {
   const [summary, setSummary] = useState(null);
   const [trend, setTrend] = useState([]);
   const [topScreens, setTopScreens] = useState([]);
   const [funnel, setFunnel] = useState(null);
   const [funnelRange, setFunnelRange] = useState('week');
+  const [authFunnel, setAuthFunnel] = useState(null);
+  const [authFunnelType, setAuthFunnelType] = useState('signup');
+  const [authFunnelRange, setAuthFunnelRange] = useState('week');
   const [revenue, setRevenue] = useState(null);
   const [sessionVolume, setSessionVolume] = useState(null);
   const [revenueByType, setRevenueByType] = useState(null);
@@ -167,6 +217,22 @@ export default function Analytics() {
       setLoading(false);
     }
   }, [appTab, funnelRange]);
+
+  // Independent fetch, keyed on its own selector state — separate from the main load()
+  // so switching Signup/Login or the range doesn't re-fetch every other card on the page.
+  const loadAuthFunnel = useCallback(async () => {
+    try {
+      const { data } = await client.get('/api/admin/analytics/auth-funnel', {
+        params: { type: authFunnelType, range: authFunnelRange },
+      });
+      setAuthFunnel(data);
+    } catch (e) {
+      // A missing/misconfigured POSTHOG_* var already shows the page-level "not
+      // configured" state via the main load() call — nothing extra to show here.
+    }
+  }, [authFunnelType, authFunnelRange]);
+
+  useEffect(() => { loadAuthFunnel(); }, [loadAuthFunnel]);
 
   // Independent fetch — Sentry not being configured yet is expected and shouldn't 503
   // the rest of the page the way a missing POSTHOG_* var does above.
@@ -474,6 +540,39 @@ export default function Analytics() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <h3 style={{ margin: 0 }}>New Customer Funnel — {authFunnel?.label || 'Signup'}</h3>
+          <div className="btn-group">
+            {AUTH_FUNNEL_TYPES.map((f) => (
+              <button
+                key={f.key}
+                className={`btn sm ${authFunnelType === f.key ? '' : 'ghost'}`}
+                onClick={() => setAuthFunnelType(f.key)}
+              >{f.label}</button>
+            ))}
+          </div>
+          <div className="btn-group">
+            {FUNNEL_RANGES.map((r) => (
+              <button
+                key={r.key}
+                className={`btn sm ${authFunnelRange === r.key ? '' : 'ghost'}`}
+                onClick={() => setAuthFunnelRange(r.key)}
+              >{r.label}</button>
+            ))}
+          </div>
+        </div>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
+          Where new customers actually drop off — every arrow below is a real leak, not just
+          a name. Switch between Signup and Login above to see either funnel.
+        </p>
+        {authFunnel?.stages?.length ? (
+          <StepFunnel stages={authFunnel.stages} />
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>Loading…</p>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>

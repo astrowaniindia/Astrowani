@@ -20,7 +20,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
-import {identifyCustomer} from '../../utils/Analytics';
+import {identifyCustomer, captureEvent} from '../../utils/Analytics';
 import {LanguageContext} from '../../context/LanguageContext';
 
 const RESEND_SECONDS = 60;
@@ -83,6 +83,7 @@ const VerifyOtp = ({navigation, route}) => {
         // Signup flow (Register screen) — apply the details collected before OTP verify
         // now that we have a real auth token to call the profile endpoint with.
         if (profileData) {
+          captureEvent('signup_otp_verified');
           try {
             let profilePic = profileData.profilePic;
             if (profilePic && profilePic.startsWith('data:')) {
@@ -103,13 +104,18 @@ const VerifyOtp = ({navigation, route}) => {
             // shouldn't strand the user on the OTP screen; they can fill it in later.
             console.log('Failed to save registration details:', profileErr.message);
           }
+          captureEvent('signup_completed');
+        } else {
+          captureEvent('login_completed');
         }
 
         navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       } else {
+        captureEvent(profileData ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_rejected' });
         showAlert(t('otp.verificationFailed'), res?.data?.message || t('otp.invalidTryAgain'), 'error');
       }
     } catch (error) {
+      captureEvent(profileData ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_error' });
       const message = error?.response?.data?.message || t('otp.failedVerify');
       showAlert(t('otp.verificationFailed'), message, 'error');
     } finally {

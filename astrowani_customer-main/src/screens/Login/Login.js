@@ -22,6 +22,7 @@ import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 const Login = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -57,6 +58,7 @@ const Login = ({navigation}) => {
 
   const handleGetOtp = async () => {
     if (validateFields()) {
+      captureEvent('login_submit_tapped');
       SetLoading(true);
       try {
         const res = await Instance.post('/api/users/mobile-otp-request', {
@@ -65,12 +67,15 @@ const Login = ({navigation}) => {
           intent: 'login',
         });
         if (res?.data?.success) {
+          captureEvent('login_otp_sent');
           navigation.navigate('VerifyOtp', { phoneNumber, role: 'customer' });
         } else {
+          captureEvent('login_failed', { reason: res?.data?.code || 'otp_send_failed' });
           showAlert(t('common.error'), res?.data?.message || t('login.otpFailed'), 'error');
         }
       } catch (error) {
         if (error?.response?.data?.code === 'NO_ACCOUNT') {
+          captureEvent('login_failed', { reason: 'no_account' });
           showAlert(
             t('login.noAccountTitle'),
             t('login.noAccountMsg'),
@@ -78,6 +83,7 @@ const Login = ({navigation}) => {
           );
         } else {
           console.log('Login error:', error);
+          captureEvent('login_failed', { reason: error?.response?.data?.code || 'other' });
           showAlert(t('common.error'), error?.response?.data?.message || t('login.somethingWrong'), 'error');
         }
       } finally {
