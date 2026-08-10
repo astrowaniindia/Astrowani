@@ -30,7 +30,12 @@ initSentry();
 process.on('uncaughtException', (err) => logError('uncaughtException', err));
 process.on('unhandledRejection', (reason) => logError('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason))));
 
-const SUPABASE_URL = 'https://fxpoustnddrgumhwdcma.supabase.co';
+// Falls back to the real project URL if unset — matches src/wallet.js's
+// pattern. This ALSO means a local dev override (SUPABASE_URL set before
+// `node index.js` starts) now actually takes effect here, not just in
+// wallet.js — previously this was hardcoded, so every supabase/supabaseService
+// call silently kept hitting production regardless of any local override.
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_iLfw8Co1PiXDyYJZvzCRKw_5hQBKn_O';
 
 // This process runs on our own trusted VPS, so every query it makes should go out
@@ -760,6 +765,7 @@ function toProfile(row, decoded = {}) {
     profilePic: row?.profile_image || '',
     handPic: row?.hand_image || '',
     isProfileComplete: customerProfileComplete(row),
+    freeBotChatCredited: !!row?.free_bot_chat_credited_at,
   };
 }
 
@@ -2313,6 +2319,47 @@ app.post('/api/wallet/verify-payment', writeLimiter, async (req, res) => {
   } catch (err) {
     console.error('POST /api/wallet/verify-payment error:', err.message);
     return res.status(500).json({ success: false, message: 'Could not verify payment' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FREE BOT CHAT: one-time ₹20 welcome credit after the scripted 5-min demo chat
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/free-bot-chat/credit', async (req, res) => {
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { data: custRow, error: readErr } = await supabaseService
+      .from('customers')
+      .select('wallet_balance, free_bot_chat_credited_at')
+      .eq('id', customer.id)
+      .single();
+    if (readErr) throw readErr;
+
+    if (custRow?.free_bot_chat_credited_at) {
+      return res.status(200).json({ success: true, alreadyCredited: true, newBalance: custRow.wallet_balance ?? null });
+    }
+
+    // Credit first, THEN mark the flag — same order as maybeRewardReferral's
+    // one-time bonus pattern. adjustCustomerWallet's idempotencyKey (keyed on
+    // this customer) is what actually prevents a double-pay on a concurrent
+    // retry; if we flipped the flag first and the wallet call then failed, the
+    // customer would be marked "credited" with no money ever paid.
+    const newBalance = await wallet.adjustCustomerWallet(customer.id, 20, {
+      description: 'Free 5-min chat welcome bonus',
+      idempotencyKey: `bot_chat_bonus:${customer.id}`,
+    });
+
+    await supabaseService
+      .from('customers')
+      .update({ free_bot_chat_credited_at: new Date().toISOString() })
+      .eq('id', customer.id);
+
+    return res.status(200).json({ success: true, newBalance });
+  } catch (err) {
+    console.error('POST /api/free-bot-chat/credit error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not credit wallet' });
   }
 });
 

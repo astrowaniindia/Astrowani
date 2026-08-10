@@ -29,12 +29,16 @@ class SessionManager {
     this.resetTimer = null;
     this.io = null;
 
-    // Track last reset times in memory.
-    // Initialize lastDailyResetDate to null so the first run always performs today's reset
-    // (catches cases where the server was down at midnight).
-    this.lastDailyResetDate = null;
-    // Initialize lastMonthlyResetMs to 31 days ago so the first run checks if a monthly reset is due.
-    this.lastMonthlyResetMs = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    // Reset timers are persisted in `app_settings` (see loadEarningsResetState()) —
+    // NOT kept only in memory. An in-memory-only clock resets to "unknown" on every
+    // process start, and any fresh process — including a developer's local backend
+    // pointed at the same production Supabase project, which is exactly how this bit
+    // once before — would then assume a reset is overdue and wipe every astrologer's
+    // earnings. Loaded lazily (DB read can't happen in a constructor) on the first
+    // checkEarningsResets() call; these two fields are undefined until then.
+    this.lastDailyResetDate = undefined;
+    this.lastMonthlyResetMs = undefined;
+    this.earningsResetStateLoaded = false;
     // Re-entrancy guard for the 30s billing poll — see checkActiveSessions().
     this.isCheckingSessions = false;
     console.log('SessionManager Instance Created.');
@@ -150,11 +154,62 @@ class SessionManager {
     console.log('SessionManager Background Worker Stopped.');
   }
 
+  // Reads the two reset timestamps from `app_settings` (shared key/value table also
+  // used for the banner interval etc.) so they survive process restarts. Called once,
+  // lazily, from the first checkEarningsResets() — see the constructor's comment.
+  // Deliberately does NOT default a missing/unreadable value to "overdue": if we don't
+  // have a trustworthy prior timestamp, we seed it to "now" (i.e. assume a reset just
+  // happened) rather than risk wiping every astrologer's earnings on an unrelated
+  // process's first boot. The daily reset stays effectively self-healing regardless —
+  // once a real date is persisted, a missed midnight is still caught correctly on the
+  // next real day change.
+  async loadEarningsResetState() {
+    try {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('key, value')
+        .in('key', ['last_daily_earnings_reset', 'last_monthly_earnings_reset_ms']);
+      const byKey = {};
+      (data || []).forEach((r) => { byKey[r.key] = r.value; });
+
+      this.lastDailyResetDate = byKey.last_daily_earnings_reset || null;
+
+      const persistedMs = Number(byKey.last_monthly_earnings_reset_ms);
+      this.lastMonthlyResetMs = Number.isFinite(persistedMs) && persistedMs > 0 ? persistedMs : Date.now();
+      if (!Number.isFinite(persistedMs) || persistedMs <= 0) {
+        // First time this code has run since the DB-backed change shipped (or the
+        // setting row doesn't exist yet) — persist "now" so we don't re-seed (and
+        // don't fire a reset) on every subsequent restart either.
+        await this.setAppSetting('last_monthly_earnings_reset_ms', String(this.lastMonthlyResetMs));
+      }
+    } catch (e) {
+      console.error('[SessionManager] Failed to load earnings-reset state, defaulting to "just reset" to avoid a spurious wipe:', e.message);
+      this.lastDailyResetDate = null;
+      this.lastMonthlyResetMs = Date.now();
+    } finally {
+      this.earningsResetStateLoaded = true;
+    }
+  }
+
+  async setAppSetting(key, value) {
+    try {
+      await supabase
+        .from('app_settings')
+        .upsert({ key, value: String(value), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    } catch (e) {
+      console.error(`[SessionManager] Failed to persist app_settings.${key}:`, e.message);
+    }
+  }
+
   /**
    * Resets today_earnings to 0 for all astrologers when a new calendar day begins.
    * Resets total_earnings to 0 for all astrologers every 30 days.
+   * Both timestamps are DB-backed (see loadEarningsResetState()) so a process restart
+   * — anyone's, anywhere — can never re-trigger a reset that already happened.
    */
   async checkEarningsResets() {
+    if (!this.earningsResetStateLoaded) await this.loadEarningsResetState();
+
     const now = new Date();
     const todayStr = now.toDateString(); // e.g. "Fri Jun 20 2026"
 
@@ -170,6 +225,7 @@ class SessionManager {
       } else {
         console.log('[SessionManager] Daily earnings reset complete for', todayStr);
         this.lastDailyResetDate = todayStr;
+        await this.setAppSetting('last_daily_earnings_reset', todayStr);
       }
     }
 
@@ -186,6 +242,7 @@ class SessionManager {
       } else {
         console.log('[SessionManager] Monthly earnings reset complete');
         this.lastMonthlyResetMs = now.getTime();
+        await this.setAppSetting('last_monthly_earnings_reset_ms', String(this.lastMonthlyResetMs));
       }
     }
   }
