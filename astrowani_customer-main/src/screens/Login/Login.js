@@ -24,9 +24,12 @@ import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import GuideAvatar from '../../components/GuideAvatar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const Login = ({navigation}) => {
-  const { t } = React.useContext(LanguageContext);
+  const { t, language, changeLanguage } = React.useContext(LanguageContext);
+  const insets = useSafeAreaInsets();
+  const toggleLanguage = () => changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
   const [countryCode, setCountryCode] = useState('IN');
   const [callingCode, setCallingCode] = useState('91');
   const [isPickerVisible, setPickerVisible] = useState(false);
@@ -102,6 +105,15 @@ const Login = ({navigation}) => {
         backgroundColor="transparent"
         barStyle="light-content"
       />
+
+      <TouchableOpacity
+        onPress={toggleLanguage}
+        activeOpacity={0.7}
+        style={[styles.langPill, { top: insets.top + verticalScale(12) }]}>
+        <Text style={[styles.langPillText, language === 'English' && styles.langPillTextActive]}>EN</Text>
+        <Text style={styles.langPillDivider}>|</Text>
+        <Text style={[styles.langPillText, language === 'Hindi' && styles.langPillTextActive]}>हिं</Text>
+      </TouchableOpacity>
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
@@ -230,6 +242,32 @@ const styles = StyleSheet.create({
   main: {
     flex: 1,
     backgroundColor: COLORS.AstroMaroon,
+  },
+  langPill: {
+    position: 'absolute',
+    right: scale(20),
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  langPillText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+  },
+  langPillTextActive: {
+    color: 'white',
+  },
+  langPillDivider: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: moderateScale(12),
+    marginHorizontal: scale(4),
   },
   scrollContainer: {
     flexGrow: 1,
