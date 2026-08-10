@@ -633,7 +633,16 @@ function DrawerNavigator({ navigation }) {
   return (
     <Drawer.Navigator
       drawerContent={props => <CustomDrawerContent {...props} />}
-      screenOptions={{ headerShown: false }}>
+      screenOptions={{
+        headerShown: false,
+        // Default swipeEdgeWidth (32dp) requires starting the swipe almost
+        // exactly on the screen edge — easy to miss and reads as "swipe
+        // doesn't open the drawer" even though it technically works. Widened
+        // so a left-to-right swipe starting anywhere in the left third of the
+        // screen opens it, alongside the existing hamburger-icon tap.
+        swipeEnabled: true,
+        swipeEdgeWidth: scale(140),
+      }}>
       <Drawer.Screen
         name="BottomTabs"
         component={BottomTabNavigator}
