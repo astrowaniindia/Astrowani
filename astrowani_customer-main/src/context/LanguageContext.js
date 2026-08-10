@@ -34,6 +34,7 @@ const translations = {
     'home.cancelRequest': 'Cancel Request',
     'home.chatWithAstrologer': 'Chat with Astrologer',
     'home.talkToAstrologer': 'Talk To Astrologer',
+    'home.guideHint': "Don't know what to do? Start your first chat!",
 
     // Common labels / actions
     'common.chat': 'Chat',
@@ -495,6 +496,7 @@ const translations = {
     'home.cancelRequest': 'अनुरोध रद्द करें',
     'home.chatWithAstrologer': 'ज्योतिषी से चैट करें',
     'home.talkToAstrologer': 'ज्योतिषी से बात करें',
+    'home.guideHint': 'क्या करना है समझ नहीं आ रहा? अपनी पहली चैट शुरू करें!',
 
     // Common labels / actions
     'common.chat': 'चैट',

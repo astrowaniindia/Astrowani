@@ -15,7 +15,10 @@ const PlacementBanner = ({
   style,
   fallbackImages = [],
 }) => {
-  const [banners, setBanners] = React.useState([]);
+  // null = "haven't heard back from the fetch yet" — distinct from [] ("fetch
+  // confirmed there are zero banners"). Without this distinction the fallback
+  // images render for a moment on every launch before the real fetch resolves.
+  const [banners, setBanners] = React.useState(null);
   const [intervalMs, setIntervalMs] = React.useState(4000);
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
@@ -33,11 +36,13 @@ const PlacementBanner = ({
     return () => { mounted = false; };
   }, [placement, app]);
 
-  const slides = banners.length > 0
-    ? banners
-        .filter((b) => b?.imageUrl)
-        .map((b) => ({ uri: b.imageUrl, actionType: b.actionType, actionValue: b.actionValue }))
-    : fallbackImages.map((source) => ({ source, actionType: 'none', actionValue: null }));
+  const slides = banners === null
+    ? []
+    : banners.length > 0
+      ? banners
+          .filter((b) => b?.imageUrl)
+          .map((b) => ({ uri: b.imageUrl, actionType: b.actionType, actionValue: b.actionValue }))
+      : fallbackImages.map((source) => ({ source, actionType: 'none', actionValue: null }));
 
   React.useEffect(() => {
     if (slides.length <= 1) return;

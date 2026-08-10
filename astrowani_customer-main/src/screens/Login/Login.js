@@ -215,7 +215,7 @@ const Login = ({navigation}) => {
         position="center"
         bottomOffset={verticalScale(75)}
         avatarSize={scale(115)}
-        offsetX={-scale(55)}
+        offsetX={-scale(43)}
         avatarOffsetY={verticalScale(53)}
         boxOffsetY={verticalScale(18)}
         onPress={() => navigation.navigate('Register')}

@@ -43,6 +43,7 @@ import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { getWalletBalance } from '../../utils/wallet';
 import PlacementBanner from '../../components/PlacementBanner';
+import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
@@ -77,6 +78,8 @@ const Home = ({navigation}) => {
   const [thought, setThought] = useState();
   const [user, setUser] = useState(null);
   const [astroServices, setAstroServices] = useState([]);
+  const [freeChatOfferVisible, setFreeChatOfferVisible] = useState(false);
+  const [freeChatOfferDismissed, setFreeChatOfferDismissed] = useState(false);
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -531,6 +534,14 @@ const Home = ({navigation}) => {
       // Store user data in AsyncStorage for chat screens
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
       console.log(userData, 'this is user data++++++++++++++');
+
+      // Free 5-min bot-chat welcome offer — only for customers who haven't
+      // used it yet (server-verified via freeBotChatCredited) and who haven't
+      // had any real session yet (same "new customer" signal used elsewhere).
+      if (!userData.freeBotChatCredited && !freeChatOfferDismissed) {
+        const eligible = await isEligibleForFreeConsultation(userData.id);
+        if (eligible) setFreeChatOfferVisible(true);
+      }
       }
       setLoading(false);
     } catch (error) {
@@ -1313,6 +1324,18 @@ const Home = ({navigation}) => {
         visible={requesting}
         astro={requestAstro}
         onCancel={cancelRequest}
+      />
+
+      <FreeChatOfferPopup
+        visible={freeChatOfferVisible}
+        onDismiss={() => {
+          setFreeChatOfferVisible(false);
+          setFreeChatOfferDismissed(true);
+        }}
+        onStart={() => {
+          setFreeChatOfferVisible(false);
+          navigation.navigate('FreeBotChatScreen');
+        }}
       />
     </View>
   );
