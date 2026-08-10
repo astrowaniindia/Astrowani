@@ -41,6 +41,7 @@ import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
+import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
 import PlacementBanner from '../../components/PlacementBanner';
 import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
@@ -538,9 +539,17 @@ const Home = ({navigation}) => {
       // Free 5-min bot-chat welcome offer — only for customers who haven't
       // used it yet (server-verified via freeBotChatCredited) and who haven't
       // had any real session yet (same "new customer" signal used elsewhere).
+      // The "seen" check is a persisted, per-account AsyncStorage flag (not
+      // just in-memory state) — someone who starts the chat but backs out
+      // before it naturally finishes never gets freeBotChatCredited set, so
+      // without a persisted flag the popup kept reappearing every time Home
+      // remounted (app restart, navigating back, etc).
       if (!userData.freeBotChatCredited && !freeChatOfferDismissed) {
-        const eligible = await isEligibleForFreeConsultation(userData.id);
-        if (eligible) setFreeChatOfferVisible(true);
+        const alreadySeen = await hasSeenFreeBotChatOffer(userData.id);
+        if (!alreadySeen) {
+          const eligible = await isEligibleForFreeConsultation(userData.id);
+          if (eligible) setFreeChatOfferVisible(true);
+        }
       }
       }
       setLoading(false);
@@ -1331,9 +1340,12 @@ const Home = ({navigation}) => {
         onDismiss={() => {
           setFreeChatOfferVisible(false);
           setFreeChatOfferDismissed(true);
+          if (user?.id) markFreeBotChatOfferSeen(user.id);
         }}
         onStart={() => {
           setFreeChatOfferVisible(false);
+          setFreeChatOfferDismissed(true);
+          if (user?.id) markFreeBotChatOfferSeen(user.id);
           navigation.navigate('FreeBotChatScreen');
         }}
       />
