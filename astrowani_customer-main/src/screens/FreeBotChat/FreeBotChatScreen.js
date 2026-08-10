@@ -31,6 +31,10 @@ import { getOpeningMessage, getBotReply } from '../../utils/freeChatBotEngine';
 import { captureEvent } from '../../utils/Analytics';
 
 const CHAT_DURATION_SECONDS = 300;
+// The ₹20 credit fires once the customer has spent this long in the chat —
+// not on full 5-minute completion. Someone who leaves right after this point
+// still keeps the bonus; someone who leaves before it gets nothing.
+const CREDIT_THRESHOLD_SECONDS = 90;
 
 const FreeBotChatScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
@@ -48,6 +52,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   const [completedVisible, setCompletedVisible] = useState(false);
   const [creditedAmount, setCreditedAmount] = useState(null);
   const hasEndedRef = useRef(false);
+  const hasCreditedRef = useRef(false);
   const flatListRef = useRef(null);
   const msgIdRef = useRef(0);
 
@@ -85,9 +90,24 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     hasEndedRef.current = true;
     setChatActive(false);
     captureEvent('free_bot_chat_ended', { completed: true });
-    await creditWallet();
+    if (!hasCreditedRef.current) {
+      hasCreditedRef.current = true;
+      await creditWallet();
+    }
     setCompletedVisible(true);
   };
+
+  // Credits as soon as the customer crosses the threshold — independent of
+  // finishNaturally, which only fires at the full 5-minute mark.
+  useEffect(() => {
+    if (seconds >= CREDIT_THRESHOLD_SECONDS && !hasCreditedRef.current) {
+      hasCreditedRef.current = true;
+      creditWallet().then(() => {
+        appendMessage('bot', '🎉 ₹20 has been credited to your wallet — enjoy!');
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seconds]);
 
   useEffect(() => {
     if (seconds >= CHAT_DURATION_SECONDS && !hasEndedRef.current) {

@@ -579,7 +579,7 @@ export default function Navigation({ initialRoute }) {
           name="Wallet"
           component={Wallet}
           options={({ navigation }) => ({
-            headerTitle: 'Balance: ₹ 0',
+            headerTitle: () => <WalletBalanceHeaderTitle />,
             headerRight: () => (
               <TouchableOpacity
                 style={{ marginRight: scale(15) }}
@@ -666,6 +666,40 @@ function DrawerNavigator({ navigation }) {
         options={{ headerShown: false }}
       />
     </Drawer.Navigator>
+  );
+}
+
+// Wallet screen's header used to hardcode "Balance: ₹ 0" regardless of the real
+// balance — this fetches the actual value the same way BottomTabNavigator's tab
+// label does (via the backend, never a direct Supabase read — see getWalletBalance).
+function WalletBalanceHeaderTitle() {
+  const [balance, setBalance] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+
+    const poll = async () => {
+      try {
+        const value = await getWalletBalance();
+        if (!cancelled) setBalance(value);
+      } catch (_) {
+        // Silent — keeps showing the last known balance.
+      }
+    };
+
+    poll();
+    timer = setInterval(poll, 20000);
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <Text style={{ color: '#fff', fontSize: moderateScale(17), fontWeight: '600' }}>
+      Balance: ₹ {balance === null ? '…' : balance}
+    </Text>
   );
 }
 
