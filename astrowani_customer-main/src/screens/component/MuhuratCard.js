@@ -394,6 +394,20 @@ const MuhuratCard = ({ title }) => {
     }
   }, [latitude, longitude, date, currentEndpoint]);
 
+  // 'Gowri Panchangam' has no live backend endpoint (getApiEndpoint's default case returns
+  // '' for it), so the fetch-gating effect above never fires and isLoading — which starts
+  // true — was never being flipped back to false, leaving this tab spinning forever. It
+  // renders a hardcoded sample (see formatMuhuratData's 'Gowri Panchangam' case) entirely
+  // client-side, so bypass the network path for it instead of waiting on an endpoint that
+  // will never come.
+  useEffect(() => {
+    if (title === 'Gowri Panchangam') {
+      setProcessedData(formatMuhuratData());
+      setError(null);
+      setIsLoading(false);
+    }
+  }, [title]);
+
   const handlePlaceSelect = (data, details = null) => {
     if (details?.geometry?.location) {
       setLocation(data.description);

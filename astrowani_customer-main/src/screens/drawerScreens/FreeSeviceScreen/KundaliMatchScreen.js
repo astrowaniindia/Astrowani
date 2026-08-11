@@ -56,14 +56,23 @@ const KundaliMatchScreen = ({navigation}) => {
   const [girlLatitude, setGirlLatitude] = useState(null);
   const [girlLongitude, setGirlLongitude] = useState(null);
 
-  const getCoordinates = (place, setLatitude, setLongitude) => {
+  // Fallback only — GooglePlacesAutocomplete's `fetchDetails` (below) resolves lat/lng
+  // synchronously inside onPress in the normal case. This exists for the rare case where
+  // Places Details comes back without a `details` object; on failure it surfaces an alert
+  // instead of the old behavior (console.warn only), which left boyLatitude/girlLatitude
+  // stuck null forever with no feedback — the place text looked filled in, but "Show Report"
+  // kept failing the required-fields check with no visible reason.
+  const getCoordinates = (place, setLatitude, setLongitude, onError) => {
     Geocoder.from(place)
       .then(json => {
         const location = json.results[0].geometry.location;
         setLatitude(location.lat);
         setLongitude(location.lng);
       })
-      .catch(error => console.warn(error));
+      .catch(error => {
+        console.warn(error);
+        onError?.();
+      });
   };
 
   const handleboyCheckboxChange = () => {
@@ -265,7 +274,14 @@ const KundaliMatchScreen = ({navigation}) => {
           placeholder={t('match.enterBoyPlace')}
           onPress={(data, details = null) => {
             setBoyBirthPlace(data.description);
-            getCoordinates(data.description, setBoyLatitude, setBoyLongitude);
+            if (details?.geometry?.location) {
+              setBoyLatitude(details.geometry.location.lat);
+              setBoyLongitude(details.geometry.location.lng);
+            } else {
+              getCoordinates(data.description, setBoyLatitude, setBoyLongitude, () =>
+                Alert.alert(t('kundali.locationFetchError')),
+              );
+            }
           }}
           query={{
             key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
@@ -275,6 +291,7 @@ const KundaliMatchScreen = ({navigation}) => {
             textInputContainer: styles.input,
             textInput: styles.dropdownText,
           }}
+          fetchDetails
         />
         </View>
 
@@ -367,7 +384,14 @@ const KundaliMatchScreen = ({navigation}) => {
           placeholder={t('match.enterGirlPlace')}
           onPress={(data, details = null) => {
             setGirlBirthPlace(data.description);
-            getCoordinates(data.description, setGirlLatitude, setGirlLongitude);
+            if (details?.geometry?.location) {
+              setGirlLatitude(details.geometry.location.lat);
+              setGirlLongitude(details.geometry.location.lng);
+            } else {
+              getCoordinates(data.description, setGirlLatitude, setGirlLongitude, () =>
+                Alert.alert(t('kundali.locationFetchError')),
+              );
+            }
           }}
           query={{
             key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
@@ -377,6 +401,7 @@ const KundaliMatchScreen = ({navigation}) => {
             textInputContainer: styles.input,
             textInput: styles.dropdownText,
           }}
+          fetchDetails
         />
 
         </View>

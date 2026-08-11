@@ -7,16 +7,18 @@
 // /api/astro/:key handlers expect: date as dd/mm/yyyy, time as HH:mm (24h) — the backend passes
 // these straight through to JyotishamAstroAPI without reformatting (see astroRoutes.js birthQuery).
 import React, {useEffect, useState} from 'react';
-import {View, Text, TextInput, TouchableOpacity, StyleSheet, Platform} from 'react-native';
+import {View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {GooglePlacesAutocomplete} from 'react-native-google-places-autocomplete';
+import Geocoder from 'react-native-geocoding';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 const GOOGLE_PLACES_KEY = 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA';
+Geocoder.init(GOOGLE_PLACES_KEY);
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -111,10 +113,27 @@ export default function BirthDetailsForm({title, showName = true, showGender = f
       <GooglePlacesAutocomplete
         placeholder={t('kundali.enterPlaceOfBirth')}
         onPress={(data, details = null) => {
-          if (!details) return;
-          const {lat, lng} = details.geometry.location;
-          setCoordinates({latitude: lat, longitude: lng});
           setPlace(data.description);
+          if (details?.geometry?.location) {
+            const {lat, lng} = details.geometry.location;
+            setCoordinates({latitude: lat, longitude: lng});
+            return;
+          }
+          // fetchDetails occasionally comes back without a `details` object (network hiccup,
+          // Place Details quota). Previously this just `return`ed — the place text still
+          // looked filled in, but `coordinates` (and therefore isComplete/onValuesChange)
+          // never updated, leaving the submit button stuck disabled with no feedback at all.
+          // Fall back to a plain geocode of the selected description, and only alert if that
+          // fails too.
+          Geocoder.from(data.description)
+            .then((json) => {
+              const location = json.results[0].geometry.location;
+              setCoordinates({latitude: location.lat, longitude: location.lng});
+            })
+            .catch((error) => {
+              console.warn(error);
+              Alert.alert(t('kundali.locationFetchError'));
+            });
         }}
         query={{key: GOOGLE_PLACES_KEY, language: 'en'}}
         styles={{

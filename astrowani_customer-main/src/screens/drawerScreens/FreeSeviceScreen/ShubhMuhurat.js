@@ -29,8 +29,8 @@ const ShubhMuhurat = ({navigation}) => {
       case 'Shubh Hora':
         return <MuhuratCard title="Day Hora" />;
       case 'Gowri Panchangam':
-        // MuhuratCard has no live endpoint for this tab yet — it still renders a
-        // hardcoded sample internally (see component/MuhuratCard.js formatMuhuratData).
+        // MuhuratCard renders a hardcoded sample for this tab client-side — no backend
+        // endpoint exists yet (see component/MuhuratCard.js formatMuhuratData).
         return <MuhuratCard title="Gowri Panchangam" />;
 
       case 'Rahu Kaal':

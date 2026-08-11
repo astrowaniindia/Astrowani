@@ -7,12 +7,24 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Linking,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {LanguageContext} from '../../context/LanguageContext';
+
+// These policy/safety pages are maintained on the marketing site, not duplicated as in-app
+// screens, so they can't go stale here when legal/support updates the real page.
+const LEGAL_LINKS = {
+  termsOfUse: 'https://astrowani.com/term_conditions/',
+  privacyPolicy: 'https://astrowani.com/privacy-policy/',
+  refundCancellation: 'https://astrowani.com/refund_cancellation/',
+  childSafety: 'https://astrowani.com/child-safety/',
+  safetyGuidelines: 'https://astrowani.com/safety-guidelines/',
+  reportVulnerability: 'https://astrowani.com/report-vulnerability/',
+};
 
 export default function Settings({navigation}) {
   const {t} = React.useContext(LanguageContext);
@@ -90,7 +102,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity> */}
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('RefundAndCancel')}
+          onPress={() => Linking.openURL(LEGAL_LINKS.refundCancellation)}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -101,11 +113,11 @@ export default function Settings({navigation}) {
             />
             <Text style={styles.text}>{t('settings.refundCancellation')}</Text>
           </View>
-          <Icon name="keyboard-arrow-right" size={25} color="#000" />
+          <Icon name="open-in-new" size={20} color="#999" />
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('PrivacyPolicy')}
+          onPress={() => Linking.openURL(LEGAL_LINKS.privacyPolicy)}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -116,11 +128,11 @@ export default function Settings({navigation}) {
             />
             <Text style={styles.text}>{t('settings.privacyPolicy')}</Text>
           </View>
-          <Icon name="keyboard-arrow-right" size={25} color="#000" />
+          <Icon name="open-in-new" size={20} color="#999" />
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('TermsOfUse')}
+          onPress={() => Linking.openURL(LEGAL_LINKS.termsOfUse)}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -131,7 +143,52 @@ export default function Settings({navigation}) {
             />
             <Text style={styles.text}>{t('settings.termsOfUse')}</Text>
           </View>
-          <Icon name="keyboard-arrow-right" size={25} color="#000" />
+          <Icon name="open-in-new" size={20} color="#999" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => Linking.openURL(LEGAL_LINKS.childSafety)}
+          style={styles.item}>
+          <View style={styles.itemContent}>
+            <Icon
+              name="child-care"
+              size={25}
+              color={COLORS.AstroMaroon}
+              style={styles.icon}
+            />
+            <Text style={styles.text}>{t('settings.childSafety')}</Text>
+          </View>
+          <Icon name="open-in-new" size={20} color="#999" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => Linking.openURL(LEGAL_LINKS.safetyGuidelines)}
+          style={styles.item}>
+          <View style={styles.itemContent}>
+            <Icon
+              name="shield"
+              size={25}
+              color={COLORS.AstroMaroon}
+              style={styles.icon}
+            />
+            <Text style={styles.text}>{t('settings.safetyGuidelines')}</Text>
+          </View>
+          <Icon name="open-in-new" size={20} color="#999" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => Linking.openURL(LEGAL_LINKS.reportVulnerability)}
+          style={styles.item}>
+          <View style={styles.itemContent}>
+            <Icon
+              name="bug-report"
+              size={25}
+              color={COLORS.AstroMaroon}
+              style={styles.icon}
+            />
+            <Text style={styles.text}>{t('settings.reportVulnerability')}</Text>
+          </View>
+          <Icon name="open-in-new" size={20} color="#999" />
         </TouchableOpacity>
 
         <TouchableOpacity

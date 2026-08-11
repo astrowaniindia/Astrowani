@@ -1,10 +1,56 @@
-// Free astrology services (Panchang, daily Horoscope, Janam Kundali, Kundali Match) — no
-// wallet charge, no auth required. These used to live on a separate DigitalOcean microservice
+// Free astrology services (Panchang, daily Horoscope, Janam Kundali, Kundali Match, Shubh
+// Muhurat) — these used to live on a separate DigitalOcean microservice
 // (astrowani-fb6pi.ondigitalocean.app) that no longer exists (DNS: non-existent domain).
 // Reimplemented here on top of JyotishamAstroAPI (already used for the paid reports in
 // astroRoutes.js), shaping each response to match what the existing customer-app screens
 // already expect — so no frontend changes were needed beyond repointing FREE_SERVICES_URL.
+//
+// Despite the name, none of this is free to the customer anymore: each Home-screen "Free
+// Services" card costs a flat ₹1, charged ONCE per visit via POST /api/free-services/charge
+// (called by the app right before it navigates into the screen — see customer app's
+// useFreeServicePurchase.js), not per individual API call this file makes. Several of these
+// screens (Panchang, Horoscope) auto-refetch on every date/location/zodiac change within a
+// single visit — charging per-request there would silently bill a user for browsing zodiac
+// signs. The five content endpoints below stay unauthenticated and uncharged on purpose;
+// the ₹1 paywall is a separate, single gate in front of the visit as a whole.
+const jwt = require('jsonwebtoken');
+const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
+const wallet = require('./wallet');
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+const FREE_SERVICE_PRICE = 1;
+// Labels only — the ledger doesn't enforce this list, but keeping it here catches a typo'd
+// `service` key from the app at request time instead of silently charging under a bad label.
+const FREE_SERVICE_KEYS = new Set(['panchang', 'janam-kundali', 'kundali-match', 'horoscope', 'shubh-muhurat']);
+
+// Same shape as astroRoutes.js's resolveCustomer — duplicated rather than shared because
+// each route file here is deliberately self-contained (see that file's own copy).
+async function resolveCustomer(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
+  let decoded;
+  try {
+    decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+  } catch (_) {
+    return null;
+  }
+  const userId = decoded.userId || decoded._id || decoded.id;
+  let customer = null;
+  if (decoded.phone) {
+    const { data } = await db.from('customers').select('id, wallet_balance').eq('mobile', decoded.phone).limit(1);
+    if (data && data.length) customer = data[0];
+  }
+  if (!customer && userId && String(userId).includes('-')) {
+    const { data } = await db.from('customers').select('id, wallet_balance').eq('id', userId).single();
+    if (data) customer = data;
+  }
+  return customer;
+}
 
 const ZODIAC_NUMBERS = {
   aries: 1, taurus: 2, gemini: 3, cancer: 4, leo: 5, virgo: 6,
@@ -100,6 +146,67 @@ function buildKundaliPayload({ extendedKundali, mangalDosh, yogasList, astroDeta
 }
 
 module.exports = function registerFreeServicesRoutes(app) {
+  // ₹1 paywall gate for a Free Services visit — called once by the customer app right after
+  // the user confirms the "Pay ₹1" popup, before it navigates into the actual service screen.
+  // `requestId` is a client-generated one-shot id (not a purchased item's natural key, unlike
+  // astroRoutes.js's request-hash idempotency) so a genuine retry of the same tap doesn't double
+  // charge, while a fresh visit (new requestId) correctly charges again.
+  app.post('/api/free-services/charge', async (req, res) => {
+    try {
+      const customer = await resolveCustomer(req);
+      if (!customer) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      }
+
+      const { service, requestId } = req.body || {};
+      if (!service || !requestId) {
+        return res.status(400).json({ success: false, message: 'service and requestId are required' });
+      }
+      if (!FREE_SERVICE_KEYS.has(service)) {
+        return res.status(400).json({ success: false, message: `Unknown free service "${service}"` });
+      }
+
+      const balance = Number(customer.wallet_balance) || 0;
+      if (balance < FREE_SERVICE_PRICE) {
+        return res.status(400).json({ success: false, message: 'Insufficient balance' });
+      }
+
+      const idempotencyKey = `free-service:${customer.id}:${service}:${requestId}`;
+      let newBalance;
+      try {
+        newBalance = await wallet.adjustCustomerWallet(customer.id, -FREE_SERVICE_PRICE, {
+          description: `Free Service: ${service}`,
+          idempotencyKey,
+        });
+      } catch (err) {
+        if (err instanceof wallet.InsufficientFunds) {
+          return res.status(400).json({ success: false, message: 'Insufficient balance' });
+        }
+        console.error('[free-services] charge debit failed:', err.message);
+        return res.status(500).json({ success: false, message: 'Payment failed, please try again' });
+      }
+
+      // Customer is charged at this point — an admin-ledger failure past this must not block
+      // access to the service already paid for; log loudly instead (same convention as
+      // astroRoutes.js's post-charge admin credit).
+      try {
+        await wallet.adjustAdminWallet(FREE_SERVICE_PRICE, {
+          description: `Free Service accessed: ${service}`,
+          serviceKey: service,
+          customerId: customer.id,
+          idempotencyKey: `${idempotencyKey}:admin`,
+        });
+      } catch (err) {
+        console.error('[free-services] charge admin ledger credit failed (customer already charged):', err.message);
+      }
+
+      return res.status(200).json({ success: true, newBalance });
+    } catch (err) {
+      console.error('[free-services] charge error:', err.message);
+      return res.status(500).json({ success: false, message: 'Payment failed, please try again' });
+    }
+  });
+
   // Daily horoscope by zodiac sign — customer app: Horoscope.js
   app.post('/api/free-services/horoscope', async (req, res) => {
     try {
@@ -334,5 +441,5 @@ module.exports = function registerFreeServicesRoutes(app) {
     }
   });
 
-  console.log('[free-services] routes registered: POST /api/free-services/{horoscope,panchang,janam-kundali,kundali-match,shubh-muhurat/choghadiya,shubh-muhurat/hora-timing,shubh-muhurat/rahu-kaal}');
+  console.log('[free-services] routes registered: POST /api/free-services/{charge,horoscope,panchang,janam-kundali,kundali-match,shubh-muhurat/choghadiya,shubh-muhurat/hora-timing,shubh-muhurat/rahu-kaal}');
 };

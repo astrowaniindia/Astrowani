@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   StyleSheet,
   ScrollView,
   Clipboard,
@@ -13,9 +12,11 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
@@ -86,63 +87,89 @@ const ReferAndEarnScreen = () => {
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchReferralInfo(true)} />}>
-      <View style={styles.imageContainer}>
-        <Image
-          source={{
-            uri: 'https://th.bing.com/th?id=OIP.ncJKHY7TUu_M4mKZVBmwCQHaEK&w=333&h=187&c=8&rs=1&qlt=90&o=6&pid=3.1&rm=2',
-          }}
-          style={styles.image}
-        />
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchReferralInfo(true)} tintColor={COLORS.AstroMaroon} />}>
+      {/* Gradient hero — same header language as the drawer, instead of a stock bing.com image */}
+      <View style={styles.hero}>
+        <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Defs>
+            <LinearGradient id="referralHeroGrad" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0" stopColor="#7a3d26" stopOpacity="1" />
+              <Stop offset="1" stopColor="#40190d" stopOpacity="1" />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#referralHeroGrad)" />
+        </Svg>
+
+        <View style={styles.heroIconRing}>
+          <MCIcon name="gift-outline" size={moderateScale(40)} color={COLORS.AstroGold} />
+        </View>
+        <Text style={styles.heroTitle}>Refer & Earn</Text>
+        <Text style={styles.heroSubtitle}>Invite friends to Astrowani and both of you win</Text>
+
+        <View style={styles.rewardPill}>
+          <MCIcon name="star-four-points" size={moderateScale(14)} color={COLORS.AstroMaroon} />
+          <Text style={styles.rewardPillText}>Get ₹{rewardAmount} per friend</Text>
+        </View>
       </View>
 
-      <View style={styles.otherInfo}>
-        <View style={styles.getRewardButton}>
-          <Text style={styles.getRewardText}>Get ₹{rewardAmount}</Text>
-        </View>
-
-        <Text style={styles.infoText}>For every friend who completes their first session</Text>
-
+      <View style={styles.body}>
         <View style={styles.statsRow}>
-          <View style={styles.statBox}>
+          <View style={styles.statCard}>
+            <View style={styles.statIconRing}>
+              <MCIcon name="account-group-outline" size={moderateScale(22)} color={COLORS.AstroMaroon} />
+            </View>
             <Text style={styles.statValue}>{totalReferred}</Text>
             <Text style={styles.statLabel}>Friends Referred</Text>
           </View>
-          <View style={styles.statBox}>
+          <View style={styles.statCard}>
+            <View style={styles.statIconRing}>
+              <MCIcon name="wallet-outline" size={moderateScale(22)} color={COLORS.AstroMaroon} />
+            </View>
             <Text style={styles.statValue}>₹{totalEarned}</Text>
             <Text style={styles.statLabel}>Total Earned</Text>
           </View>
         </View>
 
-        <View style={styles.referralCodeContainer}>
-          <Text style={styles.referralCodeText}>{`Your Referral Code : ${code || '—'}`}</Text>
-          <TouchableOpacity onPress={copyToClipboard}>
-            <Icon name="copy" size={22} color="#000" />
+        <Text style={styles.sectionLabel}>YOUR REFERRAL CODE</Text>
+        <View style={styles.codeCard}>
+          <View style={styles.codeBox}>
+            <Text style={styles.codeText}>{code || '—'}</Text>
+          </View>
+          <TouchableOpacity style={styles.copyButton} onPress={copyToClipboard} activeOpacity={0.8}>
+            <MCIcon name="content-copy" size={moderateScale(17)} color={COLORS.white} />
+            <Text style={styles.copyButtonText}>Copy</Text>
           </TouchableOpacity>
         </View>
-
         <Text style={styles.shareInfoText}>
-          Share your referral code — you earn ₹{rewardAmount} when your friend completes their first session
+          Share this code — you earn ₹{rewardAmount} when your friend completes their first session
         </Text>
 
-        <TouchableOpacity style={styles.whatsappButton} onPress={shareViaWhatsapp}>
-          <Icon name="whatsapp" size={24} color="#fff" style={styles.whatsappIcon} />
-          <Text style={styles.whatsappButtonText}>Refer Via WhatsApp</Text>
+        <TouchableOpacity style={styles.whatsappButton} onPress={shareViaWhatsapp} activeOpacity={0.85}>
+          <Icon name="whatsapp" size={moderateScale(22)} color="#fff" />
+          <Text style={styles.whatsappButtonText}>Refer via WhatsApp</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.shareButton} onPress={shareGeneric}>
-          <Icon name="share-alt" size={20} color={COLORS.AstroMaroon} style={styles.whatsappIcon} />
+        <TouchableOpacity style={styles.shareButton} onPress={shareGeneric} activeOpacity={0.85}>
+          <MCIcon name="share-variant-outline" size={moderateScale(19)} color={COLORS.AstroMaroon} />
           <Text style={styles.shareButtonText}>Share via other apps</Text>
         </TouchableOpacity>
 
-        <View style={styles.termsContainer}>
-          <Text style={styles.termsTitle}>Terms & Conditions</Text>
-          <Text style={styles.termsText}>
-            1. Your friend must sign up on Astrowani using your referral code.
-          </Text>
-          <Text style={styles.termsText}>
-            2. You receive the reward after your friend completes their first chat, call, or video session.
-          </Text>
+        <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
+        <View style={styles.stepsCard}>
+          <View style={styles.stepRow}>
+            <View style={styles.stepBadge}>
+              <Text style={styles.stepBadgeText}>1</Text>
+            </View>
+            <Text style={styles.stepText}>Your friend signs up on Astrowani using your referral code.</Text>
+          </View>
+          <View style={styles.stepDivider} />
+          <View style={styles.stepRow}>
+            <View style={styles.stepBadge}>
+              <Text style={styles.stepBadgeText}>2</Text>
+            </View>
+            <Text style={styles.stepText}>You receive ₹{rewardAmount} once they complete their first chat, call, or video session.</Text>
+          </View>
         </View>
       </View>
     </ScrollView>
@@ -151,128 +178,223 @@ const ReferAndEarnScreen = () => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.AstroSoftOrange,
   },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
-  imageContainer: {
+
+  hero: {
     alignItems: 'center',
+    paddingTop: verticalScale(28),
+    paddingBottom: verticalScale(26),
+    paddingHorizontal: scale(20),
+    borderBottomLeftRadius: moderateScale(30),
+    borderBottomRightRadius: moderateScale(30),
+    elevation: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10,
+    overflow: 'hidden',
   },
-  otherInfo: {
-    paddingHorizontal: scale(15),
-  },
-  image: {
-    width: '100%',
-    height: verticalScale(200),
-  },
-  getRewardButton: {
-    backgroundColor: COLORS.AstroGold,
-    padding: scale(10),
-    width: scale(150),
-    borderBottomLeftRadius: moderateScale(6),
-    borderBottomRightRadius: moderateScale(6),
+  heroIconRing: {
+    width: scale(72),
+    height: scale(72),
+    borderRadius: scale(36),
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.35)',
+    justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'center',
+    marginBottom: verticalScale(12),
   },
-  getRewardText: {
-    color: '#000',
-    fontSize: moderateScale(17),
+  heroTitle: {
+    color: COLORS.white,
+    fontSize: moderateScale(22),
     fontFamily: 'Lato-Bold',
+    marginBottom: verticalScale(6),
   },
-  infoText: {
-    textAlign: 'center',
-    fontSize: moderateScale(15),
-    marginVertical: verticalScale(10),
-    color: '#000',
+  heroSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: moderateScale(13),
     fontFamily: 'Lato-Regular',
+    textAlign: 'center',
+    marginBottom: verticalScale(16),
+    paddingHorizontal: scale(10),
   },
+  rewardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.AstroGold,
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(16),
+    borderRadius: moderateScale(20),
+    elevation: 3,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4,
+  },
+  rewardPillText: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(14),
+    fontFamily: 'Lato-Bold',
+    marginLeft: scale(6),
+  },
+
+  body: {
+    paddingHorizontal: scale(16),
+    paddingTop: verticalScale(20),
+    paddingBottom: verticalScale(30),
+  },
+
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    marginBottom: verticalScale(20),
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    borderRadius: moderateScale(16),
+    alignItems: 'center',
+    paddingVertical: verticalScale(16),
+    marginHorizontal: scale(5),
+    elevation: 2,
+    shadowColor: COLORS.AstroMaroon, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8,
+  },
+  statIconRing: {
+    width: scale(44), height: scale(44),
+    borderRadius: scale(22),
+    backgroundColor: COLORS.AstroSoftOrange,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: verticalScale(8),
+  },
+  statValue: { fontSize: moderateScale(19), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
+  statLabel: { fontSize: moderateScale(12), color: '#8a7a70', marginTop: 2, fontFamily: 'Lato-Regular' },
+
+  sectionLabel: {
+    fontSize: moderateScale(12),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+    letterSpacing: 0.6,
     marginBottom: verticalScale(10),
   },
-  statBox: {
+
+  codeCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: COLORS.white,
+    borderRadius: moderateScale(16),
+    padding: scale(8),
+    elevation: 2,
+    shadowColor: COLORS.AstroMaroon, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8,
+  },
+  codeBox: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(89,42,25,0.35)',
     borderRadius: moderateScale(10),
     paddingVertical: verticalScale(12),
-    paddingHorizontal: scale(20),
-  },
-  statValue: { fontSize: moderateScale(20), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
-  statLabel: { fontSize: moderateScale(12), color: '#777', marginTop: 2 },
-  referralCodeContainer: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.AstroSoftOrange,
-    padding: scale(6),
-    borderRadius: moderateScale(8),
     alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: verticalScale(8),
+    marginRight: scale(8),
+    backgroundColor: COLORS.AstroSoftOrange,
   },
-  referralCodeText: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Regular',
-
-    marginRight: scale(10),
-    color: '#000',
+  codeText: {
+    fontSize: moderateScale(18),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+    letterSpacing: 2,
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.AstroMaroon,
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(14),
+    borderRadius: moderateScale(10),
+  },
+  copyButtonText: {
+    color: COLORS.white,
+    fontSize: moderateScale(13),
+    fontFamily: 'Lato-Bold',
+    marginLeft: scale(6),
   },
   shareInfoText: {
     textAlign: 'center',
-    fontSize: moderateScale(14),
-    marginVertical: verticalScale(9),
+    fontSize: moderateScale(13),
+    marginTop: verticalScale(10),
+    marginBottom: verticalScale(18),
     fontFamily: 'Lato-Regular',
-
-    color: '#000',
+    color: '#6b5a4f',
+    lineHeight: moderateScale(18),
   },
+
   whatsappButton: {
     flexDirection: 'row',
     backgroundColor: '#25D366',
-    padding: scale(13),
-    borderRadius: moderateScale(10),
+    paddingVertical: verticalScale(13),
+    borderRadius: moderateScale(12),
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: verticalScale(10),
+    marginBottom: verticalScale(10),
+    elevation: 2,
+    shadowColor: '#25D366', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 6,
   },
   whatsappButtonText: {
     color: '#fff',
-    fontSize: moderateScale(17),
+    fontSize: moderateScale(15),
     marginLeft: scale(10),
     fontFamily: 'Lato-Bold',
   },
   shareButton: {
     flexDirection: 'row',
+    backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.AstroMaroon,
-    padding: scale(12),
-    borderRadius: moderateScale(10),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(12),
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: verticalScale(10),
+    marginBottom: verticalScale(24),
   },
   shareButtonText: {
     color: COLORS.AstroMaroon,
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(14),
     marginLeft: scale(10),
     fontFamily: 'Lato-Bold',
   },
-  whatsappIcon: {},
-  termsContainer: {
-    marginTop: verticalScale(5),
-    paddingVertical: verticalScale(10),
-    borderTopWidth: verticalScale(2),
-    borderTopColor: COLORS.AstroSoftOrange,
-  },
-  termsTitle: {
-    fontSize: moderateScale(18),
-    fontFamily: 'Lato-Bold',
 
-    color: '#000',
-    marginBottom: verticalScale(13),
+  stepsCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: moderateScale(16),
+    padding: scale(16),
+    elevation: 2,
+    shadowColor: COLORS.AstroMaroon, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8,
   },
-  termsText: {
-    fontSize: moderateScale(14),
-    marginBottom: verticalScale(10),
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  stepBadge: {
+    width: scale(26),
+    height: scale(26),
+    borderRadius: scale(13),
+    backgroundColor: COLORS.AstroSoftOrange,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: scale(12),
+  },
+  stepBadgeText: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(13),
+    fontFamily: 'Lato-Bold',
+  },
+  stepText: {
+    flex: 1,
+    fontSize: moderateScale(13.5),
     fontFamily: 'Lato-Regular',
-    color: '#000',
+    color: '#3a2e27',
+    lineHeight: moderateScale(19),
+  },
+  stepDivider: {
+    height: 1,
+    backgroundColor: 'rgba(89,42,25,0.08)',
+    marginVertical: verticalScale(12),
+    marginLeft: scale(38),
   },
 });
 

@@ -50,6 +50,7 @@ import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import useChatRequest from '../../hooks/useChatRequest';
+import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import RequestingPopup from '../../components/RequestingPopup';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
@@ -57,6 +58,18 @@ const FALLBACK_BANNERS = [
   require('../../assets/images/banner.jpeg'),
   require('../../assets/images/mainlogo.jpeg'),
 ];
+
+// Free Services aren't free anymore — each card costs ₹1 per visit, confirmed via a
+// "Pay ₹1" popup and debited before navigating in (see useFreeServicePurchase.js). The
+// `key` here is only a wallet-ledger label, not one of the free-services API's own
+// request-shape params (those stay exactly as the destination screen already sends them).
+const FREE_SERVICE_ROUTES = {
+  "Today's Panchang": {screen: 'PanchangScreen', key: 'panchang'},
+  'Janam Kundali': {screen: 'JanamKundaliScreen', key: 'janam-kundali'},
+  'Kundali Match': {screen: 'KundaliMatchScreen', key: 'kundali-match'},
+  'Free Horoscope': {screen: 'Horoscope', key: 'horoscope'},
+  'Shubh Muhurat': {screen: 'ShubhMuhurat', key: 'shubh-muhurat'},
+};
 
 const Home = ({navigation}) => {
   const { t, language } = React.useContext(LanguageContext);
@@ -114,6 +127,7 @@ const Home = ({navigation}) => {
   // failed silently. Real Chat entry points (Chat.js, ExpertsList.js, AstrologerInfo.js,
   // SearchScreen.js) all use this hook; Home's card button now matches them.
   const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
+  const { purchase: purchaseFreeService } = useFreeServicePurchase();
 
   React.useEffect(() => {
     getAstroServices()
@@ -782,18 +796,11 @@ const Home = ({navigation}) => {
 
   const handleChatPress = (item) => sendChatRequest(item);
 
-  const handleServiceSelect = service => {
-    if (service.title === "Today's Panchang") {
-      navigation.navigate('PanchangScreen');
-    } else if (service.title === 'Janam Kundali') {
-      navigation.navigate('JanamKundaliScreen');
-    } else if (service.title === 'Kundali Match') {
-      navigation.navigate('KundaliMatchScreen');
-    } else if (service.title === 'Free Horoscope') {
-      navigation.navigate('Horoscope');
-    } else if (service.title === 'Shubh Muhurat') {
-      navigation.navigate('ShubhMuhurat');
-    }
+  const handleServiceSelect = async service => {
+    const route = FREE_SERVICE_ROUTES[service.title];
+    if (!route) return;
+    const paid = await purchaseFreeService(route.key, service.title);
+    if (paid) navigation.navigate(route.screen);
   };
 
   const renderAstrologerList = ({item}) => {
@@ -1202,6 +1209,7 @@ const Home = ({navigation}) => {
         <FreeServicesScreen
           services={services}
           onServiceSelect={handleServiceSelect}
+          showPrice
         />
 
         <View style={styles.separator} />

@@ -83,9 +83,6 @@ import Settings from '../screens/drawerScreens/Settings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
 import FaqScreen from '../screens/drawerScreens/FaqScreen';
 import SupportScreen from '../screens/drawerScreens/SupportScreen';
-import RefundAndCancel from '../screens/drawerScreens/RefundAndCancel';
-import PrivacyPolicy from '../screens/drawerScreens/PrivacyPolicy';
-import TermsOfUse from '../screens/drawerScreens/TermsOfUse';
 // import GemstoneDetails from '../screens/Remedies/GemstoneDetails';
 import GemstoneList from '../screens/Remedies/GemstoneList';
 import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails';
@@ -395,51 +392,6 @@ export default function Navigation({ initialRoute }) {
           component={SupportScreen}
           options={({ route }) => ({
             title: 'Support',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-            tabBarStyle: { display: 'none' },
-          })}
-        />
-        <Stack.Screen
-          name="RefundAndCancel"
-          component={RefundAndCancel}
-          options={({ route }) => ({
-            title: 'Refund & Cancellation',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-            tabBarStyle: { display: 'none' },
-          })}
-        />
-        <Stack.Screen
-          name="PrivacyPolicy"
-          component={PrivacyPolicy}
-          options={({ route }) => ({
-            title: 'Privacy Policy',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-            tabBarStyle: { display: 'none' },
-          })}
-        />
-        <Stack.Screen
-          name="TermsOfUse"
-          component={TermsOfUse}
-          options={({ route }) => ({
-            title: 'Terms of Use',
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
             },

@@ -74,31 +74,39 @@ const Astrologers = [
 ];
 export default Astrologers;
 
+// These aren't free anymore — each costs ₹1 per visit (see Home.js's FREE_SERVICE_ROUTES /
+// useFreeServicePurchase.js). `price` here only drives the ₹1 badge FreeServicesScreen renders
+// with `showPrice` — it isn't read by the charge itself, which hardcodes ₹1 server-side.
 export const services = [
   {
     id: 1,
     title: "Today's Panchang",
     icon: 'https://backend.astrowani.com/public/images/icon_panchang.png',
+    price: 1,
   },
   {
     id: 2,
     title: 'Janam Kundali',
     icon: 'https://backend.astrowani.com/public/images/icon_kundali.png',
+    price: 1,
   },
   {
     id: 3,
     title: 'Kundali Match',
     icon: 'https://backend.astrowani.com/public/images/icon_match.png',
+    price: 1,
   },
   {
     id: 4,
     title: 'Free Horoscope',
     icon: 'https://backend.astrowani.com/public/images/icon_horoscope.png',
+    price: 1,
   },
   {
     id: 5,
     title: 'Shubh Muhurat',
     icon: 'https://backend.astrowani.com/public/images/icon_muhurat.png',
+    price: 1,
   },
 ];
 
