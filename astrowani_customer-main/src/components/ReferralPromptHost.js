@@ -15,18 +15,25 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 
 let listener = null;
-export const showReferralPrompt = () => {
-  if (listener) listener();
+// Both args optional — an admin-triggered popup (see Home.js's 'show_referral_popup'
+// socket listener) passes its own title/message; the normal post-free-chat nudge calls
+// this with no args and falls back to the default "Invite friends, earn ₹X!" copy below.
+export const showReferralPrompt = (customTitle, customMessage) => {
+  if (listener) listener(customTitle, customMessage);
 };
 
 export function ReferralPromptHost() {
   const [visible, setVisible] = useState(false);
   const [code, setCode] = useState(null);
   const [rewardAmount, setRewardAmount] = useState(25);
+  const [overrideTitle, setOverrideTitle] = useState(null);
+  const [overrideMessage, setOverrideMessage] = useState(null);
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
   useEffect(() => {
-    listener = async () => {
+    listener = async (customTitle, customMessage) => {
+      setOverrideTitle(customTitle || null);
+      setOverrideMessage(customMessage || null);
       setVisible(true);
       try {
         const token = await AsyncStorage.getItem('token');
@@ -73,9 +80,9 @@ export function ReferralPromptHost() {
           <View style={styles.iconCircle}>
             <MaterialIcons name="card-giftcard" size={moderateScale(32)} color="#fff" />
           </View>
-          <Text style={styles.title}>Invite friends, earn ₹{rewardAmount}!</Text>
+          <Text style={styles.title}>{overrideTitle || `Invite friends, earn ₹${rewardAmount}!`}</Text>
           <Text style={styles.subtitle}>
-            Share your code — you get ₹{rewardAmount} when a friend joins and completes their first session.
+            {overrideMessage || `Share your code — you get ₹${rewardAmount} when a friend joins and completes their first session.`}
           </Text>
 
           <View style={styles.codeBox}>

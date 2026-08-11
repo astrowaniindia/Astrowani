@@ -20,6 +20,7 @@ import Reports from './pages/Reports';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
+import ReferralPopup from './pages/ReferralPopup';
 import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
 import Support from './pages/Support';
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="live" element={<Live />} />
         <Route path="missed" element={<Missed />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="referral-popup" element={<ReferralPopup />} />
         <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="reports" element={<Reports />} />
         <Route path="support" element={<Support />} />

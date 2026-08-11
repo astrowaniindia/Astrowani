@@ -17,6 +17,7 @@ const links = [
   { to: '/live', label: 'Live Streams' },
   { to: '/missed', label: 'Missed Sessions' },
   { to: '/notifications', label: 'Notifications' },
+  { to: '/referral-popup', label: 'Referral Popup' },
   { to: '/free-bot-chat', label: 'Free Bot Chat' },
   { to: '/guide-avatar', label: 'Guide Avatar' },
   { to: '/withdrawals', label: 'Withdrawals' },

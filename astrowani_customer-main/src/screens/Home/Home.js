@@ -38,6 +38,7 @@ import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
 import { showStatusPopup } from '../../components/StatusPopup';
+import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import StarRating from '../../components/StarRating';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
@@ -172,6 +173,12 @@ const Home = ({navigation}) => {
           title: 'Referral Reward!',
           message: `You earned ₹${amount} — a friend you referred just completed their first session.`,
         });
+      });
+      // Admin-triggered referral popup (astrowani-admin's Referral Popup page) —
+      // shows the same ReferralPromptHost used after a free chat, with the
+      // admin's own title/message instead of the default copy.
+      socketRef.current.on('show_referral_popup', ({ title, body }) => {
+        showReferralPrompt(title, body);
       });
     };
     setup();
@@ -995,11 +1002,6 @@ const Home = ({navigation}) => {
               </>
             )}
           </View>
-          {!!astrologer.chargePerMinute && (
-            <Text style={styles.liveCardPrice} numberOfLines={1}>
-              ₹{astrologer.chargePerMinute}/min
-            </Text>
-          )}
         </View>
       </TouchableOpacity>
     );
@@ -1983,12 +1985,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     fontSize: moderateScale(10),
     marginHorizontal: scale(4),
-  },
-  liveCardPrice: {
-    color: '#FFC107',
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(11),
-    marginTop: verticalScale(4),
   },
   CategoryView: {
     flexDirection: 'row',

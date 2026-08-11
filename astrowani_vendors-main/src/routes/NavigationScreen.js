@@ -51,6 +51,8 @@ import VendorChatSession from '../screens/VendorChatSession';
 import Settings from '../screens/Settings';
 import AboutUsScreen from '../screens/AboutUsScreen';
 import FaqScreen from '../screens/FaqScreen';
+import ReferralPopupHost from '../components/ReferralPopupHost';
+import useReferralPopupSync from '../utils/useReferralPopupSync';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -58,10 +60,16 @@ function NavigationScreen() {
   const [isLoading, setIsLoading] = useState(true);
   // Resolved landing route: 'Login' | 'PendingApproval' | 'DrawerNavigator'
   const [initialRoute, setInitialRoute] = useState('Login');
+  const [astroId, setAstroId] = useState(null);
 
   useEffect(() => {
     checkToken();
+    AsyncStorage.getItem('astroId').then(setAstroId);
   }, []);
+
+  // Admin-triggered referral popup (astrowani-admin's Referral Popup page) — lives at the
+  // navigation root so it can fire regardless of which screen the vendor is currently on.
+  useReferralPopupSync(astroId);
 
   // Written by the notification Accept action (see index.js's notifee.onBackgroundEvent) so
   // the vendor lands straight in the live call/chat instead of just the dashboard. Checked in
@@ -421,6 +429,7 @@ function NavigationScreen() {
         />
       </Stack.Navigator>
       </PostHogProvider>
+      <ReferralPopupHost />
     </NavigationContainer>
   );
 }
