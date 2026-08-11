@@ -127,7 +127,7 @@ function CustomDrawerContent(props, navigation) {
 
         <View style={styles.headerTopRow}>
           <View style={styles.brandRow}>
-            <Icon name="auto-awesome" size={moderateScale(16)} color="rgba(255,255,255,0.55)" style={styles.brandIcon} />
+            <Image source={require('../assets/images/brandStarLogo.png')} style={styles.brandLogo} resizeMode="contain" />
             <Text style={styles.drawerTitle}>Astrowani</Text>
           </View>
           <TouchableOpacity onPress={() => props.navigation.closeDrawer()} style={styles.closeBtn}>
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(22),
   },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
-  brandIcon: { marginRight: scale(7) },
+  brandLogo: { width: moderateScale(34), height: moderateScale(34), marginRight: scale(7) },
   drawerTitle: { color: COLORS.white, fontSize: moderateScale(22), fontFamily: 'Lato-Bold', letterSpacing: 0.3 },
   closeBtn: {
     padding: scale(6),

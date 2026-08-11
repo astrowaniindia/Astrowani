@@ -1,0 +1,6 @@
+<resources>
+    <!-- Matches ic_launcher.png's own background — used as the adaptive icon's
+         background layer (mipmap-anydpi-v26/ic_launcher.xml) so the launcher icon
+         has no visible white halo around it. -->
+    <color name="ic_launcher_background">#38261D</color>
+</resources>

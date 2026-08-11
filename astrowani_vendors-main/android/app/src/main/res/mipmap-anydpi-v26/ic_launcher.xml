@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No adaptive icon existed before — Android/most launchers fell back to treating
+     ic_launcher.png as a plain legacy square, and padded it with their own default
+     white circular backing (visible as a thick white border on the home screen and
+     app drawer). ic_launcher_foreground.png already has the correct transparent
+     safe-zone margin for this — it just wasn't wired up. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
