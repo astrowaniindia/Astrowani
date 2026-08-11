@@ -1,4 +1,5 @@
-import React, {useState, useEffect, act, useTransition, useCallback} from 'react';
+import React, {useState, useEffect, useRef, act, useTransition, useCallback} from 'react';
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import {useFocusEffect} from '@react-navigation/native';
 import {
   ImageBackground,
@@ -920,9 +921,25 @@ const Home = ({navigation}) => {
   };
 
   const AstrologerItem = ({astrologer}) => {
+    // Pulsing red dot on the LIVE badge — the only cue the old card had that
+    // something was actually happening was a flat static label; this makes it
+    // read as "live right now" at a glance instead of just a color chip.
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.6, duration: 750, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    }, []);
+
     return (
       <TouchableOpacity
-        style={styles.AstroBackWrapper}
+        activeOpacity={0.88}
+        style={styles.liveCard}
         onPress={() =>
           navigation.navigate('LiveViewerScreen', {
             sessionId: astrologer.sessionId,
@@ -931,14 +948,58 @@ const Home = ({navigation}) => {
         }>
         <Image
           source={{uri: astrologer.profileImage || astrologer.image}}
-          style={styles.liveAstrologerimg}
+          style={styles.liveCardImage}
+          resizeMode="cover"
         />
-        <View style={[styles.livebtn, styles.live]}>
-          <Text style={styles.livetxt}>{t('common.live')}</Text>
+        {/* Bottom scrim so the name/topic stay readable over any photo — a real
+            gradient (react-native-svg is already a linked dependency, so this
+            needs no native rebuild / stays OTA-shippable), not a flat tint. */}
+        <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
+          <Defs>
+            <LinearGradient id="liveCardGradient" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0.45" stopColor="#000000" stopOpacity={0} />
+              <Stop offset="1" stopColor="#000000" stopOpacity={0.82} />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#liveCardGradient)" />
+        </Svg>
+
+        <View style={styles.liveBadge}>
+          <Animated.View style={[styles.livePulseDot, { transform: [{ scale: pulseAnim }] }]} />
+          <Text style={styles.liveBadgeText}>{t('common.live').toUpperCase()}</Text>
         </View>
-        <View style={styles.astroNameview}>
-          <Text style={styles.livename}>{astrologer.name}</Text>
-          <Text style={styles.topic}>{astrologer.specialties?.[0]?.name || ''}</Text>
+
+        <View style={styles.liveCardInfo}>
+          <Text style={styles.liveCardName} numberOfLines={1}>{astrologer.name}</Text>
+          {!!astrologer.specialties?.[0]?.name && (
+            <Text style={styles.liveCardTopic} numberOfLines={1}>{astrologer.specialties[0].name}</Text>
+          )}
+          <StarRating
+            rating={astrologer.rating}
+            totalReviews={astrologer.totalReviews}
+            size={11}
+            style={styles.liveCardStars}
+          />
+          <View style={styles.liveCardMetaRow}>
+            {!!astrologer.experience && (
+              <Text style={styles.liveCardMeta} numberOfLines={1}>
+                {astrologer.experience} {astrologer.experience === 1 ? 'yr' : 'yrs'} exp
+              </Text>
+            )}
+            {!!astrologer.language?.length && (
+              <>
+                <Text style={styles.liveCardMetaDot}>•</Text>
+                <Text style={styles.liveCardMeta} numberOfLines={1}>
+                  {astrologer.language.join(', ')}
+                </Text>
+              </>
+            )}
+          </View>
+          {!!astrologer.chargePerMinute && (
+            <Text style={styles.liveCardPrice} numberOfLines={1}>
+              ₹{astrologer.chargePerMinute}/min
+            </Text>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -1833,76 +1894,97 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(6),
   },
 
-  AstroBackWrapper: {
-    width: scale(140),
-    height: verticalScale(185),
-    borderRadius: moderateScale(16),
+  liveCard: {
+    width: scale(160),
+    height: verticalScale(240),
+    borderRadius: moderateScale(18),
     marginHorizontal: scale(8),
-    backgroundColor: '#fff',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    borderWidth: 1.5,
-    borderColor: COLORS.AstroMaroon,
     marginBottom: verticalScale(10),
-  },
-  liveAstrologerimg: {
-    width: scale(74),
-    height: scale(74),
-    borderRadius: moderateScale(37),
-    marginVertical: verticalScale(12),
-    alignSelf: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#222',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: '#ff3b30',
   },
-  darkOverlay: {
+  liveCardImage: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    width: undefined,
+    height: undefined,
   },
-  livebtn: {
-    justifyContent: 'center',
+  liveBadge: {
+    position: 'absolute',
+    top: verticalScale(10),
+    left: scale(10),
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: scale(4),
-    height: verticalScale(15),
-    marginVertical: verticalScale(3),
+    backgroundColor: '#ff3b30',
+    borderRadius: moderateScale(10),
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
   },
-  live: {
-    backgroundColor: 'red',
-    borderRadius: moderateScale(4),
-    width: scale(30),
-    alignSelf: 'center',
+  livePulseDot: {
+    width: scale(6),
+    height: scale(6),
+    borderRadius: scale(3),
+    backgroundColor: '#fff',
+    marginRight: scale(5),
   },
-  scheduled: {
-    backgroundColor: 'orange',
-    borderRadius: moderateScale(4),
-    width: scale(60),
-    alignSelf: 'center',
-  },
-  livetxt: {
-    color: 'white',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(10),
-  },
-  scheduledtxt: {
-    color: 'black',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(10),
-  },
-  astroNameview: {
-    padding: scale(5),
-  },
-  livename: {
-    color: 'black',
+  liveBadgeText: {
+    color: '#fff',
     fontFamily: 'Lato-Bold',
-    textAlign: 'center',
+    fontSize: moderateScale(10),
+    letterSpacing: 0.5,
   },
-  topic: {
-    color: 'black',
-    textAlign: 'center',
+  liveCardInfo: {
+    position: 'absolute',
+    bottom: verticalScale(10),
+    left: scale(10),
+    right: scale(10),
+  },
+  liveCardName: {
+    color: '#fff',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(14),
+  },
+  liveCardTopic: {
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(11),
+    marginTop: verticalScale(2),
+  },
+  liveCardStars: {
+    marginTop: verticalScale(4),
+  },
+  liveCardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: verticalScale(3),
+  },
+  liveCardMeta: {
+    color: 'rgba(255,255,255,0.75)',
     fontFamily: 'Lato-Regular',
     fontSize: moderateScale(10),
+  },
+  liveCardMetaDot: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: moderateScale(10),
+    marginHorizontal: scale(4),
+  },
+  liveCardPrice: {
+    color: '#FFC107',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(11),
+    marginTop: verticalScale(4),
   },
   CategoryView: {
     flexDirection: 'row',
