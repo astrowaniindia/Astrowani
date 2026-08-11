@@ -115,6 +115,11 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       keyExtractor={(item, index) => `marquee-${item._id}-${index}`}
       renderItem={renderItem}
       horizontal
+      // Must stay false: nested in a vertical ScrollView + scrolled
+      // programmatically (auto-advance timer) — Android's removeClippedSubviews
+      // default has a known native crash in this combo (ReactHorizontalScrollView
+      // cast to ReactViewGroup in ReactClippingViewManager; Sentry REACT-NATIVE-5).
+      removeClippedSubviews={false}
       showsHorizontalScrollIndicator={false}
       snapToInterval={ITEM_WIDTH}
       decelerationRate="fast"
