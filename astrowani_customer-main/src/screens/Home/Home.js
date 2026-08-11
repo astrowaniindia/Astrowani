@@ -862,7 +862,7 @@ const Home = ({navigation}) => {
                     ? handleChatPress(item)
                     : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
                 }
-                style={[item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn, styles.chatBtnFullWidth]}>
+                style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
                 <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('common.chat') : t('common.noChat')}</Text>
               </TouchableOpacity>
             </View>
@@ -1158,7 +1158,12 @@ const Home = ({navigation}) => {
         />
 
         {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
-          <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
+          <>
+            <View style={styles.topAstrologers}>
+              <Text style={styles.topAstrologerTxt}>{t('home.callWithAstrologers')}</Text>
+            </View>
+            <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
+          </>
         )}
 
         <View style={styles.separator} />
@@ -1603,15 +1608,11 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 4,
   },
-  chatBtnFullWidth: {
-    width: '100%',
-    alignItems: 'center',
-  },
   chatBtn: {
     backgroundColor: COLORS.AstroMaroon,
     borderRadius: moderateScale(20),
-    paddingVertical: verticalScale(9),
-    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(7),
+    paddingHorizontal: scale(22),
     marginVertical: verticalScale(4),
     elevation: 3,
     shadowColor: '#000',

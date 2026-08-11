@@ -12,12 +12,21 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = Math.round(SCREEN_WIDTH * 0.58);
-const CARD_MARGIN = scale(10);
-const ITEM_WIDTH = CARD_WIDTH + CARD_MARGIN * 2;
+// Center card + its two peeking neighbors span nearly the full screen width —
+// CARD_MARGIN is the only gap between adjacent cards, so they stay visually
+// separated without touching.
+const CARD_MARGIN = scale(8);
+const ITEM_WIDTH = Math.round(SCREEN_WIDTH * 0.62);
+const CARD_WIDTH = ITEM_WIDTH - CARD_MARGIN * 2;
 const SIDE_INSET = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
 const ADVANCE_INTERVAL_MS = 2800;
-const LOOP_COUNT = 16;
+// A large, finite, repeated copy of the shuffled list — not truly infinite
+// data, but once the scroll position gets deep into it we silently snap back
+// to the equivalent early position with no animation. Since that position
+// holds identical content (same shuffled order repeating), the reset is
+// imperceptible, so it behaves as an endless loop: the last astrologer is
+// immediately followed by the first again, forever.
+const LOOP_COUNT = 40;
 
 function shuffledCopy(arr) {
   const a = [...arr];
@@ -39,11 +48,26 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
   const indexRef = useRef(0);
   const pausedRef = useRef(false);
 
+  // Once within the last full cycle of the buffer, wrap back to the
+  // equivalent low index — content there is identical, so this is invisible.
+  const maybeWrap = () => {
+    const n = shuffled.length;
+    if (!n) return;
+    const safeCeiling = n * (LOOP_COUNT - 1);
+    if (indexRef.current >= safeCeiling) {
+      indexRef.current = indexRef.current % n;
+      try {
+        listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: false });
+      } catch (_) {}
+    }
+  };
+
   useEffect(() => {
     if (!looped.length) return undefined;
     const timer = setInterval(() => {
       if (pausedRef.current) return;
-      indexRef.current = Math.min(indexRef.current + 1, looped.length - 1);
+      indexRef.current += 1;
+      maybeWrap();
       try {
         listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: true });
       } catch (_) {}
@@ -74,6 +98,8 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
         <Text style={styles.specialty} numberOfLines={1}>
           {item.specialties?.[0]?.name || 'Vedic Astrology'}
         </Text>
+        <Text style={styles.meta} numberOfLines={1}>Exp: {item.experience || '0'} years</Text>
+        <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
         <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => onCallPress(item)}>
           <MaterialIcons name="call" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
           <Text style={styles.callBtnText}>Call</Text>
@@ -102,6 +128,7 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       onMomentumScrollEnd={(e) => {
         pausedRef.current = false;
         indexRef.current = Math.round(e.nativeEvent.contentOffset.x / ITEM_WIDTH);
+        maybeWrap();
       }}
     />
   );
@@ -139,7 +166,11 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12.5),
     color: '#888',
     marginTop: verticalScale(3),
-    marginBottom: verticalScale(14),
+  },
+  meta: {
+    fontSize: moderateScale(11.5),
+    color: '#999',
+    marginTop: verticalScale(2),
   },
   callBtn: {
     flexDirection: 'row',
@@ -148,6 +179,7 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(9),
     paddingHorizontal: scale(28),
     alignItems: 'center',
+    marginTop: verticalScale(12),
   },
   callBtnText: {
     color: '#fff',
