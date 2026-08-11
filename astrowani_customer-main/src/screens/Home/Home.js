@@ -1058,10 +1058,6 @@ const Home = ({navigation}) => {
           />
         )}
 
-        {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
-          <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
-        )}
-
         <View style={styles.separator} />
 
         <Text style={styles.CategoryTitle}>{t('home.categories')}</Text>
@@ -1160,6 +1156,10 @@ const Home = ({navigation}) => {
           showPrice
           variant="image"
         />
+
+        {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
+          <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
+        )}
 
         <View style={styles.separator} />
 
@@ -1608,14 +1608,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chatBtn: {
-    backgroundColor: 'white',
+    backgroundColor: COLORS.AstroMaroon,
     borderRadius: moderateScale(20),
-    paddingVertical: verticalScale(6),
+    paddingVertical: verticalScale(9),
     paddingHorizontal: scale(8),
     marginVertical: verticalScale(4),
-    borderWidth: 1,
-    borderColor: 'green',
-    elevation: 1,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   videoButton: {
     backgroundColor: 'white',
@@ -1638,9 +1640,9 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   chatBtnTxt: {
-    color: 'black',
+    color: 'white',
     fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(10),
+    fontSize: moderateScale(13),
   },
   unavailableBtn: {
     backgroundColor: '#C0392B',
