@@ -5,7 +5,7 @@ import client from '../api/client';
 // Supabase Storage via the backend and the field stores the resulting public
 // URL — never a base64 data-URI (those were bloating API payloads and slowing
 // the backend down).
-export default function ImageField({ value, onChange, label = 'Image (URL or upload)' }) {
+export default function ImageField({ value, onChange, label = 'Image (URL or upload)', recommendedWidth, recommendedHeight }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [pickedSize, setPickedSize] = useState(null); // {width, height} of the file just picked
@@ -57,24 +57,39 @@ export default function ImageField({ value, onChange, label = 'Image (URL or upl
     reader.readAsDataURL(file);
   };
 
+  // Same aspect ratio as recommended, even if the file is a different absolute
+  // size — that's fine (upload can be bigger, same ratio) and shouldn't warn.
+  const sizeMatches = !recommendedWidth || !pickedSize
+    ? null
+    : Math.abs((pickedSize.width / pickedSize.height) - (recommendedWidth / recommendedHeight)) < 0.05;
+
   return (
     <div className="field">
       <label>{label}</label>
+      {recommendedWidth && recommendedHeight && (
+        <div style={{
+          background: '#FFF3CD', color: '#7A5B00', borderRadius: 8, padding: '8px 12px',
+          fontSize: 13.5, fontWeight: 600, marginBottom: 8,
+        }}>
+          📐 Required size: {recommendedWidth} × {recommendedHeight}px (or larger, same ratio)
+        </div>
+      )}
       <input
         type="text"
         placeholder="https://… or upload below"
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
       />
-      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button type="button" className="btn secondary sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
           {uploading ? 'Uploading…' : 'Upload file'}
         </button>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
         {value ? <img src={value} alt="" className="thumb" /> : <span className="muted">No image</span>}
         {pickedSize && (
-          <span className="muted" style={{ fontSize: 13 }}>
+          <span style={{ fontSize: 13, color: sizeMatches === false ? 'var(--red)' : sizeMatches === true ? 'var(--green, #1a8f4c)' : undefined }} className={sizeMatches === null ? 'muted' : undefined}>
             This image is <strong>{pickedSize.width} × {pickedSize.height}px</strong>
+            {sizeMatches === false && ' — different ratio than required, will look cropped/stretched'}
           </span>
         )}
       </div>

@@ -191,11 +191,17 @@ export default function Banners() {
           </div>
           {(() => { const p = PLACEMENTS[editing.placement || 'home_primary']; return p ? (
             <div className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 13 }}>
-              Upload an image sized <strong>{p.width} × {p.height}px</strong> (or larger, same ratio) — {p.note}
+              {p.note}
             </div>
           ) : null; })()}
 
-          <ImageField label="Banner image (URL or upload)" value={editing.image} onChange={(v) => set('image', v)} />
+          <ImageField
+            label="Banner image (URL or upload)"
+            value={editing.image}
+            onChange={(v) => set('image', v)}
+            recommendedWidth={PLACEMENTS[editing.placement || 'home_primary']?.width}
+            recommendedHeight={PLACEMENTS[editing.placement || 'home_primary']?.height}
+          />
 
           <div className="field"><label>When tapped…</label>
             <select value={editing.action_type || 'none'} onChange={(e) => set('action_type', e.target.value)}>

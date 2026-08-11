@@ -32,7 +32,13 @@ const PlacementBanner = ({
         const secs = Number(res?.data?.intervalSeconds);
         if (secs > 0) setIntervalMs(secs * 1000);
       })
-      .catch(() => {});
+      .catch(() => {
+        // A failed fetch (network hiccup, backend blip) must not leave this
+        // permanently blank — fall back to the local placeholder images the
+        // same way a confirmed-empty response does, instead of rendering
+        // nothing with no visible explanation.
+        if (mounted) setBanners([]);
+      });
     return () => { mounted = false; };
   }, [placement, app]);
 
