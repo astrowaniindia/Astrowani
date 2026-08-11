@@ -2,9 +2,11 @@
 // Visually mirrors ChatSessionScreen.js (real chat) closely so it feels like a
 // genuine session, but there is no real chat_sessions row, no socket, and no
 // astrologer on the other end — replies come from utils/freeChatBotEngine.js.
-// On natural completion (a real 5 minutes elapsed, not a manual early exit),
-// the customer is credited ₹20 via the backend-verified, one-time-only
-// POST /api/free-bot-chat/credit.
+// No wallet reward anymore — the moment this screen mounts, POST
+// /api/free-bot-chat/mark-used marks the one-time free chat as used (so it
+// never offers itself again), regardless of how the customer leaves —
+// natural end, manual end, or closing the app mid-chat. In its place, a
+// referral nudge (ReferralPromptHost) shows once the chat ends.
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -29,12 +31,9 @@ import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import { FREE_CHAT_PERSONA } from '../../data/freeBotChatPersona';
 import { getOpeningMessage, getBotReply } from '../../utils/freeChatBotEngine';
 import { captureEvent } from '../../utils/Analytics';
+import { showReferralPrompt } from '../../components/ReferralPromptHost';
 
 const CHAT_DURATION_SECONDS = 300;
-// The ₹20 credit fires once the customer has spent this long in the chat —
-// not on full 5-minute completion. Someone who leaves right after this point
-// still keeps the bonus; someone who leaves before it gets nothing.
-const CREDIT_THRESHOLD_SECONDS = 90;
 
 const FreeBotChatScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
@@ -50,9 +49,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   const [text, setText] = useState('');
   const [botTyping, setBotTyping] = useState(false);
   const [completedVisible, setCompletedVisible] = useState(false);
-  const [creditedAmount, setCreditedAmount] = useState(null);
   const hasEndedRef = useRef(false);
-  const hasCreditedRef = useRef(false);
   const flatListRef = useRef(null);
   const msgIdRef = useRef(0);
 
@@ -66,48 +63,30 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   useEffect(() => {
     captureEvent('free_bot_chat_started');
     const t = setTimeout(() => appendMessage('bot', getOpeningMessage()), 600);
+    // Marks the free chat as used the instant the customer actually enters it —
+    // not on completion — so it can't be re-offered no matter how they leave.
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        await Instance.post(
+          '/api/free-bot-chat/mark-used',
+          {},
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+      } catch (e) {
+        console.warn('free-bot-chat mark-used error:', e.message);
+      }
+    })();
     return () => clearTimeout(t);
   }, []);
 
-  const creditWallet = async () => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await Instance.post(
-        '/api/free-bot-chat/credit',
-        {},
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-      );
-      if (res?.data?.success && !res.data.alreadyCredited) {
-        setCreditedAmount(20);
-      }
-    } catch (e) {
-      console.warn('free-bot-chat credit error:', e.message);
-    }
-  };
-
-  const finishNaturally = async () => {
+  const finishNaturally = () => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
     setChatActive(false);
     captureEvent('free_bot_chat_ended', { completed: true });
-    if (!hasCreditedRef.current) {
-      hasCreditedRef.current = true;
-      await creditWallet();
-    }
     setCompletedVisible(true);
   };
-
-  // Credits as soon as the customer crosses the threshold — independent of
-  // finishNaturally, which only fires at the full 5-minute mark.
-  useEffect(() => {
-    if (seconds >= CREDIT_THRESHOLD_SECONDS && !hasCreditedRef.current) {
-      hasCreditedRef.current = true;
-      creditWallet().then(() => {
-        appendMessage('bot', '🎉 ₹20 has been credited to your wallet — enjoy!');
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seconds]);
 
   useEffect(() => {
     if (seconds >= CHAT_DURATION_SECONDS && !hasEndedRef.current) {
@@ -122,6 +101,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     captureEvent('free_bot_chat_ended', { completed: false });
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.replace('Home');
+    showReferralPrompt();
   };
 
   const sendMessage = async () => {
@@ -157,6 +137,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     setCompletedVisible(false);
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.replace('Home');
+    showReferralPrompt();
   };
 
   return (
@@ -228,9 +209,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
             <Ionicons name="checkmark-circle" size={54} color="#1a8f4c" />
             <Text style={styles.completedTitle}>Chat Complete!</Text>
             <Text style={styles.completedMsg}>
-              {creditedAmount
-                ? `₹${creditedAmount} has been credited to your wallet — start a new chat with any astrologer!`
-                : 'Thanks for chatting with us!'}
+              Thanks for chatting with us! Start a real chat with any astrologer whenever you're ready.
             </Text>
             <TouchableOpacity style={styles.completedBtn} onPress={finish}>
               <Text style={styles.completedBtnText}>Great, thanks!</Text>

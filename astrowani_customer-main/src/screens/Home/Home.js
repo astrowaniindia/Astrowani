@@ -27,6 +27,7 @@ import Astrologers, {LiveAstrologers, Reviews, services} from './Astrologers';
 import Instance from '../../api/ApiCall';
 import {getAstroServices} from '../../api/astroApi';
 import FreeServicesScreen from '../drawerScreens/FreeSeviceScreen/FreeServicesScreen';
+import AnimatedAstrologerMarquee from './AnimatedAstrologerMarquee';
 import VoiceNotesBanner from './VoiceNotesBanner';
 import CustomerReview from './Review';
 import axios from 'axios';
@@ -161,6 +162,16 @@ const Home = ({navigation}) => {
       socketRef.current.on('connect_error', err =>
         console.error('[HomeScreen] Socket error:', err.message),
       );
+      // Real-time popup for when a referral of theirs pays out (sessionManager's
+      // maybeRewardReferral emits this to the referrer's personal room) — the FCM
+      // push already covers the backgrounded case, this covers app-open.
+      socketRef.current.on('referral_rewarded', ({ amount }) => {
+        showStatusPopup({
+          variant: 'success',
+          title: 'Referral Reward!',
+          message: `You earned ₹${amount} — a friend you referred just completed their first session.`,
+        });
+      });
     };
     setup();
     return () => {
@@ -851,28 +862,8 @@ const Home = ({navigation}) => {
                     ? handleChatPress(item)
                     : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
                 }
-                style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
+                style={[item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn, styles.chatBtnFullWidth]}>
                 <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('common.chat') : t('common.noChat')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() =>
-                  item.isCallEnabled
-                    ? getRoomTokenWebCall(item)
-                    : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableCall', {name: item.name || 'This astrologer'}))
-                }
-                style={item.isCallEnabled ? styles.callButton : styles.unavailableBtn}>
-                <Text style={item.isCallEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isCallEnabled ? t('common.call') : t('common.noCall')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() =>
-                  item.isVideoEnabled
-                    ? initiateVideoCall(item)
-                    : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableVideo', {name: item.name || 'This astrologer'}))
-                }
-                style={item.isVideoEnabled ? styles.videoButton : styles.unavailableBtn}>
-                <Text style={item.isVideoEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isVideoEnabled ? t('common.video') : t('common.noVideo')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1065,6 +1056,10 @@ const Home = ({navigation}) => {
             onMomentumScrollBegin={() => { isAutoScrolling.current = false; }}
             onMomentumScrollEnd={() => { isAutoScrolling.current = true; }}
           />
+        )}
+
+        {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
+          <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
         )}
 
         <View style={styles.separator} />
@@ -1607,6 +1602,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: '100%',
     gap: 4,
+  },
+  chatBtnFullWidth: {
+    width: '100%',
+    alignItems: 'center',
   },
   chatBtn: {
     backgroundColor: 'white',

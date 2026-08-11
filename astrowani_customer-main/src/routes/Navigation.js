@@ -26,6 +26,7 @@ import Live from '../screens/Live/Live';
 import LiveViewerScreen from '../screens/Live/LiveViewerScreen';
 import { StatusPopupHost } from '../components/StatusPopup';
 import { ReviewPromptHost } from '../components/ReviewPrompt';
+import { ReferralPromptHost } from '../components/ReferralPromptHost';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
@@ -625,6 +626,7 @@ export default function Navigation({ initialRoute }) {
     </NavigationContainer>
     <StatusPopupHost />
     <ReviewPromptHost />
+    <ReferralPromptHost />
     </>
   );
 }

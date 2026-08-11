@@ -2218,7 +2218,7 @@ app.get('/api/customer/referral-info', async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: { code, totalReferred, totalEarned, rewardAmount: 50 },
+      data: { code, totalReferred, totalEarned, rewardAmount: 25 },
     });
   } catch (err) {
     console.error('GET /api/customer/referral-info error:', err.message);
@@ -2357,43 +2357,36 @@ app.post('/api/wallet/verify-payment', writeLimiter, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FREE BOT CHAT: one-time ₹20 welcome credit after the scripted 5-min demo chat
+// FREE BOT CHAT: no wallet reward anymore — this just marks the one-time free
+// 5-min demo chat as used (column name kept as-is; it no longer means "paid").
+// Called the moment the chat screen mounts, not on completion, so it sticks
+// regardless of how the customer leaves — natural end, manual end, or the app
+// getting closed/killed mid-chat. The referral nudge shown after the chat ends
+// (ReferralPromptHost) is the replacement incentive.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/free-bot-chat/credit', async (req, res) => {
+app.post('/api/free-bot-chat/mark-used', async (req, res) => {
   try {
     const customer = await resolveCustomerFromReq(req);
     if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { data: custRow, error: readErr } = await supabaseService
       .from('customers')
-      .select('wallet_balance, free_bot_chat_credited_at')
+      .select('free_bot_chat_credited_at')
       .eq('id', customer.id)
       .single();
     if (readErr) throw readErr;
 
-    if (custRow?.free_bot_chat_credited_at) {
-      return res.status(200).json({ success: true, alreadyCredited: true, newBalance: custRow.wallet_balance ?? null });
+    if (!custRow?.free_bot_chat_credited_at) {
+      await supabaseService
+        .from('customers')
+        .update({ free_bot_chat_credited_at: new Date().toISOString() })
+        .eq('id', customer.id);
     }
 
-    // Credit first, THEN mark the flag — same order as maybeRewardReferral's
-    // one-time bonus pattern. adjustCustomerWallet's idempotencyKey (keyed on
-    // this customer) is what actually prevents a double-pay on a concurrent
-    // retry; if we flipped the flag first and the wallet call then failed, the
-    // customer would be marked "credited" with no money ever paid.
-    const newBalance = await wallet.adjustCustomerWallet(customer.id, 20, {
-      description: 'Free 5-min chat welcome bonus',
-      idempotencyKey: `bot_chat_bonus:${customer.id}`,
-    });
-
-    await supabaseService
-      .from('customers')
-      .update({ free_bot_chat_credited_at: new Date().toISOString() })
-      .eq('id', customer.id);
-
-    return res.status(200).json({ success: true, newBalance });
+    return res.status(200).json({ success: true });
   } catch (err) {
-    console.error('POST /api/free-bot-chat/credit error:', err.message);
-    return res.status(500).json({ success: false, message: 'Could not credit wallet' });
+    console.error('POST /api/free-bot-chat/mark-used error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not update' });
   }
 });
 

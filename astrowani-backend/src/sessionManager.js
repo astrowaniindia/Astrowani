@@ -559,6 +559,14 @@ class SessionManager {
           data: { type: 'referral_reward' },
         }).catch((e) => console.error('[referral] push error:', e.message));
       }
+
+      // In-app popup (ReferralRewardPopup, customer app) for when the referrer
+      // already has the app open — the push above covers the backgrounded case.
+      if (this.io) {
+        this.io.to(referral.referrer_customer_id).emit('referral_rewarded', {
+          amount: Number(referral.reward_amount),
+        });
+      }
     } catch (err) {
       console.error('[SessionManager] maybeRewardReferral error:', err.message);
     }
