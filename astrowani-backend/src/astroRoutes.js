@@ -417,26 +417,42 @@ module.exports = function registerAstroRoutes(app) {
     }
 
     // Charge only after a successful external call — nothing is charged for a failed report.
-    let newBalance = balance - price;
+    // Idempotency key is derived from the exact request payload (not Date.now(), which made
+    // every call look "new" and defeated the atomic function's replay protection entirely) —
+    // so a genuine retry of the SAME request is deduped, while a different request (even the
+    // same report type, e.g. two Kundli Matching reports for different people) still charges.
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify(req.body || {})).digest('hex').slice(0, 16);
+    const idempotencyKey = `astro-report:${customer.id}:${key}:${requestHash}`;
+
+    let newBalance;
     try {
       newBalance = await wallet.adjustCustomerWallet(customer.id, -price, {
         description: `Astro Report: ${service.name}`,
-        idempotencyKey: `astro-report:${customer.id}:${key}:${Date.now()}`,
+        idempotencyKey,
       });
-
-      const { data: adminWallet } = await db.from('admin_wallet').select('id, balance').limit(1).single();
-      await db.from('admin_wallet').update({
-        balance: (Number(adminWallet?.balance) || 0) + price,
-        updated_at: new Date().toISOString(),
-      }).eq('id', adminWallet.id);
-      await db.from('admin_wallet_transactions').insert([{
-        type: 'credit', amount: price, description: `Astro Report purchased: ${service.name}`,
-        service_key: key, customer_id: customer.id,
-      }]);
     } catch (err) {
-      // The report was already generated successfully at this point — log loudly but still
-      // return the data the customer paid to see; a billing-log failure shouldn't block delivery.
-      console.error(`POST /api/astro/${key} billing error (report already generated):`, err.message);
+      // The report was already generated at this point, but the customer must never receive
+      // it for free — including the race where the pre-check above passed but the balance
+      // changed (e.g. another purchase) before this atomic debit ran.
+      if (err instanceof wallet.InsufficientFunds) {
+        console.error(`POST /api/astro/${key} insufficient balance at charge time (race) for customer ${customer.id}`);
+        return res.status(400).json({ success: false, message: 'Insufficient balance' });
+      }
+      console.error(`POST /api/astro/${key} customer debit failed (report already generated, not delivered):`, err.message);
+      return res.status(500).json({ success: false, message: 'Payment failed, please try again' });
+    }
+
+    // The customer has now definitely been charged — a platform-ledger failure past this
+    // point must not block delivery of a report already paid for; log loudly instead.
+    try {
+      await wallet.adjustAdminWallet(price, {
+        description: `Astro Report purchased: ${service.name}`,
+        serviceKey: key,
+        customerId: customer.id,
+        idempotencyKey: `${idempotencyKey}:admin`,
+      });
+    } catch (err) {
+      console.error(`POST /api/astro/${key} admin ledger credit failed (customer already charged):`, err.message);
     }
 
     return res.status(200).json({ success: true, data: payload, newBalance });

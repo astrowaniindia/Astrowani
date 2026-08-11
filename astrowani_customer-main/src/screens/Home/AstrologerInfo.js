@@ -24,6 +24,7 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import GiftModal from '../../Component/Modal';
+import useGiftSender from '../../hooks/useGiftSender';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import {supabase} from '../../api/SupabaseClient';
@@ -55,6 +56,7 @@ const AstrologerInfo = ({route, navigation}) => {
   const [avgError, setAvgError] = useState('');
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [gifts, setGifts] = useState([]);
   const [isCallWaiting, setIsCallWaiting] = useState(false);
   const [freeConsultEligible, setFreeConsultEligible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
@@ -105,6 +107,14 @@ const AstrologerInfo = ({route, navigation}) => {
       if (id) setFreeConsultEligible(await isEligibleForFreeConsultation(id));
     })();
   }, []);
+
+  // Gifts shown inline (always-open grid, no button/modal gate) just above Reviews.
+  useEffect(() => {
+    Instance.get('/api/gifts')
+      .then((res) => setGifts(res.data?.data || []))
+      .catch(() => {});
+  }, []);
+  const { sendGift, sendingGiftId } = useGiftSender();
 
   const callSocketRef = useRef(null);
   // Tracks the in-flight call request so cancel/back can tell the vendor to dismiss its popup
@@ -792,6 +802,38 @@ const AstrologerInfo = ({route, navigation}) => {
             </Text>
           </View>
 
+          {/* Gifts Card — always shown open (no button/modal gate), one tap sends */}
+          {gifts.length > 0 && (
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <MaterialIcons name="card-giftcard" size={moderateScale(20)} color={COLORS.AstroMaroon} />
+                <Text style={styles.sectionTitle}>{t('profile.sendAGift')}</Text>
+              </View>
+              <View style={styles.giftGrid}>
+                {gifts.map((gift) => {
+                  const isSending = sendingGiftId === gift._id;
+                  return (
+                    <TouchableOpacity
+                      key={gift._id}
+                      style={styles.giftGridItem}
+                      activeOpacity={0.8}
+                      disabled={isSending}
+                      onPress={() => sendGift({
+                        astrologerId: person.userId || person._id,
+                        gift,
+                        context: 'profile',
+                        onSent: () => {},
+                      })}>
+                      <Image source={{ uri: gift.image }} style={styles.giftGridImage} />
+                      <Text style={styles.giftGridName} numberOfLines={1}>{gift.name}</Text>
+                      <Text style={styles.giftGridPrice}>{isSending ? '…' : `₹${gift.price}`}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           {/* Reviews Card */}
           <View style={[styles.card, { marginBottom: verticalScale(20) }]}>
             <View style={styles.reviewsHeader}>
@@ -1092,6 +1134,13 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(10), gap: 8 },
   sectionTitle: { fontSize: moderateScale(16), fontFamily: 'Lato-Bold', color: '#000' },
+  giftGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  giftGridItem: {
+    width: '25%', alignItems: 'center', paddingVertical: verticalScale(8),
+  },
+  giftGridImage: { width: moderateScale(48), height: moderateScale(48), borderRadius: moderateScale(10) },
+  giftGridName: { fontSize: moderateScale(11), color: '#444', marginTop: verticalScale(4), fontFamily: 'Lato-Regular' },
+  giftGridPrice: { fontSize: moderateScale(12), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold', marginTop: verticalScale(2) },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap' },
   tag: {
     backgroundColor: 'rgba(128,0,0,0.08)',

@@ -5,6 +5,15 @@
 //   import { showStatusPopup } from '../../components/StatusPopup';
 //   showStatusPopup({ variant: 'missed', title: 'Not Answered', message: '…' });
 //
+// Also supports a two-button confirm (e.g. "pay to send this gift" / "insufficient
+// balance, recharge?") by passing onConfirm — a single onPress button is shown
+// otherwise, exactly as before:
+//
+//   showStatusPopup({
+//     variant: 'confirmPay', title: 'Confirm', message: '…',
+//     confirmText: 'Pay ₹25', cancelText: 'Cancel', onConfirm: () => { … },
+//   });
+//
 // Mount <StatusPopupHost /> ONCE near the navigation root.
 import React, { useEffect, useState, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing } from 'react-native';
@@ -23,6 +32,8 @@ const VARIANTS = {
   busy:   { icon: 'schedule',     color: COLORS.AstroGold, tint: 'rgba(212,160,23,0.15)' },
   info:   { icon: 'info-outline', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
   success:{ icon: 'check-circle', color: '#1a8f4c', tint: 'rgba(26,143,76,0.12)' },
+  insufficient: { icon: 'account-balance-wallet', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
+  confirmPay:   { icon: 'payments', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
 };
 
 export function StatusPopupHost() {
@@ -37,6 +48,11 @@ export function StatusPopupHost() {
         message: opts.message || '',
         variant: opts.variant || 'info',
         buttonText: opts.buttonText || t('common.ok'),
+        // Two-button confirm mode — only active when the caller passes onConfirm.
+        onConfirm: typeof opts.onConfirm === 'function' ? opts.onConfirm : null,
+        onCancel: typeof opts.onCancel === 'function' ? opts.onCancel : null,
+        confirmText: opts.confirmText || t('common.ok'),
+        cancelText: opts.cancelText || t('common.cancel'),
       });
     };
     return () => { listener = null; };
@@ -53,9 +69,22 @@ export function StatusPopupHost() {
 
   if (!state) return null;
   const v = VARIANTS[state.variant] || VARIANTS.info;
+  const isConfirm = !!state.onConfirm;
+
+  const close = () => setState(null);
+  const handleConfirm = () => {
+    const { onConfirm } = state;
+    close();
+    onConfirm?.();
+  };
+  const handleCancel = () => {
+    const { onCancel } = state;
+    close();
+    onCancel?.();
+  };
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={() => setState(null)}>
+    <Modal transparent visible animationType="fade" onRequestClose={isConfirm ? handleCancel : close}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           <View style={[styles.iconCircle, { backgroundColor: v.tint }]}>
@@ -63,9 +92,20 @@ export function StatusPopupHost() {
           </View>
           <Text style={styles.title}>{state.title}</Text>
           <Text style={styles.message}>{state.message}</Text>
-          <TouchableOpacity style={styles.button} activeOpacity={0.85} onPress={() => setState(null)}>
-            <Text style={styles.buttonText}>{state.buttonText}</Text>
-          </TouchableOpacity>
+          {isConfirm ? (
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={[styles.button, styles.cancelButton]} activeOpacity={0.85} onPress={handleCancel}>
+                <Text style={[styles.buttonText, styles.cancelButtonText]}>{state.cancelText}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.confirmButton]} activeOpacity={0.85} onPress={handleConfirm}>
+                <Text style={styles.buttonText}>{state.confirmText}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.button} activeOpacity={0.85} onPress={close}>
+              <Text style={styles.buttonText}>{state.buttonText}</Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </View>
     </Modal>
@@ -129,6 +169,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: moderateScale(15),
     fontFamily: 'Lato-Bold',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  confirmButton: {
+    flex: 1,
+    marginLeft: scale(6),
+  },
+  cancelButton: {
+    flex: 1,
+    marginRight: scale(6),
+    backgroundColor: '#f1f1f1',
+  },
+  cancelButtonText: {
+    color: '#666',
   },
 });
 

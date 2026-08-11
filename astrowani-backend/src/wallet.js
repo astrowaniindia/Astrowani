@@ -175,6 +175,39 @@ async function transferCustomerToVendor(customerId, astrologerId, amount, opts =
   return { customerBalance, vendorBalance };
 }
 
+/**
+ * Credit (or, rarely, debit) the platform's revenue ledger. Used by astroRoutes.js
+ * to record the platform's cut of a paid astro-report purchase atomically with
+ * its own ledger row — previously a separate SELECT/UPDATE/INSERT that could
+ * race under concurrent purchases (see sql/hardening_04_atomic_admin_wallet.sql).
+ *
+ * @returns {Promise<number>} the new admin_wallet balance
+ */
+async function adjustAdminWallet(amount, opts = {}) {
+  const { description = null, serviceKey = null, customerId = null, idempotencyKey = null } = opts;
+
+  const { data, error } = await db.rpc('adjust_admin_wallet', {
+    p_amount: amount,
+    p_description: description,
+    p_service_key: serviceKey,
+    p_customer_id: customerId,
+    p_idempotency_key: idempotencyKey,
+  });
+
+  if (!error) return Number(data);
+  if (!isMissingFn(error)) throw error;
+
+  warnFallback('adjustAdminWallet');
+  const { data: adminWallet } = await db.from('admin_wallet').select('id, balance').limit(1).single();
+  const next = (Number(adminWallet?.balance) || 0) + amount;
+  await db.from('admin_wallet').update({ balance: next, updated_at: new Date().toISOString() }).eq('id', adminWallet.id);
+  await db.from('admin_wallet_transactions').insert([{
+    type: amount > 0 ? 'credit' : 'debit', amount: Math.abs(amount),
+    description, service_key: serviceKey, customer_id: customerId,
+  }]);
+  return next;
+}
+
 // ── Legacy path ─────────────────────────────────────────────────────────────
 // Only reached when the SQL functions are not installed. Deliberately kept in
 // one place instead of nine, so there is a single thing to delete once the
@@ -251,5 +284,6 @@ module.exports = {
   adjustCustomerWallet,
   adjustVendorWallet,
   transferCustomerToVendor,
+  adjustAdminWallet,
   InsufficientFunds,
 };

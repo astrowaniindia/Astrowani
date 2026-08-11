@@ -16,6 +16,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
 import {COLORS} from '../Theme/Colors';
+import useGiftSender from '../hooks/useGiftSender';
 
 const notify = (msg: string) =>
   Platform.OS === 'android' ? ToastAndroid.show(msg, ToastAndroid.SHORT) : Alert.alert(msg);
@@ -25,7 +26,8 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
   const [balance, setBalance] = useState(0);
   const [selected, setSelected] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
+  const {sendGift, sendingGiftId} = useGiftSender();
+  const sending = !!sendingGiftId;
 
   const astrologerId = astrologer?.userId || astrologer?._id;
 
@@ -51,38 +53,19 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
     if (visible) { setSelected(null); load(); }
   }, [visible]);
 
-  const send = async () => {
+  // Confirm-before-charge + insufficient-balance handling lives in useGiftSender
+  // (shared with the always-visible gift grid on the astrologer profile screen).
+  const send = () => {
     if (!selected) { notify('Select a gift first'); return; }
     if (!astrologerId) { notify('Astrologer info missing'); return; }
-    if (balance < selected.price) {
-      Alert.alert('Insufficient balance', 'Please recharge your wallet to send this gift.');
-      return;
-    }
-    setSending(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await Instance.post(
-        '/api/gift/send',
-        {astrologerId, giftId: selected._id, context, sessionId},
-        {headers: {Authorization: `Bearer ${token}`}},
-      );
-      if (res.data?.success) {
-        setBalance(res.data.newBalance ?? balance - selected.price);
-        notify(`Gift sent: ${selected.name}`);
-        onClose && onClose();
-      } else {
-        notify(res.data?.message || 'Could not send gift');
-      }
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || 'Could not send gift';
-      if (msg.toLowerCase().includes('insufficient')) {
-        Alert.alert('Insufficient balance', 'Please recharge your wallet to send this gift.');
-      } else {
-        notify(msg);
-      }
-    } finally {
-      setSending(false);
-    }
+    sendGift({
+      astrologerId,
+      gift: selected,
+      context,
+      sessionId,
+      onBalanceChange: (b) => setBalance(b ?? balance),
+      onSent: () => { onClose && onClose(); },
+    });
   };
 
   return (

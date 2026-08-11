@@ -1,12 +1,13 @@
-// Shared purchase flow for the 10 paid astro report screens: loads the service's price,
-// checks wallet balance before submitting (mirrors the AstrologerInfo.js / GiftModal pattern —
-// Alert on insufficient balance, no dedicated recharge screen exists in this app), then calls
-// the report endpoint. Returns the report payload on success, null on any failure (screen just
-// checks truthiness before navigating).
+// Shared purchase flow for the 10 paid astro report screens: loads the service's price for
+// display, and at submit-time re-fetches the CURRENT price + balance (never trusts the
+// mount-time cached price, which could be stale if an admin changed it while this screen
+// was open) then shows a "you'll be charged ₹X — Pay?" confirm popup before actually
+// calling the report endpoint. Returns the report payload on success, null on any
+// cancellation/failure (screen just checks truthiness before navigating).
 import {useContext, useEffect, useState} from 'react';
-import {Alert} from 'react-native';
 import {getAstroServices, getWalletBalance, runAstroReport} from '../../../api/astroApi';
 import {LanguageContext} from '../../../context/LanguageContext';
+import {showStatusPopup} from '../../../components/StatusPopup';
 
 export default function useAstroPurchase(serviceKey) {
   const {t} = useContext(LanguageContext);
@@ -25,25 +26,46 @@ export default function useAstroPurchase(serviceKey) {
 
   async function submit(payload) {
     if (!service) {
-      Alert.alert(t('astro.notAvailable'), t('astro.notAvailableMsg'));
+      showStatusPopup({variant: 'info', title: t('astro.notAvailable'), message: t('astro.notAvailableMsg')});
       return null;
     }
     setSubmitting(true);
     try {
-      const balance = await getWalletBalance();
-      if (balance < service.price) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          t('astro.reportCostsMsg', {price: service.price, balance}),
-        );
+      // Re-fetch right before charging — the backend always charges its own current DB
+      // price regardless, but the price the user is SHOWN and asked to confirm here must
+      // match that same current price, never a value cached from when this screen mounted.
+      const [freshList, balance] = await Promise.all([getAstroServices(), getWalletBalance()]);
+      const freshService = freshList.find((s) => s.key === serviceKey) || service;
+      setService(freshService);
+
+      if (balance < freshService.price) {
+        showStatusPopup({
+          variant: 'insufficient',
+          title: t('alerts.insufficientBalance'),
+          message: t('astro.reportCostsMsg', {price: freshService.price, balance}),
+        });
         return null;
       }
+
+      const confirmed = await new Promise((resolve) => {
+        showStatusPopup({
+          variant: 'confirmPay',
+          title: t('astro.confirmPurchase'),
+          message: t('astro.confirmPurchaseMsg', {price: freshService.price, name: freshService.name}),
+          confirmText: t('astro.payAmount', {price: freshService.price}),
+          cancelText: t('common.cancel'),
+          onConfirm: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!confirmed) return null;
+
       return await runAstroReport(serviceKey, payload);
     } catch (err) {
       if (err.isInsufficientBalance) {
-        Alert.alert(t('alerts.insufficientBalance'), t('astro.rechargeToView'));
+        showStatusPopup({variant: 'insufficient', title: t('alerts.insufficientBalance'), message: t('astro.rechargeToView')});
       } else {
-        Alert.alert(t('common.error'), err.message || t('astro.failedToGenerate'));
+        showStatusPopup({variant: 'info', title: t('common.error'), message: err.message || t('astro.failedToGenerate')});
       }
       return null;
     } finally {
