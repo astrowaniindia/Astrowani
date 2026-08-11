@@ -100,6 +100,14 @@ const LiveViewerScreen = ({route, navigation}: any) => {
         });
       });
 
+      // The backend resolves the locally-cached id above against the verified JWT identity
+      // and echoes back whichever one it actually used to route live_offer/live_ice — adopt
+      // it here so this viewer's own filters (below) and live_answer/live_ice emits keep
+      // matching what the broadcaster is targeting.
+      socket.on('live_join_ack', (d: any) => {
+        if (d?.viewerId) viewerIdRef.current = d.viewerId;
+      });
+
       socket.on('live_offer', async (d: any) => {
         if (d.viewerId !== viewerIdRef.current || !d.offer) return;
         try {

@@ -335,10 +335,22 @@ io.on('connection', (socket) => {
   // ── LIVE STREAMING (WebRTC mesh: one broadcaster → many viewers) ────────────
   // Viewer joins a stream: subscribe to the live room (comments/gifts) + tell the
   // broadcaster (in their personal room) so it can open a peer connection for them.
-  socket.on('live_join', (data) => {
+  socket.on('live_join', async (data) => {
     if (!data?.sessionId || !data?.astrologerId || !data?.viewerId) return;
+    // The client's viewerId comes from a locally-cached AsyncStorage id, which can be
+    // stale (same "user_<timestamp>" issue documented for the call flow above). join_room
+    // already ignores that value and joins the socket to the JWT-verified room instead —
+    // but live_offer/live_answer/live_ice below route by the viewerId field itself, so a
+    // mismatch here means the offer is emitted to a room nobody actually joined: the
+    // broadcaster's viewer count still increments (astrologerId is always correct) while
+    // the viewer's PeerConnection never receives a remote description and sits on
+    // "Connecting" forever. Resolve and use the verified id everywhere from this point on,
+    // and tell the client what id to use so its own live_offer/live_ice filters still match.
+    const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+    const viewerId = realId || data.viewerId; // fall back for unauthenticated/guest viewers
     socket.join('live_' + data.sessionId);
-    io.to(data.astrologerId).emit('live_viewer_joined', data);
+    socket.emit('live_join_ack', { viewerId });
+    io.to(data.astrologerId).emit('live_viewer_joined', { ...data, viewerId });
   });
   // Broadcaster → specific viewer (offer); viewer → broadcaster (answer); both ways (ICE).
   socket.on('live_offer', (data) => {
@@ -423,6 +435,9 @@ require('./src/sentryRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);
+
+// Admin-triggerable referral popup (broadcast/personal send + history)
+require('./src/referralPopupRoutes')(app);
 
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
