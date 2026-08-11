@@ -1102,6 +1102,7 @@ const Home = ({navigation}) => {
             renderItem={renderAstrologerList}
             horizontal
             showsHorizontalScrollIndicator={false}
+            removeClippedSubviews={false}
             contentContainerStyle={styles.astrologerList}
             onScroll={(e) => {
               if (!isAutoScrolling.current) {
@@ -1181,6 +1182,7 @@ const Home = ({navigation}) => {
             keyExtractor={item => item.name}
             horizontal
             showsHorizontalScrollIndicator={false}
+            removeClippedSubviews={false}
             contentContainerStyle={styles.liveAstrologersView}
           />
         ) : (
@@ -1250,6 +1252,7 @@ const Home = ({navigation}) => {
             keyExtractor={item => item._id.toString()}
             horizontal
             showsHorizontalScrollIndicator={false}
+            removeClippedSubviews={false}
             contentContainerStyle={styles.BlogView}
           />
         )}
@@ -1275,6 +1278,7 @@ const Home = ({navigation}) => {
                 keyExtractor={(item, index) => index.toString()}
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                removeClippedSubviews={false}
                 contentContainerStyle={styles.ReviewsList}
               />
             ) : (

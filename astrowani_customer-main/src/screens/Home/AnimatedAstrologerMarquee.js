@@ -116,6 +116,7 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       renderItem={renderItem}
       horizontal
       showsHorizontalScrollIndicator={false}
+      removeClippedSubviews={false}
       snapToInterval={ITEM_WIDTH}
       decelerationRate="fast"
       contentContainerStyle={{ paddingHorizontal: SIDE_INSET, paddingVertical: verticalScale(14) }}
