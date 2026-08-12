@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ActivityIndicator, AppState } from 'react-native';
+import { AppState } from 'react-native';
+import IntroSplash from '../screens/Splash/IntroSplash';
 import { NavigationContainer } from '@react-navigation/native';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthog, applySessionReplaySetting, loadAnalyticsEnvironment, getAnalyticsEnvironment } from '../utils/Analytics';
@@ -58,6 +59,10 @@ const Drawer = createDrawerNavigator();
 
 function NavigationScreen() {
   const [isLoading, setIsLoading] = useState(true);
+  // Gates on the intro animation's own onFinish, not a timer here, so the
+  // animation always plays to completion even if the token check below
+  // resolves first (the common case — an AsyncStorage read is near-instant).
+  const [introDone, setIntroDone] = useState(false);
   // Resolved landing route: 'Login' | 'PendingApproval' | 'DrawerNavigator'
   const [initialRoute, setInitialRoute] = useState('Login');
   const [astroId, setAstroId] = useState(null);
@@ -136,12 +141,8 @@ function NavigationScreen() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={COLORS.AstroMaroon} />
-      </View>
-    );
+  if (isLoading || !introDone) {
+    return <IntroSplash onFinish={() => setIntroDone(true)} />;
   }
 
   return (

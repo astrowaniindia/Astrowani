@@ -1,7 +1,7 @@
 <resources>
-    <!-- Matches ic_launcher.png's own background so the Android 12+ splash icon
-         has no visible white halo around it. Also used as the adaptive icon's
-         background layer (mipmap-anydpi-v26/ic_launcher.xml) for the same reason. -->
-    <color name="splash_background">#090018</color>
-    <color name="ic_launcher_background">#090018</color>
+    <!-- Matches IntroSplash.js's container background (#000000) so the launcher
+         icon, native Android 12+ splash, and JS intro animation are all the same
+         solid black instead of the icon looking blue next to other apps. -->
+    <color name="splash_background">#000000</color>
+    <color name="ic_launcher_background">#000000</color>
 </resources>

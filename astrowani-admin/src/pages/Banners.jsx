@@ -5,11 +5,12 @@ import ImageField from '../components/ImageField';
 
 const EMPTY = {
   title: '', title_hi: '', description: '', description_hi: '', image: '',
-  sort_order: 0, is_active: true, app: 'both',
+  sort_order: 0, is_active: true, app: 'both', language: 'both',
   placement: 'home_primary', action_type: 'none', action_value: '',
 };
 
 const APP_LABELS = { customer: 'Customer App', vendor: 'Vendor App', both: 'Both Apps' };
+const LANGUAGE_LABELS = { english: 'English', hindi: 'Hindi', both: 'Both Languages' };
 
 // Every spot in the apps a banner can be placed, with the exact image size to upload.
 // Widths/heights are in px — export at this ratio (or larger, same ratio) for a crisp image.
@@ -41,6 +42,7 @@ export default function Banners() {
   const [intervalBusy, setIntervalBusy] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [tab, setTab] = useState('customer'); // 'customer' | 'vendor'
+  const [langTab, setLangTab] = useState('all'); // 'all' | 'english' | 'hindi'
 
   const load = async () => {
     setLoading(true);
@@ -108,21 +110,32 @@ export default function Banners() {
 
   const set = (k, v) => setEditing((p) => ({ ...p, [k]: v }));
 
-  // A banner shows in the current tab if it targets that app or 'both'.
-  const visibleRows = rows.filter((r) => (r.app || 'both') === tab || (r.app || 'both') === 'both');
+  // A banner shows in the current tab if it targets that app or 'both', and (if a
+  // language sub-filter is active) that language or 'both'.
+  const visibleRows = rows
+    .filter((r) => (r.app || 'both') === tab || (r.app || 'both') === 'both')
+    .filter((r) => langTab === 'all' || (r.language || 'both') === langTab || (r.language || 'both') === 'both');
 
   return (
     <div>
       <div className="row-between" style={{ marginBottom: 18 }}>
         <h1 className="page-title" style={{ margin: 0 }}>Banners</h1>
-        {/* New banner defaults to the app of the current tab */}
-        <button className="btn" onClick={() => setEditing({ ...EMPTY, app: tab })}>+ New Banner</button>
+        {/* New banner defaults to the app + language of the current tabs */}
+        <button className="btn" onClick={() => setEditing({ ...EMPTY, app: tab, language: langTab === 'all' ? 'both' : langTab })}>+ New Banner</button>
       </div>
 
       {/* App sections */}
-      <div className="btn-group" style={{ marginBottom: 16 }}>
+      <div className="btn-group" style={{ marginBottom: 12 }}>
         <button className={`btn sm ${tab === 'customer' ? '' : 'ghost'}`} onClick={() => setTab('customer')}>Customer App</button>
         <button className={`btn sm ${tab === 'vendor' ? '' : 'ghost'}`} onClick={() => setTab('vendor')}>Vendor App</button>
+      </div>
+
+      {/* Language sections — separate place for Hindi banners vs English banners.
+          A banner set to "Both Languages" still shows under either filter. */}
+      <div className="btn-group" style={{ marginBottom: 16 }}>
+        <button className={`btn sm ${langTab === 'all' ? '' : 'ghost'}`} onClick={() => setLangTab('all')}>All Languages</button>
+        <button className={`btn sm ${langTab === 'english' ? '' : 'ghost'}`} onClick={() => setLangTab('english')}>English</button>
+        <button className={`btn sm ${langTab === 'hindi' ? '' : 'ghost'}`} onClick={() => setLangTab('hindi')}>Hindi</button>
       </div>
 
       {/* Rotation interval — applies to the customer + vendor home banners */}
@@ -144,17 +157,18 @@ export default function Banners() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th></th><th>Title</th><th>Placement</th><th>Shows in</th><th>Order</th><th>Active</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Title</th><th>Placement</th><th>Shows in</th><th>Language</th><th>Order</th><th>Active</th><th></th></tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
-            {!loading && loadError && <tr><td colSpan={7} className="empty" style={{ color: 'var(--red)' }}>Couldn't load banners: {loadError}</td></tr>}
-            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={7} className="empty">No banners for the {APP_LABELS[tab]} yet — click “+ New Banner” to add one.</td></tr>}
+            {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
+            {!loading && loadError && <tr><td colSpan={8} className="empty" style={{ color: 'var(--red)' }}>Couldn't load banners: {loadError}</td></tr>}
+            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={8} className="empty">No banners for the {APP_LABELS[tab]}{langTab !== 'all' ? ` (${LANGUAGE_LABELS[langTab]})` : ''} yet — click “+ New Banner” to add one.</td></tr>}
             {visibleRows.map((r) => (
               <tr key={r.id}>
                 <td>{r.image ? <img src={r.image} className="thumb" alt="" /> : null}</td>
                 <td>{r.title}</td>
                 <td><span className="badge gray">{PLACEMENTS[r.placement]?.label || r.placement || 'home_primary'}</span></td>
                 <td><span className="badge gray">{APP_LABELS[r.app || 'both']}</span></td>
+                <td><span className="badge gray">{LANGUAGE_LABELS[r.language || 'both']}</span></td>
                 <td>{r.sort_order}</td>
                 <td>{r.is_active ? <span className="badge green">Yes</span> : <span className="badge gray">No</span>}</td>
                 <td><div className="btn-group">
@@ -229,6 +243,19 @@ export default function Banners() {
               <option value="vendor">Vendor App only</option>
               <option value="both">Both Apps</option>
             </select></div>
+          <div className="field"><label>Language</label>
+            <select value={editing.language || 'both'} onChange={(e) => set('language', e.target.value)}>
+              <option value="english">English only</option>
+              <option value="hindi">Hindi only</option>
+              <option value="both">Both Languages</option>
+            </select>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              Shown to a customer whose app language matches (or who set no preference and it's
+              "Both Languages"). Use this when the banner image itself has English/Hindi text
+              baked in and needs a different image per language — the Title/Description (Hindi)
+              fields above are for when the same image works for both.
+            </div>
+          </div>
           <div className="two-col">
             <div className="field"><label>Sort order</label>
               <input type="number" value={editing.sort_order} onChange={(e) => set('sort_order', e.target.value)} /></div>

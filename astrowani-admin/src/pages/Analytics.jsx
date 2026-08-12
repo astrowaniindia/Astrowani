@@ -48,6 +48,12 @@ function computePresetRange(preset) {
   return { from: toLocalISODate(from), to: toLocalISODate(today) };
 }
 
+// 'free_service_card' -> 'Free Service Card'
+function formatSectionLabel(section) {
+  if (!section) return '(unknown)';
+  return section.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function formatDateLabel(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);
@@ -168,6 +174,8 @@ export default function Analytics() {
   const [trend, setTrend] = useState([]);
   const [topScreens, setTopScreens] = useState([]);
   const [funnel, setFunnel] = useState(null);
+  const [homeInteractions, setHomeInteractions] = useState([]);
+  const [homeFlow, setHomeFlow] = useState(null);
   const [authFunnel, setAuthFunnel] = useState(null);
   const [authFunnelType, setAuthFunnelType] = useState('signup');
 
@@ -260,7 +268,7 @@ export default function Analytics() {
     try {
       const dateParams = { from: dateRange.from, to: dateRange.to };
       const [summaryRes, trendRes, screensRes, funnelRes, revenueRes, sessionsRes, retentionRes,
-        revByTypeRes, paymentFunnelRes, customerSplitRes] = await Promise.all([
+        revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes] = await Promise.all([
         client.get('/api/admin/analytics/summary', { params: dateParams }),
         client.get('/api/admin/analytics/trend', { params: dateParams }),
         client.get('/api/admin/analytics/top-screens', { params: { ...dateParams, app: appTab } }),
@@ -274,6 +282,9 @@ export default function Analytics() {
         client.get('/api/admin/analytics/revenue-by-type', { params: dateParams }),
         client.get('/api/admin/analytics/payment-funnel', { params: dateParams }),
         client.get('/api/admin/analytics/customer-revenue-split', { params: dateParams }),
+        // Customer-app-only (Home.js has no vendor equivalent) — not tied to appTab.
+        client.get('/api/admin/analytics/home-interactions', { params: dateParams }),
+        client.get('/api/admin/analytics/home-flow', { params: dateParams }),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -285,6 +296,8 @@ export default function Analytics() {
       setRevenueByType(revByTypeRes.data);
       setPaymentFunnel(paymentFunnelRes.data);
       setCustomerSplit(customerSplitRes.data);
+      setHomeInteractions(homeInteractionsRes.data.sections || []);
+      setHomeFlow(homeFlowRes.data);
       setNotConfigured(false);
       setError('');
     } catch (e) {
@@ -673,6 +686,68 @@ export default function Analytics() {
             <div style={{ fontWeight: 600, marginBottom: 10 }}>Chat</div>
             <FunnelRow label="Initiated" count={funnel?.chat?.initiated ?? 0} total={funnel?.chat?.initiated ?? 0} color="var(--amber)" />
             <FunnelRow label="Connected" count={funnel?.chat?.connected ?? 0} total={funnel?.chat?.initiated ?? 0} color="var(--amber)" />
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Home Screen</h3>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Customer app only. Every tap on Home except individual astrologer cards — search,
+          banners, category tiles, free-service/astro-report cards, blog cards, review cards,
+          the "View All" links, and the fixed Chat/Call bar — plus where people go immediately
+          after Home, and how often Home is the last screen before they leave a session.
+        </p>
+        <div className="two-col" style={{ marginTop: 12 }}>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>Taps by section</div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Section</th><th>Taps</th></tr></thead>
+                <tbody>
+                  {loading && <tr><td colSpan={2} className="empty">Loading…</td></tr>}
+                  {!loading && homeInteractions.length === 0 && (
+                    <tr><td colSpan={2} className="empty">No home-screen taps recorded yet.</td></tr>
+                  )}
+                  {homeInteractions.map((s) => (
+                    <tr key={s.section}>
+                      <td>{formatSectionLabel(s.section)}</td>
+                      <td className="muted">{s.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>Where people go after Home</div>
+            <div className="stat-grid" style={{ marginBottom: 12 }}>
+              <div className="stat">
+                <div className="stat-label">Home views</div>
+                <div className="stat-value">{homeFlow?.totalHomeViews ?? 0}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Left app from Home</div>
+                <div className="stat-value">{homeFlow?.exitRatePercent ?? 0}%</div>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Next screen</th><th>Sessions</th></tr></thead>
+                <tbody>
+                  {loading && <tr><td colSpan={2} className="empty">Loading…</td></tr>}
+                  {!loading && (homeFlow?.nextScreens || []).length === 0 && (
+                    <tr><td colSpan={2} className="empty">No navigation data yet.</td></tr>
+                  )}
+                  {(homeFlow?.nextScreens || []).map((s) => (
+                    <tr key={s.screen}>
+                      <td>{s.screen}</td>
+                      <td className="muted">{s.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

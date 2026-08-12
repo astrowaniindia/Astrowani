@@ -283,6 +283,76 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Home screen interaction breakdown (customer app) ──
+  // Every tappable thing on Home.js EXCEPT per-astrologer cards (search, banners,
+  // category tiles, free-service/astro-report cards, blog cards, review cards, the
+  // "View All" links, the fixed Chat/Call bar) fires `captureEvent('home_screen_click',
+  // {section, label})` — see astrowani_customer-main/src/screens/Home/Home.js.
+  // Banner taps fire a separate `banner_click` event from the shared PlacementBanner
+  // component (it's reused on non-Home screens too), so this query UNIONs in only the
+  // two home_* placements rather than reading home_screen_click alone.
+  app.get('/api/admin/analytics/home-interactions', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const rows = await runHogQL(`
+      SELECT section, count() AS n FROM (
+        SELECT properties.section AS section
+        FROM events
+        WHERE event = 'home_screen_click' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+        UNION ALL
+        SELECT 'banner' AS section
+        FROM events
+        WHERE event = 'banner_click' AND properties.app = 'customer'
+          AND properties.placement IN ('home_primary', 'home_secondary')
+          AND ${ENV_FILTER} AND ${dateWhere}
+      )
+      GROUP BY section
+      ORDER BY n DESC
+      LIMIT 30
+    `);
+    const sections = rows.map(([section, n]) => ({ section: section || '(unknown)', count: Number(n) || 0 }));
+    return res.json({ success: true, sections });
+  }));
+
+  // ── Where people go after Home (and how often Home is the last screen of a session) ──
+  // Uses the existing $screen autocapture stream — no new client instrumentation needed.
+  // For every session, `leadInFrame` looks at the very next $screen event after each row;
+  // ClickHouse returns NULL there when a row is the last event in its partition (session),
+  // which is exactly "nothing came after this — the session ended on this screen."
+  app.get('/api/admin/analytics/home-flow', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const rows = await runHogQL(`
+      WITH ordered AS (
+        SELECT
+          properties.$screen_name AS screen,
+          leadInFrame(properties.$screen_name) OVER (PARTITION BY properties.$session_id ORDER BY timestamp) AS next_screen
+        FROM events
+        WHERE event = '$screen' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+      )
+      SELECT next_screen, count() AS n
+      FROM ordered
+      WHERE screen = 'Home'
+      GROUP BY next_screen
+      ORDER BY n DESC
+      LIMIT 20
+    `);
+    let totalHomeViews = 0;
+    let exitedFromHome = 0;
+    const nextScreens = [];
+    for (const [nextScreen, n] of rows) {
+      const count = Number(n) || 0;
+      totalHomeViews += count;
+      if (nextScreen === null) exitedFromHome = count;
+      else nextScreens.push({ screen: nextScreen, count });
+    }
+    return res.json({
+      success: true,
+      totalHomeViews,
+      exitedFromHome,
+      exitRatePercent: totalHomeViews > 0 ? Math.round((exitedFromHome / totalHomeViews) * 1000) / 10 : 0,
+      nextScreens,
+    });
+  }));
+
   console.log(isConfigured()
     ? '[postHogRoutes] Analytics routes registered under /api/admin/analytics'
     : '[postHogRoutes] Analytics routes registered but POSTHOG_* env vars are unset — will 503 until configured');

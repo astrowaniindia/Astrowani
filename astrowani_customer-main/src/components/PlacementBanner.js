@@ -5,6 +5,8 @@
 import React from 'react';
 import { View, Image, Animated, TouchableOpacity, Linking } from 'react-native';
 import Instance from '../api/ApiCall';
+import { LanguageContext } from '../context/LanguageContext';
+import { captureEvent } from '../utils/Analytics';
 
 const PlacementBanner = ({
   placement,
@@ -15,6 +17,9 @@ const PlacementBanner = ({
   style,
   fallbackImages = [],
 }) => {
+  const { language } = React.useContext(LanguageContext);
+  const apiLanguage = language === 'Hindi' ? 'hindi' : 'english';
+
   // null = "haven't heard back from the fetch yet" — distinct from [] ("fetch
   // confirmed there are zero banners"). Without this distinction the fallback
   // images render for a moment on every launch before the real fetch resolves.
@@ -25,7 +30,7 @@ const PlacementBanner = ({
 
   React.useEffect(() => {
     let mounted = true;
-    Instance(`/api/banners/all?app=${app}&placement=${placement}`)
+    Instance(`/api/banners/all?app=${app}&placement=${placement}&language=${apiLanguage}`)
       .then((res) => {
         if (!mounted) return;
         setBanners(res?.data?.data || []);
@@ -40,7 +45,7 @@ const PlacementBanner = ({
         if (mounted) setBanners([]);
       });
     return () => { mounted = false; };
-  }, [placement, app]);
+  }, [placement, app, apiLanguage]);
 
   const slides = banners === null
     ? []
@@ -67,6 +72,11 @@ const PlacementBanner = ({
   const active = slides[safeIndex];
 
   const handlePress = () => {
+    // Fired for every placement this component renders (home_primary/home_secondary/
+    // chat_top/video_top/call_top) — the admin Analytics home-screen query filters
+    // this down to the two home_* placements rather than this component only firing
+    // on Home, since the same component is reused across multiple screens.
+    captureEvent('banner_click', { placement });
     if (!active?.actionType || active.actionType === 'none' || !active.actionValue) return;
     if (active.actionType === 'url') {
       Linking.openURL(active.actionValue).catch(() => {});

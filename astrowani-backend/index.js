@@ -901,6 +901,7 @@ async function getSetting(key, fallback) {
 app.get('/api/banners/all', async (req, res) => {
   try {
     const app_ = req.query.app;
+    const language = req.query.language;
     const placement = req.query.placement || 'home_primary';
     let bannerQuery = supabase
       .from('banners')
@@ -910,6 +911,9 @@ app.get('/api/banners/all', async (req, res) => {
       .order('sort_order', { ascending: true });
     if (app_ === 'customer' || app_ === 'vendor') {
       bannerQuery = bannerQuery.or(`app.eq.${app_},app.eq.both`);
+    }
+    if (language === 'english' || language === 'hindi') {
+      bannerQuery = bannerQuery.or(`language.eq.${language},language.eq.both`);
     }
     const [{ data, error }, intervalRaw] = await Promise.all([
       bannerQuery,

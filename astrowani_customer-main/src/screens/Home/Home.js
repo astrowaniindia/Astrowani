@@ -162,6 +162,7 @@ const Home = ({navigation}) => {
   };
 
   const handleAstroServiceSelect = service => {
+    captureEvent('home_screen_click', {section: 'astro_report_card', label: service.title || service.key});
     const routeName = ASTRO_SERVICE_ROUTES[service.key];
     if (routeName) navigation.navigate(routeName);
   };
@@ -774,6 +775,7 @@ const Home = ({navigation}) => {
   };
 
   const handleMorePress = review => {
+    captureEvent('home_screen_click', {section: 'review_card', label: review?.name});
     setSelectedReview(review);
     setModalVisible(true);
   };
@@ -783,6 +785,7 @@ const Home = ({navigation}) => {
     setSelectedReview(null);
   };
   const handleSearch = () => {
+    captureEvent('home_screen_click', {section: 'search'});
     navigation.navigate('SearchScreen', {data: astrologer});
   };
 
@@ -797,6 +800,7 @@ const Home = ({navigation}) => {
   const handleChatPress = (item) => sendChatRequest(item);
 
   const handleServiceSelect = async service => {
+    captureEvent('home_screen_click', {section: 'free_service_card', label: service.title});
     const route = FREE_SERVICE_ROUTES[service.title];
     if (!route) return;
     const paid = await purchaseFreeService(route.key, service.title);
@@ -1018,7 +1022,10 @@ const Home = ({navigation}) => {
     const title = language === 'Hindi' ? (blog.hindi?.title || blog.title) : blog.title;
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate('BlogScreen', {data: blog})}
+        onPress={() => {
+          captureEvent('home_screen_click', {section: 'blog_card', label: title});
+          navigation.navigate('BlogScreen', {data: blog});
+        }}
         style={styles.blogCard}>
         <Image style={styles.blogImg} source={{uri: blog.thumbnail}} />
         <Text style={styles.blogTitle}>{title}</Text>
@@ -1093,7 +1100,10 @@ const Home = ({navigation}) => {
             <Text style={styles.topAstrologerTxt}>{t('home.bestAstrologers')}</Text>
             <TouchableOpacity
               style={styles.viewAllBtn}
-              onPress={() => navigation.navigate('Chat')}>
+              onPress={() => {
+                captureEvent('home_screen_click', {section: 'view_all_best_astrologers'});
+                navigation.navigate('Chat');
+              }}>
               <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
             </TouchableOpacity>
           </View>
@@ -1145,12 +1155,13 @@ const Home = ({navigation}) => {
                 categories?.length > 0 &&
                 categories?.map((item, index) => (
                   <TouchableOpacity
-                    onPress={() =>
+                    onPress={() => {
+                      captureEvent('home_screen_click', {section: 'category_tile', label: item.name});
                       navigation.navigate('CategoryAstrologers', {
                         categoryId: item._id,
                         categoryName: language === 'Hindi' ? (item.hindi?.name || item.name) : item.name,
-                      })
-                    }
+                      });
+                    }}
                     key={index}
                     style={styles.category}>
                     <FastImage
@@ -1179,7 +1190,10 @@ const Home = ({navigation}) => {
           <Text style={styles.topAstrologerTxt}>{t('home.liveAstrologers')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
-            onPress={() => navigation.navigate('Live')}>
+            onPress={() => {
+              captureEvent('home_screen_click', {section: 'view_all_live'});
+              navigation.navigate('Live');
+            }}>
             <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
           </TouchableOpacity>
         </View>
@@ -1245,7 +1259,10 @@ const Home = ({navigation}) => {
           <Text style={styles.topAstrologerTxt}>{t('home.blog')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
-            onPress={() => navigation.navigate('BlogList', {data: blogs})}>
+            onPress={() => {
+              captureEvent('home_screen_click', {section: 'blog_view_all'});
+              navigation.navigate('BlogList', {data: blogs});
+            }}>
             <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
           </TouchableOpacity>
         </View>
@@ -1359,14 +1376,20 @@ const Home = ({navigation}) => {
       </ScrollView>
       <View style={styles.fixedBtnView}>
         <TouchableOpacity
-          onPress={() => navigation.navigate('Chat')}
+          onPress={() => {
+            captureEvent('home_screen_click', {section: 'fixed_bar_chat'});
+            navigation.navigate('Chat');
+          }}
           style={styles.fixedBtn}>
           <MaterialIcons name="wechat" size={22} color={COLORS.AstroMaroon} />
           <Text style={styles.fixedBtnTxt}>{t('home.chatWithAstrologer')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('Call')}
+          onPress={() => {
+            captureEvent('home_screen_click', {section: 'fixed_bar_call'});
+            navigation.navigate('Call');
+          }}
           style={styles.fixedBtn}>
           <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
           <Text style={styles.fixedBtnTxt}>{t('home.talkToAstrologer')}</Text>

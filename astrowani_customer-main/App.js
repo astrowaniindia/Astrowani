@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, Alert } from 'react-native';
+import { Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Navigation from './src/routes/Navigation';
 import 'react-native-get-random-values';
 import 'react-native-reanimated';
+import IntroSplash from './src/screens/Splash/IntroSplash';
 import { requestUserPermission } from './src/utils/PushNotification';
 import CustomAlert, { showAlert } from './src/Component/CustomAlert';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -32,6 +33,10 @@ Alert.alert = (title, message, buttons, options) => {
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [userToken, setUserToken] = useState(null);
+  // Gates on the intro animation's own onFinish, not a timer here, so the
+  // animation always plays to completion even if the AsyncStorage bootstrap
+  // below resolves first (the common case — a token read is near-instant).
+  const [introDone, setIntroDone] = useState(false);
 
   useEffect(() => {
     const bootstrapAsync = async () => {
@@ -54,12 +59,10 @@ const App = () => {
     bootstrapAsync();
   }, []);
 
-  if (isLoading) {
+  if (isLoading || !introDone) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" />
-        </View>
+        <IntroSplash onFinish={() => setIntroDone(true)} />
       </GestureHandlerRootView>
     );
   }

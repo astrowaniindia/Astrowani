@@ -152,7 +152,7 @@ module.exports = function registerAdminRoutes(app) {
   crud('banners', 'banners', {
     orderBy: 'sort_order', ascending: true,
     allowed: ['title', 'title_hi', 'description', 'description_hi', 'image', 'link', 'sort_order',
-      'is_active', 'app', 'placement', 'action_type', 'action_value'],
+      'is_active', 'app', 'language', 'placement', 'action_type', 'action_value'],
   });
   crud('thoughts', 'thoughts', {
     allowed: ['text', 'text_hi', 'author', 'author_hi', 'is_active'],
