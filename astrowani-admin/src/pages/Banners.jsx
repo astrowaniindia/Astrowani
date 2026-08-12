@@ -40,6 +40,12 @@ export default function Banners() {
   const [busy, setBusy] = useState(false);
   const [intervalSecs, setIntervalSecs] = useState('4');
   const [intervalBusy, setIntervalBusy] = useState(false);
+  // Live Aarti / Pooja — YouTube URL embedded in-app at the bottom of the
+  // customer Home screen (before "What Our Clients Say"). Empty = section
+  // hidden entirely. Same app_settings key/value pattern as the interval
+  // above, see sql/live_aarti_schema.sql.
+  const [liveAartiUrl, setLiveAartiUrl] = useState('');
+  const [liveAartiBusy, setLiveAartiBusy] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [tab, setTab] = useState('customer'); // 'customer' | 'vendor'
   const [langTab, setLangTab] = useState('all'); // 'all' | 'english' | 'hindi'
@@ -62,6 +68,7 @@ export default function Banners() {
     try {
       const settingsRes = await client.get('/api/admin/settings');
       setIntervalSecs(settingsRes.data.settings?.banner_interval_seconds || '4');
+      setLiveAartiUrl(settingsRes.data.settings?.live_aarti_youtube_url || '');
     } catch (e) {
       console.error('load settings failed (run app_settings_schema.sql):', e.message);
     }
@@ -77,6 +84,15 @@ export default function Banners() {
       alert('Banner rotation interval saved. It applies on the next app refresh.');
     } catch (e) { alert(e.response?.data?.message || e.message); }
     finally { setIntervalBusy(false); }
+  };
+
+  const saveLiveAarti = async () => {
+    setLiveAartiBusy(true);
+    try {
+      await client.patch('/api/admin/settings', { key: 'live_aarti_youtube_url', value: liveAartiUrl.trim() });
+      alert(liveAartiUrl.trim() ? 'Live Aarti stream saved — it will appear on Home shortly.' : 'Live Aarti stream cleared — the section is now hidden on Home.');
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setLiveAartiBusy(false); }
   };
 
   const save = async () => {
@@ -152,6 +168,34 @@ export default function Banners() {
         </button>
         <span className="muted" style={{ alignSelf: 'center' }}>
           How long each banner shows before switching, in both apps.
+        </span>
+      </div>
+
+      {/* Live Aarti / Pooja stream — a YouTube URL embedded in-app at the very
+          bottom of the customer Home screen, before "What Our Clients Say".
+          Empty = section hidden entirely, no placeholder shown. */}
+      <div className="card" style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+        <div className="field" style={{ margin: 0, minWidth: 320, flex: 1 }}>
+          <label>Live Aarti / Pooja — YouTube URL</label>
+          <input
+            type="text"
+            placeholder="https://www.youtube.com/watch?v=... or a live stream link"
+            value={liveAartiUrl}
+            onChange={(e) => setLiveAartiUrl(e.target.value)}
+          />
+        </div>
+        <button className="btn" onClick={saveLiveAarti} disabled={liveAartiBusy}>
+          {liveAartiBusy ? 'Saving…' : 'Save'}
+        </button>
+        {liveAartiUrl && (
+          <button className="btn secondary" disabled={liveAartiBusy} onClick={() => { setLiveAartiUrl(''); }}>
+            Clear
+          </button>
+        )}
+        <span className="muted" style={{ width: '100%' }}>
+          Plays in-app on the customer Home screen, right above the reviews section. Leave empty
+          (and hit Save) to hide the section — nothing shows when there's no video/pooja live.
+          Clicking "Clear" only clears the field here; click Save to actually apply it.
         </span>
       </div>
 

@@ -174,6 +174,32 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Remedies purchase funnel — Buy Now tap → Place Order tap → confirmed order ──
+  // Mirrors the call/chat funnel above. RemedyShop.js fires remedy_buy_now_clicked on
+  // every "Buy Now" tap, remedy_place_order_clicked when the modal's Place Order button
+  // is tapped (before the request goes out), and remedy_order_placed only after
+  // POST /api/orders actually succeeds — so "Order Placed" here means a real order row
+  // exists, not just an attempt.
+  app.get('/api/admin/analytics/remedies-funnel', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const rows = await runHogQL(`
+      SELECT event, count() AS n
+      FROM events
+      WHERE event IN ('remedy_buy_now_clicked', 'remedy_place_order_clicked', 'remedy_order_placed')
+        AND properties.app = 'customer'
+        AND ${ENV_FILTER}
+        AND ${dateWhere}
+      GROUP BY event
+    `);
+    const counts = Object.fromEntries(rows.map(([event, n]) => [event, Number(n) || 0]));
+    return res.json({
+      success: true,
+      buyNowClicked: counts.remedy_buy_now_clicked || 0,
+      placeOrderClicked: counts.remedy_place_order_clicked || 0,
+      orderPlaced: counts.remedy_order_placed || 0,
+    });
+  }));
+
   // ── Signup / Login funnels — where new customers actually drop off ──
   // Deliberately a SMALL, curated set of named events (not "track every tap") — each
   // stage below is a real decision point in the flow, not decorative. `_tapped` events
@@ -279,10 +305,16 @@ module.exports = function registerPostHogRoutes(app) {
   }));
 
   // ── Home screen interaction breakdown (customer app) ──
-  // Every tappable thing on Home.js EXCEPT per-astrologer cards (search, banners,
-  // category tiles, free-service/astro-report cards, blog cards, review cards, the
-  // "View All" links, the fixed Chat/Call bar) fires `captureEvent('home_screen_click',
-  // {section, label})` — see astrowani_customer-main/src/screens/Home/Home.js.
+  // Every tappable thing on Home.js (search, banners, category tiles, astrologer
+  // cards in all three astrologer sections, free-service/astro-report cards, blog
+  // cards, review cards, the "View All" links, the fixed Chat/Call bar) fires
+  // `captureEvent('home_screen_click', {section, label})` — see
+  // astrowani_customer-main/src/screens/Home/Home.js and AnimatedAstrologerMarquee.js.
+  // Per-astrologer cards were deliberately excluded until 2026-08-14; now included as
+  // 'astrologer_card' / 'live_astrologer_card' / 'call_astrologer_card' (one section
+  // value per astrologer list on Home, so they're distinguishable in the table below) —
+  // the actual Call/Chat action buttons on those cards are NOT covered by this event,
+  // they fire call_initiated/chat_initiated separately (see the funnel endpoint above).
   // Banner taps fire a separate `banner_click` event from the shared PlacementBanner
   // component (it's reused on non-Home screens too), so this query UNIONs in only the
   // two home_* placements rather than reading home_screen_click alone.

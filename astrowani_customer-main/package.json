@@ -57,6 +57,7 @@
     "react-native-url-polyfill": "^3.0.0",
     "react-native-vector-icons": "^10.1.0",
     "react-native-webrtc": "^124.0.7",
+    "react-native-webview": "^14.0.1",
     "socket.io-client": "^4.8.3",
     "text-encoding": "^0.7.0"
   },

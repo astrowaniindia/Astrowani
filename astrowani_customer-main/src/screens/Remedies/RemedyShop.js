@@ -18,6 +18,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LanguageContext } from '../../context/LanguageContext';
 import useRemedyListSync from '../../hooks/useRemedyListSync';
+import { captureEvent } from '../../utils/Analytics';
 
 // Unified shop screen for all three remedy types. route.params: { type, title }.
 const RemedyShop = ({ route, navigation }) => {
@@ -66,6 +67,9 @@ const RemedyShop = ({ route, navigation }) => {
   useRemedyListSync(() => { fetchItems(); });
 
   const openBuy = async item => {
+    captureEvent('remedy_buy_now_clicked', {
+      item_id: item._id, item_title: item.title, remedy_type: type, price: item.price,
+    });
     setSelected(item);
     setQty(1);
     setSuccess(false);
@@ -87,6 +91,10 @@ const RemedyShop = ({ route, navigation }) => {
       Alert.alert('Phone required', 'Please enter a contact phone number.');
       return;
     }
+    const total = (selected?.price || 0) * qty;
+    captureEvent('remedy_place_order_clicked', {
+      item_id: selected._id, item_title: selected.title, remedy_type: type, quantity: qty, total,
+    });
     setPlacing(true);
     try {
       const token = await AsyncStorage.getItem('token');
@@ -101,8 +109,14 @@ const RemedyShop = ({ route, navigation }) => {
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
+      captureEvent('remedy_order_placed', {
+        item_id: selected._id, item_title: selected.title, remedy_type: type, quantity: qty, total,
+      });
       setSuccess(true);
     } catch (err) {
+      captureEvent('remedy_order_failed', {
+        item_id: selected._id, remedy_type: type, error: err?.response?.data?.message || err.message,
+      });
       Alert.alert('Order failed', err?.response?.data?.message || err.message);
     } finally {
       setPlacing(false);

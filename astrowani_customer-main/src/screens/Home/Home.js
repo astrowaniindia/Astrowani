@@ -29,6 +29,7 @@ import Instance from '../../api/ApiCall';
 import {getAstroServices} from '../../api/astroApi';
 import FreeServicesScreen from '../drawerScreens/FreeSeviceScreen/FreeServicesScreen';
 import AnimatedAstrologerMarquee from './AnimatedAstrologerMarquee';
+import LiveAartiSection from './LiveAartiSection';
 import VoiceNotesBanner from './VoiceNotesBanner';
 import CustomerReview from './Review';
 import axios from 'axios';
@@ -97,12 +98,13 @@ const AstrologerItem = ({astrologer, navigation, t}) => {
     <TouchableOpacity
       activeOpacity={0.88}
       style={styles.liveCard}
-      onPress={() =>
+      onPress={() => {
+        captureEvent('home_screen_click', {section: 'live_astrologer_card', label: astrologer?.name});
         navigation.navigate('LiveViewerScreen', {
           sessionId: astrologer.sessionId,
           astrologer,
-        })
-      }>
+        });
+      }}>
       <Image
         source={{uri: astrologer.profileImage || astrologer.image}}
         style={styles.liveCardImage}
@@ -912,7 +914,7 @@ const Home = ({navigation}) => {
   };
 
   const openAstrologer = (person) => {
-    console.log(person,"%%%%%%%%%%%%%%%%%");
+    captureEvent('home_screen_click', {section: 'astrologer_card', label: person?.name});
     navigation.navigate('AstrologerInfo', {person: person});
   };
 
@@ -1320,6 +1322,11 @@ const Home = ({navigation}) => {
             contentContainerStyle={styles.BlogView}
           />
         )}
+
+        {/* Live Aarti / Pooja — admin-set YouTube URL, embedded in-app. Renders
+            nothing at all when unset, so this is invisible unless an admin has
+            actually put a stream/video here (astrowani-admin's Banners page). */}
+        <LiveAartiSection />
 
         <View style={styles.reviewsBox}>
           <View style={[styles.customerReviews, {marginTop: verticalScale(15)}]}>

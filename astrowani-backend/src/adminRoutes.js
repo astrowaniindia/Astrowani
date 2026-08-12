@@ -734,6 +734,12 @@ module.exports = function registerAdminRoutes(app) {
       .from('app_settings')
       .upsert({ key, value: String(value), updated_at: new Date().toISOString() }, { onConflict: 'key' });
     if (error) throw error;
+    // Settings read through contentCache (e.g. live_aarti_youtube_url via
+    // GET /api/live-aarti) would otherwise only pick up an edit after the TTL
+    // expires — drop it so admin changes reflect immediately. No-op for
+    // settings nothing has cached (most of them read app_settings directly
+    // at app launch instead, per the banner-interval/session-replay pattern).
+    if (key === 'live_aarti_youtube_url') contentCache.invalidate('live-aarti:');
     return res.json({ success: true });
   }));
 

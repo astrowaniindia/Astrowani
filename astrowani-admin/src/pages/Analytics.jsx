@@ -174,6 +174,7 @@ export default function Analytics() {
   const [trend, setTrend] = useState([]);
   const [topScreens, setTopScreens] = useState([]);
   const [funnel, setFunnel] = useState(null);
+  const [remediesFunnel, setRemediesFunnel] = useState(null);
   const [homeInteractions, setHomeInteractions] = useState([]);
   const [homeFlow, setHomeFlow] = useState(null);
   const [authFunnel, setAuthFunnel] = useState(null);
@@ -267,12 +268,13 @@ export default function Analytics() {
   const load = useCallback(async () => {
     try {
       const dateParams = { from: dateRange.from, to: dateRange.to };
-      const [summaryRes, trendRes, screensRes, funnelRes, revenueRes, sessionsRes, retentionRes,
+      const [summaryRes, trendRes, screensRes, funnelRes, remediesFunnelRes, revenueRes, sessionsRes, retentionRes,
         revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes] = await Promise.all([
         client.get('/api/admin/analytics/summary', { params: dateParams }),
         client.get('/api/admin/analytics/trend', { params: dateParams }),
         client.get('/api/admin/analytics/top-screens', { params: { ...dateParams, app: appTab } }),
         client.get('/api/admin/analytics/funnel', { params: dateParams }),
+        client.get('/api/admin/analytics/remedies-funnel', { params: dateParams }),
         client.get('/api/admin/analytics/revenue', { params: dateParams }),
         client.get('/api/admin/analytics/session-volume', { params: dateParams }),
         // Retention is a rolling 30-day cohort window by nature (not "events between two
@@ -290,6 +292,7 @@ export default function Analytics() {
       setTrend(pivotTrend(trendRes.data.points || []));
       setTopScreens(screensRes.data.screens || []);
       setFunnel(funnelRes.data);
+      setRemediesFunnel(remediesFunnelRes.data);
       setRevenue(revenueRes.data);
       setSessionVolume(sessionsRes.data);
       setRetention(retentionRes.data);
@@ -691,12 +694,24 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Remedies Purchase Funnel (customer app)</h3>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
+          Of everyone who tapped "Buy Now" on a remedy, how many actually placed an order.
+          "Order Placed" only counts a confirmed order (the POST actually succeeded), not just
+          the tap.
+        </p>
+        <FunnelRow label="Buy Now tapped" count={remediesFunnel?.buyNowClicked ?? 0} total={remediesFunnel?.buyNowClicked ?? 0} color="var(--maroon)" />
+        <FunnelRow label="Place Order tapped" count={remediesFunnel?.placeOrderClicked ?? 0} total={remediesFunnel?.buyNowClicked ?? 0} color="var(--maroon)" />
+        <FunnelRow label="Order placed" count={remediesFunnel?.orderPlaced ?? 0} total={remediesFunnel?.buyNowClicked ?? 0} color="var(--amber)" />
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Home Screen</h3>
         <p className="muted" style={{ marginTop: 4 }}>
-          Customer app only. Every tap on Home except individual astrologer cards — search,
-          banners, category tiles, free-service/astro-report cards, blog cards, review cards,
-          the "View All" links, and the fixed Chat/Call bar — plus where people go immediately
-          after Home, and how often Home is the last screen before they leave a session.
+          Customer app only. Every tap on Home — search, banners, category tiles, astrologer
+          cards (in all three astrologer sections), free-service/astro-report cards, blog cards,
+          review cards, the "View All" links, and the fixed Chat/Call bar — plus where people go
+          immediately after Home, and how often Home is the last screen before they leave a session.
         </p>
         <div className="two-col" style={{ marginTop: 12 }}>
           <div>

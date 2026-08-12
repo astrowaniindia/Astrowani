@@ -962,6 +962,23 @@ app.get('/api/banners/all', async (req, res) => {
   }
 });
 
+// Live Aarti / Pooja stream — admin-set YouTube URL (app_settings key
+// live_aarti_youtube_url, see sql/live_aarti_schema.sql). Returns {url: null}
+// when unset so the customer app hides the section entirely rather than
+// showing an empty/placeholder player.
+app.get('/api/live-aarti', async (req, res) => {
+  try {
+    const url = await contentCache.get('live-aarti:url', async () => {
+      const raw = await getSetting('live_aarti_youtube_url', '');
+      return raw && raw.trim() ? raw.trim() : null;
+    });
+    return res.status(200).json({ url });
+  } catch (err) {
+    console.error('GET /api/live-aarti error:', err.message);
+    return res.status(200).json({ url: null });
+  }
+});
+
 // Thought of the Day — latest active row (table `thoughts`).
 app.get('/api/thoughts/latest', async (req, res) => {
   try {

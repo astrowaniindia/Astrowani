@@ -6,10 +6,11 @@
 // card slides into center and grows/brightens) — still fully swipeable
 // manually at any time, which pauses the auto-advance until the swipe ends.
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Animated, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { Animated, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { captureEvent } from '../../utils/Analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Center card + its two peeking neighbors span nearly the full screen width —
@@ -124,17 +125,25 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
 
     return (
       <Animated.View style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
-        <Image
-          resizeMode="cover"
-          source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
-          style={styles.avatar}
-        />
-        <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
-        <Text style={styles.specialty} numberOfLines={1}>
-          {item.specialties?.[0]?.name || 'Vedic Astrology'}
-        </Text>
-        <Text style={styles.meta} numberOfLines={1}>Exp: {item.experience || '0'} years</Text>
-        <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
+        {/* Tap-tracking only — no navigation added here (that would be a UI/UX
+            change beyond what was asked for). Separate from the Call button
+            below on purpose: that one already fires call_initiated once the
+            call actually goes through, tracked independently. */}
+        <TouchableWithoutFeedback onPress={() => captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name})}>
+          <Animated.View>
+            <Image
+              resizeMode="cover"
+              source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+              style={styles.avatar}
+            />
+            <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
+            <Text style={styles.specialty} numberOfLines={1}>
+              {item.specialties?.[0]?.name || 'Vedic Astrology'}
+            </Text>
+            <Text style={styles.meta} numberOfLines={1}>Exp: {item.experience || '0'} years</Text>
+            <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
+          </Animated.View>
+        </TouchableWithoutFeedback>
         <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => onCallPress(item)}>
           <MaterialIcons name="call" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
           <Text style={styles.callBtnText}>Call</Text>
