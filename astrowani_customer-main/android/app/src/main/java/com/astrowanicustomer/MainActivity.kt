@@ -15,10 +15,16 @@ class MainActivity : ReactActivity() {
   // before super.onCreate(); it also makes the same theme render consistently pre-31.
   // setTheme(AppTheme) then hands the rest of the activity's lifetime back to the real app
   // theme once the splash icon has been captured.
+  //
+  // super.onCreate(null) — NOT savedInstanceState — for the same reason as the vendor
+  // app's identical fix (see its MainActivity.kt): react-native-screens' ScreenStackFragment
+  // cannot be reconstructed from a restored saved-instance-state bundle after Android kills
+  // the process for memory and throws IllegalStateException on the next launch attempt,
+  // crashing before any JS runs. Passing null forces a fresh start instead of a restore.
   override fun onCreate(savedInstanceState: Bundle?) {
     installSplashScreen()
     setTheme(R.style.AppTheme)
-    super.onCreate(savedInstanceState)
+    super.onCreate(null)
   }
 
   /**
