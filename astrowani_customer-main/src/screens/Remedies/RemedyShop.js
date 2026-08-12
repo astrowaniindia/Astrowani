@@ -36,8 +36,7 @@ const RemedyShop = ({ route, navigation }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
-  const [placing, setPlacing] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
 
   const fetchItems = useCallback(async () => {
     try {
@@ -72,7 +71,7 @@ const RemedyShop = ({ route, navigation }) => {
     });
     setSelected(item);
     setQty(1);
-    setSuccess(false);
+    setUnavailable(false);
     setAddress('');
     // Prefill name/phone from stored profile if available
     try {
@@ -86,7 +85,12 @@ const RemedyShop = ({ route, navigation }) => {
     }
   };
 
-  const placeOrder = async () => {
+  // Remedies delivery/fulfillment isn't live yet — per product decision, Place
+  // Order deliberately does NOT call POST /api/orders and does NOT touch the
+  // wallet in any way. It just tells the customer this isn't serviceable in
+  // their area yet and that nothing was charged, so a real user never ends up
+  // thinking they completed a purchase that nobody will ever act on.
+  const placeOrder = () => {
     if (!phone.trim()) {
       Alert.alert('Phone required', 'Please enter a contact phone number.');
       return;
@@ -95,32 +99,7 @@ const RemedyShop = ({ route, navigation }) => {
     captureEvent('remedy_place_order_clicked', {
       item_id: selected._id, item_title: selected.title, remedy_type: type, quantity: qty, total,
     });
-    setPlacing(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      await Instance.post(
-        '/api/orders',
-        {
-          itemId: selected._id,
-          quantity: qty,
-          customerName: name,
-          customerPhone: phone,
-          address,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      captureEvent('remedy_order_placed', {
-        item_id: selected._id, item_title: selected.title, remedy_type: type, quantity: qty, total,
-      });
-      setSuccess(true);
-    } catch (err) {
-      captureEvent('remedy_order_failed', {
-        item_id: selected._id, remedy_type: type, error: err?.response?.data?.message || err.message,
-      });
-      Alert.alert('Order failed', err?.response?.data?.message || err.message);
-    } finally {
-      setPlacing(false);
-    }
+    setUnavailable(true);
   };
 
   const renderItem = ({ item }) => {
@@ -180,12 +159,12 @@ const RemedyShop = ({ route, navigation }) => {
         onRequestClose={() => setSelected(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            {success ? (
+            {unavailable ? (
               <View style={styles.successBox}>
-                <Text style={styles.successTitle}>✅ Order Placed!</Text>
+                <Text style={styles.successTitle}>We're not there yet</Text>
                 <Text style={styles.successMsg}>
-                  Your order for {selected?.title} has been placed. Our team will contact you on{' '}
-                  {phone} to confirm and arrange payment.
+                  We're not currently delivering {selected?.title} to your location. Your wallet
+                  has not been charged — nothing has been deducted.
                 </Text>
                 <TouchableOpacity style={styles.placeBtn} onPress={() => setSelected(null)}>
                   <Text style={styles.placeBtnTxt}>Done</Text>
@@ -238,8 +217,8 @@ const RemedyShop = ({ route, navigation }) => {
                   <TouchableOpacity style={styles.cancelBtn} onPress={() => setSelected(null)}>
                     <Text style={styles.cancelBtnTxt}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.placeBtn} onPress={placeOrder} disabled={placing}>
-                    <Text style={styles.placeBtnTxt}>{placing ? 'Placing…' : 'Place Order'}</Text>
+                  <TouchableOpacity style={styles.placeBtn} onPress={placeOrder}>
+                    <Text style={styles.placeBtnTxt}>Place Order</Text>
                   </TouchableOpacity>
                 </View>
               </ScrollView>
