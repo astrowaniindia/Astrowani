@@ -20,13 +20,18 @@ const ITEM_WIDTH = Math.round(SCREEN_WIDTH * 0.62);
 const CARD_WIDTH = ITEM_WIDTH - CARD_MARGIN * 2;
 const SIDE_INSET = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
 const ADVANCE_INTERVAL_MS = 2800;
-// A large, finite, repeated copy of the shuffled list — not truly infinite
-// data, but once the scroll position gets deep into it we silently snap back
-// to the equivalent early position with no animation. Since that position
+// A finite, repeated copy of the shuffled list — not truly infinite data,
+// but once the scroll position gets deep into it we silently snap back to
+// the equivalent early position with no animation. Since that position
 // holds identical content (same shuffled order repeating), the reset is
 // imperceptible, so it behaves as an endless loop: the last astrologer is
-// immediately followed by the first again, forever.
-const LOOP_COUNT = 40;
+// immediately followed by the first again, forever. 8 copies is enough
+// margin for that wrap to always land on already-rendered neighbors (this
+// list advances one discrete snapped index at a time, not a continuous
+// pixel scroll, so it needs far less buffer than a freely-scrolling
+// marquee) — was 40, which meant holding up to 40x the astrologer list in
+// memory for no visible benefit.
+const LOOP_COUNT = 8;
 
 function shuffledCopy(arr) {
   const a = [...arr];
@@ -38,7 +43,30 @@ function shuffledCopy(arr) {
 }
 
 export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) {
-  const shuffled = useMemo(() => shuffledCopy(astrologers || []), [astrologers]);
+  // Stable across refetches: Home re-fetches astrologerToShow on focus/Realtime
+  // signal, handing this a NEW array reference every time even when the actual
+  // set of astrologers hasn't changed — re-shuffling on every one of those was
+  // silently reordering the carousel out from under whoever was mid-view.
+  // Only re-shuffle when the underlying set of ids actually changes; otherwise
+  // keep the previous order and just refresh each item's data in place (price/
+  // online-status/etc. may have updated even though who's in the list hasn't).
+  const prevIdsRef = useRef('');
+  const shuffledRef = useRef([]);
+  const shuffled = useMemo(() => {
+    const list = astrologers || [];
+    const idsSignature = list.map((a) => a._id).sort().join(',');
+    if (idsSignature === prevIdsRef.current && shuffledRef.current.length) {
+      const byId = new Map(list.map((a) => [a._id, a]));
+      const refreshed = shuffledRef.current.map((a) => byId.get(a._id) || a);
+      shuffledRef.current = refreshed;
+      return refreshed;
+    }
+    prevIdsRef.current = idsSignature;
+    const fresh = shuffledCopy(list);
+    shuffledRef.current = fresh;
+    return fresh;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [astrologers]);
   const looped = useMemo(
     () => (shuffled.length ? Array(LOOP_COUNT).fill(shuffled).flat() : []),
     [shuffled],
@@ -50,16 +78,21 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
 
   // Once within the last full cycle of the buffer, wrap back to the
   // equivalent low index — content there is identical, so this is invisible.
+  // Returns whether a wrap happened, so the caller doesn't ALSO animate to
+  // the pre-wrap offset on the same tick (that produced a visible double-move:
+  // an instant jump immediately followed by an animated scroll on top of it).
   const maybeWrap = () => {
     const n = shuffled.length;
-    if (!n) return;
+    if (!n) return false;
     const safeCeiling = n * (LOOP_COUNT - 1);
     if (indexRef.current >= safeCeiling) {
       indexRef.current = indexRef.current % n;
       try {
         listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: false });
       } catch (_) {}
+      return true;
     }
+    return false;
   };
 
   useEffect(() => {
@@ -67,10 +100,12 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
     const timer = setInterval(() => {
       if (pausedRef.current) return;
       indexRef.current += 1;
-      maybeWrap();
-      try {
-        listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: true });
-      } catch (_) {}
+      const wrapped = maybeWrap();
+      if (!wrapped) {
+        try {
+          listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: true });
+        } catch (_) {}
+      }
     }, ADVANCE_INTERVAL_MS);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,16 +151,33 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       renderItem={renderItem}
       horizontal
       showsHorizontalScrollIndicator={false}
-      removeClippedSubviews={false}
+      removeClippedSubviews={true}
       snapToInterval={ITEM_WIDTH}
       decelerationRate="fast"
       contentContainerStyle={{ paddingHorizontal: SIDE_INSET, paddingVertical: verticalScale(14) }}
       scrollEventThrottle={16}
+      // useNativeDriver: true — opacity and transform.scale (the only styles
+      // scrollX drives, see renderItem below) are both native-drivable, so
+      // this animation runs entirely on the UI thread instead of competing
+      // with everything else on the JS thread (including the other
+      // auto-scrolling marquee higher up on this same screen). Previously
+      // false: under any JS-thread load, the opacity/scale interpolation
+      // could visibly fall behind the real scroll position and appear
+      // "stuck" mid-transition at a dimmed, small size.
       onScroll={Animated.event(
         [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-        { useNativeDriver: false },
+        { useNativeDriver: true },
       )}
       onScrollBeginDrag={() => { pausedRef.current = true; }}
+      onScrollEndDrag={() => {
+        // A drag doesn't always end in momentum (a short flick, or the touch
+        // getting partly absorbed by the Call button inside the card) — if
+        // un-pausing only happened in onMomentumScrollEnd below, a drag that
+        // never triggers momentum left auto-advance paused forever. This
+        // guarantees it always resumes; onMomentumScrollEnd (when it does
+        // fire) still owns re-syncing indexRef to the settled position.
+        pausedRef.current = false;
+      }}
       onMomentumScrollEnd={(e) => {
         pausedRef.current = false;
         indexRef.current = Math.round(e.nativeEvent.contentOffset.x / ITEM_WIDTH);
