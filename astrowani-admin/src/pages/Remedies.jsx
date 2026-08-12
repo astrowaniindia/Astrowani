@@ -19,13 +19,46 @@ export default function Remedies() {
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // "We're not there yet" popup — shown to the customer when they tap Place
+  // Order (remedies fulfillment isn't live yet, see RemedyShop.js). {item} in
+  // the message is replaced with the actual remedy's title on the customer's
+  // device. Same app_settings key/value pattern as the Live Aarti URL on the
+  // Banners page.
+  const [popupTitle, setPopupTitle] = useState('');
+  const [popupMessage, setPopupMessage] = useState('');
+  const [popupBusy, setPopupBusy] = useState(false);
+
   const load = async () => {
     setLoading(true);
     const { data } = await client.get('/api/admin/remedies');
     setItems(data.data || []);
     setLoading(false);
+    // Independent of the item list — a failure here (e.g. app_settings not
+    // yet migrated) must not block the remedies table from rendering.
+    try {
+      const settingsRes = await client.get('/api/admin/settings');
+      setPopupTitle(settingsRes.data.settings?.remedy_unavailable_title || "We're not there yet");
+      setPopupMessage(
+        settingsRes.data.settings?.remedy_unavailable_message
+        || "We're not currently delivering {item} to your location. Your wallet has not been charged — nothing has been deducted.",
+      );
+    } catch (e) {
+      console.error('load popup settings failed (run remedy_unavailable_popup_schema.sql):', e.message);
+    }
   };
   useEffect(() => { load(); }, []);
+
+  const savePopup = async () => {
+    setPopupBusy(true);
+    try {
+      await Promise.all([
+        client.patch('/api/admin/settings', { key: 'remedy_unavailable_title', value: popupTitle }),
+        client.patch('/api/admin/settings', { key: 'remedy_unavailable_message', value: popupMessage }),
+      ]);
+      alert('Saved — the customer app will show the new wording immediately.');
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setPopupBusy(false); }
+  };
 
   const rows = items.filter((i) => i.type === tab);
 
@@ -55,6 +88,29 @@ export default function Remedies() {
       <div className="row-between" style={{ marginBottom: 18 }}>
         <h1 className="page-title" style={{ margin: 0 }}>Remedies Shop</h1>
         <button className="btn" onClick={() => setEditing({ ...EMPTY })}>+ New {tabLabel} item</button>
+      </div>
+
+      {/* "We're not there yet" popup — shown on Place Order since remedies
+          fulfillment isn't live yet. Use {item} in the message anywhere you
+          want the specific remedy's name to appear. */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <h3 style={{ margin: 0 }}>"Not delivering yet" popup (shown on Place Order)</h3>
+        <p className="muted" style={{ marginTop: 4, marginBottom: 12 }}>
+          Shown to the customer instead of actually placing an order — remedies fulfillment
+          isn't live yet, so nothing is charged and no order is created either way. Use{' '}
+          <code>{'{item}'}</code> in the message to insert the specific remedy's name.
+        </p>
+        <div className="field" style={{ marginBottom: 10 }}>
+          <label>Title</label>
+          <input type="text" value={popupTitle} onChange={(e) => setPopupTitle(e.target.value)} />
+        </div>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label>Message</label>
+          <textarea value={popupMessage} onChange={(e) => setPopupMessage(e.target.value)} rows={3} />
+        </div>
+        <button className="btn" onClick={savePopup} disabled={popupBusy}>
+          {popupBusy ? 'Saving…' : 'Save popup text'}
+        </button>
       </div>
 
       <div className="btn-group" style={{ marginBottom: 16 }}>

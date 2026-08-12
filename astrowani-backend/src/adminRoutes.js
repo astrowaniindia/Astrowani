@@ -740,6 +740,9 @@ module.exports = function registerAdminRoutes(app) {
     // settings nothing has cached (most of them read app_settings directly
     // at app launch instead, per the banner-interval/session-replay pattern).
     if (key === 'live_aarti_youtube_url') contentCache.invalidate('live-aarti:');
+    if (key === 'remedy_unavailable_title' || key === 'remedy_unavailable_message') {
+      contentCache.invalidate('remedy-unavailable-popup:');
+    }
     return res.json({ success: true });
   }));
 

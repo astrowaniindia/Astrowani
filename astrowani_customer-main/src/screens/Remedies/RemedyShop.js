@@ -38,6 +38,25 @@ const RemedyShop = ({ route, navigation }) => {
   const [address, setAddress] = useState('');
   const [unavailable, setUnavailable] = useState(false);
 
+  // Admin-editable "not delivering yet" popup text (astrowani-admin's Remedies
+  // page). {item} is replaced with the actual remedy's title below — never
+  // trust this to already contain real content, it's free text an admin typed.
+  const [popupTitle, setPopupTitle] = useState("We're not there yet");
+  const [popupMessage, setPopupMessage] = useState(
+    "We're not currently delivering {item} to your location. Your wallet has not been charged — nothing has been deducted.",
+  );
+  useEffect(() => {
+    let cancelled = false;
+    Instance.get('/api/remedy-unavailable-popup')
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.data?.title) setPopupTitle(res.data.title);
+        if (res?.data?.message) setPopupMessage(res.data.message);
+      })
+      .catch(() => { /* keep the defaults above */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const fetchItems = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -161,12 +180,11 @@ const RemedyShop = ({ route, navigation }) => {
           <View style={styles.modalCard}>
             {unavailable ? (
               <View style={styles.successBox}>
-                <Text style={styles.successTitle}>We're not there yet</Text>
+                <Text style={styles.successTitle}>{popupTitle}</Text>
                 <Text style={styles.successMsg}>
-                  We're not currently delivering {selected?.title} to your location. Your wallet
-                  has not been charged — nothing has been deducted.
+                  {popupMessage.replace('{item}', selected?.title || 'this item')}
                 </Text>
-                <TouchableOpacity style={styles.placeBtn} onPress={() => setSelected(null)}>
+                <TouchableOpacity style={styles.doneBtn} onPress={() => setSelected(null)}>
                   <Text style={styles.placeBtnTxt}>Done</Text>
                 </TouchableOpacity>
               </View>
@@ -298,6 +316,19 @@ const styles = StyleSheet.create({
   cancelBtnTxt: { color: COLORS.black, fontFamily: 'Lato-Bold', fontSize: moderateScale(14) },
   placeBtn: { flex: 1, paddingVertical: verticalScale(12), borderRadius: moderateScale(8), alignItems: 'center', backgroundColor: COLORS.AstroMaroon, marginLeft: scale(8) },
   placeBtnTxt: { color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(14) },
+  // Standalone version of placeBtn — that one relies on `flex: 1` inside the
+  // horizontal Cancel/Place-Order row to size itself, which collapsed it to a
+  // tiny, near-invisible blob when reused by itself in the "not delivering
+  // yet" popup (no flex row to size against, no horizontal padding to fall
+  // back on). This one sizes off its own padding instead.
+  doneBtn: {
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(36),
+    borderRadius: moderateScale(8),
+    alignItems: 'center',
+    backgroundColor: COLORS.AstroMaroon,
+    marginTop: verticalScale(4),
+  },
   successBox: { alignItems: 'center', paddingVertical: verticalScale(20) },
   successTitle: { fontSize: moderateScale(20), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, marginBottom: verticalScale(10) },
   successMsg: { fontSize: moderateScale(14), color: COLORS.black, textAlign: 'center', marginBottom: verticalScale(18), lineHeight: verticalScale(20) },

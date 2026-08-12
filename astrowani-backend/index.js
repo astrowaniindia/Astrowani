@@ -979,6 +979,33 @@ app.get('/api/live-aarti', async (req, res) => {
   }
 });
 
+// "We're not there yet" popup shown on Remedies' Place Order (fulfillment
+// isn't live — see RemedyShop.js). Admin-editable text, app_settings keys
+// remedy_unavailable_title / remedy_unavailable_message, see
+// sql/remedy_unavailable_popup_schema.sql. Defaults here match that seed in
+// case the migration hasn't been run yet.
+app.get('/api/remedy-unavailable-popup', async (req, res) => {
+  try {
+    const payload = await contentCache.get('remedy-unavailable-popup:text', async () => {
+      const [title, message] = await Promise.all([
+        getSetting('remedy_unavailable_title', "We're not there yet"),
+        getSetting(
+          'remedy_unavailable_message',
+          "We're not currently delivering {item} to your location. Your wallet has not been charged — nothing has been deducted.",
+        ),
+      ]);
+      return { title, message };
+    });
+    return res.status(200).json(payload);
+  } catch (err) {
+    console.error('GET /api/remedy-unavailable-popup error:', err.message);
+    return res.status(200).json({
+      title: "We're not there yet",
+      message: "We're not currently delivering {item} to your location. Your wallet has not been charged — nothing has been deducted.",
+    });
+  }
+});
+
 // Thought of the Day — latest active row (table `thoughts`).
 app.get('/api/thoughts/latest', async (req, res) => {
   try {
