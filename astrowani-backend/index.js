@@ -15,7 +15,9 @@ const razorpay = require('./src/razorpay');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
 const { TtlCache } = require('./src/ttlCache');
+const { contentCache } = require('./src/contentCache');
 const { startAstrologerFanout } = require('./src/astrologerFanout');
+const { startTableFanout } = require('./src/tableFanout');
 const {
   applyHttpHardening, otpLimiter, authLimiter, writeLimiter,
 } = require('./src/httpHardening');
@@ -167,16 +169,29 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
 // list/profile endpoints can read the aggregate without a per-row join.
 async function recomputeAstrologerRating(astrologerId) {
   try {
-    const { data: rows } = await supabaseService
-      .from('reviews')
-      .select('rating')
-      .eq('astrologer_id', astrologerId)
-      .eq('is_hidden', false);
-    const list = rows || [];
-    const total = list.length;
-    const avg = total
-      ? Math.round((list.reduce((s, r) => s + (Number(r.rating) || 0), 0) / total) * 10) / 10
-      : 0;
+    // Aggregate in SQL instead of pulling every review row into Node — a
+    // popular astrologer's full review history no longer has to cross the
+    // wire just to compute an average. Falls back to the old full-fetch
+    // behavior if the RPC isn't installed yet (see sql/hardening_05_identity_and_review_indexes.sql).
+    const { data: rpcRows, error: rpcError } = await supabaseService
+      .rpc('astrologer_review_stats', { p_astrologer_id: astrologerId });
+    let avg;
+    let total;
+    if (!rpcError && rpcRows && rpcRows.length) {
+      avg = Math.round((Number(rpcRows[0].avg_rating) || 0) * 10) / 10;
+      total = Number(rpcRows[0].review_count) || 0;
+    } else {
+      const { data: rows } = await supabaseService
+        .from('reviews')
+        .select('rating')
+        .eq('astrologer_id', astrologerId)
+        .eq('is_hidden', false);
+      const list = rows || [];
+      total = list.length;
+      avg = total
+        ? Math.round((list.reduce((s, r) => s + (Number(r.rating) || 0), 0) / total) * 10) / 10
+        : 0;
+    }
     await supabaseService
       .from('astrologers')
       .update({ average_rating: avg, total_reviews: total })
@@ -903,38 +918,44 @@ app.get('/api/banners/all', async (req, res) => {
     const app_ = req.query.app;
     const language = req.query.language;
     const placement = req.query.placement || 'home_primary';
-    let bannerQuery = supabase
-      .from('banners')
-      .select('*')
-      .eq('is_active', true)
-      .eq('placement', placement)
-      .order('sort_order', { ascending: true });
-    if (app_ === 'customer' || app_ === 'vendor') {
-      bannerQuery = bannerQuery.or(`app.eq.${app_},app.eq.both`);
-    }
-    if (language === 'english' || language === 'hindi') {
-      bannerQuery = bannerQuery.or(`language.eq.${language},language.eq.both`);
-    }
-    const [{ data, error }, intervalRaw] = await Promise.all([
-      bannerQuery,
-      getSetting('banner_interval_seconds', '4'),
-    ]);
-    if (error) throw error;
-    const intervalSeconds = Math.max(1, Number(intervalRaw) || 4);
-    return res.status(200).json({
-      intervalSeconds,
-      data: (data || []).map((b) => ({
-        id: b.id,
-        title: b.title,
-        description: b.description,
-        imageUrl: b.image,
-        link: b.link,
-        placement: b.placement,
-        actionType: b.action_type,
-        actionValue: b.action_value,
-        hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
-      })),
+    // Admin-edited, hit on nearly every Home load — cache per (app, language,
+    // placement) combination. See src/contentCache.js.
+    const cacheKey = `banners:${app_ || 'all'}:${language || 'all'}:${placement}`;
+    const payload = await contentCache.get(cacheKey, async () => {
+      let bannerQuery = supabase
+        .from('banners')
+        .select('*')
+        .eq('is_active', true)
+        .eq('placement', placement)
+        .order('sort_order', { ascending: true });
+      if (app_ === 'customer' || app_ === 'vendor') {
+        bannerQuery = bannerQuery.or(`app.eq.${app_},app.eq.both`);
+      }
+      if (language === 'english' || language === 'hindi') {
+        bannerQuery = bannerQuery.or(`language.eq.${language},language.eq.both`);
+      }
+      const [{ data, error }, intervalRaw] = await Promise.all([
+        bannerQuery,
+        getSetting('banner_interval_seconds', '4'),
+      ]);
+      if (error) throw error;
+      const intervalSeconds = Math.max(1, Number(intervalRaw) || 4);
+      return {
+        intervalSeconds,
+        data: (data || []).map((b) => ({
+          id: b.id,
+          title: b.title,
+          description: b.description,
+          imageUrl: b.image,
+          link: b.link,
+          placement: b.placement,
+          actionType: b.action_type,
+          actionValue: b.action_value,
+          hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
+        })),
+      };
     });
+    return res.status(200).json(payload);
   } catch (err) {
     console.error('GET /api/banners/all error:', err.message);
     return res.status(200).json({ data: [], intervalSeconds: 4 });
@@ -944,21 +965,24 @@ app.get('/api/banners/all', async (req, res) => {
 // Thought of the Day — latest active row (table `thoughts`).
 app.get('/api/thoughts/latest', async (req, res) => {
   try {
-    const { data } = await supabase
-      .from('thoughts')
-      .select('text, author, text_hi, author_hi')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    const latest = data && data[0];
-    return res.status(200).json({
-      thoughtText: latest?.text || 'Welcome to Astrowani!',
-      author: latest?.author || '',
-      hindi: {
-        thoughtText: latest?.text_hi || latest?.text || 'एस्ट्रोवाणी में आपका स्वागत है!',
-        author: latest?.author_hi || latest?.author || '',
-      },
+    const payload = await contentCache.get('thoughts:latest', async () => {
+      const { data } = await supabase
+        .from('thoughts')
+        .select('text, author, text_hi, author_hi')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const latest = data && data[0];
+      return {
+        thoughtText: latest?.text || 'Welcome to Astrowani!',
+        author: latest?.author || '',
+        hindi: {
+          thoughtText: latest?.text_hi || latest?.text || 'एस्ट्रोवाणी में आपका स्वागत है!',
+          author: latest?.author_hi || latest?.author || '',
+        },
+      };
     });
+    return res.status(200).json(payload);
   } catch (err) {
     console.error('GET /api/thoughts/latest error:', err.message);
     return res.status(200).json({ thoughtText: 'Welcome to Astrowani!' });
@@ -968,19 +992,22 @@ app.get('/api/thoughts/latest', async (req, res) => {
 // Categories — admin-authored (table `categories`), shape preserved.
 app.get('/api/categories', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('sort_order', { ascending: true });
-    if (error) throw error;
-    return res.status(200).json({
-      categories: (data || []).map((c) => ({
-        _id: c.id,
-        name: c.name,
-        image: c.image,
-        hindi: { name: c.name_hi || c.name },
-      })),
+    const payload = await contentCache.get('categories:all', async () => {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return {
+        categories: (data || []).map((c) => ({
+          _id: c.id,
+          name: c.name,
+          image: c.image,
+          hindi: { name: c.name_hi || c.name },
+        })),
+      };
     });
+    return res.status(200).json(payload);
   } catch (err) {
     console.error('GET /api/categories error:', err.message);
     return res.status(200).json({ categories: [] });
@@ -1029,25 +1056,29 @@ app.get('/api/blogs', async (req, res) => {
 // Remedies shop — list active items by type (puja | gemstone | specific_puja).
 app.get('/api/remedies', async (req, res) => {
   try {
-    let query = supabase
-      .from('remedy_items')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true });
-    if (req.query.type) query = query.eq('type', req.query.type);
-    const { data, error } = await query;
-    if (error) throw error;
-    return res.status(200).json({
-      data: (data || []).map((r) => ({
-        _id: r.id,
-        type: r.type,
-        title: r.title,
-        description: r.description,
-        price: r.price,
-        image: r.image,
-        hindi: { title: r.title_hi || r.title, description: r.description_hi || r.description },
-      })),
+    const cacheKey = `remedies:${req.query.type || 'all'}`;
+    const payload = await contentCache.get(cacheKey, async () => {
+      let query = supabase
+        .from('remedy_items')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (req.query.type) query = query.eq('type', req.query.type);
+      const { data, error } = await query;
+      if (error) throw error;
+      return {
+        data: (data || []).map((r) => ({
+          _id: r.id,
+          type: r.type,
+          title: r.title,
+          description: r.description,
+          price: r.price,
+          image: r.image,
+          hindi: { title: r.title_hi || r.title, description: r.description_hi || r.description },
+        })),
+      };
     });
+    return res.status(200).json(payload);
   } catch (err) {
     console.error('GET /api/remedies error:', err.message);
     return res.status(200).json({ data: [] });
@@ -1206,25 +1237,27 @@ app.get('/api/astrologers/specialty/:id', (req, res) => {
   });
 });
 
-// Live Astrologers — real data from Supabase where is_available = true
+// Live Astrologers — real data from Supabase where is_available = true.
+// Cached + column-projected the same way GET /api/astrologers already is —
+// this endpoint used to skip both (SELECT *, no TTL cache), paying the full
+// buildCategoryMap()+buildBusyMap() cost on every single hit.
 app.get('/api/astrologers/liveAstrologers', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('astrologers')
-      .select('*')
-      .eq('is_available', true);
+    const formattedData = await astrologerListCache.get('astrologers:live', async () => {
+      const { data, error } = await supabase
+        .from('astrologers')
+        .select(ASTROLOGER_LIST_COLUMNS)
+        .eq('is_available', true);
 
-    if (error) throw error;
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
 
-    if (!data || data.length === 0) {
-      return res.status(200).json({ data: [] });
-    }
+      // Live section also respects the approval + profile-complete gates.
+      const visibleRows = data.filter(astrologerVisibleToCustomers);
 
-    // Live section also respects the approval + profile-complete gates.
-    const visibleRows = data.filter(astrologerVisibleToCustomers);
-
-    const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
-    const formattedData = visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
+      const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
+      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
+    });
 
     return res.status(200).json({ data: formattedData });
   } catch (err) {
@@ -2005,11 +2038,14 @@ app.post('/api/session/accept', async (req, res) => {
         ? astroData?.video_charge_per_minute ?? 0
         : astroData?.call_charge_per_minute ?? 0;
 
-    const { count } = await supabaseService
+    // Existence check, not a real count — .limit(1) stops at the first match
+    // instead of counting every past session a long-time customer has had.
+    const { data: priorSessionRows } = await supabaseService
       .from('chat_sessions')
-      .select('id', { count: 'exact', head: true })
-      .eq('caller_id', realCallerId);
-    const isFreeSession = (count || 0) === 0;
+      .select('id')
+      .eq('caller_id', realCallerId)
+      .limit(1);
+    const isFreeSession = !priorSessionRows || priorSessionRows.length === 0;
 
     const sessionInsertPayload = {
       request_id: targetTable === 'chat_requests' ? resolvedRequestId : null,
@@ -3024,12 +3060,15 @@ const GIFT_VENDOR_SHARE = 0.5; // astrologer gets 50%, platform keeps 50%
 // Gift catalog (active) — used by the customer GiftModal.
 app.get('/api/gifts', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('gifts').select('*').eq('is_active', true).order('sort_order', { ascending: true });
-    if (error) throw error;
-    return res.status(200).json({
-      data: (data || []).map((g) => ({ _id: g.id, name: g.name, price: g.price, image: g.image })),
+    const payload = await contentCache.get('gifts:all', async () => {
+      const { data, error } = await supabase
+        .from('gifts').select('*').eq('is_active', true).order('sort_order', { ascending: true });
+      if (error) throw error;
+      return {
+        data: (data || []).map((g) => ({ _id: g.id, name: g.name, price: g.price, image: g.image })),
+      };
     });
+    return res.status(200).json(payload);
   } catch (err) {
     console.error('GET /api/gifts error:', err.message);
     return res.status(200).json({ data: [] });
@@ -3246,6 +3285,32 @@ server.listen(PORT, () => {
     supabaseUrl: SUPABASE_URL,
     supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY,
     onChange: () => astrologerListCache.invalidate('astrologers:'),
+  });
+
+  // Same fanout pattern applied to the three other tables the 2026-08-13 perf
+  // audit found still using the old per-client unfiltered-subscription anti-
+  // pattern (finding G2) — see src/tableFanout.js. Each app-side hook
+  // (useBlogListSync / useLiveListSync / useRemedyListSync) listens for the
+  // matching event on the shared socket instead of opening its own Supabase
+  // Realtime channel.
+  const fanoutKey = process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+  startTableFanout({
+    io, supabaseUrl: SUPABASE_URL, supabaseKey: fanoutKey,
+    table: 'blogs', eventName: 'blogs_changed',
+    // No onChange here — GET /api/blogs is a direct paginated Supabase query,
+    // never wrapped in contentCache (unlike remedies/gifts/astro-services), so
+    // there is nothing to invalidate. The socket event alone is what matters:
+    // it tells BlogList.js/Home.js to refetch.
+  });
+  startTableFanout({
+    io, supabaseUrl: SUPABASE_URL, supabaseKey: fanoutKey,
+    table: 'live_sessions', eventName: 'live_sessions_changed',
+    onChange: () => astrologerListCache.invalidate('astrologers:live'),
+  });
+  startTableFanout({
+    io, supabaseUrl: SUPABASE_URL, supabaseKey: fanoutKey,
+    table: 'remedy_items', eventName: 'remedy_items_changed',
+    onChange: () => contentCache.invalidate('remedies:'),
   });
 
   // DISABLE_SESSION_MANAGER gates only the loops that WRITE.

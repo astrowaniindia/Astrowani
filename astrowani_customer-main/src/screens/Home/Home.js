@@ -49,6 +49,7 @@ import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
+import useBlogListSync from '../../hooks/useBlogListSync';
 import useChatRequest from '../../hooks/useChatRequest';
 import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import RequestingPopup from '../../components/RequestingPopup';
@@ -69,6 +70,109 @@ const FREE_SERVICE_ROUTES = {
   'Kundali Match': {screen: 'KundaliMatchScreen', key: 'kundali-match'},
   'Free Horoscope': {screen: 'Horoscope', key: 'horoscope'},
   'Shubh Muhurat': {screen: 'ShubhMuhurat', key: 'shubh-muhurat'},
+};
+
+// Hoisted to module scope (was previously declared inside Home's render body,
+// which recreated the component's identity on every Home re-render — since
+// React remounts rather than updates a list item when its component reference
+// changes, the pulsing-dot Animated.loop below could visibly restart on any
+// unrelated Home state change, not just when the live list itself changed).
+const AstrologerItem = ({astrologer, navigation, t}) => {
+  // Pulsing red dot on the LIVE badge — the only cue the old card had that
+  // something was actually happening was a flat static label; this makes it
+  // read as "live right now" at a glance instead of just a color chip.
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.6, duration: 750, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      style={styles.liveCard}
+      onPress={() =>
+        navigation.navigate('LiveViewerScreen', {
+          sessionId: astrologer.sessionId,
+          astrologer,
+        })
+      }>
+      <Image
+        source={{uri: astrologer.profileImage || astrologer.image}}
+        style={styles.liveCardImage}
+        resizeMode="cover"
+      />
+      {/* Bottom scrim so the name/topic stay readable over any photo — a real
+          gradient (react-native-svg is already a linked dependency, so this
+          needs no native rebuild / stays OTA-shippable), not a flat tint. */}
+      <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <LinearGradient id="liveCardGradient" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0.45" stopColor="#000000" stopOpacity={0} />
+            <Stop offset="1" stopColor="#000000" stopOpacity={0.82} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#liveCardGradient)" />
+      </Svg>
+
+      <View style={styles.liveBadge}>
+        <Animated.View style={[styles.livePulseDot, { transform: [{ scale: pulseAnim }] }]} />
+        <Text style={styles.liveBadgeText}>{t('common.live').toUpperCase()}</Text>
+      </View>
+
+      <View style={styles.liveCardInfo}>
+        <Text style={styles.liveCardName} numberOfLines={1}>{astrologer.name}</Text>
+        {!!astrologer.specialties?.[0]?.name && (
+          <Text style={styles.liveCardTopic} numberOfLines={1}>{astrologer.specialties[0].name}</Text>
+        )}
+        <StarRating
+          rating={astrologer.rating}
+          totalReviews={astrologer.totalReviews}
+          size={11}
+          style={styles.liveCardStars}
+        />
+        <View style={styles.liveCardMetaRow}>
+          {!!astrologer.experience && (
+            <Text style={styles.liveCardMeta} numberOfLines={1}>
+              {astrologer.experience} {astrologer.experience === 1 ? 'yr' : 'yrs'} exp
+            </Text>
+          )}
+          {!!astrologer.language?.length && (
+            <>
+              <Text style={styles.liveCardMetaDot}>•</Text>
+              <Text style={styles.liveCardMeta} numberOfLines={1}>
+                {astrologer.language.join(', ')}
+              </Text>
+            </>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+const BlogItem = ({blog, navigation, language}) => {
+  const title = language === 'Hindi' ? (blog.hindi?.title || blog.title) : blog.title;
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        captureEvent('home_screen_click', {section: 'blog_card', label: title});
+        navigation.navigate('BlogScreen', {data: blog});
+      }}
+      style={styles.blogCard}>
+      <Image style={styles.blogImg} source={{uri: blog.thumbnail}} />
+      <Text style={styles.blogTitle}>{title}</Text>
+      <Text style={styles.blogContent} numberOfLines={2} ellipsizeMode="tail">
+        {blog.metaDescription}
+      </Text>
+    </TouchableOpacity>
+  );
 };
 
 const Home = ({navigation}) => {
@@ -203,15 +307,45 @@ const Home = ({navigation}) => {
     };
   }, []);
   
+  // Marquee buffer — was Array(1000).fill(...).flat(), a 30,000+ element array
+  // for a ~30-astrologer list, held for as long as Home is mounted. 6 copies is
+  // enough for the wraparound below (contentWidthRef) to always have content on
+  // both sides; the rewind makes this loop indefinitely without needing a huge
+  // buffer to "outrun" the interval.
+  const MARQUEE_REPEAT = 6;
   const loopedAstrologers = React.useMemo(() => {
     if (!astrologerToShow || astrologerToShow.length === 0) return [];
-    return Array(1000).fill(astrologerToShow).flat();
+    return Array(MARQUEE_REPEAT).fill(astrologerToShow).flat();
   }, [astrologerToShow]);
+
+  // Measured native content width of the looped list (all MARQUEE_REPEAT copies).
+  // Used to silently rewind by exactly one copy's width once we scroll into the
+  // last copy — since every copy renders identical items, the jump is visually
+  // imperceptible, and it keeps scrollOffset bounded forever instead of running
+  // off the end of a fixed-size array.
+  const contentWidthRef = React.useRef(0);
 
   React.useEffect(() => {
     const timer = setInterval(() => {
       if (isAutoScrolling.current && listRef.current && loopedAstrologers.length > 0) {
-        scrollOffset.current += 1; 
+        scrollOffset.current += 1;
+        const totalWidth = contentWidthRef.current;
+        if (totalWidth > 0) {
+          // Direct clamp for the case where the underlying astrologer list
+          // shrinks (e.g. a background refetch) while offset was already deep
+          // into a wraparound cycle sized for the OLD, larger content — without
+          // this, the one-set-per-tick rewind below only closes the gap
+          // gradually, meaning several ticks in a row would call
+          // scrollToOffset() with a value past the new (smaller) scrollable
+          // range. Modulo snaps it back in range in a single tick instead.
+          if (scrollOffset.current >= totalWidth) {
+            scrollOffset.current = scrollOffset.current % totalWidth;
+          }
+          const singleSetWidth = totalWidth / MARQUEE_REPEAT;
+          if (scrollOffset.current >= totalWidth - singleSetWidth) {
+            scrollOffset.current -= singleSetWidth;
+          }
+        }
         try {
           listRef.current.scrollToOffset({ offset: scrollOffset.current, animated: false });
         } catch (e) {}
@@ -747,23 +881,11 @@ const Home = ({navigation}) => {
   useAstrologerListSync(() => { fetchAstrologer(); getLiveAstro(); });
 
   // Live sync — re-fetch the blog carousel when the admin publishes/edits a blog.
-  // Unique channel name per mount (same rule as the astrologer subscription above).
-  const blogChannelName = React.useRef(
-    `home-blog-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-  ).current;
-  useEffect(() => {
-    const channel = supabase
-      .channel(blogChannelName)
-      .on(
-        'postgres_changes',
-        {event: '*', schema: 'public', table: 'blogs'},
-        () => fetchBlogs(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  // Was its own independent unfiltered Supabase Realtime subscription on
+  // `blogs` — on top of BlogList.js's separate one for the same table (same
+  // anti-pattern the astrologer sync above already replaced). Now shares the
+  // one backend fanout via hooks/useBlogListSync.js.
+  useBlogListSync(() => { fetchBlogs(); });
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = () => {
@@ -938,104 +1060,6 @@ const Home = ({navigation}) => {
     );
   };
 
-  const AstrologerItem = ({astrologer}) => {
-    // Pulsing red dot on the LIVE badge — the only cue the old card had that
-    // something was actually happening was a flat static label; this makes it
-    // read as "live right now" at a glance instead of just a color chip.
-    const pulseAnim = useRef(new Animated.Value(1)).current;
-    useEffect(() => {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.6, duration: 750, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
-        ]),
-      );
-      loop.start();
-      return () => loop.stop();
-    }, []);
-
-    return (
-      <TouchableOpacity
-        activeOpacity={0.88}
-        style={styles.liveCard}
-        onPress={() =>
-          navigation.navigate('LiveViewerScreen', {
-            sessionId: astrologer.sessionId,
-            astrologer,
-          })
-        }>
-        <Image
-          source={{uri: astrologer.profileImage || astrologer.image}}
-          style={styles.liveCardImage}
-          resizeMode="cover"
-        />
-        {/* Bottom scrim so the name/topic stay readable over any photo — a real
-            gradient (react-native-svg is already a linked dependency, so this
-            needs no native rebuild / stays OTA-shippable), not a flat tint. */}
-        <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
-          <Defs>
-            <LinearGradient id="liveCardGradient" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0.45" stopColor="#000000" stopOpacity={0} />
-              <Stop offset="1" stopColor="#000000" stopOpacity={0.82} />
-            </LinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" fill="url(#liveCardGradient)" />
-        </Svg>
-
-        <View style={styles.liveBadge}>
-          <Animated.View style={[styles.livePulseDot, { transform: [{ scale: pulseAnim }] }]} />
-          <Text style={styles.liveBadgeText}>{t('common.live').toUpperCase()}</Text>
-        </View>
-
-        <View style={styles.liveCardInfo}>
-          <Text style={styles.liveCardName} numberOfLines={1}>{astrologer.name}</Text>
-          {!!astrologer.specialties?.[0]?.name && (
-            <Text style={styles.liveCardTopic} numberOfLines={1}>{astrologer.specialties[0].name}</Text>
-          )}
-          <StarRating
-            rating={astrologer.rating}
-            totalReviews={astrologer.totalReviews}
-            size={11}
-            style={styles.liveCardStars}
-          />
-          <View style={styles.liveCardMetaRow}>
-            {!!astrologer.experience && (
-              <Text style={styles.liveCardMeta} numberOfLines={1}>
-                {astrologer.experience} {astrologer.experience === 1 ? 'yr' : 'yrs'} exp
-              </Text>
-            )}
-            {!!astrologer.language?.length && (
-              <>
-                <Text style={styles.liveCardMetaDot}>•</Text>
-                <Text style={styles.liveCardMeta} numberOfLines={1}>
-                  {astrologer.language.join(', ')}
-                </Text>
-              </>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const BlogItem = ({blog}) => {
-    const title = language === 'Hindi' ? (blog.hindi?.title || blog.title) : blog.title;
-    return (
-      <TouchableOpacity
-        onPress={() => {
-          captureEvent('home_screen_click', {section: 'blog_card', label: title});
-          navigation.navigate('BlogScreen', {data: blog});
-        }}
-        style={styles.blogCard}>
-        <Image style={styles.blogImg} source={{uri: blog.thumbnail}} />
-        <Text style={styles.blogTitle}>{title}</Text>
-        <Text style={styles.blogContent} numberOfLines={2} ellipsizeMode="tail">
-          {blog.metaDescription}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
   return (
     <View style={{flex: 1, backgroundColor: COLORS.AstroMaroon}}>
       <ScrollView 
@@ -1121,8 +1145,19 @@ const Home = ({navigation}) => {
             renderItem={renderAstrologerList}
             horizontal
             showsHorizontalScrollIndicator={false}
-            removeClippedSubviews={false}
+            // removeClippedSubviews alone (not a tight windowSize) is the fix here —
+            // the real cost was the 1000x-duplicated array (see MARQUEE_REPEAT
+            // above, now 6x), not virtualization tuning. A tight windowSize was
+            // tried here and reverted: the rewind below jumps back exactly one
+            // MARQUEE_REPEAT-th of the content width, which is wide enough that a
+            // tight window can unmount that region before the jump lands, risking
+            // a blank-frame flicker at every wraparound. FlatList's own default
+            // windowSize (21) keeps enough on both sides for the jump to always
+            // land on already-mounted content, at negligible cost given the array
+            // is now only 6 copies.
+            removeClippedSubviews={true}
             contentContainerStyle={styles.astrologerList}
+            onContentSizeChange={(w) => { contentWidthRef.current = w; }}
             onScroll={(e) => {
               if (!isAutoScrolling.current) {
                 scrollOffset.current = e.nativeEvent.contentOffset.x;
@@ -1201,7 +1236,7 @@ const Home = ({navigation}) => {
         {liveAstro && liveAstro.length > 0 ? (
           <FlatList
             data={liveAstro}
-            renderItem={({item}) => <AstrologerItem astrologer={item} />}
+            renderItem={({item}) => <AstrologerItem astrologer={item} navigation={navigation} t={t} />}
             keyExtractor={item => item.name}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -1275,7 +1310,7 @@ const Home = ({navigation}) => {
         ) : (
           <FlatList
             data={blogs?.data}
-            renderItem={({item}) => <BlogItem blog={item} />}
+            renderItem={({item}) => <BlogItem blog={item} navigation={navigation} language={language} />}
             keyExtractor={item => item._id.toString()}
             horizontal
             showsHorizontalScrollIndicator={false}

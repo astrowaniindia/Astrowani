@@ -15,53 +15,28 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
-import Instance from '../api/ApiCall';
 import useNotificationBadgeSync from '../hooks/useNotificationBadgeSync';
+import useWalletBalance, { refreshWalletBalance } from '../hooks/useWalletBalance';
 
 import { LanguageContext } from '../context/LanguageContext';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const [walletBalance, setWalletBalance] = useState(0);
+  // Shared poll (see hooks/useWalletBalance.js) — this header mounts on 6 main
+  // tabs, and used to run its own independent 20s interval on top of the tab
+  // bar's and the Wallet screen's, up to 3x the necessary /api/wallet traffic
+  // at once. refreshWalletBalance() below still forces an immediate refetch on
+  // focus without starting a second timer.
+  const walletBalanceValue = useWalletBalance();
+  const walletBalance = walletBalanceValue === null ? 0 : walletBalanceValue;
   const [unreadCount, setUnreadCount] = useState(0);
   const [customerId, setCustomerId] = useState(null);
   const { language, changeLanguage } = React.useContext(LanguageContext);
 
   useEffect(() => {
-    // No more direct Realtime subscription on `customers` — that table carries every
-    // user's PII and Postgres GRANT is not row-scoped, so there is no anon column
-    // grant that exposes "your own" balance without exposing everyone's. See
-    // DATABASE_HARDENING_HANDOFF.md §3.1/§3.2. Refresh-on-focus (below) plus a 20s
-    // poll while this header is mounted keeps the display fresh enough.
-    let cancelled = false;
-    let timer = null;
-
-    const fetchBalance = async () => {
-      try {
-        const token = await AsyncStorage.getItem('token');
-        if (!token) return;
-        const res = await Instance.get('/api/wallet', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!cancelled && res.data?.success) {
-          setWalletBalance(res.data.data.balance || 0);
-        }
-      } catch (e) {
-        console.log('Error fetching wallet balance:', e.message);
-      }
-    };
-
-    fetchBalance();
-    timer = setInterval(fetchBalance, 20000);
-
-    const unsubscribe = navigation.addListener('focus', fetchBalance);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearInterval(timer);
-      unsubscribe();
-    };
+    const unsubscribe = navigation.addListener('focus', refreshWalletBalance);
+    return unsubscribe;
   }, [navigation]);
 
   useEffect(() => {

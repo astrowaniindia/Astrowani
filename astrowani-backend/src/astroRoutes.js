@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
 const wallet = require('./wallet');
+const { contentCache } = require('./contentCache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -351,13 +352,16 @@ module.exports = function registerAstroRoutes(app) {
   // Public — customer app reads prices before showing the purchase screen.
   app.get('/api/astro-services', async (req, res) => {
     try {
-      const { data, error } = await db
-        .from('astro_services')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true });
-      if (error) throw error;
-      return res.json({ success: true, data: data || [] });
+      const data = await contentCache.get('astro-services:all', async () => {
+        const { data, error } = await db
+          .from('astro_services')
+          .select('*')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+        if (error) throw error;
+        return data || [];
+      });
+      return res.json({ success: true, data });
     } catch (err) {
       console.error('GET /api/astro-services error:', err.message);
       return res.status(500).json({ success: false, message: 'Failed to load astro services' });

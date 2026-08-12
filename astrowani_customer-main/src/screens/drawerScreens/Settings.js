@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {LanguageContext} from '../../context/LanguageContext';
+import {resetWalletBalance} from '../../hooks/useWalletBalance';
 
 // These policy/safety pages are maintained on the marketing site, not duplicated as in-app
 // screens, so they can't go stale here when legal/support updates the real page.
@@ -37,6 +38,7 @@ export default function Settings({navigation}) {
   };
   const handleLogout = async () => {
     try {
+      resetWalletBalance();
       await AsyncStorage.removeItem('token');
 
       // Resetting any navigation state or redirection

@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, Image, ImageBackground, TouchableOpacity, FlatList, StyleSheet, TextInput, RefreshControl } from 'react-native';
+import { View, Text, ImageBackground, TouchableOpacity, FlatList, StyleSheet, TextInput, RefreshControl } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
-import { supabase } from '../../api/SupabaseClient';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { LanguageContext } from '../../context/LanguageContext';
+import useLiveListSync from '../../hooks/useLiveListSync';
 
 const Live = ({ navigation }) => {
   const { t } = React.useContext(LanguageContext);
@@ -40,14 +41,10 @@ const Live = ({ navigation }) => {
 
   useFocusEffect(useCallback(() => { getLiveAstro(); }, [getLiveAstro]));
 
-  // Live sync — refresh when a session starts/ends (unique channel per mount).
-  useEffect(() => {
-    const channel = supabase
-      .channel(`live-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_sessions' }, () => getLiveAstro())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [getLiveAstro]);
+  // Was an unfiltered per-mount Supabase Realtime subscription on the whole
+  // `live_sessions` table — replaced with the shared backend fanout (see
+  // hooks/useLiveListSync.js).
+  useLiveListSync(() => { getLiveAstro(); });
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -75,7 +72,7 @@ const Live = ({ navigation }) => {
         </View>
 
         <View style={styles.content}>
-          <Image source={{ uri: item.profileImage }} style={styles.profileImage} />
+          <FastImage source={{ uri: item.profileImage, priority: FastImage.priority.normal }} style={styles.profileImage} />
           <View style={styles.details}>
             <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
             <Text style={styles.title} numberOfLines={1}>{item.specialties?.[0]?.name || 'Vedic Astrology'}</Text>

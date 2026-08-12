@@ -14,6 +14,7 @@ import {
   StatusBar,
   TextInput,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
@@ -684,8 +685,8 @@ const AstrologerInfo = ({route, navigation}) => {
         <View style={styles.profileCard}>
           <View style={styles.profileTopRow}>
             <TouchableOpacity onPress={() => setImageModalVisible(true)} activeOpacity={0.85}>
-              <Image
-                source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+              <FastImage
+                source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png', priority: FastImage.priority.high }}
                 style={styles.avatar}
               />
             </TouchableOpacity>
@@ -1008,10 +1009,10 @@ const AstrologerInfo = ({route, navigation}) => {
           activeOpacity={1}
           onPress={() => setImageModalVisible(false)}>
           <StatusBar backgroundColor="rgba(0,0,0,0.95)" barStyle="light-content" />
-          <Image
+          <FastImage
             source={{ uri: person.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
             style={styles.imageModalPhoto}
-            resizeMode="contain"
+            resizeMode={FastImage.resizeMode.contain}
           />
         </TouchableOpacity>
       </Modal>

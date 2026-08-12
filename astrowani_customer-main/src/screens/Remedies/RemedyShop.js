@@ -16,8 +16,8 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
+import useRemedyListSync from '../../hooks/useRemedyListSync';
 
 // Unified shop screen for all three remedy types. route.params: { type, title }.
 const RemedyShop = ({ route, navigation }) => {
@@ -57,21 +57,13 @@ const RemedyShop = ({ route, navigation }) => {
     fetchItems();
   }, [fetchItems]);
 
-  // Live sync — re-fetch when the admin adds/edits items (unique channel name per mount).
-  useEffect(() => {
-    const channelName = `remedy-${type}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'remedy_items' },
-        () => fetchItems(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [type, fetchItems]);
+  // Was an unfiltered Supabase Realtime subscription on the whole
+  // `remedy_items` table, opened once per remedy type — a customer browsing
+  // all three types (puja/gemstone/specific_puja) accumulated three identical
+  // subscriptions to the same table. Now shares the one backend fanout (see
+  // hooks/useRemedyListSync.js) regardless of how many RemedyShop instances
+  // (one per type) are mounted at once.
+  useRemedyListSync(() => { fetchItems(); });
 
   const openBuy = async item => {
     setSelected(item);

@@ -12,6 +12,7 @@ const { sendPush } = require('./push');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { authLimiter } = require('./httpHardening');
+const { contentCache } = require('./contentCache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -126,6 +127,9 @@ module.exports = function registerAdminRoutes(app) {
     app.post(`/api/admin/${resource}`, requireAdmin, h(async (req, res) => {
       const { data, error } = await db.from(table).insert([pick(req.body || {})]).select().single();
       if (error) throw error;
+      // No-op for resources the customer-facing routes don't cache (e.g. blogs,
+      // support-tickets) — invalidate() on a prefix with no matching keys is safe.
+      contentCache.invalidate(`${resource}:`);
       return res.json({ success: true, data });
     }));
 
@@ -135,12 +139,14 @@ module.exports = function registerAdminRoutes(app) {
       if (table === 'support_tickets' && body.status === 'resolved') body.resolved_at = new Date().toISOString();
       const { data, error } = await db.from(table).update(body).eq('id', req.params.id).select().single();
       if (error) throw error;
+      contentCache.invalidate(`${resource}:`);
       return res.json({ success: true, data });
     }));
 
     app.delete(`/api/admin/${resource}/:id`, requireAdmin, h(async (req, res) => {
       const { error } = await db.from(table).delete().eq('id', req.params.id);
       if (error) throw error;
+      contentCache.invalidate(`${resource}:`);
       return res.json({ success: true });
     }));
   }

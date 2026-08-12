@@ -13,8 +13,8 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
+import useBlogListSync from '../../hooks/useBlogListSync';
 
 const BlogList = ({ navigation }) => {
   const { language } = useContext(LanguageContext);
@@ -53,14 +53,14 @@ const BlogList = ({ navigation }) => {
     fetchBlogs(1, true);
   }, []);
 
-  useEffect(() => {
-    const channelName = `blog-list-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'blogs' }, () => fetchBlogs(1, true))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+  // Was an unfiltered per-mount Supabase Realtime subscription on the whole
+  // `blogs` table — replaced with the shared backend fanout (see
+  // hooks/useBlogListSync.js). Also no longer discards pages the user has
+  // already scrolled through: a remote change only auto-refreshes while still
+  // on page 1, since fetchBlogs(1, true) fully replaces the list.
+  useBlogListSync(() => {
+    if (page <= 1) fetchBlogs(1, true);
+  });
 
   const handleLoadMore = () => {
     if (!loading && page < totalPages) {

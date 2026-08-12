@@ -10,11 +10,11 @@ import {
   FlatList,
   ActivityIndicator,
   ImageBackground,
-  Image,
   KeyboardAvoidingView,
   Platform,
   StatusBar,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../api/SupabaseClient';
@@ -306,7 +306,12 @@ const ChatSessionScreen = ({ route, navigation }) => {
         }
       }, 1000);
 
-          // Check if Vendor ended the chat
+          // Backstop only — the 'session_ended' socket listener registered above
+          // (line ~257) is the primary path and fires immediately. This used to
+          // poll every 5s for the entire session duration, which was a continuous
+          // DB read doing the same job the socket event already does; kept at a
+          // much longer interval purely as a fallback in case a socket event is
+          // ever dropped, not as the normal detection path.
           pollEndRef.current = setInterval(async () => {
             if (hasEndedRef.current || !sessionRef.current) return;
             const { data: checkSess } = await supabase
@@ -317,7 +322,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
             if (checkSess?.ended_at) {
               endSession('The astrologer has ended the session.');
             }
-          }, 5000);
+          }, 45000);
 
     };
 
@@ -371,7 +376,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         
         {person?.profileImage || person?.image ? (
-          <Image source={{ uri: person?.profileImage || person?.image }} style={styles.headerAvatar} />
+          <FastImage source={{ uri: person?.profileImage || person?.image, priority: FastImage.priority.normal }} style={styles.headerAvatar} />
         ) : (
           <View style={styles.headerAvatarFallback}>
             <Ionicons name="person" size={20} color={COLORS.AstroMaroon} />

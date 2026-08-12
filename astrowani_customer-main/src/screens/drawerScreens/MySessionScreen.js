@@ -218,6 +218,10 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
         data.length === 0 ? styles.emptyContainer : styles.listContent
       }
       showsVerticalScrollIndicator={false}
+      removeClippedSubviews={true}
+      windowSize={7}
+      maxToRenderPerBatch={10}
+      initialNumToRender={10}
       ListEmptyComponent={
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>{t('session.noneFound', {type: sessionTypeLabel})}</Text>

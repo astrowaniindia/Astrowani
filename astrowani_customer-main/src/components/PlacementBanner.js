@@ -3,7 +3,8 @@
 // a fading, tappable carousel. Tapping navigates per the admin's configured action
 // (a screen name, or an external URL) — no-ops if the banner has no action set.
 import React from 'react';
-import { View, Image, Animated, TouchableOpacity, Linking } from 'react-native';
+import { View, Animated, TouchableOpacity, Linking } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
@@ -94,10 +95,10 @@ const PlacementBanner = ({
       disabled={!isTappable}
       style={[{ height, borderRadius, overflow: 'hidden' }, style]}>
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <Image
-          source={active.uri ? { uri: active.uri } : active.source}
+        <FastImage
+          source={active.uri ? { uri: active.uri, priority: FastImage.priority.high } : active.source}
           style={{ width: '100%', height: '100%' }}
-          resizeMode="cover"
+          resizeMode={FastImage.resizeMode.cover}
         />
       </Animated.View>
     </TouchableOpacity>

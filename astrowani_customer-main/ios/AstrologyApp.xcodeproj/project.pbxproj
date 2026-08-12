@@ -11,15 +11,11 @@
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
-		1544534CC6E241E19D2901FF /* Montserrat-Italic-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6AC9924F8A89402F8BD0F0FF /* Montserrat-Italic-VariableFont_wght.ttf */; };
-		1FE765EE3FFB4C239D7DC7F4 /* OpenSans-VariableFont_wdth,wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 84D708E96BC84ACDA8ABC137 /* OpenSans-VariableFont_wdth,wght.ttf */; };
 		599B747142F143908241367C /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BF23013D291940D08AD44246 /* Lato-Bold.ttf */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		949B682902BB467792ECF1CC /* Poppins-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C55364A95840419D95A9CEC8 /* Poppins-Bold.ttf */; };
-		B55C2884CF124F6383BC32AE /* OpenSans-Italic-VariableFont_wdth,wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3C5F84EE9A5046F59753A0AE /* OpenSans-Italic-VariableFont_wdth,wght.ttf */; };
 		C75C86AECEC0477291F8B4A5 /* Lato-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F1BCC68C30F348E29809C96F /* Lato-Regular.ttf */; };
 		D84682AAFD4D427997CC1F49 /* Poppins-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1D90EC86BD7841C3A632A77B /* Poppins-Regular.ttf */; };
-		DD27FD405BA14BD7852DDB96 /* Montserrat-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FA018DD035454DEABB51B8DE /* Montserrat-VariableFont_wght.ttf */; };
 		F042215836E84E478621FC09 /* Poppins-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E2741B9553984AA5B8AC2822 /* Poppins-Light.ttf */; };
 /* End PBXBuildFile section */
 
@@ -45,16 +41,12 @@
 		13B07FB71A68108700A75B9A /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = main.m; path = AstrologyApp/main.m; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = AstrologyApp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		1D90EC86BD7841C3A632A77B /* Poppins-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-Regular.ttf"; path = "../src/assets/Fonts/Poppins-Regular.ttf"; sourceTree = "<group>"; };
-		3C5F84EE9A5046F59753A0AE /* OpenSans-Italic-VariableFont_wdth,wght.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "OpenSans-Italic-VariableFont_wdth,wght.ttf"; path = "../src/assets/Fonts/OpenSans-Italic-VariableFont_wdth,wght.ttf"; sourceTree = "<group>"; };
-		6AC9924F8A89402F8BD0F0FF /* Montserrat-Italic-VariableFont_wght.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Montserrat-Italic-VariableFont_wght.ttf"; path = "../src/assets/Fonts/Montserrat-Italic-VariableFont_wght.ttf"; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = AstrologyApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		84D708E96BC84ACDA8ABC137 /* OpenSans-VariableFont_wdth,wght.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "OpenSans-VariableFont_wdth,wght.ttf"; path = "../src/assets/Fonts/OpenSans-VariableFont_wdth,wght.ttf"; sourceTree = "<group>"; };
 		BF23013D291940D08AD44246 /* Lato-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Lato-Bold.ttf"; path = "../src/assets/Fonts/Lato-Bold.ttf"; sourceTree = "<group>"; };
 		C55364A95840419D95A9CEC8 /* Poppins-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-Bold.ttf"; path = "../src/assets/Fonts/Poppins-Bold.ttf"; sourceTree = "<group>"; };
 		E2741B9553984AA5B8AC2822 /* Poppins-Light.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-Light.ttf"; path = "../src/assets/Fonts/Poppins-Light.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F1BCC68C30F348E29809C96F /* Lato-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Lato-Regular.ttf"; path = "../src/assets/Fonts/Lato-Regular.ttf"; sourceTree = "<group>"; };
-		FA018DD035454DEABB51B8DE /* Montserrat-VariableFont_wght.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Montserrat-VariableFont_wght.ttf"; path = "../src/assets/Fonts/Montserrat-VariableFont_wght.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,10 +111,6 @@
 			children = (
 				BF23013D291940D08AD44246 /* Lato-Bold.ttf */,
 				F1BCC68C30F348E29809C96F /* Lato-Regular.ttf */,
-				6AC9924F8A89402F8BD0F0FF /* Montserrat-Italic-VariableFont_wght.ttf */,
-				FA018DD035454DEABB51B8DE /* Montserrat-VariableFont_wght.ttf */,
-				3C5F84EE9A5046F59753A0AE /* OpenSans-Italic-VariableFont_wdth,wght.ttf */,
-				84D708E96BC84ACDA8ABC137 /* OpenSans-VariableFont_wdth,wght.ttf */,
 				C55364A95840419D95A9CEC8 /* Poppins-Bold.ttf */,
 				E2741B9553984AA5B8AC2822 /* Poppins-Light.ttf */,
 				1D90EC86BD7841C3A632A77B /* Poppins-Regular.ttf */,
@@ -261,10 +249,6 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				599B747142F143908241367C /* Lato-Bold.ttf in Resources */,
 				C75C86AECEC0477291F8B4A5 /* Lato-Regular.ttf in Resources */,
-				1544534CC6E241E19D2901FF /* Montserrat-Italic-VariableFont_wght.ttf in Resources */,
-				DD27FD405BA14BD7852DDB96 /* Montserrat-VariableFont_wght.ttf in Resources */,
-				B55C2884CF124F6383BC32AE /* OpenSans-Italic-VariableFont_wdth,wght.ttf in Resources */,
-				1FE765EE3FFB4C239D7DC7F4 /* OpenSans-VariableFont_wdth,wght.ttf in Resources */,
 				949B682902BB467792ECF1CC /* Poppins-Bold.ttf in Resources */,
 				F042215836E84E478621FC09 /* Poppins-Light.ttf in Resources */,
 				D84682AAFD4D427997CC1F49 /* Poppins-Regular.ttf in Resources */,

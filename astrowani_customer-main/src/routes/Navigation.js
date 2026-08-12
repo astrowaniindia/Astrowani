@@ -7,7 +7,7 @@ import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-naviga
 import { PostHogProvider } from 'posthog-react-native';
 import { posthog, applySessionReplaySetting, loadAnalyticsEnvironment, getAnalyticsEnvironment } from '../utils/Analytics';
 import { navigationRef } from '../utils/NavigationService';
-import { getWalletBalance } from '../utils/wallet';
+import useWalletBalance from '../hooks/useWalletBalance';
 import Splash from '../screens/Splash/Splash';
 import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
@@ -56,25 +56,11 @@ import KundaliMatchingReport from '../screens/drawerScreens/FreeSeviceScreen/Kun
 import Horoscope from '../screens/drawerScreens/FreeSeviceScreen/Horoscope';
 import HoroscopeDetails from '../screens/drawerScreens/FreeSeviceScreen/HoroscopeDetails';
 import ShubhMuhurat from '../screens/drawerScreens/FreeSeviceScreen/ShubhMuhurat';
-import KundliInputScreen from '../screens/drawerScreens/AstroServices/KundliInputScreen';
-import KundliResultScreen from '../screens/drawerScreens/AstroServices/KundliResultScreen';
-import MatchingInputScreen from '../screens/drawerScreens/AstroServices/MatchingInputScreen';
-import MatchingResultScreen from '../screens/drawerScreens/AstroServices/MatchingResultScreen';
-import ChartInputScreen from '../screens/drawerScreens/AstroServices/ChartInputScreen';
-import ChartResultScreen from '../screens/drawerScreens/AstroServices/ChartResultScreen';
-import DashaInputScreen from '../screens/drawerScreens/AstroServices/DashaInputScreen';
-import DashaResultScreen from '../screens/drawerScreens/AstroServices/DashaResultScreen';
-import DoshInputScreen from '../screens/drawerScreens/AstroServices/DoshInputScreen';
-import DoshResultScreen from '../screens/drawerScreens/AstroServices/DoshResultScreen';
-import NumerologyInputScreen from '../screens/drawerScreens/AstroServices/NumerologyInputScreen';
-import NumerologyResultScreen from '../screens/drawerScreens/AstroServices/NumerologyResultScreen';
-import LalKitabInputScreen from '../screens/drawerScreens/AstroServices/LalKitabInputScreen';
-import LalKitabResultScreen from '../screens/drawerScreens/AstroServices/LalKitabResultScreen';
-import KPAstrologyInputScreen from '../screens/drawerScreens/AstroServices/KPAstrologyInputScreen';
-import KPAstrologyResultScreen from '../screens/drawerScreens/AstroServices/KPAstrologyResultScreen';
-import TarotScreen from '../screens/drawerScreens/AstroServices/TarotScreen';
-import PdfReportInputScreen from '../screens/drawerScreens/AstroServices/PdfReportInputScreen';
-import PdfReportResultScreen from '../screens/drawerScreens/AstroServices/PdfReportResultScreen';
+// These 18 astro-service report screens (9 input/result pairs + Tarot) are
+// deliberately NOT statically imported here — see the getComponent loop below
+// (2026-08-13 perf audit, finding H1). Each is only require()'d the first time
+// a customer actually navigates to it, instead of every one being evaluated
+// on cold start alongside the ~70 screens that are actually common paths.
 import Home from '../screens/Home/Home';
 import ReferAndEarnScreen from '../screens/drawerScreens/ReferAndEarnScreen';
 import MyOrdersScreen from '../screens/drawerScreens/MyOrdersScreen';
@@ -305,30 +291,37 @@ export default function Navigation({ initialRoute }) {
           })}
         />
         {[
-          ['KundliInputScreen', KundliInputScreen, 'Kundli Report'],
-          ['KundliResultScreen', KundliResultScreen, 'Kundli Report'],
-          ['MatchingInputScreen', MatchingInputScreen, 'Kundli Matching'],
-          ['MatchingResultScreen', MatchingResultScreen, 'Match Result'],
-          ['ChartInputScreen', ChartInputScreen, 'Divisional Chart'],
-          ['ChartResultScreen', ChartResultScreen, 'Chart'],
-          ['DashaInputScreen', DashaInputScreen, 'Dasha Report'],
-          ['DashaResultScreen', DashaResultScreen, 'Dasha Report'],
-          ['DoshInputScreen', DoshInputScreen, 'Dosh Report'],
-          ['DoshResultScreen', DoshResultScreen, 'Dosh Report'],
-          ['NumerologyInputScreen', NumerologyInputScreen, 'Numerology Report'],
-          ['NumerologyResultScreen', NumerologyResultScreen, 'Numerology Report'],
-          ['LalKitabInputScreen', LalKitabInputScreen, 'Lal Kitab Report'],
-          ['LalKitabResultScreen', LalKitabResultScreen, 'Lal Kitab Report'],
-          ['KPAstrologyInputScreen', KPAstrologyInputScreen, 'KP Astrology Report'],
-          ['KPAstrologyResultScreen', KPAstrologyResultScreen, 'KP Astrology Report'],
-          ['TarotScreen', TarotScreen, 'Tarot Reading'],
-          ['PdfReportInputScreen', PdfReportInputScreen, 'PDF Report'],
-          ['PdfReportResultScreen', PdfReportResultScreen, 'PDF Report'],
-        ].map(([name, component, title]) => (
+          ['KundliInputScreen', () => require('../screens/drawerScreens/AstroServices/KundliInputScreen').default, 'Kundli Report'],
+          ['KundliResultScreen', () => require('../screens/drawerScreens/AstroServices/KundliResultScreen').default, 'Kundli Report'],
+          ['MatchingInputScreen', () => require('../screens/drawerScreens/AstroServices/MatchingInputScreen').default, 'Kundli Matching'],
+          ['MatchingResultScreen', () => require('../screens/drawerScreens/AstroServices/MatchingResultScreen').default, 'Match Result'],
+          ['ChartInputScreen', () => require('../screens/drawerScreens/AstroServices/ChartInputScreen').default, 'Divisional Chart'],
+          ['ChartResultScreen', () => require('../screens/drawerScreens/AstroServices/ChartResultScreen').default, 'Chart'],
+          ['DashaInputScreen', () => require('../screens/drawerScreens/AstroServices/DashaInputScreen').default, 'Dasha Report'],
+          ['DashaResultScreen', () => require('../screens/drawerScreens/AstroServices/DashaResultScreen').default, 'Dasha Report'],
+          ['DoshInputScreen', () => require('../screens/drawerScreens/AstroServices/DoshInputScreen').default, 'Dosh Report'],
+          ['DoshResultScreen', () => require('../screens/drawerScreens/AstroServices/DoshResultScreen').default, 'Dosh Report'],
+          ['NumerologyInputScreen', () => require('../screens/drawerScreens/AstroServices/NumerologyInputScreen').default, 'Numerology Report'],
+          ['NumerologyResultScreen', () => require('../screens/drawerScreens/AstroServices/NumerologyResultScreen').default, 'Numerology Report'],
+          ['LalKitabInputScreen', () => require('../screens/drawerScreens/AstroServices/LalKitabInputScreen').default, 'Lal Kitab Report'],
+          ['LalKitabResultScreen', () => require('../screens/drawerScreens/AstroServices/LalKitabResultScreen').default, 'Lal Kitab Report'],
+          ['KPAstrologyInputScreen', () => require('../screens/drawerScreens/AstroServices/KPAstrologyInputScreen').default, 'KP Astrology Report'],
+          ['KPAstrologyResultScreen', () => require('../screens/drawerScreens/AstroServices/KPAstrologyResultScreen').default, 'KP Astrology Report'],
+          ['TarotScreen', () => require('../screens/drawerScreens/AstroServices/TarotScreen').default, 'Tarot Reading'],
+          ['PdfReportInputScreen', () => require('../screens/drawerScreens/AstroServices/PdfReportInputScreen').default, 'PDF Report'],
+          ['PdfReportResultScreen', () => require('../screens/drawerScreens/AstroServices/PdfReportResultScreen').default, 'PDF Report'],
+        ].map(([name, getComponent, title]) => (
           <Stack.Screen
             key={name}
             name={name}
-            component={component}
+            // getComponent (not `component`) defers the require() until this
+            // screen is actually navigated to, instead of at app start —
+            // Metro still bundles the module, but its JS no longer has to be
+            // evaluated on cold start alongside every commonly-used screen.
+            // (Metro needs a static, literal require() per module — a
+            // template-string path is not statically analyzable, hence one
+            // explicit require() per row instead of building the path from fileName.)
+            getComponent={getComponent}
             options={({ route }) => ({
               title,
               headerStyle: {
@@ -634,30 +627,12 @@ function DrawerNavigator({ navigation }) {
 
 // Wallet screen's header used to hardcode "Balance: ₹ 0" regardless of the real
 // balance — this fetches the actual value the same way BottomTabNavigator's tab
-// label does (via the backend, never a direct Supabase read — see getWalletBalance).
+// label does. Both now share ONE poll via useWalletBalance() instead of each
+// running an independent 20s interval against the same endpoint (previously
+// this header, the tab bar, and CustomHeader.js on 6 screens each polled
+// separately — up to 3x the necessary /api/wallet traffic at once).
 function WalletBalanceHeaderTitle() {
-  const [balance, setBalance] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer = null;
-
-    const poll = async () => {
-      try {
-        const value = await getWalletBalance();
-        if (!cancelled) setBalance(value);
-      } catch (_) {
-        // Silent — keeps showing the last known balance.
-      }
-    };
-
-    poll();
-    timer = setInterval(poll, 20000);
-    return () => {
-      cancelled = true;
-      if (timer) clearInterval(timer);
-    };
-  }, []);
+  const balance = useWalletBalance();
 
   return (
     <Text style={{ color: '#fff', fontSize: moderateScale(17), fontWeight: '600' }}>
@@ -667,34 +642,10 @@ function WalletBalanceHeaderTitle() {
 }
 
 function BottomTabNavigator() {
-  const [walletBalance, setWalletBalance] = useState(null);
-
-  useEffect(() => {
-    // Polls the backend instead of a direct Supabase Realtime subscription on
-    // `customers` — that table carries every user's PII and Postgres GRANT is not
-    // row-scoped, so there is no anon column grant that exposes "your own" balance
-    // without exposing everyone's. See DATABASE_HARDENING_HANDOFF.md §3.1/§3.2.
-    // 20s means this display can lag a live per-minute billing tick briefly,
-    // which is an acceptable trade for closing that leak.
-    let cancelled = false;
-    let timer = null;
-
-    const poll = async () => {
-      try {
-        const balance = await getWalletBalance();
-        if (!cancelled) setWalletBalance(balance);
-      } catch (_) {
-        // Silent — the tab label just keeps showing the last known balance.
-      }
-    };
-
-    poll();
-    timer = setInterval(poll, 20000);
-    return () => {
-      cancelled = true;
-      if (timer) clearInterval(timer);
-    };
-  }, []);
+  // Shared poll (see useWalletBalance.js) — 20s means this display can lag a
+  // live per-minute billing tick briefly, which is an acceptable trade for
+  // not reading `customers` directly (see DATABASE_HARDENING_HANDOFF.md §3.1/§3.2).
+  const walletBalance = useWalletBalance();
 
   const TabBarLabel = ({ focused, children }) => {
     return (

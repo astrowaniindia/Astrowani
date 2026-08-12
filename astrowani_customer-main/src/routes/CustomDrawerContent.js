@@ -14,6 +14,7 @@ import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { resetAnalyticsIdentity } from '../utils/Analytics';
+import { resetWalletBalance } from '../hooks/useWalletBalance';
 
 function CustomDrawerContent(props, navigation) {
   const { t } = React.useContext(LanguageContext);
@@ -57,6 +58,7 @@ function CustomDrawerContent(props, navigation) {
   const handleLogout = async () => {
     try {
       resetAnalyticsIdentity();
+      resetWalletBalance();
       await AsyncStorage.clear();
       props.navigation.reset({
         index: 0,

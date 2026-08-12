@@ -275,12 +275,15 @@ class SessionManager {
         ...(missedCalls || []).map((r) => r.astrologer_id),
         ...(missedChats || []).map((r) => r.receiver_id),
       ].filter(Boolean));
-      for (const astroId of freedAstroIds) {
+      // Parallel, not sequential — each astrologer's check/notify is independent,
+      // and during a traffic spike/outage backlog this can be dozens of astrologers
+      // freed in one sweep (was previously one 4-query checkAstrologerBusy at a time).
+      await Promise.all([...freedAstroIds].map(async (astroId) => {
         const stillBusy = await checkAstrologerBusy(supabase, astroId);
         if (!stillBusy.busy) {
           await notifyWaitlistIfFree(supabase, sendPush, astroId);
         }
-      }
+      }));
     } catch (err) {
       console.error('[SessionManager] markStaleRequestsMissed error:', err.message);
     }
@@ -368,9 +371,12 @@ class SessionManager {
     this.isCheckingSessions = true;
     const now = new Date();
     try {
+      // Narrowed to the columns processBilling/this loop actually reads — this
+      // runs every 30s for as long as any session is active, so full-row
+      // fetch cost scales with active-session count on every tick.
       const { data: sessions, error } = await supabase
         .from('chat_sessions')
-        .select('*')
+        .select('id, is_free_session, started_at')
         .eq('is_active', true)
         .lte('next_billing_at', now.toISOString());
 
@@ -525,12 +531,15 @@ class SessionManager {
         .maybeSingle();
       if (!referral) return;
 
-      const { count } = await supabase
+      // Only need to know "is this the first or second+ completed session" —
+      // .limit(2) stops there instead of counting a long-time customer's full history.
+      const { data: completedRows } = await supabase
         .from('chat_sessions')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('caller_id', referredCustomerId)
-        .not('ended_at', 'is', null);
-      if ((count || 0) !== 1) return; // not their first completed session
+        .not('ended_at', 'is', null)
+        .limit(2);
+      if ((completedRows || []).length !== 1) return; // not their first completed session
 
       const { data: referrer } = await supabase
         .from('customers').select('fcm_token').eq('id', referral.referrer_customer_id).single();

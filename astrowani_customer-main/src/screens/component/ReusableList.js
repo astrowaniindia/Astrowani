@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  Image,
   FlatList,
   TouchableOpacity,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   ActivityIndicator,
   TextInput,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -202,9 +202,10 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
         )}
         <View style={styles.row}>
           <View style={styles.reviewImageView}>
-            <Image
+            <FastImage
               source={{
                 uri: item.profileImage || 'https://th.bing.com/th/id/OIP.xHU435DrZMf0aN-ri48zEAHaJQ?w=126&h=180&c=7&r=0&o=5&pid=1.7',
+                priority: FastImage.priority.normal,
               }}
               style={styles.avatar}
             />
@@ -262,6 +263,11 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
         contentContainerStyle={styles.container}
         refreshing={refreshing}
         onRefresh={onRefresh}
+        removeClippedSubviews={true}
+        windowSize={7}
+        maxToRenderPerBatch={8}
+        initialNumToRender={8}
+        updateCellsBatchingPeriod={50}
       />
       {/* Waiting Modal */}
       <Modal transparent={true} visible={isWaiting} animationType="fade">

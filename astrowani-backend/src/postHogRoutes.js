@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const axios = require('axios');
 const { requireAdmin } = require('./adminRoutes');
+const { TtlCache } = require('./ttlCache');
 
 const POSTHOG_HOST = process.env.POSTHOG_HOST; // e.g. https://us.i.posthog.com
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
@@ -32,28 +33,22 @@ function isConfigured() {
   return !!(POSTHOG_HOST && POSTHOG_PROJECT_ID && POSTHOG_PERSONAL_API_KEY);
 }
 
-// Small in-memory cache so a 30-60s dashboard auto-refresh doesn't re-hit
-// PostHog's Query API on every poll. Same TTL-cache shape as astroRoutes.js's
-// PDF cache.
-const CACHE_TTL_MS = 60 * 1000;
-const queryCache = new Map();
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of queryCache) if (entry.expires < now) queryCache.delete(key);
-}, 5 * 60 * 1000);
+// TTL cache so a 30-60s dashboard auto-refresh doesn't re-hit PostHog's Query
+// API on every poll — using the shared TtlCache (src/ttlCache.js) rather than
+// a hand-rolled Map so concurrent identical queries (e.g. two admins with the
+// Analytics page open at once) single-flight onto one PostHog call instead of
+// each issuing their own during a cache-miss window.
+const queryCache = new TtlCache({ ttlMs: 60 * 1000, maxEntries: 200 });
 
 async function runHogQL(hogql) {
-  const cached = queryCache.get(hogql);
-  if (cached && cached.expires > Date.now()) return cached.data;
-
-  const { data } = await axios.post(
-    `${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`,
-    { query: { kind: 'HogQLQuery', query: hogql } },
-    { headers: { Authorization: `Bearer ${POSTHOG_PERSONAL_API_KEY}` }, timeout: 15000 }
-  );
-  const rows = data.results || [];
-  queryCache.set(hogql, { data: rows, expires: Date.now() + CACHE_TTL_MS });
-  return rows;
+  return queryCache.get(hogql, async () => {
+    const { data } = await axios.post(
+      `${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`,
+      { query: { kind: 'HogQLQuery', query: hogql } },
+      { headers: { Authorization: `Bearer ${POSTHOG_PERSONAL_API_KEY}` }, timeout: 15000 }
+    );
+    return data.results || [];
+  });
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
