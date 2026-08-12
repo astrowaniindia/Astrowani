@@ -15,10 +15,14 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 
-// Same square image used for the launcher icon foreground — its background is the exact
-// #38261D of ic_launcher_background (android/app/src/main/res/values/colors.xml), so it
-// blends seamlessly into this screen's container instead of showing a square seam.
-const STAR_LOGO = require('../../assets/images/icon.png');
+// icon.png (used for the launcher icon foreground) has a square background with a subtle
+// radial gradient baked in — never actually flat #38261D despite matching at a glance, so a
+// visible square seam showed against this screen's solid-color container during the hold
+// phase. icon_transparent.png is the same star/circle artwork with that background masked
+// out to real alpha transparency (luminance-threshold cutout, generated from icon.png), so
+// it blends into any background color with no seam, regardless of what color this screen
+// (or anything else) puts behind it.
+const STAR_LOGO = require('../../assets/images/icon_transparent.png');
 
 const POP_DURATION = 500;
 const SETTLE_DURATION = 250;
