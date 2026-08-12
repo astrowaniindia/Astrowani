@@ -1222,6 +1222,19 @@ const Home = ({navigation}) => {
         <View style={styles.separator} />
 
         <View style={styles.topAstrologers}>
+          <Text style={styles.topAstrologerTxt}>{t('home.freeServices')}</Text>
+        </View>
+        <FreeServicesScreen
+          services={services}
+          onServiceSelect={handleServiceSelect}
+          showPrice
+        />
+
+        <View style={styles.separator} />
+
+        {/* Live Astrologers — moved here (between Free Services / "₹1 service" and
+            Astro Reports) at the user's request, 2026-08-14. */}
+        <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>{t('home.liveAstrologers')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
@@ -1249,17 +1262,6 @@ const Home = ({navigation}) => {
             <Text style={styles.noLiveText}>{t('home.noOneLive')}</Text>
           </View>
         )}
-
-        <View style={styles.separator} />
-
-        <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>{t('home.freeServices')}</Text>
-        </View>
-        <FreeServicesScreen
-          services={services}
-          onServiceSelect={handleServiceSelect}
-          showPrice
-        />
 
         <View style={styles.separator} />
 
