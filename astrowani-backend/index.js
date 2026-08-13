@@ -85,7 +85,7 @@ const ASTROLOGER_LIST_COLUMNS = [
   'is_call_enabled', 'is_chat_enabled', 'is_video_call_enabled',
   'is_available', 'is_online', 'is_live',
   'average_rating', 'total_reviews',
-  'approval_status', 'is_suspended',
+  'approval_status', 'is_suspended', 'badge',
 ].join(', ');
 
 // 10s is a deliberate trade: availability can lag by up to that, but a stale
@@ -161,6 +161,9 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
     rating: Number(astro.average_rating) || 0,
     totalReviews: astro.total_reviews || 0,
     bio: astro.bio || '',
+    // Admin-assigned recognition badge — 'verified' | 'celebrity' | 'top_rated' | null.
+    // Set only from astrowani-admin's Astrologers page; astrologers cannot self-assign it.
+    badgeType: astro.badge || null,
   };
 }
 

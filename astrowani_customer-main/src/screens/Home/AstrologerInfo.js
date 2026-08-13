@@ -32,6 +32,7 @@ import {supabase} from '../../api/SupabaseClient';
 import {SOCKET_URL} from '../../config/api';
 import {showStatusPopup} from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
+import AstrologerBadge from '../../components/AstrologerBadge';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
 import {getWalletBalance} from '../../utils/wallet';
@@ -693,6 +694,7 @@ const AstrologerInfo = ({route, navigation}) => {
             <View style={styles.profileDetails}>
               <View style={styles.nameRow}>
                 <Text style={styles.profileName} numberOfLines={1}>{person.name || 'Astrologer'}</Text>
+                <AstrologerBadge type={person.badgeType} variant="inline" />
                 <TouchableOpacity onPress={toggleFavorite} disabled={loading} style={styles.favBtn}>
                   {loading ? (
                     <ActivityIndicator size="small" color={COLORS.AstroMaroon} />

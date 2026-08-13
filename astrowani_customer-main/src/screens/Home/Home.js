@@ -41,6 +41,7 @@ import { SOCKET_URL } from '../../config/api';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import StarRating from '../../components/StarRating';
+import AstrologerBadge from '../../components/AstrologerBadge';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen } from '../../utils/onboardingFlags';
@@ -937,15 +938,18 @@ const Home = ({navigation}) => {
       <TouchableOpacity
         onPress={() => openAstrologer(item)}
         style={styles.AstrologerCard}>
-        <Image
-          resizeMode="contain"
-          source={{
-            uri:
-              item.profileImage ||
-              'https://cdn-icons-png.flaticon.com/128/3135/3135715.png',
-          }}
-          style={styles.AstroImage}
-        />
+        <View style={styles.AstroImageWrap}>
+          <Image
+            resizeMode="contain"
+            source={{
+              uri:
+                item.profileImage ||
+                'https://cdn-icons-png.flaticon.com/128/3135/3135715.png',
+            }}
+            style={styles.AstroImage}
+          />
+          <AstrologerBadge type={item.badgeType} />
+        </View>
         <View style={styles.infoWrapper}>
           <Text style={styles.name}>{item.name || 'Name'}</Text>
           <Text style={styles.specialty}>
@@ -1658,15 +1662,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  AstroImageWrap: {
+    position: 'absolute',
+    top: -verticalScale(40),
+    zIndex: 10,
+  },
   AstroImage: {
     width: scale(80),
     height: scale(80),
     borderRadius: moderateScale(40),
     borderWidth: 1,
     borderColor: COLORS.AstroMaroon,
-    position: 'absolute',
-    top: -verticalScale(40),
-    zIndex: 10,
     backgroundColor: '#fff',
   },
   AstrologerCard: {

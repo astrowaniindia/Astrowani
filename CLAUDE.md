@@ -1214,3 +1214,41 @@ matching what is already there.
 2. `sql/hardening_02_access_control.sql` — sequenced lockdown of the `anon` role.
 Both are sectioned and idempotent. Read the notes before each section; several sections require
 a coordinated app change first and say so explicitly.
+
+---
+
+## Subsystem added 2026-08-13: Astrologer recognition badges (Verified / Celebrity / Top Rated)
+
+### W. Admin-assigned badges shown on astrologer cards
+
+- **What**: three mutually-exclusive recognition badges — `verified`, `celebrity`, `top_rated` —
+  settable only from `astrowani-admin`'s Astrologers page. There is no vendor-app or
+  customer-app write path; astrologers cannot assign this to themselves.
+- **DB**: `sql/astrologer_badge_schema.sql` adds `astrologers.badge text` (nullable) + a CHECK
+  constraint restricting it to the three values or `NULL`. Idempotent, not yet run against
+  production — run it before this feature works end-to-end.
+- **Backend**: `astrologers.badge` added to `ASTROLOGER_LIST_COLUMNS` and to `formatAstrologer`'s
+  output as `badgeType` (`index.js`) — kept as a distinct field name from the pre-existing
+  generic `item.badge` **text label** that `ReusableList.js`'s ribbon renders for unrelated static
+  data (the chat-category screens' "Must Try" tag), to avoid the two colliding. Admin routes
+  (`adminRoutes.js`): `GET /api/admin/astrologers` now selects `badge`; `PATCH
+  /api/admin/astrologers/:id`'s `allowed` list includes `badge`, with a 400 guard rejecting
+  anything outside the three values (defense in depth — the DB CHECK constraint is the real
+  backstop, this just avoids a raw Postgres error reaching the admin UI).
+- **Admin UI** (`Astrologers.jsx`): new "Badge" table column (`AstroBadge` pill, new `.badge.blue`
+  CSS class added for "Verified") + a "Badge" `<select>` in the Edit modal + quick
+  set/remove `ActionMenu` entries (mirrors the existing Approve/Reject pattern) so an admin
+  doesn't have to open the full edit modal just to tag someone.
+- **Customer app**: new shared `src/components/AstrologerBadge.js` — renders nothing if
+  `badgeType` is falsy; otherwise a small colored pill (icon + label: verified=blue
+  check, celebrity=gold star, top_rated=green grade). Two variants: `corner` (absolute-positioned
+  over the top-left of a circular avatar — parent needs `position:'relative'`) and `inline`
+  (plain pill next to text). Wired into every astrologer-card surface that has an avatar:
+  `ReusableList.js` (Chat/Talk/Video section lists), `ExpertsList.js` (category screens),
+  `Home.js`'s "Best Astrologers" carousel (`AstroImage` was refactored into an
+  `AstroImageWrap` so the badge can sit at a fixed offset relative to it instead of the
+  card), and `AstrologerInfo.js`'s profile header (inline variant, next to the name).
+  `AnimatedAstrologerMarquee.js` (Home's small avatar-only marquee) was deliberately left
+  alone — no room for a legible badge on that scale, and it doesn't show a name/price anyway.
+- **Not done**: no vendor-app surface shows the badge (vendor doesn't need to see its own
+  recognition badge to do their job); no push/notification when a badge is granted.

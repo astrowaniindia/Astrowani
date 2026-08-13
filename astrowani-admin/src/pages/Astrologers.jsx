@@ -10,6 +10,14 @@ function StatusBadge({ s }) {
   return <span className="badge amber">Pending</span>;
 }
 
+const BADGE_LABELS = { verified: 'Verified', celebrity: 'Celebrity', top_rated: 'Top Rated' };
+const BADGE_COLORS = { verified: 'blue', celebrity: 'amber', top_rated: 'green' };
+
+function AstroBadge({ badge }) {
+  if (!badge) return <span className="badge gray">None</span>;
+  return <span className={`badge ${BADGE_COLORS[badge] || 'gray'}`}>{BADGE_LABELS[badge] || badge}</span>;
+}
+
 export default function Astrologers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +58,7 @@ export default function Astrologers() {
         languages: (editing.languages || '').split(',').map((s) => s.trim()).filter(Boolean),
         bio: editing.bio || '',
         profile_pic_url: editing.profile_pic_url || '',
+        badge: editing.badge || null,
       });
       setEditing(null);
     } catch (e) { alert(e.response?.data?.message || e.message); }
@@ -113,18 +122,19 @@ export default function Astrologers() {
       <div className="table-wrap">
         <table>
           <thead><tr>
-            <th>Name</th><th>Phone</th><th>Status</th><th>Suspended</th>
+            <th>Name</th><th>Phone</th><th>Status</th><th>Suspended</th><th>Badge</th>
             <th>Charges (chat/call/video)</th><th>Wallet (₹)</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} className="empty">No astrologers.</td></tr>}
+            {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={8} className="empty">No astrologers.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{name(r)}</td>
                 <td className="muted">{r.phone_number || '—'}</td>
                 <td><StatusBadge s={r.approval_status} /></td>
                 <td>{r.is_suspended ? <span className="badge red">Suspended</span> : <span className="badge gray">No</span>}</td>
+                <td><AstroBadge badge={r.badge} /></td>
                 <td className="muted">
                   {r.chat_charge_per_minute || 0} / {r.call_charge_per_minute || 0} / {r.video_charge_per_minute || 0}
                   {' '}
@@ -141,6 +151,14 @@ export default function Astrologers() {
                       { label: 'Reject', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
                     { label: r.is_suspended ? 'Unsuspend' : 'Suspend', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
                     { label: 'Edit', onClick: () => openEdit(r) },
+                    r.badge !== 'verified' &&
+                      { label: 'Set badge: Verified', onClick: () => patch(r.id, { badge: 'verified' }) },
+                    r.badge !== 'celebrity' &&
+                      { label: 'Set badge: Celebrity', onClick: () => patch(r.id, { badge: 'celebrity' }) },
+                    r.badge !== 'top_rated' &&
+                      { label: 'Set badge: Top Rated', onClick: () => patch(r.id, { badge: 'top_rated' }) },
+                    r.badge &&
+                      { label: 'Remove badge', onClick: () => patch(r.id, { badge: null }) },
                     r.charges_locked_at &&
                       { label: 'Allow charge self-edit (one-time)', onClick: () => unlockCharges(r) },
                     { label: 'Adjust wallet', onClick: () => { setTopup(r); setAmount(''); } },
@@ -181,6 +199,13 @@ export default function Astrologers() {
               <input id="susp" type="checkbox" checked={!!editing.is_suspended} onChange={(e) => set('is_suspended', e.target.checked)} />
               <label htmlFor="susp" style={{ margin: 0 }}>Suspended</label></div>
           </div>
+          <div className="field"><label>Badge</label>
+            <select value={editing.badge || ''} onChange={(e) => set('badge', e.target.value || null)}>
+              <option value="">None</option>
+              <option value="verified">Verified</option>
+              <option value="celebrity">Celebrity</option>
+              <option value="top_rated">Top Rated</option>
+            </select></div>
           <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
             {editing.charges_locked_at
               ? 'This astrologer has already set these once via their app and can no longer self-edit — you can still change them here anytime.'

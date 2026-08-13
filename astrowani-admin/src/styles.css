@@ -111,6 +111,7 @@ tr:last-child td { border-bottom: none; }
 .badge.red { background: #fbe7e5; color: var(--red); }
 .badge.amber { background: #fdf2dd; color: var(--amber); }
 .badge.gray { background: #eceef1; color: var(--muted); }
+.badge.blue { background: #e3edfb; color: #1d6fd8; }
 
 /* ── Forms ──────────────────────────────────────────────── */
 .field { margin-bottom: 14px; }

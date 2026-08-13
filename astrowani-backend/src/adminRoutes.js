@@ -285,7 +285,7 @@ module.exports = function registerAdminRoutes(app) {
         'languages, profile_pic_url, bio, ' +
         'approval_status, is_suspended, is_available, is_chat_enabled, is_call_enabled, ' +
         'is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, ' +
-        'video_charge_per_minute, charges_locked_at, wallet_balance, today_earnings, total_earnings, admin_notes')
+        'video_charge_per_minute, charges_locked_at, wallet_balance, today_earnings, total_earnings, admin_notes, badge')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return res.json({ success: true, data: data || [] });
@@ -298,9 +298,12 @@ module.exports = function registerAdminRoutes(app) {
     const allowed = ['approval_status', 'is_suspended', 'is_available', 'is_chat_enabled',
       'is_call_enabled', 'is_video_call_enabled', 'chat_charge_per_minute',
       'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes',
-      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages'];
+      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages', 'badge'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+    if ('badge' in body && body.badge !== null && !['verified', 'celebrity', 'top_rated'].includes(body.badge)) {
+      return res.status(400).json({ success: false, message: 'badge must be verified, celebrity, top_rated, or null' });
+    }
     const { data, error } = await db.from('astrologers').update(body).eq('id', req.params.id).select().single();
     if (error) throw error;
     return res.json({ success: true, data });

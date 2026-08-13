@@ -16,6 +16,7 @@ import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import StarRating from '../../components/StarRating';
+import AstrologerBadge from '../../components/AstrologerBadge';
 import { LanguageContext } from '../../context/LanguageContext';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
@@ -202,13 +203,16 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
         )}
         <View style={styles.row}>
           <View style={styles.reviewImageView}>
-            <FastImage
-              source={{
-                uri: item.profileImage || 'https://th.bing.com/th/id/OIP.xHU435DrZMf0aN-ri48zEAHaJQ?w=126&h=180&c=7&r=0&o=5&pid=1.7',
-                priority: FastImage.priority.normal,
-              }}
-              style={styles.avatar}
-            />
+            <View style={styles.avatarWrap}>
+              <FastImage
+                source={{
+                  uri: item.profileImage || 'https://th.bing.com/th/id/OIP.xHU435DrZMf0aN-ri48zEAHaJQ?w=126&h=180&c=7&r=0&o=5&pid=1.7',
+                  priority: FastImage.priority.normal,
+                }}
+                style={styles.avatar}
+              />
+              <AstrologerBadge type={item.badgeType} />
+            </View>
 
             <StarRating
               rating={item?.rating}
@@ -371,6 +375,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  avatarWrap: {
+    position: 'relative',
   },
   avatar: {
     width: scale(70),

@@ -24,6 +24,7 @@ import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
 import { getWalletBalance } from '../../utils/wallet';
 import StarRating from '../../components/StarRating';
+import AstrologerBadge from '../../components/AstrologerBadge';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
@@ -282,10 +283,13 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={() => goProfile(item)}>
         <View style={styles.row}>
           <View style={styles.imageCol}>
-            <Image
-              source={{ uri: item.profileImage || 'https://th.bing.com/th/id/OIP.xHU435DrZMf0aN-ri48zEAHaJQ?w=126&h=180&c=7&r=0&o=5&pid=1.7' }}
-              style={styles.avatar}
-            />
+            <View style={styles.avatarWrap}>
+              <Image
+                source={{ uri: item.profileImage || 'https://th.bing.com/th/id/OIP.xHU435DrZMf0aN-ri48zEAHaJQ?w=126&h=180&c=7&r=0&o=5&pid=1.7' }}
+                style={styles.avatar}
+              />
+              <AstrologerBadge type={item.badgeType} />
+            </View>
             <StarRating
               rating={item?.rating}
               totalReviews={item?.totalReviews}
@@ -425,6 +429,7 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center' },
   imageCol: { alignItems: 'center', width: scale(72), marginRight: scale(6) },
+  avatarWrap: { position: 'relative' },
   avatar: {
     width: scale(64), height: scale(64), borderRadius: scale(32),
     borderWidth: 1, borderColor: COLORS.AstroMaroon,
