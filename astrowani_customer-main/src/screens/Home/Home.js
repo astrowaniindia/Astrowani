@@ -1482,6 +1482,7 @@ const Home = ({navigation}) => {
           setFreeChatOfferVisible(false);
           setFreeChatOfferDismissed(true);
           if (user?.id) markFreeBotChatOfferSeen(user.id);
+          showReferralPrompt();
         }}
         onStart={() => {
           setFreeChatOfferVisible(false);
