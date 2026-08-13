@@ -4,8 +4,7 @@
 // Confirms with real throwaway sessions that:
 //   1. Multiple due sessions all get billed correctly in one tick (nothing dropped).
 //   2. Each is billed exactly once (no double-billing from the concurrency change).
-//   3. A free-session-window session is correctly skipped and reschedules without an RPC call.
-//   4. Calling checkActiveSessions twice back-to-back (simulating an overlapping tick) does
+//   3. Calling checkActiveSessions twice back-to-back (simulating an overlapping tick) does
 //      not double-bill — the second call either no-ops (guard) or re-reads state safely.
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
@@ -51,18 +50,6 @@ async function main() {
       dueSessions.push(sess.id);
     }
 
-    // ── One free-session-window session — should be skipped, rescheduled, no charge ────
-    const freeAstro = await mkAstro('free');
-    const { data: freeCust } = await db.from('customers').insert([{ name: `${tag}-free`, mobile: `9${randDigits(9)}`, wallet_balance: 100 }]).select('id, wallet_balance').single();
-    customers.push(freeCust);
-    const { data: freeSess } = await db.from('chat_sessions').insert([{
-      caller_id: freeCust.id, vendor_id: freeAstro.id, per_minute_charge: 10, call_type: 'audio',
-      is_active: true, next_billing_at: new Date(Date.now() - 5000).toISOString(),
-      started_at: new Date().toISOString(), // just started -> inside the free window
-      is_free_session: true,
-    }]).select('id').single();
-    sessionIds.push(freeSess.id);
-
     await sessionManager.checkActiveSessions();
 
     // ── Verify all 3 real sessions got billed exactly once ──────────────────────────────
@@ -73,12 +60,6 @@ async function main() {
       const { data: cust } = await db.from('customers').select('wallet_balance').eq('id', customers[i].id).single();
       check(`session ${i}: customer debited exactly once (100 -> 90)`, Number(cust.wallet_balance) === 90);
     }
-
-    // ── Verify the free-session was skipped, not charged, but rescheduled ──────────────
-    const { data: freeAfter } = await db.from('chat_sessions').select('next_billing_at').eq('id', freeSess.id).single();
-    check('free session: rescheduled without charge', new Date(freeAfter.next_billing_at).getTime() > Date.now());
-    const { data: freeCustAfter } = await db.from('customers').select('wallet_balance').eq('id', freeCust.id).single();
-    check('free session: customer NOT charged', Number(freeCustAfter.wallet_balance) === 100);
 
     // ── Re-entrancy: call again immediately (nothing due now, but must not throw/double-bill) ──
     await sessionManager.checkActiveSessions();

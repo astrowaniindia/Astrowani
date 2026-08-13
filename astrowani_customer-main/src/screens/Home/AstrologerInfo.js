@@ -34,7 +34,6 @@ import {showStatusPopup} from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import {ensureProfileComplete} from '../../utils/profileGate';
-import {isEligibleForFreeConsultation} from '../../utils/freeConsultation';
 import {getWalletBalance} from '../../utils/wallet';
 import {LanguageContext} from '../../context/LanguageContext';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
@@ -60,7 +59,6 @@ const AstrologerInfo = ({route, navigation}) => {
   const [isModalVisible, setModalVisible] = useState(false);
   const [gifts, setGifts] = useState([]);
   const [isCallWaiting, setIsCallWaiting] = useState(false);
-  const [freeConsultEligible, setFreeConsultEligible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reportNote, setReportNote] = useState('');
@@ -100,15 +98,6 @@ const AstrologerInfo = ({route, navigation}) => {
       setReportSubmitting(false);
     }
   };
-
-  useEffect(() => {
-    (async () => {
-      const userStr = await AsyncStorage.getItem('userData');
-      const user = userStr ? JSON.parse(userStr) : null;
-      const id = user?._id || user?.id || user?.userId;
-      if (id) setFreeConsultEligible(await isEligibleForFreeConsultation(id));
-    })();
-  }, []);
 
   // Gifts shown inline (always-open grid, no button/modal gate) just above Reviews.
   useEffect(() => {
@@ -182,22 +171,19 @@ const AstrologerInfo = ({route, navigation}) => {
       const pricePerMin = person.chargePerMinute || person.pricing || 15;
       const minRequired = pricePerMin * 5;
 
-      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
-      if (!freeEligible) {
-        let balance;
-        try {
-          balance = await getWalletBalance();
-        } catch (walletErr) {
-          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-          return;
-        }
-        if (balance < minRequired) {
-          Alert.alert(
-            t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-          );
-          return;
-        }
+      let balance;
+      try {
+        balance = await getWalletBalance();
+      } catch (walletErr) {
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+        return;
+      }
+      if (balance < minRequired) {
+        Alert.alert(
+          t('alerts.insufficientBalance'),
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
+        );
+        return;
       }
 
       setIsCallWaiting(true);
@@ -359,22 +345,19 @@ const AstrologerInfo = ({route, navigation}) => {
       const pricePerMin = person.videoPrice || person.chargePerMinute || person.pricing || 15;
       const minRequired = pricePerMin * 5;
 
-      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
-      if (!freeEligible) {
-        let balance;
-        try {
-          balance = await getWalletBalance();
-        } catch (walletErr) {
-          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-          return;
-        }
-        if (balance < minRequired) {
-          Alert.alert(
-            t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-          );
-          return;
-        }
+      let balance;
+      try {
+        balance = await getWalletBalance();
+      } catch (walletErr) {
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+        return;
+      }
+      if (balance < minRequired) {
+        Alert.alert(
+          t('alerts.insufficientBalance'),
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
+        );
+        return;
       }
 
       setIsCallWaiting(true);
@@ -714,18 +697,6 @@ const AstrologerInfo = ({route, navigation}) => {
               <Text style={styles.offlineBannerText}>
                 {t('alerts.astrologerOffline', { name: person.name || 'This astrologer' })}
               </Text>
-            </View>
-          )}
-
-          {freeConsultEligible && (
-            <View style={styles.freeConsultBanner}>
-              <MaterialIcons name="card-giftcard" size={moderateScale(18)} color="#7A5B00" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.freeConsultTitle}>Your First Consultation is Free!</Text>
-                <Text style={styles.freeConsultSubtitle}>
-                  Start a chat, call, or video with any astrologer — your very first session won't be charged.
-                </Text>
-              </View>
             </View>
           )}
 
@@ -1111,13 +1082,6 @@ const styles = StyleSheet.create({
   offlineBannerText: {
     color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(12), marginLeft: scale(8), flex: 1,
   },
-  freeConsultBanner: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF3CD',
-    borderRadius: moderateScale(12), paddingVertical: verticalScale(10), paddingHorizontal: scale(12),
-    marginTop: verticalScale(12), gap: scale(8),
-  },
-  freeConsultTitle: { color: '#7A5B00', fontFamily: 'Lato-Bold', fontSize: moderateScale(13) },
-  freeConsultSubtitle: { color: '#7A5B00', fontSize: moderateScale(11), marginTop: 2 },
   statsBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: verticalScale(15), paddingTop: verticalScale(15),

@@ -11,6 +11,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { captureEvent } from '../../utils/Analytics';
+import AstrologerBadge from '../../components/AstrologerBadge';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Center card + its two peeking neighbors span nearly the full screen width —
@@ -130,12 +131,15 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
             below on purpose: that one already fires call_initiated once the
             call actually goes through, tracked independently. */}
         <TouchableWithoutFeedback onPress={() => captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name})}>
-          <Animated.View>
-            <Image
-              resizeMode="cover"
-              source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
-              style={styles.avatar}
-            />
+          <Animated.View style={styles.infoBlock}>
+            <Animated.View style={styles.avatarWrap}>
+              <Image
+                resizeMode="cover"
+                source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+                style={styles.avatar}
+              />
+              <AstrologerBadge type={item.badgeType} size={scale(84)} />
+            </Animated.View>
             <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
             <Text style={styles.specialty} numberOfLines={1}>
               {item.specialties?.[0]?.name || 'Vedic Astrology'}
@@ -211,28 +215,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
+  infoBlock: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    position: 'relative',
+    marginBottom: verticalScale(10),
+  },
   avatar: {
     width: scale(84),
     height: scale(84),
     borderRadius: scale(42),
     borderWidth: 2.5,
     borderColor: COLORS.AstroGold,
-    marginBottom: verticalScale(10),
   },
   name: {
     fontSize: moderateScale(15.5),
     fontWeight: '700',
     color: COLORS.textDark,
+    textAlign: 'center',
   },
   specialty: {
     fontSize: moderateScale(12.5),
     color: '#888',
     marginTop: verticalScale(3),
+    textAlign: 'center',
   },
   meta: {
     fontSize: moderateScale(11.5),
     color: '#999',
     marginTop: verticalScale(2),
+    textAlign: 'center',
   },
   callBtn: {
     flexDirection: 'row',

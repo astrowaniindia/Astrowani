@@ -2085,15 +2085,6 @@ app.post('/api/session/accept', async (req, res) => {
         ? astroData?.video_charge_per_minute ?? 0
         : astroData?.call_charge_per_minute ?? 0;
 
-    // Existence check, not a real count — .limit(1) stops at the first match
-    // instead of counting every past session a long-time customer has had.
-    const { data: priorSessionRows } = await supabaseService
-      .from('chat_sessions')
-      .select('id')
-      .eq('caller_id', realCallerId)
-      .limit(1);
-    const isFreeSession = !priorSessionRows || priorSessionRows.length === 0;
-
     const sessionInsertPayload = {
       request_id: targetTable === 'chat_requests' ? resolvedRequestId : null,
       per_minute_charge: perMinuteCharge,
@@ -2105,7 +2096,6 @@ app.post('/api/session/accept', async (req, res) => {
       call_request_id: targetTable === 'call_requests' ? resolvedRequestId : null,
       is_active: false,
       next_billing_at: null,
-      is_free_session: isFreeSession,
     };
     if (reqBody.sessionId) {
       sessionInsertPayload.id = reqBody.sessionId;
@@ -2142,7 +2132,6 @@ app.post('/api/session/accept', async (req, res) => {
       resolvedRequestId,
       sessionId,
       perMinuteCharge,
-      isFreeSession,
       navigationParams: {
         requestId: resolvedRequestId,
         sessionId,
@@ -2151,7 +2140,6 @@ app.post('/api/session/accept', async (req, res) => {
         perMinuteCharge,
         token: reqBody.token,
         callType: reqBody.callType,
-        isFreeSession,
       },
     });
   } catch (error) {

@@ -288,7 +288,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
                 source={{ uri: item.profileImage || 'https://th.bing.com/th/id/OIP.xHU435DrZMf0aN-ri48zEAHaJQ?w=126&h=180&c=7&r=0&o=5&pid=1.7' }}
                 style={styles.avatar}
               />
-              <AstrologerBadge type={item.badgeType} />
+              <AstrologerBadge type={item.badgeType} size={scale(64)} />
             </View>
             <StarRating
               rating={item?.rating}

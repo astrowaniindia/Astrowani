@@ -211,7 +211,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
                 }}
                 style={styles.avatar}
               />
-              <AstrologerBadge type={item.badgeType} />
+              <AstrologerBadge type={item.badgeType} size={scale(70)} />
             </View>
 
             <StarRating

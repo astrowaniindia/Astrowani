@@ -9,7 +9,6 @@ import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { ensureProfileComplete } from '../utils/profileGate';
-import { isEligibleForFreeConsultation } from '../utils/freeConsultation';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
 
@@ -104,13 +103,10 @@ const useChatRequest = (navigation) => {
         console.warn('Could not fetch supabase customer id:', e.message);
       }
 
-      // Non-blocking wallet check — skipped entirely for a customer's first-ever session
-      // (any astrologer, any type), which is free, so a brand-new ₹0-balance customer can
-      // still reach it.
-      const freeEligible = await isEligibleForFreeConsultation(supabaseCustomerId || callerId);
+      // Non-blocking wallet check.
       try {
         const token = await AsyncStorage.getItem('token');
-        if (token && !freeEligible) {
+        if (token) {
           const resp = await fetch(`${Instance.defaults.baseURL}/api/wallet`, {
             headers: { Authorization: `Bearer ${token}` },
           });

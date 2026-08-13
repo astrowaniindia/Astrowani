@@ -79,8 +79,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   room_id text,
   call_request_id text,
   is_active boolean DEFAULT true,
-  next_billing_at timestamptz,
-  is_free_session boolean DEFAULT false
+  next_billing_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS chat_requests (

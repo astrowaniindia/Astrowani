@@ -17,10 +17,6 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// First-ever session for a customer is free for this long, after which normal per-minute
-// billing resumes for the remainder of that same session.
-const FREE_CONSULTATION_MS = 3 * 60 * 1000;
-
 class SessionManager {
   constructor() {
     this.pollingInterval = 30 * 1000; // Poll every 30 seconds
@@ -376,7 +372,7 @@ class SessionManager {
       // fetch cost scales with active-session count on every tick.
       const { data: sessions, error } = await supabase
         .from('chat_sessions')
-        .select('id, is_free_session, started_at')
+        .select('id')
         .eq('is_active', true)
         .lte('next_billing_at', now.toISOString());
 
@@ -385,23 +381,7 @@ class SessionManager {
 
       console.log(`[SessionManager] Found ${sessions.length} sessions due for billing.`);
 
-      await Promise.all(sessions.map(async (session) => {
-        // First-ever session for this customer — free for the opening window; skip
-        // charging (and skip the opaque billing RPC entirely) while still inside it.
-        // Once the window elapses, normal per-minute billing resumes for what's left.
-        if (session.is_free_session && session.started_at) {
-          const elapsed = now.getTime() - new Date(session.started_at).getTime();
-          if (elapsed < FREE_CONSULTATION_MS) {
-            await supabase
-              .from('chat_sessions')
-              .update({ next_billing_at: new Date(now.getTime() + 60000).toISOString() })
-              .eq('id', session.id);
-            return;
-          }
-        }
-
-        await this.processBilling(session);
-      }));
+      await Promise.all(sessions.map((session) => this.processBilling(session)));
     } catch (err) {
       console.error('[SessionManager] Error in checkActiveSessions:', err.message);
     } finally {

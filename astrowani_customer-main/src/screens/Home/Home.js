@@ -404,26 +404,22 @@ const Home = ({navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
 
-      // Wallet check — need at least 5 minutes worth (matches Call.js), skipped for a
-      // customer's free first-ever session so a ₹0 balance doesn't block them from it.
+      // Wallet check — need at least 5 minutes worth (matches Call.js).
       const pricePerMin = Number(item.chargePerMinute || item.pricing || 0);
       const minRequired = pricePerMin * 5;
-      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
-      if (!freeEligible) {
-        let balance;
-        try {
-          balance = await getWalletBalance();
-        } catch (walletErr) {
-          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-          return null;
-        }
-        if (balance < minRequired) {
-          Alert.alert(
-            t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-          );
-          return null;
-        }
+      let balance;
+      try {
+        balance = await getWalletBalance();
+      } catch (walletErr) {
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+        return null;
+      }
+      if (balance < minRequired) {
+        Alert.alert(
+          t('alerts.insufficientBalance'),
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
+        );
+        return null;
       }
 
       navigatedRef.current = false;
@@ -546,26 +542,22 @@ const Home = ({navigation}) => {
       const token = await AsyncStorage.getItem('token');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
 
-      // Wallet check — need at least 5 minutes worth (video rate), skipped for a
-      // customer's free first-ever session.
+      // Wallet check — need at least 5 minutes worth (video rate).
       const pricePerMin = Number(item.videoPrice || item.chargePerMinute || item.pricing || 0);
       const minRequired = pricePerMin * 5;
-      const videoFreeEligible = await isEligibleForFreeConsultation(userEntireData.id);
-      if (!videoFreeEligible) {
-        let balance;
-        try {
-          balance = await getWalletBalance();
-        } catch (walletErr) {
-          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-          return null;
-        }
-        if (balance < minRequired) {
-          Alert.alert(
-            t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-          );
-          return null;
-        }
+      let balance;
+      try {
+        balance = await getWalletBalance();
+      } catch (walletErr) {
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+        return null;
+      }
+      if (balance < minRequired) {
+        Alert.alert(
+          t('alerts.insufficientBalance'),
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
+        );
+        return null;
       }
 
       navigatedRef.current = false;
@@ -948,7 +940,7 @@ const Home = ({navigation}) => {
             }}
             style={styles.AstroImage}
           />
-          <AstrologerBadge type={item.badgeType} />
+          <AstrologerBadge type={item.badgeType} size={scale(80)} />
         </View>
         <View style={styles.infoWrapper}>
           <Text style={styles.name}>{item.name || 'Name'}</Text>

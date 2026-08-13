@@ -510,7 +510,6 @@ import FastImage from 'react-native-fast-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
-import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { getWalletBalance } from '../../utils/wallet';
 import axios from 'axios';
 import {COLORS} from '../../Theme/Colors';
@@ -638,22 +637,19 @@ const CallsList = ({navigation}) => {
       const pricePerMin = item.chargePerMinute || item.pricing || 15;
       const minRequired = pricePerMin * 5;
 
-      const freeEligible = await isEligibleForFreeConsultation(userEntireData.id);
-      if (!freeEligible) {
-        let balance;
-        try {
-          balance = await getWalletBalance();
-        } catch (walletErr) {
-          Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
-          return;
-        }
-        if (balance < minRequired) {
-          Alert.alert(
-            t('alerts.insufficientBalance'),
-            `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-          );
-          return;
-        }
+      let balance;
+      try {
+        balance = await getWalletBalance();
+      } catch (walletErr) {
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
+        return;
+      }
+      if (balance < minRequired) {
+        Alert.alert(
+          t('alerts.insufficientBalance'),
+          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
+        );
+        return;
       }
 
       setIsWaiting(true);
