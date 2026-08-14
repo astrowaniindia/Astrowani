@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
+import { showInsufficientBalanceAlert } from '../utils/insufficientBalanceAlert';
 import { ensureProfileComplete } from '../utils/profileGate';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
@@ -123,10 +124,9 @@ const useChatRequest = (navigation) => {
             // customer through while Call/Video (which read the right field) blocked them.
             const charge = item.chatPrice ?? item.chat_charge_per_minute ?? item.chatChargePerMinute ?? 0;
             if (charge > 0 && balance < charge) {
-              Alert.alert(
-                t('chat.lowBalance'),
-                t('chat.lowBalanceMsg', { charge }),
-              );
+              // Same themed popup (Recharge / Refer & Earn ₹25 / Cancel) as the
+              // call and video entry points — was previously a plain OK-only Alert.
+              showInsufficientBalanceAlert({ navigation, minRequired: charge, balance, t });
               return;
             }
           }

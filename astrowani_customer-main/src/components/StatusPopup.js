@@ -5,13 +5,23 @@
 //   import { showStatusPopup } from '../../components/StatusPopup';
 //   showStatusPopup({ variant: 'missed', title: 'Not Answered', message: '…' });
 //
-// Also supports a two-button confirm (e.g. "pay to send this gift" / "insufficient
-// balance, recharge?") by passing onConfirm — a single onPress button is shown
-// otherwise, exactly as before:
+// Also supports a two-button confirm (e.g. "pay to send this gift" / "end this
+// call?") by passing onConfirm — a single onPress button is shown otherwise,
+// exactly as before:
 //
 //   showStatusPopup({
 //     variant: 'confirmPay', title: 'Confirm', message: '…',
 //     confirmText: 'Pay ₹25', cancelText: 'Cancel', onConfirm: () => { … },
+//   });
+//
+// And a three-button stacked layout (e.g. "insufficient balance — recharge, or
+// refer a friend instead?") by additionally passing onExtra/extraText:
+//
+//   showStatusPopup({
+//     variant: 'insufficient', title: 'Insufficient Balance', message: '…',
+//     confirmText: 'Recharge', onConfirm: () => { … },
+//     extraText: 'Refer & Earn ₹25', onExtra: () => { … },
+//     cancelText: 'Cancel', onCancel: () => { … },
 //   });
 //
 // Mount <StatusPopupHost /> ONCE near the navigation root.
@@ -34,6 +44,7 @@ const VARIANTS = {
   success:{ icon: 'check-circle', color: '#1a8f4c', tint: 'rgba(26,143,76,0.12)' },
   insufficient: { icon: 'account-balance-wallet', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
   confirmPay:   { icon: 'payments', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
+  endCall:      { icon: 'call-end', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
 };
 
 export function StatusPopupHost() {
@@ -53,6 +64,10 @@ export function StatusPopupHost() {
         onCancel: typeof opts.onCancel === 'function' ? opts.onCancel : null,
         confirmText: opts.confirmText || t('common.ok'),
         cancelText: opts.cancelText || t('common.cancel'),
+        // Three-button stacked mode — only active when the caller ALSO passes
+        // onExtra (on top of onConfirm above), e.g. "Recharge" / "Refer & Earn" / "Cancel".
+        onExtra: typeof opts.onExtra === 'function' ? opts.onExtra : null,
+        extraText: opts.extraText || '',
         onClose: typeof opts.onClose === 'function' ? opts.onClose : null,
       });
     };
@@ -71,6 +86,7 @@ export function StatusPopupHost() {
   if (!state) return null;
   const v = VARIANTS[state.variant] || VARIANTS.info;
   const isConfirm = !!state.onConfirm;
+  const isThreeButton = isConfirm && !!state.onExtra;
 
   const close = () => {
     const { onClose } = state;
@@ -87,6 +103,11 @@ export function StatusPopupHost() {
     close();
     onCancel?.();
   };
+  const handleExtra = () => {
+    const { onExtra } = state;
+    close();
+    onExtra?.();
+  };
 
   return (
     <Modal transparent visible animationType="fade" onRequestClose={isConfirm ? handleCancel : close}>
@@ -97,7 +118,19 @@ export function StatusPopupHost() {
           </View>
           <Text style={styles.title}>{state.title}</Text>
           <Text style={styles.message}>{state.message}</Text>
-          {isConfirm ? (
+          {isThreeButton ? (
+            <View style={styles.stackedButtons}>
+              <TouchableOpacity style={styles.button} activeOpacity={0.85} onPress={handleConfirm}>
+                <Text style={styles.buttonText}>{state.confirmText}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.secondaryButton]} activeOpacity={0.85} onPress={handleExtra}>
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>{state.extraText}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ghostButton} activeOpacity={0.7} onPress={handleCancel}>
+                <Text style={styles.ghostButtonText}>{state.cancelText}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isConfirm ? (
             <View style={styles.buttonRow}>
               <TouchableOpacity style={[styles.button, styles.cancelButton]} activeOpacity={0.85} onPress={handleCancel}>
                 <Text style={[styles.buttonText, styles.cancelButtonText]}>{state.cancelText}</Text>
@@ -190,6 +223,28 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: '#666',
+  },
+  stackedButtons: {
+    width: '100%',
+  },
+  secondaryButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroGold,
+    marginTop: verticalScale(10),
+  },
+  secondaryButtonText: {
+    color: COLORS.AstroGold,
+  },
+  ghostButton: {
+    alignItems: 'center',
+    paddingVertical: verticalScale(11),
+    marginTop: verticalScale(4),
+  },
+  ghostButtonText: {
+    color: '#888',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(14),
   },
 });
 

@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -121,6 +122,23 @@ const ChatSessionScreen = ({ route, navigation }) => {
     endSession(null);
   }
 
+  // Leaving this screen (back arrow or the hardware/gesture back button) must NOT
+  // silently end the chat — the astrologer's side stays connected and billing keeps
+  // running until the session is actually terminated, so the customer needs to
+  // explicitly confirm before that happens. Same themed confirm as the call/video
+  // screens' hardware-back handler (StatusPopup, variant 'endCall').
+  const confirmEndChat = () => {
+    if (hasEndedRef.current) { manualEndSession(); return; }
+    showStatusPopup({
+      variant: 'endCall',
+      title: 'End Chat',
+      message: 'Going back will end this chat session. Are you sure you want to end the chat?',
+      confirmText: 'End',
+      cancelText: 'Cancel',
+      onConfirm: manualEndSession,
+    });
+  };
+
   // ─── Auto first message: customer birth details → astrologer ───────────────
   const sendCustomerDetails = async (sessionData, senderId) => {
     try {
@@ -211,6 +229,18 @@ const ChatSessionScreen = ({ route, navigation }) => {
       }),
     });
   };
+
+  // ─── Hardware/gesture back button ────────────────────────────────────────
+  // Mirrors VoiceCallScreen/VideoCallScreen's hardware-back confirm — see
+  // confirmEndChat above for why this can't just let the default back happen.
+  useEffect(() => {
+    const bh = BackHandler.addEventListener('hardwareBackPress', () => {
+      confirmEndChat();
+      return true;
+    });
+    return () => bh.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Initialise ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -383,7 +413,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
       {/* ── Header: name + timer + wallet ─────── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={manualEndSession} style={styles.backBtn}>
+        <TouchableOpacity onPress={confirmEndChat} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         

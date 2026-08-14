@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
 import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
+import {showStatusPopup} from '../../components/StatusPopup';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
@@ -349,10 +350,14 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
-      Alert.alert('End Call', 'Are you sure you want to end the call?', [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'End', style: 'destructive', onPress: onPressDisconnect},
-      ], {cancelable: false});
+      showStatusPopup({
+        variant: 'endCall',
+        title: 'End Call',
+        message: 'Are you sure you want to end the call?',
+        confirmText: 'End',
+        cancelText: 'Cancel',
+        onConfirm: onPressDisconnect,
+      });
       return true;
     });
 
