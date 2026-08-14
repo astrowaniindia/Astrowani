@@ -12,6 +12,7 @@ import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -136,7 +137,7 @@ const CustomHeader = ({title, showLanguage}) => {
           </TouchableOpacity>
           {showLanguage && (
             <TouchableOpacity onPress={toggleLanguageModal}>
-              <MaterialIcons name="language" color="white" size={24} />
+              <MaterialCommunityIcons name="translate" color="white" size={24} />
             </TouchableOpacity>
           )}
         </View>

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, {useState, useEffect, useRef, useCallback, useContext} from 'react';
 import {
   StyleSheet,
   Text,
@@ -24,6 +24,8 @@ import io from 'socket.io-client';
 import {SOCKET_URL} from '../../config/api';
 import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import {LanguageContext} from '../../context/LanguageContext';
+import LanguageToggle from '../../components/LanguageToggle';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -42,6 +44,7 @@ const ICE_SERVERS = {
 
 // Vendor live broadcaster — WebRTC mesh: keeps one RTCPeerConnection per viewer.
 const GoLiveScreen = ({route, navigation}: any) => {
+  const {t} = useContext(LanguageContext);
   const [localStreamURL, setLocalStreamURL] = useState<string | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [feed, setFeed] = useState<any[]>([]); // comments + gift toasts
@@ -141,7 +144,7 @@ const GoLiveScreen = ({route, navigation}: any) => {
         astroIdRef.current = (await AsyncStorage.getItem('astroId')) || '';
       }
       if (!astroIdRef.current) {
-        Alert.alert('Error', 'Session missing. Please log in again.');
+        Alert.alert(t('login.error'), t('goLive.sessionMissing'));
         navigation.goBack();
         return;
       }
@@ -155,7 +158,7 @@ const GoLiveScreen = ({route, navigation}: any) => {
           perms['android.permission.CAMERA'] !== 'granted' ||
           perms['android.permission.RECORD_AUDIO'] !== 'granted'
         ) {
-          Alert.alert('Permissions required', 'Camera and microphone are needed to go live.');
+          Alert.alert(t('goLive.permissionsRequired'), t('goLive.cameraMicRequired'));
           navigation.goBack();
           return;
         }
@@ -179,7 +182,7 @@ const GoLiveScreen = ({route, navigation}: any) => {
         sessionId = resp.data?.sessionId;
       } catch (e: any) {
         const serverMsg = e?.response?.data?.message;
-        Alert.alert('Error', serverMsg || 'Could not start live session.');
+        Alert.alert(t('login.error'), serverMsg || t('goLive.couldNotStart'));
         navigation.goBack();
         return;
       }
@@ -244,19 +247,20 @@ const GoLiveScreen = ({route, navigation}: any) => {
         <RTCView streamURL={localStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" mirror zOrder={0} />
       )}
       <View style={styles.scrim} pointerEvents="none" />
+      <LanguageToggle dark style={styles.languageToggle} />
 
       {/* Top bar: LIVE + viewers + close */}
       <View style={styles.topBar}>
         <View style={styles.liveBadge}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>{isLive ? 'LIVE' : 'STARTING…'}</Text>
+          <Text style={styles.liveText}>{isLive ? t('goLive.live') : t('goLive.starting')}</Text>
         </View>
         <View style={styles.viewerPill}>
           <MaterialIcons name="visibility" size={16} color="#fff" />
           <Text style={styles.viewerText}>{viewerCount}</Text>
         </View>
         <TouchableOpacity style={styles.endBtn} onPress={endLive}>
-          <Text style={styles.endBtnText}>End</Text>
+          <Text style={styles.endBtnText}>{t('goLive.end')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -269,11 +273,11 @@ const GoLiveScreen = ({route, navigation}: any) => {
           item.type === 'gift' ? (
             <View style={styles.giftRow}>
               <MaterialIcons name="card-giftcard" size={16} color={COLORS.AstroGold} />
-              <Text style={styles.giftText}>{item.name || 'Someone'} sent {item.giftName} (₹{item.amount})</Text>
+              <Text style={styles.giftText}>{item.name || t('goLive.someone')} {t('goLive.sent')} {item.giftName} (₹{item.amount})</Text>
             </View>
           ) : (
             <View style={styles.commentRow}>
-              <Text style={styles.commentName}>{item.name || 'Guest'}: </Text>
+              <Text style={styles.commentName}>{item.name || t('goLive.guest')}: </Text>
               <Text style={styles.commentText}>{item.message}</Text>
             </View>
           )
@@ -298,6 +302,7 @@ export default GoLiveScreen;
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#000'},
   scrim: {...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.15)'},
+  languageToggle: {top: 90},
   topBar: {
     position: 'absolute', top: 40, left: 16, right: 16, flexDirection: 'row', alignItems: 'center',
   },

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useContext, useState} from 'react';
 import {
   StyleSheet,
   Image,
@@ -17,8 +17,11 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {countries} from './Country';
 import Instance from '../../api/ApiCall';
+import {LanguageContext} from '../../context/LanguageContext';
+import LanguageToggle from '../../components/LanguageToggle';
 
 const Login = ({navigation}) => {
+  const {t} = useContext(LanguageContext);
   const [countryCode, setCountryCode] = useState('IN');
   const [callingCode, setCallingCode] = useState('91');
   const [isPickerVisible, setPickerVisible] = useState(false);
@@ -37,13 +40,13 @@ const Login = ({navigation}) => {
 
   const validateFields = () => {
     if (!phoneNumber) {
-      Alert.alert('Validation Error', 'Phone number cannot be empty.');
+      Alert.alert(t('login.validationError'), t('login.phoneEmpty'));
       return false;
     }
     if (phoneNumber.length < 10) {
       Alert.alert(
-        'Validation Error',
-        'Phone number must be at least 10 digits long.',
+        t('login.validationError'),
+        t('login.phoneTooShort'),
       );
       return false;
     }
@@ -62,14 +65,14 @@ const Login = ({navigation}) => {
       if (res?.data?.success) {
         navigation.navigate('VerifyOtp', { phoneNumber, role: 'astrologer' });
       } else {
-        Alert.alert('Error', res?.data?.message || 'Could not send OTP. Please try again.');
+        Alert.alert(t('login.error'), res?.data?.message || t('login.otpSendFailed'));
       }
     } catch (error) {
       if (error?.response?.data?.code === 'NO_ACCOUNT') {
-        Alert.alert('Not Found', 'No astrologer account found with this phone number. Please register first.');
+        Alert.alert(t('login.notFound'), t('login.noAccountFound'));
       } else {
         console.log('Login error:', error);
-        Alert.alert('Login Error', 'Something went wrong. Please try again.');
+        Alert.alert(t('login.loginError'), t('login.somethingWrong'));
       }
     } finally {
       SetLoading(false);
@@ -83,13 +86,14 @@ const Login = ({navigation}) => {
         backgroundColor="transparent"
         barStyle="light-content"
       />
+      <LanguageToggle dark />
       <Image
         source={require('../../assets/images/logo1.png')}
         style={styles.logo}
       />
       <Text style={styles.title}>Astrowani</Text>
 
-      <Text style={styles.subTitle}>For Astrologers</Text>
+      <Text style={styles.subTitle}>{t('login.forAstrologers')}</Text>
       <View style={styles.loginContainer}>
         <View style={styles.numberInput}>
           <TouchableOpacity
@@ -108,7 +112,7 @@ const Login = ({navigation}) => {
           <TextInput
             style={styles.input}
             maxLength={10}
-            placeholder="Phone number"
+            placeholder={t('login.phoneNumber')}
             keyboardType="phone-pad"
             value={phoneNumber}
             onChangeText={setPhoneNumber}
@@ -122,23 +126,23 @@ const Login = ({navigation}) => {
           {loading ? (
             <ActivityIndicator color={COLORS.white} />
           ) : (
-            <Text style={styles.btnTxt}>Continue</Text>
+            <Text style={styles.btnTxt}>{t('login.continue')}</Text>
           )}
         </TouchableOpacity>
 
         <View style={styles.termsView}>
-          <Text style={styles.termsText}>By signing up, you agree to our</Text>
+          <Text style={styles.termsText}>{t('login.termsPrefix')}</Text>
           <TouchableOpacity style={styles.termsLink}>
-            <Text style={styles.linktext}>Terms of use</Text>
+            <Text style={styles.linktext}>{t('login.termsOfUse')}</Text>
           </TouchableOpacity>
-          <Text style={styles.termsText}>&</Text>
+          <Text style={styles.termsText}>{t('login.and')}</Text>
           <TouchableOpacity style={styles.termsLink}>
-            <Text style={styles.linktext}>Privacy Policy</Text>
+            <Text style={styles.linktext}>{t('login.privacyPolicy')}</Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity onPress={() => navigation.navigate('Registration')}>
-          <Text style={styles.register}>Don't have an Account ? Register</Text>
+          <Text style={styles.register}>{t('login.noAccount')}</Text>
         </TouchableOpacity>
       </View>
       <Modal
@@ -164,7 +168,7 @@ const Login = ({navigation}) => {
               )}
             />
             <TouchableOpacity onPress={togglePicker}>
-              <Text style={styles.closeText}>Close</Text>
+              <Text style={styles.closeText}>{t('login.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
