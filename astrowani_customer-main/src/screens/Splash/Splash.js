@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useContext, useEffect} from 'react';
 import {
   Image,
   Text,
@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
+import {LanguageContext} from '../../context/LanguageContext';
 
 export default function Splash({navigation}) {
+  const {t} = useContext(LanguageContext);
   useEffect(() => {
     const splashTimeout = setTimeout(() => {
       navigation.replace('Login');
@@ -36,7 +38,7 @@ export default function Splash({navigation}) {
           style={styles.splashImage}
           source={require('../../assets/images/splash.jpeg')}
         />
-        <Text style={styles.text}>Consult Online Astrologers</Text>
+        <Text style={styles.text}>{t('splash.tagline')}</Text>
       </ImageBackground>
     </View>
   );

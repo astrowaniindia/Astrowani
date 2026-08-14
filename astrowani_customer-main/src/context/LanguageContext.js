@@ -233,6 +233,15 @@ const translations = {
     'walletHistory.noTransaction': 'No Transaction',
     'walletHistory.addMoney': 'Add Money',
 
+    'freeBotChat.freeChat': 'Free chat',
+    'freeBotChat.freeBanner': 'Your free 5-minute welcome chat — completely free',
+    'freeBotChat.messagePlaceholder': 'Type a message…',
+    'freeBotChat.completeTitle': 'Chat Complete!',
+    'freeBotChat.completeMsg': "Thanks for chatting with us! Start a real chat with any astrologer whenever you're ready.",
+    'freeBotChat.greatThanks': 'Great, thanks!',
+
+    'splash.tagline': 'Consult Online Astrologers',
+
     'call.pleaseLogin': 'Please login to continue.',
     'call.audioCall': 'AUDIO CALL',
     'call.videoCall': 'VIDEO CALL',
@@ -849,6 +858,15 @@ const translations = {
 
     'walletHistory.noTransaction': 'कोई लेनदेन नहीं',
     'walletHistory.addMoney': 'पैसे जोड़ें',
+
+    'freeBotChat.freeChat': 'मुफ्त चैट',
+    'freeBotChat.freeBanner': 'आपकी मुफ्त 5-मिनट की स्वागत चैट — पूरी तरह मुफ्त',
+    'freeBotChat.messagePlaceholder': 'संदेश लिखें…',
+    'freeBotChat.completeTitle': 'चैट पूर्ण!',
+    'freeBotChat.completeMsg': 'हमसे चैट करने के लिए धन्यवाद! जब भी तैयार हों, किसी भी ज्योतिषी से असली चैट शुरू करें।',
+    'freeBotChat.greatThanks': 'बढ़िया, धन्यवाद!',
+
+    'splash.tagline': 'ऑनलाइन ज्योतिषियों से परामर्श करें',
 
     'call.pleaseLogin': 'जारी रखने के लिए कृपया लॉगिन करें।',
     'call.audioCall': 'ऑडियो कॉल',

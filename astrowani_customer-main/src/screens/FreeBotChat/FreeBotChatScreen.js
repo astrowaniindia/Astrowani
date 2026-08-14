@@ -7,7 +7,7 @@
 // never offers itself again), regardless of how the customer leaves —
 // natural end, manual end, or closing the app mid-chat. In its place, a
 // referral nudge (ReferralPromptHost) shows once the chat ends.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,11 +32,13 @@ import { FREE_CHAT_PERSONA } from '../../data/freeBotChatPersona';
 import { getOpeningMessage, getBotReply } from '../../utils/freeChatBotEngine';
 import { captureEvent } from '../../utils/Analytics';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const CHAT_DURATION_SECONDS = 300;
 
 const FreeBotChatScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const { t } = useContext(LanguageContext);
   // Admin-editable persona passed from Home.js's FreeChatOfferPopup — falls
   // back to the bundled default if navigated to without it.
   const persona = route?.params?.persona;
@@ -62,7 +64,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     captureEvent('free_bot_chat_started');
-    const t = setTimeout(() => appendMessage('bot', getOpeningMessage()), 600);
+    const openingTimer = setTimeout(() => appendMessage('bot', getOpeningMessage()), 600);
     // Marks the free chat as used the instant the customer actually enters it —
     // not on completion — so it can't be re-offered no matter how they leave.
     (async () => {
@@ -77,7 +79,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
         console.warn('free-bot-chat mark-used error:', e.message);
       }
     })();
-    return () => clearTimeout(t);
+    return () => clearTimeout(openingTimer);
   }, []);
 
   const finishNaturally = () => {
@@ -154,9 +156,9 @@ const FreeBotChatScreen = ({ navigation, route }) => {
         <View style={styles.headerCenter}>
           <Text style={styles.astroName} numberOfLines={1}>{personaName}</Text>
           {botTyping ? (
-            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>typing...</Text>
+            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>{t('chatSession.typing')}</Text>
           ) : (
-            <Text style={styles.charge}>Free chat</Text>
+            <Text style={styles.charge}>{t('freeBotChat.freeChat')}</Text>
           )}
         </View>
 
@@ -164,14 +166,14 @@ const FreeBotChatScreen = ({ navigation, route }) => {
           <Text style={styles.timer}>{pad(mm)}:{pad(ss)}</Text>
           <TouchableOpacity style={styles.endBtn} onPress={manualEnd}>
             <Ionicons name="call" size={16} color="#fff" />
-            <Text style={styles.endText}>End</Text>
+            <Text style={styles.endText}>{t('chatSession.end')}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={styles.freeBanner}>
         <Ionicons name="gift-outline" size={16} color="#7A5B00" />
-        <Text style={styles.freeBannerText}>Your free 5-minute welcome chat — completely free</Text>
+        <Text style={styles.freeBannerText}>{t('freeBotChat.freeBanner')}</Text>
       </View>
 
       <ImageBackground
@@ -194,7 +196,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder="Type a message…"
+          placeholder={t('freeBotChat.messagePlaceholder')}
           placeholderTextColor="#aaa"
           multiline
         />
@@ -207,12 +209,12 @@ const FreeBotChatScreen = ({ navigation, route }) => {
         <View style={styles.overlay}>
           <View style={styles.completedCard}>
             <Ionicons name="checkmark-circle" size={54} color="#1a8f4c" />
-            <Text style={styles.completedTitle}>Chat Complete!</Text>
+            <Text style={styles.completedTitle}>{t('freeBotChat.completeTitle')}</Text>
             <Text style={styles.completedMsg}>
-              Thanks for chatting with us! Start a real chat with any astrologer whenever you're ready.
+              {t('freeBotChat.completeMsg')}
             </Text>
             <TouchableOpacity style={styles.completedBtn} onPress={finish}>
-              <Text style={styles.completedBtnText}>Great, thanks!</Text>
+              <Text style={styles.completedBtnText}>{t('freeBotChat.greatThanks')}</Text>
             </TouchableOpacity>
           </View>
         </View>
