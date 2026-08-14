@@ -1,5 +1,5 @@
 // ChatSessionScreen.js — Customer side
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -30,10 +30,12 @@ import { setActiveChatAstrologerId } from '../utils/PushNotification';
 import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
+import { LanguageContext } from '../context/LanguageContext';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
   const insets = useSafeAreaInsets();
+  const { t } = useContext(LanguageContext);
 
   const [session, setSession] = useState(null);
   // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
@@ -111,7 +113,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
     };
 
     if (message) {
-      showStatusPopup({ variant: 'info', title: 'Session Ended', message, onClose: goBackOrHome });
+      showStatusPopup({ variant: 'info', title: t('chatSession.sessionEnded'), message, onClose: goBackOrHome });
     } else {
       goBackOrHome();
     }
@@ -133,10 +135,10 @@ const ChatSessionScreen = ({ route, navigation }) => {
     if (hasEndedRef.current) { manualEndSession(); return; }
     showStatusPopup({
       variant: 'endCall',
-      title: 'End Chat',
-      message: 'Going back will end this chat session. Are you sure you want to end the chat?',
-      confirmText: 'End',
-      cancelText: 'Cancel',
+      title: t('chatSession.endChatTitle'),
+      message: t('chatSession.endChatMsg'),
+      confirmText: t('chatSession.end'),
+      cancelText: t('common.cancel'),
       onConfirm: manualEndSession,
     });
   };
@@ -306,8 +308,8 @@ const ChatSessionScreen = ({ route, navigation }) => {
             // backgrounds the app (e.g. presses the phone's Home button) without
             // actually ending the chat. See activeSessionNotification.js.
             showActiveSessionNotification({
-              title: 'Chat in progress',
-              message: `Your chat with ${person?.name || person?.firstName || 'the astrologer'} is still active. Tap to return.`,
+              title: t('chatSession.inProgress'),
+              message: t('chatSession.stillActive', { name: person?.name || person?.firstName || t('common.astrologer') }),
               screen: 'ChatSessionScreen',
               params: { requestId, person, sessionId: sessionRef.current?.id },
             });
@@ -347,7 +349,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
           if (pollCount > 30 && !sessionRef.current) {
             clearInterval(pollRef.current);
-            endSession('Session could not be started.');
+            endSession(t('chat.notPickedUp'));
           }
         } finally {
           isFetching = false;
@@ -368,7 +370,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
               .eq('id', sessionRef.current.id)
               .single();
             if (checkSess?.ended_at) {
-              endSession('The astrologer has ended the session.');
+              endSession(t('chatSession.astrologerEnded'));
             }
           }, 45000);
 
@@ -446,13 +448,13 @@ const ChatSessionScreen = ({ route, navigation }) => {
         )}
 
         <View style={styles.headerCenter}>
-          <Text style={styles.astroName} numberOfLines={1}>{person?.name || person?.firstName || 'Astrologer'}</Text>
+          <Text style={styles.astroName} numberOfLines={1}>{person?.name || person?.firstName || t('common.astrologer')}</Text>
           {vendorTyping ? (
-            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>typing...</Text>
+            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>{t('chatSession.typing')}</Text>
           ) : session ? (
             <Text style={styles.charge}>₹{session.per_minute_charge}/min</Text>
           ) : (
-            <Text style={styles.charge}>Connecting…</Text>
+            <Text style={styles.charge}>{t('chatSession.connecting')}</Text>
           )}
         </View>
 
@@ -460,7 +462,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
           <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
           <TouchableOpacity style={styles.endBtn} onPress={manualEndSession}>
             <Ionicons name="call" size={16} color="#fff" />
-            <Text style={styles.endText}>End</Text>
+            <Text style={styles.endText}>{t('chatSession.end')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -469,7 +471,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
       {connecting ? (
         <View style={styles.waiting}>
           <ActivityIndicator size="large" color={COLORS.AstroMaroon} />
-          <Text style={styles.waitingText}>Waiting for astrologer to accept…</Text>
+          <Text style={styles.waitingText}>{t('chatSession.waitingForAccept')}</Text>
         </View>
       ) : (
         <ImageBackground 
@@ -496,7 +498,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
             style={styles.input}
             value={text}
             onChangeText={handleTyping}
-            placeholder="Type a message…"
+            placeholder={t('chatSession.messagePlaceholder')}
             placeholderTextColor="#aaa"
             multiline
           />

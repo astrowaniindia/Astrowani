@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useContext, useRef} from 'react';
 import {
   StyleSheet,
   Text,
@@ -33,6 +33,7 @@ import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {captureEvent} from '../../utils/Analytics';
 import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
+import {LanguageContext} from '../../context/LanguageContext';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -58,6 +59,7 @@ const ICE_SERVERS = {
 };
 
 const VideoCallScreen = ({route, navigation}: any) => {
+  const {t} = useContext(LanguageContext);
   const {
     sessionId: initialSessionId = '',
     recieverName = 'Astrologer',
@@ -244,8 +246,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
           const audioOk = granted[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
           const cameraOk = granted[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
           if (!audioOk || !cameraOk) {
-            Alert.alert('Permission Required', 'Microphone and camera access are needed for video calls.', [
-              {text: 'OK', onPress: () => navigation.goBack()},
+            Alert.alert(t('call.permissionRequired'), t('call.micCameraPermissionMsg'), [
+              {text: t('common.ok'), onPress: () => navigation.goBack()},
             ]);
             return;
           }
@@ -295,8 +297,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
             // backgrounds the app (e.g. presses the phone's Home button) without
             // actually ending the call. See activeSessionNotification.js.
             showActiveSessionNotification({
-              title: 'Video call in progress',
-              message: `Your video call with ${recieverName} is still active. Tap to return.`,
+              title: t('call.videoInProgress'),
+              message: t('call.videoStillActive', {name: recieverName}),
               screen: 'VideoCallScreen',
               params: {sessionId: sessionIdRef.current, recieverName, recieverImage, recieverId},
             });
@@ -388,10 +390,10 @@ const VideoCallScreen = ({route, navigation}: any) => {
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
       showStatusPopup({
         variant: 'endCall',
-        title: 'End Call',
-        message: 'Are you sure you want to end the call?',
-        confirmText: 'End',
-        cancelText: 'Cancel',
+        title: t('call.endCallTitle'),
+        message: t('call.endCallMsg'),
+        confirmText: t('call.end'),
+        cancelText: t('common.cancel'),
         onConfirm: onPressDisconnect,
       });
       return true;
@@ -418,8 +420,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const ring2Opacity = ring2Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
 
   const statusLabel =
-    callState === 'connecting' ? 'Connecting...' :
-    callState === 'ringing' ? `Ringing... ${ringCountdown}s` :
+    callState === 'connecting' ? t('call.connecting') :
+    callState === 'ringing' ? t('call.ringing', {seconds: ringCountdown}) :
     formatTime(callDuration);
 
   const avatarInitial = recieverName.charAt(0).toUpperCase();
@@ -447,7 +449,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerLabel}>VIDEO CALL</Text>
+        <Text style={styles.headerLabel}>{t('call.videoCall')}</Text>
       </View>
 
       {/* Connecting / Ringing UI */}
@@ -505,7 +507,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
       <View style={styles.controlsBar}>
         <TouchableOpacity style={[styles.ctrlBtn, audioMuted && styles.ctrlBtnRed]} onPress={toggleMute} activeOpacity={0.75}>
           <VectorIcon name={audioMuted ? 'mic-off' : 'mic'} type="MaterialIcons" size={24} color={audioMuted ? '#FF3B30' : '#fff'} />
-          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? 'Unmute' : 'Mute'}</Text>
+          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
@@ -514,12 +516,12 @@ const VideoCallScreen = ({route, navigation}: any) => {
 
         <TouchableOpacity style={[styles.ctrlBtn, videoMuted && styles.ctrlBtnRed]} onPress={toggleVideo} activeOpacity={0.75}>
           <VectorIcon name={videoMuted ? 'videocam-off' : 'videocam'} type="MaterialIcons" size={24} color={videoMuted ? '#FF3B30' : '#fff'} />
-          <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelRed]}>{videoMuted ? 'Video Off' : 'Camera'}</Text>
+          <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelRed]}>{videoMuted ? t('call.videoOff') : t('call.camera')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.ctrlBtn} onPress={flipCamera} activeOpacity={0.75}>
           <VectorIcon name="flip-camera-android" type="MaterialIcons" size={24} color="#fff" />
-          <Text style={styles.ctrlLabel}>Flip</Text>
+          <Text style={styles.ctrlLabel}>{t('call.flip')}</Text>
         </TouchableOpacity>
       </View>
     </View>

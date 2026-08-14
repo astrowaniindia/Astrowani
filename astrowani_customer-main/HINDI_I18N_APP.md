@@ -138,7 +138,17 @@ Investigating why Free Services didn't work turned up a bigger, unrelated findin
   follow-up work — see the task list / conversation for the exact Postman endpoint paths once
   confirmed.
 
-## Not yet covered (Phase 5 — follow-up work)
+## Coverage so far (Phase 6)
+
+- `ChatSessionScreen.js` — header (name/typing/connecting/charge), End button, waiting-for-accept
+  state, message input placeholder, end-chat confirm popup, session-ended/astrologer-ended popup
+  messages, and the persistent "chat in progress" notification title/body.
+- `screens/Video/VoiceCallScreen.tsx`, `screens/Video/VideoCallScreen.tsx` — header label
+  (AUDIO/VIDEO CALL), connecting/ringing status, mute/speaker/camera/flip control labels,
+  hardware-back end-call confirm popup, mic/camera permission alerts, and the persistent
+  "call in progress" notification title/body.
+
+## Not yet covered (Phase 5/7 — follow-up work)
 
 Same pattern applies everywhere: import `LanguageContext`, destructure `t`, replace strings, add
 keys to `LanguageContext.js`. Reuse existing `alerts.*`/`common.*` keys where the message matches
@@ -150,6 +160,19 @@ string-matching translated text for control flow) when doing this work.
   `services[].title` values without also updating the `===` comparisons that route on them
 - Legal pages (`RefundAndCancel.js`, `PrivacyPolicy.js`, `TermsOfUse.js`) — intentionally
   English-only per product decision, not a gap
+- Confirmed still untranslated (audited 2026-08-14, not previously listed here):
+  `screens/Live/LiveViewerScreen.tsx`, `screens/notificationPopup.js`,
+  `drawerScreens/ReferAndEarnScreen.js`, `component/HoroscopeCard.js`, `component/MuhuratCard.js`,
+  `component/ExpertsList.js`, `Remedies/BookPujaScreen.js`, `Remedies/GemstoneDetails.js`,
+  `Remedies/GemstoneList.js`, `Remedies/PujaDetails.js`, `drawerScreens/MyOrdersScreen.js`,
+  `drawerScreens/FavoriteScreen.js`, `drawerScreens/SupportScreen.js`,
+  `drawerScreens/VoiceNotesScreen.js`, `FreeBotChat/FreeBotChatScreen.js`, `Home/AddReview.js`,
+  `Home/Review.js`, `Home/GemStoneBuy.tsx`, `Home/VipPuja.jsx`, `Home/VoiceNotesBanner.js`,
+  `Home/LiveAartiSection.js`, `Wallet/History.js`, `chat/CareerJob.js`,
+  `chat/LoveAndRelationScreen.js`, `chat/MaritalLifeScreen.js`, `chat/PremiumScreen.js`,
+  `Splash/Splash.js`. `Video/JoinTheRoom.tsx` looks unreferenced from `routes/` (likely dead,
+  same pattern as the vendor app's `EnxJoinScreen.tsx`) — verify before spending time on it.
+  `MainScreen/MainScreen.js` and `drawerScreens/WalletScreen.js` are empty stub files, not gaps.
 
 ## Backend-driven (DB) content
 

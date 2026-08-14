@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useContext, useRef} from 'react';
 import {
   StyleSheet,
   Text,
@@ -31,6 +31,7 @@ import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {captureEvent} from '../../utils/Analytics';
+import {LanguageContext} from '../../context/LanguageContext';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -53,6 +54,7 @@ const ICE_SERVERS = {
 };
 
 const VoiceCallScreen = ({route, navigation}: any) => {
+  const {t} = useContext(LanguageContext);
   const {
     sessionId: initialSessionId = '',
     recieverName = 'Astrologer',
@@ -234,8 +236,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         try {
           const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            Alert.alert('Permission Required', 'Microphone access is needed for audio calls.', [
-              {text: 'OK', onPress: () => navigation.goBack()},
+            Alert.alert(t('call.permissionRequired'), t('call.micPermissionMsg'), [
+              {text: t('common.ok'), onPress: () => navigation.goBack()},
             ]);
             return;
           }
@@ -275,8 +277,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             // backgrounds the app (e.g. presses the phone's Home button) without
             // actually ending the call. See activeSessionNotification.js.
             showActiveSessionNotification({
-              title: 'Call in progress',
-              message: `Your call with ${recieverName} is still active. Tap to return.`,
+              title: t('call.inProgress'),
+              message: t('call.stillActive', {name: recieverName}),
               screen: 'VoiceCallScreen',
               params: {sessionId: sessionIdRef.current, recieverName, recieverImage, recieverId},
             });
@@ -371,10 +373,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
       showStatusPopup({
         variant: 'endCall',
-        title: 'End Call',
-        message: 'Are you sure you want to end the call?',
-        confirmText: 'End',
-        cancelText: 'Cancel',
+        title: t('call.endCallTitle'),
+        message: t('call.endCallMsg'),
+        confirmText: t('call.end'),
+        cancelText: t('common.cancel'),
         onConfirm: onPressDisconnect,
       });
       return true;
@@ -403,8 +405,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const ring2Opacity = ring2Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
 
   const statusLabel =
-    callState === 'connecting' ? 'Connecting...' :
-    callState === 'ringing' ? `Ringing... ${ringCountdown}s` :
+    callState === 'connecting' ? t('call.connecting') :
+    callState === 'ringing' ? t('call.ringing', {seconds: ringCountdown}) :
     formatTime(callDuration);
 
   const isActive = callState === 'in_call';
@@ -421,7 +423,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
 
       <View style={styles.header}>
-        <Text style={styles.headerLabel}>AUDIO CALL</Text>
+        <Text style={styles.headerLabel}>{t('call.audioCall')}</Text>
       </View>
 
       <View style={styles.centerContent}>
@@ -454,7 +456,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       <View style={styles.controlsBar}>
         <TouchableOpacity style={[styles.ctrlBtn, audioMuted && styles.ctrlBtnRed]} onPress={toggleMute} activeOpacity={0.75}>
           <VectorIcon name={audioMuted ? 'mic-off' : 'mic'} type="MaterialIcons" size={26} color={audioMuted ? '#FF3B30' : '#fff'} />
-          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? 'Unmute' : 'Mute'}</Text>
+          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
@@ -463,7 +465,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
         <TouchableOpacity style={[styles.ctrlBtn, speakerOn && styles.ctrlBtnGold]} onPress={toggleSpeaker} activeOpacity={0.75}>
           <VectorIcon name={speakerOn ? 'volume-up' : 'volume-down'} type="MaterialIcons" size={26} color={speakerOn ? color.AstroGold : '#fff'} />
-          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? 'Speaker' : 'Earpiece'}</Text>
+          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? t('call.speaker') : t('call.earpiece')}</Text>
         </TouchableOpacity>
       </View>
     </View>
