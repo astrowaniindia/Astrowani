@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useContext, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,8 +20,10 @@ import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const ReferAndEarnScreen = () => {
+  const { t } = useContext(LanguageContext);
   const [code, setCode] = useState(null);
   const [totalReferred, setTotalReferred] = useState(0);
   const [totalEarned, setTotalEarned] = useState(0);
@@ -61,7 +63,7 @@ const ReferAndEarnScreen = () => {
   const copyToClipboard = () => {
     if (!code) return;
     Clipboard.setString(code);
-    Alert.alert('Copied to clipboard', `Referral code ${code} copied!`);
+    Alert.alert(t('refer.copiedTitle'), t('refer.copiedMsg', { code }));
   };
 
   const shareGeneric = async () => {
@@ -72,7 +74,7 @@ const ReferAndEarnScreen = () => {
 
   const shareViaWhatsapp = () => {
     Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`).catch(() =>
-      Alert.alert('WhatsApp not installed'),
+      Alert.alert(t('refer.whatsappNotInstalled')),
     );
   };
 
@@ -104,12 +106,12 @@ const ReferAndEarnScreen = () => {
         <View style={styles.heroIconRing}>
           <MCIcon name="gift-outline" size={moderateScale(40)} color={COLORS.AstroGold} />
         </View>
-        <Text style={styles.heroTitle}>Refer & Earn</Text>
-        <Text style={styles.heroSubtitle}>Invite friends to Astrowani and both of you win</Text>
+        <Text style={styles.heroTitle}>{t('refer.title')}</Text>
+        <Text style={styles.heroSubtitle}>{t('refer.subtitle')}</Text>
 
         <View style={styles.rewardPill}>
           <MCIcon name="star-four-points" size={moderateScale(14)} color={COLORS.AstroMaroon} />
-          <Text style={styles.rewardPillText}>Get ₹{rewardAmount} per friend</Text>
+          <Text style={styles.rewardPillText}>{t('refer.getPerFriend', { amount: rewardAmount })}</Text>
         </View>
       </View>
 
@@ -120,55 +122,55 @@ const ReferAndEarnScreen = () => {
               <MCIcon name="account-group-outline" size={moderateScale(22)} color={COLORS.AstroMaroon} />
             </View>
             <Text style={styles.statValue}>{totalReferred}</Text>
-            <Text style={styles.statLabel}>Friends Referred</Text>
+            <Text style={styles.statLabel}>{t('refer.friendsReferred')}</Text>
           </View>
           <View style={styles.statCard}>
             <View style={styles.statIconRing}>
               <MCIcon name="wallet-outline" size={moderateScale(22)} color={COLORS.AstroMaroon} />
             </View>
             <Text style={styles.statValue}>₹{totalEarned}</Text>
-            <Text style={styles.statLabel}>Total Earned</Text>
+            <Text style={styles.statLabel}>{t('refer.totalEarned')}</Text>
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>YOUR REFERRAL CODE</Text>
+        <Text style={styles.sectionLabel}>{t('refer.yourCode')}</Text>
         <View style={styles.codeCard}>
           <View style={styles.codeBox}>
             <Text style={styles.codeText}>{code || '—'}</Text>
           </View>
           <TouchableOpacity style={styles.copyButton} onPress={copyToClipboard} activeOpacity={0.8}>
             <MCIcon name="content-copy" size={moderateScale(17)} color={COLORS.white} />
-            <Text style={styles.copyButtonText}>Copy</Text>
+            <Text style={styles.copyButtonText}>{t('refer.copy')}</Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.shareInfoText}>
-          Share this code — you earn ₹{rewardAmount} when your friend completes their first session
+          {t('refer.shareInfo', { amount: rewardAmount })}
         </Text>
 
         <TouchableOpacity style={styles.whatsappButton} onPress={shareViaWhatsapp} activeOpacity={0.85}>
           <Icon name="whatsapp" size={moderateScale(22)} color="#fff" />
-          <Text style={styles.whatsappButtonText}>Refer via WhatsApp</Text>
+          <Text style={styles.whatsappButtonText}>{t('refer.viaWhatsapp')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.shareButton} onPress={shareGeneric} activeOpacity={0.85}>
           <MCIcon name="share-variant-outline" size={moderateScale(19)} color={COLORS.AstroMaroon} />
-          <Text style={styles.shareButtonText}>Share via other apps</Text>
+          <Text style={styles.shareButtonText}>{t('refer.viaOtherApps')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
+        <Text style={styles.sectionLabel}>{t('refer.howItWorks')}</Text>
         <View style={styles.stepsCard}>
           <View style={styles.stepRow}>
             <View style={styles.stepBadge}>
               <Text style={styles.stepBadgeText}>1</Text>
             </View>
-            <Text style={styles.stepText}>Your friend signs up on Astrowani using your referral code.</Text>
+            <Text style={styles.stepText}>{t('refer.step1')}</Text>
           </View>
           <View style={styles.stepDivider} />
           <View style={styles.stepRow}>
             <View style={styles.stepBadge}>
               <Text style={styles.stepBadgeText}>2</Text>
             </View>
-            <Text style={styles.stepText}>You receive ₹{rewardAmount} once they complete their first chat, call, or video session.</Text>
+            <Text style={styles.stepText}>{t('refer.step2', { amount: rewardAmount })}</Text>
           </View>
         </View>
       </View>

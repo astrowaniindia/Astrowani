@@ -1,5 +1,5 @@
 import {StyleSheet, Text, View, ActivityIndicator, RefreshControl} from 'react-native';
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {useEffect, useState, useCallback, useContext, useRef} from 'react';
 import {useFocusEffect} from '@react-navigation/native';
 import ReusableList from '../component/ReusableList';
 import {COLORS} from '../../Theme/Colors';
@@ -7,8 +7,10 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../../api/SupabaseClient';
 import {moderateScale, verticalScale} from '../../utils/Scaling';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const FavoriteScreen = ({navigation}) => {
+  const {t} = useContext(LanguageContext);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState([]);
@@ -97,7 +99,7 @@ const FavoriteScreen = ({navigation}) => {
           onRefresh={onRefresh}
         />
       ) : (
-        <Text style={styles.notext}>No Favorites yet.{'\n'}Tap the heart on an astrologer's profile to add them here.</Text>
+        <Text style={styles.notext}>{t('favorites.empty')}</Text>
       )}
     </View>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useContext, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Modal, TouchableOpacity, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,8 +6,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
-const TYPE_LABEL = { puja: 'Puja', gemstone: 'Gemstone', specific_puja: 'Specific Puja', life_report: 'Life Report' };
+const TYPE_LABEL_KEY = { puja: 'orders.typePuja', gemstone: 'orders.typeGemstone', specific_puja: 'orders.typeSpecificPuja', life_report: 'orders.typeLifeReport' };
 
 function statusColor(status) {
   if (status === 'completed') return '#4CAF50';
@@ -16,6 +17,7 @@ function statusColor(status) {
 }
 
 const MyOrdersScreen = () => {
+  const { t } = useContext(LanguageContext);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,16 +56,16 @@ const MyOrdersScreen = () => {
           <Text style={styles.statusPillText}>{item.status.toUpperCase()}</Text>
         </View>
       </View>
-      <Text style={styles.itemMeta}>{TYPE_LABEL[item.item_type] || item.item_type} · ₹{item.total}</Text>
+      <Text style={styles.itemMeta}>{(TYPE_LABEL_KEY[item.item_type] ? t(TYPE_LABEL_KEY[item.item_type]) : item.item_type)} · ₹{item.total}</Text>
       <Text style={styles.itemDate}>{new Date(item.created_at).toLocaleDateString('en-IN')}</Text>
       {item.item_type === 'life_report' && (
         item.report_content ? (
           <View style={styles.reportReadyRow}>
             <Icon name="description" size={16} color={COLORS.AstroMaroon} />
-            <Text style={styles.reportReadyText}>Report delivered — tap to view</Text>
+            <Text style={styles.reportReadyText}>{t('orders.reportDelivered')}</Text>
           </View>
         ) : (
-          <Text style={styles.reportPendingText}>Your report is being prepared…</Text>
+          <Text style={styles.reportPendingText}>{t('orders.reportPending')}</Text>
         )
       )}
     </TouchableOpacity>
@@ -88,7 +90,7 @@ const MyOrdersScreen = () => {
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Icon name="shopping-bag" size={40} color="#ccc" />
-            <Text style={styles.emptyText}>No orders yet.</Text>
+            <Text style={styles.emptyText}>{t('orders.noOrders')}</Text>
           </View>
         }
       />
@@ -101,7 +103,7 @@ const MyOrdersScreen = () => {
               <Text style={styles.reportText}>{viewingReport?.report_content}</Text>
             </ScrollView>
             <TouchableOpacity style={styles.closeBtn} onPress={() => setViewingReport(null)}>
-              <Text style={styles.closeBtnText}>Close</Text>
+              <Text style={styles.closeBtnText}>{t('orders.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>

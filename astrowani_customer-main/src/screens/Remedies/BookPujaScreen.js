@@ -231,7 +231,7 @@
 // export default BookPujaScreen;
 
 
-import React from 'react';
+import React, { useContext } from 'react';
 import {
   View,
   Text,
@@ -243,13 +243,15 @@ import {
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import ImageSlider from '../component/ImageSlider';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const BookPujaScreen = ({ route, navigation }) => {
 const data= route.params?.pujas || {};
+const { t } = useContext(LanguageContext);
 
   const handleBookNow = () => {
     // Add your booking logic here
-    Alert.alert('Booking', 'Proceeding to book the puja...');
+    Alert.alert(t('pujaDetail.bookingTitle'), t('pujaDetail.bookingMsg'));
   };
 
   const imageData = [{ id: 1, image: data.image }];
@@ -269,7 +271,7 @@ const data= route.params?.pujas || {};
           <Text style={styles.subtitle}>{data.bio}</Text>
           
           <View style={styles.ratingContainer}>
-            <Text style={styles.soldText}>{data.pujaSold} Puja Sold</Text>
+            <Text style={styles.soldText}>{data.pujaSold} {t('pujaDetail.pujaSold')}</Text>
             <Text style={styles.ratingText}>★★★★★ 4.8</Text>
           </View>
 
@@ -277,13 +279,13 @@ const data= route.params?.pujas || {};
 
           <Text style={styles.description}>{data.description}</Text>
 
-          <Text style={styles.detailTitle}>Details:</Text>
-          <Text style={styles.detailText}>• Duration: {data.duration}</Text>
-          <Text style={styles.detailText}>• Pooja God or Goddess: {data.pujaGodGoddes}</Text>
-          <Text style={styles.detailText}>• Location: {data.location}</Text>
-          <Text style={styles.detailText}>• Date: {new Date(data.date).toLocaleDateString()}</Text>
+          <Text style={styles.detailTitle}>{t('pujaDetail.details')}</Text>
+          <Text style={styles.detailText}>• {t('pujaDetail.duration')}: {data.duration}</Text>
+          <Text style={styles.detailText}>• {t('pujaDetail.godGoddess')}: {data.pujaGodGoddes}</Text>
+          <Text style={styles.detailText}>• {t('pujaDetail.location')}: {data.location}</Text>
+          <Text style={styles.detailText}>• {t('pujaDetail.date')}: {new Date(data.date).toLocaleDateString()}</Text>
 
-          <Text style={styles.benefitsTitle}>Benefits:</Text>
+          <Text style={styles.benefitsTitle}>{t('pujaDetail.benefits')}</Text>
           {data.Benefits.map((benefit, index) => (
             <Text key={index} style={styles.benefitText}>✓ {benefit}</Text>
           ))}
@@ -293,10 +295,10 @@ const data= route.params?.pujas || {};
         <View>
           <Text style={styles.originalPrice}>₹{data.price}</Text>
           <Text style={styles.discountedPrice}>₹699</Text>
-          <Text style={styles.groupText}>Group Puja</Text>
+          <Text style={styles.groupText}>{t('pujaDetail.groupPuja')}</Text>
         </View>
         <TouchableOpacity onPress={handleBookNow} style={styles.bookButton}>
-          <Text style={styles.bookButtonText}>Book Now</Text>
+          <Text style={styles.bookButtonText}>{t('pujaDetail.bookNow')}</Text>
         </TouchableOpacity>
       </View>
     </View>

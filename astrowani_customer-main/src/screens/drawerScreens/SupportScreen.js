@@ -7,24 +7,26 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { Dropdown } from 'react-native-element-dropdown';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const SupportScreen = () => {
+  const { t } = useContext(LanguageContext);
   const Issues = [
     {
-      label: 'Technical Issue',
+      label: t('support.issueTechnical'),
       value: 'Technical Issue',
     },
-    { label: 'Account Related Issue', value: 'Account Related Issue' },
-    { label: 'Refund Request', value: 'Refund Request' },
-    { label: 'Other', value: 'Other' },
-    { label: 'Feedback', value: 'Feedback' },
+    { label: t('support.issueAccount'), value: 'Account Related Issue' },
+    { label: t('support.issueRefund'), value: 'Refund Request' },
+    { label: t('support.issueOther'), value: 'Other' },
+    { label: t('support.issueFeedback'), value: 'Feedback' },
   ];
 
   const [issue, setIssue] = useState(null);
@@ -36,7 +38,7 @@ const SupportScreen = () => {
 
   const handleSubmit = async () => {
     if (!name || !email || !issue || !message) {
-      Alert.alert('Please fill all fields before submitting.');
+      Alert.alert(t('support.fillAllFields'));
       return;
     }
     setLoading(true);
@@ -69,10 +71,10 @@ const SupportScreen = () => {
       setMessage('');
       setMobile('');
 
-      Alert.alert('Support request submitted successfully!');
+      Alert.alert(t('support.submittedSuccess'));
     } catch (err) {
       console.log(err.message);
-      Alert.alert('Error:', err.message);
+      Alert.alert(t('common.errorPrefix'), err.message);
     } finally {
       setLoading(false);
     }
@@ -81,21 +83,20 @@ const SupportScreen = () => {
   return (
     <View style={styles.container}>
       <View style={styles.form}>
-        <Text style={styles.title}>Have any Questions?</Text>
+        <Text style={styles.title}>{t('support.title')}</Text>
         <Text style={styles.subtitle}>
-          We are happy to help. Tell us your Issue and we will get back to you
-          earliest.
+          {t('support.subtitle')}
         </Text>
 
         <TextInput
-          placeholder="Enter Your Name"
+          placeholder={t('support.enterName')}
           placeholderTextColor={COLORS.gray}
           style={styles.input}
           value={name}
           onChangeText={setName}
         />
         <TextInput
-          placeholder="Email"
+          placeholder={t('support.email')}
           placeholderTextColor={COLORS.gray}
           keyboardType="email-address"
           style={styles.input}
@@ -103,7 +104,7 @@ const SupportScreen = () => {
           onChangeText={setEmail}
         />
         <TextInput
-          placeholder="Mobile Number"
+          placeholder={t('support.mobileNumber')}
           placeholderTextColor={COLORS.gray}
           keyboardType="number-pad"
           style={styles.input}
@@ -116,7 +117,7 @@ const SupportScreen = () => {
             data={Issues}
             labelField="label"
             valueField="value"
-            placeholder="Select Issue"
+            placeholder={t('support.selectIssue')}
             placeholderStyle={styles.dropdownText}
             selectedTextStyle={styles.selectedItemText} // Style for selected item
             value={issue}
@@ -138,7 +139,7 @@ const SupportScreen = () => {
           />
         </View>
         <TextInput
-          placeholder="Write your message here"
+          placeholder={t('support.writeMessage')}
           placeholderTextColor={COLORS.gray}
           keyboardType="default"
           style={styles.messagebox}
@@ -151,7 +152,7 @@ const SupportScreen = () => {
           {loading ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={styles.submitBtnTxt}>Submit</Text>
+            <Text style={styles.submitBtnTxt}>{t('support.submit')}</Text>
           )}
         </TouchableOpacity>
       </View>

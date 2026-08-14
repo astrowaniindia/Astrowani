@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, {useState, useEffect, useRef, useCallback, useContext} from 'react';
 import {
   StyleSheet,
   Text,
@@ -26,6 +26,7 @@ import {SOCKET_URL} from '../../config/api';
 import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import GiftModal from '../../Component/Modal';
+import {LanguageContext} from '../../context/LanguageContext';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -44,6 +45,7 @@ const ICE_SERVERS = {
 
 // Customer live viewer — one peer connection to the broadcaster (mesh node).
 const LiveViewerScreen = ({route, navigation}: any) => {
+  const {t} = useContext(LanguageContext);
   const {sessionId, astrologer} = route.params || {};
   const astrologerId = astrologer?.userId || astrologer?._id;
 
@@ -54,7 +56,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
   const [connecting, setConnecting] = useState(true);
 
   const viewerIdRef = useRef<string>('');
-  const viewerNameRef = useRef<string>('Guest');
+  const viewerNameRef = useRef<string>(t('live.guest'));
   const socketRef = useRef<any>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const leftRef = useRef(false);
@@ -82,7 +84,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       const userStr = await AsyncStorage.getItem('userData');
       const user = userStr ? JSON.parse(userStr) : null;
       viewerIdRef.current = user?.id || user?._id || `guest_${Date.now()}`;
-      viewerNameRef.current = user?.name || user?.firstName || 'Guest';
+      viewerNameRef.current = user?.name || user?.firstName || t('live.guest');
       if (cancelled) return;
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -134,7 +136,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       socket.on('live_gift', (d: any) => pushFeed({type: 'gift', name: d.name, giftName: d.giftName, amount: d.amount}));
       socket.on('live_ended', () => {
         if (leftRef.current) return;
-        Alert.alert('Live ended', `${astrologer?.name || 'The astrologer'} has ended the live.`);
+        Alert.alert(t('live.ended'), t('live.endedMsg', {name: astrologer?.name || t('live.theAstrologer')}));
         cleanup(false);
         navigation.goBack();
       });
@@ -163,7 +165,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           {astrologer?.profileImage ? (
             <Image source={{uri: astrologer.profileImage}} style={styles.placeholderAvatar} />
           ) : null}
-          <Text style={styles.placeholderText}>{connecting ? 'Connecting to live…' : 'Waiting for video…'}</Text>
+          <Text style={styles.placeholderText}>{connecting ? t('live.connectingToLive') : t('live.waitingForVideo')}</Text>
         </View>
       )}
       <View style={styles.scrim} pointerEvents="none" />
@@ -172,8 +174,8 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       <View style={styles.topBar}>
         <Image source={{uri: astrologer?.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png'}} style={styles.avatar} />
         <View style={{marginLeft: 8, flex: 1}}>
-          <Text style={styles.name} numberOfLines={1}>{astrologer?.name || 'Astrologer'}</Text>
-          <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
+          <Text style={styles.name} numberOfLines={1}>{astrologer?.name || t('common.astrologer')}</Text>
+          <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{t('common.live')}</Text></View>
         </View>
         <TouchableOpacity style={styles.closeBtn} onPress={() => { cleanup(true); navigation.goBack(); }}>
           <MaterialIcons name="close" size={22} color="#fff" />
@@ -189,11 +191,11 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           item.type === 'gift' ? (
             <View style={styles.giftRow}>
               <MaterialIcons name="card-giftcard" size={16} color={COLORS.AstroGold} />
-              <Text style={styles.giftText}>{item.name || 'Someone'} sent {item.giftName} (₹{item.amount})</Text>
+              <Text style={styles.giftText}>{item.name || t('live.someone')} {t('live.sent')} {item.giftName} (₹{item.amount})</Text>
             </View>
           ) : (
             <View style={styles.commentRow}>
-              <Text style={styles.commentName}>{item.name || 'Guest'}: </Text>
+              <Text style={styles.commentName}>{item.name || t('live.guest')}: </Text>
               <Text style={styles.commentText}>{item.message}</Text>
             </View>
           )
@@ -207,7 +209,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
         <View style={styles.bottomBar}>
           <TextInput
             style={styles.input}
-            placeholder="Say something…"
+            placeholder={t('live.sayPlaceholder')}
             placeholderTextColor="#ddd"
             value={comment}
             onChangeText={setComment}

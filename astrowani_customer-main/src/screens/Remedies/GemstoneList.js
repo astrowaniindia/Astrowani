@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useContext, useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,10 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const GemstoneList = ({navigation}) => {
+  const {t} = useContext(LanguageContext);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,7 @@ const GemstoneList = ({navigation}) => {
           style={styles.image}
         />
         <Text style={styles.title}>{item.name || 'name'}</Text>
-        <Text style={styles.caret}>{item.carat || '0'} carats</Text>
+        <Text style={styles.caret}>{item.carat || '0'} {t('gemstone.carats')}</Text>
         <Text style={styles.price}> ₹{item.price || '0'}</Text>
       </View>
     </TouchableOpacity>
@@ -71,7 +73,7 @@ const GemstoneList = ({navigation}) => {
   if (error) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Error: {error}</Text>
+        <Text style={styles.errorText}>{t('common.errorPrefix')} {error}</Text>
       </View>
     );
   }

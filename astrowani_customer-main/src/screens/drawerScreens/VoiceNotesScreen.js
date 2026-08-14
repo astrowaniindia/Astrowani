@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useContext, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,10 +7,12 @@ import Sound from 'react-native-sound';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
 Sound.setCategory('Playback');
 
 const VoiceNotesScreen = () => {
+  const { t } = useContext(LanguageContext);
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,7 +123,7 @@ const VoiceNotesScreen = () => {
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Icon name="mic-outline" size={40} color="#ccc" />
-            <Text style={styles.emptyText}>No voice notes yet.</Text>
+            <Text style={styles.emptyText}>{t('voiceNotes.noNotes')}</Text>
           </View>
         }
       />
