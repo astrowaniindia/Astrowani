@@ -49,7 +49,26 @@ export default function LiveAartiSection() {
 
   if (!videoId) return null;
 
-  const embedUrl = `https://www.youtube.com/embed/${videoId}?playsinline=1&modestbranding=1&rel=0`;
+  const embedUrl = `https://www.youtube.com/embed/${videoId}?playsinline=1&modestbranding=1&rel=0&autoplay=1`;
+  // WebView must load a real HTML document that CONTAINS an <iframe> pointing at the
+  // embed URL — not navigate its top-level frame directly to youtube.com/embed/...
+  // Doing the latter (source={{uri: embedUrl}}) has no parent document, so YouTube's
+  // player has no framing context and refuses to init with "Error 153 / Video player
+  // configuration error" (reproduced even with a known-embeddable test video, in a
+  // plain browser tab — nothing to do with the specific URL an admin enters).
+  const embedHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+        <style>html,body{margin:0;padding:0;background:#000;overflow:hidden;}
+          iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;}</style>
+      </head>
+      <body>
+        <iframe src="${embedUrl}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+      </body>
+    </html>
+  `;
 
   return (
     <View style={styles.container}>
@@ -58,12 +77,13 @@ export default function LiveAartiSection() {
       </View>
       <View style={styles.playerWrap}>
         <WebView
-          source={{ uri: embedUrl }}
+          source={{ html: embedHtml, baseUrl: 'https://www.youtube.com' }}
           style={styles.player}
           allowsFullscreenVideo
           mediaPlaybackRequiresUserAction={false}
           javaScriptEnabled
           domStorageEnabled
+          originWhitelist={['*']}
         />
       </View>
     </View>
