@@ -164,7 +164,18 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       renderItem={renderItem}
       horizontal
       showsHorizontalScrollIndicator={false}
-      removeClippedSubviews={true}
+      // MUST stay false (Sentry REACT-NATIVE-5, https://astrowani.sentry.io/issues/7665434814/):
+      // a horizontal FlatList nested inside another ScrollView and driven by
+      // programmatic scrollToOffset() (see the auto-advance interval above) hits a
+      // long-documented Android ClassCastException in RN's clipping/view-recycling
+      // path (ReactClippingViewManager.getChildCount tries to reattach a clipped
+      // ReactHorizontalScrollView as a plain ReactViewGroup). This was briefly
+      // re-enabled in f01662e under the belief that shrinking LOOP_COUNT (this
+      // list's buffer size) addressed the crash — it doesn't; the crash is about
+      // the clipping/reattachment mechanism itself, not item count, so a smaller
+      // buffer still hits it. Do not re-enable without removing the nested
+      // auto-scrolling FlatList pattern entirely.
+      removeClippedSubviews={false}
       snapToInterval={ITEM_WIDTH}
       decelerationRate="fast"
       contentContainerStyle={{ paddingHorizontal: SIDE_INSET, paddingVertical: verticalScale(14) }}
