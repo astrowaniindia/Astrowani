@@ -27,11 +27,15 @@ export default function useGiftSender() {
 
   const doSend = async ({ astrologerId, gift, context, sessionId, onSent, onBalanceChange }) => {
     setSendingGiftId(gift._id);
+    // Generated once per tap and reused for this request only — lets the backend dedupe a
+    // double-tap or network-layer retry of the SAME confirm as one charge, while a genuine
+    // second gift (a new tap, later) gets its own id and is billed normally.
+    const clientRequestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     try {
       const token = await AsyncStorage.getItem('token');
       const res = await Instance.post(
         '/api/gift/send',
-        { astrologerId, giftId: gift._id, context, sessionId },
+        { astrologerId, giftId: gift._id, context, sessionId, clientRequestId },
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (res.data?.success) {

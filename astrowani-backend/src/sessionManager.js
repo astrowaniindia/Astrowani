@@ -428,6 +428,17 @@ class SessionManager {
    * force-end) would resurrect it and restart the 60s billing clock — silently re-billing a
    * customer for a call that isn't happening. Now only activates a session that has never
    * been ended (`ended_at IS NULL`); a replay against an already-terminated session is a no-op.
+   *
+   * SECURITY (fixed 2026-08-14 — money/billing audit): the above fix still let a repeated
+   * signal against a session that is CURRENTLY active push next_billing_at another 60s into
+   * the future every time it fired, since the update matched on id + ended_at IS NULL only.
+   * checkActiveSessions() only bills sessions where next_billing_at <= now, so a client
+   * re-emitting signal_connection every ~30s could keep next_billing_at perpetually just out
+   * of reach and get an unlimited free call/chat — never billed, vendor never paid. Adding
+   * `is_active: false` to the match makes this a true one-shot: the first signal transitions
+   * is_active false -> true and sets the first billing time; every subsequent signal for the
+   * same session matches zero rows and is a no-op, so next_billing_at can never be pushed
+   * forward by replaying this event.
    */
   async activateSession(sessionId) {
     console.log(`[SessionManager] Activating session ${sessionId}`);
@@ -441,6 +452,7 @@ class SessionManager {
         started_at: new Date().toISOString()
       })
       .eq('id', sessionId)
+      .eq('is_active', false)
       .is('ended_at', null)
       .select('id');
 
@@ -524,6 +536,27 @@ class SessionManager {
       const { data: referrer } = await supabase
         .from('customers').select('fcm_token').eq('id', referral.referrer_customer_id).single();
       if (!referrer) return;
+
+      // ABUSE MITIGATION (added 2026-08-14 — money/billing audit): nothing ties a referral
+      // code redemption to a real distinct person — one person can sign up several accounts
+      // under different phone numbers and refer each into existence from a single "main"
+      // account, farming the reward repeatedly. A real device-fingerprint check would need
+      // new client-side collection this codebase doesn't have yet, so as an immediate,
+      // schema-free bound: cap how many referral rewards one referrer can collect in a
+      // rolling 24h window. Legitimate word-of-mouth referring rarely exceeds a handful of
+      // real friends in a day; this only meaningfully blocks a farming pattern.
+      const REFERRAL_REWARDS_PER_DAY_CAP = 5;
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count: recentRewardCount } = await supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true })
+        .eq('referrer_customer_id', referral.referrer_customer_id)
+        .eq('status', 'rewarded')
+        .gte('rewarded_at', since);
+      if ((recentRewardCount || 0) >= REFERRAL_REWARDS_PER_DAY_CAP) {
+        console.warn(`[SessionManager] Referral reward skipped — referrer ${referral.referrer_customer_id} hit the ${REFERRAL_REWARDS_PER_DAY_CAP}/24h cap.`);
+        return;
+      }
 
       // Keyed on the referral row, so this sweep running twice — or two sessions
       // ending close together — cannot pay the same referral bonus twice.

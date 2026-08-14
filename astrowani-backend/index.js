@@ -8,7 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
 const { computeAstrologerMetrics } = require('./src/astrologerMetrics');
 const { logError } = require('./src/errorLogger');
-const { checkAstrologerBusy, buildBusyMap } = require('./src/busyStatus');
+const { checkAstrologerBusy, buildBusyMap, checkCustomerBusy } = require('./src/busyStatus');
 const { notifyWaitlistIfFree } = require('./src/waitlist');
 const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
@@ -326,7 +326,26 @@ io.on('connection', (socket) => {
       .catch((e) => console.error('[cancel_call] push lookup error:', e.message));
   });
 
+  // SECURITY (2026-08-14 — money/billing audit): previously accepted any sessionId from any
+  // connected socket with no identity check at all, unlike join_session's verified-participant
+  // guard above. Combined with activateSession() being replayable, this let a non-participant
+  // (or a participant replaying the event) push a session's billing clock forward indefinitely
+  // — see sessionManager.js activateSession() for the other half of the fix. Now requires the
+  // same verified-participant check as join_session before touching billing state.
   socket.on('signal_connection', async (data) => {
+    if (!data || !data.sessionId) return;
+    const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+    if (!realId) {
+      console.warn(`[socket] signal_connection rejected for ${data.sessionId} — missing/invalid auth token`);
+      return;
+    }
+    const { data: sessionRow } = await supabaseService
+      .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', data.sessionId).maybeSingle();
+    if (!sessionRow
+      || (String(sessionRow.caller_id) !== String(realId) && String(sessionRow.vendor_id) !== String(realId))) {
+      console.warn(`[socket] signal_connection rejected — ${realId} is not a participant of session ${data.sessionId}`);
+      return;
+    }
     console.log('Connection signal received for session:', data.sessionId);
     const success = await sessionManager.activateSession(data.sessionId);
     if (success) {
@@ -1759,6 +1778,17 @@ app.post('/api/call/initiate', writeLimiter, async (req, res) => {
       } catch(e) {}
     }
 
+    // FAIRNESS FIX (added 2026-08-14 — money/billing audit): checkAstrologerBusy above only
+    // ever gated the astrologer side — nothing stopped this same customer from also being
+    // mid-session/mid-request with someone else, double-booking one wallet across two
+    // simultaneous sessions. See busyStatus.js checkCustomerBusy for the full reasoning.
+    if (callerInfo.id) {
+      const customerBusyStatus = await checkCustomerBusy(supabase, callerInfo.id);
+      if (customerBusyStatus.busy) {
+        return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
+      }
+    }
+
     const sessionId = crypto.randomUUID();
     const roomId = crypto.randomUUID();
 
@@ -1877,6 +1907,14 @@ app.post('/api/chat/initiate', async (req, res) => {
     const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
     if (busyStatus.busy) {
       return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
+    }
+
+    // FAIRNESS FIX (added 2026-08-14 — money/billing audit): mirrors the same check added to
+    // /api/call/initiate — one customer shouldn't be able to double-book a second astrologer
+    // while already active/pending with another. See busyStatus.js checkCustomerBusy.
+    const customerBusyStatus = await checkCustomerBusy(supabase, customer.id);
+    if (customerBusyStatus.busy) {
+      return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
     }
 
     const { data: row, error } = await supabase
@@ -2178,11 +2216,31 @@ app.post('/api/session/reject', async (req, res) => {
 });
 
 // End a call/session — terminates billing and notifies both parties
+//
+// SECURITY (fixed 2026-08-14 — money/billing audit): had no authorization check at all — any
+// unauthenticated request with a guessed/leaked sessionId could terminate someone else's
+// active, still-being-billed session early. Not a fund-theft path on its own, but a griefing/
+// availability gap sitting directly next to billing logic. Now requires the caller's JWT to
+// resolve to either the session's caller_id or its vendor_id before anything is terminated.
 app.post('/api/call/end', async (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) {
       return res.status(400).json({ success: false, message: 'sessionId is required' });
+    }
+
+    const { data: sessionRow } = await supabaseService
+      .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+    if (!sessionRow) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+    const customer = await resolveCustomerFromReq(req);
+    const vendorId = await resolveVendorIdFromReq(req);
+    const isParticipant =
+      (customer?.id && String(customer.id) === String(sessionRow.caller_id)) ||
+      (vendorId && String(vendorId) === String(sessionRow.vendor_id));
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Not a participant of this session' });
     }
 
     await sessionManager.terminateSession(sessionId, 'Call ended by user');
@@ -3267,7 +3325,7 @@ app.post('/api/gift/send', writeLimiter, async (req, res) => {
     const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
     const userId = decoded.userId || decoded._id || decoded.id;
 
-    const { astrologerId, giftId, context, sessionId } = req.body || {};
+    const { astrologerId, giftId, context, sessionId, clientRequestId } = req.body || {};
     if (!astrologerId || !giftId) {
       return res.status(400).json({ success: false, message: 'astrologerId and giftId required' });
     }
@@ -3301,13 +3359,26 @@ app.post('/api/gift/send', writeLimiter, async (req, res) => {
     // Previously these were four separate statements, so a failure between them
     // could take money from the customer and never credit the astrologer — or
     // credit the astrologer for a debit that never landed.
+    // SECURITY (fixed 2026-08-14 — money/billing audit): the idempotency key used to embed
+    // Date.now(), which is unique on every call by construction — defeating the whole point
+    // of an idempotency key (wallet.js's own doc comment warns against exactly this: "never a
+    // random value"). A double-tap or network-layer retry of the same "send gift" action
+    // generated a fresh key each time and was charged twice. Newer app builds send a stable
+    // clientRequestId (one per tap, reused across any retry of that tap) which is used
+    // directly. Older, not-yet-updated clients that don't send one fall back to a 5-second
+    // time bucket instead of a raw timestamp — still lets a user send the same gift again
+    // deliberately a few seconds later, but collapses a rapid double-tap/retry into one charge.
+    const giftIdempotencyKey = clientRequestId
+      ? `gift:${customer.id}:${giftId}:${clientRequestId}`
+      : `gift:${customer.id}:${giftId}:${Math.floor(Date.now() / 5000)}`;
+
     let giftBalances;
     try {
       giftBalances = await wallet.transferCustomerToVendor(customer.id, astrologerId, amount, {
         vendorAmount: vendorCredit,
         description: `Gift: ${gift.name}`,
         sessionId: sessionId || null,
-        idempotencyKey: `gift:${customer.id}:${giftId}:${Date.now()}`,
+        idempotencyKey: giftIdempotencyKey,
       });
     } catch (giftErr2) {
       if (giftErr2 instanceof wallet.InsufficientFunds) {

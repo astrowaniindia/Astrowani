@@ -62,6 +62,7 @@ const translations = {
     'alerts.notAvailableVideo': '{{name}} is not available for video call right now.',
     'alerts.astrologerOffline': '{{name}} is offline right now. Please check back later.',
     'alerts.astrologerBusy': 'Astrologer is busy right now. Please try again after some time.',
+    'alerts.selfBusy': 'You already have an active or pending call/chat. Please finish that one first.',
     'alerts.notPickedUpAudio': 'Your audio call was not picked up. Please try again later.',
     'alerts.notPickedUpVideo': 'Your video call was not picked up. Please try again later.',
     'alerts.insufficientBalance': 'Insufficient Balance',
@@ -155,6 +156,7 @@ const translations = {
     'chat.couldNotSendRequest': 'Could not send request: {{msg}}',
     'chat.notPickedUp': 'Your chat request was not picked up. Please try again later.',
     'status.astrologerBusyTitle': 'Astrologer Busy',
+    'status.youAreBusyTitle': 'Already in a Session',
     'status.notAnsweredTitle': 'Not Answered',
 
     // Live tab
@@ -536,6 +538,7 @@ const translations = {
     'alerts.notAvailableVideo': '{{name}} अभी वीडियो कॉल के लिए उपलब्ध नहीं है।',
     'alerts.astrologerOffline': '{{name}} अभी ऑफ़लाइन है। कृपया बाद में देखें।',
     'alerts.astrologerBusy': 'ज्योतिषी अभी व्यस्त हैं। कृपया कुछ समय बाद पुनः प्रयास करें।',
+    'alerts.selfBusy': 'आपकी पहले से ही एक सक्रिय या लंबित कॉल/चैट चल रही है। कृपया पहले उसे समाप्त करें।',
     'alerts.notPickedUpAudio': 'आपकी ऑडियो कॉल का जवाब नहीं दिया गया। कृपया बाद में पुनः प्रयास करें।',
     'alerts.notPickedUpVideo': 'आपकी वीडियो कॉल का जवाब नहीं दिया गया। कृपया बाद में पुनः प्रयास करें।',
     'alerts.insufficientBalance': 'अपर्याप्त बैलेंस',
@@ -629,6 +632,7 @@ const translations = {
     'chat.couldNotSendRequest': 'अनुरोध नहीं भेजा जा सका: {{msg}}',
     'chat.notPickedUp': 'आपके चैट अनुरोध का जवाब नहीं दिया गया। कृपया बाद में पुनः प्रयास करें।',
     'status.astrologerBusyTitle': 'ज्योतिषी व्यस्त हैं',
+    'status.youAreBusyTitle': 'पहले से सत्र में हैं',
     'status.notAnsweredTitle': 'कोई जवाब नहीं',
 
     // Live tab

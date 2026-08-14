@@ -73,10 +73,13 @@ const useChatRequest = (navigation) => {
           body: JSON.stringify({ astrologerId: receiverId }),
         });
         if (availResp.status === 409) {
+          const availJson = await availResp.json().catch(() => null);
           showStatusPopup({
             variant: 'busy',
-            title: t('status.astrologerBusyTitle'),
-            message: t('alerts.astrologerBusy'),
+            title: availJson?.selfBusy ? t('status.youAreBusyTitle') : t('status.astrologerBusyTitle'),
+            message: availJson?.selfBusy
+              ? (availJson.message || t('alerts.selfBusy'))
+              : t('alerts.astrologerBusy'),
           });
           return;
         }
@@ -144,15 +147,17 @@ const useChatRequest = (navigation) => {
         },
         body: JSON.stringify({ astrologerId: receiverId }),
       });
+      const initJson = await initRes.json();
       if (initRes.status === 409) {
         showStatusPopup({
           variant: 'busy',
-          title: t('status.astrologerBusyTitle'),
-          message: t('alerts.astrologerBusy'),
+          title: initJson?.selfBusy ? t('status.youAreBusyTitle') : t('status.astrologerBusyTitle'),
+          message: initJson?.selfBusy
+            ? (initJson.message || t('alerts.selfBusy'))
+            : t('alerts.astrologerBusy'),
         });
         return;
       }
-      const initJson = await initRes.json();
       if (!initRes.ok || !initJson?.requestId) {
         throw new Error(initJson?.message || 'No request ID returned');
       }
