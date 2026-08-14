@@ -148,31 +148,51 @@ Investigating why Free Services didn't work turned up a bigger, unrelated findin
   hardware-back end-call confirm popup, mic/camera permission alerts, and the persistent
   "call in progress" notification title/body.
 
-## Not yet covered (Phase 5/7 — follow-up work)
+## Coverage so far (Phase 7 — closes out the 2026-08-14 audit)
 
-Same pattern applies everywhere: import `LanguageContext`, destructure `t`, replace strings, add
-keys to `LanguageContext.js`. Reuse existing `alerts.*`/`common.*` keys where the message matches
-one already used elsewhere. Watch for the bug classes above (variable shadowing of `t`, and
-string-matching translated text for control flow) when doing this work.
+All ~25 screens flagged by the Phase 6 audit are now wired, except the ones noted as
+intentionally skipped below:
 
-- `screens/Home/Astrologers.js` is placeholder/mock data (unused UI strings coupled to
-  string-matching routing logic in `Home.js`'s `handleServiceSelect`) — do NOT translate the
-  `services[].title` values without also updating the `===` comparisons that route on them
-- Legal pages (`RefundAndCancel.js`, `PrivacyPolicy.js`, `TermsOfUse.js`) — intentionally
-  English-only per product decision, not a gap
-- Confirmed still untranslated (audited 2026-08-14, not previously listed here):
-  `screens/Live/LiveViewerScreen.tsx`, `screens/notificationPopup.js`,
-  `drawerScreens/ReferAndEarnScreen.js`, `component/HoroscopeCard.js`, `component/MuhuratCard.js`,
-  `component/ExpertsList.js`, `Remedies/BookPujaScreen.js`, `Remedies/GemstoneDetails.js`,
-  `Remedies/GemstoneList.js`, `Remedies/PujaDetails.js`, `drawerScreens/MyOrdersScreen.js`,
-  `drawerScreens/FavoriteScreen.js`, `drawerScreens/SupportScreen.js`,
-  `drawerScreens/VoiceNotesScreen.js`, `FreeBotChat/FreeBotChatScreen.js`, `Home/AddReview.js`,
-  `Home/Review.js`, `Home/GemStoneBuy.tsx`, `Home/VipPuja.jsx`, `Home/VoiceNotesBanner.js`,
-  `Home/LiveAartiSection.js`, `Wallet/History.js`, `chat/CareerJob.js`,
-  `chat/LoveAndRelationScreen.js`, `chat/MaritalLifeScreen.js`, `chat/PremiumScreen.js`,
-  `Splash/Splash.js`. `Video/JoinTheRoom.tsx` looks unreferenced from `routes/` (likely dead,
-  same pattern as the vendor app's `EnxJoinScreen.tsx`) — verify before spending time on it.
-  `MainScreen/MainScreen.js` and `drawerScreens/WalletScreen.js` are empty stub files, not gaps.
+- `Live/LiveViewerScreen.tsx` — connecting/waiting states, LIVE badge, gift/comment feed,
+  live-ended alert, comment placeholder.
+- `component/ExpertsList.js` — the shared 3-button (Chat/Call/Video) category-screen card; all
+  alerts reuse existing `alerts.*`/`status.*`/`common.*` keys where the message matched.
+- `component/MuhuratCard.js` — "No data available" empty state only (the
+  Choghadiya/Hora/Gowri Panchangam/Rahu Kaal terms it switches on stay untranslated, same
+  intentional-Sanskrit-terms precedent as the ShubhMuhurat tabs).
+- `Remedies/BookPujaScreen.js`, `PujaDetails.js`, `GemstoneList.js` — detail labels and error
+  prefixes.
+- `drawerScreens/ReferAndEarnScreen.js`, `MyOrdersScreen.js`, `FavoriteScreen.js`,
+  `SupportScreen.js`, `VoiceNotesScreen.js`.
+- `Home/AddReview.js`, `Review.js`, `GemStoneBuy.tsx`, `VoiceNotesBanner.js`,
+  `LiveAartiSection.js`, `Wallet/History.js`.
+- `FreeBotChat/FreeBotChatScreen.js`, `Splash/Splash.js`.
+
+Two more latent `t`-shadowing bugs were found and fixed during this pass (same bug class as the
+original `AstrologerInfo.js` one): a `const t = setTimeout(...)` in `FreeBotChatScreen.js`
+(renamed `openingTimer`), and an IFSC-field `onChangeText` callback in the **vendor** app's
+`EditProfile.js` named `t` (renamed `v`) — noted here since it's the same bug class, even though
+that file lives in `astrowani_vendors-main`.
+
+### Intentionally NOT translated (confirmed, not gaps)
+
+- `screens/Home/Astrologers.js` — placeholder/mock data coupled to string-matching routing logic
+  in `Home.js`'s `handleServiceSelect`; translating `services[].title` without updating the
+  `===` comparisons would break routing.
+- Legal pages (`RefundAndCancel.js`, `PrivacyPolicy.js`, `TermsOfUse.js`) — English-only per
+  product decision.
+- `screens/notificationPopup.js` — dead code, nothing imports it (the customer app never
+  receives incoming-call popups; that's a vendor-app-only flow).
+- `chat/CareerJob.js`, `LoveAndRelationScreen.js`, `MaritalLifeScreen.js`, `PremiumScreen.js` —
+  pure `ReusableList` wrappers around hardcoded mock astrologer data; no UI chrome of their own.
+- `Home/VipPuja.jsx` — its card's `onPress` navigation is commented out (non-functional).
+- `Remedies/GemstoneDetails.js`, `component/HoroscopeCard.js` — mostly commented-out dead code
+  with at most one low-visibility fallback string.
+- `Video/JoinTheRoom.tsx` — unreferenced from `routes/`, looks dead (same pattern as the vendor
+  app's `EnxJoinScreen.tsx`) — verify before spending time on it if it resurfaces.
+- `MainScreen/MainScreen.js`, `drawerScreens/WalletScreen.js` — empty stub files.
+
+As of this pass, every real, reachable, non-legal screen in the customer app has Hindi coverage.
 
 ## Backend-driven (DB) content
 
