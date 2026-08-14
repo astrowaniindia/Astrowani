@@ -285,6 +285,14 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       // Join session room only — HomeScreen socket owns the personal room
       if (sessionId) socket.emit('join_session', sessionId);
 
+      // Re-join on every reconnect (brief network drop, app quickly backgrounded then
+      // resumed), not just the initial connect — the backend's session-abandon grace
+      // timer (index.js) only cancels once this fires, so without it a real reconnect
+      // would still get treated as an abandoned session and end a perfectly live call.
+      socket.on('connect', () => {
+        if (sessionId) socket.emit('join_session', sessionId);
+      });
+
       // Emit webrtc_ready periodically until offer arrives
       const emitReady = () => {
         if (socketRef.current && sessionId && !isEndingRef.current) {

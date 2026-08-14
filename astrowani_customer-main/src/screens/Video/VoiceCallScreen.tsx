@@ -300,6 +300,14 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       if (user?.id) socket.emit('join_room', user.id);
       if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
 
+      // Re-join on every reconnect (brief network drop, app quickly backgrounded then
+      // resumed), not just the initial connect — the backend's session-abandon grace
+      // timer (index.js) only cancels once this fires, so without it a real reconnect
+      // would still get treated as an abandoned session and end a perfectly live call.
+      socket.on('connect', () => {
+        if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
+      });
+
       socket.once('call_accepted', (data: any) => {
         if (data.sessionId && !sessionIdRef.current) {
           sessionIdRef.current = data.sessionId;

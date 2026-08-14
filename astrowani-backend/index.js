@@ -249,6 +249,50 @@ async function resolveSocketIdentity(token) {
   }
 }
 
+// MONEY-LEAK GUARD (2026-08-14): if a participant's app is fully killed (not just
+// backgrounded) mid-session, their socket disconnects and — previously — nothing at all
+// happened server-side. sessionManager's 30s billing poll doesn't check connectivity, so
+// billing kept running indefinitely against a customer's wallet with no app left alive to
+// even show them the "still connected" notification, and the other party's screen never
+// got a session_ended signal either. Grace period tolerates a real reconnect (brief
+// network drop, quick background-then-resume — the client re-emits join_session on every
+// socket reconnect, see VoiceCallScreen.tsx/VideoCallScreen.tsx/ChatSessionScreen.js);
+// only a participant that never comes back within it gets the session force-ended, on
+// both sides, via the same terminateSession() used by every other end-of-call path.
+const SESSION_ABANDON_GRACE_MS = 25000;
+const pendingSessionTerminations = new Map(); // "sessionId:participantId" -> Timeout
+
+function cancelPendingSessionTermination(sessionId, participantId) {
+  const key = `${sessionId}:${participantId}`;
+  const timer = pendingSessionTerminations.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    pendingSessionTerminations.delete(key);
+    console.log(`[socket] ${participantId} rejoined session ${sessionId} within grace period — termination cancelled`);
+  }
+}
+
+function scheduleSessionAbandonCheck(sessionId, participantId) {
+  const key = `${sessionId}:${participantId}`;
+  if (pendingSessionTerminations.has(key)) return; // already scheduled — e.g. duplicate disconnect events
+  const timer = setTimeout(async () => {
+    pendingSessionTerminations.delete(key);
+    try {
+      const { data: session } = await supabaseService
+        .from('chat_sessions')
+        .select('id, is_active')
+        .eq('id', sessionId)
+        .maybeSingle();
+      if (!session || !session.is_active) return; // already ended some other way — nothing to do
+      console.warn(`[socket] Participant ${participantId} did not reconnect to session ${sessionId} within ${SESSION_ABANDON_GRACE_MS}ms — force-ending session (money-leak guard).`);
+      await sessionManager.terminateSession(sessionId, 'Participant disconnected (app closed or lost connection)');
+    } catch (e) {
+      console.error('[socket] abandon-check error:', e.message);
+    }
+  }, SESSION_ABANDON_GRACE_MS);
+  pendingSessionTerminations.set(key, timer);
+}
+
 io.on('connection', (socket) => {
   console.log('A user connected via Socket.io:', socket.id);
 
@@ -288,6 +332,12 @@ io.on('connection', (socket) => {
     }
     socket.join(sessionId);
     console.log(`Socket ${socket.id} joined session room: ${sessionId} (verified participant ${realId})`);
+
+    // Track for the disconnect handler below, and cancel any abandon-check already
+    // running for this exact participant+session (a reconnect within the grace period).
+    socket.data.sessionId = sessionId;
+    socket.data.participantId = realId;
+    cancelPendingSessionTermination(sessionId, realId);
   });
 
   socket.on('initiate_call', (data) => {
@@ -431,6 +481,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    const { sessionId, participantId } = socket.data || {};
+    if (sessionId && participantId) {
+      scheduleSessionAbandonCheck(sessionId, participantId);
+    }
   });
 });
 

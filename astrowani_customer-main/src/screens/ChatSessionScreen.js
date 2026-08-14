@@ -261,6 +261,14 @@ const ChatSessionScreen = ({ route, navigation }) => {
       const authToken = await AsyncStorage.getItem('token');
       socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
 
+      // Re-join on every reconnect (brief network drop, app quickly backgrounded then
+      // resumed), not just the initial join below — the backend's session-abandon grace
+      // timer (index.js) only cancels once this fires, so without it a real reconnect
+      // would still get treated as an abandoned session and end a perfectly live chat.
+      socketRef.current.on('connect', () => {
+        if (sessionRef.current) socketRef.current.emit('join_session', sessionRef.current.id);
+      });
+
       // Poll until session is created by vendor
       let isFetching = false;
       pollRef.current = setInterval(async () => {
