@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useContext, useRef} from 'react';
 import {
   StyleSheet,
   Text,
@@ -29,6 +29,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
+import {LanguageContext} from '../context/LanguageContext';
 
 interface Props {
   route: any;
@@ -51,6 +52,7 @@ const ICE_SERVERS = {
 };
 
 const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
+  const {t} = useContext(LanguageContext);
   const {
     sessionId = '',
     callerName = 'Customer',
@@ -220,8 +222,8 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
           const audioOk = perms[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
           const cameraOk = perms[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
           if (!audioOk || !cameraOk) {
-            Alert.alert('Permission Required', 'Microphone and camera access are needed for video calls.', [
-              {text: 'OK', onPress: () => navigation.goBack()},
+            Alert.alert(t('call.permissionRequired'), t('call.micCameraPermissionMsg'), [
+              {text: t('common.ok'), onPress: () => navigation.goBack()},
             ]);
             return;
           }
@@ -340,9 +342,9 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
-      Alert.alert('End Call', 'Are you sure you want to end the call?', [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'End', style: 'destructive', onPress: onPressDisconnect},
+      Alert.alert(t('call.endCallTitle'), t('call.endCallMsg'), [
+        {text: t('common.cancel'), style: 'cancel'},
+        {text: t('call.end'), style: 'destructive', onPress: onPressDisconnect},
       ], {cancelable: false});
       return true;
     });
@@ -391,8 +393,8 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       {!isConnected && (
         <View style={styles.connectingOverlay}>
           <View style={styles.header}>
-            <Text style={styles.headerLabel}>VIDEO CALL</Text>
-            {perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}/min</Text>}
+            <Text style={styles.headerLabel}>{t('call.videoCall')}</Text>
+            {perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>}
           </View>
           <View style={styles.centerContent}>
             <Animated.View style={[styles.ring, {transform: [{scale: ring1Scale}], opacity: ring1Opacity}]} />
@@ -405,7 +407,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
             <Text style={styles.callerName}>{callerName}</Text>
             <View style={styles.statusPill}>
               <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Connecting...</Text>
+              <Text style={styles.statusText}>{t('call.connecting')}</Text>
             </View>
           </View>
         </View>
@@ -422,7 +424,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
           {perMinuteCharge > 0 && (
             <View style={styles.billingBadge}>
               <Ionicons name="timer-outline" size={13} color={COLORS.AstroGold} />
-              <Text style={styles.billingText}>₹{perMinuteCharge}/min • billing active</Text>
+              <Text style={styles.billingText}>₹{perMinuteCharge}{t('common.perMin')} • {t('call.billingActive')}</Text>
             </View>
           )}
         </View>
@@ -447,12 +449,12 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       <View style={styles.controlsBar}>
         <TouchableOpacity style={[styles.ctrlBtn, audioMuted && styles.ctrlBtnRed]} onPress={toggleMute} activeOpacity={0.75}>
           <MaterialIcons name={audioMuted ? 'mic-off' : 'mic'} size={26} color={audioMuted ? '#FF3B30' : '#fff'} />
-          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? 'Unmute' : 'Mute'}</Text>
+          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.ctrlBtn, videoMuted && styles.ctrlBtnRed]} onPress={toggleVideo} activeOpacity={0.75}>
           <MaterialIcons name={videoMuted ? 'videocam-off' : 'videocam'} size={26} color={videoMuted ? '#FF3B30' : '#fff'} />
-          <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelRed]}>{videoMuted ? 'Video Off' : 'Video'}</Text>
+          <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelRed]}>{videoMuted ? t('call.videoOff') : t('call.video')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
@@ -461,12 +463,12 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
 
         <TouchableOpacity style={styles.ctrlBtn} onPress={flipCamera} activeOpacity={0.75}>
           <MaterialIcons name="flip-camera-android" size={26} color="#fff" />
-          <Text style={styles.ctrlLabel}>Flip</Text>
+          <Text style={styles.ctrlLabel}>{t('call.flip')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.ctrlBtn, speakerOn && styles.ctrlBtnGold]} onPress={handleSpeakerToggle} activeOpacity={0.75}>
           <MaterialIcons name={speakerOn ? 'volume-up' : 'volume-down'} size={26} color={speakerOn ? COLORS.AstroGold : '#fff'} />
-          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? 'Speaker' : 'Earpiece'}</Text>
+          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? t('call.speaker') : t('call.earpiece')}</Text>
         </TouchableOpacity>
       </View>
     </View>

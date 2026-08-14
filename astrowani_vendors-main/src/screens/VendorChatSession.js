@@ -1,5 +1,5 @@
 // VendorChatSession.js — Vendor side active chat screen
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import Instance from '../api/ApiCall';
 import useElapsedSeconds from '../utils/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showStatusPopup } from '../components/StatusPopup';
+import { LanguageContext } from '../context/LanguageContext';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -36,6 +37,7 @@ const SCRIPTED_REPLIES = [
 const VendorChatSession = ({ route, navigation }) => {
   const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId } = route.params;
   const insets = useSafeAreaInsets();
+  const { t } = useContext(LanguageContext);
 
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -174,7 +176,7 @@ const VendorChatSession = ({ route, navigation }) => {
     if (pollEndRef.current) clearInterval(pollEndRef.current);
 
     if (reason) {
-       showStatusPopup({ variant: 'info', title: 'Session Ended', message: reason });
+       showStatusPopup({ variant: 'info', title: t('call.sessionEnded'), message: reason });
     }
 
     if (navigation.canGoBack()) {
@@ -280,11 +282,11 @@ const VendorChatSession = ({ route, navigation }) => {
         </View>
 
         <View style={styles.headerInfo}>
-          <Text style={styles.callerName} numberOfLines={1}>{callerName || 'Customer'}</Text>
+          <Text style={styles.callerName} numberOfLines={1}>{callerName || t('common.customer')}</Text>
           {customerTyping ? (
-            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>typing...</Text>
+            <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>{t('call.typing')}</Text>
           ) : (
-            <Text style={styles.charge}>₹{perMinuteCharge}/min</Text>
+            <Text style={styles.charge}>₹{perMinuteCharge}{t('common.perMin')}</Text>
           )}
         </View>
 
@@ -292,7 +294,7 @@ const VendorChatSession = ({ route, navigation }) => {
 
         <TouchableOpacity style={styles.endBtn} onPress={endSession}>
           <Ionicons name="call" size={16} color="#fff" />
-          <Text style={styles.endText}>End</Text>
+          <Text style={styles.endText}>{t('call.end')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -342,7 +344,7 @@ const VendorChatSession = ({ route, navigation }) => {
         <View style={[styles.inputRow, {paddingBottom: insets.bottom + 16}]}>
           <TextInput
             style={styles.input}
-            placeholder="Message..."
+            placeholder={t('call.messagePlaceholder')}
             placeholderTextColor="#999"
             value={newMessage}
             onChangeText={handleTyping}

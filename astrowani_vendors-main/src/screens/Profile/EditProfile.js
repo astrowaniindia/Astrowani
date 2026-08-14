@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,9 +20,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { fetchAstrologerRow } from '../../utils/vendorProfile';
 import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 
 export default function EditProfile() {
   const Navigation=useNavigation()
+  const { t } = useContext(LanguageContext);
   const [name, setName] = useState('');
   const [data, setData] = useState(null);
   const [email, setEmail] = useState('');
@@ -50,7 +52,7 @@ export default function EditProfile() {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Cancel', 'Camera', 'Gallery'],
+          options: [t('common.cancel'), t('editProfile.camera'), t('editProfile.gallery')],
           cancelButtonIndex: 0,
         },
         buttonIndex => {
@@ -63,12 +65,12 @@ export default function EditProfile() {
       );
     } else {
       Alert.alert(
-        'Choose an option',
+        t('editProfile.chooseOption'),
         '',
         [
-          { text: 'Camera', onPress: openCamera },
-          { text: 'Gallery', onPress: openGallery },
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('editProfile.camera'), onPress: openCamera },
+          { text: t('editProfile.gallery'), onPress: openGallery },
+          { text: t('common.cancel'), style: 'cancel' },
         ],
         { cancelable: true }
       );
@@ -248,8 +250,7 @@ fetchData()
         <View style={styles.requiredNotice}>
           <Icon name="stars" size={16} color={COLORS.orange} />
           <Text style={styles.requiredNoticeText}>
-            Fields marked with <Text style={styles.requiredStar}>★</Text> are required for your
-            profile to appear on the Astrowani customer app.
+            {t('editProfile.requiredNotice')} <Text style={styles.requiredStar}>★</Text> {t('editProfile.requiredNoticeSuffix')}
           </Text>
         </View>
 
@@ -268,15 +269,15 @@ fetchData()
               <Icon name="camera-alt" size={20} color={COLORS.white} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.requiredFieldTag}>Profile photo <Text style={styles.requiredStar}>★</Text></Text>
+          <Text style={styles.requiredFieldTag}>{t('editProfile.profilePhoto')} <Text style={styles.requiredStar}>★</Text></Text>
           <TouchableOpacity style={styles.removeTextButton} onPress={removeProfileImage}>
-            <Text style={styles.removeText}>Remove Photo</Text>
+            <Text style={styles.removeText}>{t('editProfile.removePhoto')}</Text>
           </TouchableOpacity>
         </View>
-        
-        <Text style={styles.sectionTitle}>Personal Details</Text>
-        
-        <Text style={styles.label}>Full Name <Text style={styles.requiredStar}>★</Text></Text>
+
+        <Text style={styles.sectionTitle}>{t('profile.personalDetails')}</Text>
+
+        <Text style={styles.label}>{t('editProfile.fullName')} <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           value={name}
@@ -284,8 +285,8 @@ fetchData()
           placeholder="Enter your full name"
           placeholderTextColor={COLORS.lightGrey}
         />
-        
-        <Text style={styles.label}>Email <Text style={styles.requiredStar}>★</Text></Text>
+
+        <Text style={styles.label}>{t('editProfile.email')} <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -295,7 +296,7 @@ fetchData()
           keyboardType="email-address"
         />
 
-        <Text style={styles.label}>Phone Number</Text>
+        <Text style={styles.label}>{t('editProfile.phoneNumber')}</Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -305,7 +306,7 @@ fetchData()
           keyboardType="phone-pad"
         />
 
-        <Text style={styles.label}>Gender <Text style={styles.requiredStar}>★</Text></Text>
+        <Text style={styles.label}>{t('editProfile.gender')} <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -315,9 +316,9 @@ fetchData()
         />
 
         <View style={styles.divider} />
-        <Text style={styles.sectionTitle}>About You</Text>
+        <Text style={styles.sectionTitle}>{t('editProfile.aboutYou')}</Text>
 
-        <Text style={styles.label}>Description</Text>
+        <Text style={styles.label}>{t('editProfile.description')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholderTextColor={COLORS.lightGrey}
@@ -330,9 +331,9 @@ fetchData()
         />
 
         <View style={styles.divider} />
-        <Text style={styles.sectionTitle}>Professional Details</Text>
+        <Text style={styles.sectionTitle}>{t('profile.professionalDetails')}</Text>
 
-        <Text style={styles.label}>Experience (Years) <Text style={styles.requiredStar}>★</Text></Text>
+        <Text style={styles.label}>{t('editProfile.experienceYears')} <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -346,15 +347,15 @@ fetchData()
           <View style={styles.lockedNotice}>
             <Icon name="lock-outline" size={16} color="#8a6d00" />
             <Text style={styles.lockedNoticeText}>
-              Your charges are locked — you set them once already. Contact the admin team if you need a change.
+              {t('editProfile.chargesLockedNotice')}
             </Text>
           </View>
         )}
 
         <Text style={styles.requiredFieldTag}>
-          <Text style={styles.requiredStar}>★</Text> At least one of Chat / Call / Video charges must be set above ₹0.
+          <Text style={styles.requiredStar}>★</Text> {t('editProfile.chargesHint')}
         </Text>
-        <Text style={styles.label}>Chat Charges (₹/min)</Text>
+        <Text style={styles.label}>{t('editProfile.chatCharges')}</Text>
         <TextInput
           style={[styles.input, chargesLocked && styles.inputDisabled]}
           placeholderTextColor={COLORS.lightGrey}
@@ -364,7 +365,7 @@ fetchData()
           editable={!chargesLocked}
         />
 
-        <Text style={styles.label}>Call Charges (₹/min)</Text>
+        <Text style={styles.label}>{t('editProfile.callCharges')}</Text>
         <TextInput
           style={[styles.input, chargesLocked && styles.inputDisabled]}
           placeholderTextColor={COLORS.lightGrey}
@@ -374,7 +375,7 @@ fetchData()
           editable={!chargesLocked}
         />
 
-        <Text style={styles.label}>Video Charges (₹/min)</Text>
+        <Text style={styles.label}>{t('editProfile.videoCharges')}</Text>
         <TextInput
           style={[styles.input, chargesLocked && styles.inputDisabled]}
           placeholderTextColor={COLORS.lightGrey}
@@ -384,7 +385,7 @@ fetchData()
           editable={!chargesLocked}
         />
 
-        <Text style={styles.label}>Languages (comma separated) <Text style={styles.requiredStar}>★</Text></Text>
+        <Text style={styles.label}>{t('editProfile.languages')} <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -394,12 +395,12 @@ fetchData()
         />
 
         <View style={styles.divider} />
-        <Text style={styles.sectionTitle}>Payout Details</Text>
+        <Text style={styles.sectionTitle}>{t('editProfile.payoutDetails')}</Text>
         <Text style={styles.payoutHint}>
-          Required to request a withdrawal — add either a bank account or a UPI ID.
+          {t('editProfile.payoutHint')}
         </Text>
 
-        <Text style={styles.label}>Account Holder Name</Text>
+        <Text style={styles.label}>{t('editProfile.accountHolderName')}</Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -408,7 +409,7 @@ fetchData()
           placeholder="As per bank records"
         />
 
-        <Text style={styles.label}>Account Number</Text>
+        <Text style={styles.label}>{t('editProfile.accountNumber')}</Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -418,17 +419,17 @@ fetchData()
           keyboardType="number-pad"
         />
 
-        <Text style={styles.label}>IFSC Code</Text>
+        <Text style={styles.label}>{t('editProfile.ifscCode')}</Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
           value={bankIfsc}
-          onChangeText={(t) => setBankIfsc(t.toUpperCase())}
+          onChangeText={(v) => setBankIfsc(v.toUpperCase())}
           placeholder="e.g. SBIN0001234"
           autoCapitalize="characters"
         />
 
-        <Text style={styles.label}>Bank Name</Text>
+        <Text style={styles.label}>{t('editProfile.bankName')}</Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -437,7 +438,7 @@ fetchData()
           placeholder="e.g. State Bank of India"
         />
 
-        <Text style={styles.label}>UPI ID (alternative to bank details)</Text>
+        <Text style={styles.label}>{t('editProfile.upiId')}</Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -448,7 +449,7 @@ fetchData()
         />
 
         <TouchableOpacity style={styles.submitButton} onPress={updateData}>
-          <Text style={styles.submitButtonText}>Save Changes</Text>
+          <Text style={styles.submitButtonText}>{t('editProfile.saveChanges')}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

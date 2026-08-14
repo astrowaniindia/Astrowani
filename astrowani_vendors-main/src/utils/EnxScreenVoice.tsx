@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useContext, useRef} from 'react';
 import {
   StyleSheet,
   Text,
@@ -28,6 +28,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
+import {LanguageContext} from '../context/LanguageContext';
 
 interface Props {
   route: any;
@@ -53,6 +54,7 @@ const ICE_SERVERS = {
 };
 
 const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
+  const {t} = useContext(LanguageContext);
   const {
     sessionId = '',
     callerName = 'Customer',
@@ -197,8 +199,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
         try {
           const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            Alert.alert('Permission Required', 'Microphone access is needed for audio calls.', [
-              {text: 'OK', onPress: () => navigation.goBack()},
+            Alert.alert(t('call.permissionRequired'), t('call.micPermissionMsg'), [
+              {text: t('common.ok'), onPress: () => navigation.goBack()},
             ]);
             return;
           }
@@ -307,9 +309,9 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
-      Alert.alert('End Call', 'Are you sure you want to end the call?', [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'End', style: 'destructive', onPress: onPressDisconnect},
+      Alert.alert(t('call.endCallTitle'), t('call.endCallMsg'), [
+        {text: t('common.cancel'), style: 'cancel'},
+        {text: t('call.end'), style: 'destructive', onPress: onPressDisconnect},
       ], {cancelable: false});
       return true;
     });
@@ -335,7 +337,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const ring2Scale = ring2Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]});
   const ring2Opacity = ring2Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
 
-  const statusLabel = isConnected ? formatTime(callDuration) : 'Connecting...';
+  const statusLabel = isConnected ? formatTime(callDuration) : t('call.connecting');
   const avatarInitial = callerName.charAt(0).toUpperCase();
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -345,8 +347,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
 
       <View style={styles.header}>
-        <Text style={styles.headerLabel}>AUDIO CALL</Text>
-        {perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}/min</Text>}
+        <Text style={styles.headerLabel}>{t('call.audioCall')}</Text>
+        {perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>}
       </View>
 
       <View style={styles.centerContent}>
@@ -373,7 +375,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
         {isConnected && perMinuteCharge > 0 && (
           <View style={styles.billingBadge}>
             <Ionicons name="timer-outline" size={13} color={COLORS.AstroGold} />
-            <Text style={styles.billingText}>₹{perMinuteCharge}/min • billing active</Text>
+            <Text style={styles.billingText}>₹{perMinuteCharge}{t('common.perMin')} • {t('call.billingActive')}</Text>
           </View>
         )}
       </View>
@@ -381,7 +383,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       <View style={styles.controlsBar}>
         <TouchableOpacity style={[styles.ctrlBtn, audioMuted && styles.ctrlBtnRed]} onPress={toggleMute} activeOpacity={0.75}>
           <MaterialIcons name={audioMuted ? 'mic-off' : 'mic'} size={26} color={audioMuted ? '#FF3B30' : '#fff'} />
-          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? 'Unmute' : 'Mute'}</Text>
+          <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
@@ -390,7 +392,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
 
         <TouchableOpacity style={[styles.ctrlBtn, speakerOn && styles.ctrlBtnGold]} onPress={toggleSpeaker} activeOpacity={0.75}>
           <MaterialIcons name={speakerOn ? 'volume-up' : 'volume-down'} size={26} color={speakerOn ? COLORS.AstroGold : '#fff'} />
-          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? 'Speaker' : 'Earpiece'}</Text>
+          <Text style={[styles.ctrlLabel, speakerOn && styles.ctrlLabelGold]}>{speakerOn ? t('call.speaker') : t('call.earpiece')}</Text>
         </TouchableOpacity>
       </View>
     </View>
