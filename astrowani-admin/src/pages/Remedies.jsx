@@ -19,6 +19,15 @@ export default function Remedies() {
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // The 4 top-level category cards (Puja/Gemstones/Specific Puja/Life Reports) shown
+  // on the customer app's Remedies landing screen — the main title/description/image
+  // for each section, distinct from the items *inside* it edited below. Was previously
+  // hardcoded in the app; now backed by table remedy_categories (see
+  // sql/remedy_categories_schema.sql).
+  const [categories, setCategories] = useState([]);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryBusy, setCategoryBusy] = useState(false);
+
   // "We're not there yet" popup — shown to the customer when they tap Place
   // Order (remedies fulfillment isn't live yet, see RemedyShop.js). {item} in
   // the message is replaced with the actual remedy's title on the customer's
@@ -45,8 +54,34 @@ export default function Remedies() {
     } catch (e) {
       console.error('load popup settings failed (run remedy_unavailable_popup_schema.sql):', e.message);
     }
+    // Independent of the item list — a failure here (e.g. remedy_categories not yet
+    // migrated) must not block the items table from rendering.
+    try {
+      const categoriesRes = await client.get('/api/admin/remedy-categories');
+      setCategories(categoriesRes.data.data || []);
+    } catch (e) {
+      console.error('load remedy categories failed (run remedy_categories_schema.sql):', e.message);
+    }
   };
   useEffect(() => { load(); }, []);
+
+  const saveCategory = async () => {
+    setCategoryBusy(true);
+    try {
+      const payload = {
+        title: editingCategory.title,
+        title_hi: editingCategory.title_hi,
+        description: editingCategory.description,
+        description_hi: editingCategory.description_hi,
+        image: editingCategory.image,
+      };
+      await client.put(`/api/admin/remedy-categories/${editingCategory.id}`, payload);
+      setEditingCategory(null);
+      await load();
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setCategoryBusy(false); }
+  };
+  const setCat = (k, v) => setEditingCategory((p) => ({ ...p, [k]: v }));
 
   const savePopup = async () => {
     setPopupBusy(true);
@@ -113,16 +148,25 @@ export default function Remedies() {
         </button>
       </div>
 
-      <div className="btn-group" style={{ marginBottom: 16 }}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`btn ${tab === t.key ? '' : 'secondary'}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label} ({items.filter((i) => i.type === t.key).length})
-          </button>
-        ))}
+      <div className="row-between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div className="btn-group">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={`btn ${tab === t.key ? '' : 'secondary'}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label} ({items.filter((i) => i.type === t.key).length})
+            </button>
+          ))}
+        </div>
+        <button
+          className="btn secondary sm"
+          disabled={!categories.find((c) => c.type === tab)}
+          onClick={() => setEditingCategory({ ...categories.find((c) => c.type === tab) })}
+        >
+          Edit "{tabLabel}" section (title/description/image)
+        </button>
       </div>
 
       <div className="table-wrap">
@@ -171,6 +215,29 @@ export default function Remedies() {
           <div className="actions">
             <button className="btn secondary" onClick={() => setEditing(null)}>Cancel</button>
             <button className="btn" onClick={save} disabled={busy || !editing.title}>{busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </Modal>
+      )}
+
+      {editingCategory && (
+        <Modal title={`Edit "${tabLabel}" section`} onClose={() => setEditingCategory(null)}>
+          <p className="muted" style={{ marginTop: -4, marginBottom: 12 }}>
+            This is the main card the customer sees on the Remedies home screen for this
+            section — not one of the individual items above. Leave the image blank to keep
+            using the app's built-in default image.
+          </p>
+          <div className="field"><label>Title (English)</label>
+            <input type="text" value={editingCategory.title || ''} onChange={(e) => setCat('title', e.target.value)} /></div>
+          <div className="field"><label>Title (Hindi)</label>
+            <input type="text" value={editingCategory.title_hi || ''} onChange={(e) => setCat('title_hi', e.target.value)} placeholder="हिंदी में शीर्षक" /></div>
+          <div className="field"><label>Description (English)</label>
+            <textarea value={editingCategory.description || ''} onChange={(e) => setCat('description', e.target.value)} /></div>
+          <div className="field"><label>Description (Hindi)</label>
+            <textarea value={editingCategory.description_hi || ''} onChange={(e) => setCat('description_hi', e.target.value)} placeholder="हिंदी में विवरण" /></div>
+          <ImageField label="Section image (URL or upload)" value={editingCategory.image} onChange={(v) => setCat('image', v)} />
+          <div className="actions">
+            <button className="btn secondary" onClick={() => setEditingCategory(null)}>Cancel</button>
+            <button className="btn" onClick={saveCategory} disabled={categoryBusy || !editingCategory.title}>{categoryBusy ? 'Saving…' : 'Save'}</button>
           </div>
         </Modal>
       )}

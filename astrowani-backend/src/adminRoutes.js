@@ -172,6 +172,14 @@ module.exports = function registerAdminRoutes(app) {
     orderBy: 'sort_order', ascending: true,
     allowed: ['type', 'title', 'title_hi', 'description', 'description_hi', 'price', 'image', 'is_active', 'sort_order'],
   });
+  // The 4 top-level category cards (Puja/Gemstones/Specific Puja/Life Reports) on the
+  // Remedies landing screen — distinct from remedy_items above (the items *inside*
+  // each category). Fixed set of 4 rows seeded by sql/remedy_categories_schema.sql;
+  // the admin UI only ever PUTs existing rows, never creates/deletes.
+  crud('remedy-categories', 'remedy_categories', {
+    orderBy: 'sort_order', ascending: true,
+    allowed: ['title', 'title_hi', 'description', 'description_hi', 'image', 'sort_order'],
+  });
   // Live-stream gift catalog.
   crud('gifts', 'gifts', {
     orderBy: 'sort_order', ascending: true,

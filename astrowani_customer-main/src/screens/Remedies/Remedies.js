@@ -10,48 +10,70 @@ import {
 } from 'react-native';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 
-const data = [
-  {
-    id: '1',
+// Bundled fallback images/titles — used whenever the admin hasn't set a category's
+// title/description/image yet (or the fetch fails), so this screen never breaks or
+// goes blank. See astrowani-admin's Remedies page → "Edit ... section" for the
+// admin-editable version of these (table remedy_categories).
+const DEFAULTS = {
+  puja: {
     title: 'Puja',
     description: 'Join shared rituals by renowned Purohits and Pandits for blessings and positivity.',
     image: require('../../assets/images/specificPuja.jpg'),
-    // image: 'https://astrowaniindia.com/wp-content/uploads/2024/05/second-300x300.jpg',
   },
-  {
-    id: '3',
+  gemstone: {
     title: 'Gemstones',
     description: 'Buy certified gemstones to balance energies and support your astrological goals.',
     image: require('../../assets/images/gemsStones.jpg'),
-    // image: 'https://astrowaniindia.com/wp-content/uploads/2024/05/second-300x300.jpg',
   },
-  {
-    id: '4',
+  specific_puja: {
     title: 'Specific Puja',
     description: 'Buy certified gemstones to balance energies and support your astrological goals.',
     image: require('../../assets/images/groupPuja.jpg'),
   },
-  {
-    id: '5',
+  life_report: {
     title: 'Life Reports',
     description: 'One-time detailed reports on your career, marriage, health, or finances.',
     image: require('../../assets/images/specificPuja.jpg'),
   },
-];
+};
+const ORDER = ['puja', 'gemstone', 'specific_puja', 'life_report'];
+
 const Remedies = () => {
-  const navigation = useNavigation()
+  const navigation = useNavigation();
+  const { language } = React.useContext(LanguageContext);
+  const [categories, setCategories] = React.useState(null);
+
+  const fetchCategories = React.useCallback(() => {
+    Instance.get('/api/remedy-categories')
+      .then((res) => setCategories(res?.data?.data || []))
+      .catch(() => setCategories([])); // fall through to DEFAULTS below on any failure
+  }, []);
+
+  useFocusEffect(React.useCallback(() => { fetchCategories(); }, [fetchCategories]));
+
+  // Merge admin-set fields over the bundled defaults, per type, in the fixed
+  // display order — an admin can set only some fields (e.g. just the image) and
+  // the rest still falls back cleanly.
+  const data = ORDER.map((type) => {
+    const fallback = DEFAULTS[type];
+    const fromApi = (categories || []).find((c) => c.type === type);
+    const title = language === 'Hindi' ? (fromApi?.hindi?.title || fromApi?.title) : fromApi?.title;
+    const description = language === 'Hindi' ? (fromApi?.hindi?.description || fromApi?.description) : fromApi?.description;
+    return {
+      id: type,
+      type,
+      title: title || fallback.title,
+      description: description || fallback.description,
+      image: fromApi?.image ? { uri: fromApi.image } : fallback.image,
+    };
+  });
+
   const handleBookPuja = item => {
-    if (item.title === 'Puja') {
-      navigation.navigate('RemedyShop', { type: 'puja', title: 'Puja' });
-    } else if (item.title === 'Gemstones') {
-      navigation.navigate('RemedyShop', { type: 'gemstone', title: 'Gemstones' });
-    } else if (item.title === 'Specific Puja') {
-      navigation.navigate('RemedyShop', { type: 'specific_puja', title: 'Specific Puja' });
-    } else if (item.title === 'Life Reports') {
-      navigation.navigate('RemedyShop', { type: 'life_report', title: 'Life Reports' });
-    }
+    navigation.navigate('RemedyShop', { type: item.type, title: item.title });
   };
   const renderItem = ({ item }) => (
     <TouchableOpacity onPress={() => handleBookPuja(item)} style={styles.card}>

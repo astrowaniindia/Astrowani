@@ -1151,6 +1151,47 @@ app.get('/api/remedies', async (req, res) => {
   }
 });
 
+// Remedies shop — the 4 top-level category cards (Puja/Gemstones/Specific Puja/
+// Life Reports) shown on the Remedies landing screen. Admin-editable via
+// astrowani-admin's Remedies page (table remedy_categories, see
+// sql/remedy_categories_schema.sql). Falls back to the previously-hardcoded
+// defaults (image: null → app uses its bundled image) if the table hasn't been
+// migrated yet, so this never blocks the screen from rendering.
+const REMEDY_CATEGORY_DEFAULTS = [
+  { type: 'puja', title: 'Puja', description: 'Join shared rituals by renowned Purohits and Pandits for blessings and positivity.' },
+  { type: 'gemstone', title: 'Gemstones', description: 'Buy certified gemstones to balance energies and support your astrological goals.' },
+  { type: 'specific_puja', title: 'Specific Puja', description: 'Book a dedicated puja performed specifically for you.' },
+  { type: 'life_report', title: 'Life Reports', description: 'One-time detailed reports on your career, marriage, health, or finances.' },
+];
+
+app.get('/api/remedy-categories', async (req, res) => {
+  try {
+    const payload = await contentCache.get('remedy-categories:all', async () => {
+      const { data, error } = await supabase
+        .from('remedy_categories')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      const rows = data && data.length ? data : REMEDY_CATEGORY_DEFAULTS;
+      return {
+        data: rows.map((r) => ({
+          type: r.type,
+          title: r.title,
+          description: r.description,
+          image: r.image || null,
+          hindi: { title: r.title_hi || r.title, description: r.description_hi || r.description },
+        })),
+      };
+    });
+    return res.status(200).json(payload);
+  } catch (err) {
+    console.error('GET /api/remedy-categories error:', err.message);
+    return res.status(200).json({
+      data: REMEDY_CATEGORY_DEFAULTS.map((d) => ({ ...d, image: null, hindi: { title: d.title, description: d.description } })),
+    });
+  }
+});
+
 // Place an order for a remedy item (payment gateway wired later).
 app.post('/api/orders', async (req, res) => {
   try {
