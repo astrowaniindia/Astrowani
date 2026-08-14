@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, PermissionsAndroid } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import Instance from '../api/ApiCall';
-import { navigate } from './NavigationService';
+import { navigate, navigationRef } from './NavigationService';
 
 const CHANNEL_ID = 'astrowani-default';
 
@@ -145,6 +145,22 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
 });
 
 
+// Tapping the persistent "call/chat still in progress" notification (see
+// activeSessionNotification.js) must land back on the live session, not the app's normal
+// start screen — the OS's default "bring app to front" only resumes the right screen if
+// the app process survived the background; if Android killed it, a plain foreground-bring
+// re-mounts fresh at the initial route with no memory of where the customer was. Storing
+// the target here and consuming it in Navigation.js (on ready + on next foreground) covers
+// both cases, same pattern as the vendor app's pendingCallNavigation for notification Accept.
+async function handleActiveSessionTap(data) {
+  const params = (() => { try { return JSON.parse(data.params || '{}'); } catch (_) { return {}; } })();
+  if (navigationRef.isReady()) {
+    navigationRef.navigate(data.screen, params);
+  } else {
+    await AsyncStorage.setItem('pendingSessionNavigation', JSON.stringify({ screen: data.screen, params }));
+  }
+}
+
 function handleNotificationTap(remoteMessage) {
   const type = remoteMessage?.data?.type;
   if (type === 'admin_broadcast' || type === 'admin_personal') {
@@ -153,6 +169,8 @@ function handleNotificationTap(remoteMessage) {
     navigate('VoiceNotes');
   } else if (type === 'report_delivered') {
     navigate('MyOrders');
+  } else if (type === 'active_session') {
+    handleActiveSessionTap(remoteMessage.data);
   }
 }
 

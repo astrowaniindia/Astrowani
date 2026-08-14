@@ -297,6 +297,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
             showActiveSessionNotification({
               title: 'Video call in progress',
               message: `Your video call with ${recieverName} is still active. Tap to return.`,
+              screen: 'VideoCallScreen',
+              params: {sessionId: sessionIdRef.current, recieverName, recieverImage, recieverId},
             });
             stopRipple();
             stopRingCountdown();

@@ -14,7 +14,13 @@ import PushNotification from 'react-native-push-notification';
 const CHANNEL_ID = 'astrowani-default'; // same channel PushNotification.js already created
 const NOTIFICATION_ID = 'active-session';
 
-export function showActiveSessionNotification({ title, message }) {
+// `screen`/`params` let a tap navigate straight back into the live call/chat room
+// (see PushNotification.js's handleNotificationTap + Navigation.js's pending-navigation
+// consumer) instead of just relying on Android's default "bring app to front" behavior,
+// which only resumes the right screen if the app process is still alive — a tap after
+// Android has fully killed a backgrounded app would otherwise land on the normal start
+// screen instead of the call/chat room.
+export function showActiveSessionNotification({ title, message, screen, params }) {
   PushNotification.localNotification({
     id: NOTIFICATION_ID,
     channelId: CHANNEL_ID,
@@ -24,6 +30,7 @@ export function showActiveSessionNotification({ title, message }) {
     largeIcon: 'ic_launcher',
     title,
     message,
+    userInfo: { type: 'active_session', screen, params: JSON.stringify(params || {}) },
   });
 }
 

@@ -300,6 +300,8 @@ const ChatSessionScreen = ({ route, navigation }) => {
             showActiveSessionNotification({
               title: 'Chat in progress',
               message: `Your chat with ${person?.name || person?.firstName || 'the astrologer'} is still active. Tap to return.`,
+              screen: 'ChatSessionScreen',
+              params: { requestId, person, sessionId: sessionRef.current?.id },
             });
             captureEvent('chat_started', { session_id: data.id });
 

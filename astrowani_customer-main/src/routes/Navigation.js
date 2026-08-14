@@ -1,5 +1,6 @@
 import React, {useState, useEffect} from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -88,9 +89,50 @@ export default function Navigation({ initialRoute }) {
     loadAnalyticsEnvironment();
   }, []);
 
+  // Written by PushNotification.js's handleActiveSessionTap when the persistent
+  // "call/chat in progress" notification is tapped while the app process is dead —
+  // gets the customer straight back into the live session instead of the normal start
+  // screen. Checked in two places for the same reason as the vendor app's equivalent:
+  // a genuine cold start (NavigationContainer mounts fresh → onReady fires) vs. simply
+  // resuming an app that was only backgrounded (JS engine never died, onReady does NOT
+  // fire again — only the AppState 'active' transition below catches that case).
+  const consumePendingSessionNavigation = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('pendingSessionNavigation');
+      if (!raw) return false;
+      await AsyncStorage.removeItem('pendingSessionNavigation');
+      const { screen, params } = JSON.parse(raw);
+      if (screen && navigationRef.isReady()) {
+        navigationRef.navigate(screen, params);
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // The write (handleActiveSessionTap) and this read can race — retry briefly rather
+  // than checking only once, same reasoning as the vendor app's equivalent retry.
+  const consumePendingSessionNavigationWithRetry = async (attempt = 0) => {
+    const found = await consumePendingSessionNavigation();
+    if (!found && attempt < 6) {
+      setTimeout(() => consumePendingSessionNavigationWithRetry(attempt + 1), 400);
+    }
+  };
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        consumePendingSessionNavigationWithRetry();
+      }
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} onReady={() => consumePendingSessionNavigationWithRetry()}>
       {/* Must be inside NavigationContainer — PostHog's screen-autocapture hook reads
           navigation state via @react-navigation/native's own hooks, which only work
           for descendants of NavigationContainer. */}

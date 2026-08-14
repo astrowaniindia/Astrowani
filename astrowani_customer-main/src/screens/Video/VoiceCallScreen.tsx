@@ -277,6 +277,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             showActiveSessionNotification({
               title: 'Call in progress',
               message: `Your call with ${recieverName} is still active. Tap to return.`,
+              screen: 'VoiceCallScreen',
+              params: {sessionId: sessionIdRef.current, recieverName, recieverImage, recieverId},
             });
             stopRipple();
             stopRingCountdown();
