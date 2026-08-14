@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useContext, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,10 +6,12 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
 // Home-screen banner surfacing an unheard voice note — matches the "new voice message"
 // prominence pattern used by AstroTalk and similar apps. Renders nothing if there are none.
 const VoiceNotesBanner = ({ navigation }) => {
+  const { t } = useContext(LanguageContext);
   const [unread, setUnread] = useState(null); // most recent unread note, or null
 
   useFocusEffect(
@@ -42,8 +44,8 @@ const VoiceNotesBanner = ({ navigation }) => {
         style={styles.avatar}
       />
       <View style={styles.textWrap}>
-        <Text style={styles.title}>New voice note from {unread.astrologerName}</Text>
-        <Text style={styles.subtitle}>Tap to listen — they're checking in on you</Text>
+        <Text style={styles.title}>{t('voiceNotesBanner.newNote', { name: unread.astrologerName })}</Text>
+        <Text style={styles.subtitle}>{t('voiceNotesBanner.subtitle')}</Text>
       </View>
       <View style={styles.playIconWrap}>
         <Icon name="play" size={18} color="#fff" />

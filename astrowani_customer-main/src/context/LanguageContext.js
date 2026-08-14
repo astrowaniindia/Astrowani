@@ -200,6 +200,38 @@ const translations = {
     'expertsList.noneFound': 'No astrologers found.',
     'expertsList.failedSendCallRequest': 'Failed to send call request.',
     'common.noDataAvailable': 'No data available',
+    'common.customer': 'Customer',
+    'common.success': 'Success',
+
+    'addReview.title': 'Review {{name}}',
+    'addReview.ratingRequired': 'Please provide a rating.',
+    'addReview.commentRequired': 'Please write a review comment.',
+    'addReview.submittedMsg': 'Your review has been submitted successfully!',
+    'addReview.failedSubmit': 'Failed to submit review.',
+    'addReview.placeholder': 'Write your experience...',
+    'addReview.submit': 'Submit Review',
+
+    'review.getBestSolutions': 'Get Best Solutions',
+    'review.forAstrologer': 'for {{name}}',
+
+    'voiceNotesBanner.newNote': 'New voice note from {{name}}',
+    'voiceNotesBanner.subtitle': "Tap to listen — they're checking in on you",
+
+    'liveAarti.title': 'Live Aarti / Pooja',
+
+    'gemBuy.buy': 'Buy',
+    'gemBuy.messageFor': 'Message for {{name}}',
+    'gemBuy.enterMessage': 'Enter your message',
+    'gemBuy.purchase': 'Purchase',
+    'gemBuy.inquiry': 'Inquiry',
+    'gemBuy.submit': 'Submit',
+    'gemBuy.close': 'Close',
+    'gemBuy.paymentSuccessful': 'Payment Successful',
+    'gemBuy.paymentId': 'Payment ID: {{id}}',
+    'gemBuy.paymentFailed': 'Payment Failed',
+
+    'walletHistory.noTransaction': 'No Transaction',
+    'walletHistory.addMoney': 'Add Money',
 
     'call.pleaseLogin': 'Please login to continue.',
     'call.audioCall': 'AUDIO CALL',
@@ -785,6 +817,38 @@ const translations = {
     'expertsList.noneFound': 'कोई ज्योतिषी नहीं मिला।',
     'expertsList.failedSendCallRequest': 'कॉल अनुरोध भेजने में विफल।',
     'common.noDataAvailable': 'कोई डेटा उपलब्ध नहीं',
+    'common.customer': 'ग्राहक',
+    'common.success': 'सफलता',
+
+    'addReview.title': '{{name}} की समीक्षा करें',
+    'addReview.ratingRequired': 'कृपया एक रेटिंग दें।',
+    'addReview.commentRequired': 'कृपया एक समीक्षा टिप्पणी लिखें।',
+    'addReview.submittedMsg': 'आपकी समीक्षा सफलतापूर्वक सबमिट कर दी गई है!',
+    'addReview.failedSubmit': 'समीक्षा सबमिट करने में विफल।',
+    'addReview.placeholder': 'अपना अनुभव लिखें...',
+    'addReview.submit': 'समीक्षा सबमिट करें',
+
+    'review.getBestSolutions': 'सर्वोत्तम समाधान पाएं',
+    'review.forAstrologer': '{{name}} के लिए',
+
+    'voiceNotesBanner.newNote': '{{name}} से नया वॉइस नोट',
+    'voiceNotesBanner.subtitle': 'सुनने के लिए टैप करें — वे आपका हाल-चाल पूछ रहे हैं',
+
+    'liveAarti.title': 'लाइव आरती / पूजा',
+
+    'gemBuy.buy': 'खरीदें',
+    'gemBuy.messageFor': '{{name}} के लिए संदेश',
+    'gemBuy.enterMessage': 'अपना संदेश दर्ज करें',
+    'gemBuy.purchase': 'खरीद',
+    'gemBuy.inquiry': 'पूछताछ',
+    'gemBuy.submit': 'सबमिट करें',
+    'gemBuy.close': 'बंद करें',
+    'gemBuy.paymentSuccessful': 'भुगतान सफल',
+    'gemBuy.paymentId': 'भुगतान आईडी: {{id}}',
+    'gemBuy.paymentFailed': 'भुगतान विफल',
+
+    'walletHistory.noTransaction': 'कोई लेनदेन नहीं',
+    'walletHistory.addMoney': 'पैसे जोड़ें',
 
     'call.pleaseLogin': 'जारी रखने के लिए कृपया लॉगिन करें।',
     'call.audioCall': 'ऑडियो कॉल',

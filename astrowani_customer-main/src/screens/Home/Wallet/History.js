@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useContext, useState, useCallback} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View, FlatList, ActivityIndicator, RefreshControl} from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,8 +6,10 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../../api/ApiCall';
 import {COLORS} from '../../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
+import {LanguageContext} from '../../../context/LanguageContext';
 
 const History = ({navigation}) => {
+  const {t} = useContext(LanguageContext);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,9 +71,9 @@ const History = ({navigation}) => {
       ListEmptyComponent={
         <View style={styles.container}>
           <Icon name="history" size={50} color={COLORS.AstroMaroon} style={styles.icon} />
-          <Text style={styles.noTransactionText}>No Transaction</Text>
+          <Text style={styles.noTransactionText}>{t('walletHistory.noTransaction')}</Text>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.addMoneyButton}>
-            <Text style={styles.addMoneyText}>Add Money</Text>
+            <Text style={styles.addMoneyText}>{t('walletHistory.addMoney')}</Text>
           </TouchableOpacity>
         </View>
       }

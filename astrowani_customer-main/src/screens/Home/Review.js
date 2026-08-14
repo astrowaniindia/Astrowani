@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { View, Text, Image, FlatList, ScrollView } from 'react-native';
 import { COLORS } from '../../Theme/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import StarRating from '../../components/StarRating';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const CustomerReview = ({ review }) => {
+  const { t } = useContext(LanguageContext);
   const [user, setUser] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,7 @@ const CustomerReview = ({ review }) => {
 
   return (
     <View style={{ padding: 10 }}>
-      <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10, color: COLORS.black, }}>Get Best Solutions</Text>
+      <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10, color: COLORS.black, }}>{t('review.getBestSolutions')}</Text>
       <FlatList
         data={feedback}
         horizontal={true}
@@ -71,9 +73,9 @@ const CustomerReview = ({ review }) => {
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarInitial}>{(item?.user?.firstName || 'C').charAt(0)}</Text>
             </View>
-            <Text style={styles.name} numberOfLines={1}>{item?.user?.firstName || 'Customer'}</Text>
+            <Text style={styles.name} numberOfLines={1}>{item?.user?.firstName || t('common.customer')}</Text>
             {!!item?.astrologerName && (
-              <Text style={styles.forAstro} numberOfLines={1}>for {item.astrologerName}</Text>
+              <Text style={styles.forAstro} numberOfLines={1}>{t('review.forAstrologer', { name: item.astrologerName })}</Text>
             )}
             <StarRating rating={item?.rating} size={16} style={styles.starContainer} />
             {!!item?.comment && <Text style={styles.title} numberOfLines={3}>{item.comment}</Text>}

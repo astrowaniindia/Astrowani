@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // import Instance from '../../api/ApiCall';
 import RazorpayCheckout from 'react-native-razorpay';
 import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 const screenWidth = Dimensions.get('window').width;
 const screenHeight = Dimensions.get('window').height;
 
@@ -50,6 +51,7 @@ interface ApiResponse {
 }
 
 const GemstoneDetails: React.FC = () => {
+  const { t } = useContext(LanguageContext);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [selectedProduct, setSelectedProduct] = useState<Gemstone | null>(null);
   const [formData, setFormData] = useState<FormData>({
@@ -124,12 +126,12 @@ const GemstoneDetails: React.FC = () => {
     RazorpayCheckout.open(options)
       .then((data: any) => {
         // Success
-        Alert.alert('Payment Successful', `Payment ID: ${data.razorpay_payment_id}`);
+        Alert.alert(t('gemBuy.paymentSuccessful'), t('gemBuy.paymentId', { id: data.razorpay_payment_id }));
         // Optionally, call an API to update wallet balance
       })
       .catch((error: any) => {
         // Failure
-        Alert.alert('Payment Failed', error.description);
+        Alert.alert(t('gemBuy.paymentFailed'), error.description);
       });
   };
   const dataPost = async (): Promise<void> => {
@@ -211,7 +213,7 @@ const GemstoneDetails: React.FC = () => {
               <TouchableOpacity
                 style={styles.buyButton}
                 onPress={() => handleBuyPress(item)}>
-                <Text style={styles.buyText}>Buy</Text>
+                <Text style={styles.buyText}>{t('gemBuy.buy')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -235,13 +237,13 @@ const GemstoneDetails: React.FC = () => {
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              Message for {selectedProduct?.name}
+              {t('gemBuy.messageFor', { name: selectedProduct?.name })}
             </Text>
 
             <TextInput
               placeholderTextColor={color.lightGrey}
               style={styles.input}
-              placeholder="Enter your message"
+              placeholder={t('gemBuy.enterMessage')}
               value={formData.message}
               onChangeText={text => handleInputChange('message', text)}
             />
@@ -253,7 +255,7 @@ const GemstoneDetails: React.FC = () => {
                   formData.queryType === 'purchase' && styles.activeQueryType,
                 ]}
                 onPress={() => handleQueryTypeChange('purchase')}>
-                <Text style={styles.queryTypeText}>Purchase</Text>
+                <Text style={styles.queryTypeText}>{t('gemBuy.purchase')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -261,16 +263,16 @@ const GemstoneDetails: React.FC = () => {
                   formData.queryType === 'inquiry' && styles.activeQueryType,
                 ]}
                 onPress={() => handleQueryTypeChange('inquiry')}>
-                <Text style={styles.queryTypeText}>Inquiry</Text>
+                <Text style={styles.queryTypeText}>{t('gemBuy.inquiry')}</Text>
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.submitButton} onPress={dataPost}>
-              <Text style={styles.submitText}>Submit</Text>
+              <Text style={styles.submitText}>{t('gemBuy.submit')}</Text>
             </TouchableOpacity>
 
             <Button
-              title="Close"
+              title={t('gemBuy.close')}
               onPress={() => setModalVisible(false)}
               color={color.reddeep}
             />

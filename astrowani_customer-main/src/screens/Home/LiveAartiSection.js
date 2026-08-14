@@ -5,12 +5,13 @@
 // section is invisible unless an admin has actually put something there.
 //
 // Placement: bottom of Home, right before "What Our Clients Say" — see Home.js.
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PLAYER_WIDTH = SCREEN_WIDTH - scale(30);
@@ -31,6 +32,7 @@ function extractYouTubeId(url) {
 }
 
 export default function LiveAartiSection() {
+  const { t } = useContext(LanguageContext);
   const [videoId, setVideoId] = useState(null);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function LiveAartiSection() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Live Aarti / Pooja</Text>
+        <Text style={styles.title}>{t('liveAarti.title')}</Text>
       </View>
       <View style={styles.playerWrap}>
         <WebView

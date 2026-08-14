@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const AddReview = ({ route, navigation }) => {
+  const { t } = useContext(LanguageContext);
   const { person } = route.params;
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -14,11 +16,11 @@ const AddReview = ({ route, navigation }) => {
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      Alert.alert('Error', 'Please provide a rating.');
+      Alert.alert(t('common.error'), t('addReview.ratingRequired'));
       return;
     }
     if (!comment.trim()) {
-      Alert.alert('Error', 'Please write a review comment.');
+      Alert.alert(t('common.error'), t('addReview.commentRequired'));
       return;
     }
 
@@ -36,12 +38,12 @@ const AddReview = ({ route, navigation }) => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      Alert.alert('Success', 'Your review has been submitted successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() }
+      Alert.alert(t('common.success'), t('addReview.submittedMsg'), [
+        { text: t('common.ok'), onPress: () => navigation.goBack() }
       ]);
     } catch (err) {
       console.log('Error adding review:', err?.response?.data || err.message);
-      Alert.alert('Error', err?.response?.data?.error || 'Failed to submit review.');
+      Alert.alert(t('common.error'), err?.response?.data?.error || t('addReview.failedSubmit'));
     } finally {
       setLoading(false);
     }
@@ -49,7 +51,7 @@ const AddReview = ({ route, navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Review {person.name}</Text>
+      <Text style={styles.title}>{t('addReview.title', { name: person.name })}</Text>
       
       <View style={styles.starsContainer}>
         {[1, 2, 3, 4, 5].map((star) => (
@@ -65,7 +67,7 @@ const AddReview = ({ route, navigation }) => {
 
       <TextInput
         style={styles.input}
-        placeholder="Write your experience..."
+        placeholder={t('addReview.placeholder')}
         placeholderTextColor="#999"
         multiline
         numberOfLines={6}
@@ -77,7 +79,7 @@ const AddReview = ({ route, navigation }) => {
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.submitText}>Submit Review</Text>
+          <Text style={styles.submitText}>{t('addReview.submit')}</Text>
         )}
       </TouchableOpacity>
     </View>
