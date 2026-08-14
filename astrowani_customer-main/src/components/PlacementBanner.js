@@ -8,6 +8,7 @@ import FastImage from 'react-native-fast-image';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
+import { readCache, writeCache } from '../utils/cacheFetch';
 
 const PlacementBanner = ({
   placement,
@@ -29,23 +30,40 @@ const PlacementBanner = ({
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
 
+  const cacheKey = `banners_${app}_${placement}_${apiLanguage}`;
+
   React.useEffect(() => {
     let mounted = true;
+
+    // Stale-while-revalidate: paint last time's banners immediately (no blank
+    // gap), then silently replace them once the network call comes back.
+    readCache(cacheKey).then(cached => {
+      if (mounted && cached) {
+        setBanners(cached.banners);
+        if (cached.intervalMs > 0) setIntervalMs(cached.intervalMs);
+      }
+    });
+
     Instance(`/api/banners/all?app=${app}&placement=${placement}&language=${apiLanguage}`)
       .then((res) => {
         if (!mounted) return;
-        setBanners(res?.data?.data || []);
+        const freshBanners = res?.data?.data || [];
         const secs = Number(res?.data?.intervalSeconds);
-        if (secs > 0) setIntervalMs(secs * 1000);
+        const freshIntervalMs = secs > 0 ? secs * 1000 : intervalMs;
+        setBanners(freshBanners);
+        if (secs > 0) setIntervalMs(freshIntervalMs);
+        writeCache(cacheKey, { banners: freshBanners, intervalMs: freshIntervalMs });
       })
       .catch(() => {
         // A failed fetch (network hiccup, backend blip) must not leave this
         // permanently blank — fall back to the local placeholder images the
         // same way a confirmed-empty response does, instead of rendering
-        // nothing with no visible explanation.
-        if (mounted) setBanners([]);
+        // nothing with no visible explanation. Only do this if we didn't
+        // already hydrate from cache above.
+        if (mounted) setBanners(prev => (prev === null ? [] : prev));
       });
     return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placement, app, apiLanguage]);
 
   const slides = banners === null

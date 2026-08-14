@@ -38,6 +38,7 @@ import { supabase } from '../../api/SupabaseClient';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
+import { readCache, writeCache } from '../../utils/cacheFetch';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import StarRating from '../../components/StarRating';
@@ -741,7 +742,17 @@ const Home = ({navigation}) => {
         setLoading(false);
       });
   };
+    // Stale-while-revalidate: hydrate each section from its last-fetched cache
+    // immediately (no spinner, no blank gap) while the fresh network response
+    // is still in flight, then swap in the real data when it arrives. Keeps
+    // the loading flag true through the cache hit so callers that gate on it
+    // (pull-to-refresh, etc.) still see a real in-flight fetch.
     const fetchCategories = async () => {
+      const cached = await readCache('home_categories');
+      if (cached) {
+        setCategories(cached);
+        setLoading(false);
+      }
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) {
@@ -752,13 +763,20 @@ const Home = ({navigation}) => {
         });
 
         setCategories(response?.data?.categories);
+        writeCache('home_categories', response?.data?.categories);
       } catch (err) {
-        setError(err.message);
+        if (!cached) setError(err.message);
       } finally {
         setLoading(false);
       }
     };
     const fetchBlogs = async () => {
+      const cached = await readCache('home_blogs');
+      if (cached) {
+        setBlogsToShow(cached.blogsToShow);
+        setBlogs(cached.blogs);
+        setLoadingBlogs(false);
+      }
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) throw new Error('Token not found');
@@ -769,13 +787,20 @@ const Home = ({navigation}) => {
           response.data.length >= 6 ? response.data.slice(0, 6) : response.data;
         setBlogsToShow(sliceData);
         setBlogs(response.data);
+        writeCache('home_blogs', {blogsToShow: sliceData, blogs: response.data});
       } catch (err) {
-        setErrorBlogs(err.message);
+        if (!cached) setErrorBlogs(err.message);
       } finally {
         setLoadingBlogs(false);
       }
     };
     const fetchAstrologer = async () => {
+      const cached = await readCache('home_astrologers');
+      if (cached) {
+        setAstrologerToShow(cached);
+        setAstrologer(cached);
+        setLoadingAstrologer(false);
+      }
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) throw new Error('Token not found');
@@ -788,8 +813,9 @@ const Home = ({navigation}) => {
         setAstrologerToShow(astroResponse);
         setAstrologer(astroResponse);
         setErrorAstrologer(null); // clear any stale error from a prior failed attempt
+        writeCache('home_astrologers', astroResponse);
       } catch (err) {
-        setErrorAstrologer(err.message);
+        if (!cached) setErrorAstrologer(err.message);
       } finally {
         setLoadingAstrologer(false);
       }
@@ -809,6 +835,11 @@ const Home = ({navigation}) => {
     };
 
     const fetchTopReviews = async () => {
+      const cached = await readCache('home_top_reviews');
+      if (cached) {
+        setTopRatedReviews(cached);
+        setLoadingReview(false);
+      }
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) throw new Error('Token not found');
@@ -826,8 +857,9 @@ const Home = ({navigation}) => {
           sortedReviews.length >= 5 ? sortedReviews.slice(0, 5) : sortedReviews;
 
         setTopRatedReviews(topReviews);
+        writeCache('home_top_reviews', topReviews);
       } catch (err) {
-        setErrorReview(err.message);
+        if (!cached) setErrorReview(err.message);
       } finally {
         setLoadingReview(false);
       }
