@@ -22,6 +22,12 @@
 -- here AND in the Supabase SQL editor, in that order — this file is now the
 -- source of truth for review, but the dashboard is still what actually runs.
 --
+-- UPDATE 2026-08-14: vendor_wallet_transactions.customer_id added (see
+-- sql/hardening_06_vendor_txn_counterparty.sql — run that migration first, it
+-- adds the column) so the vendor wallet screen can show WHO a per-minute
+-- billing credit was earned from, not just an amount. Step 8's INSERT below
+-- now includes it.
+--
 -- UPDATE 2026-08-08: reviewed line-by-line (not just behaviorally tested) and
 -- found one real latent double-billing race — the original SELECT only checked
 -- is_active=true, never re-verifying next_billing_at <= NOW(). Two overlapping
@@ -113,21 +119,23 @@ BEGIN
         v_request_id
     );
 
-    -- 8. Insert vendor_wallet_transactions credit row with request_id
+    -- 8. Insert vendor_wallet_transactions credit row with request_id + customer_id
     INSERT INTO public.vendor_wallet_transactions (
         vendor_id,
         type,
         amount,
         description,
         session_id,
-        request_id
+        request_id,
+        customer_id
     ) VALUES (
         v_vendor_id,
         'credit',
         v_charge,
         'Automated ' || COALESCE(v_call_type, 'session') || ' earning',
         p_session_id,
-        v_request_id
+        v_request_id,
+        v_caller_id
     );
 
     -- 9. Advance chat_sessions.next_billing_at by 60 seconds relative to the greatest of next_billing_at and NOW()

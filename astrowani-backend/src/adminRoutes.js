@@ -306,6 +306,25 @@ module.exports = function registerAdminRoutes(app) {
     }
     const { data, error } = await db.from('astrologers').update(body).eq('id', req.params.id).select().single();
     if (error) throw error;
+
+    // If this update just made the astrologer ineligible to be live (suspended, or
+    // approval taken away), force-end any broadcast they're currently running — being
+    // filtered out of GET /api/live/active isn't enough on its own, since a viewer who
+    // already joined via socket before the suspension would keep watching indefinitely.
+    const madeIneligible =
+      body.is_suspended === true || (body.approval_status && body.approval_status !== 'approved');
+    if (madeIneligible) {
+      const { data: activeLive } = await db
+        .from('live_sessions')
+        .select('id')
+        .eq('astrologer_id', req.params.id)
+        .eq('is_active', true);
+      const endLiveSession = req.app.locals.endLiveSession;
+      if (endLiveSession && activeLive && activeLive.length > 0) {
+        await Promise.all(activeLive.map((s) => endLiveSession(s.id, 'astrologer_suspended')));
+      }
+    }
+
     return res.json({ success: true, data });
   }));
 
@@ -429,10 +448,15 @@ module.exports = function registerAdminRoutes(app) {
   // Powers the admin "New Entries" screen. Returns pending applications with the
   // detail an admin needs to vet them. Approve/Reject reuse the PATCH above.
   app.get('/api/admin/new-entries', requireAdmin, h(async (req, res) => {
+    // `profile_image` is not a real column on this table (see ASTROLOGER_LIST_COLUMNS'
+    // comment in index.js — it's a legacy name that always evaluates undefined; the actual
+    // column EditProfile/VerifyOtp write to is `profile_pic_url`). Selecting a nonexistent
+    // column makes PostgREST 400 the whole query, so this endpoint was 500ing on every call
+    // and the admin "New Entries" page silently showed nothing for every new signup.
     const { data, error } = await db
       .from('astrologers')
       .select('id, first_name, last_name, email, phone_number, gender, experience, ' +
-        'languages, specialties, profile_image, approval_status, admin_notes, created_at')
+        'languages, specialties, profile_pic_url, approval_status, admin_notes, created_at')
       .eq('approval_status', 'pending')
       .order('created_at', { ascending: false });
     if (error) throw error;

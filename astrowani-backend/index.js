@@ -19,7 +19,7 @@ const { contentCache } = require('./src/contentCache');
 const { startAstrologerFanout } = require('./src/astrologerFanout');
 const { startTableFanout } = require('./src/tableFanout');
 const {
-  applyHttpHardening, otpLimiter, authLimiter, writeLimiter,
+  applyHttpHardening, otpLimiter, otpPhoneLimiter, authLimiter, writeLimiter,
 } = require('./src/httpHardening');
 
 // No-op until SENTRY_DSN is set in the environment — see MD files/deployment-and-releases.md.
@@ -524,7 +524,7 @@ function toE164(phoneNumber) {
 /**
  * Endpoint to request an OTP
  */
-app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
+app.post('/api/users/mobile-otp-request', otpLimiter, otpPhoneLimiter, async (req, res) => {
   const { phoneNumber, role, intent } = req.body;
 
   if (!phoneNumber) {
@@ -577,7 +577,7 @@ app.post('/api/users/mobile-otp-request', otpLimiter, async (req, res) => {
     expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
   });
 
-  console.log(`Generated OTP for ${phoneNumber}: ${otp} (Session: ${sessionId})`);
+  console.log(`Generated OTP for ${phoneNumber} (role: ${role || 'unspecified'}, intent: ${intent || 'unspecified'}): ${otp} (Session: ${sessionId})`);
 
   // Send OTP via EnableX SMS API using the DLT-approved "OTP for astrowani" template
   if (ENABLEX_APP_ID && ENABLEX_APP_KEY) {
@@ -1766,6 +1766,12 @@ app.post('/api/call/initiate', writeLimiter, async (req, res) => {
     // anon key no longer needs a direct INSERT grant on call_requests. See
     // DATABASE_HARDENING_HANDOFF.md STEP 3. room_token stays null: it was already
     // vestigial (this endpoint never returned a real vendorToken for clients to store).
+    // session_id is stored here too (not just sent over the socket) so the Supabase
+    // Realtime backup listener on the vendor side (HomeScreen.js — used when the socket
+    // event is missed) has the same sessionId the customer already has. Without this, a
+    // vendor accepting via the Realtime path got sessionId: null and /api/session/accept
+    // let a fresh random id get generated for chat_sessions — different from the id the
+    // customer's call screen was already listening on, so the call never connected.
     const { data: requestRow, error: requestErr } = await supabase
       .from('call_requests')
       .insert([{
@@ -1776,6 +1782,7 @@ app.post('/api/call/initiate', writeLimiter, async (req, res) => {
         status: 'pending',
         room_id: roomId,
         room_token: null,
+        session_id: sessionId,
       }])
       .select('id')
       .single();
@@ -2567,6 +2574,18 @@ app.get('/vendor/wallet', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(20);
 
+    // Resolve customer_id -> name in one batched query instead of one lookup per row.
+    // customer_id is only populated going forward (sql/hardening_06_vendor_txn_counterparty.sql)
+    // — older rows and non-customer transactions (withdrawals, admin corrections) have it
+    // NULL and simply show no counterparty name, same as before this feature existed.
+    const customerIds = [...new Set((txns || []).map(t => t.customer_id).filter(Boolean))];
+    let nameById = {};
+    if (customerIds.length > 0) {
+      const { data: custRows } = await supabase
+        .from('customers').select('id, name').in('id', customerIds);
+      (custRows || []).forEach(c => { nameById[c.id] = c.name; });
+    }
+
     return res.status(200).json({
       success: true,
       data: {
@@ -2576,6 +2595,7 @@ app.get('/vendor/wallet', async (req, res) => {
           description: t.description || 'Consultation Earning',
           amount: t.type === 'credit' ? t.amount : -t.amount,
           date: new Date(t.created_at).toLocaleDateString('en-IN'),
+          counterpartyName: t.customer_id ? (nameById[t.customer_id] || null) : null,
         })),
       },
     });
@@ -2928,9 +2948,24 @@ app.get('/api/vendor/wallet', async (req, res) => {
         sessionMap[s.id] = { customerName: nameMap[s.caller_id] || 'Customer', callType: s.call_type || null };
       });
     }
+
+    // Gifts (live or profile) never had this resolve — a gift's session_id, when set at
+    // all, points at a live_sessions row, not chat_sessions, so the lookup above always
+    // missed it and every "Gift: X" row showed no sender name. customer_id
+    // (sql/hardening_06_vendor_txn_counterparty.sql) is written directly on the ledger row
+    // now and doesn't depend on which table session_id happens to reference — resolve it
+    // directly and prefer it over the session-based lookup above.
+    const directCustomerIds = [...new Set((txns || []).map((t) => t.customer_id).filter(Boolean))];
+    let directNameMap = {};
+    if (directCustomerIds.length) {
+      const { data: directCustomers } = await supabaseService
+        .from('customers').select('id, name').in('id', directCustomerIds);
+      (directCustomers || []).forEach((c) => { directNameMap[c.id] = c.name || 'Customer'; });
+    }
+
     const enrichedTxns = (txns || []).map((t) => ({
       ...t,
-      customerName: sessionMap[t.session_id]?.customerName || null,
+      customerName: (t.customer_id && directNameMap[t.customer_id]) || sessionMap[t.session_id]?.customerName || null,
       callType: sessionMap[t.session_id]?.callType || null,
     }));
 
@@ -3122,7 +3157,10 @@ app.get('/api/live/active', async (req, res) => {
     const { data: astros } = await supabase.from('astrologers').select('*').in('id', astroIds);
     const categoryMap = await buildCategoryMap();
     const byId = {};
-    (astros || []).forEach((a, i) => { byId[a.id] = formatAstrologer(a, i, categoryMap); });
+    // Same eligibility gate as every other customer-facing list — a suspended or
+    // never-approved astrologer must not appear here even if their live_sessions row
+    // is still (incorrectly, or from before they were suspended) marked active.
+    (astros || []).filter(astrologerVisibleToCustomers).forEach((a, i) => { byId[a.id] = formatAstrologer(a, i, categoryMap); });
 
     const data = sessions
       .filter((s) => byId[s.astrologer_id])
@@ -3148,6 +3186,19 @@ app.post('/api/live/start', async (req, res) => {
   try {
     const astrologerId = await resolveVendorIdFromReq(req);
     if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    // A suspended or not-yet-approved astrologer must not be able to broadcast at all —
+    // resolveVendorIdFromReq only proves the JWT belongs to this astrologer, it says
+    // nothing about their approval/suspension state.
+    const { data: astroRow } = await supabaseService
+      .from('astrologers')
+      .select('approval_status, is_suspended')
+      .eq('id', astrologerId)
+      .single();
+    if (!astroRow || astroRow.approval_status !== 'approved' || astroRow.is_suspended === true) {
+      return res.status(403).json({ success: false, message: 'Your account is not eligible to go live.' });
+    }
+
     const { title } = req.body || {};
     // Close any stale active session for this astrologer first.
     await supabaseService.from('live_sessions')

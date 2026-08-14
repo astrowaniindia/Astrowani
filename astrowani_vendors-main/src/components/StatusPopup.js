@@ -1,17 +1,17 @@
-// Themed, app-wide status popup (replaces the default Android Alert for
-// call/chat outcomes like "missed" / "busy"). Imperative API so any screen or
-// hook can show it without wiring local state:
+// Themed, app-wide status popup (replaces the default Android Alert for outcomes like
+// "session ended" / "inquiry sent"). Mirrors astrowani_customer-main's StatusPopup.js so
+// both apps stop showing the plain white/black system Alert for these. Imperative API so
+// any screen can show it without wiring local state:
 //
-//   import { showStatusPopup } from '../../components/StatusPopup';
-//   showStatusPopup({ variant: 'missed', title: 'Not Answered', message: '…' });
+//   import { showStatusPopup } from '../components/StatusPopup';
+//   showStatusPopup({ variant: 'success', title: 'Success', message: '…' });
 //
-// Also supports a two-button confirm (e.g. "pay to send this gift" / "insufficient
-// balance, recharge?") by passing onConfirm — a single onPress button is shown
-// otherwise, exactly as before:
+// Also supports a two-button confirm by passing onConfirm — a single onPress button is
+// shown otherwise:
 //
 //   showStatusPopup({
-//     variant: 'confirmPay', title: 'Confirm', message: '…',
-//     confirmText: 'Pay ₹25', cancelText: 'Cancel', onConfirm: () => { … },
+//     variant: 'info', title: 'End Call', message: 'Are you sure?',
+//     confirmText: 'End', cancelText: 'Cancel', onConfirm: () => { … },
 //   });
 //
 // Mount <StatusPopupHost /> ONCE near the navigation root.
@@ -19,8 +19,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
-import { moderateScale, scale, verticalScale } from '../utils/Scaling';
-import { LanguageContext } from '../context/LanguageContext';
 
 let listener = null;
 export const showStatusPopup = (opts) => {
@@ -29,16 +27,14 @@ export const showStatusPopup = (opts) => {
 
 const VARIANTS = {
   missed: { icon: 'phone-missed', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
-  busy:   { icon: 'schedule',     color: COLORS.AstroGold, tint: 'rgba(212,160,23,0.15)' },
-  info:   { icon: 'info-outline', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
+  busy:   { icon: 'schedule',     color: COLORS.AstroGold, tint: 'rgba(255,215,0,0.15)' },
+  info:   { icon: 'info-outline', color: COLORS.AstroMaroon, tint: 'rgba(89,42,25,0.12)' },
   success:{ icon: 'check-circle', color: '#1a8f4c', tint: 'rgba(26,143,76,0.12)' },
-  insufficient: { icon: 'account-balance-wallet', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
-  confirmPay:   { icon: 'payments', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
+  error:  { icon: 'error-outline', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
 };
 
 export function StatusPopupHost() {
-  const { t } = React.useContext(LanguageContext);
-  const [state, setState] = useState(null); // { title, message, variant, buttonText }
+  const [state, setState] = useState(null);
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
   useEffect(() => {
@@ -47,17 +43,16 @@ export function StatusPopupHost() {
         title: opts.title || 'Notice',
         message: opts.message || '',
         variant: opts.variant || 'info',
-        buttonText: opts.buttonText || t('common.ok'),
-        // Two-button confirm mode — only active when the caller passes onConfirm.
+        buttonText: opts.buttonText || 'OK',
         onConfirm: typeof opts.onConfirm === 'function' ? opts.onConfirm : null,
         onCancel: typeof opts.onCancel === 'function' ? opts.onCancel : null,
-        confirmText: opts.confirmText || t('common.ok'),
-        cancelText: opts.cancelText || t('common.cancel'),
+        confirmText: opts.confirmText || 'OK',
+        cancelText: opts.cancelText || 'Cancel',
         onClose: typeof opts.onClose === 'function' ? opts.onClose : null,
       });
     };
     return () => { listener = null; };
-  }, [t]);
+  }, []);
 
   useEffect(() => {
     if (state) {
@@ -79,12 +74,12 @@ export function StatusPopupHost() {
   };
   const handleConfirm = () => {
     const { onConfirm } = state;
-    close();
+    setState(null);
     onConfirm?.();
   };
   const handleCancel = () => {
     const { onCancel } = state;
-    close();
+    setState(null);
     onCancel?.();
   };
 
@@ -93,7 +88,7 @@ export function StatusPopupHost() {
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           <View style={[styles.iconCircle, { backgroundColor: v.tint }]}>
-            <MaterialIcons name={v.icon} size={moderateScale(34)} color={v.color} />
+            <MaterialIcons name={v.icon} size={34} color={v.color} />
           </View>
           <Text style={styles.title}>{state.title}</Text>
           <Text style={styles.message}>{state.message}</Text>
@@ -123,14 +118,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: scale(30),
+    paddingHorizontal: 30,
   },
   card: {
     width: '100%',
     backgroundColor: '#fff',
-    borderRadius: moderateScale(20),
-    paddingVertical: verticalScale(24),
-    paddingHorizontal: scale(22),
+    borderRadius: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 22,
     alignItems: 'center',
     elevation: 12,
     shadowColor: '#000',
@@ -139,41 +134,38 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
   },
   iconCircle: {
-    width: scale(64),
-    height: scale(64),
-    borderRadius: scale(32),
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: verticalScale(14),
+    marginBottom: 14,
   },
   title: {
-    fontSize: moderateScale(18),
+    fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.AstroMaroon,
-    fontFamily: 'Lato-Bold',
-    marginBottom: verticalScale(6),
+    marginBottom: 6,
     textAlign: 'center',
   },
   message: {
-    fontSize: moderateScale(14),
+    fontSize: 14,
     color: '#555',
-    fontFamily: 'Lato-Regular',
     textAlign: 'center',
-    lineHeight: moderateScale(20),
-    marginBottom: verticalScale(20),
+    lineHeight: 20,
+    marginBottom: 20,
   },
   button: {
     backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(25),
-    paddingVertical: verticalScale(11),
+    borderRadius: 25,
+    paddingVertical: 11,
     width: '100%',
     alignItems: 'center',
   },
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: moderateScale(15),
-    fontFamily: 'Lato-Bold',
+    fontSize: 15,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -181,11 +173,11 @@ const styles = StyleSheet.create({
   },
   confirmButton: {
     flex: 1,
-    marginLeft: scale(6),
+    marginLeft: 6,
   },
   cancelButton: {
     flex: 1,
-    marginRight: scale(6),
+    marginRight: 6,
     backgroundColor: '#f1f1f1',
   },
   cancelButtonText: {

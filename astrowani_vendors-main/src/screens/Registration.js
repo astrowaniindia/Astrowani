@@ -397,6 +397,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderColor: COLORS.AshGray,
     fontFamily: 'Lato-Regular',
+    // No explicit text color meant Android fell back to the app theme's default
+    // textColorPrimary — on this app's dark theme that resolved to white, making
+    // typed text invisible against this form's white input background. Pin it
+    // explicitly instead of relying on the platform default.
+    color: COLORS.black || '#000',
   },
   dropdownText: {
     fontSize: moderateScale(14),

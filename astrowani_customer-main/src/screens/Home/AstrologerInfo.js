@@ -35,6 +35,7 @@ import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import {getWalletBalance} from '../../utils/wallet';
+import {showInsufficientBalanceAlert} from '../../utils/insufficientBalanceAlert';
 import {LanguageContext} from '../../context/LanguageContext';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {formatBusyLabel} from '../../utils/busyLabel';
@@ -179,10 +180,7 @@ const AstrologerInfo = ({route, navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
         return;
       }
 
@@ -353,10 +351,7 @@ const AstrologerInfo = ({route, navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
         return;
       }
 

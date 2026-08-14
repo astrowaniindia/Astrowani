@@ -21,6 +21,7 @@ import {showStatusPopup} from '../../components/StatusPopup';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import PlacementBanner from '../../components/PlacementBanner';
 import {getWalletBalance} from '../../utils/wallet';
+import {showInsufficientBalanceAlert} from '../../utils/insufficientBalanceAlert';
 import io from 'socket.io-client';
 import {LanguageContext} from '../../context/LanguageContext';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
@@ -156,10 +157,7 @@ const Video = ({navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
         return;
       }
 

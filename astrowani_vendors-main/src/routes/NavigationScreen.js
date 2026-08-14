@@ -53,6 +53,7 @@ import Settings from '../screens/Settings';
 import AboutUsScreen from '../screens/AboutUsScreen';
 import FaqScreen from '../screens/FaqScreen';
 import ReferralPopupHost from '../components/ReferralPopupHost';
+import { StatusPopupHost } from '../components/StatusPopup';
 import useReferralPopupSync from '../utils/useReferralPopupSync';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -431,6 +432,7 @@ function NavigationScreen() {
       </Stack.Navigator>
       </PostHogProvider>
       <ReferralPopupHost />
+      <StatusPopupHost />
     </NavigationContainer>
   );
 }

@@ -25,10 +25,18 @@ import {SOCKET_URL} from '../../config/api';
 import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
+// Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
+// is now the primary relay; OpenRelay's free public servers are kept only as a
+// secondary fallback in case the VPS's coturn is ever unreachable.
 const ICE_SERVERS = {
   iceServers: [
     {urls: 'stun:stun.l.google.com:19302'},
     {urls: 'stun:stun1.l.google.com:19302'},
+    {urls: 'turn:76.13.243.165:3478', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
+    {urls: 'turn:76.13.243.165:3478?transport=tcp', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
+    {urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject'},
+    {urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject'},
+    {urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject'},
   ],
 };
 
@@ -169,8 +177,9 @@ const GoLiveScreen = ({route, navigation}: any) => {
         const headers = await authHeaders();
         const resp = await axios.post(`${SOCKET_URL}/api/live/start`, {astrologerId: astroIdRef.current}, {headers});
         sessionId = resp.data?.sessionId;
-      } catch (e) {
-        Alert.alert('Error', 'Could not start live session.');
+      } catch (e: any) {
+        const serverMsg = e?.response?.data?.message;
+        Alert.alert('Error', serverMsg || 'Could not start live session.');
         navigation.goBack();
         return;
       }

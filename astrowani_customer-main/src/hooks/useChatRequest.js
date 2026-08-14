@@ -113,7 +113,12 @@ const useChatRequest = (navigation) => {
           if (resp.ok) {
             const json = await resp.json();
             const balance = json?.data?.balance ?? 0;
-            const charge = item.chat_charge_per_minute ?? item.chatChargePerMinute ?? 0;
+            // The real field on a formatted astrologer object (see formatAstrologer in
+            // index.js) is `chatPrice` — chat_charge_per_minute/chatChargePerMinute don't
+            // exist on it, so this always evaluated to 0 and silently skipped the check
+            // below regardless of actual balance. This was the bug: chat let a ₹0-balance
+            // customer through while Call/Video (which read the right field) blocked them.
+            const charge = item.chatPrice ?? item.chat_charge_per_minute ?? item.chatChargePerMinute ?? 0;
             if (charge > 0 && balance < charge) {
               Alert.alert(
                 t('chat.lowBalance'),

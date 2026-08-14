@@ -23,6 +23,7 @@ import RequestingPopup from '../../components/RequestingPopup';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
 import { getWalletBalance } from '../../utils/wallet';
+import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import { ensureProfileComplete } from '../../utils/profileGate';
@@ -126,14 +127,11 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       try {
         balance = await getWalletBalance();
       } catch (walletErr) {
-        Alert.alert('Error', 'Failed to verify wallet balance.');
+        Alert.alert('Error', 'Could not check your wallet balance — please check your internet connection and try again.');
         return;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          'Insufficient Balance',
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance });
         return;
       }
 

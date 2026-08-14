@@ -749,8 +749,8 @@ function BottomTabNavigator() {
       })}>
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Chat" component={ChatStack} />
-      <Tab.Screen name="Video" component={VideoStack} />
       <Tab.Screen name="Call" component={CallStack} />
+      <Tab.Screen name="Video" component={VideoStack} />
       <Tab.Screen name="Live" component={LiveStack} />
       <Tab.Screen name="Remedies" component={RemediesStack} />
     </Tab.Navigator>

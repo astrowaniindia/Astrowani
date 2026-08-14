@@ -13,7 +13,6 @@ import {
   StatusBar,
   ImageBackground,
   ScrollView,
-  Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +24,7 @@ import { SOCKET_URL } from '../config/api';
 import Instance from '../api/ApiCall';
 import useElapsedSeconds from '../utils/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
+import { showStatusPopup } from '../components/StatusPopup';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -144,7 +144,15 @@ const VendorChatSession = ({ route, navigation }) => {
     return () => {
       if (pollMsgRef.current) clearInterval(pollMsgRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
-      if (socketRef.current) socketRef.current.disconnect();
+      // Same fix as the customer-side ChatSessionScreen: leaving via hardware back /
+      // swipe-back / navigating away only used to disconnect the socket without telling
+      // the backend, so a session the vendor abandoned this way stayed active/billable.
+      if (sessionIdRef.current && socketRef.current) {
+        socketRef.current.emit('end_session', { sessionId: sessionIdRef.current });
+        setTimeout(() => socketRef.current && socketRef.current.disconnect(), 300);
+      } else if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
   }, []);
 
@@ -158,7 +166,7 @@ const VendorChatSession = ({ route, navigation }) => {
     if (pollEndRef.current) clearInterval(pollEndRef.current);
 
     if (reason) {
-       Alert.alert('Session Ended', reason);
+       showStatusPopup({ variant: 'info', title: 'Session Ended', message: reason });
     }
 
     if (navigation.canGoBack()) {

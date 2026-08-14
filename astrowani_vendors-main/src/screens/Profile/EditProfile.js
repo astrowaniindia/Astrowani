@@ -242,6 +242,17 @@ fetchData()
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.card}>
+        {/* Fields marked with a gold ★ below are the ones that determine whether this
+            profile shows up in the Astrowani customer app at all — see
+            astrologerProfileComplete() on the backend. Everything else is optional. */}
+        <View style={styles.requiredNotice}>
+          <Icon name="stars" size={16} color={COLORS.orange} />
+          <Text style={styles.requiredNoticeText}>
+            Fields marked with <Text style={styles.requiredStar}>★</Text> are required for your
+            profile to appear on the Astrowani customer app.
+          </Text>
+        </View>
+
         {/* Profile Image Section */}
         <View style={styles.imageContainer}>
           <View style={styles.profileWrapper}>
@@ -257,6 +268,7 @@ fetchData()
               <Icon name="camera-alt" size={20} color={COLORS.white} />
             </TouchableOpacity>
           </View>
+          <Text style={styles.requiredFieldTag}>Profile photo <Text style={styles.requiredStar}>★</Text></Text>
           <TouchableOpacity style={styles.removeTextButton} onPress={removeProfileImage}>
             <Text style={styles.removeText}>Remove Photo</Text>
           </TouchableOpacity>
@@ -264,7 +276,7 @@ fetchData()
         
         <Text style={styles.sectionTitle}>Personal Details</Text>
         
-        <Text style={styles.label}>Full Name</Text>
+        <Text style={styles.label}>Full Name <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           value={name}
@@ -273,7 +285,7 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
         />
         
-        <Text style={styles.label}>Email</Text>
+        <Text style={styles.label}>Email <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -293,7 +305,7 @@ fetchData()
           keyboardType="phone-pad"
         />
 
-        <Text style={styles.label}>Gender</Text>
+        <Text style={styles.label}>Gender <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -320,7 +332,7 @@ fetchData()
         <View style={styles.divider} />
         <Text style={styles.sectionTitle}>Professional Details</Text>
 
-        <Text style={styles.label}>Experience (Years)</Text>
+        <Text style={styles.label}>Experience (Years) <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -339,6 +351,9 @@ fetchData()
           </View>
         )}
 
+        <Text style={styles.requiredFieldTag}>
+          <Text style={styles.requiredStar}>★</Text> At least one of Chat / Call / Video charges must be set above ₹0.
+        </Text>
         <Text style={styles.label}>Chat Charges (₹/min)</Text>
         <TextInput
           style={[styles.input, chargesLocked && styles.inputDisabled]}
@@ -369,7 +384,7 @@ fetchData()
           editable={!chargesLocked}
         />
 
-        <Text style={styles.label}>Languages (comma separated)</Text>
+        <Text style={styles.label}>Languages (comma separated) <Text style={styles.requiredStar}>★</Text></Text>
         <TextInput
           style={styles.input}
           placeholderTextColor={COLORS.lightGrey}
@@ -554,6 +569,30 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: moderateScale(12.5),
     color: '#7A5B00',
+  },
+  requiredNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: moderateScale(10),
+    padding: scale(10),
+    marginBottom: verticalScale(15),
+    gap: scale(8),
+  },
+  requiredNoticeText: {
+    flex: 1,
+    fontSize: moderateScale(12.5),
+    color: '#7A4B00',
+  },
+  requiredStar: {
+    color: COLORS.orange,
+    fontWeight: 'bold',
+  },
+  requiredFieldTag: {
+    fontSize: moderateScale(12.5),
+    color: '#7A4B00',
+    textAlign: 'center',
+    marginBottom: verticalScale(10),
   },
   submitButton: {
     backgroundColor: COLORS.AstroMaroon,

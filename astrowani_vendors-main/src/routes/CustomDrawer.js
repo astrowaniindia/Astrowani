@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useContext, useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -21,8 +21,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {resetAnalyticsIdentity} from '../utils/Analytics';
 import { supabase } from '../api/SupabaseClient';
 import { fetchAstrologerRow } from '../utils/vendorProfile';
+import { LanguageContext } from '../context/LanguageContext';
 function CustomDrawer(props) {
   const insets = useSafeAreaInsets();
+  const { language, changeLanguage, t } = useContext(LanguageContext);
   const [user, setUser] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -121,28 +123,28 @@ function CustomDrawer(props) {
 
       <View style={styles.drawerItemsContainer}>
         <DrawerItem
-          label="Dashboard"
+          label={t('drawer.dashboard')}
           icon={() => (
             <Icon name="dashboard" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('HomeScreen')}
         />
         <DrawerItem
-          label="My Customers"
+          label={t('drawer.myCustomers')}
           icon={() => (
             <Icon name="group" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('MyCustomers')}
         />
         <DrawerItem
-          label="Profile"
+          label={t('drawer.profile')}
           icon={() => (
             <EvilIcons name="user" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('Profile')}
         />
         <DrawerItem
-          label="Session History"
+          label={t('drawer.sessionHistory')}
           icon={() => (
             <Icon name="history" size={24} color={COLORS.AstroMaroon} />
           )}
@@ -151,7 +153,7 @@ function CustomDrawer(props) {
         <DrawerItem
           label={() => (
             <View style={styles.missedLabelRow}>
-              <Text style={styles.missedLabel}>Missed Sessions</Text>
+              <Text style={styles.missedLabel}>{t('drawer.missedSessions')}</Text>
               {missedCount > 0 && (
                 <View style={styles.missedBadge}>
                   <Text style={styles.missedBadgeText}>{missedCount > 99 ? '99+' : missedCount}</Text>
@@ -168,19 +170,19 @@ function CustomDrawer(props) {
           }}
         />
         <DrawerItem
-          label="Support"
+          label={t('drawer.support')}
           icon={() => <Icon name="help" size={24} color={COLORS.AstroMaroon} />}
           onPress={() => props.navigation.navigate('Support')}
         />
         <DrawerItem
-          label="Notification"
+          label={t('drawer.notification')}
           icon={() => (
             <EvilIcons name="bell" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('Notification')}
         />
         <DrawerItem
-          label="Settings"
+          label={t('drawer.settings')}
           icon={() => (
             <Icon
               name="settings-suggest"
@@ -191,27 +193,44 @@ function CustomDrawer(props) {
           onPress={() => props.navigation.navigate('Settings')}
         />
         <DrawerItem
-          label="Rating & Review"
+          label={t('drawer.ratingReview')}
           icon={() => <Icon name="help" size={24} color={COLORS.AstroMaroon} />}
           onPress={() => props.navigation.navigate('RatingReview')}
         />
         <DrawerItem
-          label="Performance"
+          label={t('drawer.performance')}
           icon={() => <Icon name="insights" size={24} color={COLORS.AstroMaroon} />}
           onPress={() => props.navigation.navigate('PerformanceDashboard')}
         />
         <DrawerItem
-          label="Wallet"
+          label={t('drawer.wallet')}
           icon={() => <Icon name="account-balance-wallet" size={24} color={COLORS.AstroMaroon} />}
           onPress={() => props.navigation.navigate('Wallet')}
         />
         <DrawerItem
-          label="Logout"
+          label={t('drawer.logout')}
           icon={() => (
             <Icon name="logout" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={handleLogout}
         />
+      </View>
+
+      {/* Language toggle */}
+      <View style={styles.languageSection}>
+        <Text style={styles.languageLabel}>{t('drawer.language')}</Text>
+        <View style={styles.languageButtons}>
+          <TouchableOpacity
+            style={[styles.langBtn, language === 'English' && styles.langBtnActive]}
+            onPress={() => changeLanguage('English')}>
+            <Text style={[styles.langBtnText, language === 'English' && styles.langBtnTextActive]}>English</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.langBtn, language === 'Hindi' && styles.langBtnActive]}
+            onPress={() => changeLanguage('Hindi')}>
+            <Text style={[styles.langBtnText, language === 'Hindi' && styles.langBtnTextActive]}>हिंदी</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Social Media Section */}
@@ -277,6 +296,39 @@ const styles = StyleSheet.create({
   drawerItemsContainer: {
     marginTop: verticalScale(10),
     paddingHorizontal: scale(10),
+  },
+  languageSection: {
+    marginTop: verticalScale(10),
+    paddingHorizontal: scale(20),
+  },
+  languageLabel: {
+    fontSize: moderateScale(13),
+    fontWeight: 'bold',
+    color: '#888',
+    marginBottom: verticalScale(8),
+  },
+  languageButtons: {
+    flexDirection: 'row',
+    gap: scale(10),
+  },
+  langBtn: {
+    flex: 1,
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(8),
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
+    alignItems: 'center',
+  },
+  langBtnActive: {
+    backgroundColor: COLORS.AstroMaroon,
+  },
+  langBtnText: {
+    color: COLORS.AstroMaroon,
+    fontWeight: '600',
+    fontSize: moderateScale(13),
+  },
+  langBtnTextActive: {
+    color: COLORS.white,
   },
   socialSection: {
     marginTop: verticalScale(20),

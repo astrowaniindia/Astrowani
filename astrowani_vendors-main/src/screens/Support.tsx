@@ -1,5 +1,6 @@
-import { StyleSheet, Text, TextInput, View, Button, Alert, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TextInput, View, Button, TouchableOpacity } from 'react-native';
 import React, { useState } from 'react';
+import { showStatusPopup } from '../components/StatusPopup';
 
 export default function Support() {
   const [name, setName] = useState('');
@@ -9,13 +10,13 @@ export default function Support() {
   // Handle form submission
   const handleSubmit = () => {
     if (!name || !email || !message) {
-      Alert.alert('Error', 'Please fill all the fields');
+      showStatusPopup({ variant: 'error', title: 'Error', message: 'Please fill all the fields' });
       return;
     }
 
     // For now, just show a success message
-    Alert.alert('Success', 'Your inquiry has been sent!');
-    
+    showStatusPopup({ variant: 'success', title: 'Success', message: 'Your inquiry has been sent!' });
+
     // Here you can send the data to an API or email service
     console.log('Inquiry Submitted:', { name, email, message });
   };

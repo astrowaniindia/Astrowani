@@ -511,6 +511,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { getWalletBalance } from '../../utils/wallet';
+import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
 import axios from 'axios';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
@@ -645,10 +646,7 @@ const CallsList = ({navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
         return;
       }
 

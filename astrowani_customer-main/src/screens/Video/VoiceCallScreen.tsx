@@ -35,10 +35,18 @@ type CallState = 'connecting' | 'ringing' | 'in_call';
 const AVATAR_SIZE = 140;
 const RING_BASE = AVATAR_SIZE + 40;
 
+// Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
+// is now the primary relay; OpenRelay's free public servers are kept only as a
+// secondary fallback in case the VPS's coturn is ever unreachable.
 const ICE_SERVERS = {
   iceServers: [
     {urls: 'stun:stun.l.google.com:19302'},
     {urls: 'stun:stun1.l.google.com:19302'},
+    {urls: 'turn:76.13.243.165:3478', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
+    {urls: 'turn:76.13.243.165:3478?transport=tcp', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
+    {urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject'},
+    {urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject'},
+    {urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject'},
   ],
 };
 

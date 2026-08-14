@@ -21,6 +21,7 @@ import { supabase } from '../api/SupabaseClient';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
 import { showReviewPrompt } from '../components/ReviewPrompt';
+import { showStatusPopup } from '../components/StatusPopup';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config/api';
@@ -107,9 +108,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
     };
 
     if (message) {
-      Alert.alert('Session Ended', message, [
-        { text: 'OK', onPress: goBackOrHome },
-      ]);
+      showStatusPopup({ variant: 'info', title: 'Session Ended', message, onClose: goBackOrHome });
     } else {
       goBackOrHome();
     }
@@ -333,7 +332,20 @@ const ChatSessionScreen = ({ route, navigation }) => {
       setActiveChatAstrologerId(null);
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
-      if (socketRef.current) socketRef.current.disconnect();
+      // Leaving this screen any other way than the explicit End button (hardware back,
+      // swipe-back gesture, navigating elsewhere) used to just disconnect the socket
+      // without telling the backend — the session stayed active server-side and kept
+      // billing the customer while the vendor's screen never learned it ended. Mirror
+      // manualEndSession's emit here so every exit path terminates the session.
+      if (!hasEndedRef.current && sessionRef.current && socketRef.current) {
+        socketRef.current.emit('end_session', { sessionId: sessionRef.current.id });
+        hasEndedRef.current = true;
+        // Give the emit a moment to actually flush over the socket before we tear it
+        // down — disconnecting in the same tick can drop the just-queued packet.
+        setTimeout(() => socketRef.current && socketRef.current.disconnect(), 300);
+      } else if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
   }, []);
 

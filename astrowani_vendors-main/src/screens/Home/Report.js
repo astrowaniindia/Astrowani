@@ -171,10 +171,13 @@ export default function Wallet() {
   const renderTransaction = ({ item }) => {
     const typeIcon = CALL_TYPE_ICONS[item.callType] || null;
     // A real session earning reads "Chat with Ansh Sharma" instead of the generic
-    // "Automated chat earning" — falls back to the raw description for non-session
-    // transactions (withdrawals, refunds, admin corrections) which have no linked session.
-    const title = item.customerName && typeIcon
-      ? `${typeIcon.label} with ${item.customerName}`
+    // "Automated chat earning". Gifts have a customerName but no callType/typeIcon (a gift
+    // isn't a call/chat/video session) — this used to require BOTH, so a gift's sender name
+    // was silently dropped even once the backend started resolving it; falls back to the
+    // raw description only when there's truly no customer to attribute it to (withdrawals,
+    // refunds, admin corrections).
+    const title = item.customerName
+      ? (typeIcon ? `${typeIcon.label} with ${item.customerName}` : `${item.description} from ${item.customerName}`)
       : item.description;
     const icon = typeIcon || (item.isCredit
       ? { name: 'add-circle', color: '#2E7D32' }

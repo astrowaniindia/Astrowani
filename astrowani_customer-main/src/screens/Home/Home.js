@@ -46,6 +46,7 @@ import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
+import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
 import PlacementBanner from '../../components/PlacementBanner';
 import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
 import { formatBusyLabel } from '../../utils/busyLabel';
@@ -415,10 +416,7 @@ const Home = ({navigation}) => {
         return null;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
         return null;
       }
 
@@ -553,10 +551,7 @@ const Home = ({navigation}) => {
         return null;
       }
       if (balance < minRequired) {
-        Alert.alert(
-          t('alerts.insufficientBalance'),
-          `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. Please recharge.`,
-        );
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
         return null;
       }
 

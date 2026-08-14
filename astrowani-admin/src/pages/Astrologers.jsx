@@ -18,6 +18,8 @@ function AstroBadge({ badge }) {
   return <span className={`badge ${BADGE_COLORS[badge] || 'gray'}`}>{BADGE_LABELS[badge] || badge}</span>;
 }
 
+const PAGE_SIZE = 20;
+
 export default function Astrologers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +27,11 @@ export default function Astrologers() {
   const [busy, setBusy] = useState(false);
   const [topup, setTopup] = useState(null); // astrologer being wallet-adjusted
   const [amount, setAmount] = useState('');
+  // Search/filter/pagination — the list grew large enough that scrolling to find a
+  // specific astrologer, or scanning the whole table for e.g. pending ones, became slow.
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all | pending | approved | rejected | suspended
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -33,6 +40,24 @@ export default function Astrologers() {
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => { setPage(1); }, [search, statusFilter]);
+
+  const matchesFilter = (r) => {
+    if (statusFilter === 'suspended') return !!r.is_suspended;
+    if (statusFilter !== 'all') return r.approval_status === statusFilter;
+    return true;
+  };
+  const matchesSearch = (r) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const name = `${r.first_name || ''} ${r.last_name || ''}`.toLowerCase();
+    const phone = (r.phone_number || '').toLowerCase();
+    const email = (r.email || '').toLowerCase();
+    return name.includes(q) || phone.includes(q) || email.includes(q);
+  };
+  const filteredRows = rows.filter((r) => matchesFilter(r) && matchesSearch(r));
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const pageRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const patch = async (id, body) => {
     await client.patch(`/api/admin/astrologers/${id}`, body);
@@ -119,6 +144,25 @@ export default function Astrologers() {
   return (
     <div>
       <h1 className="page-title">Astrologers</h1>
+      <div className="btn-group" style={{ marginBottom: 12, alignItems: 'center' }}>
+        <input
+          type="text"
+          placeholder="Search by name, phone, or email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ minWidth: 260 }}
+        />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="suspended">Suspended</option>
+        </select>
+        <span className="muted" style={{ fontSize: 13 }}>
+          {filteredRows.length} of {rows.length} astrologer{rows.length === 1 ? '' : 's'}
+        </span>
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr>
@@ -127,8 +171,8 @@ export default function Astrologers() {
           </tr></thead>
           <tbody>
             {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8} className="empty">No astrologers.</td></tr>}
-            {rows.map((r) => (
+            {!loading && filteredRows.length === 0 && <tr><td colSpan={8} className="empty">No astrologers match.</td></tr>}
+            {pageRows.map((r) => (
               <tr key={r.id}>
                 <td>{name(r)}</td>
                 <td className="muted">{r.phone_number || '—'}</td>
@@ -170,6 +214,13 @@ export default function Astrologers() {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div className="btn-group" style={{ marginTop: 12, alignItems: 'center' }}>
+          <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
+          <span className="muted" style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+          <button className="btn secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
+        </div>
+      )}
 
       {editing && (
         <Modal title={`Edit — ${name(editing)}`} onClose={() => setEditing(null)}>

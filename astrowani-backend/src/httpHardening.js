@@ -14,7 +14,7 @@
 // runaway retry loops, not to inconvenience a real user on a flaky train
 // connection who taps resend a few times.
 
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
@@ -41,6 +41,34 @@ const otpLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({
     success: false,
     message: 'Too many OTP requests. Please wait 15 minutes before trying again.',
+  }),
+});
+
+// OTP, keyed by phone number instead of IP. otpLimiter above stops one IP from
+// hammering many numbers, but does nothing to stop an attacker rotating across a
+// handful of IPs to flood ONE number with repeated OTP texts — each individual IP
+// stays under the per-IP limit while the victim's phone keeps buzzing. Observed in
+// production 2026-08-14: OTP requests for the same number from 4 different IPs
+// over several days, none of which ever tripped otpLimiter. This closes that gap
+// by capping how many OTPs a single phone number can receive regardless of source.
+const otpPhoneLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const digits = String(req.body?.phoneNumber || '').replace(/\D/g, '');
+    if (digits) return digits;
+    // No phone number yet — the route's own validation rejects the request right
+    // after; fall back to IP so this middleware never throws on a malformed body.
+    // Must go through ipKeyGenerator (not raw req.ip) — express-rate-limit refuses
+    // to start otherwise, since an un-normalized IPv6 address is too fine-grained
+    // to rate-limit meaningfully (see ERR_ERL_KEY_GEN_IPV6).
+    return ipKeyGenerator(req.ip);
+  },
+  handler: (req, res) => res.status(429).json({
+    success: false,
+    message: 'Too many OTP requests for this number. Please wait before trying again.',
   }),
 });
 
@@ -133,6 +161,7 @@ function applyHttpHardening(app) {
 module.exports = {
   applyHttpHardening,
   otpLimiter,
+  otpPhoneLimiter,
   authLimiter,
   writeLimiter,
 };

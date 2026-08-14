@@ -134,8 +134,8 @@ export default function NewEntries() {
 
       {viewing && (
         <Modal title={`Application — ${fullName(viewing)}`} onClose={() => setViewing(null)}>
-          {viewing.profile_image
-            ? <img src={viewing.profile_image} alt="" style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', marginBottom: 12 }} />
+          {viewing.profile_pic_url
+            ? <img src={viewing.profile_pic_url} alt="" style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', marginBottom: 12 }} />
             : <div className="muted" style={{ marginBottom: 12 }}>No photo uploaded</div>}
           <div className="field"><label>Email</label><div>{viewing.email || '—'}</div></div>
           <div className="two-col">
