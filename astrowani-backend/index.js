@@ -594,16 +594,22 @@ function toE164(phoneNumber) {
   return `+${digits}`;
 }
 
-// Google Play reviewer test account (customer app only) — real phone+SMS OTP login is
+// Google Play reviewer test account (both apps) — real phone+SMS OTP login is
 // unreviewable as-is: a reviewer has no way to receive the SMS, and even if they did,
 // the 5-minute OTP expiry routinely lapses before a reviewer actually gets to the login
 // screen. This one fixed number always gets a fixed OTP with no real SMS sent and a long
-// expiry, and skips the normal "must already have an account to log in" gate below (its
-// account is auto-created on first successful verify, same as any brand-new customer).
-// Give Play Console's Sign in details exactly this phone number + OTP. Not wired into the
-// vendor app — astrologer accounts require the full Registration flow after verify, so a
-// bare test login here wouldn't get a reviewer anywhere useful; if the vendor app hits the
-// same rejection, it needs a real pre-seeded test astrologer row instead.
+// expiry.
+//
+// Customer app: skips the normal "must already have an account to log in" gate below —
+// its customers row is auto-created on first successful verify, same as any brand-new
+// signup, so no DB seeding is needed for that side.
+//
+// Vendor app: astrologer accounts are NEVER auto-created on verify (they require the
+// full Registration flow) — so this fixed OTP alone is not enough on its own. A real
+// astrologers row for this exact phone number must be pre-seeded via
+// sql/play_store_reviewer_astrologer.sql (run once in the Supabase SQL editor) so
+// verify's existing-astrologer lookup actually finds something and logs the reviewer
+// straight into the dashboard.
 const PLAY_STORE_REVIEWER_PHONE = '9999999999';
 const PLAY_STORE_REVIEWER_OTP = '123456';
 
@@ -617,7 +623,7 @@ app.post('/api/users/mobile-otp-request', otpLimiter, otpPhoneLimiter, async (re
     return res.status(400).json({ success: false, message: 'Phone number is required' });
   }
 
-  if (phoneNumber === PLAY_STORE_REVIEWER_PHONE && (!role || role === 'customer')) {
+  if (phoneNumber === PLAY_STORE_REVIEWER_PHONE) {
     await otpStore.set(phoneNumber, {
       otp: PLAY_STORE_REVIEWER_OTP,
       sessionId: Date.now().toString(),
