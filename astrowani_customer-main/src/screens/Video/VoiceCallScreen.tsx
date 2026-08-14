@@ -26,6 +26,7 @@ import io from 'socket.io-client';
 import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
 import {showStatusPopup} from '../../components/StatusPopup';
+import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
@@ -159,6 +160,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     stopRingCountdown();
     stopRipple();
     cleanupWebRTC();
+    hideActiveSessionNotification();
     const sid = sessionIdRef.current;
     captureEvent('call_ended', {
       call_type: 'voice',
@@ -269,6 +271,13 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             isConnectedRef.current = true;
             setCallState('in_call');
             captureEvent('call_connected', {call_type: 'voice', session_id: sessionIdRef.current});
+            // Persistent notification — billing keeps running even if the customer
+            // backgrounds the app (e.g. presses the phone's Home button) without
+            // actually ending the call. See activeSessionNotification.js.
+            showActiveSessionNotification({
+              title: 'Call in progress',
+              message: `Your call with ${recieverName} is still active. Tap to return.`,
+            });
             stopRipple();
             stopRingCountdown();
             startCallTimer();

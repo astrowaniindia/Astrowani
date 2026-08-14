@@ -299,7 +299,14 @@ const HomeScreen = () => {
         },
         (payload) => {
           const req = payload.new;
-          if (req && req.status && req.status !== 'pending' && req.status !== 'accepted') {
+          // Dismiss on ANY status change away from 'pending' — including 'accepted'. That
+          // used to be excluded on the assumption only handleAccept() (which already
+          // self-dismisses synchronously) could cause it, but the notification's Accept
+          // button also accepts server-side via a background handler that never touches
+          // popupQueue at all — leaving this popup stuck waiting for a second, redundant
+          // manual tap once the app reopens. Re-dismissing an already-removed item here is
+          // a harmless no-op (dismissPopupIfMatches filters by requestId/roomId/callerId).
+          if (req && req.status && req.status !== 'pending') {
             dismissPopupIfMatches({ requestId: req.id, roomId: req.room_id, callerId: req.customer_id });
           }
         }
@@ -317,7 +324,8 @@ const HomeScreen = () => {
         },
         (payload) => {
           const req = payload.new;
-          if (req && req.status && req.status !== 'pending' && req.status !== 'accepted') {
+          // See the call_requests listener above for why 'accepted' is included here too.
+          if (req && req.status && req.status !== 'pending') {
             dismissPopupIfMatches({ requestId: req.id, callerId: req.caller_id });
           }
         }

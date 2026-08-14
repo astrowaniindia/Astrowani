@@ -32,6 +32,7 @@ import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {captureEvent} from '../../utils/Analytics';
+import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -160,6 +161,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
   // ─── Call End ───────────────────────────────────────────────────────────────
   const doEndCall = useCallback(async () => {
     stopCallTimer(); stopRingCountdown(); stopRipple(); cleanupWebRTC();
+    hideActiveSessionNotification();
     const sid = sessionIdRef.current;
     captureEvent('call_ended', {
       call_type: 'video',
@@ -289,6 +291,13 @@ const VideoCallScreen = ({route, navigation}: any) => {
             isConnectedRef.current = true;
             setCallState('in_call');
             captureEvent('call_connected', {call_type: 'video', session_id: sessionIdRef.current});
+            // Persistent notification — billing keeps running even if the customer
+            // backgrounds the app (e.g. presses the phone's Home button) without
+            // actually ending the call. See activeSessionNotification.js.
+            showActiveSessionNotification({
+              title: 'Video call in progress',
+              message: `Your video call with ${recieverName} is still active. Tap to return.`,
+            });
             stopRipple();
             stopRingCountdown();
             startCallTimer();

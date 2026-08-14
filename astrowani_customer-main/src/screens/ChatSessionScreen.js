@@ -29,6 +29,7 @@ import { SOCKET_URL } from '../config/api';
 import { setActiveChatAstrologerId } from '../utils/PushNotification';
 import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
+import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
@@ -89,6 +90,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
     });
 
     setChatActive(false);
+    hideActiveSessionNotification();
     if (pollRef.current) clearInterval(pollRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
     if (socketRef.current) socketRef.current.disconnect();
@@ -292,6 +294,13 @@ const ChatSessionScreen = ({ route, navigation }) => {
             chatConnectedRef.current = true;
             setSessionStartMs(data.started_at ? new Date(data.started_at).getTime() : Date.now());
             setChatActive(true);
+            // Persistent notification — billing keeps running even if the customer
+            // backgrounds the app (e.g. presses the phone's Home button) without
+            // actually ending the chat. See activeSessionNotification.js.
+            showActiveSessionNotification({
+              title: 'Chat in progress',
+              message: `Your chat with ${person?.name || person?.firstName || 'the astrologer'} is still active. Tap to return.`,
+            });
             captureEvent('chat_started', { session_id: data.id });
 
             // Load existing messages
@@ -360,6 +369,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
     return () => {
       setActiveChatAstrologerId(null);
+      hideActiveSessionNotification(); // safety net — harmless no-op if already hidden
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
       // Leaving this screen any other way than the explicit End button (hardware back,
