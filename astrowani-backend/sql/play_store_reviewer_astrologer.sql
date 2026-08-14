@@ -41,7 +41,7 @@ BEGIN
       wallet_balance, today_earnings, total_earnings
     ) VALUES (
       '9999999999', 'Play Store', 'Reviewer', 'reviewer@astrowani.com', 'Male', 10,
-      ARRAY['Hindi','English']::text[], ARRAY[]::text[],
+      ARRAY['Hindi','English']::text[], ARRAY[]::uuid[],
       'https://backend.astrowani.com/public/images/banner1.jpeg',
       'approved', false, true,
       true, true, true,
