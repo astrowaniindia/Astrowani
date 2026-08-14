@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import AstrologerBadge from '../../components/AstrologerBadge';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
+import { LanguageContext } from '../../context/LanguageContext';
 
 // Shared detailed astrologer card used by the category screens. Shows the full
 // profile (avatar, rating, name, specialty, languages, experience, price) plus
@@ -40,6 +41,7 @@ import { requestNotifyMe } from '../../utils/notifyMe';
 // call_requests insert, Realtime backup, 45s timeout, vendor-cancel sync).
 const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
   const navigation = useNavigation();
+  const { t } = useContext(LanguageContext);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Chat flow (shared hook owns its own RequestingPopup state)
@@ -64,11 +66,12 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
   // Card body tap → view profile (no auto-action)
   const goProfile = item => navigation.navigate('AstrologerInfo', { person: item });
 
+  const UNAVAILABLE_KEY = { chat: 'alerts.notAvailableChat', call: 'alerts.notAvailableCall', video: 'alerts.notAvailableVideo' };
   const showUnavailable = (item, label) =>
-    Alert.alert('Unavailable', `${item.name || 'This astrologer'} is not available for ${label} right now.`);
+    Alert.alert(t('alerts.unavailable'), t(UNAVAILABLE_KEY[label] || 'alerts.notAvailableChat', { name: item.name || t('common.astrologer') }));
 
   const showOffline = (item) =>
-    Alert.alert('Unavailable', `${item.name || 'This astrologer'} is offline right now. Please check back later.`);
+    Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || t('common.astrologer') }));
 
   // Tell the vendor the customer abandoned the pending request (dismisses their popup).
   const notifyVendorCancelled = (status = 'cancelled') => {
@@ -113,7 +116,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
-        Alert.alert('Error', 'Please login to continue.');
+        Alert.alert(t('common.error'), t('call.pleaseLogin'));
         return;
       }
       const userEntireData = JSON.parse(userDataStr);
@@ -127,7 +130,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       try {
         balance = await getWalletBalance();
       } catch (walletErr) {
-        Alert.alert('Error', 'Could not check your wallet balance — please check your internet connection and try again.');
+        Alert.alert(t('common.error'), t('alerts.failedWalletCheck'));
         return;
       }
       if (balance < minRequired) {
@@ -145,7 +148,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       );
       if (response.status !== 200) {
         setIsCallWaiting(false);
-        Alert.alert('Error', 'Failed to initiate call.');
+        Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
         return;
       }
       captureEvent('call_initiated', {call_type: type, astrologer_id: item.userId});
@@ -161,7 +164,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       const requestId = response.data.data?.requestId || response.data.requestId;
       if (!requestId) {
         setIsCallWaiting(false);
-        Alert.alert('Error', 'Failed to send call request.');
+        Alert.alert(t('common.error'), t('expertsList.failedSendCallRequest'));
         return;
       }
       const requestData = {id: requestId};
@@ -211,11 +214,11 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
         activeCallRef.current = null;
         teardown();
         setIsCallWaiting(false);
-        if (msg) showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: msg });
+        if (msg) showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: msg });
       };
 
       sock.once('call_accepted', d => goToCall(d.sessionId));
-      sock.on('call_rejected', () => declineCleanup('Astrologer is busy right now. Please try again after some time.'));
+      sock.on('call_rejected', () => declineCleanup(t('alerts.astrologerBusy')));
 
       const channel = supabase
         .channel(`experts_call_${requestData.id}`)
@@ -224,7 +227,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           { event: 'UPDATE', schema: 'public', table: 'call_requests', filter: `id=eq.${requestData.id}` },
           payload => {
             if (payload.new.status === 'accepted') goToCall(payload.new.session_id);
-            else if (payload.new.status === 'rejected') declineCleanup('Astrologer is busy right now. Please try again after some time.');
+            else if (payload.new.status === 'rejected') declineCleanup(t('alerts.astrologerBusy'));
           },
         )
         .subscribe();
@@ -236,17 +239,17 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           notifyVendorCancelled('missed');
           teardown();
           setIsCallWaiting(false);
-          showStatusPopup({ variant: 'missed', title: 'Not Answered', message: `Your ${type === 'video' ? 'video call' : 'audio call'} was not picked up. Please try again later.` });
+          showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: type === 'video' ? t('alerts.notPickedUpVideo') : t('alerts.notPickedUpAudio') });
         }
       }, 60000);
     } catch (err) {
       setIsCallWaiting(false);
       if (err?.response?.status === 409) {
-        showStatusPopup({ variant: 'busy', title: 'Astrologer Busy', message: 'Astrologer is busy right now. Please try again after some time.' });
+        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
         return;
       }
       console.error('[ExpertsList] initiateCall error:', err);
-      Alert.alert('Error', 'Failed to initiate call. Please try again.');
+      Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
     }
   };
 
@@ -258,19 +261,19 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
 
   const ActionButton = ({ item, kind }) => {
     const config = {
-      chat: { enabled: item.isChatEnabled, icon: 'chat', offIcon: 'speaker-notes-off', label: 'Chat', color: COLORS.AstroMaroon },
-      call: { enabled: item.isCallEnabled, icon: 'call', offIcon: 'phone-disabled', label: 'Call', color: COLORS.green },
-      video: { enabled: item.isVideoEnabled, icon: 'videocam', offIcon: 'videocam-off', label: 'Video', color: '#2D6CDF' },
+      chat: { enabled: item.isChatEnabled, icon: 'chat', offIcon: 'speaker-notes-off', label: t('common.chat'), key: 'chat', color: COLORS.AstroMaroon },
+      call: { enabled: item.isCallEnabled, icon: 'call', offIcon: 'phone-disabled', label: t('common.call'), key: 'call', color: COLORS.green },
+      video: { enabled: item.isVideoEnabled, icon: 'videocam', offIcon: 'videocam-off', label: t('common.video'), key: 'video', color: '#2D6CDF' },
     }[kind];
 
     return (
       <TouchableOpacity
         activeOpacity={0.85}
         style={[styles.actionBtn, { backgroundColor: config.enabled ? config.color : '#C0392B' }]}
-        onPress={() => (config.enabled ? handlers[kind](item) : showUnavailable(item, config.label.toLowerCase()))}
+        onPress={() => (config.enabled ? handlers[kind](item) : showUnavailable(item, config.key))}
       >
         <MaterialIcons name={config.enabled ? config.icon : config.offIcon} size={moderateScale(16)} color="#fff" />
-        <Text style={styles.actionBtnText}>{config.enabled ? config.label : 'Off'}</Text>
+        <Text style={styles.actionBtnText}>{config.enabled ? config.label : t('profile.off')}</Text>
       </TouchableOpacity>
     );
   };
@@ -297,7 +300,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           </View>
 
           <View style={styles.details}>
-            <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
+            <Text style={styles.name} numberOfLines={1}>{item.name || t('common.astrologer')}</Text>
             <Text style={styles.specialization} numberOfLines={1}>
               {item.specialties?.[0]?.name || 'Vedic Astrology'}
             </Text>
@@ -305,9 +308,9 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
               <MaterialIcons name="language" size={moderateScale(11)} color={COLORS.AstroMaroon} /> {languages || 'Hindi'}
             </Text>
             <Text style={styles.meta}>
-              <MaterialIcons name="work-outline" size={moderateScale(11)} color={COLORS.AstroMaroon} /> Exp: {item.experience ?? '0'} yrs
+              <MaterialIcons name="work-outline" size={moderateScale(11)} color={COLORS.AstroMaroon} /> {t('common.exp')}: {item.experience ?? '0'} {t('common.yrs')}
             </Text>
-            <Text style={styles.offer}>{item.pricing ? `₹${item.pricing}/min` : 'Free'}</Text>
+            <Text style={styles.offer}>{item.pricing ? `₹${item.pricing}/min` : t('common.free')}</Text>
           </View>
 
           <View style={styles.actionsCol}>
@@ -318,7 +321,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
                 onPress={() => showOffline(item)}
               >
                 <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
-                <Text style={styles.actionBtnText}>Offline</Text>
+                <Text style={styles.actionBtnText}>{t('common.offline')}</Text>
               </TouchableOpacity>
             ) : item.isBusy === true && item.busyReason === 'live' ? (
               <TouchableOpacity
@@ -334,7 +337,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
                 }}
               >
                 <MaterialIcons name="live-tv" size={moderateScale(16)} color="#fff" />
-                <Text style={styles.actionBtnText}>Live now</Text>
+                <Text style={styles.actionBtnText}>{t('expertsList.liveNow')}</Text>
               </TouchableOpacity>
             ) : item.isBusy === true ? (
               <TouchableOpacity
@@ -343,8 +346,8 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
                 onPress={async () => {
                   const { ok } = await requestNotifyMe(item.userId || item._id, 'chat');
                   Alert.alert(
-                    ok ? "We'll let you know" : 'Error',
-                    ok ? `We'll notify you when ${item.name || 'this astrologer'} is free.` : 'Could not join the waitlist. Please try again.'
+                    ok ? t('expertsList.notifyTitle') : t('common.error'),
+                    ok ? t('expertsList.notifyMsg', { name: item.name || t('common.astrologer') }) : t('expertsList.notifyFailed')
                   );
                 }}
               >
@@ -373,7 +376,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           <MaterialIcons name="search" size={moderateScale(22)} color={COLORS.AstroMaroon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search astrologer by name or skill..."
+            placeholder={t('common.searchAstrologer')}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholderTextColor={COLORS.AshGray}
@@ -390,7 +393,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <MaterialIcons name="person-search" size={moderateScale(34)} color={COLORS.AstroMaroon} />
-            <Text style={styles.emptyTxt}>No astrologers found.</Text>
+            <Text style={styles.emptyTxt}>{t('expertsList.noneFound')}</Text>
           </View>
         }
       />

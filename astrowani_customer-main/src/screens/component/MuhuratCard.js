@@ -317,7 +317,7 @@
 // export default MuhuratCard;
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -337,8 +337,10 @@ import Geolocation from '@react-native-community/geolocation';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { FREE_SERVICES_URL } from '../../config/api';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const MuhuratCard = ({ title }) => {
+  const { t } = useContext(LanguageContext);
   const [location, setLocation] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
@@ -627,7 +629,7 @@ const MuhuratCard = ({ title }) => {
             renderItem={renderItem}
             keyExtractor={(item, index) => index.toString()}
             contentContainerStyle={styles.flatListContent}
-            ListEmptyComponent={<Text style={styles.emptyText}>No data available</Text>}
+            ListEmptyComponent={<Text style={styles.emptyText}>{t('common.noDataAvailable')}</Text>}
           />
         )}
       </KeyboardAvoidingView>

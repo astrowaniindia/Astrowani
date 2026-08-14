@@ -193,6 +193,14 @@ const translations = {
 
     'voiceNotes.noNotes': 'No voice notes yet.',
 
+    'expertsList.liveNow': 'Live now',
+    'expertsList.notifyTitle': "We'll let you know",
+    'expertsList.notifyMsg': "We'll notify you when {{name}} is free.",
+    'expertsList.notifyFailed': 'Could not join the waitlist. Please try again.',
+    'expertsList.noneFound': 'No astrologers found.',
+    'expertsList.failedSendCallRequest': 'Failed to send call request.',
+    'common.noDataAvailable': 'No data available',
+
     'call.pleaseLogin': 'Please login to continue.',
     'call.audioCall': 'AUDIO CALL',
     'call.videoCall': 'VIDEO CALL',
@@ -769,6 +777,14 @@ const translations = {
     'support.submittedSuccess': 'सहायता अनुरोध सफलतापूर्वक सबमिट किया गया!',
 
     'voiceNotes.noNotes': 'अभी तक कोई वॉइस नोट नहीं।',
+
+    'expertsList.liveNow': 'अभी लाइव',
+    'expertsList.notifyTitle': 'हम आपको बताएंगे',
+    'expertsList.notifyMsg': 'जब {{name}} खाली होंगे तो हम आपको सूचित करेंगे।',
+    'expertsList.notifyFailed': 'प्रतीक्षा सूची में शामिल नहीं हो सके। कृपया पुनः प्रयास करें।',
+    'expertsList.noneFound': 'कोई ज्योतिषी नहीं मिला।',
+    'expertsList.failedSendCallRequest': 'कॉल अनुरोध भेजने में विफल।',
+    'common.noDataAvailable': 'कोई डेटा उपलब्ध नहीं',
 
     'call.pleaseLogin': 'जारी रखने के लिए कृपया लॉगिन करें।',
     'call.audioCall': 'ऑडियो कॉल',
