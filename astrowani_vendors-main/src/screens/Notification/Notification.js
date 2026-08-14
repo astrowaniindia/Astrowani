@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
 import useNotificationBadgeSync from '../../utils/useNotificationBadgeSync';
+import { LanguageContext } from '../../context/LanguageContext';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -18,6 +19,7 @@ function timeAgo(dateStr) {
 }
 
 export default function Notification() {
+  const { t } = useContext(LanguageContext);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,7 +91,7 @@ export default function Notification() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Icon name="notifications-off" size={60} color="gray" />
-              <Text style={styles.noNotificationsText}>No notifications</Text>
+              <Text style={styles.noNotificationsText}>{t('notification.noNotifications')}</Text>
             </View>
           }
         />

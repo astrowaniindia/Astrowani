@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useContext, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import RNFS from 'react-native-fs';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const audioRecorderPlayer = new AudioRecorderPlayer();
 
@@ -28,6 +29,7 @@ function timeAgo(dateStr) {
 }
 
 const MyCustomers = () => {
+  const { t } = useContext(LanguageContext);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -165,17 +167,17 @@ const MyCustomers = () => {
         <View style={styles.customerDetails}>
           <Text style={styles.customerName}>{item.name}</Text>
           <Text style={styles.customerInfo}>
-            Last connected: <Text style={{ fontWeight: 'bold' }}>{timeAgo(item.lastSessionAt)}</Text>
+            {t('customers.lastConnected')}: <Text style={{ fontWeight: 'bold' }}>{timeAgo(item.lastSessionAt)}</Text>
           </Text>
           <Text style={styles.customerInfo}>
-            Session type: <Text style={{ color: 'green', fontWeight: 'bold' }}>{item.lastSessionType || '—'}</Text>
+            {t('customers.sessionType')}: <Text style={{ color: 'green', fontWeight: 'bold' }}>{item.lastSessionType || '—'}</Text>
           </Text>
         </View>
       </View>
 
       <TouchableOpacity style={styles.voiceNoteButton} onPress={() => openRecorder(item)}>
         <Icon name="mic-outline" size={18} color="#fff" />
-        <Text style={styles.voiceNoteButtonText}>Send Voice Note</Text>
+        <Text style={styles.voiceNoteButtonText}>{t('customers.sendVoiceNote')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -191,7 +193,7 @@ const MyCustomers = () => {
           renderItem={renderCustomerItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={<Text style={styles.emptyText}>No customers found.</Text>}
+          ListEmptyComponent={<Text style={styles.emptyText}>{t('customers.noCustomers')}</Text>}
         />
       )}
 

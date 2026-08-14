@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
+import { LanguageContext } from '../../context/LanguageContext';
 
 export default function RatingReview() {
+  const { t } = useContext(LanguageContext);
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,7 +53,7 @@ export default function RatingReview() {
         </Text>
       </View>
       <View style={styles.info}>
-        <Text style={styles.phone}>{item?.user?.firstName || 'Customer'}</Text>
+        <Text style={styles.phone}>{item?.user?.firstName || t('common.customer')}</Text>
         <Text style={styles.date}>{fmtDate(item.createdAt)}</Text>
         {item.comment ? <Text style={styles.review}>{item.comment}</Text> : null}
         <View style={styles.stars}>{renderStars(item.rating)}</View>
@@ -62,7 +64,7 @@ export default function RatingReview() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Ratings & Reviews</Text>
+      <Text style={styles.header}>{t('reviews.title')}</Text>
       {loading ? (
         <ActivityIndicator size="large" color="orange" style={{ marginTop: 30 }} />
       ) : (
@@ -70,7 +72,7 @@ export default function RatingReview() {
           data={reviews}
           renderItem={renderItem}
           keyExtractor={(_, index) => String(index)}
-          ListEmptyComponent={<Text style={styles.empty}>No reviews yet.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>{t('reviews.noReviews')}</Text>}
         />
       )}
     </View>

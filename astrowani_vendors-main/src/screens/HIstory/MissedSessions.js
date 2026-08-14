@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useRef, useEffect} from 'react';
+import React, {useState, useCallback, useContext, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,12 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {supabase} from '../../api/SupabaseClient';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const TABS = [
-  {key: 'chat',  label: 'Chat',       icon: 'chatbubble-outline', table: 'chat_requests', idField: 'receiver_id',   nameField: 'caller_name',   types: null},
-  {key: 'audio', label: 'Audio Call', icon: 'call-outline',       table: 'call_requests', idField: 'astrologer_id', nameField: 'customer_name', types: ['audio', 'voice']},
-  {key: 'video', label: 'Video Call', icon: 'videocam-outline',   table: 'call_requests', idField: 'astrologer_id', nameField: 'customer_name', types: ['video']},
+  {key: 'chat',  labelKey: 'sessionHistory.chat',      icon: 'chatbubble-outline', table: 'chat_requests', idField: 'receiver_id',   nameField: 'caller_name',   types: null},
+  {key: 'audio', labelKey: 'sessionHistory.audioCall', icon: 'call-outline',       table: 'call_requests', idField: 'astrologer_id', nameField: 'customer_name', types: ['audio', 'voice']},
+  {key: 'video', labelKey: 'sessionHistory.videoCall', icon: 'videocam-outline',   table: 'call_requests', idField: 'astrologer_id', nameField: 'customer_name', types: ['video']},
 ];
 
 const fmtTime = ts =>
@@ -29,6 +30,7 @@ const fmtTime = ts =>
     : '';
 
 const TabContent = ({tab, astroId}) => {
+  const {t} = useContext(LanguageContext);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const channelRef = useRef(null);
@@ -109,20 +111,20 @@ const TabContent = ({tab, astroId}) => {
             <Ionicons name="call-outline" size={20} color={COLORS.red} />
           </View>
           <View style={{flex: 1, marginLeft: scale(12)}}>
-            <Text style={styles.name}>{item[tab.nameField] || 'Customer'}</Text>
+            <Text style={styles.name}>{item[tab.nameField] || t('common.customer')}</Text>
             <Text style={styles.time}>{fmtTime(item.created_at)}</Text>
           </View>
           <View style={styles.missedPill}>
             <Ionicons name="close-circle" size={14} color="#fff" />
-            <Text style={styles.missedText}>Missed</Text>
+            <Text style={styles.missedText}>{t('missed.missed')}</Text>
           </View>
         </View>
       )}
       ListEmptyComponent={
         <View style={styles.emptyState}>
           <Ionicons name="checkmark-done-circle-outline" size={52} color="#ccc" />
-          <Text style={styles.emptyText}>No missed {tab.label.toLowerCase()}s</Text>
-          <Text style={styles.emptySubText}>Calls you don't answer in 1 minute show up here</Text>
+          <Text style={styles.emptyText}>{t('missed.noMissed')}</Text>
+          <Text style={styles.emptySubText}>{t('missed.noMissedSub')}</Text>
         </View>
       }
     />
@@ -130,6 +132,7 @@ const TabContent = ({tab, astroId}) => {
 };
 
 export default function MissedSessions() {
+  const {t} = useContext(LanguageContext);
   const [activeTab, setActiveTab] = useState(0);
   const [astroId, setAstroId] = useState(null);
 
@@ -144,16 +147,16 @@ export default function MissedSessions() {
   return (
     <View style={styles.container}>
       <View style={styles.tabBar}>
-        {TABS.map((t, i) => {
+        {TABS.map((tabItem, i) => {
           const active = i === activeTab;
           return (
             <TouchableOpacity
-              key={t.key}
+              key={tabItem.key}
               style={styles.tabItem}
               onPress={() => setActiveTab(i)}
               activeOpacity={0.75}>
-              <Ionicons name={t.icon} size={18} color={active ? COLORS.AstroMaroon : '#999'} />
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
+              <Ionicons name={tabItem.icon} size={18} color={active ? COLORS.AstroMaroon : '#999'} />
+              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t(tabItem.labelKey)}</Text>
               {active && <View style={styles.tabUnderline} />}
             </TouchableOpacity>
           );

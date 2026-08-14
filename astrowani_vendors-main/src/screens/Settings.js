@@ -1,23 +1,25 @@
-import React from 'react';
+import React, {useContext} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, Alert} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import {COLORS} from '../Theme/Colors';
+import {LanguageContext} from '../context/LanguageContext';
 
 const SETTINGS_SCREENS = [];
 
 // TODO: replace the About Us / FAQ's URLs with the real website links.
 const SETTINGS_LINKS = [
-  {label: 'About Us', icon: 'info', url: 'https://astrowani.com/about-us/'},
-  {label: "FAQ's", icon: 'help-outline', url: 'https://astrowani.com/faq/'},
-  {label: 'Refund & Cancellation', icon: 'attach-money', url: 'https://astrowani.com/refund_cancellation/'},
-  {label: 'Privacy Policy', icon: 'privacy-tip', url: 'https://astrowani.com/privacy-policy/'},
-  {label: 'Terms & Conditions', icon: 'gavel', url: 'https://astrowani.com/term_conditions/'},
-  {label: 'Safety Guidelines', icon: 'verified-user', url: 'https://astrowani.com/safety-guidelines/'},
-  {label: 'Child Safety', icon: 'shield', url: 'https://astrowani.com/child-safety/'},
+  {labelKey: 'settings.aboutUs', icon: 'info', url: 'https://astrowani.com/about-us/'},
+  {labelKey: 'settings.faq', icon: 'help-outline', url: 'https://astrowani.com/faq/'},
+  {labelKey: 'settings.refundCancellation', icon: 'attach-money', url: 'https://astrowani.com/refund_cancellation/'},
+  {labelKey: 'settings.privacyPolicy', icon: 'privacy-tip', url: 'https://astrowani.com/privacy-policy/'},
+  {labelKey: 'settings.termsConditions', icon: 'gavel', url: 'https://astrowani.com/term_conditions/'},
+  {labelKey: 'settings.safetyGuidelines', icon: 'verified-user', url: 'https://astrowani.com/safety-guidelines/'},
+  {labelKey: 'settings.childSafety', icon: 'shield', url: 'https://astrowani.com/child-safety/'},
 ];
 
 export default function Settings({navigation}) {
+  const {t} = useContext(LanguageContext);
   const openLink = async url => {
     try {
       await Linking.openURL(url);
@@ -31,24 +33,24 @@ export default function Settings({navigation}) {
       <ScrollView style={styles.scrollContainer}>
         {SETTINGS_SCREENS.map(item => (
           <TouchableOpacity
-            key={item.label}
+            key={item.labelKey}
             style={styles.item}
             onPress={() => navigation.navigate(item.screen)}>
             <View style={styles.itemContent}>
               <Icon name={item.icon} size={25} color={COLORS.AstroMaroon} style={styles.icon} />
-              <Text style={styles.text}>{item.label}</Text>
+              <Text style={styles.text}>{t(item.labelKey)}</Text>
             </View>
             <Icon name="keyboard-arrow-right" size={25} color="#888" />
           </TouchableOpacity>
         ))}
         {SETTINGS_LINKS.map(item => (
           <TouchableOpacity
-            key={item.label}
+            key={item.labelKey}
             style={styles.item}
             onPress={() => openLink(item.url)}>
             <View style={styles.itemContent}>
               <Icon name={item.icon} size={25} color={COLORS.AstroMaroon} style={styles.icon} />
-              <Text style={styles.text}>{item.label}</Text>
+              <Text style={styles.text}>{t(item.labelKey)}</Text>
             </View>
             <Icon name="open-in-new" size={20} color="#888" />
           </TouchableOpacity>

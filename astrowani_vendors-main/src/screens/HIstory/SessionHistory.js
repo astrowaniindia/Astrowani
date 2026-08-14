@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useRef} from 'react';
+import React, {useState, useCallback, useContext, useRef} from 'react';
 import {
   View,
   Text,
@@ -16,12 +16,13 @@ import {supabase} from '../../api/SupabaseClient';
 import {resolveCustomerNames} from '../../utils/customerNames';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
+import {LanguageContext} from '../../context/LanguageContext';
 
 const TABS = [
-  {key: 'chat',  label: 'Chat',       icon: 'chatbubble-outline',   types: ['chat']},
-  {key: 'audio', label: 'Audio Call', icon: 'call-outline',          types: ['audio', 'voice']},
-  {key: 'video', label: 'Video Call', icon: 'videocam-outline',      types: ['video']},
-  {key: 'live',  label: 'Live',       icon: 'radio-button-on-outline', types: ['live']},
+  {key: 'chat',  labelKey: 'sessionHistory.chat',      icon: 'chatbubble-outline',   types: ['chat']},
+  {key: 'audio', labelKey: 'sessionHistory.audioCall', icon: 'call-outline',          types: ['audio', 'voice']},
+  {key: 'video', labelKey: 'sessionHistory.videoCall', icon: 'videocam-outline',      types: ['video']},
+  {key: 'live',  labelKey: 'sessionHistory.live',      icon: 'radio-button-on-outline', types: ['live']},
 ];
 
 const TAB_ICONS = {
@@ -49,6 +50,7 @@ const formatDate = (iso) => {
 };
 
 const SessionCard = ({item, tabKey}) => {
+  const {t} = useContext(LanguageContext);
   const icon = TAB_ICONS[tabKey] || TAB_ICONS.chat;
   const durationMins = item.ended_at
     ? Math.max(1, Math.round((new Date(item.ended_at) - new Date(item.started_at)) / 60000))
@@ -63,12 +65,12 @@ const SessionCard = ({item, tabKey}) => {
           <Ionicons name={icon.name} size={18} color={icon.color} />
         </View>
         <View style={styles.cardHeaderText}>
-          <Text style={styles.customerName}>{item.customerName || 'Customer'}</Text>
+          <Text style={styles.customerName}>{item.customerName || t('common.customer')}</Text>
           <Text style={styles.sessionDate}>{formatDate(item.started_at || item.created_at)}</Text>
         </View>
         <View style={[styles.statusPill, item.is_active ? styles.pillActive : styles.pillDone]}>
           <Text style={[styles.statusText, item.is_active ? styles.statusActive : styles.statusDone]}>
-            {item.is_active ? 'Active' : 'Completed'}
+            {item.is_active ? t('sessionHistory.active') : t('sessionHistory.completed')}
           </Text>
         </View>
       </View>
@@ -77,19 +79,19 @@ const SessionCard = ({item, tabKey}) => {
       <View style={styles.statsRow}>
         <View style={styles.stat}>
           <MaterialIcons name="timer" size={15} color="#888" />
-          <Text style={styles.statLabel}>Duration</Text>
-          <Text style={styles.statValue}>{item.is_active ? 'Active' : formatDuration(durationMins)}</Text>
+          <Text style={styles.statLabel}>{t('sessionHistory.duration')}</Text>
+          <Text style={styles.statValue}>{item.is_active ? t('sessionHistory.active') : formatDuration(durationMins)}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
           <MaterialIcons name="currency-rupee" size={15} color="#888" />
-          <Text style={styles.statLabel}>Rate</Text>
-          <Text style={styles.statValue}>₹{item.per_minute_charge || 0}/min</Text>
+          <Text style={styles.statLabel}>{t('sessionHistory.rate')}</Text>
+          <Text style={styles.statValue}>₹{item.per_minute_charge || 0}{t('common.perMin')}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
           <Ionicons name="wallet-outline" size={15} color="#888" />
-          <Text style={styles.statLabel}>Earned</Text>
+          <Text style={styles.statLabel}>{t('sessionHistory.earned')}</Text>
           <Text style={[styles.statValue, styles.earnedValue]}>₹{earnings}</Text>
         </View>
       </View>
@@ -98,6 +100,7 @@ const SessionCard = ({item, tabKey}) => {
 };
 
 const TabContent = ({tabKey, types, astroId}) => {
+  const {t} = useContext(LanguageContext);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -258,8 +261,8 @@ const TabContent = ({tabKey, types, astroId}) => {
       ListEmptyComponent={
         <View style={styles.emptyState}>
           <Ionicons name="time-outline" size={52} color="#ccc" />
-          <Text style={styles.emptyText}>No history yet</Text>
-          <Text style={styles.emptySubText}>Sessions will appear here after calls end</Text>
+          <Text style={styles.emptyText}>{t('sessionHistory.noHistory')}</Text>
+          <Text style={styles.emptySubText}>{t('sessionHistory.noHistorySub')}</Text>
         </View>
       }
     />
@@ -267,6 +270,7 @@ const TabContent = ({tabKey, types, astroId}) => {
 };
 
 export default function SessionHistory({route}) {
+  const {t} = useContext(LanguageContext);
   const [activeTab, setActiveTab] = useState(0);
   const [astroId, setAstroId] = useState(null);
 
@@ -280,21 +284,21 @@ export default function SessionHistory({route}) {
     <View style={styles.container}>
       {/* Tab bar */}
       <View style={styles.tabBar}>
-        {TABS.map((t, i) => {
+        {TABS.map((tabItem, i) => {
           const active = i === activeTab;
           return (
             <TouchableOpacity
-              key={t.key}
+              key={tabItem.key}
               style={[styles.tabItem, active && styles.tabItemActive]}
               onPress={() => setActiveTab(i)}
               activeOpacity={0.75}>
               <Ionicons
-                name={t.icon}
+                name={tabItem.icon}
                 size={18}
                 color={active ? COLORS.AstroMaroon : '#999'}
               />
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                {t.label}
+                {t(tabItem.labelKey)}
               </Text>
               {active && <View style={styles.tabUnderline} />}
             </TouchableOpacity>

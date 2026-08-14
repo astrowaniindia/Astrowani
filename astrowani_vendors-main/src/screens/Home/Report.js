@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Modal, TextInput, Alert, RefreshControl } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const STATUS_COLORS = {
   pending: '#F5A623',
@@ -34,6 +35,7 @@ const formatDateTime = (iso) => {
 
 export default function Wallet() {
   const navigation = useNavigation();
+  const { t } = useContext(LanguageContext);
   const [balance, setBalance] = useState(null);
   const [hasPayoutDetails, setHasPayoutDetails] = useState(true);
   const [transactions, setTransactions] = useState([]);
@@ -162,7 +164,7 @@ export default function Wallet() {
         </View>
       </View>
       <Text style={styles.transactionDate}>
-        Requested {new Date(w.requested_at).toLocaleDateString('en-IN')}
+        {t('wallet.requested')} {new Date(w.requested_at).toLocaleDateString('en-IN')}
       </Text>
       {w.admin_note ? <Text style={styles.withdrawalNote}>{w.admin_note}</Text> : null}
     </View>
@@ -221,17 +223,17 @@ export default function Wallet() {
         }
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {activeTab === 'transactions' ? 'No transactions yet.' : 'No withdrawal requests yet.'}
+            {activeTab === 'transactions' ? t('wallet.noTransactions') : t('wallet.noWithdrawals')}
           </Text>
         }
         ListHeaderComponent={
           <>
             {/* Wallet Balance Section */}
             <View style={styles.walletCard}>
-              <Text style={styles.walletText}>Wallet Balance</Text>
+              <Text style={styles.walletText}>{t('wallet.walletBalance')}</Text>
               <Text style={styles.walletBalance}>₹{balance}</Text>
               <TouchableOpacity style={styles.topUpButton} onPress={openWithdrawModal}>
-                <Text style={styles.topUpButtonText}>Request Withdrawal</Text>
+                <Text style={styles.topUpButtonText}>{t('wallet.requestWithdrawal')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -243,7 +245,7 @@ export default function Wallet() {
                 onPress={() => setActiveTab('transactions')}
                 activeOpacity={0.75}>
                 <Text style={[styles.tabLabel, activeTab === 'transactions' && styles.tabLabelActive]}>
-                  Transactions
+                  {t('wallet.transactions')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -251,7 +253,7 @@ export default function Wallet() {
                 onPress={() => setActiveTab('withdrawals')}
                 activeOpacity={0.75}>
                 <Text style={[styles.tabLabel, activeTab === 'withdrawals' && styles.tabLabelActive]}>
-                  Withdrawals{withdrawals.length ? ` (${withdrawals.length})` : ''}
+                  {t('wallet.withdrawals')}{withdrawals.length ? ` (${withdrawals.length})` : ''}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -262,8 +264,8 @@ export default function Wallet() {
       <Modal transparent visible={modalVisible} animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Request Withdrawal</Text>
-            <Text style={styles.modalSubtitle}>Available balance: ₹{balance}</Text>
+            <Text style={styles.modalTitle}>{t('wallet.requestWithdrawal')}</Text>
+            <Text style={styles.modalSubtitle}>{t('wallet.walletBalance')}: ₹{balance}</Text>
             <TextInput
               style={styles.modalInput}
               placeholder="Enter amount"
@@ -273,7 +275,7 @@ export default function Wallet() {
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.modalCancelButton} onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalSubmitButton}
@@ -282,7 +284,7 @@ export default function Wallet() {
                 {submitting ? (
                   <ActivityIndicator size="small" color="#FFF" />
                 ) : (
-                  <Text style={styles.modalSubmitText}>Submit</Text>
+                  <Text style={styles.modalSubmitText}>{t('common.submit')}</Text>
                 )}
               </TouchableOpacity>
             </View>

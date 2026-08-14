@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,8 +18,10 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { fetchAstrologerRow } from '../../utils/vendorProfile';
+import { LanguageContext } from '../../context/LanguageContext';
 
 export default function Profile({ navigation }) {
+  const { t } = useContext(LanguageContext);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
@@ -105,7 +107,7 @@ export default function Profile({ navigation }) {
           
           <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditProfile')}>
             <Icon name="edit" size={16} color={COLORS.white} />
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+            <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -113,48 +115,48 @@ export default function Profile({ navigation }) {
       <View style={styles.bodyContainer}>
         {/* Personal Details Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Personal Details</Text>
+          <Text style={styles.cardTitle}>{t('profile.personalDetails')}</Text>
           <View style={styles.divider} />
-          
+
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>First Name</Text>
-            <Text style={styles.infoValue}>{data?.userId?.firstName || 'Not available'}</Text>
+            <Text style={styles.infoLabel}>{t('profile.firstName')}</Text>
+            <Text style={styles.infoValue}>{data?.userId?.firstName || t('common.notAvailable')}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Last Name</Text>
-            <Text style={styles.infoValue}>{data?.userId?.lastName || 'Not available'}</Text>
+            <Text style={styles.infoLabel}>{t('profile.lastName')}</Text>
+            <Text style={styles.infoValue}>{data?.userId?.lastName || t('common.notAvailable')}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Gender</Text>
-            <Text style={[styles.infoValue, { textTransform: 'capitalize' }]}>{data?.userId?.gender || 'Not specified'}</Text>
+            <Text style={styles.infoLabel}>{t('profile.gender')}</Text>
+            <Text style={[styles.infoValue, { textTransform: 'capitalize' }]}>{data?.userId?.gender || t('common.notSpecified')}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Phone</Text>
-            <Text style={styles.infoValue}>{data?.userId?.phoneNumber || 'Not available'}</Text>
+            <Text style={styles.infoLabel}>{t('profile.phone')}</Text>
+            <Text style={styles.infoValue}>{data?.userId?.phoneNumber || t('common.notAvailable')}</Text>
           </View>
         </View>
 
         {/* Professional Details Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Professional Details</Text>
+          <Text style={styles.cardTitle}>{t('profile.professionalDetails')}</Text>
           <View style={styles.divider} />
-          
+
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Experience</Text>
-            <Text style={styles.infoValue}>{data?.experience || '0'} Years</Text>
+            <Text style={styles.infoLabel}>{t('profile.experience')}</Text>
+            <Text style={styles.infoValue}>{data?.experience || '0'} {t('profile.years')}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Chat Charges</Text>
-            <Text style={styles.infoValue}>₹{data?.chatChargePerMinute || '0'}/min</Text>
+            <Text style={styles.infoLabel}>{t('profile.chatCharges')}</Text>
+            <Text style={styles.infoValue}>₹{data?.chatChargePerMinute || '0'}{t('common.perMin')}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Call Charges</Text>
-            <Text style={styles.infoValue}>₹{data?.callChargePerMinute || '0'}/min</Text>
+            <Text style={styles.infoLabel}>{t('profile.callCharges')}</Text>
+            <Text style={styles.infoValue}>₹{data?.callChargePerMinute || '0'}{t('common.perMin')}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Language</Text>
+            <Text style={styles.infoLabel}>{t('profile.language')}</Text>
             <Text style={styles.infoValue}>
-              {data?.language && data.language.length > 0 ? data.language.join(', ') : 'Not specified'}
+              {data?.language && data.language.length > 0 ? data.language.join(', ') : t('common.notSpecified')}
             </Text>
           </View>
         </View>
@@ -164,7 +166,7 @@ export default function Profile({ navigation }) {
           style={styles.logoutButton}
           onPress={() => setLogoutModalVisible(true)}>
           <Icon name="logout" size={20} color={COLORS.white} />
-          <Text style={styles.logoutButtonText}>Logout</Text>
+          <Text style={styles.logoutButtonText}>{t('profile.logout')}</Text>
         </TouchableOpacity>
 
         {/* Logout Confirmation Modal */}
@@ -176,18 +178,18 @@ export default function Profile({ navigation }) {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContainer}>
               <Text style={styles.modalTitle}>
-                Are you sure you want to logout?
+                {t('profile.confirmLogout')}
               </Text>
               <View style={styles.modalButtonContainer}>
                 <Pressable
                   style={[styles.modalButton, styles.cancelButton]}
                   onPress={() => setLogoutModalVisible(false)}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.modalButton, styles.confirmButton]}
                   onPress={handleLogout}>
-                  <Text style={styles.confirmButtonText}>Confirm</Text>
+                  <Text style={styles.confirmButtonText}>{t('profile.confirm')}</Text>
                 </Pressable>
               </View>
             </View>

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,6 +6,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import { LanguageContext } from '../../context/LanguageContext';
 
 function formatResponseTime(seconds) {
   if (seconds == null) return '—';
@@ -14,6 +15,7 @@ function formatResponseTime(seconds) {
 }
 
 export default function PerformanceDashboard() {
+  const { t } = useContext(LanguageContext);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,15 +56,15 @@ export default function PerformanceDashboard() {
     <ScrollView
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchMetrics(true)} />}>
-      <Text style={styles.title}>Your Performance</Text>
+      <Text style={styles.title}>{t('performance.title')}</Text>
       <Text style={styles.subtitle}>
-        How you look to customers — based on your last {metrics?.resolvedRequests ?? 0} requests.
+        {t('performance.subtitlePrefix')} {metrics?.resolvedRequests ?? 0} {t('performance.subtitleSuffix')}
       </Text>
 
       {!hasData ? (
         <View style={styles.emptyCard}>
           <Icon name="insights" size={40} color="#ccc" />
-          <Text style={styles.emptyText}>Not enough activity yet to show your performance.</Text>
+          <Text style={styles.emptyText}>{t('performance.notEnoughActivity')}</Text>
         </View>
       ) : (
         <>
@@ -71,9 +73,9 @@ export default function PerformanceDashboard() {
               <Icon name="bolt" size={26} color={COLORS.AstroGold} />
             </View>
             <View style={styles.cardBody}>
-              <Text style={styles.cardLabel}>Avg. Response Time</Text>
+              <Text style={styles.cardLabel}>{t('performance.avgResponseTime')}</Text>
               <Text style={styles.cardValue}>{formatResponseTime(metrics.avgResponseSeconds)}</Text>
-              <Text style={styles.cardHint}>How fast you accept or reject incoming requests</Text>
+              <Text style={styles.cardHint}>{t('performance.avgResponseHint')}</Text>
             </View>
           </View>
 
@@ -82,9 +84,9 @@ export default function PerformanceDashboard() {
               <Icon name="check-circle" size={26} color="#4CAF50" />
             </View>
             <View style={styles.cardBody}>
-              <Text style={styles.cardLabel}>Acceptance Rate</Text>
+              <Text style={styles.cardLabel}>{t('performance.acceptanceRate')}</Text>
               <Text style={styles.cardValue}>{metrics.acceptanceRate ?? 0}%</Text>
-              <Text style={styles.cardHint}>Of requests you've accepted, rejected, or missed</Text>
+              <Text style={styles.cardHint}>{t('performance.acceptanceHint')}</Text>
             </View>
           </View>
 
@@ -93,7 +95,7 @@ export default function PerformanceDashboard() {
               <Icon name="favorite" size={26} color="#E91E63" />
             </View>
             <View style={styles.cardBody}>
-              <Text style={styles.cardLabel}>Repeat Customers</Text>
+              <Text style={styles.cardLabel}>{t('performance.repeatCustomers')}</Text>
               <Text style={styles.cardValue}>{metrics.repeatCustomerRate ?? 0}%</Text>
               <Text style={styles.cardHint}>
                 Of your {metrics.totalCustomers} customer{metrics.totalCustomers === 1 ? '' : 's'}, how many came back

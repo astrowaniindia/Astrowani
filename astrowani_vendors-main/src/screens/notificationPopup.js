@@ -1,8 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, Animated } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { LanguageContext } from '../context/LanguageContext';
 
 const NotificationPopup = ({ visible, data, onAccept, onCancel, queueCount = 0 }) => {
+  const { t } = useContext(LanguageContext);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -30,28 +32,28 @@ const NotificationPopup = ({ visible, data, onAccept, onCancel, queueCount = 0 }
         <View style={styles.popup}>
           <View style={styles.header}>
             <Ionicons name="videocam" size={24} color="#592a19" />
-            <Text style={styles.title}>{data?.callType === 'video' ? 'Incoming Video Call' : 'Incoming Call'}</Text>
+            <Text style={styles.title}>{data?.callType === 'video' ? t('popup.incomingVideoCall') : t('popup.incomingCall')}</Text>
           </View>
-          
+
           <Animated.View style={[styles.avatarContainer, { transform: [{ scale: pulseAnim }] }]}>
             <Ionicons name="person-circle-outline" size={80} color="#ccc" />
           </Animated.View>
-          
-          <Text style={styles.callerName}>{data?.callerName || 'Customer'}</Text>
-          <Text style={styles.message}>is requesting a consultation...</Text>
+
+          <Text style={styles.callerName}>{data?.callerName || t('common.customer')}</Text>
+          <Text style={styles.message}>{t('popup.requesting')}</Text>
           {queueCount > 0 && (
-            <Text style={styles.queueNote}>+{queueCount} more waiting</Text>
+            <Text style={styles.queueNote}>+{queueCount} {t('popup.moreWaiting')}</Text>
           )}
 
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
               <Ionicons name="close" size={22} color="white" />
-              <Text style={styles.buttonText}>Decline</Text>
+              <Text style={styles.buttonText}>{t('popup.decline')}</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity style={styles.acceptButton} onPress={onAccept}>
               <Ionicons name="call" size={22} color="white" />
-              <Text style={styles.buttonText}>Accept</Text>
+              <Text style={styles.buttonText}>{t('common.accept')}</Text>
             </TouchableOpacity>
           </View>
         </View>

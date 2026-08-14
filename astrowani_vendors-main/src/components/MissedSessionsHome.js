@@ -1,7 +1,7 @@
 // Compact "Missed Sessions" section for the vendor HomeScreen.
 // Combines missed chat + audio + video requests for the logged-in astrologer,
 // with quick time filters (Today default / Yesterday / This Month / All).
-import React, {useState, useCallback, useRef} from 'react';
+import React, {useState, useCallback, useContext, useRef} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, ActivityIndicator} from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +9,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {supabase} from '../api/SupabaseClient';
 import {COLORS} from '../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../utils/Scaling';
+import {LanguageContext} from '../context/LanguageContext';
 
 // Returns the [from, to) ISO boundaries for a filter key, or null for "all".
 const getRange = key => {
@@ -30,14 +31,14 @@ const getRange = key => {
 };
 
 const FILTERS = [
-  {key: 'today', label: 'Today'},
-  {key: 'yesterday', label: 'Yesterday'},
-  {key: 'month', label: 'This Month'},
-  {key: 'all', label: 'All'},
+  {key: 'today', labelKey: 'missedHome.today'},
+  {key: 'yesterday', labelKey: 'missedHome.yesterday'},
+  {key: 'month', labelKey: 'missedHome.thisMonth'},
+  {key: 'all', labelKey: 'missedHome.all'},
 ];
 
-const typeLabel = row =>
-  row._kind === 'chat' ? 'Chat' : row.call_type === 'video' ? 'Video Call' : 'Audio Call';
+const typeLabel = (row, t) =>
+  row._kind === 'chat' ? t('missedHome.chat') : row.call_type === 'video' ? t('missedHome.videoCall') : t('missedHome.audioCall');
 const typeIcon = row =>
   row._kind === 'chat' ? 'chatbubble-outline' : row.call_type === 'video' ? 'videocam-outline' : 'call-outline';
 
@@ -50,6 +51,7 @@ const fmtTime = ts =>
 
 export default function MissedSessionsHome() {
   const navigation = useNavigation();
+  const {t} = useContext(LanguageContext);
   const [filter, setFilter] = useState('today');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -113,9 +115,9 @@ export default function MissedSessionsHome() {
   return (
     <View style={styles.cardContainer}>
       <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>Missed Sessions</Text>
+        <Text style={styles.sectionTitle}>{t('missedHome.title')}</Text>
         <TouchableOpacity onPress={() => navigation.navigate('MissedSessions')} activeOpacity={0.7}>
-          <Text style={styles.viewAll}>View All</Text>
+          <Text style={styles.viewAll}>{t('missedHome.viewAll')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -129,7 +131,7 @@ export default function MissedSessionsHome() {
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => setFilter(f.key)}
               activeOpacity={0.8}>
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>{f.label}</Text>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{t(f.labelKey)}</Text>
             </TouchableOpacity>
           );
         })}
@@ -140,7 +142,7 @@ export default function MissedSessionsHome() {
       ) : visible.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="checkmark-done-circle-outline" size={36} color="#ccc" />
-          <Text style={styles.emptyText}>No missed sessions</Text>
+          <Text style={styles.emptyText}>{t('missed.noMissed')}</Text>
         </View>
       ) : (
         visible.map(item => (
@@ -149,18 +151,18 @@ export default function MissedSessionsHome() {
               <Ionicons name={typeIcon(item)} size={18} color={COLORS.red} />
             </View>
             <View style={{flex: 1, marginLeft: scale(10)}}>
-              <Text style={styles.name} numberOfLines={1}>{item.name || 'Customer'}</Text>
-              <Text style={styles.meta}>{typeLabel(item)} · {fmtTime(item.created_at)}</Text>
+              <Text style={styles.name} numberOfLines={1}>{item.name || t('common.customer')}</Text>
+              <Text style={styles.meta}>{typeLabel(item, t)} · {fmtTime(item.created_at)}</Text>
             </View>
             <View style={styles.missedPill}>
               <Ionicons name="close-circle" size={12} color="#fff" />
-              <Text style={styles.missedText}>Missed</Text>
+              <Text style={styles.missedText}>{t('missed.missed')}</Text>
             </View>
           </View>
         ))
       )}
       {!loading && rows.length > visible.length && (
-        <Text style={styles.moreText}>+{rows.length - visible.length} more</Text>
+        <Text style={styles.moreText}>+{rows.length - visible.length} {t('missedHome.more')}</Text>
       )}
     </View>
   );
