@@ -467,7 +467,7 @@ function HomeStack({ navigation }) {
           name="HomeScreen"
           component={HomeScreen}
           options={{
-            header: () => <CustomHeader title="Astrowani" />,
+            header: () => <CustomHeader title="Astrowani" showLanguage />,
           }}
         />
         <Stack.Screen

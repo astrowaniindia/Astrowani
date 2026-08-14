@@ -18,12 +18,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../api/SupabaseClient';
 import {fetchAstrologerRow} from '../utils/vendorProfile';
 import useNotificationBadgeSync from '../utils/useNotificationBadgeSync';
+import {LanguageContext} from '../context/LanguageContext';
 
 const CustomHeader = ({title, showLanguage}) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const {language, changeLanguage, t} = React.useContext(LanguageContext);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -94,8 +95,8 @@ const CustomHeader = ({title, showLanguage}) => {
     setLanguageModalVisible(!languageModalVisible);
   };
 
-  const selectLanguage = language => {
-    setSelectedLanguage(language);
+  const selectLanguage = (lang) => {
+    changeLanguage(lang);
     toggleLanguageModal();
   };
   return (
@@ -152,13 +153,13 @@ const CustomHeader = ({title, showLanguage}) => {
           activeOpacity={1}
           onPressOut={toggleLanguageModal}>
           <TouchableOpacity style={styles.modalContent} activeOpacity={1}>
-            <Text style={styles.modalTitle}>Choose Language</Text>
+            <Text style={styles.modalTitle}>{t('drawer.language')}</Text>
 
             <TouchableOpacity
               style={styles.languageOption}
               onPress={() => selectLanguage('English')}>
               <View style={styles.roundIcon}>
-                {selectedLanguage === 'English' && (
+                {language === 'English' && (
                   <View style={styles.point} />
                 )}
               </View>
@@ -169,9 +170,9 @@ const CustomHeader = ({title, showLanguage}) => {
               style={styles.languageOption}
               onPress={() => selectLanguage('Hindi')}>
               <View style={styles.roundIcon}>
-                {selectedLanguage === 'Hindi' && <View style={styles.point} />}
+                {language === 'Hindi' && <View style={styles.point} />}
               </View>
-              <Text style={styles.languageText}>Hindi</Text>
+              <Text style={styles.languageText}>हिंदी</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>

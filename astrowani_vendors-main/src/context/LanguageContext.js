@@ -3,11 +3,13 @@
 // with English fallback). Astrologers skew heavily towards Hindi, so this exists to let
 // them use the app in their preferred language.
 //
-// COVERAGE NOTE: this is a real, working toggle, but translation coverage currently
-// covers the drawer menu and the most-visible HomeScreen dashboard labels only — not
-// every screen in the app. Extend `translations` below with more namespaced keys
-// (e.g. 'wallet.balance') and wrap the corresponding strings in t('...') as more
-// screens are covered; the switching mechanism itself doesn't need to change.
+// COVERAGE NOTE: this is a real, working toggle (drawer footer buttons + the header
+// language icon on Home, both call changeLanguage()), and translation coverage covers
+// the drawer menu and the HomeScreen dashboard (online/offline, service toggles, go
+// live, profile-completion banner, session history button) — not every screen in the
+// app yet. Extend `translations` below with more namespaced keys (e.g. 'wallet.balance')
+// and wrap the corresponding strings in t('...') as more screens are covered; the
+// switching mechanism itself doesn't need to change.
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -41,12 +43,20 @@ const translations = {
     'home.todayEarnings': "Today's Earnings",
     'home.totalEarnings': 'Total Earnings',
     'home.walletBalance': 'Wallet Balance',
+    'home.youAreOnlineSub': 'Customers can reach you for chat, call & video',
+    'home.youAreOfflineSub': "You're hidden from new requests everywhere",
+    'home.serviceSettings': 'Service Settings',
+    'home.completeProfile': 'Complete your profile',
+    'home.completeProfileSub': 'Add your photo, experience, languages and charges so customers can find you. Tap to finish.',
+    'home.pendingApproval': 'We will review your profile and get back to you soon!',
+    'home.sessionHistoryBtn': 'Session History',
 
     'common.ok': 'OK',
     'common.cancel': 'Cancel',
     'common.save': 'Save',
     'common.accept': 'Accept',
     'common.reject': 'Reject',
+    'common.perMin': '/min',
   },
   Hindi: {
     'drawer.dashboard': 'डैशबोर्ड',
@@ -75,12 +85,20 @@ const translations = {
     'home.todayEarnings': 'आज की कमाई',
     'home.totalEarnings': 'कुल कमाई',
     'home.walletBalance': 'वॉलेट बैलेंस',
+    'home.youAreOnlineSub': 'ग्राहक आपसे चैट, कॉल और वीडियो के लिए संपर्क कर सकते हैं',
+    'home.youAreOfflineSub': 'आप नए अनुरोधों से छिपे हुए हैं',
+    'home.serviceSettings': 'सेवा सेटिंग्स',
+    'home.completeProfile': 'अपनी प्रोफ़ाइल पूरी करें',
+    'home.completeProfileSub': 'अपना फोटो, अनुभव, भाषाएं और शुल्क जोड़ें ताकि ग्राहक आपको ढूंढ सकें। पूरा करने के लिए टैप करें।',
+    'home.pendingApproval': 'हम आपकी प्रोफ़ाइल की समीक्षा करेंगे और जल्द ही आपसे संपर्क करेंगे!',
+    'home.sessionHistoryBtn': 'सत्र इतिहास',
 
     'common.ok': 'ठीक है',
     'common.cancel': 'रद्द करें',
     'common.save': 'सेव करें',
     'common.accept': 'स्वीकार करें',
     'common.reject': 'अस्वीकार करें',
+    'common.perMin': '/मिनट',
   },
 };
 

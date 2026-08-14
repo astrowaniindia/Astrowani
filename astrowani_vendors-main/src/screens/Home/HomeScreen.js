@@ -1,7 +1,7 @@
 // HomeScreen.js — Vendor side
 // Listens via Supabase Realtime for incoming chat/call requests
 // Shows NotificationPopup → Accept navigates to session screen, Reject updates status
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,7 @@ import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
 import { startRinging, stopRinging } from '../../utils/incomingRingtone';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
+import { LanguageContext } from '../../context/LanguageContext';
 
 // Same key scheme as incomingRequestNotifications.js's idKeyFor — must match so accept/reject/
 // dismiss here also cancels the OS notification (and its ringtone tracking) for the same request.
@@ -84,6 +85,7 @@ const toggleStyles = StyleSheet.create({
 
 const HomeScreen = () => {
   const navigation = useNavigation();
+  const { t } = useContext(LanguageContext);
   const socketRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -555,7 +557,7 @@ const HomeScreen = () => {
         <View style={styles.pendingApprovalBanner}>
           <Ionicons name="time-outline" size={22} color="#fff" />
           <Text style={styles.pendingApprovalText}>
-            We will review your profile and get back to you soon!
+            {t('home.pendingApproval')}
           </Text>
         </View>
       )}
@@ -568,9 +570,9 @@ const HomeScreen = () => {
           onPress={() => navigation.navigate('EditProfile')}>
           <Ionicons name="alert-circle" size={24} color="#fff" />
           <View style={styles.profileBannerTextWrap}>
-            <Text style={styles.profileBannerTitle}>Complete your profile</Text>
+            <Text style={styles.profileBannerTitle}>{t('home.completeProfile')}</Text>
             <Text style={styles.profileBannerSub}>
-              Add your photo, experience, languages and charges so customers can find you. Tap to finish.
+              {t('home.completeProfileSub')}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={22} color="#fff" />
@@ -583,11 +585,9 @@ const HomeScreen = () => {
           <View style={styles.availabilityLeft}>
             <View style={[styles.statusDot, { backgroundColor: isOnline ? COLORS.green : '#C0392B' }]} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.availabilityTitle}>{isOnline ? 'You are Online' : 'You are Offline'}</Text>
+              <Text style={styles.availabilityTitle}>{isOnline ? t('home.youAreOnline') : t('home.youAreOffline')}</Text>
               <Text style={styles.availabilitySub}>
-                {isOnline
-                  ? 'Customers can reach you for chat, call & video'
-                  : "You're hidden from new requests everywhere"}
+                {isOnline ? t('home.youAreOnlineSub') : t('home.youAreOfflineSub')}
               </Text>
             </View>
           </View>
@@ -597,13 +597,13 @@ const HomeScreen = () => {
 
       {/* Toggles inside a unified premium card */}
       <View style={styles.cardContainer}>
-        <Text style={styles.sectionTitle}>Service Settings</Text>
+        <Text style={styles.sectionTitle}>{t('home.serviceSettings')}</Text>
         <View style={styles.toggleRow}>
           <View style={styles.toggleLeft}>
             <Ionicons name="call" size={22} color={COLORS.AstroMaroon} />
-            <Text style={styles.toggleLabel}>Call</Text>
+            <Text style={styles.toggleLabel}>{t('home.call')}</Text>
           </View>
-          <Text style={styles.rate}>₹{charges?.callChargePerMinute}/min</Text>
+          <Text style={styles.rate}>₹{charges?.callChargePerMinute}{t('common.perMin')}</Text>
           <View style={styles.toggleRight}>
             <ServiceToggle
               value={callEnabled}
@@ -617,9 +617,9 @@ const HomeScreen = () => {
         <View style={styles.toggleRow}>
           <View style={styles.toggleLeft}>
             <Ionicons name="videocam" size={22} color={COLORS.AstroMaroon} />
-            <Text style={styles.toggleLabel}>Video</Text>
+            <Text style={styles.toggleLabel}>{t('home.video')}</Text>
           </View>
-          <Text style={styles.rate}>₹{charges?.videoChargePerMinute}/min</Text>
+          <Text style={styles.rate}>₹{charges?.videoChargePerMinute}{t('common.perMin')}</Text>
           <View style={styles.toggleRight}>
             <ServiceToggle
               value={videoCallEnabled}
@@ -633,9 +633,9 @@ const HomeScreen = () => {
         <View style={styles.toggleRow}>
           <View style={styles.toggleLeft}>
             <Ionicons name="chatbubble" size={22} color={COLORS.AstroMaroon} />
-            <Text style={styles.toggleLabel}>Chat</Text>
+            <Text style={styles.toggleLabel}>{t('home.chat')}</Text>
           </View>
-          <Text style={styles.rate}>₹{charges?.chatChargePerMinute}/min</Text>
+          <Text style={styles.rate}>₹{charges?.chatChargePerMinute}{t('common.perMin')}</Text>
           <View style={styles.toggleRight}>
             <ServiceToggle
               value={chatEnabled}
@@ -658,7 +658,7 @@ const HomeScreen = () => {
           navigation.navigate('GoLiveScreen', { astrologerId: astroId });
         }}>
         <Ionicons name="radio-button-on" size={24} color={COLORS.AstroMaroon} />
-        <Text style={styles.liveButtonText}>GO LIVE</Text>
+        <Text style={styles.liveButtonText}>{t('home.goLive')}</Text>
       </TouchableOpacity>
 
       {/* Missed sessions with time filters (Today default / Yesterday / This Month / All) */}
@@ -677,7 +677,7 @@ const HomeScreen = () => {
       <View style={styles.fixedBottomBar}>
         <TouchableOpacity style={styles.historyBtn} onPress={() => navigation.navigate('SessionHistory')} activeOpacity={0.8}>
           <Ionicons name="time-outline" size={20} color="#fff" />
-          <Text style={styles.historyBtnText}>Session History</Text>
+          <Text style={styles.historyBtnText}>{t('home.sessionHistoryBtn')}</Text>
         </TouchableOpacity>
       </View>
     </View>
