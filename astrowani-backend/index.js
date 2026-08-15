@@ -592,6 +592,38 @@ function toE164(phoneNumber) {
   return `+${digits}`;
 }
 
+// EnableX accepting a send (result:0 + job_id) only means it was queued — the
+// carrier can still fail it afterwards (DND, invalid number, operator drop).
+// Poll the job once after a short delay and log anything that is not delivered,
+// so a "the OTP never arrived" report can actually be traced to a cause instead
+// of guessing. Deliberately fire-and-forget: never blocks or fails the OTP
+// response, and never throws into the request path.
+function verifyEnxDelivery(jobId, e164, authHeader, delayMs = 20000) {
+  setTimeout(async () => {
+    try {
+      const { data } = await axios.get(`https://api.enablex.io/sms/v1/messages/${jobId}`, {
+        headers: { Authorization: `Basic ${authHeader}` },
+      });
+      const detail = data?.detailed?.[0] || {};
+      if (detail.status === 'delivered') {
+        console.log(`[enablex-sms] delivered ${e164} (job ${jobId})`);
+        return;
+      }
+      logError('enablex-sms', new Error(`SMS not delivered: ${detail.status || 'unknown'}`), {
+        phone: e164,
+        jobId,
+        status: detail.status,
+        errorCode: detail.error_code,
+        errorDesc: detail.error_des,
+        summary: data?.summary,
+      });
+    } catch (err) {
+      // Status lookup is diagnostics only — its failure must stay silent-ish.
+      console.log(`[enablex-sms] status check failed for job ${jobId}: ${err.message}`);
+    }
+  }, delayMs).unref?.();
+}
+
 // Google Play reviewer test account (both apps) — real phone+SMS OTP login is
 // unreviewable as-is: a reviewer has no way to receive the SMS, and even if they did,
 // the 5-minute OTP expiry routinely lapses before a reviewer actually gets to the login
@@ -704,7 +736,38 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
           'Content-Type': 'application/json'
         }
       });
-      console.log('EnableX SMS sent successfully. job_id:', enxResponse.data?.job_id);
+
+      // EnableX signals business-level failures (DND block, exhausted credits,
+      // DLT/template rejection, per-number throttling) in the response BODY as a
+      // non-zero `result`, while still answering HTTP 200 — so axios does not
+      // throw and the catch below never runs. This was previously unchecked: the
+      // backend logged "sent successfully", returned success:true, and the app
+      // opened the OTP screen for an SMS that was never actually sent. Reported
+      // in production 2026-08-15 (vendor login OTP never arrived while the API
+      // reported success). Treat anything other than result:0 as a real failure.
+      const enxResult = enxResponse.data?.result;
+      const jobId = enxResponse.data?.job_id;
+      if (enxResult !== 0 || !jobId) {
+        logError('enablex-sms', new Error('EnableX rejected the SMS send'), {
+          phone: toE164(phoneNumber),
+          enxResult,
+          enxBody: enxResponse.data,
+        });
+        await otpStore.delete(phoneNumber);
+        return res.status(502).json({
+          success: false,
+          message: 'Could not send the OTP SMS right now. Please try again in a moment.',
+        });
+      }
+
+      console.log(`EnableX SMS accepted for ${toE164(phoneNumber)}. job_id: ${jobId}`);
+
+      // Acceptance is not delivery. Confirm the carrier actually delivered it and
+      // log the failure if not — without this there is no record tying a "no OTP
+      // arrived" report to what really happened, which is why the 2026-08-15
+      // failures could not be diagnosed after the fact. Fire-and-forget so the
+      // OTP response is not delayed by the carrier round-trip.
+      verifyEnxDelivery(jobId, toE164(phoneNumber), authHeader);
     } catch (error) {
       // Previously swallowed: the app was told success:true even when no SMS was
       // actually sent, so a real delivery failure looked identical to a working
