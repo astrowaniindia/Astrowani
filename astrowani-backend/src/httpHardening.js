@@ -1,15 +1,48 @@
 // astrowani-backend/src/httpHardening.js
 //
-// Baseline HTTP protections: security headers, response compression, and CORS.
-// Rate limiting was removed at the user's request (2026-08-15) after it started
-// rejecting legitimate vendor-registration traffic with 429s. There is currently
-// NO protection against OTP-spam / SMS-billing abuse or brute-force retries —
-// see git history (src/httpHardening.js prior to this change) if reintroducing
-// rate limiting is needed later.
+// Baseline HTTP protections: security headers, response compression, CORS, and
+// a deliberately loose per-IP flood backstop.
+//
+// HISTORY — READ BEFORE TIGHTENING ANY LIMIT HERE. The original version of this
+// file capped OTP sends at 6 per 15 minutes PER IP. That rejected legitimate
+// vendor signups in production with 429s (2026-08-15) and the limiting was
+// removed wholesale. The value was not really the problem; the DIMENSION was.
+// Indian mobile carriers use CGNAT, so thousands of unrelated subscribers share
+// one public IP address. Any per-IP budget is therefore spent by strangers, and
+// the users who get rejected are whoever happens to arrive last — which looks
+// exactly like a random, unreproducible signup failure.
+//
+// So the real OTP controls now live in index.js, keyed to the phone number and
+// to the code itself, where abuse actually happens:
+//   - per-number send cooldown + hourly send cap  (stops flooding one number)
+//   - per-code failed-attempt cap                 (stops brute force)
+//   - global hourly send cap                      (stops spray across numbers)
+// What remains here is only a coarse backstop against a single host hammering
+// the API, set high enough that a shared carrier NAT will never reach it.
 
+const { rateLimit } = require('express-rate-limit');
 const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
+
+const jsonLimitHandler = (req, res) =>
+  res.status(429).json({
+    success: false,
+    message: 'Too many requests. Please wait a moment and try again.',
+  });
+
+// Coarse per-IP flood backstop. 240 requests/minute is far beyond what any
+// single real device generates, so a CGNAT pool of ordinary users stays well
+// under it while a runaway client or scraper is still capped.
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 240,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: jsonLimitHandler,
+  // Socket.io polling and health checks must not consume the budget.
+  skip: (req) => req.path.startsWith('/socket.io') || req.path === '/health',
+});
 
 // Behind Nginx on the VPS, req.ip is the proxy unless Express is told to read
 // X-Forwarded-For.
@@ -65,6 +98,7 @@ function applyHttpHardening(app) {
   app.use(compression());
 
   app.use(buildCors());
+  app.use(generalLimiter);
 }
 
 module.exports = {

@@ -116,7 +116,17 @@ const VerifyOtp = ({navigation, route}) => {
       }
     } catch (error) {
       captureEvent(profileData ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_error' });
-      const message = error?.response?.data?.message || t('otp.failedVerify');
+      const data = error?.response?.data;
+      // Past the attempt cap the server burns the code, so no further guess can
+      // ever succeed — the only way forward is a new OTP. Unlock Resend at once
+      // rather than leaving the customer waiting out a countdown for a code
+      // that is already dead.
+      if (data?.code === 'OTP_ATTEMPTS_EXCEEDED') {
+        setCode('');
+        otpRef.current?.clear?.();
+        setTimer(0);
+      }
+      const message = data?.message || t('otp.failedVerify');
       showAlert(t('otp.verificationFailed'), message, 'error');
     } finally {
       setVerifying(false);
@@ -140,7 +150,15 @@ const VerifyOtp = ({navigation, route}) => {
         showAlert(t('common.error'), res?.data?.message || t('otp.couldNotResend'), 'error');
       }
     } catch (error) {
-      showAlert(t('common.error'), t('otp.couldNotResendRetry'), 'error');
+      // The server owns the real cooldown (per-number and DB-backed); this
+      // screen's countdown is only a UI hint and drifts out of step with it —
+      // e.g. after an app restart, or when the same number was used on another
+      // device. When the server throttles, adopt ITS retryAfterSeconds so the
+      // button unlocks exactly when a resend will actually be accepted, and
+      // show its message instead of swallowing it behind a generic failure.
+      const data = error?.response?.data;
+      if (data?.retryAfterSeconds) setTimer(data.retryAfterSeconds);
+      showAlert(t('common.error'), data?.message || t('otp.couldNotResendRetry'), 'error');
     } finally {
       setResending(false);
     }

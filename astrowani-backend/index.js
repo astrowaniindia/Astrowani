@@ -546,25 +546,182 @@ require('./src/uploadRoutes')(app);
 // Resend issued after the restart would actually work. See
 // sql/otp_codes_schema.sql. Same failure class as the earnings-reset restart
 // bug fixed earlier this project.
+// --- OTP policy knobs -------------------------------------------------------
+// Tuned to be invisible to a real person and restrictive to a script. A human
+// signing up needs one OTP and types it once; these ceilings sit far above
+// that and far below what makes abuse worthwhile.
+const OTP_MAX_ATTEMPTS = 5;                       // wrong guesses before the code is burned
+const OTP_RESEND_COOLDOWN_MS = 45 * 1000;         // min gap between sends to one number
+const OTP_SEND_WINDOW_MS = 60 * 60 * 1000;        // rolling window for the send cap
+const OTP_MAX_SENDS_PER_WINDOW = 8;               // max SMS to one number per window
+const OTP_TTL_MS = 5 * 60 * 1000;
+
+// OTPs are HMAC'd, not stored in the clear. A plain hash would be pointless —
+// only 1,000,000 possible 6-digit codes, enumerable offline in milliseconds —
+// so the secret is what actually protects them: reading the table is no longer
+// enough to impersonate a user mid-login. Falls back to JWT_SECRET, which
+// index.js already refuses to boot without.
+const OTP_HMAC_SECRET = process.env.OTP_HMAC_SECRET || JWT_SECRET;
+const hashOtp = (otp) =>
+  crypto.createHmac('sha256', OTP_HMAC_SECRET).update(String(otp)).digest('hex');
+
+// Compare digests without leaking how much of the value matched via timing.
+const safeEqualHex = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+  } catch (_) {
+    return false;
+  }
+};
+
 const otpStore = {
-  async set(phoneNumber, { otp, sessionId, expiresAt }) {
+  // `sendMeta` carries the rolling-window counters forward. Passing it keeps
+  // the throttle state on the same row as the code, so it survives restarts
+  // and is shared across processes — an in-memory counter would reset on every
+  // deploy and would not be seen by a second PM2 worker.
+  async set(phoneNumber, { otp, sessionId, expiresAt, sendMeta }) {
+    const now = new Date();
     await supabaseService.from('otp_codes').upsert({
       phone_number: phoneNumber,
-      otp,
+      otp: null,                  // never persist the code itself
+      otp_hash: hashOtp(otp),
       session_id: sessionId,
       expires_at: new Date(expiresAt).toISOString(),
+      attempts: 0,                // a new code gets a fresh guess budget
+      last_sent_at: now.toISOString(),
+      sends_in_window: sendMeta?.sendsInWindow ?? 1,
+      window_started_at: (sendMeta?.windowStartedAt ?? now).toISOString(),
     });
   },
+
   async get(phoneNumber) {
     const { data } = await supabaseService
-      .from('otp_codes').select('otp, session_id, expires_at').eq('phone_number', phoneNumber).maybeSingle();
+      .from('otp_codes')
+      .select('otp, otp_hash, session_id, expires_at, attempts, last_sent_at, sends_in_window, window_started_at')
+      .eq('phone_number', phoneNumber)
+      .maybeSingle();
     if (!data) return null;
-    return { otp: data.otp, sessionId: data.session_id, expiresAt: new Date(data.expires_at).getTime() };
+    return {
+      otp: data.otp,                        // legacy plaintext, only on pre-migration rows
+      otpHash: data.otp_hash,
+      sessionId: data.session_id,
+      expiresAt: new Date(data.expires_at).getTime(),
+      attempts: data.attempts ?? 0,
+      lastSentAt: data.last_sent_at ? new Date(data.last_sent_at).getTime() : 0,
+      sendsInWindow: data.sends_in_window ?? 0,
+      windowStartedAt: data.window_started_at ? new Date(data.window_started_at) : new Date(),
+    };
   },
+
+  async recordFailedAttempt(phoneNumber, currentAttempts) {
+    const next = (currentAttempts ?? 0) + 1;
+    await supabaseService
+      .from('otp_codes').update({ attempts: next }).eq('phone_number', phoneNumber);
+    return next;
+  },
+
   async delete(phoneNumber) {
     await supabaseService.from('otp_codes').delete().eq('phone_number', phoneNumber);
   },
 };
+
+/**
+ * Server-side send throttle, keyed by phone number.
+ *
+ * Deliberately per-NUMBER rather than per-IP. Indian mobile carriers use
+ * CGNAT, so thousands of unrelated subscribers share one public IP — a per-IP
+ * OTP budget gets eaten by strangers and blocks legitimate first-time signups,
+ * which is the most likely cause of the production 429s on 2026-08-15. Abuse
+ * worth stopping is "this number is being flooded", and that is exactly what
+ * this measures.
+ *
+ * Returns {allowed} or {allowed:false, retryAfterSeconds, message}.
+ */
+async function checkOtpSendThrottle(existing) {
+  if (!existing) return { allowed: true, sendMeta: null };
+
+  const now = Date.now();
+
+  const sinceLast = now - existing.lastSentAt;
+  if (existing.lastSentAt && sinceLast < OTP_RESEND_COOLDOWN_MS) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.ceil((OTP_RESEND_COOLDOWN_MS - sinceLast) / 1000),
+      message: 'An OTP was just sent. Please wait a few seconds before requesting another.',
+    };
+  }
+
+  // Roll the window forward if it has elapsed, otherwise keep counting in it.
+  const windowStartedMs = existing.windowStartedAt.getTime();
+  const windowElapsed = now - windowStartedMs >= OTP_SEND_WINDOW_MS;
+  if (windowElapsed) {
+    return { allowed: true, sendMeta: { sendsInWindow: 1, windowStartedAt: new Date(now) } };
+  }
+
+  if (existing.sendsInWindow >= OTP_MAX_SENDS_PER_WINDOW) {
+    const resetInSec = Math.ceil((windowStartedMs + OTP_SEND_WINDOW_MS - now) / 1000);
+    return {
+      allowed: false,
+      retryAfterSeconds: resetInSec,
+      message: 'Too many OTP requests for this number. Please try again later.',
+    };
+  }
+
+  return {
+    allowed: true,
+    sendMeta: {
+      sendsInWindow: existing.sendsInWindow + 1,
+      windowStartedAt: existing.windowStartedAt,
+    },
+  };
+}
+
+// Ceiling on OTPs sent across the WHOLE system per hour.
+//
+// Per-number throttling cannot see the attack that actually threatens the SMS
+// bill: one OTP each to thousands of *different* numbers. Every one of those
+// requests is under the per-number cap, so only a global view catches it.
+// Counting otp_codes rows works because rows are deleted on successful verify
+// — a spray targets numbers nobody will ever verify, so those rows sit there
+// until they expire, which is exactly the signal we want.
+//
+// Set well above real peak signup traffic. If it ever trips in normal use the
+// number is too low; raise it rather than leaving it tripping, because a
+// tripped breaker blocks legitimate logins too.
+const OTP_GLOBAL_HOURLY_CAP = Number(process.env.OTP_GLOBAL_HOURLY_CAP || 500);
+
+async function isGlobalOtpCapExceeded() {
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count, error } = await supabaseService
+    .from('otp_codes')
+    .select('phone_number', { count: 'exact', head: true })
+    .gte('last_sent_at', since);
+  // Fail OPEN: a counting failure must never block real logins. The whole
+  // point of this breaker is cost control, not correctness of auth.
+  if (error) return false;
+  if ((count ?? 0) >= OTP_GLOBAL_HOURLY_CAP) {
+    logError('otp-global-cap', new Error('Global hourly OTP cap reached'), {
+      count,
+      cap: OTP_GLOBAL_HOURLY_CAP,
+    });
+    return true;
+  }
+  return false;
+}
+
+// Expired codes are dead weight: one row per distinct phone number ever seen,
+// growing forever and slowing every lookup. Purge on an interval rather than
+// per-request so a user waiting on an OTP never pays for the cleanup.
+async function purgeExpiredOtps() {
+  try {
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await supabaseService.from('otp_codes').delete().lt('expires_at', cutoff);
+  } catch (err) {
+    console.log('[otp-purge] failed:', err.message);
+  }
+}
+setInterval(purgeExpiredOtps, 30 * 60 * 1000).unref?.();
 
 // EnableX Credentials for the SMS/OTP project specifically ("OTP Atrowani").
 // Distinct from ENABLEX_APP_ID/ENABLEX_APP_KEY, which belong to a different EnableX project.
@@ -702,18 +859,50 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
     }
   }
 
-  // Generate a 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  // Server-side send throttle. The 60s cooldown in both apps is UI only and is
+  // bypassed by calling this endpoint directly, so the real limit has to live
+  // here. Runs after the reviewer short-circuit above (that path returns early
+  // and is intentionally exempt) and before any SMS is billed.
+  const existingOtpRow = await otpStore.get(phoneNumber);
+  const throttle = await checkOtpSendThrottle(existingOtpRow);
+  if (!throttle.allowed) {
+    res.set('Retry-After', String(throttle.retryAfterSeconds));
+    return res.status(429).json({
+      success: false,
+      code: 'OTP_THROTTLED',
+      retryAfterSeconds: throttle.retryAfterSeconds,
+      message: throttle.message,
+    });
+  }
+
+  // Cost circuit-breaker for the spray attack the per-number cap cannot see.
+  if (await isGlobalOtpCapExceeded()) {
+    return res.status(503).json({
+      success: false,
+      code: 'OTP_TEMPORARILY_UNAVAILABLE',
+      message: 'We are unable to send OTPs right now. Please try again shortly.',
+    });
+  }
+
+  // Generate a 6-digit OTP.
+  // crypto.randomInt, not Math.random: Math.random is a non-cryptographic PRNG
+  // whose internal state can be recovered from observed outputs, which for a
+  // credential means OTPs become predictable without ever seeing the SMS.
+  const otp = String(crypto.randomInt(100000, 1000000));
   const sessionId = Date.now().toString(); // Simple session ID
 
-  // Store the OTP
+  // Store the OTP (hashed — see otpStore) with the rolling send counters.
   await otpStore.set(phoneNumber, {
     otp,
     sessionId,
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
+    expiresAt: Date.now() + OTP_TTL_MS,
+    sendMeta: throttle.sendMeta,
   });
 
-  console.log(`Generated OTP for ${phoneNumber} (role: ${role || 'unspecified'}, intent: ${intent || 'unspecified'}): ${otp} (Session: ${sessionId})`);
+  // The code itself is deliberately NOT logged. It was previously printed in
+  // full, which put live credentials into PM2 logs (and anywhere those get
+  // shipped) for anyone with server or log access to read and use.
+  console.log(`Generated OTP for ${phoneNumber} (role: ${role || 'unspecified'}, intent: ${intent || 'unspecified'}, session: ${sessionId})`);
 
   // Send OTP via EnableX SMS API using the DLT-approved "OTP for astrowani" template
   if (ENABLEX_APP_ID && ENABLEX_APP_KEY) {
@@ -815,8 +1004,46 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     return res.status(400).json({ success: false, message: 'OTP has expired' });
   }
 
-  if (storedData.otp !== otp.toString()) {
-    return res.status(400).json({ success: false, message: 'Invalid OTP' });
+  // Burn the code once the guess budget is spent. Without this the endpoint
+  // counted nothing: a wrong OTP left the code live, so all 1,000,000 six-digit
+  // combinations could be ground down with concurrent requests inside the
+  // 5-minute window. The attempt cap — not the HTTP rate limiter — is what
+  // actually makes a short numeric OTP safe, because it is keyed to the code
+  // rather than to the caller's IP (which CGNAT makes meaningless anyway).
+  if (storedData.attempts >= OTP_MAX_ATTEMPTS) {
+    await otpStore.delete(phoneNumber);
+    return res.status(429).json({
+      success: false,
+      code: 'OTP_ATTEMPTS_EXCEEDED',
+      message: 'Too many incorrect attempts. Please request a new OTP.',
+    });
+  }
+
+  // New rows store only the HMAC; `otp` is populated solely on rows written by
+  // the previous code path, so keep that comparison alive for codes already in
+  // flight across the deploy. Both sides use a constant-time compare.
+  const submitted = String(otp).trim();
+  const matches = storedData.otpHash
+    ? safeEqualHex(storedData.otpHash, hashOtp(submitted))
+    : storedData.otp === submitted;
+
+  if (!matches) {
+    const used = await otpStore.recordFailedAttempt(phoneNumber, storedData.attempts);
+    const remaining = Math.max(0, OTP_MAX_ATTEMPTS - used);
+    if (remaining === 0) {
+      await otpStore.delete(phoneNumber);
+      return res.status(429).json({
+        success: false,
+        code: 'OTP_ATTEMPTS_EXCEEDED',
+        message: 'Too many incorrect attempts. Please request a new OTP.',
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      code: 'OTP_INVALID',
+      attemptsRemaining: remaining,
+      message: `Invalid OTP. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
+    });
   }
 
   // OTP is valid!
