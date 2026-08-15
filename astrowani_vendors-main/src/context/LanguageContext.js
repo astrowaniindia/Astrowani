@@ -13,7 +13,8 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const LanguageContext = createContext();
+// NOTE: the context itself is created *below* `translations`, because its default
+// value needs to read from it. See the comment there.
 
 const translations = {
   English: {
@@ -475,6 +476,21 @@ const translations = {
     'goLive.couldNotStart': 'लाइव सत्र शुरू नहीं हो सका।',
   },
 };
+
+// A missing Provider must never be fatal. `createContext()` with no default
+// returns undefined, so every one of the ~23 consumers doing
+// `const {language, t} = useContext(LanguageContext)` throws
+// "Cannot read property 'language' of undefined" and takes the whole screen
+// down with it. That crash was reported by Sentry on 2026-08-14
+// (ASTROWANI-VENDOR-4) from a dev emulator while this feature was mid-build,
+// but the same shape can happen in production any time a consumer renders
+// outside the Provider — including during an OTA bundle swap or a remount.
+// Giving the context a real default degrades to English instead of crashing.
+export const LanguageContext = createContext({
+  language: 'English',
+  changeLanguage: () => {},
+  t: (key) => translations.English[key] ?? key,
+});
 
 export const LanguageProvider = ({ children }) => {
   const [language, setLanguage] = useState('English');
