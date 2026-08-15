@@ -7,18 +7,21 @@
 // /api/astro/:key handlers expect: date as dd/mm/yyyy, time as HH:mm (24h) — the backend passes
 // these straight through to JyotishamAstroAPI without reformatting (see astroRoutes.js birthQuery).
 import React, {useEffect, useState} from 'react';
-import {View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert} from 'react-native';
+import {View, Text, TextInput, TouchableOpacity, StyleSheet} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import {GooglePlacesAutocomplete} from 'react-native-google-places-autocomplete';
-import Geocoder from 'react-native-geocoding';
+import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import {LanguageContext} from '../../../context/LanguageContext';
 
-const GOOGLE_PLACES_KEY = 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA';
-Geocoder.init(GOOGLE_PLACES_KEY);
+// Google Places/Geocoding were removed here: the shipped key's Cloud project
+// had billing disabled, so both APIs returned REQUEST_DENIED, coordinates never
+// got set, and every report's Pay button stayed disabled with no explanation
+// (2026-08-15). PlaceAutocomplete uses Open-Meteo's keyless, billing-free
+// geocoding instead, so there is no credential to lapse — and it reports its
+// own failures in the UI rather than dead-ending the form.
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -110,48 +113,19 @@ export default function BirthDetailsForm({title, showName = true, showGender = f
         <Ionicons name="alarm-outline" color={COLORS.AstroMaroon} size={22} />
       </TouchableOpacity>
 
-      <GooglePlacesAutocomplete
+      {/* Passing null on edit clears the coordinates, so changing the place after
+          picking one re-disables submit instead of keeping the old city's chart. */}
+      <PlaceAutocomplete
         placeholder={t('kundali.enterPlaceOfBirth')}
-        onPress={(data, details = null) => {
-          setPlace(data.description);
-          if (details?.geometry?.location) {
-            const {lat, lng} = details.geometry.location;
-            setCoordinates({latitude: lat, longitude: lng});
+        onSelect={(picked) => {
+          if (!picked) {
+            setPlace('');
+            setCoordinates(null);
             return;
           }
-          // fetchDetails occasionally comes back without a `details` object (network hiccup,
-          // Place Details quota). Previously this just `return`ed — the place text still
-          // looked filled in, but `coordinates` (and therefore isComplete/onValuesChange)
-          // never updated, leaving the submit button stuck disabled with no feedback at all.
-          // Fall back to a plain geocode of the selected description, and only alert if that
-          // fails too.
-          Geocoder.from(data.description)
-            .then((json) => {
-              const location = json.results[0].geometry.location;
-              setCoordinates({latitude: location.lat, longitude: location.lng});
-            })
-            .catch((error) => {
-              console.warn(error);
-              Alert.alert(t('kundali.locationFetchError'));
-            });
+          setPlace(picked.label);
+          setCoordinates({latitude: picked.latitude, longitude: picked.longitude});
         }}
-        query={{key: GOOGLE_PLACES_KEY, language: 'en'}}
-        styles={{
-          container: {flex: 0, marginBottom: verticalScale(10)},
-          textInput: styles.input,
-          listView: {
-            backgroundColor: 'white',
-            borderRadius: moderateScale(5),
-            position: 'absolute',
-            top: Platform.select({ios: verticalScale(45), android: verticalScale(45)}),
-            left: 0,
-            right: 0,
-            zIndex: 1000,
-            elevation: 3,
-          },
-        }}
-        enablePoweredByContainer={false}
-        fetchDetails
       />
 
       {showDatePicker && (
