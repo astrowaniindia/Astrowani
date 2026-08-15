@@ -412,10 +412,10 @@ const PanchangScreen = () => {
           <Text style={styles.errorText}>{error}</Text>
         ) : (
           <>
-            <DetailList title={t('panchang.title')} data={formatPanchangData()} />
-            <DetailList title={t('panchang.additionalInfo')} data={formatAdditionalInfo()} />
-            <DetailList title={t('panchang.auspiciousTime')} data={formatAuspiciousTime()} />
-            <DetailList title={t('panchang.inauspiciousTime')} data={formatInauspiciousTime()} />
+            <DetailList title={t('panchang.title')} data={formatPanchangData()} glyph="☀" />
+            <DetailList title={t('panchang.additionalInfo')} data={formatAdditionalInfo()} glyph="◆" />
+            <DetailList title={t('panchang.auspiciousTime')} data={formatAuspiciousTime()} glyph="✓" />
+            <DetailList title={t('panchang.inauspiciousTime')} data={formatInauspiciousTime()} glyph="✕" />
           </>
         )}
       </ScrollView>
