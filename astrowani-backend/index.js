@@ -690,13 +690,17 @@ async function checkOtpSendThrottle(existing) {
 // number is too low; raise it rather than leaving it tripping, because a
 // tripped breaker blocks legitimate logins too.
 //
-// Raised 500 -> 5000 on 2026-08-15 to leave headroom for a marketing-driven
-// signup surge, since a breaker that trips during a campaign locks out real
-// customers. This is a ceiling, not a budget — it costs nothing by itself, but
-// it does define the worst-case hourly SMS spend if the endpoint is ever
-// abused: 5000 x the EnableX per-message rate. Override per-environment with
-// OTP_GLOBAL_HOURLY_CAP without a redeploy.
-const OTP_GLOBAL_HOURLY_CAP = Number(process.env.OTP_GLOBAL_HOURLY_CAP || 5000);
+// Raised 500 -> 20000 on 2026-08-15 to leave generous headroom for a
+// marketing-driven signup surge, since a breaker that trips during a campaign
+// locks out real customers too.
+//
+// At this height it is a last-resort sanity limit rather than a meaningful
+// cost control: 20000/hour is ~333/min sustained, so the worst-case spend in
+// an abused hour is 20000 x the EnableX per-message rate. The protection that
+// actually does the work is the per-number cooldown and hourly cap, which stop
+// any single number being flooded; this only catches a spray broad enough to
+// evade those. Override per-environment via OTP_GLOBAL_HOURLY_CAP.
+const OTP_GLOBAL_HOURLY_CAP = Number(process.env.OTP_GLOBAL_HOURLY_CAP || 20000);
 
 async function isGlobalOtpCapExceeded() {
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
