@@ -261,12 +261,10 @@ import { COLORS } from '../../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../../utils/Scaling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import DetailList from '../../component/DetailsList';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import Geocoder from 'react-native-geocoding';
+import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { FREE_SERVICES_URL } from '../../../config/api';
 
-Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); //
 
 const PanchangScreen = () => {
   const { t } = React.useContext(LanguageContext);
@@ -282,15 +280,8 @@ const PanchangScreen = () => {
   });
 
 
-  const getCoordinates = (place, setLatitude, setLongitude) => {
-    Geocoder.from(place)
-      .then(json => {
-        const location = json.results[0].geometry.location;
-        setLatitude(location.lat);
-        setLongitude(location.lng);
-      })
-      .catch(error => console.warn(error));
-  };
+  // Geocoder fallback removed with Google Places — PlaceAutocomplete resolves
+  // coordinates on selection and surfaces its own failures inline.
 
   useEffect(() => {
     const fetchPanchangData = async () => {
@@ -370,40 +361,22 @@ const PanchangScreen = () => {
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
-      <GooglePlacesAutocomplete
+      {/* Unlike the birth-chart screens, Panchang keeps its default coordinates:
+          it renders on open before any input, so it needs somewhere to start.
+          Picking a location just refines it. The old code also destructured
+          `details.geometry` unguarded, which threw whenever Places returned no
+          details — including every time once billing lapsed. */}
+      <PlaceAutocomplete
           placeholder={t('panchang.enterLocation')}
-          onPress={(data, details = null) => {
-            setLocation(data.description);
-            const { lat, lng } = details.geometry.location;
+          inputStyle={styles.locationInput}
+          onSelect={(picked) => {
+            if (!picked) return;
+            setLocation(picked.label);
             setCoordinates({
-              latitude: lat,
-              longitude: lng
+              latitude: picked.latitude,
+              longitude: picked.longitude,
             });
           }}
-          query={{
-            key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
-            language: 'en',
-          }}
-          styles={{
-            container: {
-              flex: 0,
-            },
-            textInput: {
-              ...styles.locationInput,
-            },
-            listView: {
-              backgroundColor: 'white',
-              borderRadius: moderateScale(5),
-              position: 'absolute',
-              top: Platform.select({ ios: verticalScale(45), android: verticalScale(45) }),
-              left: 0,
-              right: 0,
-              zIndex: 10000,
-              elevation: 3,
-            },
-          }}
-          enablePoweredByContainer={false}
-          fetchDetails={true}
         />
       </View>
 

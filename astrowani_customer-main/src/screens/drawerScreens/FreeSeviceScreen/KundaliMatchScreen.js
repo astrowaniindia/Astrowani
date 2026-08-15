@@ -17,13 +17,10 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import Geocoder from 'react-native-geocoding';
+import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import axios from 'axios';
 import { FREE_SERVICES_URL } from '../../../config/api';
 import { LanguageContext } from '../../../context/LanguageContext';
-
-Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA"); //
 
 
 const KundaliMatchScreen = ({navigation}) => {
@@ -56,24 +53,9 @@ const KundaliMatchScreen = ({navigation}) => {
   const [girlLatitude, setGirlLatitude] = useState(null);
   const [girlLongitude, setGirlLongitude] = useState(null);
 
-  // Fallback only — GooglePlacesAutocomplete's `fetchDetails` (below) resolves lat/lng
-  // synchronously inside onPress in the normal case. This exists for the rare case where
-  // Places Details comes back without a `details` object; on failure it surfaces an alert
-  // instead of the old behavior (console.warn only), which left boyLatitude/girlLatitude
-  // stuck null forever with no feedback — the place text looked filled in, but "Show Report"
-  // kept failing the required-fields check with no visible reason.
-  const getCoordinates = (place, setLatitude, setLongitude, onError) => {
-    Geocoder.from(place)
-      .then(json => {
-        const location = json.results[0].geometry.location;
-        setLatitude(location.lat);
-        setLongitude(location.lng);
-      })
-      .catch(error => {
-        console.warn(error);
-        onError?.();
-      });
-  };
+  // The Geocoder fallback that used to live here is gone with Google Places —
+  // PlaceAutocomplete resolves coordinates as part of selection and reports its
+  // own failures inline, so there is no separate fallback path to keep in sync.
 
   const handleboyCheckboxChange = () => {
     setBoyDontKnowTime(!boydontKnowTime);
@@ -270,28 +252,19 @@ const KundaliMatchScreen = ({navigation}) => {
             placeholderTextColor="gray"
             style={styles.input}
           /> */}
-            <GooglePlacesAutocomplete
+            <PlaceAutocomplete
           placeholder={t('match.enterBoyPlace')}
-          onPress={(data, details = null) => {
-            setBoyBirthPlace(data.description);
-            if (details?.geometry?.location) {
-              setBoyLatitude(details.geometry.location.lat);
-              setBoyLongitude(details.geometry.location.lng);
-            } else {
-              getCoordinates(data.description, setBoyLatitude, setBoyLongitude, () =>
-                Alert.alert(t('kundali.locationFetchError')),
-              );
+          onSelect={(picked) => {
+            if (!picked) {
+              setBoyBirthPlace('');
+              setBoyLatitude(null);
+              setBoyLongitude(null);
+              return;
             }
+            setBoyBirthPlace(picked.label);
+            setBoyLatitude(picked.latitude);
+            setBoyLongitude(picked.longitude);
           }}
-          query={{
-            key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
-            language: 'en',
-          }}
-          styles={{
-            textInputContainer: styles.input,
-            textInput: styles.dropdownText,
-          }}
-          fetchDetails
         />
         </View>
 
@@ -380,28 +353,19 @@ const KundaliMatchScreen = ({navigation}) => {
             placeholderTextColor="gray"
             style={styles.input}
           /> */}
-            <GooglePlacesAutocomplete
+            <PlaceAutocomplete
           placeholder={t('match.enterGirlPlace')}
-          onPress={(data, details = null) => {
-            setGirlBirthPlace(data.description);
-            if (details?.geometry?.location) {
-              setGirlLatitude(details.geometry.location.lat);
-              setGirlLongitude(details.geometry.location.lng);
-            } else {
-              getCoordinates(data.description, setGirlLatitude, setGirlLongitude, () =>
-                Alert.alert(t('kundali.locationFetchError')),
-              );
+          onSelect={(picked) => {
+            if (!picked) {
+              setGirlBirthPlace('');
+              setGirlLatitude(null);
+              setGirlLongitude(null);
+              return;
             }
+            setGirlBirthPlace(picked.label);
+            setGirlLatitude(picked.latitude);
+            setGirlLongitude(picked.longitude);
           }}
-          query={{
-            key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
-            language: 'en',
-          }}
-          styles={{
-            textInputContainer: styles.input,
-            textInput: styles.dropdownText,
-          }}
-          fetchDetails
         />
 
         </View>

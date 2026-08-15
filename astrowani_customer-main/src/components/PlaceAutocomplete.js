@@ -35,12 +35,17 @@ export default function PlaceAutocomplete({
   onSelect,
   inputStyle,
   strings = {},
+  // Seeds the box with an already-saved place (profile screens show a stored
+  // value and only allow editing once unlocked). Treated as already-selected so
+  // it does not immediately fire a search for text the user did not just type.
+  initialValue = '',
+  editable = true,
 }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialValue);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState(false);
+  const [selected, setSelected] = useState(Boolean(initialValue));
   // Guards against a slow earlier response overwriting a newer one.
   const requestSeq = useRef(0);
 
@@ -113,12 +118,13 @@ export default function PlaceAutocomplete({
     <View style={styles.wrap}>
       <View style={[styles.inputRow, inputStyle]}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, !editable && styles.inputDisabled]}
           placeholder={placeholder}
           placeholderTextColor={COLORS.placeholder}
           value={query}
           onChangeText={onChangeText}
           autoCorrect={false}
+          editable={editable}
         />
         {loading ? (
           <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
@@ -158,6 +164,7 @@ const styles = StyleSheet.create({
     height: verticalScale(42),
   },
   input: {flex: 1, color: COLORS.black, fontSize: moderateScale(13), padding: 0},
+  inputDisabled: {color: '#666'},
   error: {color: '#C0392B', fontSize: moderateScale(11), marginTop: verticalScale(4)},
   list: {
     position: 'absolute',

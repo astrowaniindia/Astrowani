@@ -332,7 +332,8 @@ import {
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import PlaceAutocomplete from '../../components/PlaceAutocomplete';
+import { reverseGeocode } from '../../utils/geocoding';
 import Geolocation from '@react-native-community/geolocation';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
@@ -357,14 +358,17 @@ const MuhuratCard = ({ title }) => {
         setLatitude(position.coords.latitude.toString());
         setLongitude(position.coords.longitude.toString());
         
-        fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA`)
-          .then(response => response.json())
-          .then(data => {
-            if (data.results[0]) {
-              setLocation(data.results[0].formatted_address);
-            }
-          })
-          .catch(error => console.error('Geocoding Error:', error));
+        // Reverse geocode via BigDataCloud (no key, no billing) instead of the
+        // Google Geocoding API, whose Cloud project has billing disabled — that
+        // call returned REQUEST_DENIED, so the location label stayed blank while
+        // the timings below silently rendered for the raw coordinates.
+        reverseGeocode(position.coords.latitude, position.coords.longitude)
+          .then(place => setLocation(place.label))
+          .catch(err => {
+            // Not fatal: the muhurat timings only need lat/lng, which we already
+            // have. Only the display label is missing, so log and carry on.
+            console.log('Reverse geocode failed:', err.message);
+          });
       },
       error => console.error('Geolocation Error:', error),
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
@@ -410,12 +414,15 @@ const MuhuratCard = ({ title }) => {
     }
   }, [title]);
 
-  const handlePlaceSelect = (data, details = null) => {
-    if (details?.geometry?.location) {
-      setLocation(data.description);
-      setLatitude(details.geometry.location.lat.toString());
-      setLongitude(details.geometry.location.lng.toString());
-    }
+  const handlePlaceSelect = (picked) => {
+    // Null means the user edited the text after picking, so the old coordinates
+    // no longer describe what is on screen. Keep them rather than clearing:
+    // this card always shows timings for *somewhere*, and the geolocation
+    // fallback already seeded a valid position on mount.
+    if (!picked) return;
+    setLocation(picked.label);
+    setLatitude(String(picked.latitude));
+    setLongitude(String(picked.longitude));
   };
 
   const handleDateChange = () => {
@@ -570,23 +577,10 @@ const MuhuratCard = ({ title }) => {
         style={styles.keyboardAvoidingView}
       >
         <View style={styles.headerContainer}>
-          <GooglePlacesAutocomplete
+          <PlaceAutocomplete
             placeholder="Enter your location"
-            onPress={handlePlaceSelect}
-            query={{
-              key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
-              language: 'en',
-            }}
-            textInputProps={{
-              value: location,
-              onChangeText: setLocation,
-            }}
-            styles={{
-              container: styles.autocompleteContainer,
-              textInputContainer: styles.locationInput,
-              textInput: styles.locationInputText,
-              listView: styles.autocompleteList,
-            }}
+            inputStyle={styles.locationInput}
+            onSelect={handlePlaceSelect}
           />
           <View style={styles.dateContainer}>
             <TouchableOpacity onPress={handleDateChange}>

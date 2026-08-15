@@ -14,12 +14,9 @@ import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import Geocoder from 'react-native-geocoding';
+import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { FREE_SERVICES_URL } from '../../../config/api';
-
-Geocoder.init("AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA");
 
 const JanamKundaliScreen = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -30,10 +27,13 @@ const JanamKundaliScreen = ({navigation}) => {
   const [dateOfBirth, setDateOfBirth] = useState(null);
   const [timeOfBirth, setTimeOfBirth] = useState(null);
   const [dontKnowTime, setDontKnowTime] = useState(false);
-  const [coordinates, setCoordinates] = useState({
-    latitude: 10.214747,
-    longitude: 78.097626
-  });
+  // Starts null, NOT a hardcoded fallback. This previously defaulted to a fixed
+  // lat/lng in Tamil Nadu and was interpolated into the request with no
+  // validation, so anyone who did not pick a place — which was everyone while
+  // Google Places was returning REQUEST_DENIED — silently got a birth chart
+  // computed for a city they had never been to, presented as their own. A wrong
+  // answer with no error is worse than a refusal; handleShowKundali now checks.
+  const [coordinates, setCoordinates] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleCheckboxChange = () => {
@@ -77,6 +77,12 @@ const JanamKundaliScreen = ({navigation}) => {
     }
     if (!dontKnowTime && !timeOfBirth) {
       Alert.alert(t('common.error'), t('kundali.pleaseSelectTob'));
+      return;
+    }
+    // Place was never validated, which is how the hardcoded default silently
+    // produced charts for the wrong city. The chart is meaningless without it.
+    if (!coordinates) {
+      Alert.alert(t('common.error'), t('kundali.enterPlaceOfBirth'));
       return;
     }
 
@@ -198,38 +204,21 @@ const JanamKundaliScreen = ({navigation}) => {
             <Text style={styles.label}>{t('kundali.dontKnow')}</Text>
           </TouchableOpacity>
 
-          <GooglePlacesAutocomplete
+          {/* The old Google version also crashed outright on a missing `details`
+              object — `details.geometry` with no optional chaining — on top of
+              never resolving at all once billing lapsed. */}
+          <PlaceAutocomplete
             placeholder={t('kundali.enterPlaceOfBirth')}
-            onPress={(data, details = null) => {
-              const { lat, lng } = details.geometry.location;
+            onSelect={(picked) => {
+              if (!picked) {
+                setCoordinates(null);
+                return;
+              }
               setCoordinates({
-                latitude: lat,
-                longitude: lng
+                latitude: picked.latitude,
+                longitude: picked.longitude,
               });
             }}
-            query={{
-              key: 'AIzaSyD9gQiOP8vVtzDFjLjF59SL2MlcHXhjAsA',
-              language: 'en',
-            }}
-            styles={{
-              container: {
-                flex: 0,
-                marginBottom: verticalScale(10),
-              },
-              textInput: styles.input,
-              listView: {
-                backgroundColor: 'white',
-                borderRadius: moderateScale(5),
-                position: 'absolute',
-                top: Platform.select({ ios: verticalScale(45), android: verticalScale(45) }),
-                left: 0,
-                right: 0,
-                zIndex: 1000,
-                elevation: 3,
-              },
-            }}
-            enablePoweredByContainer={false}
-            fetchDetails={true}
           />
         </View>
 

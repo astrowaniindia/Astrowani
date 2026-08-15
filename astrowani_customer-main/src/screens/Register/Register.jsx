@@ -25,6 +25,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import PlaceAutocomplete from '../../components/PlaceAutocomplete';
 
 export default function Register({ navigation }) {
   const { t, language } = React.useContext(LanguageContext);
@@ -311,11 +312,15 @@ export default function Register({ navigation }) {
           />
         )}
 
-        <TextInput
-          style={styles.input}
+        {/* Was a free-text box, so birth place arrived as whatever the user
+            typed ("mumbai", "Bombay", a typo) — astrologers read this verbatim
+            in chat, and it can never be used for a chart. The picker stores a
+            resolved "City, State, Country" instead. Same keyless provider as
+            the report screens, so there is no billing dependency. */}
+        <PlaceAutocomplete
           placeholder={t('register.placeOfBirth')}
-          value={place}
-          onChangeText={setPlace}
+          inputStyle={styles.input}
+          onSelect={(picked) => setPlace(picked ? picked.label : '')}
         />
 
         <TextInput

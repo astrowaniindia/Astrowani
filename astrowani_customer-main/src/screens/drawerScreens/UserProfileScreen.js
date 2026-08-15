@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
 import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
+import PlaceAutocomplete from '../../components/PlaceAutocomplete';
 
 // Indian state names are proper nouns — intentionally not translated (kept English/Roman
 // script, which is how they're commonly written even in Hindi-language Indian UIs).
@@ -333,6 +334,17 @@ const UserProfileScreen = ({navigation, route}) => {
               {...extraProps}
             />
           )}
+          {/* Birth place is a lookup, not free text — the value is read verbatim
+              by astrologers and previously arrived as whatever was typed. Uses
+              the same keyless provider as the report screens. */}
+          {type === 'place' && (
+            <PlaceAutocomplete
+              placeholder={t('userProfile.enterField', { field: placeholder })}
+              initialValue={value || ''}
+              editable={isEditable}
+              onSelect={(picked) => onChange(picked ? picked.label : '')}
+            />
+          )}
           {type === 'dropdown' && (
             <Dropdown
               style={styles.dropdownInput}
@@ -424,7 +436,7 @@ const UserProfileScreen = ({navigation, route}) => {
 
               <View style={styles.divider} />
               <Text style={styles.formSectionTitle}>{t('userProfile.location')}</Text>
-              {renderField('city', 'business-outline', t('userProfile.cityPlaceOfBirth'), userProfile.city, v => handleInputChange('city', v))}
+              {renderField('city', 'business-outline', t('userProfile.cityPlaceOfBirth'), userProfile.city, v => handleInputChange('city', v), 'place')}
               {renderField('state', 'map-outline', t('userProfile.state'), userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
             </View>
           </View>
