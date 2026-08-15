@@ -11,7 +11,6 @@ const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
-const { authLimiter } = require('./httpHardening');
 const { contentCache } = require('./contentCache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -51,7 +50,7 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
 
 module.exports = function registerAdminRoutes(app) {
   // ── Login ────────────────────────────────────────────────────────────────
-  app.post('/api/admin/login', authLimiter, h(async (req, res) => {
+  app.post('/api/admin/login', h(async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Email and password required' });

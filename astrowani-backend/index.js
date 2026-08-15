@@ -18,9 +18,7 @@ const { TtlCache } = require('./src/ttlCache');
 const { contentCache } = require('./src/contentCache');
 const { startAstrologerFanout } = require('./src/astrologerFanout');
 const { startTableFanout } = require('./src/tableFanout');
-const {
-  applyHttpHardening, otpLimiter, otpPhoneLimiter, authLimiter, writeLimiter,
-} = require('./src/httpHardening');
+const { applyHttpHardening } = require('./src/httpHardening');
 
 // No-op until SENTRY_DSN is set in the environment — see MD files/deployment-and-releases.md.
 initSentry();
@@ -616,7 +614,7 @@ const PLAY_STORE_REVIEWER_OTP = '123456';
 /**
  * Endpoint to request an OTP
  */
-app.post('/api/users/mobile-otp-request', otpLimiter, otpPhoneLimiter, async (req, res) => {
+app.post('/api/users/mobile-otp-request', async (req, res) => {
   const { phoneNumber, role, intent } = req.body;
 
   if (!phoneNumber) {
@@ -736,7 +734,7 @@ app.post('/api/users/mobile-otp-request', otpLimiter, otpPhoneLimiter, async (re
 /**
  * Endpoint to verify an OTP
  */
-app.post('/api/users/mobile-otp-verify', authLimiter, async (req, res) => {
+app.post('/api/users/mobile-otp-verify', async (req, res) => {
   const { phoneNumber, otp, fcmToken, role, referralCode } = req.body;
 
   if (!phoneNumber || !otp) {
@@ -1501,7 +1499,7 @@ app.post('/api/users/fcm-token', async (req, res) => {
 // technical/account/feedback tickets — this route never existed, so every submission
 // silently failed (generic Error alert, nothing reached anyone). Found during the
 // pre-launch readiness pass, 2026-08-08. See sql/support_tickets_schema.sql.
-app.post('/api/support/create-support', writeLimiter, async (req, res) => {
+app.post('/api/support/create-support', async (req, res) => {
   try {
     const { name, email, issueType, message, mobile } = req.body || {};
     if (!name || !email || !issueType || !message) {
@@ -1865,7 +1863,7 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
 });
 
 // WebRTC Call Initiate — no third-party room server needed; signaling goes through socket.io
-app.post('/api/call/initiate', writeLimiter, async (req, res) => {
+app.post('/api/call/initiate', async (req, res) => {
   try {
     const { receiverId, callType } = req.body;
     if (!receiverId) return res.status(400).json({ success: false, message: 'receiverId required' });
@@ -2536,7 +2534,7 @@ app.get('/api/customer/referral-info', async (req, res) => {
 const MIN_RECHARGE_RUPEES = 1;
 const MAX_RECHARGE_RUPEES = 100000; // sanity ceiling — adjust if a legitimate need arises
 
-app.post('/api/wallet/create-order', writeLimiter, async (req, res) => {
+app.post('/api/wallet/create-order', async (req, res) => {
   try {
     if (!razorpay.isConfigured()) {
       return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
@@ -2572,7 +2570,7 @@ app.post('/api/wallet/create-order', writeLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/wallet/verify-payment', writeLimiter, async (req, res) => {
+app.post('/api/wallet/verify-payment', async (req, res) => {
   try {
     const customer = await resolveCustomerFromReq(req);
     if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
@@ -2794,7 +2792,7 @@ app.get('/vendor/wallet', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // VENDOR WALLET: Request a withdrawal (deducts balance immediately, pending admin payout)
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/vendor/wallet/withdraw', writeLimiter, async (req, res) => {
+app.post('/vendor/wallet/withdraw', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -3045,7 +3043,7 @@ app.get('/api/vendor/profile', async (req, res) => {
 // EditProfile"), but that meant ANY holder of the public key could rewrite ANY astrologer's
 // charge rates (not just their own), since column grants have no row-ownership concept.
 // Moving the write here closes that: astroId comes only from the vendor's own JWT.
-app.put('/api/vendor/profile', writeLimiter, async (req, res) => {
+app.put('/api/vendor/profile', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -3446,7 +3444,7 @@ app.post('/api/live/:id/end', async (req, res) => {
 
 // Customer sends a gift (live or profile). Money: customer wallet → astrologer wallet
 // (50%); the rest is platform revenue, recorded in gift_transactions.
-app.post('/api/gift/send', writeLimiter, async (req, res) => {
+app.post('/api/gift/send', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
