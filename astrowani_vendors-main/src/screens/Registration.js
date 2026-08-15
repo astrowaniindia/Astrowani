@@ -168,8 +168,17 @@ const Registration = ({ navigation }) => {
         );
         navigation.navigate('Login');
       } else {
-        console.error('Error Message:', error.message);
-        Alert.alert('Registration Failed', error.message || 'Something went wrong.');
+        // Prefer the server's own message — axios's error.message is the raw
+        // "Request failed with status code NNN", which told the astrologer
+        // nothing and was reported as confusing in production 2026-08-15.
+        // The backend already sends a human-readable reason (e.g. the OTP SMS
+        // could not be sent); surface that instead and keep the status code
+        // out of the user's face.
+        console.error('Registration error:', error?.response?.status, error?.response?.data || error.message);
+        Alert.alert(
+          'Registration Failed',
+          error?.response?.data?.message || 'Something went wrong. Please try again.',
+        );
       }
     } finally {
       setLoading(false);

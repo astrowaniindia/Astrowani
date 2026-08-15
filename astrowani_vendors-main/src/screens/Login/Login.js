@@ -71,8 +71,14 @@ const Login = ({navigation}) => {
       if (error?.response?.data?.code === 'NO_ACCOUNT') {
         Alert.alert(t('login.notFound'), t('login.noAccountFound'));
       } else {
-        console.log('Login error:', error);
-        Alert.alert(t('login.loginError'), t('login.somethingWrong'));
+        // Surface the backend's own reason when it sent one (e.g. the OTP SMS
+        // could not be sent) — the generic fallback hid actionable failures
+        // behind "something went wrong". See Registration.js for the same fix.
+        console.log('Login error:', error?.response?.status, error?.response?.data || error.message);
+        Alert.alert(
+          t('login.loginError'),
+          error?.response?.data?.message || t('login.somethingWrong'),
+        );
       }
     } finally {
       SetLoading(false);
