@@ -9,8 +9,12 @@
 //   2. Response envelope is `{status, response, callsRemaining}` for MOST endpoints, but the
 //      Numerology endpoints add extra top-level fields: `{status, success, message, response}`.
 //      This client always returns just `.response` so callers never see the difference.
-//   3. `chart_image/*` and `kp/kundli_chart` / `kp/rasi_chart` return RAW SVG TEXT, not the JSON
-//      envelope at all. This client detects that (`<svg` prefix) and returns it tagged as `svg`.
+//   3. `chart_image/*` and `kp/kundli_chart` / `kp/rasi_chart` return the SVG OUTSIDE the normal
+//      envelope — but as a JSON-ENCODED STRING (the body literally begins with a double quote:
+//      "\"<svg …>\""), NOT as raw SVG text. This note previously claimed raw text and the client
+//      only checked for a leading `<svg`, which never matched; the body then JSON.parsed to a bare
+//      string, hit the "no .response field" guard, and threw — surfacing as a 502 on every Kundli,
+//      Chart and KP report (verified live 2026-08-15). Both encodings are handled now.
 //   4. PDF endpoints (`pdf/*`) use `lat`/`lon` query params, while almost everything else in the
 //      API uses `latitude`/`longitude`. Don't copy-paste a query builder between the two.
 //   5. Date format is documented as `dd/mm/yyyy`, but the collection's own examples inconsistently
@@ -52,6 +56,20 @@ async function callJyotisham(path, query = {}, { responseType = 'text' } = {}) {
     }
 
     const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+
+    // The chart endpoints deliver their SVG as a JSON string, so parsing yields
+    // a bare string rather than an envelope object. Catch that here — without
+    // it the `.response === undefined` guard below treats a perfectly good
+    // chart as a malformed response and throws (see note #3).
+    if (typeof parsed === 'string') {
+      if (parsed.trim().startsWith('<svg')) {
+        return { type: 'svg', data: parsed };
+      }
+      throw new Error(
+        `JyotishamAstroAPI returned an unexpected string response for ${path}: ${parsed.slice(0, 200)}`,
+      );
+    }
+
     if (parsed && parsed.status && parsed.status !== 200) {
       throw new Error(parsed.message || `JyotishamAstroAPI returned status ${parsed.status}`);
     }
