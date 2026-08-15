@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const LanguageContext = createContext();
+// NOTE: the context itself is created *below* `translations`, because its default
+// value needs to read from it. See the comment there.
 
 // Namespaced keys (namespace.key) to avoid collisions as coverage grows across screens.
 // NOTE: numbers, currency amounts, dates/times, astrologer names, OTP codes, and the
@@ -1261,6 +1262,33 @@ const translations = {
     'result.viewReport': 'रिपोर्ट देखें',
   },
 };
+
+// Resolve a key against the English table, applying the same {{param}}
+// interpolation the Provider's own t() does. Shared by the context default
+// below so a Provider-less render behaves identically, just without switching.
+const translateEnglish = (key, params) => {
+  let str = translations.English[key] ?? key;
+  if (params) {
+    Object.keys(params).forEach(p => {
+      str = str.replace(new RegExp(`{{${p}}}`, 'g'), params[p]);
+    });
+  }
+  return str;
+};
+
+// A missing Provider must never be fatal. `createContext()` with no default
+// returns undefined, so every consumer doing
+// `const {language, t} = useContext(LanguageContext)` throws
+// "Cannot read property 'language' of undefined" and takes the whole screen
+// down with it. The vendor app hit exactly that (Sentry ASTROWANI-VENDOR-4,
+// 2026-08-14) and this app carries the identical shape — it can happen any
+// time a consumer renders outside the Provider, including during an OTA
+// bundle swap or a remount. Defaulting to English degrades instead of crashing.
+export const LanguageContext = createContext({
+  language: 'English',
+  changeLanguage: () => {},
+  t: translateEnglish,
+});
 
 export const LanguageProvider = ({ children }) => {
   const [language, setLanguage] = useState('English');
