@@ -1,7 +1,9 @@
 import React from 'react';
 import {ScrollView, StyleSheet} from 'react-native';
 import {ASTRO, ReportShell} from '../../../components/astro/AstroUI';
-import {PlanetTable, InfoSection} from '../../../components/astro/AstroBlocks';
+import {
+  PlanetTable, LalKitabHoroscope, LalKitabHouses, LalKitabRemedies, LalKitabDebts,
+} from '../../../components/astro/AstroBlocks';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function LalKitabResultScreen({route}) {
@@ -9,15 +11,17 @@ export default function LalKitabResultScreen({route}) {
   const {data} = route.params || {};
 
   return (
-    <ScrollView style={styles.main}>
-      <ReportShell title={t('result.lalKitabHoroscope')} subtitle="Lal Kitab houses, debts and remedies">
-        <InfoSection title={t('result.lalKitabHoroscope')} data={data?.horoscope} glyph="📕" />
-        <InfoSection title={t('result.lalKitabDebts')} data={data?.debts} glyph="⚖" />
-        <InfoSection title={t('result.lalKitabRemedies')} data={data?.remedies} glyph="✚" />
-        <InfoSection title={t('result.lalKitabHouses')} data={data?.houses} glyph="⌂" />
-        {/* Planets here may or may not use the numeric-key shape; PlanetTable
-            falls back to a plain listing when it does not. */}
-        <PlanetTable data={data?.planets} title={t('result.lalKitabPlanets')} />
+    <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
+      <ReportShell title="Lal Kitab Report" subtitle="Chart, houses, debts and remedies">
+        {/* The horoscope payload is twelve houses with their planets — a chart in
+            list form. Drawn as a grid it is a chart again. */}
+        <LalKitabHoroscope data={data?.horoscope} title={t('result.lalKitabHoroscope')} index={0} />
+        <PlanetTable data={data?.planets} title={t('result.lalKitabPlanets')} index={1} />
+        <LalKitabHouses data={data?.houses} title={t('result.lalKitabHouses')} index={2} />
+        <LalKitabDebts data={data?.debts} title={t('result.lalKitabDebts')} index={3} />
+        {/* Nine planets × (a paragraph of effects + up to five remedies) is far
+            too much to print flat — one collapsible per planet instead. */}
+        <LalKitabRemedies data={data?.remedies} title={t('result.lalKitabRemedies')} index={4} />
       </ReportShell>
     </ScrollView>
   );

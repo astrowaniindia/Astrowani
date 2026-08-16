@@ -85,9 +85,27 @@ async function callJyotisham(path, query = {}, { responseType = 'text' } = {}) {
     }
     return { type: 'json', data: parsed.response };
   } catch (err) {
-    const detail = err?.response?.data || err.message;
-    console.error(`[jyotisham] GET ${path} failed:`, detail);
-    throw new Error(typeof detail === 'string' ? detail : 'JyotishamAstroAPI request failed');
+    let detail = err?.response?.data || err.message;
+    // An arraybuffer responseType (the PDF endpoints) means even the error body arrives as
+    // bytes, so the message is unreadable unless it's decoded back first.
+    if (Buffer.isBuffer(detail)) {
+      try { detail = JSON.parse(detail.toString('utf8')); } catch (_) { detail = detail.toString('utf8'); }
+    }
+    const text = typeof detail === 'string' ? detail : (detail?.error || detail?.message || '');
+    console.error(`[jyotisham] GET ${path} failed:`, text || detail);
+
+    // Quota exhaustion is an OPERATIONAL state, not a bug in the request — it arrives as
+    // HTTP 429 {"error":"Insufficient credits…"}. Tagging it lets astroRoutes turn it into
+    // an honest "temporarily unavailable" instead of a bare 502 the customer can't act on.
+    // Confirmed live 2026-08-16: the PDF endpoints were 429ing on this while every non-PDF
+    // endpoint still answered 200 — PDF generation draws on a separate credit pool.
+    if (err?.response?.status === 429 || /insufficient credits/i.test(text)) {
+      throw Object.assign(new Error('JyotishamAstroAPI credits exhausted'), {
+        quotaExhausted: true,
+        statusCode: 503,
+      });
+    }
+    throw new Error(text || 'JyotishamAstroAPI request failed');
   }
 }
 

@@ -11,10 +11,19 @@
 // These primitives give every screen one consistent language: a warm parchment
 // surface, maroon/gold brand accents, and real visual encodings (bars, rings,
 // badges, tables) instead of prose. Blocks built on them live in AstroBlocks.js.
-import React from 'react';
-import {View, Text, StyleSheet} from 'react-native';
+import React, {useEffect, useRef, useState} from 'react';
+import {
+  View, Text, StyleSheet, Animated, Easing, TouchableOpacity, LayoutAnimation,
+  Platform, UIManager,
+} from 'react-native';
+import Svg, {Circle, G} from 'react-native-svg';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // Palette extends the brand (AstroMaroon / AstroSoftOrange / AstroGold) with the
 // semantic colours these reports need. Kept here so every block agrees.
@@ -69,21 +78,27 @@ export function ReportShell({title, subtitle, children}) {
   );
 }
 
-/** Section container: gold-ruled header + parchment body. */
-export function SectionCard({title, subtitle, glyph, children, style}) {
+/** Section container: gold-ruled header + parchment body, revealed on mount. */
+export function SectionCard({title, subtitle, glyph, children, style, index = 0, noPad}) {
   return (
-    <View style={[styles.card, style]}>
-      {(title || glyph) && (
-        <View style={styles.cardHeader}>
-          {!!glyph && <Text style={styles.cardGlyph}>{glyph}</Text>}
-          <View style={{flex: 1}}>
-            <Text style={styles.cardTitle}>{title}</Text>
-            {!!subtitle && <Text style={styles.cardSubtitle}>{subtitle}</Text>}
+    <Reveal index={index}>
+      <View style={[styles.card, style]}>
+        {(title || glyph) && (
+          <View style={styles.cardHeader}>
+            {!!glyph && (
+              <View style={styles.cardGlyphBadge}>
+                <Text style={styles.cardGlyph}>{glyph}</Text>
+              </View>
+            )}
+            <View style={{flex: 1}}>
+              <Text style={styles.cardTitle}>{title}</Text>
+              {!!subtitle && <Text style={styles.cardSubtitle}>{subtitle}</Text>}
+            </View>
           </View>
-        </View>
-      )}
-      <View style={styles.cardBody}>{children}</View>
-    </View>
+        )}
+        <View style={noPad ? null : styles.cardBody}>{children}</View>
+      </View>
+    </Reveal>
   );
 }
 
@@ -107,22 +122,316 @@ export function TileRow({children}) {
 /**
  * Horizontal score bar. Encodes value/max as width so a reader takes in the
  * whole picture at a glance instead of comparing numbers in prose.
+ *
+ * The fill animates in: a bar that grows draws the eye to it and makes the
+ * relative lengths land as a comparison rather than as decoration. Staggered by
+ * `index` so a list of eight kootas fills in sequence instead of all at once.
  */
-export function ScoreBar({label, value, max, caption}) {
+export function ScoreBar({label, value, max, caption, index = 0}) {
   const v = Number(value) || 0;
   const m = Number(max) || 0;
   const pct = m > 0 ? Math.max(0, Math.min(1, v / m)) : 0;
   const tone = pct >= 0.7 ? ASTRO.good : pct >= 0.4 ? ASTRO.warn : ASTRO.bad;
+  const grow = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(grow, {
+      toValue: pct,
+      duration: 620,
+      delay: Math.min(index, 10) * 70,
+      easing: Easing.out(Easing.cubic),
+      // Width is a layout prop — the native driver cannot animate it.
+      useNativeDriver: false,
+    }).start();
+  }, [pct, index, grow]);
+
+  const width = grow.interpolate({inputRange: [0, 1], outputRange: ['0%', '100%']});
+
   return (
     <View style={styles.barWrap}>
       <View style={styles.barTop}>
         <Text style={styles.barLabel}>{label}</Text>
-        <Text style={styles.barValue}>{m ? `${v} / ${m}` : String(v)}</Text>
+        <Text style={[styles.barValue, {color: tone}]}>{m ? `${v} / ${m}` : String(v)}</Text>
       </View>
       <View style={styles.barTrack}>
-        <View style={[styles.barFill, {width: `${pct * 100}%`, backgroundColor: tone}]} />
+        <Animated.View style={[styles.barFill, {width, backgroundColor: tone}]} />
       </View>
       {!!caption && <Text style={styles.barCaption}>{caption}</Text>}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Entrance animation                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Fades and lifts its children in on mount. Applied to every section card so a
+ * long report arrives in a readable rhythm instead of dumping as one wall — the
+ * specific complaint about these screens was that nothing invited you to read.
+ */
+export function Reveal({children, index = 0, style}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 420,
+      delay: Math.min(index, 8) * 80,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [anim, index]);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: anim,
+          transform: [{translateY: anim.interpolate({inputRange: [0, 1], outputRange: [14, 0]})}],
+        },
+      ]}>
+      {children}
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Ring gauge                                                           */
+/* ------------------------------------------------------------------ */
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+/**
+ * Circular gauge for the ONE headline number of a report — compatibility %,
+ * dosha intensity, plane strength. A ring reads as "how much out of the whole"
+ * instantly, which a bare "Score 53" never did.
+ */
+export function RingGauge({
+  value, max = 100, label, caption, size = moderateScale(128), thickness = moderateScale(11), tone,
+}) {
+  const v = Number(value) || 0;
+  const m = Number(max) || 100;
+  const pct = m > 0 ? Math.max(0, Math.min(1, v / m)) : 0;
+  const color = tone || (pct >= 0.7 ? ASTRO.good : pct >= 0.4 ? ASTRO.warn : ASTRO.bad);
+
+  const r = (size - thickness) / 2;
+  const circumference = 2 * Math.PI * r;
+  const anim = useRef(new Animated.Value(circumference)).current;
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: circumference * (1 - pct),
+      duration: 900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+
+    // Count the number up alongside the arc so the two read as one motion.
+    const counter = new Animated.Value(0);
+    const id = counter.addListener(({value: f}) => setShown(Math.round(f)));
+    Animated.timing(counter, {
+      toValue: v, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false,
+    }).start();
+    return () => counter.removeListener(id);
+  }, [pct, v, circumference, anim]);
+
+  return (
+    <View style={[styles.ringWrap, {width: size}]}>
+      <View style={{width: size, height: size}}>
+        <Svg width={size} height={size}>
+          {/* -90° so the arc starts at 12 o'clock, the way a gauge is read. */}
+          <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
+            <Circle
+              cx={size / 2} cy={size / 2} r={r}
+              stroke={ASTRO.parchmentDeep} strokeWidth={thickness} fill="none"
+            />
+            <AnimatedCircle
+              cx={size / 2} cy={size / 2} r={r}
+              stroke={color} strokeWidth={thickness} fill="none" strokeLinecap="round"
+              strokeDasharray={`${circumference} ${circumference}`}
+              strokeDashoffset={anim}
+            />
+          </G>
+        </Svg>
+        <View style={[StyleSheet.absoluteFill, styles.ringCenter]}>
+          <Text style={[styles.ringValue, {color, fontSize: size * 0.26}]}>{shown}</Text>
+          {m !== 1 && <Text style={styles.ringMax}>/ {m}</Text>}
+        </View>
+      </View>
+      {!!label && <Text style={styles.ringLabel}>{label}</Text>}
+      {!!caption && <Text style={styles.ringCaption}>{caption}</Text>}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Collapsible                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Show-more container. The remedy lists from this API run to ten paragraphs
+ * apiece and, printed in full, buried every other section of the report under
+ * scroll. Collapsed by default with the count in the header, so the reader
+ * chooses what to go deep on.
+ */
+export function Collapsible({title, count, children, defaultOpen = false, glyph}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const spin = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
+
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
+    Animated.timing(spin, {
+      toValue: open ? 0 : 1, duration: 200, useNativeDriver: true,
+    }).start();
+    setOpen(!open);
+  };
+
+  const rotate = spin.interpolate({inputRange: [0, 1], outputRange: ['0deg', '180deg']});
+
+  return (
+    <View style={styles.collapse}>
+      <TouchableOpacity style={styles.collapseHead} onPress={toggle} activeOpacity={0.7}>
+        {!!glyph && <Text style={styles.collapseGlyph}>{glyph}</Text>}
+        <Text style={styles.collapseTitle}>{title}</Text>
+        {count !== undefined && count !== null && (
+          <View style={styles.collapseCount}>
+            <Text style={styles.collapseCountText}>{count}</Text>
+          </View>
+        )}
+        <Animated.View style={{transform: [{rotate}]}}>
+          <Ionicons name="chevron-down" size={moderateScale(17)} color={ASTRO.maroon} />
+        </Animated.View>
+      </TouchableOpacity>
+      {open && <View style={styles.collapseBody}>{children}</View>}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Numbered list — remedies, steps, factors                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Remedies as numbered cards. They were rendered as "• <paragraph>" bullets,
+ * which at ten items of four lines each is indistinguishable from a wall of
+ * text. Numbering plus a card per item gives each remedy an edge to rest on.
+ */
+export function NumberedList({items, tone = 'gold'}) {
+  const list = (items || []).filter(Boolean);
+  if (!list.length) return null;
+  const dotBg = tone === 'maroon' ? ASTRO.maroon : ASTRO.gold;
+  return (
+    <View>
+      {list.map((item, i) => (
+        <View key={i} style={styles.numItem}>
+          <View style={[styles.numDot, {backgroundColor: dotBg}]}>
+            <Text style={styles.numDotText}>{i + 1}</Text>
+          </View>
+          <Text style={styles.numText}>
+            {typeof item === 'string' ? item.trim() : JSON.stringify(item)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Two-party comparison                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Boy-vs-girl row for the matching report, which is full of {boy, girl} pairs.
+ * These were printing as the literal strings "false"/"true" in two columns —
+ * information the reader has to decode. A tick, a cross and a colour say it.
+ */
+export function CompareRow({label, left, right, invert = false}) {
+  const cell = (raw) => {
+    if (typeof raw === 'boolean') {
+      // `invert` flags rows where "true" is the bad outcome (a dosha present).
+      const good = invert ? !raw : raw;
+      return {
+        icon: raw ? 'close-circle' : 'checkmark-circle',
+        color: good ? ASTRO.good : ASTRO.bad,
+        text: raw ? 'Yes' : 'No',
+      };
+    }
+    return {icon: null, color: ASTRO.ink, text: raw === undefined || raw === null ? '—' : String(raw)};
+  };
+  const l = cell(left);
+  const r = cell(right);
+
+  return (
+    <View style={styles.cmpRow}>
+      <Text style={styles.cmpLabel} numberOfLines={2}>{label}</Text>
+      <View style={styles.cmpCell}>
+        {!!l.icon && <Ionicons name={l.icon} size={moderateScale(15)} color={l.color} />}
+        <Text style={[styles.cmpValue, {color: l.color}]}>{l.text}</Text>
+      </View>
+      <View style={styles.cmpCell}>
+        {!!r.icon && <Ionicons name={r.icon} size={moderateScale(15)} color={r.color} />}
+        <Text style={[styles.cmpValue, {color: r.color}]}>{r.text}</Text>
+      </View>
+    </View>
+  );
+}
+
+export function CompareHeader({leftName = 'Boy', rightName = 'Girl'}) {
+  return (
+    <View style={[styles.cmpRow, styles.cmpHead]}>
+      <Text style={styles.cmpLabel} />
+      <Text style={[styles.cmpHeadText, styles.cmpCell]}>♂ {leftName}</Text>
+      <Text style={[styles.cmpHeadText, styles.cmpCell]}>♀ {rightName}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Callout                                                              */
+/* ------------------------------------------------------------------ */
+
+/** Tinted panel for the API's summary sentence — the one line worth reading first. */
+export function Callout({children, tone = 'default', icon = 'sparkles'}) {
+  if (!children) return null;
+  const map = {
+    good: {bg: '#EDF7ED', bd: '#CDE8CE', fg: ASTRO.good},
+    bad: {bg: '#FDF0EE', bd: '#F3D2CC', fg: ASTRO.bad},
+    warn: {bg: '#FFF6EA', bd: '#F6E0C0', fg: ASTRO.warn},
+    default: {bg: '#FFFBF1', bd: ASTRO.goldSoft, fg: ASTRO.maroon},
+  };
+  const c = map[tone] || map.default;
+  return (
+    <View style={[styles.callout, {backgroundColor: c.bg, borderColor: c.bd}]}>
+      <Ionicons name={icon} size={moderateScale(15)} color={c.fg} style={styles.calloutIcon} />
+      <Text style={[styles.calloutText, {color: ASTRO.ink}]}>{children}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Labelled pill row (qualities, traits, lists of short words)          */
+/* ------------------------------------------------------------------ */
+
+/** Short strings as wrapping pills — far more scannable than a comma sentence. */
+export function PillRow({items, tone = 'default', label}) {
+  const list = (items || [])
+    .map((s) => (typeof s === 'string' ? s.trim() : String(s ?? '')))
+    .filter((s) => s && s !== '-');
+  if (!list.length) return null;
+  const bg = tone === 'good' ? '#EDF7ED' : tone === 'bad' ? '#FDF0EE' : ASTRO.goldSoft;
+  const fg = tone === 'good' ? ASTRO.good : tone === 'bad' ? ASTRO.bad : ASTRO.maroon;
+  return (
+    <View style={{marginBottom: verticalScale(4)}}>
+      {!!label && <Text style={styles.pillRowLabel}>{label}</Text>}
+      <View style={styles.pillWrap}>
+        {list.map((s, i) => (
+          <View key={i} style={[styles.pill, {backgroundColor: bg}]}>
+            <Text style={[styles.pillText, {color: fg}]}>{s}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -211,7 +520,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: ASTRO.line,
   },
-  cardGlyph: {fontSize: moderateScale(18), color: ASTRO.gold, marginRight: scale(8)},
+  cardGlyphBadge: {
+    width: moderateScale(28), height: moderateScale(28), borderRadius: moderateScale(14),
+    backgroundColor: ASTRO.goldSoft, alignItems: 'center', justifyContent: 'center',
+    marginRight: scale(9),
+  },
+  cardGlyph: {fontSize: moderateScale(15), color: ASTRO.maroon},
   cardTitle: {fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
   cardSubtitle: {fontSize: moderateScale(11), fontFamily: 'Lato-Regular', color: ASTRO.muted, marginTop: 1},
   cardBody: {padding: scale(12)},
@@ -265,4 +579,81 @@ const styles = StyleSheet.create({
   kv: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: verticalScale(4)},
   kvLabel: {flex: 1, fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.muted},
   kvValue: {flex: 1, fontSize: moderateScale(12), fontFamily: 'Lato-Regular', color: ASTRO.ink, textAlign: 'right'},
+
+  ringWrap: {alignItems: 'center'},
+  ringCenter: {alignItems: 'center', justifyContent: 'center'},
+  ringValue: {fontFamily: 'Lato-Bold', includeFontPadding: false},
+  ringMax: {fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: ASTRO.muted, marginTop: -2},
+  ringLabel: {
+    fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.maroon,
+    marginTop: verticalScale(7), textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.4,
+  },
+  ringCaption: {
+    fontSize: moderateScale(10), fontFamily: 'Lato-Regular', color: ASTRO.muted,
+    textAlign: 'center', marginTop: 1,
+  },
+
+  collapse: {
+    borderWidth: 1, borderColor: ASTRO.line, borderRadius: moderateScale(10),
+    marginBottom: verticalScale(8), backgroundColor: COLORS.white, overflow: 'hidden',
+  },
+  collapseHead: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: scale(10), paddingVertical: verticalScale(9),
+    backgroundColor: '#FFFDF7',
+  },
+  collapseGlyph: {fontSize: moderateScale(14), color: ASTRO.gold, marginRight: scale(7)},
+  collapseTitle: {flex: 1, fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.ink},
+  collapseCount: {
+    minWidth: moderateScale(20), paddingHorizontal: scale(5), paddingVertical: 1,
+    borderRadius: 20, backgroundColor: ASTRO.goldSoft, marginRight: scale(8), alignItems: 'center',
+  },
+  collapseCountText: {fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
+  collapseBody: {
+    paddingHorizontal: scale(10), paddingTop: verticalScale(8), paddingBottom: verticalScale(4),
+    borderTopWidth: 1, borderTopColor: ASTRO.line,
+  },
+
+  numItem: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: verticalScale(9)},
+  numDot: {
+    width: moderateScale(19), height: moderateScale(19), borderRadius: moderateScale(10),
+    alignItems: 'center', justifyContent: 'center', marginRight: scale(8), marginTop: 1,
+  },
+  numDotText: {fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: COLORS.white},
+  numText: {
+    flex: 1, fontSize: moderateScale(12), lineHeight: moderateScale(19),
+    fontFamily: 'Lato-Regular', color: ASTRO.ink,
+  },
+
+  cmpRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(7),
+    borderBottomWidth: 1, borderBottomColor: ASTRO.line,
+  },
+  cmpHead: {borderBottomWidth: 1.5, borderBottomColor: ASTRO.goldSoft},
+  cmpHeadText: {
+    fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.maroon, textAlign: 'center',
+  },
+  cmpLabel: {flex: 1.5, fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.muted},
+  cmpCell: {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center'},
+  cmpValue: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold', marginLeft: scale(4)},
+
+  callout: {
+    flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1, borderRadius: moderateScale(10),
+    padding: scale(10), marginBottom: verticalScale(8),
+  },
+  calloutIcon: {marginRight: scale(8), marginTop: 1},
+  calloutText: {
+    flex: 1, fontSize: moderateScale(12), lineHeight: moderateScale(19), fontFamily: 'Lato-Regular',
+  },
+
+  pillRowLabel: {
+    fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: ASTRO.muted,
+    textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: verticalScale(4),
+  },
+  pillWrap: {flexDirection: 'row', flexWrap: 'wrap', marginBottom: verticalScale(4)},
+  pill: {
+    paddingHorizontal: scale(9), paddingVertical: verticalScale(4), borderRadius: 20,
+    marginRight: scale(5), marginBottom: verticalScale(5),
+  },
+  pillText: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold'},
 });

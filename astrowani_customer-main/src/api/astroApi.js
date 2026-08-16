@@ -29,9 +29,25 @@ export async function runAstroReport(key, payload) {
     const res = await Instance.post(`/api/astro/${key}`, payload, { headers });
     return res.data?.data;
   } catch (err) {
-    const message = err.response?.data?.message || err.message || 'Something went wrong';
+    const status = err.response?.status;
+    const serverMessage = err.response?.data?.message;
+    // A gateway error (or a timeout) never carries our JSON body, so axios's own
+    // "Request failed with status code 502" is all that is left — and that is
+    // exactly what a customer was shown when the PDF report failed. Replace the
+    // bare status-code string with something that says what to do.
+    const message = serverMessage
+      || (status >= 500
+        ? 'This report could not be generated right now. You have not been charged — please try again in a few minutes.'
+        : null)
+      || (err.message && !/status code/i.test(err.message) ? err.message : null)
+      || 'Something went wrong. Please try again.';
+
     const wrapped = new Error(message);
-    wrapped.isInsufficientBalance = message.toLowerCase().includes('insufficient');
+    // Only a 400 from OUR backend means the wallet is short. Matching on the word
+    // "insufficient" alone once misfired on the upstream provider's own
+    // "Insufficient credits" quota error, telling the customer to recharge a
+    // wallet that was never the problem.
+    wrapped.isInsufficientBalance = status === 400 && /insufficient/i.test(serverMessage || '');
     throw wrapped;
   }
 }

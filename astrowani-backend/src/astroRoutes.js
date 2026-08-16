@@ -417,6 +417,15 @@ module.exports = function registerAstroRoutes(app) {
     } catch (err) {
       const statusCode = err.statusCode || 502;
       console.error(`POST /api/astro/${key} upstream error:`, err.message);
+      // Never surface a raw upstream string to a paying customer — "Insufficient credits.
+      // Please renew your subscription" is OUR billing problem and reads to them as if their
+      // wallet is empty (it isn't; nothing was charged, the debit runs only on success).
+      if (err.quotaExhausted) {
+        return res.status(503).json({
+          success: false,
+          message: 'This report is temporarily unavailable. You have not been charged — please try again later.',
+        });
+      }
       return res.status(statusCode).json({ success: false, message: err.message || 'Failed to generate report' });
     }
 

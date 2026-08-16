@@ -1,34 +1,34 @@
 import React from 'react';
-import {ScrollView, StyleSheet, View} from 'react-native';
-import {SvgXml} from 'react-native-svg';
-import {scale, moderateScale} from '../../../utils/Scaling';
+import {ScrollView, StyleSheet} from 'react-native';
 import {ASTRO, ReportShell, SectionCard} from '../../../components/astro/AstroUI';
-import {PlanetTable, InfoSection} from '../../../components/astro/AstroBlocks';
+import ZoomableChart from '../../../components/astro/ZoomableChart';
+import {PlanetTable, KpCusps, KpSignificators} from '../../../components/astro/AstroBlocks';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function KPAstrologyResultScreen({route}) {
   const {t} = React.useContext(LanguageContext);
   const {data} = route.params || {};
+  // kp/planet_details nests the list under `planets` with the ascendant beside
+  // it — PlanetTable understands that shape, but the ascendant is worth showing
+  // in the same list rather than dropping it.
+  const planets = data?.planetDetails?.planets
+    ? [...data.planetDetails.planets, ...(data.planetDetails.ascendant ? [data.planetDetails.ascendant] : [])]
+    : data?.planetDetails;
 
   return (
-    <ScrollView style={styles.main}>
+    <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
       <ReportShell title="KP Astrology" subtitle="Krishnamurti Paddhati chart and significators">
         {!!data?.chartSvg && (
-          <SectionCard title="KP Chart" glyph="✧">
-            <View style={styles.chartWrap}>
-              <SvgXml xml={data.chartSvg} width="100%" height={moderateScale(300)} />
-            </View>
+          <SectionCard title="KP Chart" glyph="✧" subtitle="Tap to zoom" index={0}>
+            <ZoomableChart svg={data.chartSvg} title="KP Chart" />
           </SectionCard>
         )}
-        <PlanetTable data={data?.planetDetails} title={t('result.planetDetails')} />
-        <InfoSection title={t('result.cuspDetails')} data={data?.cuspDetails} glyph="◑" />
-        <InfoSection title={t('result.houseSignificators')} data={data?.houseSignificators} glyph="⌂" />
+        <PlanetTable data={planets} title={t('result.planetDetails')} index={1} />
+        <KpCusps data={data?.cuspDetails} title={t('result.cuspDetails')} index={2} />
+        <KpSignificators data={data?.houseSignificators} title={t('result.houseSignificators')} index={3} />
       </ReportShell>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  main: {flex: 1, backgroundColor: ASTRO.parchmentDeep},
-  chartWrap: {alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, padding: scale(6)},
-});
+const styles = StyleSheet.create({main: {flex: 1, backgroundColor: ASTRO.parchmentDeep}});
