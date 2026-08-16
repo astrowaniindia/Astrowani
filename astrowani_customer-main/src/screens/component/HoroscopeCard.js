@@ -1,262 +1,84 @@
+// Horoscope reading card (Daily / Monthly / Yearly tabs).
+//
+// Was a centred remote stock image — the SAME hardcoded Bing URL for every sign,
+// so it identified nothing and failed to load offline — over a bare paragraph.
+// Now: the sign's own zodiac glyph, the period as a badge, and the prediction as
+// proper prose on the same parchment surface the paid reports use.
 import React from 'react';
-import {View, Text, StyleSheet, ScrollView, Image} from 'react-native';
+import {View, Text, StyleSheet, ScrollView} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {COLORS} from '../../Theme/Colors';
-const HoroscopeCard = ({data, daily, tab}) => {
+import {
+  ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH,
+} from '../../components/astro/AstroUI';
+import {LanguageContext} from '../../context/LanguageContext';
 
-  console.log("datata is", data)
-  const getCurrentDate = () => {
+// The API returns the sign name; the glyph map is keyed on the English name, and
+// (since the reports pass) also on the Hindi one.
+function glyphFor(sign) {
+  return ZODIAC_GLYPH[sign] || ZODIAC_GLYPH[String(sign || '').trim()] || '✦';
+}
+
+export default function HoroscopeCard({data, tab}) {
+  const {t} = React.useContext(LanguageContext);
+
+  const periodLabel = () => {
     const date = new Date();
-    const options = {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    };
-    return date.toLocaleDateString('en-US', options);
+    if (tab === 'monthly') return date.toLocaleString('en-US', {month: 'long', year: 'numeric'});
+    if (tab === 'yearly') return String(date.getFullYear());
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
+    });
   };
 
-  const getCurrentMonth = () => {
-    const date = new Date();
-    return date.toLocaleString('en-US', {month: 'long', year: 'numeric'});
-  };
+  const tabLabel = tab === 'monthly' ? t('free.monthly')
+    : tab === 'yearly' ? t('free.yearly') : t('free.daily');
 
-  const getCurrentYear = () => {
-    const date = new Date();
-    return date.getFullYear();
-  };
-
-  const renderDate = () => {
-    if (tab === 'monthly') {
-      return getCurrentMonth();
-    } else if (tab === 'yearly') {
-      return getCurrentYear();
-    } else {
-      return getCurrentDate();
-    }
-  };
+  // The free-services endpoint currently returns one `prediction` string; the
+  // monthly/yearly tabs reuse it until per-period endpoints exist. Read whatever
+  // richer shape is present rather than assuming, and never blank the card out.
+  const text = data?.[tab]?.description
+    || data?.prediction
+    || data?.daily?.description
+    || '';
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.horoscopeContainer}>
-        <View style={styles.imageWrapper}>
-          <Image
-            style={styles.signImage}
-            source={{
-              uri:
-                data.zodiacImage ||
-                'https://www.bing.com/th?id=OIP.CtB9-R0mxlASJmUU3FkwKgHaHa&w=142&h=150&c=8&rs=1&qlt=90&o=6&pid=3.1&rm=2',
-            }}
-          />
-        </View>
-        <Text style={styles.titleText}>{data.zodiacSign || 'Sign'}</Text>
-        <View style={styles.dateContainer}>
-          <Text style={styles.dateText}>{renderDate()}</Text>
-        </View>
-        <View>
-        <Text style={styles.descriptionText}>
-       { data.prediction}
-        </Text>
-        </View>
-        {/* <Text style={styles.descriptionText}>
-          {tab === 'daily' && data?.daily?.description
-            ? data.daily.description
-            : tab === 'monthly' && data?.monthly?.description
-            ? data.monthly.description
-            : tab === 'yearly' && data?.yearly?.description
-            ? data.yearly.description
-            : 'Description not available'}
-        </Text> */}
-
-        {/* {tab === 'monthly' && data?.monthly?.career ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Career:</Text>
-            <Text style={styles.factorDetail}>{data?.monthly?.career}</Text>
-          </View>
-        ) : tab === 'yearly' && data.yearly?.career ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Career:</Text>
-            <Text style={styles.factorDetail}>{data?.yearly?.career}</Text>
-          </View>
-        ) : null} */}
-{/* 
-        {tab === 'monthly' && data?.monthly?.love ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Love:</Text>
-            <Text style={styles.factorDetail}>{data?.monthly?.love}</Text>
-          </View>
-        ) : tab === 'yearly' && data.yearly?.love ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Love:</Text>
-            <Text style={styles.factorDetail}>{data?.yearly?.love}</Text>
-          </View>
-        ) : null} */}
-
-        {/* {tab === 'monthly' && data?.monthly?.health ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Health:</Text>
-            <Text style={styles.factorDetail}>{data?.monthly?.health}</Text>
-          </View>
-        ) : tab === 'yearly' && data.yearly?.health ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Health:</Text>
-            <Text style={styles.factorDetail}>{data?.yearly?.health}</Text>
-          </View>
-        ) : null}
-        {tab === 'monthly' && data?.monthly?.money ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Money:</Text>
-            <Text style={styles.factorDetail}>{data?.monthly?.money}</Text>
-          </View>
-        ) : tab === 'yearly' && data.yearly?.money ? (
-          <View style={styles.lifesFactor}>
-            <Text style={styles.factorheading}>Money:</Text>
-            <Text style={styles.factorDetail}>{data?.yearly?.money}</Text>
-          </View>
-        ) : null} */}
-      </View>
-      {/* {daily && (
-        <View style={styles.luckyContainer}>
-          <Text style={styles.luckyTitleText}>
-            Lucky Color & Lucky Number Today
-          </Text>
-          <View style={styles.luckyItemsContainer}>
-            <View style={styles.luckyItem}>
-              <Icon
-                name="palette"
-                size={30}
-                color="#E91E63"
-                style={styles.icon}
-              />
-              <Text style={styles.luckyItemTitle}>Lucky color for Today</Text>
-              <Text style={styles.luckyItemValue}>
-                {data.daily?.luckyColor || 'color'}
-              </Text>
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <SectionCard title={data?.zodiacSign || '—'} glyph={glyphFor(data?.zodiacSign)}>
+        <View style={styles.hero}>
+          <Text style={styles.heroGlyph}>{glyphFor(data?.zodiacSign)}</Text>
+          <View style={styles.heroSide}>
+            <View style={styles.periodBadge}>
+              <Text style={styles.periodBadgeText}>{tabLabel}</Text>
             </View>
-            <View style={styles.luckyItem}>
-              <Icon
-                name="numeric"
-                size={30}
-                color="#FF5722"
-                style={styles.icon}
-              />
-              <Text style={styles.luckyItemTitle}>Lucky number for Today</Text>
-              <Text style={styles.luckyItemValue}>
-                {data.daily?.luckyNumber || 'number'}
-              </Text>
-            </View>
+            <Text style={styles.periodDate}>{periodLabel()}</Text>
           </View>
         </View>
-      )} */}
+
+        {text
+          ? <Prose>{text}</Prose>
+          : <Callout icon="information-circle">{t('horoscope.unableToFetch')}</Callout>}
+      </SectionCard>
     </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#fff',
-    padding: scale(15),
-    backgroundColor: COLORS.AstroSoftOrange,
+  scroll: {paddingTop: verticalScale(12), paddingBottom: verticalScale(28)},
+  hero: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white,
+    borderWidth: 1, borderColor: ASTRO.line, borderRadius: moderateScale(12),
+    padding: scale(12), marginBottom: verticalScale(12),
   },
-  horoscopeContainer: {
-    marginBottom: verticalScale(20),
+  heroGlyph: {fontSize: moderateScale(40), color: ASTRO.gold},
+  heroSide: {flex: 1, marginLeft: scale(12)},
+  periodBadge: {
+    alignSelf: 'flex-start', backgroundColor: ASTRO.goldSoft, borderRadius: 20,
+    paddingHorizontal: scale(10), paddingVertical: verticalScale(3),
   },
-  dateContainer: {
-    marginBottom: verticalScale(15),
-  },
-  dateText: {
-    fontSize: moderateScale(16),
-    color: '#f54242',
-    fontFamily: 'Lato-Regular',
-    textAlign: 'center',
-  },
-  titleText: {
-    fontSize: moderateScale(18),
-    fontFamily: 'Lato-Bold',
-    marginVertical: verticalScale(4),
-    color: '#000',
-    textAlign: 'center',
-  },
-  descriptionText: {
-    fontSize: moderateScale(14),
-    color: COLORS.black,
-    fontFamily: 'Lato-Regular',
-    marginBottom: verticalScale(10),
-    lineHeight: 20,
-  },
-  luckyContainer: {
-    backgroundColor: '#f8f8f8',
-    borderRadius: moderateScale(8),
-    overflow: 'hidden',
-    marginTop: verticalScale(20),
-  },
-  luckyTitleText: {
-    fontSize: moderateScale(15),
-    backgroundColor: COLORS.lightTurquoise,
-    fontFamily: 'Lato-Bold',
-    color: '#f54242',
-    textAlign: 'center',
-    paddingVertical: verticalScale(8),
-  },
-  icon: {
-    marginBottom: verticalScale(8),
-  },
-  luckyItemsContainer: {
-    padding: scale(15),
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  luckyItem: {
-    alignItems: 'center',
-
-    width: scale(140),
-  },
-  luckyItemTitle: {
-    fontSize: moderateScale(12),
-    color: '#000',
-    fontFamily: 'Lato-Regular',
-    marginBottom: verticalScale(8),
-  },
-  luckyItemValue: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Bold',
-    color: '#000',
-  },
-  signImage: {
-    width: scale(50),
-    height: verticalScale(50),
-
-    marginBottom: verticalScale(10),
-  },
-  imageWrapper: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
-    width: scale(70),
-    height: scale(70),
-    borderRadius: moderateScale(35),
-    backgroundColor: '#fff',
-    elevation: 4,
-    shadowColor: '#000',
-  },
-
-  lifesFactor: {
-    marginVertical: verticalScale(10),
-  },
-  factorheading: {
-    color: '#000',
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(15),
-    marginBottom: verticalScale(5),
-  },
-  factorDetail: {
-    color: '#000',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(14),
-    marginBottom: verticalScale(5),
+  periodBadgeText: {fontSize: moderateScale(10.5), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
+  periodDate: {
+    fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.ink,
+    marginTop: verticalScale(5),
   },
 });
-
-export default HoroscopeCard;

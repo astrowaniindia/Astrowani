@@ -1,47 +1,62 @@
-import React, {useEffect, useState} from 'react';
+// Daily horoscope picker.
+//
+// Was: a row of plain text chips, then a card showing THE SAME hardcoded Bing
+// stock image for all twelve signs (a placeholder URL that had shipped as-is),
+// with the prediction itself hidden behind a tap. Nothing identified the sign
+// you had picked except its name.
+//
+// Now: a twelve-sign grid using the real zodiac glyphs (no remote images to load
+// or 404), the selected sign as an animated hero, and the day's prediction read
+// right there — with the Daily/Monthly/Yearly detail still one tap away.
+import React, {useEffect, useRef, useState} from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Animated, Easing,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import {LanguageContext} from '../../../context/LanguageContext';
 import {FREE_SERVICES_URL} from '../../../config/api';
+import {
+  ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH, Reveal,
+} from '../../../components/astro/AstroUI';
 
 const ZODIAC_SIGNS = [
-  {sign: 'aries', name: 'Aries', dateRange: {start: '2024-03-21', end: '2024-04-19'}},
-  {sign: 'taurus', name: 'Taurus', dateRange: {start: '2024-04-20', end: '2024-05-20'}},
-  {sign: 'gemini', name: 'Gemini', dateRange: {start: '2024-05-21', end: '2024-06-20'}},
-  {sign: 'cancer', name: 'Cancer', dateRange: {start: '2024-06-21', end: '2024-07-22'}},
-  {sign: 'leo', name: 'Leo', dateRange: {start: '2024-07-23', end: '2024-08-22'}},
-  {sign: 'virgo', name: 'Virgo', dateRange: {start: '2024-08-23', end: '2024-09-22'}},
-  {sign: 'libra', name: 'Libra', dateRange: {start: '2024-09-23', end: '2024-10-22'}},
-  {sign: 'scorpio', name: 'Scorpio', dateRange: {start: '2024-10-23', end: '2024-11-21'}},
-  {sign: 'sagittarius', name: 'Sagittarius', dateRange: {start: '2024-11-22', end: '2024-12-21'}},
-  {sign: 'capricorn', name: 'Capricorn', dateRange: {start: '2024-12-22', end: '2025-01-19'}},
-  {sign: 'aquarius', name: 'Aquarius', dateRange: {start: '2025-01-20', end: '2025-02-18'}},
-  {sign: 'pisces', name: 'Pisces', dateRange: {start: '2025-02-19', end: '2025-03-20'}},
+  {sign: 'aries', name: 'Aries', element: 'fire', dateRange: {start: '2024-03-21', end: '2024-04-19'}},
+  {sign: 'taurus', name: 'Taurus', element: 'earth', dateRange: {start: '2024-04-20', end: '2024-05-20'}},
+  {sign: 'gemini', name: 'Gemini', element: 'air', dateRange: {start: '2024-05-21', end: '2024-06-20'}},
+  {sign: 'cancer', name: 'Cancer', element: 'water', dateRange: {start: '2024-06-21', end: '2024-07-22'}},
+  {sign: 'leo', name: 'Leo', element: 'fire', dateRange: {start: '2024-07-23', end: '2024-08-22'}},
+  {sign: 'virgo', name: 'Virgo', element: 'earth', dateRange: {start: '2024-08-23', end: '2024-09-22'}},
+  {sign: 'libra', name: 'Libra', element: 'air', dateRange: {start: '2024-09-23', end: '2024-10-22'}},
+  {sign: 'scorpio', name: 'Scorpio', element: 'water', dateRange: {start: '2024-10-23', end: '2024-11-21'}},
+  {sign: 'sagittarius', name: 'Sagittarius', element: 'fire', dateRange: {start: '2024-11-22', end: '2024-12-21'}},
+  {sign: 'capricorn', name: 'Capricorn', element: 'earth', dateRange: {start: '2024-12-22', end: '2025-01-19'}},
+  {sign: 'aquarius', name: 'Aquarius', element: 'air', dateRange: {start: '2025-01-20', end: '2025-02-18'}},
+  {sign: 'pisces', name: 'Pisces', element: 'water', dateRange: {start: '2025-02-19', end: '2025-03-20'}},
 ];
 
-const Horoscope = ({navigation}) => {
+// Element tints the glyph, so the grid has structure beyond twelve identical tiles.
+const ELEMENT_COLOR = {fire: '#C0392B', earth: '#6B8E23', air: '#4A7CA8', water: '#3E7A8C'};
+
+export default function Horoscope({navigation}) {
   const {t} = React.useContext(LanguageContext);
-  const zodiacName = sign => t(`zodiac.${sign}`);
+  const zodiacName = (sign) => t(`zodiac.${sign}`);
   const [selected, setSelected] = useState(ZODIAC_SIGNS[0]);
   const [horoscopeData, setHoroscopeData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const formatDate = dateString => {
+  // Re-plays whenever the sign changes, so switching sign feels like the card
+  // turning over rather than text silently swapping underneath you.
+  const heroAnim = useRef(new Animated.Value(0)).current;
+
+  const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
   };
 
-  const fetchHoroscope = async sign => {
+  const fetchHoroscope = async (sign) => {
     const response = await fetch(
       `${FREE_SERVICES_URL}/api/free-services/horoscope?sign=${sign}`,
       {method: 'POST', headers: {'Content-Type': 'application/json'}},
@@ -50,11 +65,14 @@ const Horoscope = ({navigation}) => {
   };
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       setLoading(true);
       setError('');
+      heroAnim.setValue(0);
       try {
         const response = await fetchHoroscope(selected.sign);
+        if (cancelled) return;
         setHoroscopeData({
           _id: selected.sign,
           zodiacSign: zodiacName(selected.sign),
@@ -62,141 +80,135 @@ const Horoscope = ({navigation}) => {
           prediction: response.data.daily_prediction.prediction,
           date: response.data.daily_prediction.date,
         });
+        Animated.timing(heroAnim, {
+          toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+        }).start();
       } catch (err) {
-        console.error(`Failed to fetch horoscope for ${selected.sign}:`, err);
+        if (cancelled) return;
+        console.log(`Failed to fetch horoscope for ${selected.sign}:`, err);
         setError(t('horoscope.unableToFetch'));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     load();
+    // A fast tapper can outrun the network; `cancelled` stops a stale response
+    // overwriting the sign they actually landed on.
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
+  const tint = ELEMENT_COLOR[selected.element] || ASTRO.maroon;
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{t('horoscope.title', {sign: zodiacName(selected.sign)})}</Text>
+    <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
+      <View style={styles.grid}>
+        {ZODIAC_SIGNS.map((z, i) => {
+          const on = selected.sign === z.sign;
+          return (
+            <Reveal key={z.sign} index={Math.floor(i / 4)} style={styles.gridCellWrap}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setSelected(z)}
+                style={[styles.gridCell, on && styles.gridCellOn]}>
+                <Text
+                  style={[
+                    styles.gridGlyph,
+                    {color: ELEMENT_COLOR[z.element] || ASTRO.gold},
+                    on && styles.gridGlyphOn,
+                  ]}>
+                  {ZODIAC_GLYPH[z.name]}
+                </Text>
+                <Text style={[styles.gridName, on && styles.gridNameOn]}>{zodiacName(z.sign)}</Text>
+              </TouchableOpacity>
+            </Reveal>
+          );
+        })}
+      </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.signPicker} contentContainerStyle={styles.signPickerContent}>
-        {ZODIAC_SIGNS.map(z => (
-          <TouchableOpacity
-            key={z.sign}
-            style={[styles.signChip, selected.sign === z.sign && styles.signChipActive]}
-            onPress={() => setSelected(z)}>
-            <Text style={[styles.signChipText, selected.sign === z.sign && styles.signChipTextActive]}>{zodiacName(z.sign)}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <Animated.View
+        style={{
+          opacity: heroAnim,
+          transform: [
+            {translateY: heroAnim.interpolate({inputRange: [0, 1], outputRange: [16, 0]})},
+          ],
+        }}>
+        <SectionCard
+          title={t('horoscope.title', {sign: zodiacName(selected.sign)})}
+          glyph={ZODIAC_GLYPH[selected.name]}
+          subtitle={`${formatDate(selected.dateRange.start)} – ${formatDate(selected.dateRange.end)}`}>
+          {loading ? (
+            <View style={styles.indicator}>
+              <ActivityIndicator size="small" color={ASTRO.maroon} />
+            </View>
+          ) : error ? (
+            <Callout tone="bad" icon="alert-circle">{error}</Callout>
+          ) : horoscopeData ? (
+            <>
+              <View style={[styles.hero, {borderColor: tint}]}>
+                <Text style={[styles.heroGlyph, {color: tint}]}>{ZODIAC_GLYPH[selected.name]}</Text>
+                <View style={styles.heroSide}>
+                  <Text style={styles.heroName}>{horoscopeData.zodiacSign}</Text>
+                  {!!horoscopeData.date && <Text style={styles.heroDate}>{horoscopeData.date}</Text>}
+                </View>
+              </View>
+              {/* The prediction was previously behind a tap. It is the point of the
+                  screen, so it reads inline; the tab view is still there for more. */}
+              <Prose>{horoscopeData.prediction}</Prose>
 
-      {loading ? (
-        <View style={styles.indicator}>
-          <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
-        </View>
-      ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : horoscopeData ? (
-        <TouchableOpacity
-          onPress={() => navigation.navigate('HoroscopeDetails', {data: horoscopeData})}
-          style={styles.signContainer}>
-          <View style={styles.imageWrapper}>
-            <Image
-              source={{
-                uri: 'https://www.bing.com/th?id=OIP.CtB9-R0mxlASJmUU3FkwKgHaHa&w=142&h=150&c=8&rs=1&qlt=90&o=6&pid=3.1&rm=2',
-              }}
-              style={styles.signImage}
-            />
-          </View>
-          <Text style={styles.signName}>{horoscopeData.zodiacSign}</Text>
-          <Text style={styles.signDate}>
-            {`${formatDate(horoscopeData.dateRange.start)} - ${formatDate(horoscopeData.dateRange.end)}`}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-    </View>
+              <TouchableOpacity
+                style={styles.moreBtn}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('HoroscopeDetails', {data: horoscopeData})}>
+                <Text style={styles.moreBtnText}>{t('free.fullReading')}</Text>
+                <Ionicons name="chevron-forward" size={moderateScale(16)} color={COLORS.white} />
+              </TouchableOpacity>
+            </>
+          ) : null}
+        </SectionCard>
+      </Animated.View>
+    </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.AstroSoftOrange,
-    paddingTop: verticalScale(20),
-    alignItems: 'center',
+  main: {flex: 1, backgroundColor: ASTRO.parchmentDeep},
+  grid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    paddingHorizontal: scale(11), paddingTop: verticalScale(12),
   },
-  title: {
-    fontSize: moderateScale(19),
-    fontFamily: 'Lato-Bold',
-    textAlign: 'center',
-    color: COLORS.AstroMaroon,
-    marginBottom: verticalScale(14),
+  gridCellWrap: {width: '25%', padding: scale(3)},
+  gridCell: {
+    backgroundColor: ASTRO.parchment, borderRadius: moderateScale(10), borderWidth: 1,
+    borderColor: ASTRO.line, alignItems: 'center', paddingVertical: verticalScale(9),
   },
-  signPicker: {
-    maxHeight: verticalScale(46),
-    marginBottom: verticalScale(20),
+  gridCellOn: {backgroundColor: ASTRO.maroon, borderColor: ASTRO.maroon},
+  gridGlyph: {fontSize: moderateScale(22)},
+  gridGlyphOn: {color: ASTRO.goldSoft},
+  gridName: {
+    fontSize: moderateScale(9.5), fontFamily: 'Lato-Bold', color: ASTRO.muted,
+    marginTop: 2, textAlign: 'center',
   },
-  signPickerContent: {
-    paddingHorizontal: scale(15),
+  gridNameOn: {color: COLORS.white},
+
+  indicator: {paddingVertical: verticalScale(26), alignItems: 'center'},
+  hero: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1.5,
+    borderRadius: moderateScale(12), backgroundColor: COLORS.white,
+    padding: scale(12), marginBottom: verticalScale(10),
   },
-  signChip: {
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(8),
-    borderRadius: moderateScale(20),
-    borderWidth: 1,
-    borderColor: COLORS.AstroMaroon,
-    backgroundColor: COLORS.white,
-    marginRight: scale(8),
+  heroGlyph: {fontSize: moderateScale(42)},
+  heroSide: {flex: 1, marginLeft: scale(12)},
+  heroName: {fontSize: moderateScale(18), fontFamily: 'Lato-Bold', color: ASTRO.ink},
+  heroDate: {fontSize: moderateScale(11), fontFamily: 'Lato-Regular', color: ASTRO.muted, marginTop: 2},
+
+  moreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: ASTRO.maroon, borderRadius: moderateScale(10),
+    paddingVertical: verticalScale(11), marginTop: verticalScale(12),
   },
-  signChipActive: {
-    backgroundColor: COLORS.AstroMaroon,
-  },
-  signChipText: {
-    fontSize: moderateScale(13),
-    fontFamily: 'Lato-Bold',
-    color: COLORS.AstroMaroon,
-  },
-  signChipTextActive: {
-    color: COLORS.white,
-  },
-  errorText: {
-    color: 'red',
-    textAlign: 'center',
-    paddingVertical: verticalScale(10),
-  },
-  indicator: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: verticalScale(10),
-  },
-  signContainer: {
-    alignItems: 'center',
-    marginBottom: verticalScale(25),
-  },
-  signImage: {
-    width: scale(50),
-    height: scale(50),
-    marginBottom: verticalScale(10),
-  },
-  signName: {
-    fontSize: moderateScale(16),
-    marginBottom: verticalScale(3),
-    fontFamily: 'Lato-Regular',
-    color: '#d32f2f',
-  },
-  signDate: {
-    fontSize: moderateScale(12),
-    fontFamily: 'Lato-Regular',
-    color: '#000',
-  },
-  imageWrapper: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: scale(70),
-    height: scale(70),
-    borderRadius: moderateScale(35),
-    backgroundColor: '#fff',
-    elevation: 4,
-    shadowColor: '#000',
+  moreBtnText: {
+    fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: COLORS.white,
+    marginRight: scale(4),
   },
 });
-
-export default Horoscope;

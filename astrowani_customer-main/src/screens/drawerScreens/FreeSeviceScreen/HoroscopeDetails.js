@@ -1,110 +1,35 @@
+// Daily / Monthly / Yearly horoscope tabs.
+//
+// The tab row was three hand-rolled TouchableOpacitys with a border-radius pill
+// that jumped between them with no transition, on a plain white ground that
+// matched nothing else. Replaced with the shared animated SegmentedTabs so this
+// screen, Shubh Muhurat and Kundali Matching all behave the same way.
 import React, {useState} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  FlatList,
-} from 'react-native';
-import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
-import {COLORS} from '../../../Theme/Colors';
-
+import {View, StyleSheet} from 'react-native';
+import {ASTRO, SegmentedTabs} from '../../../components/astro/AstroUI';
+import {LanguageContext} from '../../../context/LanguageContext';
 import HoroscopeCard from '../../component/HoroscopeCard';
 
-const HoroscopeDetails = ({navigation, route}) => {
-  const [activeTab, setActiveTab] = useState('Daily');
+export default function HoroscopeDetails({route}) {
+  const {t} = React.useContext(LanguageContext);
+  const [tab, setTab] = useState('daily');
   const {data} = route.params;
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'Daily':
-        return <HoroscopeCard data={data} tab="daily" daily={true} />;
-      case 'Monthly':
-        return <HoroscopeCard data={data} tab="monthly" />;
-      case 'Yearly':
-        return <HoroscopeCard data={data} tab="yearly" />;
-      default:
-        return null;
-    }
-  };
+  const tabs = [
+    {key: 'daily', label: t('free.daily')},
+    {key: 'monthly', label: t('free.monthly')},
+    {key: 'yearly', label: t('free.yearly')},
+  ];
 
   return (
     <View style={styles.container}>
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'Daily' && styles.activeTab]}
-          onPress={() => setActiveTab('Daily')}>
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'Daily' && styles.tabTextActive,
-            ]}>
-            Daily
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'Monthly' && styles.activeTab]}
-          onPress={() => setActiveTab('Monthly')}>
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'Monthly' && styles.tabTextActive,
-            ]}>
-            Monthly
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'Yearly' && styles.activeTab]}
-          onPress={() => setActiveTab('Yearly')}>
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'Yearly' && styles.tabTextActive,
-            ]}>
-            Yearly
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {renderContent()}
+      <SegmentedTabs tabs={tabs} active={tab} onChange={setTab} />
+      {/* keyed on the tab so the card's entrance animation replays on every switch */}
+      <HoroscopeCard key={tab} data={data} tab={tab} daily={tab === 'daily'} />
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-
-    backgroundColor: COLORS.white,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: scale(15),
-    paddingVertical: verticalScale(5),
-  },
-  activeTab: {
-    borderWidth: scale(1),
-    backgroundColor: COLORS.AstroSoftOrange,
-    borderRadius: moderateScale(30),
-    borderBottomColor: COLORS.AstroMaroon,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: verticalScale(7),
-  },
-  tabTextActive: {
-    color: COLORS.AstroMaroon,
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(14),
-  },
-  tabText: {
-    color: '#000',
-    fontFamily: 'Lato-Regular',
-    fontSize: moderateScale(14),
-  },
+  container: {flex: 1, backgroundColor: ASTRO.parchmentDeep},
 });
-
-export default HoroscopeDetails;

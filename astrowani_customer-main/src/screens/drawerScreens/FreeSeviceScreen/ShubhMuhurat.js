@@ -1,200 +1,43 @@
+// Shubh Muhurat — auspicious timing tabs.
+//
+// The tab row was a FlatList of hand-styled chips on a white ground, with the
+// active one distinguished only by a background colour that matched nothing else
+// in the app. Now the shared animated SegmentedTabs (scrollable, since four tabs
+// do not fit as fixed quarters) on the same parchment as the reports.
 import React, {useState} from 'react';
-import {
-  View,
-  Text,
-  Image,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
-import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
-import {COLORS} from '../../../Theme/Colors';
+import {View, StyleSheet} from 'react-native';
+import {ASTRO, SegmentedTabs} from '../../../components/astro/AstroUI';
+import {LanguageContext} from '../../../context/LanguageContext';
 import MuhuratCard from '../../component/MuhuratCard';
-import DetailList from '../../component/DetailsList';
 
-const tabs = [
-  {id: '1', title: 'Choghadiya'},
-  {id: '2', title: 'Shubh Hora'},
-  {id: '3', title: 'Gowri Panchangam'},
-  {id: '4', title: 'Rahu Kaal'},
-
+// `key` is the string MuhuratCard switches on to pick its endpoint — it must stay
+// English regardless of display language, so the label is translated separately.
+const TABS = [
+  {key: 'Day Choghadiya', labelKey: 'free.choghadiya'},
+  {key: 'Day Hora', labelKey: 'free.shubhHora'},
+  {key: 'Gowri Panchangam', labelKey: 'free.gowriPanchangam'},
+  {key: 'Rahu Kaal', labelKey: 'free.rahuKaal'},
 ];
-const ShubhMuhurat = ({navigation}) => {
-  const [activeTab, setActiveTab] = useState('Choghadiya');
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'Choghadiya':
-        return <MuhuratCard title="Day Choghadiya" />;
-      case 'Shubh Hora':
-        return <MuhuratCard title="Day Hora" />;
-      case 'Gowri Panchangam':
-        // MuhuratCard renders a hardcoded sample for this tab client-side — no backend
-        // endpoint exists yet (see component/MuhuratCard.js formatMuhuratData).
-        return <MuhuratCard title="Gowri Panchangam" />;
+export default function ShubhMuhurat() {
+  const {t} = React.useContext(LanguageContext);
+  const [active, setActive] = useState(TABS[0].key);
 
-      case 'Rahu Kaal':
-        return <MuhuratCard title="Rahu Kaal" />;
-
-      default:
-        return null;
-    }
-  };
-  const renderTab = ({item}) => (
-    <TouchableOpacity
-      style={[styles.tab, activeTab === item.title && styles.activeTab]}
-      onPress={() => setActiveTab(item.title)}>
-      <Text
-        style={[
-          styles.tabText,
-          activeTab === item.title && styles.activeTabText,
-        ]}>
-        {item.title}
-      </Text>
-    </TouchableOpacity>
-  );
   return (
     <View style={styles.main}>
-      <View style={styles.tabContainer}>
-        <FlatList
-          data={tabs}
-          renderItem={renderTab}
-          keyExtractor={item => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-        />
-      </View>
-      {renderTabContent()}
+      <SegmentedTabs
+        scrollable
+        tabs={TABS.map((tb) => ({key: tb.key, label: t(tb.labelKey)}))}
+        active={active}
+        onChange={setActive}
+      />
+      {/* keyed so switching tabs replays the row entrance animation and resets
+          MuhuratCard's own fetch state instead of showing the previous tab's rows */}
+      <MuhuratCard key={active} title={active} />
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  main: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  container: {
-    padding: scale(10),
-    backgroundColor: COLORS.AstroSoftOrange,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: moderateScale(10),
-    padding: scale(10),
-    marginBottom: verticalScale(10),
-    elevation: 2,
-  },
-  badge: {
-    position: 'absolute',
-    top: verticalScale(-10),
-    left: scale(-10),
-    backgroundColor: 'red',
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(5),
-    borderTopLeftRadius: moderateScale(10),
-    borderBottomRightRadius: moderateScale(10),
-  },
-  badgeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: scale(60),
-    height: verticalScale(60),
-    borderRadius: moderateScale(30),
-    marginRight: scale(10),
-  },
-  details: {
-    flex: 1,
-  },
-  name: {
-    fontSize: moderateScale(16),
-    color: 'black',
-    fontWeight: 'bold',
-  },
-  specialization: {
-    fontSize: moderateScale(14),
-    color: '#666',
-  },
-  languages: {
-    fontSize: moderateScale(12),
-    color: '#666',
-  },
-  experience: {
-    fontSize: moderateScale(12),
-    color: '#666',
-  },
-  reviews: {
-    fontSize: moderateScale(12),
-    color: COLORS.AstroMaroon,
-    fontWeight: 'bold',
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  price: {
-    textDecorationLine: 'line-through',
-    fontSize: moderateScale(12),
-    color: '#666',
-  },
-  offer: {
-    fontSize: moderateScale(12),
-    color: 'red',
-    marginLeft: scale(5),
-  },
-  chatButton: {
-    backgroundColor: '#00C853',
-    borderRadius: moderateScale(20),
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(5),
-  },
-  chatText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-
-  tabContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    paddingVertical: verticalScale(7),
-    paddingHorizontal: scale(5),
-  },
-  tab: {
-    paddingHorizontal: scale(10),
-    marginLeft: scale(5),
-    paddingVertical: verticalScale(5),
-  },
-  tabText: {
-    color: 'black',
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(13),
-    paddingHorizontal: scale(10),
-  },
-  activeTab: {
-    marginLeft: scale(5),
-    paddingVertical: verticalScale(6),
-    borderWidth: moderateScale(1),
-    borderColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(20),
-    backgroundColor: COLORS.AstroSoftOrange,
-  },
-  activeTabText: {
-    paddingHorizontal: scale(10),
-    color: 'black',
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(13),
-  },
-  activeMain: {
-    flex: 1,
-    backgroundColor: COLORS.AstroSoftOrange,
-  },
+  main: {flex: 1, backgroundColor: ASTRO.parchmentDeep},
 });
-
-export default ShubhMuhurat;

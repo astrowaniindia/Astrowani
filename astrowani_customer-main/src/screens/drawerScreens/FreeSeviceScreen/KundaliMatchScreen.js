@@ -540,7 +540,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(20),
     borderRadius: moderateScale(15),
     backgroundColor: COLORS.AstroMaroon,
-    bottom: 0,
     right: scale(10),
     bottom: 0,
   },

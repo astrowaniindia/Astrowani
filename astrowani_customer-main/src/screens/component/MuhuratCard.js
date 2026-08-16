@@ -339,6 +339,62 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { FREE_SERVICES_URL } from '../../config/api';
 import { LanguageContext } from '../../context/LanguageContext';
+import { ASTRO, Reveal } from '../../components/astro/AstroUI';
+
+// Choghadiya / Hora / Rahu Kaal all report a "type" per window. These are the
+// classical classifications; anything unrecognised stays neutral rather than
+// being guessed at, since calling an inauspicious window auspicious is worse
+// than saying nothing.
+const GOOD_TYPES = ['shubh', 'amrit', 'labh', 'char', 'amruta', 'good', 'auspicious', 'shubha'];
+const BAD_TYPES = ['rog', 'kaal', 'udveg', 'kala', 'bad', 'inauspicious', 'rahu', 'yamaganda', 'gulika'];
+
+function muhuratTone(item) {
+  const hay = `${item?.description || ''} ${item?.name || ''}`.toLowerCase();
+  if (GOOD_TYPES.some(w => hay.includes(w))) return 'good';
+  if (BAD_TYPES.some(w => hay.includes(w))) return 'bad';
+  return 'neutral';
+}
+
+function isNow(item) {
+  const s = Date.parse(item?.start);
+  const e = Date.parse(item?.end);
+  if (isNaN(s) || isNaN(e)) return false;
+  const now = Date.now();
+  return now >= s && now <= e;
+}
+
+const muStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row', backgroundColor: ASTRO.parchment, borderRadius: moderateScale(10),
+    borderWidth: 1, borderColor: ASTRO.line, marginBottom: verticalScale(9), overflow: 'hidden',
+  },
+  cardNow: { borderColor: ASTRO.gold, borderWidth: 1.5, backgroundColor: '#FFFDF3' },
+  accent: { width: scale(5) },
+  body: { flex: 1, padding: scale(11) },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  name: { flex: 1, fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: ASTRO.ink },
+  nowPill: {
+    backgroundColor: ASTRO.good, borderRadius: 20,
+    paddingHorizontal: scale(9), paddingVertical: verticalScale(2),
+  },
+  nowPillText: { fontSize: moderateScale(9.5), fontFamily: 'Lato-Bold', color: '#fff' },
+  timeRow: { flexDirection: 'row', alignItems: 'center', marginTop: verticalScale(4) },
+  time: {
+    fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: ASTRO.maroon,
+    marginLeft: scale(5),
+  },
+  tagRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: verticalScale(6) },
+  tag: {
+    borderWidth: 1, borderRadius: 20, paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2), marginRight: scale(7),
+  },
+  tagText: { fontSize: moderateScale(10), fontFamily: 'Lato-Bold' },
+  toneText: {
+    fontSize: moderateScale(10), fontFamily: 'Lato-Bold',
+    textTransform: 'uppercase', letterSpacing: 0.4, marginRight: scale(7),
+  },
+  subText: { fontSize: moderateScale(10.5), fontFamily: 'Lato-Regular', color: ASTRO.muted },
+});
 
 const MuhuratCard = ({ title }) => {
   const { t } = useContext(LanguageContext);
@@ -457,8 +513,13 @@ const MuhuratCard = ({ title }) => {
         return apiResponse?.choghadiya?.data?.muhurat?.map(item => ({
           name: item.name,
           time: `${formatTime(item.start)} - ${formatTime(item.end)}`,
+          // Raw bounds kept alongside the display string so a row can tell whether it is
+          // the window happening right now — the most useful thing on a muhurat screen,
+          // and not derivable at render time once the times were pre-formatted.
+          start: item.start,
+          end: item.end,
           description: item.type,
-              icon:"",
+          icon: "",
           subText: item.vela || ''
         })) || [];
 
@@ -466,8 +527,10 @@ const MuhuratCard = ({ title }) => {
         return apiResponse?.horaTiming?.data?.hora_timing?.map(item => ({
           name: `${item.hora.name} (${item.hora.vedic_name})`,
           time: `${formatTime(item.start)} - ${formatTime(item.end)}`,
+          start: item.start,
+          end: item.end,
           description: item.type,
-          icon:"",
+          icon: "",
         })) || [];
 
       case 'Rahu Kaal':
@@ -548,27 +611,48 @@ const MuhuratCard = ({ title }) => {
     }
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.row}>
-      <View>
-        <View style={styles.rowHeader}>
-          {item.name && (
-            <View style={styles.rowHeader}>
-              <Text style={styles.choghadiyaName}>{item.name}</Text>
-              {item.icon && (
-                <View style={styles.iconContainer}>
-                  {item.subText && <Text style={styles.subText}>{item.subText}</Text>}
-                  <Icon name={item.icon} size={20} color="#E91E63" />
+  const renderItem = ({ item, index }) => {
+    const tone = muhuratTone(item);
+    const active = isNow(item);
+    const accent = tone === 'good' ? ASTRO.good : tone === 'bad' ? ASTRO.bad : ASTRO.gold;
+    const toneLabel = tone === 'good' ? t('free.auspicious')
+      : tone === 'bad' ? t('free.inauspicious') : t('free.neutral');
+    return (
+      <Reveal index={index}>
+        <View style={[muStyles.card, active && muStyles.cardNow]}>
+          {/* Colour bar on the leading edge: the whole point of a muhurat list is which
+              windows are auspicious, and that was previously a plain-text "type" word
+              stranded at the right-hand edge of the row. */}
+          <View style={[muStyles.accent, { backgroundColor: accent }]} />
+          <View style={muStyles.body}>
+            <View style={muStyles.topRow}>
+              <Text style={muStyles.name}>{item.name || item.description}</Text>
+              {active && (
+                <View style={muStyles.nowPill}>
+                  <Text style={muStyles.nowPillText}>{t('free.now')}</Text>
                 </View>
               )}
             </View>
-          )}
+            {!!item.time && (
+              <View style={muStyles.timeRow}>
+                <Icon name="clock-outline" size={moderateScale(13)} color={ASTRO.muted} />
+                <Text style={muStyles.time}>{item.time}</Text>
+              </View>
+            )}
+            <View style={muStyles.tagRow}>
+              {!!item.description && item.description !== item.name && (
+                <View style={[muStyles.tag, { borderColor: accent }]}>
+                  <Text style={[muStyles.tagText, { color: accent }]}>{item.description}</Text>
+                </View>
+              )}
+              <Text style={[muStyles.toneText, { color: accent }]}>{toneLabel}</Text>
+              {!!item.subText && <Text style={muStyles.subText}>{item.subText}</Text>}
+            </View>
+          </View>
         </View>
-        {item.time && <Text style={styles.time}>{item.time}</Text>}
-      </View>
-      <Text style={styles.description}>{item.description}</Text>
-    </View>
-  );
+      </Reveal>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>

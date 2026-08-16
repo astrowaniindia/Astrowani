@@ -257,10 +257,14 @@ import {
   Platform,
 } from 'react-native';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../../utils/Scaling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import DetailList from '../../component/DetailsList';
+import {
+  ASTRO, SectionCard, StatTile, TileRow, Divider,
+} from '../../../components/astro/AstroUI';
 import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { FREE_SERVICES_URL } from '../../../config/api';
@@ -316,6 +320,8 @@ const PanchangScreen = () => {
     setShowDatePicker(false);
     setDate(currentDate);
   };
+
+  // (SunMoonHero and PeriodList are defined below the screen component.)
 
   const formatPanchangData = () => {
     if (!panchangData) return [];
@@ -412,10 +418,24 @@ const PanchangScreen = () => {
           <Text style={styles.errorText}>{error}</Text>
         ) : (
           <>
+            {/* Sunrise/sunset led the "Additional Info" list as two of four
+                identical text rows. They are the frame the whole day hangs on,
+                so they lead the screen as a visual instead. */}
+            <SunMoonHero panchang={panchangData} t={t} />
             <DetailList title={t('panchang.title')} data={formatPanchangData()} glyph="☀" />
             <DetailList title={t('panchang.additionalInfo')} data={formatAdditionalInfo()} glyph="◆" />
-            <DetailList title={t('panchang.auspiciousTime')} data={formatAuspiciousTime()} glyph="✓" />
-            <DetailList title={t('panchang.inauspiciousTime')} data={formatInauspiciousTime()} glyph="✕" />
+            <PeriodList
+              title={t('panchang.auspiciousTime')}
+              glyph="✓"
+              tone="good"
+              periods={panchangData?.auspicious_period}
+            />
+            <PeriodList
+              title={t('panchang.inauspiciousTime')}
+              glyph="✕"
+              tone="bad"
+              periods={panchangData?.inauspicious_period}
+            />
           </>
         )}
       </ScrollView>
@@ -423,8 +443,152 @@ const PanchangScreen = () => {
   );
 };
 
+const clockTime = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: true});
+};
+
+/**
+ * Sunrise → sunset as an actual arc of the day, with a marker for where "now" sits.
+ *
+ * These four timings were four text rows indistinguishable from Tithi and Karana.
+ * Drawn, they answer "how much daylight is left" without any reading at all.
+ */
+function SunMoonHero({panchang, t}) {
+  if (!panchang) return null;
+  const rise = Date.parse(panchang.sunrise);
+  const set = Date.parse(panchang.sunset);
+  const valid = !isNaN(rise) && !isNaN(set) && set > rise;
+  const now = Date.now();
+  const progress = valid ? Math.max(0, Math.min(1, (now - rise) / (set - rise))) : 0;
+  const dayHours = valid ? (set - rise) / 3600000 : 0;
+
+  return (
+    <SectionCard title={t('free.sunAndMoon')} glyph="☀" index={0}>
+      <View style={styles.sunRow}>
+        <View style={styles.sunEnd}>
+          <Ionicons name="sunny" size={moderateScale(20)} color="#E8A33D" />
+          <Text style={styles.sunLabel}>{t('panchang.sunrise')}</Text>
+          <Text style={styles.sunTime}>{clockTime(panchang.sunrise)}</Text>
+        </View>
+        <View style={styles.sunTrackWrap}>
+          <View style={styles.sunTrack}>
+            <View style={[styles.sunFill, {width: `${progress * 100}%`}]} />
+          </View>
+          {valid && (
+            <View style={[styles.sunDotWrap, {left: `${progress * 100}%`}]}>
+              <View style={styles.sunDot} />
+            </View>
+          )}
+          {dayHours > 0 && (
+            <Text style={styles.sunSpan}>
+              {t('free.dayLength')}: {Math.floor(dayHours)}h {Math.round((dayHours % 1) * 60)}m
+            </Text>
+          )}
+        </View>
+        <View style={styles.sunEnd}>
+          <Ionicons name="moon" size={moderateScale(18)} color={ASTRO.maroon} />
+          <Text style={styles.sunLabel}>{t('panchang.sunset')}</Text>
+          <Text style={styles.sunTime}>{clockTime(panchang.sunset)}</Text>
+        </View>
+      </View>
+
+      <Divider />
+      <TileRow>
+        <StatTile label={t('panchang.moonrise')} value={clockTime(panchang.moonrise)} />
+        <StatTile label={t('panchang.moonset')} value={clockTime(panchang.moonset)} />
+      </TileRow>
+    </SectionCard>
+  );
+}
+
+/**
+ * Auspicious / inauspicious windows as colour-coded rows, with the one running
+ * right now called out. They were label/value text rows in a generic list, which
+ * gave no signal about which mattered or when.
+ */
+function PeriodList({title, glyph, tone, periods}) {
+  const rows = Array.isArray(periods)
+    ? periods.filter((p) => p?.period?.[0]).map((p) => ({
+      name: p.name,
+      start: p.period[0].start,
+      end: p.period[0].end,
+    }))
+    : [];
+  if (!rows.length) return null;
+  const accent = tone === 'good' ? ASTRO.good : ASTRO.bad;
+  const now = Date.now();
+
+  return (
+    <SectionCard title={title} glyph={glyph} index={tone === 'good' ? 3 : 4}>
+      {rows.map((r, i) => {
+        const s = Date.parse(r.start);
+        const e = Date.parse(r.end);
+        const active = !isNaN(s) && !isNaN(e) && now >= s && now <= e;
+        return (
+          <View key={i} style={[styles.periodRow, active && {borderColor: accent, borderWidth: 1.5}]}>
+            <View style={[styles.periodAccent, {backgroundColor: accent}]} />
+            <View style={styles.periodBody}>
+              <Text style={styles.periodName}>{r.name}</Text>
+              <Text style={styles.periodTime}>{clockTime(r.start)} – {clockTime(r.end)}</Text>
+            </View>
+            {active && (
+              <View style={[styles.periodNow, {backgroundColor: accent}]}>
+                <Text style={styles.periodNowText}>●</Text>
+              </View>
+            )}
+          </View>
+        );
+      })}
+    </SectionCard>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: ASTRO.parchmentDeep,
+  },
+  sunRow: {flexDirection: 'row', alignItems: 'center'},
+  sunEnd: {alignItems: 'center', width: scale(64)},
+  sunLabel: {
+    fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: ASTRO.muted,
+    textTransform: 'uppercase', letterSpacing: 0.3, marginTop: 2,
+  },
+  sunTime: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.ink},
+  sunTrackWrap: {flex: 1, paddingHorizontal: scale(6)},
+  sunTrack: {
+    height: verticalScale(6), borderRadius: 20, backgroundColor: ASTRO.parchmentDeep,
+    overflow: 'hidden',
+  },
+  sunFill: {height: '100%', borderRadius: 20, backgroundColor: '#E8A33D'},
+  sunDotWrap: {position: 'absolute', top: 0, marginLeft: -scale(5)},
+  sunDot: {
+    width: scale(10), height: scale(10), borderRadius: scale(5),
+    backgroundColor: '#fff', borderWidth: 2, borderColor: '#E8A33D',
+  },
+  sunSpan: {
+    fontSize: moderateScale(9.5), fontFamily: 'Lato-Bold', color: ASTRO.muted,
+    textAlign: 'center', marginTop: verticalScale(6),
+  },
+
+  periodRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white,
+    borderWidth: 1, borderColor: ASTRO.line, borderRadius: moderateScale(9),
+    marginBottom: verticalScale(7), overflow: 'hidden',
+  },
+  periodAccent: {width: scale(4), alignSelf: 'stretch'},
+  periodBody: {flex: 1, padding: scale(9)},
+  periodName: {fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: ASTRO.ink},
+  periodTime: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.maroon, marginTop: 1},
+  periodNow: {
+    width: moderateScale(18), height: moderateScale(18), borderRadius: moderateScale(9),
+    alignItems: 'center', justifyContent: 'center', marginRight: scale(9),
+  },
+  periodNowText: {color: '#fff', fontSize: moderateScale(8)},
+
+  legacyContainer: {
     flex: 1,
     backgroundColor: COLORS.AstroSoftOrange,
   },

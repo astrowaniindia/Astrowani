@@ -14,7 +14,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
   View, Text, StyleSheet, Animated, Easing, TouchableOpacity, LayoutAnimation,
-  Platform, UIManager,
+  Platform, UIManager, ScrollView,
 } from 'react-native';
 import Svg, {Circle, G} from 'react-native-svg';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -407,6 +407,80 @@ export function CompareHeader({leftName = 'Boy', rightName = 'Girl'}) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Segmented tabs                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tab bar with a sliding indicator.
+ *
+ * The ₹1 service screens each hand-rolled their own tab row — Horoscope Details, Shubh
+ * Muhurat and Kundali Matching all had a different one, with different colours, none of
+ * them matching the paid reports and none of them animated. One component now, so the
+ * whole free-services set reads as the same product as the paid set.
+ *
+ * `scrollable` for four-plus tabs (Shubh Muhurat) where fixed thirds would truncate.
+ */
+export function SegmentedTabs({tabs, active, onChange, scrollable = false}) {
+  const list = tabs || [];
+  const idx = Math.max(0, list.findIndex((tb) => (tb.key ?? tb) === active));
+  const slide = useRef(new Animated.Value(idx)).current;
+  const [barWidth, setBarWidth] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(slide, {
+      toValue: idx, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    }).start();
+  }, [idx, slide]);
+
+  const seg = list.length ? barWidth / list.length : 0;
+  const translateX = slide.interpolate({
+    inputRange: list.map((_, i) => i),
+    outputRange: list.map((_, i) => i * seg),
+    extrapolate: 'clamp',
+  });
+
+  const body = (
+    <View
+      style={[styles.tabsTrack, scrollable && styles.tabsTrackScroll]}
+      onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
+      {/* Only the fixed-width layout can host a sliding pill — with a scrollable row the
+          segment widths are content-driven and unknown until after layout. */}
+      {!scrollable && barWidth > 0 && (
+        <Animated.View style={[styles.tabsPill, {width: seg, transform: [{translateX}]}]} />
+      )}
+      {list.map((tb) => {
+        const key = tb.key ?? tb;
+        const label = tb.label ?? tb;
+        const on = key === active;
+        return (
+          <TouchableOpacity
+            key={key}
+            activeOpacity={0.75}
+            onPress={() => onChange(key)}
+            style={[
+              styles.tabsItem,
+              scrollable && styles.tabsItemScroll,
+              scrollable && on && styles.tabsItemScrollOn,
+            ]}>
+            <Text style={[styles.tabsLabel, on && styles.tabsLabelOn]}>{label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  if (!scrollable) return <View style={styles.tabsWrap}>{body}</View>;
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.tabsScrollContent}>
+      {body}
+    </ScrollView>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Callout                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -674,4 +748,21 @@ const styles = StyleSheet.create({
     marginRight: scale(5), marginBottom: verticalScale(5),
   },
   pillText: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold'},
+
+  tabsWrap: {paddingHorizontal: scale(14), paddingTop: verticalScale(10)},
+  tabsScrollContent: {paddingHorizontal: scale(14), paddingTop: verticalScale(10)},
+  tabsTrack: {
+    flexDirection: 'row', backgroundColor: ASTRO.parchment, borderRadius: 30,
+    borderWidth: 1, borderColor: ASTRO.line, padding: 3,
+  },
+  tabsTrackScroll: {alignSelf: 'flex-start'},
+  tabsPill: {
+    position: 'absolute', top: 3, bottom: 3, left: 3, borderRadius: 30,
+    backgroundColor: ASTRO.maroon,
+  },
+  tabsItem: {flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: verticalScale(8)},
+  tabsItemScroll: {flex: 0, paddingHorizontal: scale(14), borderRadius: 30},
+  tabsItemScrollOn: {backgroundColor: ASTRO.maroon},
+  tabsLabel: {fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.muted},
+  tabsLabelOn: {color: COLORS.white},
 });

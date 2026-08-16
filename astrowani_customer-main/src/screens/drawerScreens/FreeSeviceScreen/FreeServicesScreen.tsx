@@ -12,6 +12,8 @@ import {
 import { moderateScale, scale, verticalScale } from '../../../utils/Scaling';
 import { COLORS } from '../../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+// @ts-ignore — AstroUI is plain JS; Babel strips types at bundle time.
+import { Reveal } from '../../../components/astro/AstroUI';
 
 // Define types for your service items
 type ServiceItem = {
@@ -40,9 +42,13 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   showPrice = false,
   variant = 'badge',
 }) => {
-  const renderService = ({ item }: { item: ServiceItem }) => {
+  const renderService = ({ item, index }: { item: ServiceItem; index: number }) => {
     if (variant === 'image') {
       return (
+        // Staggered entrance so the row assembles itself rather than appearing
+        // fully-formed — same Reveal the report cards use, so the free services
+        // feel like part of the same product.
+        <Reveal index={index}>
         <TouchableOpacity
           onPress={() => onServiceSelect(item)}
           style={styles.imageCard}
@@ -71,9 +77,11 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
             {item.title}
           </Text>
         </TouchableOpacity>
+        </Reveal>
       );
     }
     return (
+      <Reveal index={index}>
       <TouchableOpacity
         onPress={() => onServiceSelect(item)}
         style={styles.serviceBox}
@@ -100,6 +108,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
           {item.title}
         </Text>
       </TouchableOpacity>
+      </Reveal>
     );
   };
 
