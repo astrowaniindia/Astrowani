@@ -225,6 +225,12 @@ const translations = {
     'voiceNotesBanner.subtitle': "Tap to listen — they're checking in on you",
 
     'liveAarti.title': 'Live Aarti / Pooja',
+    'liveAarti.liveNow': 'LIVE',
+    'liveAarti.watchOnYouTube': 'Watch on YouTube',
+    'liveAarti.cantPlayHere': 'This channel does not allow playing inside apps.',
+    'liveAarti.playbackFailed': 'This stream could not be played here.',
+    'liveAarti.tapToPlay': 'Tap to play',
+    'liveAarti.loading': 'Connecting to the live stream…',
 
     'gemBuy.buy': 'Buy',
     'gemBuy.messageFor': 'Message for {{name}}',
@@ -1050,6 +1056,12 @@ const translations = {
     'voiceNotesBanner.subtitle': 'सुनने के लिए टैप करें — वे आपका हाल-चाल पूछ रहे हैं',
 
     'liveAarti.title': 'लाइव आरती / पूजा',
+    'liveAarti.liveNow': 'लाइव',
+    'liveAarti.watchOnYouTube': 'YouTube पर देखें',
+    'liveAarti.cantPlayHere': 'यह चैनल ऐप के अंदर चलाने की अनुमति नहीं देता।',
+    'liveAarti.playbackFailed': 'यह लाइव स्ट्रीम यहाँ नहीं चल सकी।',
+    'liveAarti.tapToPlay': 'चलाने के लिए टैप करें',
+    'liveAarti.loading': 'लाइव स्ट्रीम से जुड़ा जा रहा है…',
 
     'gemBuy.buy': 'खरीदें',
     'gemBuy.messageFor': '{{name}} के लिए संदेश',

@@ -16,6 +16,7 @@ const razorpay = require('./src/razorpay');
 const wallet = require('./src/wallet');
 const { TtlCache } = require('./src/ttlCache');
 const { contentCache } = require('./src/contentCache');
+const { createLiveAartiPoller } = require('./src/liveAarti');
 const { startAstrologerFanout } = require('./src/astrologerFanout');
 const { startTableFanout } = require('./src/tableFanout');
 const { applyHttpHardening } = require('./src/httpHardening');
@@ -1459,6 +1460,51 @@ app.get('/api/live-aarti', async (req, res) => {
   } catch (err) {
     console.error('GET /api/live-aarti error:', err.message);
     return res.status(200).json({ url: null });
+  }
+});
+
+// Every Aarti/Pooja channel that is live RIGHT NOW — the app shows all of them
+// in a horizontal scroller, so this deliberately returns a list with no
+// ranking. Served from the cached state the poller writes
+// (src/liveAarti.js), never by calling YouTube inline: opening Home must not
+// wait on, or spend API quota against, a third party.
+//
+// `fallbackUrl` is the old single admin-set URL. The app uses it only when
+// nothing is live, which keeps the previous behaviour working for anyone who
+// has set it.
+app.get('/api/live-aarti/live', async (req, res) => {
+  try {
+    const payload = await contentCache.get('live-aarti:live', async () => {
+      const { data, error } = await supabase
+        .from('live_aarti_channels')
+        .select('id, name, live_video_id, live_title, live_thumbnail, is_embeddable')
+        .eq('is_enabled', true)
+        .eq('is_live', true)
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+
+      const channels = (data || [])
+        .filter((c) => c.live_video_id)
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          videoId: c.live_video_id,
+          title: c.live_title || '',
+          thumbnail: c.live_thumbnail || '',
+          // false => the channel forbids embedding, so the app must offer
+          // "Watch on YouTube" instead of a player that renders black.
+          embeddable: c.is_embeddable !== false,
+        }));
+
+      const raw = await getSetting('live_aarti_youtube_url', '');
+      return { channels, fallbackUrl: raw && raw.trim() ? raw.trim() : null };
+    });
+    return res.status(200).json(payload);
+  } catch (err) {
+    // The table may not exist yet (migration not run). Degrade to "nothing
+    // live" rather than 500-ing the Home screen.
+    console.error('GET /api/live-aarti/live error:', err.message);
+    return res.status(200).json({ channels: [], fallbackUrl: null });
   }
 });
 
@@ -4006,6 +4052,12 @@ app.post('/api/gift/send', async (req, res) => {
 // Expose for admin force-stop (used in adminRoutes via app.locals)
 app.locals.endLiveSession = endLiveSession;
 
+// Live Aarti / Pooja channel poller (src/liveAarti.js). Exposed on app.locals
+// so the admin "refresh now" route can trigger a poll without importing the
+// instance — same pattern as endLiveSession above.
+const liveAartiPoller = createLiveAartiPoller(supabaseService);
+app.locals.pollLiveAarti = () => liveAartiPoller.pollOnce();
+
 // Catch-all Express error handler — must be registered last, after every route.
 // Routes that already catch their own errors (most do, via try/catch + res.status(500))
 // never reach this; it exists for anything that throws/rejects outside those blocks.
@@ -4069,5 +4121,11 @@ server.listen(PORT, () => {
     return;
   }
   sessionManager.start(io); // Start the SessionManager with io instance
+
+  // Live Aarti detection. Read-only against YouTube plus a cache write, so it
+  // is NOT gated by DISABLE_SESSION_MANAGER (that flag is about money-writing
+  // loops) — but it is started after it, so a disabled session manager returns
+  // above and this stays off too on a machine deliberately running inert.
+  liveAartiPoller.start();
 });
 

@@ -15,6 +15,7 @@ const links = [
   { to: '/gifts', label: 'Gifts' },
   { to: '/astro-services', label: 'Astro Services' },
   { to: '/live', label: 'Live Streams' },
+  { to: '/live-aarti', label: 'Live Aarti & Pooja' },
   { to: '/missed', label: 'Missed Sessions' },
   { to: '/notifications', label: 'Notifications' },
   { to: '/referral-popup', label: 'Referral Popup' },

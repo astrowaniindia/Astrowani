@@ -12,6 +12,7 @@ const { sendPush } = require('./push');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
+const liveAarti = require('./liveAarti');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -189,6 +190,121 @@ module.exports = function registerAdminRoutes(app) {
     orderBy: 'sort_order', ascending: true,
     allowed: ['key', 'name', 'description', 'category', 'price', 'image', 'is_active', 'sort_order'],
   });
+
+  // ── Live Aarti / Pooja channels ──────────────────────────────────────────
+  // Not the generic crud() factory: adding or editing a channel has to RESOLVE
+  // the pasted link to a UC… channel id before the row is of any use, and the
+  // admin needs to see why a link failed rather than getting a row that simply
+  // never goes live.
+  const LIVE_AARTI_FIELDS = ['name', 'channel_url', 'is_enabled', 'sort_order'];
+  const pickAarti = (body) => {
+    const out = {};
+    for (const k of LIVE_AARTI_FIELDS) if (k in (body || {})) out[k] = body[k];
+    return out;
+  };
+
+  app.get('/api/admin/live-aarti-channels', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('live_aarti_channels').select('*')
+      .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+    if (error) throw error;
+    return res.json({
+      success: true,
+      data: data || [],
+      // Lets the page explain itself when detection can't run at all, instead
+      // of showing a list of channels that mysteriously never go live.
+      youtubeConfigured: liveAarti.isConfigured(),
+    });
+  }));
+
+  app.post('/api/admin/live-aarti-channels', requireAdmin, h(async (req, res) => {
+    const body = pickAarti(req.body);
+    if (!body.name || !body.channel_url) {
+      return res.status(400).json({ success: false, message: 'Name and channel link are required.' });
+    }
+    const resolved = await liveAarti.resolveChannelId(body.channel_url);
+    const { data, error } = await db.from('live_aarti_channels').insert([{
+      ...body,
+      channel_id: resolved.channelId || null,
+      resolve_error: resolved.error || null,
+    }]).select().single();
+    if (error) throw error;
+    contentCache.invalidate('live-aarti:');
+    return res.json({ success: true, data });
+  }));
+
+  app.put('/api/admin/live-aarti-channels/:id', requireAdmin, h(async (req, res) => {
+    const body = pickAarti(req.body);
+    // Re-resolve only when the link actually changed — resolution can cost 100
+    // quota units for a /c/ vanity URL, and renaming a channel shouldn't.
+    if (body.channel_url) {
+      const { data: existing } = await db
+        .from('live_aarti_channels').select('channel_url').eq('id', req.params.id).single();
+      if (!existing || existing.channel_url !== body.channel_url) {
+        const resolved = await liveAarti.resolveChannelId(body.channel_url);
+        body.channel_id = resolved.channelId || null;
+        body.resolve_error = resolved.error || null;
+        // Stale live state belongs to the old channel.
+        body.is_live = false;
+        body.live_video_id = null;
+      }
+    }
+    const { data, error } = await db
+      .from('live_aarti_channels').update(body).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    contentCache.invalidate('live-aarti:');
+    return res.json({ success: true, data });
+  }));
+
+  app.delete('/api/admin/live-aarti-channels/:id', requireAdmin, h(async (req, res) => {
+    const { error } = await db.from('live_aarti_channels').delete().eq('id', req.params.id);
+    if (error) throw error;
+    contentCache.invalidate('live-aarti:');
+    return res.json({ success: true });
+  }));
+
+  // "Check now" — the escape hatch for the cheap detection path. The poller
+  // finds streams via the free RSS feed, which occasionally lags or omits a
+  // live broadcast; this asks YouTube directly (search.list, 100 quota units).
+  // Admin-triggered only, never on a timer. See src/liveAarti.js.
+  app.post('/api/admin/live-aarti-channels/:id/check', requireAdmin, h(async (req, res) => {
+    const { data: row, error } = await db
+      .from('live_aarti_channels').select('*').eq('id', req.params.id).single();
+    if (error) throw error;
+    if (!row?.channel_id) {
+      return res.status(400).json({ success: false, message: row?.resolve_error || 'This channel link has not been resolved yet.' });
+    }
+    const result = await liveAarti.forceCheckChannel(row.channel_id);
+    if (result.error) return res.status(502).json({ success: false, message: result.error });
+
+    const now = new Date().toISOString();
+    const patch = result.live
+      ? {
+        is_live: true,
+        live_video_id: result.videoId,
+        live_title: result.info?.title || null,
+        live_thumbnail: result.info?.thumbnail || null,
+        is_embeddable: result.info?.embeddable ?? null,
+        last_checked_at: now,
+        last_live_at: now,
+      }
+      : { is_live: false, live_video_id: null, live_title: null, live_thumbnail: null, last_checked_at: now };
+
+    const { data: updated } = await db
+      .from('live_aarti_channels').update(patch).eq('id', row.id).select().single();
+    contentCache.invalidate('live-aarti:');
+    return res.json({ success: true, live: !!result.live, data: updated });
+  }));
+
+  // Re-run the whole cheap poll immediately (costs ~1 unit) so an admin doesn't
+  // have to wait out the interval after adding a channel.
+  app.post('/api/admin/live-aarti-channels/poll', requireAdmin, h(async (req, res) => {
+    const result = typeof app.locals.pollLiveAarti === 'function'
+      ? await app.locals.pollLiveAarti()
+      : { skipped: 'poller not running' };
+    contentCache.invalidate('live-aarti:');
+    return res.json({ success: true, result });
+  }));
 
   // Customer support tickets (POST /api/support/create-support in index.js writes here).
   // Admin only reads/updates status+note — creation happens on the customer-facing route.
