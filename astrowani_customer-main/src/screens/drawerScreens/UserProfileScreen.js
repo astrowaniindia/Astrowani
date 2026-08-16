@@ -25,22 +25,6 @@ import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
 
-// Indian state names are proper nouns — intentionally not translated (kept English/Roman
-// script, which is how they're commonly written even in Hindi-language Indian UIs).
-const StatesOfIndia = [
-  {label: 'Andhra Pradesh', value: 'Andhra Pradesh'}, {label: 'Arunachal Pradesh', value: 'Arunachal Pradesh'},
-  {label: 'Assam', value: 'Assam'}, {label: 'Bihar', value: 'Bihar'}, {label: 'Chhattisgarh', value: 'Chhattisgarh'},
-  {label: 'Delhi', value: 'Delhi'}, {label: 'Goa', value: 'Goa'}, {label: 'Gujarat', value: 'Gujarat'},
-  {label: 'Haryana', value: 'Haryana'}, {label: 'Himachal Pradesh', value: 'Himachal Pradesh'},
-  {label: 'Jharkhand', value: 'Jharkhand'}, {label: 'Karnataka', value: 'Karnataka'}, {label: 'Kerala', value: 'Kerala'},
-  {label: 'Madhya Pradesh', value: 'Madhya Pradesh'}, {label: 'Maharashtra', value: 'Maharashtra'},
-  {label: 'Manipur', value: 'Manipur'}, {label: 'Meghalaya', value: 'Meghalaya'}, {label: 'Mizoram', value: 'Mizoram'},
-  {label: 'Nagaland', value: 'Nagaland'}, {label: 'Odisha', value: 'Odisha'}, {label: 'Punjab', value: 'Punjab'},
-  {label: 'Rajasthan', value: 'Rajasthan'}, {label: 'Sikkim', value: 'Sikkim'}, {label: 'Tamil Nadu', value: 'Tamil Nadu'},
-  {label: 'Telangana', value: 'Telangana'}, {label: 'Tripura', value: 'Tripura'}, {label: 'Uttar Pradesh', value: 'Uttar Pradesh'},
-  {label: 'Uttarakhand', value: 'Uttarakhand'}, {label: 'West Bengal', value: 'West Bengal'},
-];
-
 const UserProfileScreen = ({navigation, route}) => {
   const { t } = React.useContext(LanguageContext);
   const genderOptions = [
@@ -235,15 +219,11 @@ const UserProfileScreen = ({navigation, route}) => {
       return;
     }
 
-    // 9. City validation
+    // 9. City validation. State is no longer entered separately — it comes
+    // from the same place lookup as City, so a valid City implies State was
+    // resolved too (or the place genuinely has none, e.g. a city-state).
     if (!userProfile.city || !userProfile.city.trim()) {
       showCustomAlert(t('userProfile.validationError'), t('userProfile.enterCity'));
-      return;
-    }
-
-    // 10. State validation
-    if (!userProfile.state) {
-      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectState'));
       return;
     }
 
@@ -342,7 +322,15 @@ const UserProfileScreen = ({navigation, route}) => {
               placeholder={t('userProfile.enterField', { field: placeholder })}
               initialValue={value || ''}
               editable={isEditable}
-              onSelect={(picked) => onChange(picked ? picked.label : '')}
+              onSelect={(picked) => {
+                onChange(picked ? picked.label : '');
+                // City and State used to be two separate fields the customer
+                // filled in by hand — State duplicated what the place lookup
+                // already knows, and the two could disagree (a city typed in
+                // one state, a different state picked from the dropdown).
+                // Deriving it from the SAME lookup makes that impossible.
+                if (extraProps.onPlaceSelect) extraProps.onPlaceSelect(picked);
+              }}
             />
           )}
           {type === 'dropdown' && (
@@ -436,8 +424,13 @@ const UserProfileScreen = ({navigation, route}) => {
 
               <View style={styles.divider} />
               <Text style={styles.formSectionTitle}>{t('userProfile.location')}</Text>
-              {renderField('city', 'business-outline', t('userProfile.cityPlaceOfBirth'), userProfile.city, v => handleInputChange('city', v), 'place')}
-              {renderField('state', 'map-outline', t('userProfile.state'), userProfile.state, v => handleInputChange('state', v), 'dropdown', { data: StatesOfIndia })}
+              {/* Was two boxes (a City lookup + a State dropdown you picked by
+                  hand) that could contradict each other. One lookup now
+                  supplies both — State is read straight off the place the API
+                  resolved, not re-entered. */}
+              {renderField('city', 'business-outline', t('userProfile.cityPlaceOfBirth'), userProfile.city, v => handleInputChange('city', v), 'place', {
+                onPlaceSelect: (picked) => handleInputChange('state', picked ? picked.state : ''),
+              })}
             </View>
           </View>
         )}

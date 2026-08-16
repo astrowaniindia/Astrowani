@@ -295,6 +295,19 @@ const Registration = ({ navigation }) => {
               placeholder={t('registration.selectGender')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
+              // Unlike Skills/Languages above, this Dropdown had no itemTextStyle
+              // and react-native-element-dropdown's own default item style sets
+              // no color at all. With no explicit color anywhere, the open
+              // options list fell back to the NATIVE theme's default text
+              // colour — and this app's theme is Theme.AppCompat.DayNight
+              // (android/app/src/main/res/values/styles.xml), which switches to
+              // its dark variant automatically when the device is in system
+              // dark mode. Dark mode's default text colour is white, on the
+              // dropdown's own white list background — invisible. The
+              // placeholder/selected text never showed this because those DO
+              // set an explicit color via placeholderStyle/selectedTextStyle;
+              // only the open list's per-option text was unstyled.
+              itemTextStyle={styles.itemText}
               value={user.gender}
               onChange={item => {
                 handleInputChange('gender', item.value);

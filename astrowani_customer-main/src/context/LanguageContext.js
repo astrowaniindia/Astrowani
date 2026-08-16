@@ -47,6 +47,24 @@ const translations = {
     // Common labels / actions
     'common.chat': 'Chat',
     'common.call': 'Call',
+    'common.expYears': 'Exp: {{count}} years',
+    // Home "₹1 Services" card titles (screens/Home/Astrologers.js `services`).
+    'home.service.panchang': "Today's Panchang",
+    'home.service.janamKundali': 'Janam Kundali',
+    'home.service.kundaliMatch': 'Kundali Match',
+    'home.service.freeHoroscope': 'Free Horoscope',
+    'home.service.shubhMuhurat': 'Shubh Muhurat',
+    // Remedies / Services tab (screens/Remedies/Remedies.js) — bundled fallback
+    // shown until an admin sets Hindi text for a category in the dashboard.
+    'remedies.servicesTitle': 'Services',
+    'remedies.puja.title': 'Puja',
+    'remedies.puja.description': 'Join shared rituals by renowned Purohits and Pandits for blessings and positivity.',
+    'remedies.gemstone.title': 'Gemstones',
+    'remedies.gemstone.description': 'Buy certified gemstones to balance energies and support your astrological goals.',
+    'remedies.specificPuja.title': 'Specific Puja',
+    'remedies.specificPuja.description': 'Book a dedicated puja performed specifically for you.',
+    'remedies.lifeReport.title': 'Life Reports',
+    'remedies.lifeReport.description': 'One-time detailed reports on your career, marriage, health, or finances.',
     'common.video': 'Video',
     'common.noChat': 'No Chat',
     'common.noCall': 'No Call',
@@ -608,6 +626,13 @@ const translations = {
 
     // AstroServices shared
     'astro.notAvailable': 'Not available',
+    // "Use my saved profile" (BirthDetailsForm.js, NumerologyInputScreen.js).
+    'astro.useMyProfile': 'Use my saved profile',
+    'astro.fillingFromProfile': 'Filling from your profile…',
+    'astro.profileNotLoggedIn': 'Log in to use your saved profile.',
+    'astro.profileFilledPartial': 'Filled what we had — some details are still missing from your profile.',
+    'astro.profileFillFailed': 'Could not load your saved profile. Please fill this in manually.',
+    'astro.profilePlaceNotFound': 'Filled your other details, but could not find your saved birth place on the map — please re-select it.',
     'astro.notAvailableMsg': 'This report is not available right now. Please try again later.',
     'astro.reportCostsMsg': 'This report costs ₹{{price}}. Your wallet balance is ₹{{balance}}. Please recharge your wallet.',
     'astro.rechargeToView': 'Please recharge your wallet to get this report.',
@@ -878,6 +903,21 @@ const translations = {
     // Common labels / actions
     'common.chat': 'चैट',
     'common.call': 'कॉल',
+    'common.expYears': 'अनुभव: {{count}} वर्ष',
+    'home.service.panchang': 'आज का पंचांग',
+    'home.service.janamKundali': 'जन्म कुंडली',
+    'home.service.kundaliMatch': 'कुंडली मिलान',
+    'home.service.freeHoroscope': 'मुफ़्त राशिफल',
+    'home.service.shubhMuhurat': 'शुभ मुहूर्त',
+    'remedies.servicesTitle': 'सेवाएं',
+    'remedies.puja.title': 'पूजा',
+    'remedies.puja.description': 'आशीर्वाद और सकारात्मकता के लिए प्रसिद्ध पुरोहितों और पंडितों के साथ सामूहिक अनुष्ठान में शामिल हों।',
+    'remedies.gemstone.title': 'रत्न',
+    'remedies.gemstone.description': 'ऊर्जाओं को संतुलित करने और अपने ज्योतिषीय लक्ष्यों में मदद के लिए प्रमाणित रत्न खरीदें।',
+    'remedies.specificPuja.title': 'विशेष पूजा',
+    'remedies.specificPuja.description': 'विशेष रूप से आपके लिए की जाने वाली एक समर्पित पूजा बुक करें।',
+    'remedies.lifeReport.title': 'जीवन रिपोर्ट',
+    'remedies.lifeReport.description': 'आपके करियर, विवाह, स्वास्थ्य या वित्त पर एकबारगी विस्तृत रिपोर्ट।',
     'common.video': 'वीडियो',
     'common.noChat': 'चैट उपलब्ध नहीं',
     'common.noCall': 'कॉल उपलब्ध नहीं',
@@ -1438,6 +1478,12 @@ const translations = {
 
     // AstroServices shared
     'astro.notAvailable': 'अनुपलब्ध',
+    'astro.useMyProfile': 'मेरी सेव की गई प्रोफ़ाइल इस्तेमाल करें',
+    'astro.fillingFromProfile': 'आपकी प्रोफ़ाइल से भरा जा रहा है…',
+    'astro.profileNotLoggedIn': 'अपनी सेव की गई प्रोफ़ाइल इस्तेमाल करने के लिए लॉग इन करें।',
+    'astro.profileFilledPartial': 'जो जानकारी उपलब्ध थी वह भर दी गई है — आपकी प्रोफ़ाइल में कुछ विवरण अभी भी अधूरे हैं।',
+    'astro.profileFillFailed': 'आपकी सेव की गई प्रोफ़ाइल लोड नहीं हो सकी। कृपया इसे मैन्युअल रूप से भरें।',
+    'astro.profilePlaceNotFound': 'बाकी जानकारी भर दी गई है, लेकिन आपका सेव किया गया जन्म स्थान मानचित्र पर नहीं मिला — कृपया इसे दोबारा चुनें।',
     'astro.notAvailableMsg': 'यह रिपोर्ट अभी उपलब्ध नहीं है। कृपया बाद में पुनः प्रयास करें।',
     'astro.reportCostsMsg': 'इस रिपोर्ट की कीमत ₹{{price}} है। आपका वॉलेट बैलेंस ₹{{balance}} है। कृपया अपना वॉलेट रीचार्ज करें।',
     'astro.rechargeToView': 'यह रिपोर्ट प्राप्त करने के लिए कृपया अपना वॉलेट रीचार्ज करें।',

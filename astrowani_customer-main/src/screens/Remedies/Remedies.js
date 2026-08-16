@@ -14,61 +14,59 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 
-// Bundled fallback images/titles — used whenever the admin hasn't set a category's
-// title/description/image yet (or the fetch fails), so this screen never breaks or
-// goes blank. See astrowani-admin's Remedies page → "Edit ... section" for the
-// admin-editable version of these (table remedy_categories).
-const DEFAULTS = {
-  puja: {
-    title: 'Puja',
-    description: 'Join shared rituals by renowned Purohits and Pandits for blessings and positivity.',
-    image: require('../../assets/images/specificPuja.jpg'),
-  },
-  gemstone: {
-    title: 'Gemstones',
-    description: 'Buy certified gemstones to balance energies and support your astrological goals.',
-    image: require('../../assets/images/gemsStones.jpg'),
-  },
-  specific_puja: {
-    title: 'Specific Puja',
-    description: 'Buy certified gemstones to balance energies and support your astrological goals.',
-    image: require('../../assets/images/groupPuja.jpg'),
-  },
-  life_report: {
-    title: 'Life Reports',
-    description: 'One-time detailed reports on your career, marriage, health, or finances.',
-    image: require('../../assets/images/specificPuja.jpg'),
-  },
+// Bundled fallback images — used whenever the admin hasn't set a category's
+// image yet (or the fetch fails), so this screen never breaks or goes blank.
+// See astrowani-admin's Remedies page → "Edit ... section" for the
+// admin-editable version of these (table remedy_categories). Title/description
+// text now comes from i18n (below), not this object — the fallback used to be
+// English-only regardless of the app's language, so it stayed "Puja" /
+// "Gemstones" / etc. even with the Hindi toggle on.
+const IMAGE_DEFAULTS = {
+  puja: require('../../assets/images/specificPuja.jpg'),
+  gemstone: require('../../assets/images/gemsStones.jpg'),
+  specific_puja: require('../../assets/images/groupPuja.jpg'),
+  life_report: require('../../assets/images/specificPuja.jpg'),
+};
+// Maps each category type to its i18n key pair.
+const TEXT_KEYS = {
+  puja: {title: 'remedies.puja.title', description: 'remedies.puja.description'},
+  gemstone: {title: 'remedies.gemstone.title', description: 'remedies.gemstone.description'},
+  specific_puja: {title: 'remedies.specificPuja.title', description: 'remedies.specificPuja.description'},
+  life_report: {title: 'remedies.lifeReport.title', description: 'remedies.lifeReport.description'},
 };
 const ORDER = ['puja', 'gemstone', 'specific_puja', 'life_report'];
 
 const Remedies = () => {
   const navigation = useNavigation();
-  const { language } = React.useContext(LanguageContext);
+  const { language, t } = React.useContext(LanguageContext);
   const [categories, setCategories] = React.useState(null);
 
   const fetchCategories = React.useCallback(() => {
     Instance.get('/api/remedy-categories')
       .then((res) => setCategories(res?.data?.data || []))
-      .catch(() => setCategories([])); // fall through to DEFAULTS below on any failure
+      .catch(() => setCategories([])); // fall through to the i18n fallback below on any failure
   }, []);
 
   useFocusEffect(React.useCallback(() => { fetchCategories(); }, [fetchCategories]));
 
-  // Merge admin-set fields over the bundled defaults, per type, in the fixed
+  // Merge admin-set fields over the bundled fallback, per type, in the fixed
   // display order — an admin can set only some fields (e.g. just the image) and
-  // the rest still falls back cleanly.
+  // the rest still falls back cleanly. The fallback text is now translated
+  // (TEXT_KEYS via t()), not a fixed English string, so a category the admin
+  // hasn't filled in yet still respects the Hindi toggle.
   const data = ORDER.map((type) => {
-    const fallback = DEFAULTS[type];
+    const keys = TEXT_KEYS[type];
+    const fallbackTitle = t(keys.title);
+    const fallbackDescription = t(keys.description);
     const fromApi = (categories || []).find((c) => c.type === type);
     const title = language === 'Hindi' ? (fromApi?.hindi?.title || fromApi?.title) : fromApi?.title;
     const description = language === 'Hindi' ? (fromApi?.hindi?.description || fromApi?.description) : fromApi?.description;
     return {
       id: type,
       type,
-      title: title || fallback.title,
-      description: description || fallback.description,
-      image: fromApi?.image ? { uri: fromApi.image } : fallback.image,
+      title: title || fallbackTitle,
+      description: description || fallbackDescription,
+      image: fromApi?.image ? { uri: fromApi.image } : IMAGE_DEFAULTS[type],
     };
   });
 

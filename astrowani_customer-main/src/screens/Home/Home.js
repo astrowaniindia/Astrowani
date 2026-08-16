@@ -164,6 +164,12 @@ const AstrologerItem = ({astrologer, navigation, t}) => {
 
 const BlogItem = ({blog, navigation, language}) => {
   const title = language === 'Hindi' ? (blog.hindi?.title || blog.title) : blog.title;
+  // Was always blog.metaDescription regardless of language — the title above
+  // already checked for a Hindi variant, but this excerpt line never did, so a
+  // fully Hindi-translated blog still showed its English excerpt underneath.
+  const metaDescription = language === 'Hindi'
+    ? (blog.hindi?.metaDescription || blog.metaDescription)
+    : blog.metaDescription;
   return (
     <TouchableOpacity
       onPress={() => {
@@ -174,7 +180,7 @@ const BlogItem = ({blog, navigation, language}) => {
       <Image style={styles.blogImg} source={{uri: blog.thumbnail}} />
       <Text style={styles.blogTitle}>{title}</Text>
       <Text style={styles.blogContent} numberOfLines={2} ellipsizeMode="tail">
-        {blog.metaDescription}
+        {metaDescription}
       </Text>
     </TouchableOpacity>
   );
@@ -1269,7 +1275,7 @@ const Home = ({navigation}) => {
           <Text style={styles.topAstrologerTxt}>{t('home.freeServices')}</Text>
         </View>
         <FreeServicesScreen
-          services={services}
+          services={services.map(s => ({...s, displayTitle: t(s.titleKey)}))}
           onServiceSelect={handleServiceSelect}
           showPrice
         />
@@ -1317,6 +1323,7 @@ const Home = ({navigation}) => {
             id: s.id,
             key: s.key,
             title: s.name,
+            displayTitle: language === 'Hindi' ? (s.name_hi || s.name) : s.name,
             icon: s.image || ASTRO_SERVICE_ICONS[s.category],
             price: s.price,
           }))}

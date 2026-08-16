@@ -1613,7 +1613,10 @@ app.get('/api/blogs', async (req, res) => {
       category: { name: b.categories?.name || '' },
       createdAt: b.created_at,
       english: { title: b.title_en || b.title, content: b.content_en || '' },
-      hindi: { title: b.title_hi || '', content: b.content_hi || '' },
+      hindi: {
+        title: b.title_hi || '', content: b.content_hi || '',
+        metaDescription: b.meta_description_hi || '', excerpt: b.excerpt_hi || '',
+      },
     }));
 
     return res.status(200).json({
@@ -2257,27 +2260,41 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
       .select('rating, comment, created_at, customer_id, astrologer_id')
       .eq('is_hidden', false)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(40);
     if (error) throw error;
     const rows = data || [];
     const custIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean))];
     const astroIds = [...new Set(rows.map((r) => r.astrologer_id).filter(Boolean))];
-    let custNames = {}, astroNames = {};
+    // profile_image is the column name on customers — the app's Image source
+    // key is `profilePic`, kept as-is below so the existing card (which already
+    // falls back to a placeholder when it's absent) needs no change.
+    let custNames = {}, custPics = {}, astroNames = {};
     if (custIds.length) {
-      const { data: c } = await supabaseService.from('customers').select('id, name').in('id', custIds);
-      (c || []).forEach((x) => { custNames[x.id] = (x.name || '').trim().split(' ')[0] || 'Customer'; });
+      const { data: c } = await supabaseService.from('customers').select('id, name, profile_image').in('id', custIds);
+      (c || []).forEach((x) => {
+        custNames[x.id] = (x.name || '').trim().split(' ')[0] || 'Customer';
+        custPics[x.id] = x.profile_image || null;
+      });
     }
     if (astroIds.length) {
       const { data: a } = await supabaseService.from('astrologers').select('id, first_name, last_name').in('id', astroIds);
       (a || []).forEach((x) => { astroNames[x.id] = `${x.first_name || ''} ${x.last_name || ''}`.trim() || 'Astrologer'; });
     }
-    return res.status(200).json(rows.map((r) => ({
-      user: { firstName: custNames[r.customer_id] || 'Customer' },
+    const formatted = rows.map((r) => ({
+      user: { firstName: custNames[r.customer_id] || 'Customer', profilePic: custPics[r.customer_id] || null },
       astrologerName: astroNames[r.astrologer_id] || 'Astrologer',
       rating: r.rating,
       comment: r.comment || '',
       createdAt: r.created_at,
-    })));
+    }));
+    // Reviews with a real photo lead the carousel — a wall of the same
+    // placeholder head reads as fake, a real face reads as a real customer.
+    // A stable sort (has-photo first) rather than a hard filter, so a quiet
+    // week with mostly photo-less reviews still fills the row instead of
+    // going empty. Within each group, original recency order is preserved.
+    const withPhoto = formatted.filter((r) => r.user.profilePic);
+    const withoutPhoto = formatted.filter((r) => !r.user.profilePic);
+    return res.status(200).json([...withPhoto, ...withoutPhoto].slice(0, 20));
   } catch (e) {
     console.error('[reviews] all error:', e.message);
     return res.status(200).json([]);

@@ -12,6 +12,7 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { captureEvent } from '../../utils/Analytics';
 import AstrologerBadge from '../../components/AstrologerBadge';
+import { LanguageContext } from '../../context/LanguageContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Center card + its two peeking neighbors span nearly the full screen width —
@@ -45,6 +46,7 @@ function shuffledCopy(arr) {
 }
 
 export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) {
+  const { t } = React.useContext(LanguageContext);
   // Stable across refetches: Home re-fetches astrologerToShow on focus/Realtime
   // signal, handing this a NEW array reference every time even when the actual
   // set of astrologers hasn't changed — re-shuffling on every one of those was
@@ -144,13 +146,13 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
             <Text style={styles.specialty} numberOfLines={1}>
               {item.specialties?.[0]?.name || 'Vedic Astrology'}
             </Text>
-            <Text style={styles.meta} numberOfLines={1}>Exp: {item.experience || '0'} years</Text>
+            <Text style={styles.meta} numberOfLines={1}>{t('common.expYears', {count: item.experience || '0'})}</Text>
             <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
           </Animated.View>
         </TouchableWithoutFeedback>
         <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => onCallPress(item)}>
           <MaterialIcons name="call" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
-          <Text style={styles.callBtnText}>Call</Text>
+          <Text style={styles.callBtnText}>{t('common.call')}</Text>
         </TouchableOpacity>
       </Animated.View>
     );

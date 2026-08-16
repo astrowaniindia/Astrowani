@@ -77,34 +77,44 @@ export default Astrologers;
 // These aren't free anymore — each costs ₹1 per visit (see Home.js's FREE_SERVICE_ROUTES /
 // useFreeServicePurchase.js). `price` here only drives the ₹1 badge FreeServicesScreen renders
 // with `showPrice` — it isn't read by the charge itself, which hardcodes ₹1 server-side.
+// `title` stays English here — this is a plain data module with no access to
+// LanguageContext's t(). `titleKey` is what Home.js actually renders (via
+// t(item.titleKey)); `title` only remains as the FREE_SERVICE_ROUTES lookup
+// key that Home.js's handleServiceSelect uses to find the destination screen,
+// so it must stay exactly matching those object keys — do not translate it.
 export const services = [
   {
     id: 1,
     title: "Today's Panchang",
+    titleKey: 'home.service.panchang',
     icon: 'https://backend.astrowani.com/public/images/icon_panchang.png',
     price: 1,
   },
   {
     id: 2,
     title: 'Janam Kundali',
+    titleKey: 'home.service.janamKundali',
     icon: 'https://backend.astrowani.com/public/images/icon_kundali.png',
     price: 1,
   },
   {
     id: 3,
     title: 'Kundali Match',
+    titleKey: 'home.service.kundaliMatch',
     icon: 'https://backend.astrowani.com/public/images/icon_match.png',
     price: 1,
   },
   {
     id: 4,
     title: 'Free Horoscope',
+    titleKey: 'home.service.freeHoroscope',
     icon: 'https://backend.astrowani.com/public/images/icon_horoscope.png',
     price: 1,
   },
   {
     id: 5,
     title: 'Shubh Muhurat',
+    titleKey: 'home.service.shubhMuhurat',
     icon: 'https://backend.astrowani.com/public/images/icon_muhurat.png',
     price: 1,
   },

@@ -23,7 +23,10 @@ const CATEGORY_FALLBACK_ICONS = {
   'PDF Reports': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
 };
 
-const EMPTY = { key: '', name: '', description: '', category: CATEGORIES[0], price: 0, image: '', is_active: true, sort_order: 0 };
+const EMPTY = {
+  key: '', name: '', name_hi: '', description: '', description_hi: '',
+  category: CATEGORIES[0], price: 0, image: '', is_active: true, sort_order: 0,
+};
 
 export default function AstroServices() {
   const [rows, setRows] = useState([]);
@@ -121,8 +124,12 @@ export default function AstroServices() {
             <input type="text" value={editing.key} onChange={(e) => set('key', e.target.value)} disabled={!!editing.id} /></div>
           <div className="field"><label>Name</label>
             <input type="text" value={editing.name} onChange={(e) => set('name', e.target.value)} /></div>
+          <div className="field"><label>Name (Hindi) — shown when a customer has the app set to हिं</label>
+            <input type="text" value={editing.name_hi || ''} onChange={(e) => set('name_hi', e.target.value)} /></div>
           <div className="field"><label>Description</label>
             <input type="text" value={editing.description || ''} onChange={(e) => set('description', e.target.value)} /></div>
+          <div className="field"><label>Description (Hindi)</label>
+            <input type="text" value={editing.description_hi || ''} onChange={(e) => set('description_hi', e.target.value)} /></div>
           <ImageField label="Card image" value={editing.image} onChange={(v) => set('image', v)} />
           <div className="field"><label>Category</label>
             <select value={editing.category} onChange={(e) => set('category', e.target.value)}>

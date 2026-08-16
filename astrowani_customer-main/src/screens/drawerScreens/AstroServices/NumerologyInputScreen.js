@@ -7,6 +7,8 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import useAstroPurchase from './useAstroPurchase';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useSavedProfile from '../../../hooks/useSavedProfile';
+import {showStatusPopup} from '../../../components/StatusPopup';
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -25,8 +27,28 @@ export default function NumerologyInputScreen({navigation}) {
   const [dob, setDob] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const {service, submitting, submit, resultParams} = useAstroPurchase('numerology');
+  const {fetchProfile, loading: profileLoading} = useSavedProfile();
 
   const isComplete = Boolean(name && phone && gender && dob);
+
+  const applyMyProfile = async () => {
+    const {profile, error} = await fetchProfile();
+    if (!profile) {
+      showStatusPopup({
+        variant: 'info',
+        title: t('astro.useMyProfile'),
+        message: error === 'not_logged_in' ? t('astro.profileNotLoggedIn') : t('astro.profileFillFailed'),
+      });
+      return;
+    }
+    if (profile.name) setName(profile.name);
+    if (profile.phone) setPhone(profile.phone);
+    if (profile.gender) setGender(String(profile.gender).toLowerCase());
+    if (profile.dob) setDob(new Date(profile.dob));
+    if (!profile.name || !profile.phone || !profile.gender || !profile.dob) {
+      showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profileFilledPartial')});
+    }
+  };
 
   const onSubmit = async () => {
     const data = await submit({date: toApiDate(dob), name, phone, gender});
@@ -36,6 +58,22 @@ export default function NumerologyInputScreen({navigation}) {
   return (
     <ScrollView style={styles.main} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{t('kundali.enterDetails')}</Text>
+
+      <TouchableOpacity
+        style={styles.useProfileBtn}
+        activeOpacity={0.8}
+        disabled={profileLoading}
+        onPress={applyMyProfile}>
+        {profileLoading ? (
+          <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+        ) : (
+          <Ionicons name="person-circle-outline" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+        )}
+        <Text style={styles.useProfileBtnText}>
+          {profileLoading ? t('astro.fillingFromProfile') : t('astro.useMyProfile')}
+        </Text>
+      </TouchableOpacity>
+
       <TextInput
         placeholder={t('kundali.enterFullName')} placeholderTextColor={COLORS.placeholder}
         style={styles.input} value={name} onChangeText={setName}
@@ -83,6 +121,12 @@ const styles = StyleSheet.create({
   main: {flex: 1, backgroundColor: COLORS.AstroSoftOrange},
   content: {padding: scale(15)},
   title: {fontSize: moderateScale(15), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, marginBottom: verticalScale(10)},
+  useProfileBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',
+    paddingVertical: verticalScale(7), paddingHorizontal: scale(12), marginBottom: verticalScale(12),
+    borderRadius: moderateScale(20), borderWidth: 1, borderColor: COLORS.AstroMaroon, backgroundColor: '#FDF3EE',
+  },
+  useProfileBtnText: {fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, marginLeft: scale(6)},
   input: {
     flexDirection: 'row', height: verticalScale(50), paddingHorizontal: scale(10), marginBottom: verticalScale(10),
     alignItems: 'center', justifyContent: 'space-between', borderRadius: moderateScale(8),

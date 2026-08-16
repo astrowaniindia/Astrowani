@@ -19,6 +19,11 @@ import { Reveal } from '../../../components/astro/AstroUI';
 type ServiceItem = {
   id: number | string;
   title: string;
+  // Optional translated label shown instead of `title`. `title` itself has to
+  // stay a stable, untranslated identifier in some callers (Home.js's
+  // FREE_SERVICE_ROUTES is keyed by the English title string), so the actual
+  // on-screen text is a separate field rather than overwriting `title`.
+  displayTitle?: string;
   icon: string;
   description?: string;
   price?: number;
@@ -74,7 +79,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
             )}
           </View>
           <Text style={styles.imageCardText} numberOfLines={2}>
-            {item.title}
+            {item.displayTitle ?? item.title}
           </Text>
         </TouchableOpacity>
         </Reveal>
@@ -105,7 +110,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
           )}
         </View>
         <Text style={styles.serviceText} numberOfLines={2}>
-          {item.title}
+          {item.displayTitle ?? item.title}
         </Text>
       </TouchableOpacity>
       </Reveal>

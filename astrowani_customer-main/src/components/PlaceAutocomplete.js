@@ -30,6 +30,39 @@ export function formatPlace(r) {
   return [r.name, r.admin1, r.country].filter(Boolean).join(', ');
 }
 
+/**
+ * One-shot lookup for a place NAME (not user keystrokes) — used to re-resolve
+ * coordinates for a place a customer already typed once, e.g. their saved
+ * profile's place of birth, which is stored as text only (no lat/lon). Returns
+ * the same shape PlaceAutocomplete's own onSelect gives, or null if nothing
+ * matched or the request failed — callers must treat null as "couldn't
+ * auto-fill this field," never as "leave the old value," since a silent
+ * failure here would submit a chart for the wrong coordinates.
+ */
+export async function geocodePlace(text) {
+  const q = String(text || '').trim();
+  if (!q) return null;
+  try {
+    const url = `${GEOCODE_URL}?name=${encodeURIComponent(q)}&count=1&language=en&format=json`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const r = Array.isArray(json.results) ? json.results[0] : null;
+    if (!r) return null;
+    return {
+      label: formatPlace(r),
+      name: r.name,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      timezone: r.timezone,
+      country: r.country,
+      state: r.admin1 || '',
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 export default function PlaceAutocomplete({
   placeholder,
   onSelect,
@@ -101,6 +134,10 @@ export default function PlaceAutocomplete({
       longitude: r.longitude,
       timezone: r.timezone,
       country: r.country,
+      // The state/province — already folded into `label`, but callers that
+      // need it as its own field (a profile's separate State field, e.g.)
+      // shouldn't have to re-parse the formatted label to get it back out.
+      state: r.admin1 || '',
     });
   };
 

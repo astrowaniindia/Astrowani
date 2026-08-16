@@ -152,7 +152,7 @@ module.exports = function registerAdminRoutes(app) {
   }
 
   crud('blogs', 'blogs', {
-    allowed: ['title', 'excerpt', 'meta_description', 'thumbnail', 'category_id',
+    allowed: ['title', 'excerpt', 'excerpt_hi', 'meta_description', 'meta_description_hi', 'thumbnail', 'category_id',
       'title_en', 'content_en', 'title_hi', 'content_hi', 'is_published'],
   });
   crud('banners', 'banners', {
@@ -188,7 +188,7 @@ module.exports = function registerAdminRoutes(app) {
   // Paid astrology report catalog (JyotishamAstroAPI) — prices flow into admin_wallet on purchase.
   crud('astro-services', 'astro_services', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['key', 'name', 'description', 'category', 'price', 'image', 'is_active', 'sort_order'],
+    allowed: ['key', 'name', 'name_hi', 'description', 'description_hi', 'category', 'price', 'image', 'is_active', 'sort_order'],
   });
 
   // ── Live Aarti / Pooja channels ──────────────────────────────────────────

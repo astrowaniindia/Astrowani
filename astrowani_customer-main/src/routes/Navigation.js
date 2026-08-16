@@ -16,6 +16,7 @@ import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import CustomHeader from './CustomHeader';
+import { LanguageContext } from '../context/LanguageContext';
 import Chat from '../screens/chat/Chat';
 import CustomDrawerContent from './CustomDrawerContent'; // Your custom drawer content
 import UserProfileScreen from '../screens/drawerScreens/UserProfileScreen';
@@ -914,6 +915,14 @@ function LiveStack() {
     </Stack.Navigator>
   );
 }
+// `header` renders as a plain function component, so it can use hooks —
+// t('remedies.servicesTitle') was previously a hardcoded "Services" that
+// stayed English even with the Hindi toggle on.
+function RemediesHeader() {
+  const { t } = React.useContext(LanguageContext);
+  return <CustomHeader title={t('remedies.servicesTitle')} />;
+}
+
 function RemediesStack() {
   return (
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
@@ -921,7 +930,7 @@ function RemediesStack() {
         name="RemediesScreen"
         component={Remedies}
         options={{
-          header: () => <CustomHeader title="Services" />,
+          header: () => <RemediesHeader />,
         }}
       />
     </Stack.Navigator>

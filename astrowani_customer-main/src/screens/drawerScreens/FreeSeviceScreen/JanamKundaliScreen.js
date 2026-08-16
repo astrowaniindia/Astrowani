@@ -7,6 +7,7 @@ import {
   Image,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import React, {useState} from 'react';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
@@ -14,10 +15,23 @@ import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
+import PlaceAutocomplete, {geocodePlace} from '../../../components/PlaceAutocomplete';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
 import { FREE_SERVICES_URL } from '../../../config/api';
+import useSavedProfile from '../../../hooks/useSavedProfile';
+import {showStatusPopup} from '../../../components/StatusPopup';
+
+// Parses "HH:MM" or "HH:MM:SS" (the two shapes the backend's time_of_birth
+// column holds, depending on which screen originally wrote it) into a Date
+// carrying that hour/minute, to seed the time picker.
+function parseTimeString(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(':');
+  const d = new Date();
+  d.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
+  return d;
+}
 
 const JanamKundaliScreen = ({navigation}) => {
   const { apiLanguage } = useFreeServiceLanguage(navigation);
@@ -37,6 +51,50 @@ const JanamKundaliScreen = ({navigation}) => {
   // answer with no error is worse than a refusal; handleShowKundali now checks.
   const [coordinates, setCoordinates] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Only used to seed PlaceAutocomplete's displayed text after a profile-fill —
+  // this screen otherwise tracks just coordinates, not the label.
+  const [place, setPlace] = useState('');
+  const [placeFieldKey, setPlaceFieldKey] = useState(0);
+  const {fetchProfile, loading: profileLoading} = useSavedProfile();
+
+  const applyMyProfile = async () => {
+    const {profile, error} = await fetchProfile();
+    if (!profile) {
+      showStatusPopup({
+        variant: 'info',
+        title: t('astro.useMyProfile'),
+        message: error === 'not_logged_in' ? t('astro.profileNotLoggedIn') : t('astro.profileFillFailed'),
+      });
+      return;
+    }
+    if (profile.name) setName(profile.name);
+    if (profile.gender) setGender(String(profile.gender).toLowerCase());
+    if (profile.dob) setDateOfBirth(new Date(profile.dob));
+    if (profile.timeOfBirth) {
+      setTimeOfBirth(parseTimeString(profile.timeOfBirth));
+      setDontKnowTime(false);
+    }
+
+    let placeResolved = !profile.placeOfBirth;
+    if (profile.placeOfBirth) {
+      const geo = await geocodePlace(profile.placeOfBirth);
+      if (geo) {
+        setPlace(geo.label);
+        setCoordinates({latitude: geo.latitude, longitude: geo.longitude});
+        setPlaceFieldKey((k) => k + 1);
+        placeResolved = true;
+      } else {
+        setPlace('');
+        setCoordinates(null);
+      }
+    }
+
+    if (!placeResolved && profile.placeOfBirth) {
+      showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profilePlaceNotFound')});
+    } else if (!profile.name || !profile.gender || !profile.dob || !profile.timeOfBirth || !placeResolved) {
+      showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profileFilledPartial')});
+    }
+  };
 
   const handleCheckboxChange = () => {
     setDontKnowTime(!dontKnowTime);
@@ -130,6 +188,21 @@ const JanamKundaliScreen = ({navigation}) => {
         </View>
 
         <View style={styles.profileView}>
+          <TouchableOpacity
+            style={styles.useProfileBtn}
+            activeOpacity={0.8}
+            disabled={profileLoading}
+            onPress={applyMyProfile}>
+            {profileLoading ? (
+              <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+            ) : (
+              <Ionicons name="person-circle-outline" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+            )}
+            <Text style={styles.useProfileBtnText}>
+              {profileLoading ? t('astro.fillingFromProfile') : t('astro.useMyProfile')}
+            </Text>
+          </TouchableOpacity>
+
           <TextInput
             placeholder={t('kundali.enterFullName')}
             placeholderTextColor="#000"
@@ -210,6 +283,8 @@ const JanamKundaliScreen = ({navigation}) => {
               object — `details.geometry` with no optional chaining — on top of
               never resolving at all once billing lapsed. */}
           <PlaceAutocomplete
+            key={placeFieldKey}
+            initialValue={place}
             placeholder={t('kundali.enterPlaceOfBirth')}
             onSelect={(picked) => {
               if (!picked) {
@@ -275,6 +350,12 @@ const styles = StyleSheet.create({
     marginLeft: scale(10),
     color: '#000',
   },
+  useProfileBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',
+    paddingVertical: verticalScale(7), paddingHorizontal: scale(12), marginBottom: verticalScale(12),
+    borderRadius: moderateScale(20), borderWidth: 1, borderColor: COLORS.AstroMaroon, backgroundColor: '#FDF3EE',
+  },
+  useProfileBtnText: {fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, marginLeft: scale(6)},
   formContainer: {
     padding: scale(15),
   },

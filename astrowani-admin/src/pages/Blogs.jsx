@@ -5,7 +5,7 @@ import RichText from '../components/RichText';
 import ImageField from '../components/ImageField';
 
 const EMPTY = {
-  title: '', excerpt: '', meta_description: '', thumbnail: '', category_id: '',
+  title: '', excerpt: '', excerpt_hi: '', meta_description: '', meta_description_hi: '', thumbnail: '', category_id: '',
   title_en: '', content_en: '', title_hi: '', content_hi: '', is_published: true,
 };
 
@@ -101,6 +101,10 @@ export default function Blogs() {
             <textarea value={editing.excerpt} onChange={(e) => set('excerpt', e.target.value)} />
           </div>
           <div className="field">
+            <label>Excerpt (Hindi)</label>
+            <textarea value={editing.excerpt_hi || ''} onChange={(e) => set('excerpt_hi', e.target.value)} />
+          </div>
+          <div className="field">
             <label>Meta description (SEO)</label>
             <textarea value={editing.meta_description} onChange={(e) => set('meta_description', e.target.value)} />
           </div>
@@ -129,6 +133,10 @@ export default function Blogs() {
           <div className="field">
             <label>Hindi — content</label>
             <RichText value={editing.content_hi} onChange={(v) => set('content_hi', v)} placeholder="हिंदी लेख लिखें…" />
+          </div>
+          <div className="field">
+            <label>Hindi — meta description (the excerpt shown under the title on the blog cards)</label>
+            <textarea value={editing.meta_description_hi || ''} onChange={(e) => set('meta_description_hi', e.target.value)} />
           </div>
 
           <div className="field checkbox-row">

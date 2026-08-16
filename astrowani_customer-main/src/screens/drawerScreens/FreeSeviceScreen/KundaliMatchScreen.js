@@ -9,6 +9,7 @@ import {
   Platform,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import React, {useState} from 'react';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
@@ -17,11 +18,21 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
+import PlaceAutocomplete, {geocodePlace} from '../../../components/PlaceAutocomplete';
 import axios from 'axios';
 import { FREE_SERVICES_URL } from '../../../config/api';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
+import useSavedProfile from '../../../hooks/useSavedProfile';
+import {showStatusPopup} from '../../../components/StatusPopup';
+
+function parseTimeString(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(':');
+  const d = new Date();
+  d.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
+  return d;
+}
 
 
 const KundaliMatchScreen = ({navigation}) => {
@@ -58,6 +69,73 @@ const KundaliMatchScreen = ({navigation}) => {
   // The Geocoder fallback that used to live here is gone with Google Places —
   // PlaceAutocomplete resolves coordinates as part of selection and reports its
   // own failures inline, so there is no separate fallback path to keep in sync.
+
+  const [boyPlaceKey, setBoyPlaceKey] = useState(0);
+  const [girlPlaceKey, setGirlPlaceKey] = useState(0);
+  const {fetchProfile} = useSavedProfile();
+  // Which side's "use my profile" fetch is in flight, if any — drives each
+  // button's own spinner and disables both while either is running, without
+  // making a tap on one side spin the other's button too.
+  const [fillingWho, setFillingWho] = useState(null); // 'boy' | 'girl' | null
+
+  // Shared by both sides — which setters to call is the only thing that
+  // differs between "use my profile" on the boy's form vs the girl's.
+  const applyProfileTo = async (who) => {
+    setFillingWho(who);
+    const isBoy = who === 'boy';
+    const setName = isBoy ? setBoyName : setGirlName;
+    const setGender = isBoy ? setBoyGender : setGirlGender;
+    const setDob = isBoy ? setBoyDateOfBirth : setGirlDateOfBirth;
+    const setTob = isBoy ? setBoyTimeOfBirth : setGirlTimeOfBirth;
+    const setDontKnow = isBoy ? setBoyDontKnowTime : setGirlDontKnowTime;
+    const setPlace = isBoy ? setBoyBirthPlace : setGirlBirthPlace;
+    const setLat = isBoy ? setBoyLatitude : setGirlLatitude;
+    const setLng = isBoy ? setBoyLongitude : setGirlLongitude;
+    const setPlaceKey = isBoy ? setBoyPlaceKey : setGirlPlaceKey;
+
+    try {
+      const {profile, error} = await fetchProfile();
+      if (!profile) {
+        showStatusPopup({
+          variant: 'info',
+          title: t('astro.useMyProfile'),
+          message: error === 'not_logged_in' ? t('astro.profileNotLoggedIn') : t('astro.profileFillFailed'),
+        });
+        return;
+      }
+      if (profile.name) setName(profile.name);
+      if (profile.gender) setGender(String(profile.gender).toLowerCase());
+      if (profile.dob) setDob(new Date(profile.dob));
+      if (profile.timeOfBirth) {
+        setTob(parseTimeString(profile.timeOfBirth));
+        setDontKnow(false);
+      }
+
+      let placeResolved = !profile.placeOfBirth;
+      if (profile.placeOfBirth) {
+        const geo = await geocodePlace(profile.placeOfBirth);
+        if (geo) {
+          setPlace(geo.label);
+          setLat(geo.latitude);
+          setLng(geo.longitude);
+          setPlaceKey((k) => k + 1);
+          placeResolved = true;
+        } else {
+          setPlace('');
+          setLat(null);
+          setLng(null);
+        }
+      }
+
+      if (!placeResolved && profile.placeOfBirth) {
+        showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profilePlaceNotFound')});
+      } else if (!profile.name || !profile.gender || !profile.dob || !profile.timeOfBirth || !placeResolved) {
+        showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profileFilledPartial')});
+      }
+    } finally {
+      setFillingWho(null);
+    }
+  };
 
   const handleboyCheckboxChange = () => {
     setBoyDontKnowTime(!boydontKnowTime);
@@ -175,11 +253,27 @@ const KundaliMatchScreen = ({navigation}) => {
         </View>
 
         <View style={styles.profileView}>
+          <TouchableOpacity
+            style={styles.useProfileBtn}
+            activeOpacity={0.8}
+            disabled={fillingWho !== null}
+            onPress={() => applyProfileTo('boy')}>
+            {fillingWho === 'boy' ? (
+              <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+            ) : (
+              <Ionicons name="person-circle-outline" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+            )}
+            <Text style={styles.useProfileBtnText}>
+              {fillingWho === 'boy' ? t('astro.fillingFromProfile') : t('astro.useMyProfile')}
+            </Text>
+          </TouchableOpacity>
+
           <TextInput
             placeholder={t('kundali.enterFullName')}
             placeholderTextColor="gray"
             style={styles.input}
-            onChange={text => setBoyName(text.nativeEvent.text)}
+            value={boyName}
+            onChangeText={setBoyName}
           />
 
           <View style={styles.dropdownContainer}>
@@ -255,6 +349,8 @@ const KundaliMatchScreen = ({navigation}) => {
             style={styles.input}
           /> */}
             <PlaceAutocomplete
+          key={boyPlaceKey}
+          initialValue={boyBirthPlace}
           placeholder={t('match.enterBoyPlace')}
           onSelect={(picked) => {
             if (!picked) {
@@ -276,11 +372,27 @@ const KundaliMatchScreen = ({navigation}) => {
         </View>
 
         <View style={styles.profileView}>
+          <TouchableOpacity
+            style={styles.useProfileBtn}
+            activeOpacity={0.8}
+            disabled={fillingWho !== null}
+            onPress={() => applyProfileTo('girl')}>
+            {fillingWho === 'girl' ? (
+              <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+            ) : (
+              <Ionicons name="person-circle-outline" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+            )}
+            <Text style={styles.useProfileBtnText}>
+              {fillingWho === 'girl' ? t('astro.fillingFromProfile') : t('astro.useMyProfile')}
+            </Text>
+          </TouchableOpacity>
+
           <TextInput
             placeholder={t('kundali.enterFullName')}
             placeholderTextColor="gray"
             style={styles.input}
-            onChange={text => setGirlName(text.nativeEvent.text)}
+            value={girlName}
+            onChangeText={setGirlName}
           />
 
           <View style={styles.dropdownContainer}>
@@ -356,6 +468,8 @@ const KundaliMatchScreen = ({navigation}) => {
             style={styles.input}
           /> */}
             <PlaceAutocomplete
+          key={girlPlaceKey}
+          initialValue={girlBirthPlace}
           placeholder={t('match.enterGirlPlace')}
           onSelect={(picked) => {
             if (!picked) {
@@ -658,4 +772,10 @@ const styles = StyleSheet.create({
 
     fontSize: moderateScale(16),
   },
+  useProfileBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',
+    paddingVertical: verticalScale(7), paddingHorizontal: scale(12), marginBottom: verticalScale(12),
+    borderRadius: moderateScale(20), borderWidth: 1, borderColor: COLORS.AstroMaroon, backgroundColor: '#FDF3EE',
+  },
+  useProfileBtnText: {fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon, marginLeft: scale(6)},
 });

@@ -7,14 +7,16 @@
 // /api/astro/:key handlers expect: date as dd/mm/yyyy, time as HH:mm (24h) — the backend passes
 // these straight through to JyotishamAstroAPI without reformatting (see astroRoutes.js birthQuery).
 import React, {useEffect, useState} from 'react';
-import {View, Text, TextInput, TouchableOpacity, StyleSheet} from 'react-native';
+import {View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
+import PlaceAutocomplete, {geocodePlace} from '../../../components/PlaceAutocomplete';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useSavedProfile from '../../../hooks/useSavedProfile';
+import {showStatusPopup} from '../../../components/StatusPopup';
 
 // Google Places/Geocoding were removed here: the shipped key's Cloud project
 // had billing disabled, so both APIs returned REQUEST_DENIED, coordinates never
@@ -35,7 +37,21 @@ function toApiTime(d) {
   return `${hh}:${min}`;
 }
 
-export default function BirthDetailsForm({title, showName = true, showGender = false, onValuesChange}) {
+// Parses whatever the backend's time_of_birth column holds — "HH:MM" or
+// "HH:MM:SS" depending on which screen originally wrote it (Register.jsx sends
+// seconds, UserProfileScreen.js doesn't) — into a Date carrying just that
+// hour/minute, so it can seed the time picker.
+function parseTimeString(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(':');
+  const d = new Date();
+  d.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
+  return d;
+}
+
+export default function BirthDetailsForm({
+  title, showName = true, showGender = false, showUseProfile = true, onValuesChange,
+}) {
   const {t} = React.useContext(LanguageContext);
   const displayTitle = title || t('kundali.enterDetails');
   const GENDER_OPTIONS = [
@@ -51,6 +67,56 @@ export default function BirthDetailsForm({title, showName = true, showGender = f
   const [timeOfBirth, setTimeOfBirth] = useState(null);
   const [coordinates, setCoordinates] = useState(null);
   const [place, setPlace] = useState('');
+  // Bumped on every profile-fill so PlaceAutocomplete remounts and picks up the
+  // new `initialValue` — it only reads that prop once, on mount, the same way
+  // every other seeded-value field in this codebase works.
+  const [placeFieldKey, setPlaceFieldKey] = useState(0);
+  const {fetchProfile, loading: profileLoading} = useSavedProfile();
+
+  const applyMyProfile = async () => {
+    const {profile, error} = await fetchProfile();
+    if (!profile) {
+      showStatusPopup({
+        variant: 'info',
+        title: t('astro.useMyProfile'),
+        message: error === 'not_logged_in' ? t('astro.profileNotLoggedIn') : t('astro.profileFillFailed'),
+      });
+      return;
+    }
+
+    if (showName && profile.name) setName(profile.name);
+    // Report forms use lowercase male/female/other; older accounts have
+    // capitalized values from the sign-up form's own gender picker.
+    if (profile.gender) setGender(String(profile.gender).toLowerCase());
+    if (profile.dob) setDateOfBirth(new Date(profile.dob));
+    if (profile.timeOfBirth) setTimeOfBirth(parseTimeString(profile.timeOfBirth));
+
+    let placeResolved = !profile.placeOfBirth;
+    if (profile.placeOfBirth) {
+      // The profile stores only a place NAME — no coordinates — so it has to
+      // be re-geocoded here. A stale/failed lookup must not silently keep old
+      // coordinates: a birth chart for the wrong city is worse than an empty
+      // field the customer notices and fixes.
+      const geo = await geocodePlace(profile.placeOfBirth);
+      if (geo) {
+        setPlace(geo.label);
+        setCoordinates({latitude: geo.latitude, longitude: geo.longitude});
+        setPlaceFieldKey((k) => k + 1);
+        placeResolved = true;
+      } else {
+        setPlace('');
+        setCoordinates(null);
+      }
+    }
+
+    const missing = (showName && !profile.name) || (showGender && !profile.gender) || !profile.dob
+      || !profile.timeOfBirth || !placeResolved;
+    if (!placeResolved && profile.placeOfBirth) {
+      showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profilePlaceNotFound')});
+    } else if (missing) {
+      showStatusPopup({variant: 'info', title: t('astro.useMyProfile'), message: t('astro.profileFilledPartial')});
+    }
+  };
 
   useEffect(() => {
     const isComplete = Boolean(
@@ -73,6 +139,23 @@ export default function BirthDetailsForm({title, showName = true, showGender = f
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{displayTitle}</Text>
+
+      {showUseProfile && (
+        <TouchableOpacity
+          style={styles.useProfileBtn}
+          activeOpacity={0.8}
+          disabled={profileLoading}
+          onPress={applyMyProfile}>
+          {profileLoading ? (
+            <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+          ) : (
+            <Ionicons name="person-circle-outline" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+          )}
+          <Text style={styles.useProfileBtnText}>
+            {profileLoading ? t('astro.fillingFromProfile') : t('astro.useMyProfile')}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {showName && (
         <TextInput
@@ -114,8 +197,13 @@ export default function BirthDetailsForm({title, showName = true, showGender = f
       </TouchableOpacity>
 
       {/* Passing null on edit clears the coordinates, so changing the place after
-          picking one re-disables submit instead of keeping the old city's chart. */}
+          picking one re-disables submit instead of keeping the old city's chart.
+          Keyed so a profile-fill (which sets `place` programmatically, not via
+          onSelect) can force a remount to actually display the new text —
+          PlaceAutocomplete only reads initialValue once, on mount. */}
       <PlaceAutocomplete
+        key={placeFieldKey}
+        initialValue={place}
         placeholder={t('kundali.enterPlaceOfBirth')}
         onSelect={(picked) => {
           if (!picked) {
@@ -162,6 +250,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Bold',
     color: COLORS.AstroMaroon,
     marginBottom: verticalScale(10),
+  },
+  useProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: verticalScale(7),
+    paddingHorizontal: scale(12),
+    marginBottom: verticalScale(12),
+    borderRadius: moderateScale(20),
+    borderWidth: 1,
+    borderColor: COLORS.AstroMaroon,
+    backgroundColor: '#FDF3EE',
+  },
+  useProfileBtnText: {
+    fontSize: moderateScale(12.5),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+    marginLeft: scale(6),
   },
   input: {
     flexDirection: 'row',
