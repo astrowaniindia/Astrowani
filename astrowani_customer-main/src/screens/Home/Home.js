@@ -1204,6 +1204,20 @@ const Home = ({navigation}) => {
           />
         )}
 
+        {/* Call With Astrologers — moved up here (directly under "India's Best
+            Astrologers", above "Astrowani's Categories") at the user's request,
+            2026-08-16. It used to sit far down the page, between Astro Reports
+            and the Blog carousel. */}
+        {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
+          <>
+            <View style={styles.separator} />
+            <View style={styles.topAstrologers}>
+              <Text style={styles.topAstrologerTxt}>{t('home.callWithAstrologers')}</Text>
+            </View>
+            <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
+          </>
+        )}
+
         <View style={styles.separator} />
 
         <Text style={styles.CategoryTitle}>{t('home.categories')}</Text>
@@ -1310,15 +1324,6 @@ const Home = ({navigation}) => {
           showPrice
           variant="image"
         />
-
-        {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
-          <>
-            <View style={styles.topAstrologers}>
-              <Text style={styles.topAstrologerTxt}>{t('home.callWithAstrologers')}</Text>
-            </View>
-            <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
-          </>
-        )}
 
         <View style={styles.separator} />
 
