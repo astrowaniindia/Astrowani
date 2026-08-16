@@ -16,16 +16,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {LanguageContext} from '../../context/LanguageContext';
 import {resetWalletBalance} from '../../hooks/useWalletBalance';
 
-// These policy/safety pages are maintained on the marketing site, not duplicated as in-app
-// screens, so they can't go stale here when legal/support updates the real page.
-const LEGAL_LINKS = {
-  termsOfUse: 'https://astrowani.com/term_conditions/',
-  privacyPolicy: 'https://astrowani.com/privacy-policy/',
-  refundCancellation: 'https://astrowani.com/refund_cancellation/',
-  childSafety: 'https://astrowani.com/child-safety/',
-  safetyGuidelines: 'https://astrowani.com/safety-guidelines/',
-  reportVulnerability: 'https://astrowani.com/report-vulnerability/',
-};
+// Moved to config/legal.js — the sign-up screen links the same Terms and Privacy
+// pages for its acceptance checkbox, and a legal URL should exist in one place.
+import {LEGAL_LINKS} from '../../config/legal';
 
 export default function Settings({navigation}) {
   const {t} = React.useContext(LanguageContext);

@@ -10,7 +10,10 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
+import { LEGAL_LINKS } from '../config/legal';
+import { LanguageContext } from '../context/LanguageContext';
 import { Dropdown, MultiSelect } from 'react-native-element-dropdown';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
@@ -21,11 +24,13 @@ import Instance from '../api/ApiCall';
 import { getFCMToken } from '../utils/Firebase';
 
 const Registration = ({ navigation }) => {
+  const { t } = React.useContext(LanguageContext);
   const [loading, setLoading] = useState(true);
   const [fcmToken, setFcmToken] = useState('');
 
   const [skillsOptions, setSkillsOptions] = useState([]);
   const [error, setError] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
 
   useEffect(() => {
@@ -101,11 +106,18 @@ const Registration = ({ navigation }) => {
   const handleSubmit = async () => {
     const trimmedName = (user.fullName || '').trim();
     if (!trimmedName || !user.phoneNumber) {
-      Alert.alert('Missing info', 'Please enter at least your full name and phone number.');
+      Alert.alert(t('registration.missingInfoTitle'), t('registration.missingNamePhone'));
       return;
     }
     if (user.phoneNumber.length < 10) {
-      Alert.alert('Missing info', 'Please enter a valid 10-digit phone number.');
+      Alert.alert(t('registration.missingInfoTitle'), t('registration.invalidPhone'));
+      return;
+    }
+    // Checked here rather than by disabling the button: a dead button tells the
+    // user nothing about why they are stuck. The button is dimmed as a hint and
+    // still explains itself on tap.
+    if (!acceptedTerms) {
+      Alert.alert(t('settings.termsConditions'), t('registration.acceptRequired'));
       return;
     }
     setLoading(true);
@@ -128,7 +140,7 @@ const Registration = ({ navigation }) => {
         intent: 'signup',
       });
       if (!res?.data?.success) {
-        Alert.alert('Registration Failed', res?.data?.message || 'Could not send OTP. Please try again.');
+        Alert.alert(t('registration.failedTitle'), res?.data?.message || t('registration.otpSendFailed'));
         return;
       }
 
@@ -187,10 +199,12 @@ const Registration = ({ navigation }) => {
   };
   console.log("Dropdown Options:", skillsOptions);
 
+  // Labels are translated; the stored `value` stays English so existing rows
+  // and every consumer of astrologers.gender keep matching.
   const genderOptions = [
-    { label: 'Male', value: 'male' },
-    { label: 'Female', value: 'female' },
-    { label: 'Other', value: 'other' },
+    { label: t('registration.male'), value: 'male' },
+    { label: t('registration.female'), value: 'female' },
+    { label: t('registration.other'), value: 'other' },
   ];
 
   const languageOptions = [
@@ -225,11 +239,11 @@ const Registration = ({ navigation }) => {
             <Ionicons name="pencil" size={16} color={COLORS.orange} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.uploadText}>Upload Image (below 5MB)</Text>
+        <Text style={styles.uploadText}>{t('registration.uploadImage')}</Text>
 
         <View style={styles.profileView}>
           <TextInput
-            placeholder="Full Name"
+            placeholder={t('registration.fullName')}
             placeholderTextColor="gray"
             style={styles.input}
             value={user.fullName}
@@ -241,7 +255,7 @@ const Registration = ({ navigation }) => {
               data={skillsOptions}
               labelField="label"
               valueField="value"
-              placeholder="Select Skills"
+              placeholder={t('registration.selectSkills')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={user.skills}
@@ -264,7 +278,7 @@ const Registration = ({ navigation }) => {
           </View>
 
           <TextInput
-            placeholder="Total Experience"
+            placeholder={t('registration.totalExperience')}
             placeholderTextColor="gray"
             style={styles.input}
             keyboardType="number-pad"
@@ -278,7 +292,7 @@ const Registration = ({ navigation }) => {
               data={genderOptions}
               labelField="label"
               valueField="value"
-              placeholder="Select Gender"
+              placeholder={t('registration.selectGender')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={user.gender}
@@ -302,7 +316,7 @@ const Registration = ({ navigation }) => {
               data={languageOptions}
               labelField="label"
               valueField="value"
-              placeholder="Select Languages"
+              placeholder={t('registration.selectLanguages')}
               placeholderStyle={styles.dropdownText}
               selectedTextStyle={styles.selectedItemText}
               value={user.languages}
@@ -325,7 +339,7 @@ const Registration = ({ navigation }) => {
           </View>
 
           <TextInput
-            placeholder="Enter Email ID"
+            placeholder={t('registration.email')}
             placeholderTextColor="gray"
             style={styles.input}
             keyboardType="email-address"
@@ -333,7 +347,7 @@ const Registration = ({ navigation }) => {
             onChangeText={text => handleInputChange('email', text)}
           />
           <TextInput
-            placeholder="Enter Phone number"
+            placeholder={t('registration.phone')}
             placeholderTextColor="gray"
             style={styles.input}
             keyboardType="number-pad"
@@ -341,15 +355,54 @@ const Registration = ({ navigation }) => {
             onChangeText={text => handleInputChange('phoneNumber', text)}
           />
         </View>
-        <TouchableOpacity onPress={handleSubmit} style={styles.submitButton} disabled={loading}>
+        {/* Tick box and link text are SEPARATE touch targets on purpose: tapping
+            the words must open the page, tapping the box must toggle acceptance.
+            One Touchable around the row would make it impossible to read the
+            terms without also accepting them. */}
+        <View style={styles.termsRow}>
+          <TouchableOpacity
+            onPress={() => setAcceptedTerms(!acceptedTerms)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: acceptedTerms }}
+            accessibilityLabel={t('registration.acceptTermsA11y')}
+            style={[styles.termsBox, acceptedTerms && styles.termsBoxChecked]}>
+            {acceptedTerms && (
+              <Ionicons name="checkmark" size={moderateScale(14)} color={COLORS.white || '#fff'} />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.termsText}>
+            {t('registration.acceptPrefix')}
+            <Text
+              style={styles.termsLink}
+              onPress={() => Linking.openURL(LEGAL_LINKS.termsOfUse).catch(() => {})}>
+              {t('settings.termsConditions')}
+            </Text>
+            {t('registration.acceptAnd')}
+            <Text
+              style={styles.termsLink}
+              onPress={() => Linking.openURL(LEGAL_LINKS.privacyPolicy).catch(() => {})}>
+              {t('settings.privacyPolicy')}
+            </Text>
+            {/* Empty in English, where the sentence is already complete. Hindi is
+                verb-final, so its verb has to land after the last link. */}
+            {t('registration.acceptSuffix')}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleSubmit}
+          style={[styles.submitButton, (loading || !acceptedTerms) && styles.submitButtonDim]}
+          disabled={loading}>
           {loading ? (
             <ActivityIndicator color={COLORS.AstroMaroon} />
           ) : (
-            <Text style={styles.submitButtonText}>Submit</Text>
+            <Text style={styles.submitButtonText}>{t('registration.submit')}</Text>
           )}
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.signin}>Already have an Account? Sign in</Text>
+          <Text style={styles.signin}>{t('registration.alreadyHaveAccount')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -384,11 +437,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: verticalScale(12),
+  },
+  termsBox: {
+    width: moderateScale(20),
+    height: moderateScale(20),
+    borderRadius: moderateScale(4),
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: scale(10),
+    marginTop: verticalScale(1),
+    backgroundColor: '#fff',
+  },
+  termsBoxChecked: {
+    backgroundColor: COLORS.AstroMaroon,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: moderateScale(12),
+    color: '#555',
+    lineHeight: verticalScale(18),
+  },
+  termsLink: {
+    color: COLORS.AstroMaroon,
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
+  },
   submitButton: {
     backgroundColor: COLORS.AstroGold,
     padding: moderateScale(14),
     alignItems: 'center',
     borderRadius: moderateScale(7),
+  },
+  submitButtonDim: {
+    opacity: 0.6,
   },
   submitButtonText: {
     fontWeight: 'bold',

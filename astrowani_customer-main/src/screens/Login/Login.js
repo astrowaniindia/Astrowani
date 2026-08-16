@@ -14,7 +14,9 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
+import {LEGAL_LINKS} from '../../config/legal';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -178,15 +180,21 @@ const Login = ({navigation}) => {
             )}
           </TouchableOpacity>
 
+          {/* Both links were TouchableOpacity with no onPress — they rendered as
+              links and did nothing on tap. */}
           <View style={styles.termsView}>
             <Text style={styles.termsText}>
               {t('login.agreeTerms')}
             </Text>
-            <TouchableOpacity style={styles.termsLink}>
+            <TouchableOpacity
+              style={styles.termsLink}
+              onPress={() => Linking.openURL(LEGAL_LINKS.termsOfUse).catch(() => {})}>
               <Text style={styles.linktext}>{t('settings.termsOfUse')}</Text>
             </TouchableOpacity>
             <Text style={styles.termsText}>{t('login.and')}</Text>
-            <TouchableOpacity style={styles.termsLink}>
+            <TouchableOpacity
+              style={styles.termsLink}
+              onPress={() => Linking.openURL(LEGAL_LINKS.privacyPolicy).catch(() => {})}>
               <Text style={styles.linktext}>{t('settings.privacyPolicy')}</Text>
             </TouchableOpacity>
           </View>

@@ -26,6 +26,7 @@ import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
+import TermsAcceptance from '../../components/TermsAcceptance';
 
 export default function Register({ navigation }) {
   const { t, language } = React.useContext(LanguageContext);
@@ -50,6 +51,7 @@ export default function Register({ navigation }) {
   const [email, setEmail] = useState('');
   const [image, setImage] = useState(null); // data-URI, for the preview
   const [submitting, setSubmitting] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   useEffect(() => {
     // Request camera permission on Android
@@ -152,6 +154,13 @@ export default function Register({ navigation }) {
       showAlert(t('common.error'), t('register.validMobile'), 'error');
       return;
     }
+    // Checked here rather than by disabling the button: a dead button tells the
+    // user nothing about why they are stuck. The button is dimmed as a hint and
+    // still explains itself on tap.
+    if (!acceptedTerms) {
+      showAlert(t('common.error'), t('register.acceptRequired'), 'error');
+      return;
+    }
 
     captureEvent('signup_submit_tapped');
     setSubmitting(true);
@@ -166,6 +175,8 @@ export default function Register({ navigation }) {
         navigation.navigate('VerifyOtp', {
           phoneNumber: mobile,
           role: 'customer',
+          // Recorded on the new account row by the backend at insert time.
+          termsAccepted: true,
           // Applied to the new account via PUT /api/users/profile right after OTP verify.
           profileData: {
             name,
@@ -341,8 +352,14 @@ export default function Register({ navigation }) {
           onChangeText={setEmail}
         />
 
+            <TermsAcceptance
+              accepted={acceptedTerms}
+              onChange={setAcceptedTerms}
+              style={styles.terms}
+            />
+
             <TouchableOpacity
-              style={[styles.submitButton, submitting && { opacity: 0.6 }]}
+              style={[styles.submitButton, (submitting || !acceptedTerms) && { opacity: 0.6 }]}
               onPress={handleSubmit}
               disabled={submitting}>
               <Text style={styles.submitButtonText}>{submitting ? t('register.sendingOtp') : t('register.submit')}</Text>
@@ -436,6 +453,9 @@ const styles = StyleSheet.create({
   dateButtonText: {
     fontSize: 16,
     color: '#333',
+  },
+  terms: {
+    marginTop: 8,
   },
   submitButton: {
     backgroundColor: COLORS.AstroMaroon,

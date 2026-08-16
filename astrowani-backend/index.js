@@ -556,6 +556,73 @@ const OTP_SEND_WINDOW_MS = 60 * 60 * 1000;        // rolling window for the send
 const OTP_MAX_SENDS_PER_WINDOW = 8;               // max SMS to one number per window
 const OTP_TTL_MS = 5 * 60 * 1000;
 
+// Identifies WHICH terms a user accepted. Bump this whenever the published
+// Terms & Conditions change materially — an acceptance record that doesn't say
+// what was accepted is not much of a record. Stored on the account row alongside
+// the timestamp (sql/terms_acceptance_schema.sql).
+const TERMS_VERSION = '2026-08-16';
+
+/**
+ * Columns recording a Terms & Conditions acceptance, stamped when an account row
+ * is created.
+ *
+ * Built on the SERVER, from the server's own clock, and never merged from the
+ * request body. A client-supplied "termsAcceptedAt" would be worth nothing as
+ * evidence — the whole point of this record is that the app cannot fabricate it.
+ * The only thing the client contributes is `source`, which is a label for which
+ * screen the account came from, not the acceptance itself.
+ */
+function termsAcceptanceFields(source) {
+  return {
+    terms_accepted_at: new Date().toISOString(),
+    terms_version: TERMS_VERSION,
+    terms_accepted_source: source,
+  };
+}
+
+/**
+ * True when a write failed only because a column does not exist.
+ *
+ * TWO codes, and the second is the one that actually fires: writes go through
+ * PostgREST, which rejects an unknown column against its cached schema and
+ * returns its own PGRST204 ("Could not find the 'x' column ... in the schema
+ * cache") before Postgres is ever asked. Postgres's native 42703 is only seen
+ * when a statement does reach the database. Checking 42703 alone looks correct
+ * and catches nothing — verified against the live schema, where an insert of a
+ * not-yet-migrated column returned PGRST204.
+ */
+function isMissingColumnError(error) {
+  if (!error) return false;
+  return error.code === 'PGRST204'
+    || error.code === '42703'
+    || /could not find the .* column|column .* does not exist/i.test(error.message || '');
+}
+
+/**
+ * Insert an account row, stamping the terms acceptance, and survive the columns
+ * not existing yet.
+ *
+ * The backend redeploys automatically on push, but sql/terms_acceptance_schema.sql
+ * is applied by hand in the Supabase editor like every other migration in this
+ * repo. Between those two moments a strict insert would fail with 42703
+ * (undefined column) and take out signup on BOTH apps. Creating the account
+ * matters more than recording the acceptance, so a missing column costs the
+ * record and a loud warning, not the registration.
+ *
+ * Remove the fallback once the migration is applied everywhere.
+ */
+async function insertAccountRow(table, row, source) {
+  const first = await supabaseService
+    .from(table).insert([{ ...row, ...termsAcceptanceFields(source) }]).select('id').single();
+  if (!first.error || !isMissingColumnError(first.error)) return first;
+
+  console.warn(
+    `[terms] ${table} has no terms_* columns — run sql/terms_acceptance_schema.sql. ` +
+    'Creating the account WITHOUT an acceptance record.',
+  );
+  return supabaseService.from(table).insert([row]).select('id').single();
+}
+
 // OTPs are HMAC'd, not stored in the clear. A plain hash would be pointless —
 // only 1,000,000 possible 6-digit codes, enumerable offline in milliseconds —
 // so the secret is what actually protects them: reading the table is no longer
@@ -998,7 +1065,10 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
  * Endpoint to verify an OTP
  */
 app.post('/api/users/mobile-otp-verify', async (req, res) => {
-  const { phoneNumber, otp, fcmToken, role, referralCode } = req.body;
+  // `termsAccepted` tells us the account came from the Register screen's explicit
+  // checkbox rather than the Login screen's passive notice. It is a label only —
+  // the timestamp itself is stamped server-side (see termsAcceptanceFields).
+  const { phoneNumber, otp, fcmToken, role, referralCode, termsAccepted } = req.body;
 
   if (!phoneNumber || !otp) {
     return res.status(400).json({ success: false, message: 'Phone number and OTP are required' });
@@ -1113,16 +1183,21 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
           referrerId = referrerRow?.id || null;
         }
 
-        const { data: newCustomer, error: insertError } = await supabaseService
-          .from('customers')
-          .insert([{
+        // Account creation IS the acceptance point for a customer: both the
+        // Register screen (explicit checkbox) and the Login screen (the "By
+        // signing up, you agree…" notice above the button) lead here. The source
+        // column keeps the two distinguishable, because they are not equally
+        // strong evidence.
+        const { data: newCustomer, error: insertError } = await insertAccountRow(
+          'customers',
+          {
             mobile: phoneNumber,
             wallet_balance: 0,
             fcm_token: fcmToken || null,
             referral_code: generateReferralCode(),
-          }])
-          .select('id')
-          .single();
+          },
+          termsAccepted ? 'signup_form' : 'login_notice',
+        );
         if (insertError) throw insertError;
         supabaseCustomerId = newCustomer?.id;
 
@@ -3485,9 +3560,24 @@ app.post('/api/vendor/register', async (req, res) => {
       return res.status(409).json({ success: false, message: 'This number is already registered' });
     }
 
-    const registrationData = { ...(req.body || {}), phone_number: decoded.phone };
-    const { data: created, error } = await supabaseService
-      .from('astrologers').insert([registrationData]).select('id').single();
+    // The terms columns are stripped from the body and re-stamped server-side.
+    // This endpoint spreads req.body straight into the insert, so without the
+    // strip a modified app could post its own terms_accepted_at and the record
+    // would prove nothing.
+    //
+    // NOTE: that same spread is a broader mass-assignment hole — any column on
+    // `astrologers` can be set by the registrant, including wallet_balance,
+    // approval_status and the per-minute charges. Out of scope for this change;
+    // it needs an explicit allow-list of registration fields.
+    const {
+      terms_accepted_at: _ta, terms_version: _tv, terms_accepted_source: _ts,
+      ...clientFields
+    } = req.body || {};
+    const { data: created, error } = await insertAccountRow(
+      'astrologers',
+      { ...clientFields, phone_number: decoded.phone },
+      'signup_form',
+    );
     if (error) throw error;
 
     const token = jwt.sign(

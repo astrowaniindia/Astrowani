@@ -27,7 +27,7 @@ const RESEND_SECONDS = 60;
 
 const VerifyOtp = ({navigation, route}) => {
   const {t} = React.useContext(LanguageContext);
-  const {phoneNumber, role = 'customer', profileData} = route?.params || {};
+  const {phoneNumber, role = 'customer', profileData, termsAccepted} = route?.params || {};
 
   const [code, setCode] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -72,6 +72,10 @@ const VerifyOtp = ({navigation, route}) => {
         fcmToken,
         role,
         referralCode: referralCode.trim() || undefined,
+        // Labels the acceptance as having come from the Register screen's
+        // checkbox rather than the Login screen's notice. The backend stamps the
+        // actual timestamp itself — this flag only picks which source to record.
+        termsAccepted: !!termsAccepted,
       });
       if (res?.data?.success && res?.data?.token) {
         await AsyncStorage.setItem('token', res.data.token);
