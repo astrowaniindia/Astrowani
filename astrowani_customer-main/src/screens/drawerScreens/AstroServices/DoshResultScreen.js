@@ -4,41 +4,47 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import {ASTRO, ReportShell, SectionCard, Callout} from '../../../components/astro/AstroUI';
-import {DoshaVerdict} from '../../../components/astro/AstroBlocks';
+import {DoshaVerdict, doshaPresence} from '../../../components/astro/AstroBlocks';
+import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 /**
  * At-a-glance summary of all four doshas.
  *
- * Without it the reader has to scroll through four long sections — each ending
- * in ten remedies — before they can answer "so which ones do I actually have?".
- * This puts the four answers on the first screen and lets the detail follow.
+ * Without it the reader has to scroll through four long sections — each ending in ten
+ * remedies — before they can answer "so which ones do I actually have?". This puts the four
+ * answers on the first screen and lets the detail follow.
  */
 function DoshaSummary({items, index}) {
+  const {t} = React.useContext(LanguageContext);
   const known = items.filter((i) => i.present !== null);
   if (!known.length) return null;
   const affected = known.filter((i) => i.present);
 
   return (
-    <SectionCard title="At a Glance" glyph="◉" subtitle="All four doshas" index={index}>
-      <Callout tone={affected.length ? 'warn' : 'good'} icon={affected.length ? 'alert-circle' : 'shield-checkmark'}>
+    <SectionCard title={t('report.atAGlance')} glyph="◉" subtitle={t('report.allFourDoshas')} index={index}>
+      <Callout
+        tone={affected.length ? 'warn' : 'good'}
+        icon={affected.length ? 'alert-circle' : 'shield-checkmark'}>
         {affected.length
-          ? `${affected.length} of ${known.length} doshas are present in your chart: ${affected.map((a) => a.label).join(', ')}. Remedies for each are listed below.`
-          : 'None of the four doshas are present in your chart.'}
+          ? t('report.doshaSummaryAffected', {
+            n: affected.length,
+            total: known.length,
+            list: affected.map((a) => a.label).join(', '),
+          })
+          : t('report.doshaSummaryClear')}
       </Callout>
       <View style={styles.grid}>
         {known.map((i) => (
-          <View
-            key={i.label}
-            style={[styles.tile, i.present ? styles.tileBad : styles.tileGood]}>
+          <View key={i.label} style={[styles.tile, i.present ? styles.tileBad : styles.tileGood]}>
             <Ionicons
               name={i.present ? 'alert-circle' : 'checkmark-circle'}
               size={moderateScale(22)}
               color={i.present ? ASTRO.bad : ASTRO.good}
             />
-            <Text style={styles.tileLabel} numberOfLines={2}>{i.label}</Text>
+            <Text style={styles.tileLabel}>{i.label}</Text>
             <Text style={[styles.tileState, {color: i.present ? ASTRO.bad : ASTRO.good}]}>
-              {i.present ? 'Present' : 'Clear'}
+              {i.present ? t('report.present') : t('report.clear')}
             </Text>
           </View>
         ))}
@@ -47,37 +53,32 @@ function DoshaSummary({items, index}) {
   );
 }
 
-// manglik-dosh has no is_dosha_present flag — it reports three independent
-// sources instead, so derive presence the same way DoshaVerdict does.
-function presence(d) {
-  if (!d || typeof d !== 'object') return null;
-  if (typeof d.is_dosha_present === 'boolean') return d.is_dosha_present;
-  const sources = ['manglik_by_mars', 'manglik_by_saturn', 'manglik_by_rahuketu']
-    .filter((k) => typeof d[k] === 'boolean');
-  return sources.length ? sources.some((k) => d[k]) : null;
-}
-
-export default function DoshResultScreen({route}) {
+export default function DoshResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
-  const {data} = route.params || {};
+  const {data, busy} = useReportLanguage(route, navigation);
 
+  // doshaPresence is shared with DoshaVerdict so the summary tile and the section below it
+  // can never disagree about whether a dosha is present.
   const items = [
-    {label: t('result.mangalDosh'), present: presence(data?.mangalDosh)},
-    {label: t('result.kaalsarpDosh'), present: presence(data?.kaalsarpDosh)},
-    {label: t('result.manglikDosh'), present: presence(data?.manglikDosh)},
-    {label: t('result.pitraDosh'), present: presence(data?.pitraDosh)},
+    {label: t('result.mangalDosh'), present: doshaPresence(data?.mangalDosh)},
+    {label: t('result.kaalsarpDosh'), present: doshaPresence(data?.kaalsarpDosh)},
+    {label: t('result.manglikDosh'), present: doshaPresence(data?.manglikDosh)},
+    {label: t('result.pitraDosh'), present: doshaPresence(data?.pitraDosh)},
   ];
 
   return (
-    <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
-      <ReportShell title="Dosha Analysis" subtitle="What is present, how strong, and what to do">
-        <DoshaSummary items={items} index={0} />
-        <DoshaVerdict title={t('result.mangalDosh')} data={data?.mangalDosh} glyph="♂" index={1} />
-        <DoshaVerdict title={t('result.kaalsarpDosh')} data={data?.kaalsarpDosh} glyph="☊" index={2} />
-        <DoshaVerdict title={t('result.manglikDosh')} data={data?.manglikDosh} glyph="♂" index={3} />
-        <DoshaVerdict title={t('result.pitraDosh')} data={data?.pitraDosh} glyph="☉" index={4} />
-      </ReportShell>
-    </ScrollView>
+    <View style={styles.main}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <ReportShell title={t('report.doshaAnalysis')} subtitle={t('report.doshaAnalysisSub')}>
+          <DoshaSummary items={items} index={0} />
+          <DoshaVerdict title={t('result.mangalDosh')} data={data?.mangalDosh} glyph="♂" index={1} />
+          <DoshaVerdict title={t('result.kaalsarpDosh')} data={data?.kaalsarpDosh} glyph="☊" index={2} />
+          <DoshaVerdict title={t('result.manglikDosh')} data={data?.manglikDosh} glyph="♂" index={3} />
+          <DoshaVerdict title={t('result.pitraDosh')} data={data?.pitraDosh} glyph="☉" index={4} />
+        </ReportShell>
+      </ScrollView>
+      <TranslatingOverlay visible={busy} label={t('report.translating')} />
+    </View>
   );
 }
 

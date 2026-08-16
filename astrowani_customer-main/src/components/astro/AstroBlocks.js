@@ -1,35 +1,31 @@
 // Domain blocks that render specific JyotishamAstroAPI payloads properly.
 //
-// Built against REAL captured responses (re-captured live 2026-08-16 across all
-// 22 endpoints these reports use), which is the thing the original generic
-// renderer could not do — it was written without live API access, so it
-// defensively dumped every payload as label/value text.
+// Built against REAL captured responses (all 22 endpoints these reports use, re-captured
+// live 2026-08-16 in both en and hi), which is the thing the original generic renderer
+// could not do — it was written without live API access, so it defensively dumped every
+// payload as label/value text.
 //
-// The 2026-08-16 pass replaced the remaining dumps. What was still wrong after
-// the first pass, and what each fix is:
+// TWO RULES THAT MUST NOT BE BROKEN HERE
 //
-//   * PARALLEL ARRAYS WERE PRINTED SIDE BY SIDE. /dasha/mahadasha returns
-//     {mahadasha:[9 names], mahadasha_order:[9 dates]} and yogini returns
-//     {dasha_list, dasha_end_dates, dasha_lord_list} — three separate arrays
-//     describing ONE sequence. Printed independently you got a list of 24 bare
-//     planet names, then a list of 24 bare dates, with no way to tell which
-//     went with which. They are now ZIPPED into one timeline.
-//   * BOOLEAN PAIRS READ AS "false / false". The matching report is full of
-//     {boy, girl} booleans; rendered literally they say nothing. Now CompareRow.
-//   * REMEDIES BURIED EVERYTHING. Ten multi-line remedies per dosha, printed as
-//     bullets, meant a reader scrolled past four screens of prose to reach the
-//     next section. Now collapsed behind a labelled count.
-//   * GRIDS WERE PRINTED AS LISTS. The Lo Shu grid IS a 3x3 square and Lal Kitab
-//     houses ARE a 12-house chart; both were emitted as flat key/value rows.
+//  1. NEVER DROP API TEXT. The provider is paid per call and the customer is paid per
+//     report; every sentence that comes back gets displayed somewhere. Where a block pulls
+//     a number out of a sentence for a headline ("Your Name number ... is : 3" → a big 3),
+//     the ORIGINAL sentence is still rendered underneath. `Collapsible` is fine — it hides
+//     nothing, it defers. `slice()` on a content array is not, and there is none left.
+//  2. STAY PROGRESSIVE. Every block checks for the shape it expects and falls back to a
+//     plain key/value listing otherwise, so an upstream payload change degrades instead of
+//     crashing or coming up blank.
 //
-// Every block stays PROGRESSIVE: it checks that the shape it expects is present
-// and falls back to a plain key/value listing when it is not, so an upstream
-// payload change can never make a paid report crash or come up blank.
-import React from 'react';
+// LANGUAGE. Reports can be fetched with lang=hi, which returns the whole payload in Hindi
+// (see components/astro/ReportLanguage.js). That means two things for code here: labels
+// come from t(), and any lookup keyed on an API string (sign names, planet names) must
+// tolerate Devanagari — see the glyph maps in AstroUI.
+import React, {useContext} from 'react';
 import {View, Text, StyleSheet} from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+import {LanguageContext} from '../../context/LanguageContext';
 import {
   ASTRO, SectionCard, StatTile, TileRow, ScoreBar, Badge, ChipGrid, Prose,
   Divider, KeyVal, humanize, ZODIAC_GLYPH, PLANET_GLYPH,
@@ -38,6 +34,11 @@ import {
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 const isBlank = (v) => v === undefined || v === null || v === '' || v === '-';
+const asList = (v) => (Array.isArray(v) ? v.filter((x) => !isBlank(x)) : isBlank(v) ? [] : [v]);
+
+// Pulls a trailing number out of a sentence for a headline tile. The caller ALWAYS still
+// renders the full sentence — see rule 1 above.
+const trailingNumber = (s) => (String(s ?? '').match(/(\d+)\s*$/) || [])[1];
 
 /* ------------------------------------------------------------------ */
 /* Generic fallback — used whenever a payload is not the expected shape */
@@ -97,27 +98,35 @@ function extractPlanets(data) {
 /**
  * Planet positions as CARDS, not a spreadsheet.
  *
- * The previous version was a six-column table inside a horizontal ScrollView.
- * On a phone that means half the columns are off-screen at any moment and the
- * reader has to scrub sideways per row to assemble one planet's story — the
- * user specifically called the sideways table out. One card per planet fits the
- * screen, keeps a planet's facts together, and makes retrograde/combust
- * impossible to miss.
+ * This was a six-column table inside a horizontal ScrollView. On a phone half the columns
+ * sit off-screen at any moment and the reader has to scrub sideways per row to assemble one
+ * planet's story. One card per planet fits the screen, keeps a planet's facts together, and
+ * makes retrograde/combust impossible to miss.
  */
-export function PlanetTable({data, title = 'Planetary Positions', index = 0}) {
+export function PlanetTable({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.planetaryPositions');
   const planets = extractPlanets(data);
   if (!planets.length) {
-    return <SectionCard title={title} glyph="☉" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="☉" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   const luckyGem = Array.isArray(data?.lucky_gem) ? data.lucky_gem.join(', ') : data?.lucky_gem;
   const luckyNum = Array.isArray(data?.lucky_num) ? data.lucky_num.join(', ') : data?.lucky_num;
 
   return (
-    <SectionCard title={title} glyph="☉" subtitle={`${planets.length} positions at birth`} index={index}>
+    <SectionCard
+      title={heading}
+      glyph="☉"
+      subtitle={t('report.positionsAtBirth', {count: planets.length})}
+      index={index}>
       {planets.map((p, i) => {
         const name = p.full_name || p.name || p.planet || '—';
         const glyph = PLANET_GLYPH[name] || PLANET_GLYPH[p.name] || '•';
-        const zGlyph = ZODIAC_GLYPH[p.zodiac || p.sign] || '';
+        // Lal Kitab's planet list carries `rashi` where the horoscope endpoints use
+        // `zodiac`/`sign`; without it the card header read "SUN —" with the sign only
+        // appearing further down as a detail cell.
+        const sign = p.zodiac || p.sign || p.rashi;
+        const zGlyph = ZODIAC_GLYPH[sign] || '';
         const retro = p.is_retrograde || p.retro;
         const combust = p.is_combust;
         return (
@@ -129,32 +138,27 @@ export function PlanetTable({data, title = 'Planetary Positions', index = 0}) {
               <View style={{flex: 1}}>
                 <Text style={styles.pName}>{name}</Text>
                 <Text style={styles.pSign}>
-                  {zGlyph ? `${zGlyph} ` : ''}{p.zodiac || p.sign || '—'}
-                  {p.house ? `  ·  House ${p.house}` : ''}
+                  {zGlyph ? `${zGlyph} ` : ''}{isBlank(sign) ? '—' : sign}
+                  {p.house ? `  ·  ${t('report.house')} ${p.house}` : ''}
                 </Text>
               </View>
-              {/* Combustion and retrogression change a reading materially, so
-                  they get a visible marker rather than a buried field. */}
+              {/* Combustion and retrogression change a reading materially, so they get a
+                  visible marker rather than a buried field. */}
               <View style={styles.pFlags}>
-                {!!retro && <View style={styles.flagBad}><Text style={styles.flagBadText}>℞ Retro</Text></View>}
-                {!!combust && <View style={styles.flagWarn}><Text style={styles.flagWarnText}>Combust</Text></View>}
+                {!!retro && <View style={styles.flagBad}><Text style={styles.flagBadText}>℞ {t('report.retrograde')}</Text></View>}
+                {!!combust && <View style={styles.flagWarn}><Text style={styles.flagWarnText}>{t('report.combust')}</Text></View>}
               </View>
             </View>
             <View style={styles.pGrid}>
-              {!isBlank(p.local_degree_dms || p.longitude_dms) && (
-                <PMini label="Degree" value={p.local_degree_dms || p.longitude_dms} />
-              )}
-              {!isBlank(p.nakshatra) && <PMini label="Nakshatra" value={p.nakshatra} />}
-              {!isBlank(p.nakshatra_pada) && <PMini label="Pada" value={p.nakshatra_pada} />}
-              {!isBlank(p.nakshatra_lord || p.nakshatraLord) && (
-                <PMini label="Nak. Lord" value={p.nakshatra_lord || p.nakshatraLord} />
-              )}
-              {!isBlank(p.signLord) && <PMini label="Sign Lord" value={p.signLord} />}
-              {!isBlank(p.subLord) && <PMini label="Sub Lord" value={p.subLord} />}
-              {!isBlank(p.subSubLord) && <PMini label="Sub-sub Lord" value={p.subSubLord} />}
-              {!isBlank(p.position) && <PMini label="Position" value={p.position} />}
-              {!isBlank(p.nature) && <PMini label="Nature" value={p.nature} />}
-              {!isBlank(p.rashi) && <PMini label="Rashi" value={p.rashi} />}
+              <PMini label={t('report.degree')} value={p.local_degree_dms || p.longitude_dms} />
+              <PMini label={t('report.nakshatra')} value={p.nakshatra} />
+              <PMini label={t('report.pada')} value={p.nakshatra_pada} />
+              <PMini label={t('report.nakLord')} value={p.nakshatra_lord || p.nakshatraLord} />
+              <PMini label={t('report.signLord')} value={p.signLord} />
+              <PMini label={t('report.subLord')} value={p.subLord} />
+              <PMini label={t('report.subSubLord')} value={p.subSubLord} />
+              <PMini label={t('report.position')} value={p.position} />
+              <PMini label={t('report.nature')} value={p.nature} />
             </View>
           </View>
         );
@@ -164,8 +168,8 @@ export function PlanetTable({data, title = 'Planetary Positions', index = 0}) {
         <>
           <Divider />
           <TileRow>
-            {!!luckyGem && <StatTile label="Lucky Gem" value={luckyGem} />}
-            {!!luckyNum && <StatTile label="Lucky Number" value={luckyNum} />}
+            {!!luckyGem && <StatTile label={t('report.luckyGem')} value={luckyGem} />}
+            {!!luckyNum && <StatTile label={t('report.luckyNumber')} value={luckyNum} />}
           </TileRow>
         </>
       )}
@@ -174,10 +178,11 @@ export function PlanetTable({data, title = 'Planetary Positions', index = 0}) {
 }
 
 function PMini({label, value}) {
+  if (isBlank(value)) return null;
   return (
     <View style={styles.pMini}>
       <Text style={styles.pMiniLabel}>{label}</Text>
-      <Text style={styles.pMiniValue} numberOfLines={1}>{String(value)}</Text>
+      <Text style={styles.pMiniValue}>{String(value)}</Text>
     </View>
   );
 }
@@ -189,33 +194,33 @@ function PMini({label, value}) {
 const STONE_KEYS = ['life_stone', 'lucky_stone', 'fortune_stone'];
 const STONE_ICON = {life_stone: '◆', lucky_stone: '★', fortune_stone: '✦'};
 
-export function KundliAttributes({data, title = 'Birth Attributes', index = 0}) {
+export function KundliAttributes({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
   if (!isObj(data)) return null;
+  const heading = title || t('report.birthAttributes');
   const stones = STONE_KEYS.filter((k) => data[k]);
   const attrKeys = Object.keys(data).filter(
     (k) => !STONE_KEYS.includes(k) && !isObj(data[k]) && !Array.isArray(data[k]),
   );
 
-  // The sign/nakshatra trio is the headline of a kundli — lift it out of the
-  // chip soup so the reader sees their placements before the fine detail.
+  // The sign trio is the headline of a kundli — lift it out of the chip soup so the reader
+  // sees their placements before the fine detail. Everything else still renders below.
   const headline = [
-    {label: 'Ascendant', value: data.ascendant_sign, glyph: ZODIAC_GLYPH[data.ascendant_sign] || '↑'},
-    {label: 'Moon Sign', value: data.rasi, glyph: ZODIAC_GLYPH[data.rasi] || '☽'},
-    {label: 'Sun Sign', value: data.sun_sign, glyph: ZODIAC_GLYPH[data.sun_sign] || '☉'},
+    {label: t('report.ascendant'), value: data.ascendant_sign, glyph: ZODIAC_GLYPH[data.ascendant_sign] || '↑'},
+    {label: t('report.moonSign'), value: data.rasi, glyph: ZODIAC_GLYPH[data.rasi] || '☽'},
+    {label: t('report.sunSign'), value: data.sun_sign, glyph: ZODIAC_GLYPH[data.sun_sign] || '☉'},
   ].filter((h) => h.value);
 
-  const rest = attrKeys.filter(
-    (k) => !['ascendant_sign', 'rasi', 'sun_sign'].includes(k),
-  );
+  const rest = attrKeys.filter((k) => !['ascendant_sign', 'rasi', 'sun_sign'].includes(k));
 
   return (
-    <SectionCard title={title} glyph="✦" index={index}>
+    <SectionCard title={heading} glyph="✦" index={index}>
       {!!headline.length && (
         <View style={styles.signRow}>
           {headline.map((h) => (
             <View key={h.label} style={styles.signCard}>
               <Text style={styles.signGlyph}>{h.glyph}</Text>
-              <Text style={styles.signValue} numberOfLines={1}>{h.value}</Text>
+              <Text style={styles.signValue}>{h.value}</Text>
               <Text style={styles.signLabel}>{h.label}</Text>
             </View>
           ))}
@@ -230,7 +235,7 @@ export function KundliAttributes({data, title = 'Birth Attributes', index = 0}) 
       {!!stones.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Recommended Stones</Text>
+          <Text style={styles.subLabel}>{t('report.recommendedStones')}</Text>
           <View style={styles.stoneRow}>
             {stones.map((k) => (
               <View key={k} style={styles.stone}>
@@ -251,43 +256,54 @@ export function KundliAttributes({data, title = 'Birth Attributes', index = 0}) 
 /* ------------------------------------------------------------------ */
 
 /**
- * A dosha report answers one question: do I have it, and how badly. That answer
- * now leads — a ring gauge and a verdict badge — with the ten-paragraph remedy
- * list folded away behind a count underneath it.
+ * Presence of a dosha, derived from whichever field the endpoint actually uses.
+ *
+ * /dosha/manglik-dosh has NO is_dosha_present — it reports three independent sources
+ * (mars / saturn / rahu-ketu) plus a score. Deriving from those is what stops it falling
+ * through to a raw key/value dump.
+ */
+export function doshaPresence(d) {
+  if (!isObj(d)) return null;
+  if (typeof d.is_dosha_present === 'boolean') return d.is_dosha_present;
+  const keys = ['manglik_by_mars', 'manglik_by_saturn', 'manglik_by_rahuketu']
+    .filter((k) => typeof d[k] === 'boolean');
+  return keys.length ? keys.some((k) => d[k]) : null;
+}
+
+/**
+ * A dosha report answers one question: do I have it, and how badly. That answer leads —
+ * ring gauge and verdict badge — with the ten-paragraph remedy list deferred behind a
+ * count underneath. Nothing is discarded; the count tells the reader exactly how much is
+ * waiting behind the tap.
  */
 export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
+  const {t} = useContext(LanguageContext);
   if (!isObj(data)) {
     return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
 
-  const remedies = Array.isArray(data.remedies) ? data.remedies.filter(Boolean)
-    : (data.remedies ? [data.remedies] : []);
-  const effects = Array.isArray(data.effects) ? data.effects.filter(Boolean) : [];
-  const aspects = Array.isArray(data.aspects) ? data.aspects.filter(Boolean) : [];
+  const remedies = asList(data.remedies);
+  const effects = asList(data.effects);
+  const aspects = asList(data.aspects);
   const factors = Array.isArray(data.factors) ? data.factors
     : isObj(data.factors) ? Object.values(data.factors) : [];
 
-  // /dosha/manglik-dosh has NO is_dosha_present — it reports three independent
-  // sources (mars / saturn / rahu-ketu) plus a score. Derive the verdict from
-  // those rather than falling through to a key/value dump, which is what the
-  // screenshot of "Manglikdosh Saturn Points / Boy false / Girl false" was.
   const sources = [
-    {key: 'manglik_by_mars', label: 'By Mars', glyph: '♂'},
-    {key: 'manglik_by_saturn', label: 'By Saturn', glyph: '♄'},
-    {key: 'manglik_by_rahuketu', label: 'By Rahu/Ketu', glyph: '☊'},
+    {key: 'manglik_by_mars', label: t('report.byMars'), glyph: '♂'},
+    {key: 'manglik_by_saturn', label: t('report.bySaturn'), glyph: '♄'},
+    {key: 'manglik_by_rahuketu', label: t('report.byRahuKetu'), glyph: '☊'},
   ].filter((s) => typeof data[s.key] === 'boolean');
 
-  const present = typeof data.is_dosha_present === 'boolean'
-    ? data.is_dosha_present
-    : sources.length ? sources.some((s) => data[s.key]) : null;
-
+  const present = doshaPresence(data);
   if (present === null && !sources.length) {
     return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
 
   const partial = data.is_anshik === true;
   const tone = present ? (partial ? 'warn' : 'bad') : 'good';
-  const label = present ? (partial ? 'Partially Present' : 'Present') : 'Not Present';
+  const label = present
+    ? (partial ? t('report.partiallyPresent') : t('report.present'))
+    : t('report.notPresent');
   const hasScore = typeof data.score === 'number';
 
   return (
@@ -297,7 +313,7 @@ export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
           <RingGauge
             value={data.score}
             max={100}
-            label="Intensity"
+            label={t('report.intensity')}
             size={moderateScale(112)}
             tone={present ? (partial ? ASTRO.warn : ASTRO.bad) : ASTRO.good}
           />
@@ -312,27 +328,19 @@ export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
         )}
         <View style={styles.verdictSide}>
           <Badge text={label} tone={tone} />
-          {!!data.bot_response && (
-            <Text style={styles.verdictLine}>{String(data.bot_response)}</Text>
-          )}
+          {!!data.bot_response && <Text style={styles.verdictLine}>{String(data.bot_response)}</Text>}
         </View>
       </View>
 
       {!!sources.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Sources</Text>
+          <Text style={styles.subLabel}>{t('report.sources')}</Text>
           <View style={styles.srcRow}>
             {sources.map((s) => (
-              <View
-                key={s.key}
-                style={[styles.src, data[s.key] ? styles.srcOn : styles.srcOff]}>
-                <Text style={[styles.srcGlyph, {color: data[s.key] ? ASTRO.bad : ASTRO.muted}]}>
-                  {s.glyph}
-                </Text>
-                <Text style={[styles.srcLabel, {color: data[s.key] ? ASTRO.bad : ASTRO.muted}]}>
-                  {s.label}
-                </Text>
+              <View key={s.key} style={[styles.src, data[s.key] ? styles.srcOn : styles.srcOff]}>
+                <Text style={[styles.srcGlyph, {color: data[s.key] ? ASTRO.bad : ASTRO.muted}]}>{s.glyph}</Text>
+                <Text style={[styles.srcLabel, {color: data[s.key] ? ASTRO.bad : ASTRO.muted}]}>{s.label}</Text>
                 <Ionicons
                   name={data[s.key] ? 'close-circle' : 'checkmark-circle'}
                   size={moderateScale(13)}
@@ -347,7 +355,7 @@ export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
       {!!factors.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Why</Text>
+          <Text style={styles.subLabel}>{t('report.why')}</Text>
           {factors.map((f, i) => (
             <Callout key={i} tone="warn" icon="information-circle">{String(f)}</Callout>
           ))}
@@ -356,7 +364,7 @@ export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
 
       {!!aspects.length && (
         <>
-          <Text style={styles.subLabel}>Aspects</Text>
+          <Text style={styles.subLabel}>{t('report.aspects')}</Text>
           <NumberedList items={aspects} tone="maroon" />
         </>
       )}
@@ -365,16 +373,16 @@ export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
         <>
           <Divider />
           <Callout tone="good" icon="shield-checkmark">
-            {`Cancellation score ${data.cancellation.cancellationScore}` +
-              (Array.isArray(data.cancellation.cancellationReason) && data.cancellation.cancellationReason.length
-                ? ` — ${data.cancellation.cancellationReason.join('; ')}`
+            {t('report.cancellationScore', {score: data.cancellation.cancellationScore}) +
+              (asList(data.cancellation.cancellationReason).length
+                ? ` — ${asList(data.cancellation.cancellationReason).join('; ')}`
                 : '')}
           </Callout>
         </>
       )}
 
       {!!effects.length && (
-        <Collapsible title="Effects" count={effects.length} glyph="◈">
+        <Collapsible title={t('report.effects')} count={effects.length} glyph="◈">
           <NumberedList items={effects} tone="maroon" />
         </Collapsible>
       )}
@@ -382,7 +390,7 @@ export function DoshaVerdict({title, data, glyph = '⚠', index = 0}) {
       {!!remedies.length && (
         <>
           <Divider />
-          <Collapsible title="Remedies" count={remedies.length} glyph="✚">
+          <Collapsible title={t('report.remedies')} count={remedies.length} glyph="✚">
             <NumberedList items={remedies} />
           </Collapsible>
         </>
@@ -400,24 +408,26 @@ const MAX_VISIBLE_PERIODS = 6;
 /**
  * Normalise every dasha shape this API emits into one [{name, start, end, lord}].
  *
- * Three genuinely different shapes come back:
- *   current-mahadasha-full → [{name, start, end}]                  (already fine)
- *   mahadasha              → {mahadasha:[names], mahadasha_order:[start dates]}
- *   yogini-dasha-*         → {dasha_list, dasha_end_dates, dasha_lord_list}
- * The last two are parallel arrays; index i of each describes ONE period. Printing
- * them as separate lists — which is what the shipped app did — destroys the
- * pairing that is the entire content of a dasha table.
+ * Four genuinely different shapes come back:
+ *   current-mahadasha-full → [{name, start, end}]                       (already fine)
+ *   mahadasha              → {mahadasha:[names], mahadasha_order:[starts]}
+ *   yogini-dasha-main      → {dasha_list, dasha_end_dates, dasha_lord_list}
+ *   yogini-dasha-sub       → [{main_dasha, main_dasha_lord, sub_dasha_list,
+ *                              sub_dasha_end_dates, sub_dasha_start_dates}] × 24
+ * All but the first are parallel arrays: index i of each describes ONE period. Printing
+ * them as separate lists — which is what the shipped app did — destroys the pairing that
+ * is the entire content of a dasha table. The last shape is handled by DashaGroups below,
+ * because it is a list of GROUPS each containing its own parallel arrays.
  */
-function normalizePeriods(input) {
+export function normalizePeriods(input) {
   if (Array.isArray(input) && input.some((p) => isObj(p) && p.name)) {
     return input.filter((p) => isObj(p) && p.name);
   }
   if (!isObj(input)) return [];
 
   if (Array.isArray(input.mahadasha) && Array.isArray(input.mahadasha_order)) {
-    const names = input.mahadasha;
     const starts = input.mahadasha_order;
-    return names.map((name, i) => ({
+    return input.mahadasha.map((name, i) => ({
       name,
       start: starts[i],
       // Each period runs up to the next one's start; the last has no successor.
@@ -425,24 +435,30 @@ function normalizePeriods(input) {
     }));
   }
 
+  const zip = (names, ends, lords, firstStart) => names.map((name, i) => ({
+    name,
+    // The first period starts where the group does, or at birth if unstated.
+    start: i === 0 ? firstStart : ends[i - 1],
+    end: ends[i],
+    lord: Array.isArray(lords) ? lords[i] : undefined,
+  }));
+
   if (Array.isArray(input.dasha_list) && Array.isArray(input.dasha_end_dates)) {
-    const names = input.dasha_list;
-    const ends = input.dasha_end_dates;
-    const lords = Array.isArray(input.dasha_lord_list) ? input.dasha_lord_list : [];
-    return names.map((name, i) => ({
-      name,
-      // First period starts at birth (no earlier end date exists to borrow).
-      start: i === 0 ? undefined : ends[i - 1],
-      end: ends[i],
-      lord: lords[i],
-    }));
+    return zip(input.dasha_list, input.dasha_end_dates, input.dasha_lord_list, undefined);
+  }
+  if (Array.isArray(input.sub_dasha_list) && Array.isArray(input.sub_dasha_end_dates)) {
+    return zip(
+      input.sub_dasha_list, input.sub_dasha_end_dates, null,
+      // sub_dasha_start_dates is a single string for the whole group, not an array.
+      typeof input.sub_dasha_start_dates === 'string' ? input.sub_dasha_start_dates : undefined,
+    );
   }
   return [];
 }
 
 // The API mixes "Sat 31 Oct 1998" and "Mon, May 27, 2002, 12:00:00 AM".
 // Date.parse handles both once the leading weekday is dropped.
-function parseDate(s) {
+export function parseDate(s) {
   if (!s) return NaN;
   const t = Date.parse(String(s).replace(/^[A-Za-z]{3},?\s*/, ''));
   return isNaN(t) ? NaN : t;
@@ -455,25 +471,78 @@ function shortDate(s) {
   return `${d.getDate()} ${d.toLocaleString('en', {month: 'short'})} ${d.getFullYear()}`;
 }
 
+function findCurrent(list) {
+  const now = Date.now();
+  return list.findIndex((p) => {
+    const s = parseDate(p.start);
+    const e = parseDate(p.end);
+    if (!isNaN(s) && !isNaN(e)) return now >= s && now <= e;
+    // A period with no explicit start runs from birth to its end.
+    if (isNaN(s) && !isNaN(e)) return now <= e;
+    return false;
+  });
+}
+
+/** One row of a dasha timeline. Extracted so DashaGroups can reuse it. */
+function PeriodRow({p, current, span, maxSpan, showLine, t}) {
+  const years = span ? span / (365.25 * 24 * 3600 * 1000) : 0;
+  return (
+    <View style={[styles.period, current && styles.periodCurrent]}>
+      <View style={styles.periodRail}>
+        <View style={[styles.periodDot, current && styles.periodDotCurrent]} />
+        {showLine && <View style={styles.periodLine} />}
+      </View>
+      <View style={{flex: 1}}>
+        <View style={styles.periodTop}>
+          <Text style={[styles.periodName, current && {color: ASTRO.maroon}]}>
+            {PLANET_GLYPH[p.name] ? `${PLANET_GLYPH[p.name]} ` : ''}{p.name}
+            {p.lord && p.lord !== p.name ? <Text style={styles.periodLord}>  ({p.lord})</Text> : null}
+          </Text>
+          {current && <Badge text={t('report.now')} tone="good" />}
+        </View>
+        <Text style={styles.periodDates}>
+          {/* A period with no start of its own runs from birth — more useful than a dash. */}
+          {p.start ? shortDate(p.start) : t('report.birth')} → {shortDate(p.end)}
+          {years >= 0.1
+            ? `  ·  ${years < 1
+              ? `${Math.round(years * 12)} ${t('report.mo')}`
+              : `${years.toFixed(years < 10 ? 1 : 0)} ${t('report.yr')}`}`
+            : ''}
+        </Text>
+        {span > 0 && (
+          <View style={styles.spanTrack}>
+            <View
+              style={[
+                styles.spanFill,
+                {width: `${Math.max(4, (span / maxSpan) * 100)}%`,
+                  backgroundColor: current ? ASTRO.good : ASTRO.goldSoft},
+              ]}
+            />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export function DashaTimeline({title, periods, glyph = '⏳', subtitle, index = 0}) {
+  const {t} = useContext(LanguageContext);
+
+  // yogini-dasha-sub is a list of groups, not a flat sequence — hand it off.
+  if (Array.isArray(periods) && periods.some((p) => isObj(p) && Array.isArray(p.sub_dasha_list))) {
+    return <DashaGroups title={title} groups={periods} glyph={glyph} subtitle={subtitle} index={index} />;
+  }
+
   const list = normalizePeriods(periods);
   if (!list.length) {
     if (!periods) return null;
     return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={periods} /></SectionCard>;
   }
 
-  const now = Date.now();
-  const currentIdx = list.findIndex((p) => {
-    const s = parseDate(p.start);
-    const e = parseDate(p.end);
-    if (!isNaN(s) && !isNaN(e)) return now >= s && now <= e;
-    // Yogini's first period has no explicit start — it runs from birth to its end.
-    if (isNaN(s) && !isNaN(e)) return now <= e;
-    return false;
-  });
+  const currentIdx = findCurrent(list);
 
-  // Longest period sets the bar scale, so relative duration is readable at a
-  // glance — a 20-year Venus mahadasha should visibly dwarf a 6-year Sun.
+  // Longest period sets the bar scale, so relative duration is readable at a glance — a
+  // 20-year Venus mahadasha should visibly dwarf a 6-year Sun.
   const spans = list.map((p) => {
     const s = parseDate(p.start);
     const e = parseDate(p.end);
@@ -482,78 +551,138 @@ export function DashaTimeline({title, periods, glyph = '⏳', subtitle, index = 
   const maxSpan = Math.max(...spans, 1);
 
   const current = currentIdx >= 0 ? list[currentIdx] : null;
-  // Start the visible window at the current period — nobody opens a dasha report
-  // to read about 1998. Everything else stays one tap away.
+  // Start the visible window at the current period — nobody opens a dasha report to read
+  // about 1998. Everything else stays one tap away, never removed.
   const startAt = currentIdx > 0 ? currentIdx : 0;
   const head = list.slice(startAt, startAt + MAX_VISIBLE_PERIODS);
   const before = list.slice(0, startAt);
   const after = list.slice(startAt + MAX_VISIBLE_PERIODS);
 
-  const row = (p, i, absoluteIdx) => {
-    const cur = absoluteIdx === currentIdx;
-    const span = spans[absoluteIdx];
-    const years = span ? span / (365.25 * 24 * 3600 * 1000) : 0;
-    return (
-      <View key={absoluteIdx} style={[styles.period, cur && styles.periodCurrent]}>
-        <View style={styles.periodRail}>
-          <View style={[styles.periodDot, cur && styles.periodDotCurrent]} />
-          {i < head.length - 1 && <View style={styles.periodLine} />}
-        </View>
-        <View style={{flex: 1}}>
-          <View style={styles.periodTop}>
-            <Text style={[styles.periodName, cur && {color: ASTRO.maroon}]}>
-              {PLANET_GLYPH[p.name] ? `${PLANET_GLYPH[p.name]} ` : ''}{p.name}
-              {p.lord && p.lord !== p.name ? <Text style={styles.periodLord}>  ({p.lord})</Text> : null}
-            </Text>
-            {cur && <Badge text="Now" tone="good" />}
-          </View>
-          <Text style={styles.periodDates}>
-            {/* Yogini's first period has no start date of its own — it runs from
-                birth, which is more useful to say than an em dash. */}
-            {p.start ? shortDate(p.start) : 'Birth'} → {shortDate(p.end)}
-            {years >= 0.1 ? `  ·  ${years < 1 ? `${Math.round(years * 12)} mo` : `${years.toFixed(years < 10 ? 1 : 0)} yr`}` : ''}
-          </Text>
-          {span > 0 && (
-            <View style={styles.spanTrack}>
-              <View
-                style={[
-                  styles.spanFill,
-                  {width: `${Math.max(4, (span / maxSpan) * 100)}%`,
-                    backgroundColor: cur ? ASTRO.good : ASTRO.goldSoft},
-                ]}
-              />
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  };
+  const row = (p, i, abs, lastOfBlock) => (
+    <PeriodRow
+      key={abs}
+      p={p}
+      t={t}
+      current={abs === currentIdx}
+      span={spans[abs]}
+      maxSpan={maxSpan}
+      showLine={!lastOfBlock}
+    />
+  );
 
   return (
     <SectionCard
       title={title}
       glyph={glyph}
-      subtitle={subtitle || `${list.length} periods`}
+      subtitle={subtitle || t('report.periods', {count: list.length})}
       index={index}>
       {!!current && (
         <Callout tone="good" icon="time">
-          {`Currently running: ${current.name}${current.lord && current.lord !== current.name ? ` (${current.lord})` : ''} — until ${shortDate(current.end)}`}
+          {t('report.currentlyRunning', {
+            name: current.lord && current.lord !== current.name
+              ? `${current.name} (${current.lord})` : current.name,
+            end: shortDate(current.end),
+          })}
         </Callout>
       )}
 
       {!!before.length && (
-        <Collapsible title="Earlier periods" count={before.length} glyph="↑">
-          {before.map((p, i) => row(p, i, i))}
+        <Collapsible title={t('report.earlierPeriods')} count={before.length} glyph="↑">
+          {before.map((p, i) => row(p, i, i, i === before.length - 1))}
         </Collapsible>
       )}
 
-      {head.map((p, i) => row(p, i, startAt + i))}
+      {head.map((p, i) => row(p, i, startAt + i, i === head.length - 1))}
 
       {!!after.length && (
-        <Collapsible title="Later periods" count={after.length} glyph="↓">
-          {after.map((p, i) => row(p, i, startAt + head.length + i))}
+        <Collapsible title={t('report.laterPeriods')} count={after.length} glyph="↓">
+          {after.map((p, i) => row(p, i, startAt + head.length + i, i === after.length - 1))}
         </Collapsible>
       )}
+    </SectionCard>
+  );
+}
+
+/**
+ * yogini-dasha-sub: 24 groups, each a main dasha holding its own 8 sub-periods.
+ *
+ * This shape was the one still rendering as a raw dump after the first redesign pass —
+ * "SUB DASHA LIST • Ulka • Siddha …" followed by "SUB DASHA END DATES • …", repeated 24
+ * times down the screen with no connection between a name and its date. Each group is now
+ * a collapsible holding a real zipped timeline, and the group containing today is open.
+ */
+export function DashaGroups({title, groups, glyph = '⏳', subtitle, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const rows = Array.isArray(groups) ? groups.filter(isObj) : [];
+  if (!rows.length) {
+    return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={groups} /></SectionCard>;
+  }
+
+  const now = Date.now();
+  const built = rows.map((g) => {
+    const periods = normalizePeriods(g);
+    const start = parseDate(g.sub_dasha_start_dates);
+    const lastEnd = parseDate(periods.length ? periods[periods.length - 1].end : null);
+    return {
+      group: g,
+      periods,
+      active: !isNaN(start) && !isNaN(lastEnd) && now >= start && now <= lastEnd,
+      start,
+      lastEnd,
+    };
+  });
+  const activeIdx = built.findIndex((b) => b.active);
+
+  return (
+    <SectionCard
+      title={title}
+      glyph={glyph}
+      subtitle={subtitle || t('report.periods', {count: rows.length})}
+      index={index}>
+      {activeIdx >= 0 && (
+        <Callout tone="good" icon="time">
+          {t('report.currentlyRunning', {
+            name: `${built[activeIdx].group.main_dasha}${built[activeIdx].group.main_dasha_lord
+              ? ` (${built[activeIdx].group.main_dasha_lord})` : ''}`,
+            end: shortDate(built[activeIdx].periods[built[activeIdx].periods.length - 1]?.end),
+          })}
+        </Callout>
+      )}
+
+      {built.map((b, gi) => {
+        const spans = b.periods.map((p) => {
+          const s = parseDate(p.start);
+          const e = parseDate(p.end);
+          return !isNaN(s) && !isNaN(e) && e > s ? e - s : 0;
+        });
+        const maxSpan = Math.max(...spans, 1);
+        const curIdx = findCurrent(b.periods);
+        const name = b.group.main_dasha || `#${gi + 1}`;
+        const lord = b.group.main_dasha_lord;
+        return (
+          <Collapsible
+            key={gi}
+            defaultOpen={b.active}
+            glyph={PLANET_GLYPH[lord] || PLANET_GLYPH[name] || '◈'}
+            count={b.periods.length || undefined}
+            title={
+              `${name}${lord ? ` · ${lord}` : ''}` +
+              (isNaN(b.start) ? '' : `   ${shortDate(b.group.sub_dasha_start_dates)} → ${shortDate(b.periods[b.periods.length - 1]?.end)}`)
+            }>
+            {b.periods.map((p, i) => (
+              <PeriodRow
+                key={i}
+                p={p}
+                t={t}
+                current={b.active && i === curIdx}
+                span={spans[i]}
+                maxSpan={maxSpan}
+                showLine={i < b.periods.length - 1}
+              />
+            ))}
+          </Collapsible>
+        );
+      })}
     </SectionCard>
   );
 }
@@ -562,45 +691,40 @@ export function DashaTimeline({title, periods, glyph = '⏳', subtitle, index = 
 /* Ashtakoot / Dashakoot match breakdown                                */
 /* ------------------------------------------------------------------ */
 
-// Each koota entry looks like {name, description, full_score, <key>: score}.
-// The score sits under a key matching the koota itself (varna.varna etc), so
-// derive it rather than hardcoding names.
+// Each koota entry looks like {name, description, full_score, <key>: score}. The score sits
+// under a key matching the koota itself (varna.varna etc), so derive it rather than
+// hardcoding names.
 function kootaScore(key, obj) {
   if (typeof obj[key] === 'number') return obj[key];
-  const numeric = Object.entries(obj).find(
-    ([k, v]) => typeof v === 'number' && k !== 'full_score',
-  );
+  const numeric = Object.entries(obj).find(([k, v]) => typeof v === 'number' && k !== 'full_score');
   return numeric ? numeric[1] : null;
 }
 
-export function KootaBreakdown({data, title = 'Guna Milan', glyph = '❤', index = 0}) {
+export function KootaBreakdown({data, title, glyph = '❤', index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.totalGuna');
   if (!isObj(data)) {
-    return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
-  const kootas = Object.entries(data).filter(
-    ([, v]) => isObj(v) && v.full_score !== undefined,
-  );
+  const kootas = Object.entries(data).filter(([, v]) => isObj(v) && v.full_score !== undefined);
   if (!kootas.length) {
-    return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
 
   const totalMax = kootas.reduce((s, [, v]) => s + (Number(v.full_score) || 0), 0);
   const totalGot = kootas.reduce((s, [k, v]) => s + (Number(kootaScore(k, v)) || 0), 0);
   const pct = totalMax ? Math.round((totalGot / totalMax) * 100) : 0;
   const tone = pct >= 70 ? 'good' : pct >= 50 ? 'warn' : 'bad';
+  const verdict = pct >= 70 ? t('report.excellent') : pct >= 50 ? t('report.average') : t('report.low');
 
   return (
-    <SectionCard title={title} glyph={glyph} subtitle="Point-by-point compatibility" index={index}>
+    <SectionCard title={heading} glyph={glyph} subtitle={t('report.pointByPoint')} index={index}>
       <View style={styles.kootaHero}>
-        <RingGauge value={totalGot} max={totalMax} label="Total Guna" />
+        <RingGauge value={totalGot} max={totalMax} label={t('report.totalGuna')} />
         <View style={styles.kootaHeroSide}>
-          <StatTile label="Compatibility" value={`${pct}%`} tone={tone} />
+          <StatTile label={t('report.compatibility')} value={`${pct}%`} tone={tone} />
           <View style={{height: verticalScale(6)}} />
-          <StatTile
-            label="Verdict"
-            value={pct >= 70 ? 'Excellent' : pct >= 50 ? 'Average' : 'Low'}
-            tone={tone}
-          />
+          <StatTile label={t('report.verdict')} value={verdict} tone={tone} />
         </View>
       </View>
 
@@ -608,8 +732,8 @@ export function KootaBreakdown({data, title = 'Guna Milan', glyph = '❤', index
 
       <Divider />
       {kootas.map(([k, v], i) => {
-        // Each koota also carries the two people's own values (boy_varna /
-        // girl_varna). Showing them makes the score explicable instead of arbitrary.
+        // Each koota also carries the two people's own values (boy_varna / girl_varna).
+        // Showing them makes the score explicable instead of arbitrary.
         const boy = v[`boy_${k}`];
         const girl = v[`girl_${k}`];
         return (
@@ -634,40 +758,44 @@ export function KootaBreakdown({data, title = 'Guna Milan', glyph = '❤', index
 }
 
 /* ------------------------------------------------------------------ */
-/* Aggregate match — the overall verdict screen                         */
+/* Aggregate match — the overall verdict                                */
 /* ------------------------------------------------------------------ */
 
-// {boy, girl} pairs in the aggregate payload, with the plain-language sentence
-// that goes with each. `invert` marks the ones where true = a dosha is present.
+// {boy, girl} pairs in the aggregate payload, each with the plain-language sentence that
+// goes with it. All of these are doshas, so `true` is the bad outcome.
 const AGG_DOSHAS = [
-  {points: 'mangaldosh_points', text: 'mangaldosh', label: 'Mangal Dosha', invert: true},
-  {points: 'pitradosh_points', text: 'pitradosh', label: 'Pitra Dosha', invert: true},
-  {points: 'kaalsarp_points', text: 'kaalsarpdosh', label: 'Kaal Sarp Dosha', invert: true},
-  {points: 'manglikdosh_saturn_points', text: 'manglikdosh_saturn', label: 'Manglik by Saturn', invert: true},
-  {points: 'manglikdosh_rahuketu_points', text: 'manglikdosh_rahuketu', label: 'Manglik by Rahu/Ketu', invert: true},
+  {points: 'mangaldosh_points', text: 'mangaldosh', key: 'report.mangalDosha'},
+  {points: 'pitradosh_points', text: 'pitradosh', key: 'report.pitraDosha'},
+  {points: 'kaalsarp_points', text: 'kaalsarpdosh', key: 'report.kaalSarpDosha'},
+  {points: 'manglikdosh_saturn_points', text: 'manglikdosh_saturn', key: 'report.manglikSaturn'},
+  {points: 'manglikdosh_rahuketu_points', text: 'manglikdosh_rahuketu', key: 'report.manglikRahuKetu'},
 ];
 
-/**
- * The overall compatibility verdict. This payload was the single worst offender
- * in the shipped app: a flat dump where "MANGLIKDOSH SATURN POINTS / Boy false /
- * Girl false" appeared five times over, and the score the reader actually came
- * for was one unremarkable row among thirty.
- */
-export function AggregateMatch({data, title = 'Overall Compatibility', index = 0}) {
+// mangaldosh_points arrives as 0/100 numbers while every other pair is boolean. Coerce so
+// one CompareRow renders them all consistently.
+function normaliseFlag(v) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v > 0;
+  return v;
+}
+
+export function AggregateMatch({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.overallCompatibility');
   if (!isObj(data) || data.score === undefined) {
-    return <SectionCard title={title} glyph="∑" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="∑" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   const score = Number(data.score) || 0;
   const tone = score >= 70 ? 'good' : score >= 50 ? 'warn' : 'bad';
   const rows = AGG_DOSHAS.filter((d) => isObj(data[d.points]));
   const explanations = AGG_DOSHAS
     .filter((d) => typeof data[d.text] === 'string' && data[d.text])
-    .map((d) => ({label: d.label, text: data[d.text]}));
+    .map((d) => ({label: t(d.key), text: data[d.text]}));
 
   return (
-    <SectionCard title={title} glyph="∑" subtitle="Everything weighed together" index={index}>
+    <SectionCard title={heading} glyph="∑" subtitle={t('report.everythingWeighed')} index={index}>
       <View style={styles.aggHero}>
-        <RingGauge value={score} max={100} label="Match Score" size={moderateScale(140)} />
+        <RingGauge value={score} max={100} label={t('report.matchScore')} size={moderateScale(140)} />
       </View>
 
       {!!data.bot_response && <Callout tone={tone} icon="heart">{String(data.bot_response)}</Callout>}
@@ -675,22 +803,18 @@ export function AggregateMatch({data, title = 'Overall Compatibility', index = 0
       {(data.ashtakoot !== undefined || data.dashkoot !== undefined) && (
         <>
           <Divider />
-          {data.ashtakoot !== undefined && (
-            <ScoreBar label="Ashtakoot" value={data.ashtakoot} max={36} index={0} />
-          )}
-          {data.dashkoot !== undefined && (
-            <ScoreBar label="Dashakoot" value={data.dashkoot} max={10} index={1} />
-          )}
+          {data.ashtakoot !== undefined && <ScoreBar label="Ashtakoot" value={data.ashtakoot} max={36} index={0} />}
+          {data.dashkoot !== undefined && <ScoreBar label="Dashakoot" value={data.dashkoot} max={10} index={1} />}
         </>
       )}
 
       {(typeof data.rajjudosh === 'boolean' || typeof data.vedhadosh === 'boolean') && (
         <View style={styles.flagPairRow}>
           {typeof data.rajjudosh === 'boolean' && (
-            <MiniVerdict label="Rajju Dosha" bad={data.rajjudosh} />
+            <MiniVerdict label={t('report.rajjuDosha')} bad={data.rajjudosh} />
           )}
           {typeof data.vedhadosh === 'boolean' && (
-            <MiniVerdict label="Vedha Dosha" bad={data.vedhadosh} />
+            <MiniVerdict label={t('report.vedhaDosha')} bad={data.vedhadosh} />
           )}
         </View>
       )}
@@ -698,15 +822,17 @@ export function AggregateMatch({data, title = 'Overall Compatibility', index = 0
       {!!rows.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Dosha Comparison</Text>
-          <CompareHeader />
+          <Text style={styles.subLabel}>{t('report.doshaComparison')}</Text>
+          <CompareHeader leftName={t('report.boy')} rightName={t('report.girl')} />
           {rows.map((d) => (
             <CompareRow
               key={d.points}
-              label={d.label}
+              label={t(d.key)}
               left={normaliseFlag(data[d.points].boy)}
               right={normaliseFlag(data[d.points].girl)}
-              invert={d.invert}
+              yesLabel={t('report.yes')}
+              noLabel={t('report.no')}
+              invert
             />
           ))}
         </>
@@ -715,7 +841,7 @@ export function AggregateMatch({data, title = 'Overall Compatibility', index = 0
       {!!explanations.length && (
         <>
           <Divider />
-          <Collapsible title="What each dosha means here" count={explanations.length} glyph="✎">
+          <Collapsible title={t('report.whatEachDosha')} count={explanations.length} glyph="✎">
             {explanations.map((e) => (
               <View key={e.label} style={{marginBottom: verticalScale(8)}}>
                 <Text style={styles.expLabel}>{e.label}</Text>
@@ -727,7 +853,7 @@ export function AggregateMatch({data, title = 'Overall Compatibility', index = 0
       )}
 
       {!!data.extended_response && (
-        <Collapsible title="Detailed reading" glyph="◈">
+        <Collapsible title={t('report.detailedReading')} glyph="◈">
           <Prose>{String(data.extended_response)}</Prose>
         </Collapsible>
       )}
@@ -735,17 +861,13 @@ export function AggregateMatch({data, title = 'Overall Compatibility', index = 0
   );
 }
 
-// mangaldosh_points arrives as 0/100 numbers while every other pair is boolean.
-// Coerce to boolean so one CompareRow renders them all consistently.
-function normaliseFlag(v) {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v > 0;
-  return v;
-}
-
 function MiniVerdict({label, bad}) {
   return (
-    <View style={[styles.miniVerdict, {borderColor: bad ? '#F3D2CC' : '#CDE8CE', backgroundColor: bad ? '#FDF0EE' : '#EDF7ED'}]}>
+    <View
+      style={[
+        styles.miniVerdict,
+        {borderColor: bad ? '#F3D2CC' : '#CDE8CE', backgroundColor: bad ? '#FDF0EE' : '#EDF7ED'},
+      ]}>
       <Ionicons
         name={bad ? 'close-circle' : 'checkmark-circle'}
         size={moderateScale(16)}
@@ -760,25 +882,21 @@ function MiniVerdict({label, bad}) {
 /* Numerology                                                           */
 /* ------------------------------------------------------------------ */
 
-const PLANE_META = {
-  intellectual: {glyph: '☿', hint: 'Mind and reasoning'},
-  spiritual: {glyph: '♆', hint: 'Inner life'},
-  material: {glyph: '♄', hint: 'Money and matter'},
-  thought: {glyph: '☽', hint: 'Ideas and planning'},
-  will: {glyph: '♂', hint: 'Determination'},
-  outlook: {glyph: '☉', hint: 'How you see the world'},
-  property: {glyph: '⌂', hint: 'Assets and home'},
-  luck: {glyph: '✦', hint: 'Fortune'},
+const PLANE_GLYPH = {
+  intellectual: '☿', spiritual: '♆', material: '♄', thought: '☽',
+  will: '♂', outlook: '☉', property: '⌂', luck: '✦',
 };
 
 /**
- * The Lo Shu grid IS a three-by-three square — that is the whole idea of it.
- * The shipped app printed it as nine key/value rows, which throws away the one
- * thing that makes the reading possible: seeing which cells are empty.
+ * The Lo Shu grid IS a three-by-three square — that is the whole idea of it. The shipped
+ * app printed it as nine key/value rows, which throws away the one thing that makes the
+ * reading possible: seeing which cells are empty.
  */
-export function NumerologyNumbers({data, title = 'Your Numbers', glyph = '#', index = 0}) {
+export function NumerologyNumbers({data, title, glyph = '#', index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.yourNumbers');
   if (!isObj(data)) {
-    return <SectionCard title={title} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph={glyph} index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   const grid = isObj(data.loShuGrid) ? data.loShuGrid : null;
   const numberKeys = Object.keys(data).filter((k) => typeof data[k] === 'number');
@@ -792,10 +910,10 @@ export function NumerologyNumbers({data, title = 'Your Numbers', glyph = '#', in
   const LAYOUT = [[4, 9, 2], [3, 5, 7], [8, 1, 6]];
 
   return (
-    <SectionCard title={title} glyph={glyph} index={index}>
+    <SectionCard title={heading} glyph={glyph} index={index}>
       {!!numberKeys.length && (
         <TileRow>
-          {numberKeys.slice(0, 6).map((k) => (
+          {numberKeys.map((k) => (
             <StatTile key={k} label={humanize(k.replace(/Number$/, ''))} value={String(data[k])} />
           ))}
         </TileRow>
@@ -804,99 +922,107 @@ export function NumerologyNumbers({data, title = 'Your Numbers', glyph = '#', in
       {!!grid && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Lo Shu Grid</Text>
+          <Text style={styles.subLabel}>{t('report.loShuGrid')}</Text>
           <View style={styles.loshu}>
             {LAYOUT.map((rowNums, r) => (
               <View key={r} style={styles.loshuRow}>
                 {rowNums.map((n) => {
                   const filled = grid[String(n)];
                   return (
-                    <View
-                      key={n}
-                      style={[styles.loshuCell, filled ? styles.loshuCellOn : styles.loshuCellOff]}>
+                    <View key={n} style={[styles.loshuCell, filled ? styles.loshuCellOn : styles.loshuCellOff]}>
                       <Text style={[styles.loshuValue, !filled && styles.loshuValueOff]}>
                         {filled ? String(filled) : n}
                       </Text>
-                      {!filled && <Text style={styles.loshuMissing}>missing</Text>}
+                      {!filled && <Text style={styles.loshuMissing}>{t('report.missing')}</Text>}
                     </View>
                   );
                 })}
               </View>
             ))}
           </View>
-          <Text style={styles.loshuHint}>
-            Filled cells are the digits present in your date of birth; faded cells are missing.
-          </Text>
+          <Text style={styles.loshuHint}>{t('report.loShuHint')}</Text>
         </>
       )}
 
       {(!!available.length || !!missing.length) && (
         <>
           <Divider />
-          <PillRow label="Present" items={available} tone="good" />
-          <PillRow label="Missing" items={missing} tone="bad" />
+          <PillRow label={t('report.present')} items={available} tone="good" />
+          <PillRow label={t('report.missing')} items={missing} tone="bad" />
         </>
       )}
 
       {!!planes.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Plane Strengths</Text>
-          {planes.map(([k, v], i) => {
-            const meta = PLANE_META[k] || {};
-            return (
-              <ScoreBar
-                key={k}
-                label={`${meta.glyph ? `${meta.glyph}  ` : ''}${humanize(k)}`}
-                value={Number(v) || 0}
-                max={100}
-                caption={meta.hint}
-                index={i}
-              />
-            );
-          })}
+          <Text style={styles.subLabel}>{t('report.planeStrengths')}</Text>
+          {planes.map(([k, v], i) => (
+            <ScoreBar
+              key={k}
+              label={`${PLANE_GLYPH[k] ? `${PLANE_GLYPH[k]}  ` : ''}${humanize(k)}`}
+              value={Number(v) || 0}
+              max={100}
+              // planeNumbers holds which digits fall on this plane — the reason for the score.
+              caption={isObj(data.planeNumbers) ? data.planeNumbers[k] : undefined}
+              index={i}
+            />
+          ))}
         </>
       )}
 
+      {/* Whatever the blocks above did not consume — missingNumbers as a raw string,
+          realDigits, luckFactor — still renders, so nothing the API sent is lost. */}
       {!!data.description && <><Divider /><Prose>{String(data.description)}</Prose></>}
     </SectionCard>
   );
 }
 
 /** Name analysis — a set of verdict sentences, each pass/fail. */
-export function NameAnalysis({data, title = 'Name Analysis', index = 0}) {
+export function NameAnalysis({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
   if (!isObj(data)) return null;
+  const heading = title || 'Name Analysis';
   const verdictKeys = Object.keys(data).filter(
     (k) => /Compatibility/i.test(k) && typeof data[k] === 'string',
   );
-  const numbers = ['nameNumber', 'firstNameNumber'].filter((k) => data[k]);
-  const lucky = ['luckyNumbers', 'neutralNumbers', 'unluckyNumbers'].filter((k) => data[k]);
+  const numbers = [
+    {key: 'nameNumber', label: t('report.fullName')},
+    {key: 'firstNameNumber', label: t('report.firstName')},
+  ].filter((n) => data[n.key]);
+  const lucky = [
+    {key: 'luckyNumbers', tone: 'good'},
+    {key: 'neutralNumbers', tone: 'default'},
+    {key: 'unluckyNumbers', tone: 'bad'},
+  ].filter((l) => data[l.key]);
 
   return (
-    <SectionCard title={title} glyph="✎" index={index}>
+    <SectionCard title={heading} glyph="✎" index={index}>
       {!!data.description && <Prose>{String(data.description)}</Prose>}
 
       {!!numbers.length && (
         <>
           {!!data.description && <Divider />}
           <TileRow>
-            {numbers.map((k) => (
+            {numbers.map((n) => (
               <StatTile
-                key={k}
-                label={k === 'nameNumber' ? 'Full Name' : 'First Name'}
-                // "Your Name number as per Chaldean Numerology is : 3" — the
-                // number is the content; the sentence around it is packaging.
-                value={(String(data[k]).match(/(\d+)\s*$/) || [, String(data[k])])[1]}
+                key={n.key}
+                label={n.label}
+                value={trailingNumber(data[n.key]) || String(data[n.key])}
               />
             ))}
           </TileRow>
+          {/* The tile shows the number; the API's own sentence is kept verbatim beneath it
+              rather than thrown away (see rule 1 at the top of this file). */}
+          {numbers.map((n) => (
+            <Text key={n.key} style={styles.sourceLine}>{String(data[n.key])}</Text>
+          ))}
         </>
       )}
 
       {!!verdictKeys.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Compatibility</Text>
+          <Text style={styles.subLabel}>{t('report.compatibility')}</Text>
           {verdictKeys.map((k) => {
             const text = String(data[k]);
             const good = /^great/i.test(text);
@@ -921,29 +1047,30 @@ export function NameAnalysis({data, title = 'Name Analysis', index = 0}) {
       {!!lucky.length && (
         <>
           <Divider />
-          {lucky.map((k) => {
-            const raw = String(data[k]);
+          {lucky.map((l) => {
+            const raw = String(data[l.key]);
             const nums = (raw.split(':')[1] || raw).split(',').map((s) => s.trim()).filter(Boolean);
-            return (
-              <PillRow
-                key={k}
-                label={humanize(k)}
-                items={nums}
-                tone={k === 'luckyNumbers' ? 'good' : k === 'unluckyNumbers' ? 'bad' : 'default'}
-              />
-            );
+            return <PillRow key={l.key} label={humanize(l.key)} items={nums} tone={l.tone} />;
           })}
         </>
       )}
 
+      {!!data.suggestedNameNumber && (
+        <><Divider /><Prose>{String(data.suggestedNameNumber)}</Prose></>
+      )}
+      {!!data.suggestedTotal && <Prose>{String(data.suggestedTotal)}</Prose>}
+
       {Array.isArray(data.suggestedNameSpellings) && !!data.suggestedNameSpellings.length && (
-        <Collapsible title="Suggested name spellings" count={data.suggestedNameSpellings.length} glyph="✦">
+        <Collapsible
+          title={t('report.suggestedSpellings')}
+          count={data.suggestedNameSpellings.length}
+          glyph="✦">
           {data.suggestedNameSpellings.map((entry, i) => (
             isObj(entry)
-              ? Object.entries(entry).map(([heading, reasons]) => (
-                <View key={heading} style={{marginBottom: verticalScale(8)}}>
-                  <Text style={styles.expLabel}>{heading}</Text>
-                  <NumberedList items={Array.isArray(reasons) ? reasons : [reasons]} />
+              ? Object.entries(entry).map(([hd, reasons]) => (
+                <View key={hd} style={{marginBottom: verticalScale(8)}}>
+                  <Text style={styles.expLabel}>{hd}</Text>
+                  <NumberedList items={asList(reasons)} />
                 </View>
               ))
               : <Text key={i} style={styles.bullet}>• {String(entry)}</Text>
@@ -954,24 +1081,28 @@ export function NameAnalysis({data, title = 'Name Analysis', index = 0}) {
   );
 }
 
-/** Mobile-number analysis — digit-by-digit. */
-export function MobileAnalysis({data, title = 'Mobile Number', index = 0}) {
+/** Mobile-number analysis — digit by digit. */
+export function MobileAnalysis({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
   if (!isObj(data)) return null;
-  const sum = (String(data.mobileNumberSum || '').match(/(\d+)\s*$/) || [])[1];
+  const heading = title || 'Mobile Number';
+  const sum = trailingNumber(data.mobileNumberSum);
   const digits = Array.isArray(data.individualDigitAnalysis) ? data.individualDigitAnalysis : [];
-  const results = Array.isArray(data.mobileNumberSumResult) ? data.mobileNumberSumResult : [];
-  const favourable = !results.some((r) => /not favorable|not favourable/i.test(String(r)));
+  const results = asList(data.mobileNumberSumResult);
+  const favourable = !results.some((r) => /not favou?rable/i.test(String(r)));
 
   return (
-    <SectionCard title={title} glyph="☎" index={index}>
-      {!!data.mobileNumber && (
-        <Text style={styles.phone}>{String(data.mobileNumber).replace(/^.*?:\s*/, '')}</Text>
-      )}
+    <SectionCard title={heading} glyph="☎" index={index}>
+      {!!data.mobileNumber && <Text style={styles.phone}>{String(data.mobileNumber)}</Text>}
       {!!sum && (
         <View style={styles.sumRow}>
-          <RingGauge value={Number(sum)} max={9} label="Number Sum" size={moderateScale(96)} />
+          <RingGauge value={Number(sum)} max={9} label={t('report.numberSum')} size={moderateScale(96)} />
           <View style={{flex: 1, marginLeft: scale(12)}}>
-            <Badge text={favourable ? 'Favourable' : 'Not Favourable'} tone={favourable ? 'good' : 'bad'} />
+            <Badge
+              text={favourable ? t('report.favourable') : t('report.notFavourable')}
+              tone={favourable ? 'good' : 'bad'}
+            />
+            <Text style={styles.sourceLine}>{String(data.mobileNumberSum)}</Text>
             {!!data.mobileNumberDescriptions && (
               <Text style={styles.verdictLine}>{String(data.mobileNumberDescriptions)}</Text>
             )}
@@ -989,7 +1120,7 @@ export function MobileAnalysis({data, title = 'Mobile Number', index = 0}) {
       {!!digits.length && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>Digit Meanings</Text>
+          <Text style={styles.subLabel}>{t('report.digitMeanings')}</Text>
           {digits.map((d, i) => (
             <View key={i} style={styles.digitRow}>
               <View style={styles.digitBadge}>
@@ -997,7 +1128,10 @@ export function MobileAnalysis({data, title = 'Mobile Number', index = 0}) {
                   {(String(d.digit || '').match(/(\d+)/) || ['?'])[0]}
                 </Text>
               </View>
-              <Text style={styles.digitMeaning}>{String(d.meaning || '')}</Text>
+              <View style={{flex: 1}}>
+                <Text style={styles.digitTitle}>{String(d.digit || '')}</Text>
+                <Text style={styles.digitMeaning}>{String(d.meaning || '')}</Text>
+              </View>
             </View>
           ))}
         </>
@@ -1005,14 +1139,17 @@ export function MobileAnalysis({data, title = 'Mobile Number', index = 0}) {
       {!!data.negativeNumbers && (
         <Callout tone="warn" icon="alert-circle">{String(data.negativeNumbers)}</Callout>
       )}
+      {!!data.pairsOfThree && <Callout icon="information-circle">{String(data.pairsOfThree)}</Callout>}
     </SectionCard>
   );
 }
 
 /** Lucky colours / days / directions — inherently a set of chips, not prose. */
-export function LuckyThings({data, title = 'Lucky For You', index = 0}) {
+export function LuckyThings({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
   const lt = isObj(data) ? (isObj(data.luckyThings) ? data.luckyThings : data) : null;
   if (!lt) return null;
+  const heading = title || t('report.luckyForYou');
 
   // The payload nests {label, value} pairs two levels deep under themed groups.
   const pairs = [];
@@ -1020,25 +1157,25 @@ export function LuckyThings({data, title = 'Lucky For You', index = 0}) {
     if (!isObj(group)) continue;
     for (const entry of Object.values(group)) {
       if (isObj(entry) && entry.label && entry.value) {
-        pairs.push({label: humanize(entry.label.toLowerCase()), value: String(entry.value).replace(/,\s*$/, '')});
+        pairs.push({label: humanize(String(entry.label).toLowerCase()), value: String(entry.value)});
       }
     }
   }
   const singles = [
-    {label: 'Ruling Planet', value: lt.ruler, glyph: PLANET_GLYPH[lt.ruler] || '✦'},
-    {label: 'Element', value: lt.element, glyph: '◆'},
-    {label: 'Sun Sign', value: lt.sunSign, glyph: ZODIAC_GLYPH[lt.sunSign] || '☉'},
-    {label: 'Best Time', value: lt.best_time_of_the_day, glyph: '◷'},
+    {label: t('report.rulingPlanet'), value: lt.ruler, glyph: PLANET_GLYPH[lt.ruler] || '✦'},
+    {label: t('report.element'), value: lt.element, glyph: '◆'},
+    {label: t('report.sunSign'), value: lt.sunSign, glyph: ZODIAC_GLYPH[lt.sunSign] || '☉'},
+    {label: t('report.bestTime'), value: lt.best_time_of_the_day, glyph: '◷'},
   ].filter((s) => s.value);
 
   return (
-    <SectionCard title={title} glyph="★" index={index}>
+    <SectionCard title={heading} glyph="★" index={index}>
       {!!singles.length && (
         <View style={styles.signRow}>
           {singles.map((s) => (
             <View key={s.label} style={styles.signCard}>
               <Text style={styles.signGlyph}>{s.glyph}</Text>
-              <Text style={styles.signValue} numberOfLines={1}>{s.value}</Text>
+              <Text style={styles.signValue}>{s.value}</Text>
               <Text style={styles.signLabel}>{s.label}</Text>
             </View>
           ))}
@@ -1058,10 +1195,10 @@ export function LuckyThings({data, title = 'Lucky For You', index = 0}) {
         </>
       )}
       {Array.isArray(lt.traits) && !!lt.traits.length && (
-        <><Divider /><PillRow label="Traits" items={lt.traits} /></>
+        <><Divider /><PillRow label={t('report.traits')} items={lt.traits} /></>
       )}
       {Array.isArray(lt.favourable_periods) && !!lt.favourable_periods.length && (
-        <PillRow label="Favourable Periods" items={lt.favourable_periods} tone="good" />
+        <PillRow label={t('report.favourablePeriods')} items={lt.favourable_periods} tone="good" />
       )}
       {!!data?.description && <><Divider /><Prose>{String(data.description)}</Prose></>}
     </SectionCard>
@@ -1069,27 +1206,34 @@ export function LuckyThings({data, title = 'Lucky For You', index = 0}) {
 }
 
 /** Personal-year forecast. */
-export function PersonalYear({data, title = 'Personal Year', index = 0}) {
+export function PersonalYear({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
   if (!isObj(data)) return null;
-  const year = (String(data.personalYear || '').match(/(\d+)\s*$/) || [])[1];
+  const heading = title || 'Personal Year';
+  const year = trailingNumber(data.personalYear);
   const desc = isObj(data.description) ? data.description : null;
   const luck = isObj(data.luckFactorDetails) ? data.luckFactorDetails : null;
-  const luckPct = luck && Array.isArray(luck.descriptions)
-    ? (String(luck.descriptions[0] || '').match(/(\d+)\s*%/) || [])[1] : null;
+  const luckLines = luck ? asList(luck.descriptions) : [];
+  const luckPct = (String(luckLines[0] || '').match(/(\d+)\s*%/) || [])[1];
 
   return (
-    <SectionCard title={title} glyph="◷" index={index}>
+    <SectionCard title={heading} glyph="◷" index={index}>
       <View style={styles.pyHero}>
-        {!!year && <RingGauge value={Number(year)} max={9} label="Personal Year" size={moderateScale(104)} />}
+        {!!year && (
+          <RingGauge value={Number(year)} max={9} label={t('report.personalYearLabel') || heading} size={moderateScale(104)} />
+        )}
         <View style={{flex: 1, marginLeft: scale(12)}}>
           {!!desc?.title && <Text style={styles.pyTitle}>{desc.title}</Text>}
+          {!!data.personalYear && <Text style={styles.sourceLine}>{String(data.personalYear)}</Text>}
           {!!luckPct && (
             <View style={{marginTop: verticalScale(6)}}>
-              <ScoreBar label="Luck Factor" value={Number(luckPct)} max={100} />
+              <ScoreBar label={t('report.luckFactor')} value={Number(luckPct)} max={100} />
             </View>
           )}
         </View>
       </View>
+      {!!luck?.title && <Text style={styles.sourceLine}>{String(luck.title)}</Text>}
+      {luckLines.slice(1).map((l, i) => <Text key={i} style={styles.sourceLine}>{String(l)}</Text>)}
       {!!desc?.description && <><Divider /><Prose>{String(desc.description)}</Prose></>}
     </SectionCard>
   );
@@ -1112,34 +1256,41 @@ const SHORT_PLANET = {
 /**
  * Lal Kitab horoscope as an actual 12-house chart.
  *
- * The payload is [{sign, sign_name, planet[], planet_small[]}] × 12 — a chart in
- * list form. The shipped app printed "Sign 1 / Sign Name Aries / PLANET • SUN •
- * MERCURY…" down the screen, so the reader had to hold twelve houses in their
- * head to picture it. A grid IS the picture.
+ * The payload is [{sign, sign_name, planet[], planet_small[]}] × 12 — a chart in list form.
+ * The shipped app printed "Sign 1 / Sign Name Aries / PLANET • SUN • MERCURY…" down the
+ * screen, so the reader had to hold twelve houses in their head to picture it. A grid IS
+ * the picture.
  */
-export function LalKitabHoroscope({data, title = 'Lal Kitab Chart', index = 0}) {
+export function LalKitabHoroscope({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.lalKitabChart');
   const houses = Array.isArray(data) ? data.filter(isObj) : [];
   if (!houses.length) {
-    return <SectionCard title={title} glyph="📕" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="📕" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   return (
-    <SectionCard title={title} glyph="📕" subtitle="Planets by sign" index={index}>
+    <SectionCard title={heading} glyph="📕" subtitle={t('report.planetsBySign')} index={index}>
       <View style={styles.hGrid}>
         {houses.map((h, i) => {
-          const planets = Array.isArray(h.planet) ? h.planet : [];
+          const planets = asList(h.planet);
+          const small = asList(h.planet_small);
           return (
-            <View key={i} style={[styles.hCell, planets.length ? styles.hCellFull : null]}>
-              <View style={styles.hCellTop}>
-                <Text style={styles.hCellNum}>{h.sign ?? i + 1}</Text>
-                <Text style={styles.hCellGlyph}>{ZODIAC_GLYPH[h.sign_name] || ''}</Text>
-              </View>
-              <Text style={styles.hCellName} numberOfLines={1}>{h.sign_name || '—'}</Text>
-              <View style={styles.hCellPlanets}>
-                {planets.length ? planets.map((p) => (
-                  <View key={p} style={styles.hPlanet}>
-                    <Text style={styles.hPlanetText}>{SHORT_PLANET[p] || p}</Text>
-                  </View>
-                )) : <Text style={styles.hEmpty}>—</Text>}
+            <View key={i} style={styles.hCell}>
+              <View style={[styles.hCellInner, planets.length ? styles.hCellOccupied : null]}>
+                <View style={styles.hCellTop}>
+                  <Text style={styles.hCellNum}>{h.sign ?? i + 1}</Text>
+                  <Text style={styles.hCellGlyph}>{ZODIAC_GLYPH[h.sign_name] || ''}</Text>
+                </View>
+                <Text style={styles.hCellName}>{h.sign_name || '—'}</Text>
+                <View style={styles.hCellPlanets}>
+                  {planets.length ? planets.map((p, pi) => (
+                    <View key={pi} style={styles.hPlanet}>
+                      <Text style={styles.hPlanetText}>
+                        {SHORT_PLANET[p] || small[pi] || p}
+                      </Text>
+                    </View>
+                  )) : <Text style={styles.hEmpty}>—</Text>}
+                </View>
               </View>
             </View>
           );
@@ -1150,15 +1301,16 @@ export function LalKitabHoroscope({data, title = 'Lal Kitab Chart', index = 0}) 
 }
 
 /** The 12 khanas with their lords, exalted and debilitated planets. */
-export function LalKitabHouses({data, title = 'Houses (Khana)', index = 0}) {
+export function LalKitabHouses({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.housesKhana');
   const rows = Array.isArray(data) ? data.filter(isObj) : [];
   if (!rows.length) {
-    return <SectionCard title={title} glyph="⌂" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="⌂" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
-  const listOf = (v) => (Array.isArray(v) ? v : v ? [v] : []).filter((x) => x && x !== '-');
 
   return (
-    <SectionCard title={title} glyph="⌂" subtitle={`${rows.length} khanas`} index={index}>
+    <SectionCard title={heading} glyph="⌂" subtitle={t('report.khanas', {count: rows.length})} index={index}>
       {rows.map((h, i) => (
         <View key={i} style={styles.khana}>
           <View style={styles.khanaNum}>
@@ -1167,21 +1319,19 @@ export function LalKitabHouses({data, title = 'Houses (Khana)', index = 0}) {
           <View style={{flex: 1}}>
             <View style={styles.khanaTop}>
               <Text style={styles.khanaOwner}>
-                Lord: <Text style={styles.khanaOwnerVal}>{h.maalik || '—'}</Text>
+                {t('report.lord')}: <Text style={styles.khanaOwnerVal}>{h.maalik || '—'}</Text>
               </Text>
               {h.soya === true && (
                 <View style={styles.sleepBadge}>
-                  <Text style={styles.sleepBadgeText}>Sleeping</Text>
+                  <Text style={styles.sleepBadgeText}>{t('report.sleeping')}</Text>
                 </View>
               )}
             </View>
             <Text style={styles.khanaSub}>
-              Pakka Ghar: {h.pakka_ghar || '—'}   ·   Kismat: {h.kismat || '—'}
+              {t('report.pakkaGhar')}: {h.pakka_ghar || '—'}   ·   {t('report.kismat')}: {h.kismat || '—'}
             </Text>
-            <View style={styles.khanaPills}>
-              <PillRow label={null} items={listOf(h.exalt).map((p) => `↑ ${p}`)} tone="good" />
-              <PillRow label={null} items={listOf(h.debilitated).map((p) => `↓ ${p}`)} tone="bad" />
-            </View>
+            <PillRow items={asList(h.exalt).map((p) => `↑ ${p}`)} tone="good" />
+            <PillRow items={asList(h.debilitated).map((p) => `↓ ${p}`)} tone="bad" />
           </View>
         </View>
       ))}
@@ -1190,39 +1340,37 @@ export function LalKitabHouses({data, title = 'Houses (Khana)', index = 0}) {
 }
 
 /** Per-planet effects + remedies, one collapsible each. */
-export function LalKitabRemedies({data, title = 'Planet Remedies', index = 0}) {
+export function LalKitabRemedies({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.planetRemedies');
   if (!isObj(data)) {
-    return <SectionCard title={title} glyph="✚" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="✚" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   const entries = Object.entries(data).filter(([, v]) => isObj(v) && (v.effects || v.remedies));
   if (!entries.length) {
-    return <SectionCard title={title} glyph="✚" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="✚" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
 
   return (
-    <SectionCard
-      title={title}
-      glyph="✚"
-      subtitle="Tap a planet to read its effects and remedies"
-      index={index}>
+    <SectionCard title={heading} glyph="✚" subtitle={t('report.tapPlanet')} index={index}>
       {entries.map(([k, v]) => {
-        const remedies = Array.isArray(v.remedies) ? v.remedies : v.remedies ? [v.remedies] : [];
+        const remedies = asList(v.remedies);
         const houseNo = ROMAN_HOUSE[v.house] || v.house;
         return (
           <Collapsible
             key={k}
-            title={`${v.planet || humanize(k)}${houseNo ? ` · House ${houseNo}` : ''}`}
+            title={`${v.planet || humanize(k)}${houseNo ? ` · ${t('report.house')} ${houseNo}` : ''}`}
             count={remedies.length || undefined}
             glyph={PLANET_GLYPH[v.planet] || PLANET_GLYPH[humanize(k)] || '✦'}>
             {!!v.effects && (
               <View style={{marginBottom: verticalScale(8)}}>
-                <Text style={styles.subLabel}>Effects</Text>
+                <Text style={styles.subLabel}>{t('report.effects')}</Text>
                 <Prose>{String(v.effects)}</Prose>
               </View>
             )}
             {!!remedies.length && (
               <>
-                <Text style={styles.subLabel}>Remedies</Text>
+                <Text style={styles.subLabel}>{t('report.remedies')}</Text>
                 <NumberedList items={remedies} />
               </>
             )}
@@ -1234,37 +1382,39 @@ export function LalKitabRemedies({data, title = 'Planet Remedies', index = 0}) {
 }
 
 /** Karmic debts — each with indications, events and remedies. */
-export function LalKitabDebts({data, title = 'Karmic Debts (Rin)', index = 0}) {
+export function LalKitabDebts({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || t('report.karmicDebts');
   const rows = Array.isArray(data) ? data.filter(isObj) : [];
   if (!rows.length) {
     return (
-      <SectionCard title={title} glyph="⚖" index={index}>
-        <Callout tone="good" icon="shield-checkmark">No karmic debts found in your chart.</Callout>
+      <SectionCard title={heading} glyph="⚖" index={index}>
+        <Callout tone="good" icon="shield-checkmark">{t('report.noDebts')}</Callout>
       </SectionCard>
     );
   }
   return (
-    <SectionCard title={title} glyph="⚖" subtitle={`${rows.length} found`} index={index}>
+    <SectionCard title={heading} glyph="⚖" subtitle={t('report.found', {count: rows.length})} index={index}>
       {rows.map((d, i) => (
         <View key={i} style={styles.debt}>
           <View style={styles.debtHead}>
             <Ionicons name="alert-circle" size={moderateScale(16)} color={ASTRO.warn} />
-            <Text style={styles.debtName}>{d.debt_name || `Debt ${i + 1}`}</Text>
+            <Text style={styles.debtName}>{d.debt_name || `${t('report.karmicDebts')} ${i + 1}`}</Text>
           </View>
           {!!d.planetory && <Prose>{String(d.planetory)}</Prose>}
-          {Array.isArray(d.indications) && !!d.indications.length && (
-            <Collapsible title="Indications" count={d.indications.length} glyph="◈">
-              <NumberedList items={d.indications} tone="maroon" />
+          {!!asList(d.indications).length && (
+            <Collapsible title={t('report.indications')} count={asList(d.indications).length} glyph="◈">
+              <NumberedList items={asList(d.indications)} tone="maroon" />
             </Collapsible>
           )}
-          {Array.isArray(d.events) && !!d.events.length && (
-            <Collapsible title="Possible events" count={d.events.length} glyph="◷">
-              <NumberedList items={d.events} tone="maroon" />
+          {!!asList(d.events).length && (
+            <Collapsible title={t('report.possibleEvents')} count={asList(d.events).length} glyph="◷">
+              <NumberedList items={asList(d.events)} tone="maroon" />
             </Collapsible>
           )}
-          {Array.isArray(d.remedies) && !!d.remedies.length && (
-            <Collapsible title="Remedies" count={d.remedies.length} glyph="✚">
-              <NumberedList items={d.remedies} />
+          {!!asList(d.remedies).length && (
+            <Collapsible title={t('report.remedies')} count={asList(d.remedies).length} glyph="✚">
+              <NumberedList items={asList(d.remedies)} />
             </Collapsible>
           )}
         </View>
@@ -1278,13 +1428,15 @@ export function LalKitabDebts({data, title = 'Karmic Debts (Rin)', index = 0}) {
 /* ------------------------------------------------------------------ */
 
 /** Cusp table — 12 houses with sign/star/sub lords, one card each. */
-export function KpCusps({data, title = 'Cusp Details', index = 0}) {
+export function KpCusps({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || 'Cusp Details';
   const rows = Array.isArray(data) ? data.filter(isObj) : [];
   if (!rows.length) {
-    return <SectionCard title={title} glyph="◑" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="◑" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   return (
-    <SectionCard title={title} glyph="◑" subtitle="Sign, star and sub lord per house" index={index}>
+    <SectionCard title={heading} glyph="◑" subtitle={t('report.cuspSub')} index={index}>
       {rows.map((c, i) => (
         <View key={i} style={styles.cusp}>
           <View style={styles.cuspNum}>
@@ -1296,10 +1448,11 @@ export function KpCusps({data, title = 'Cusp Details', index = 0}) {
               {c.degree_dms ? <Text style={styles.cuspDeg}>  {c.degree_dms}</Text> : null}
             </Text>
             <View style={styles.cuspLords}>
-              <CuspLord label="Sign" value={c.signLord} />
-              <CuspLord label="Star" value={c.nakshatraLord} />
-              <CuspLord label="Sub" value={c.subLord} />
-              <CuspLord label="Sub-sub" value={c.subSubLord} />
+              <CuspLord label={t('report.sign')} value={c.signLord} />
+              <CuspLord label={t('report.star')} value={c.nakshatraLord} />
+              <CuspLord label={t('report.nakshatra')} value={c.nakshatra} />
+              <CuspLord label={t('report.sub')} value={c.subLord} />
+              <CuspLord label={t('report.subSub')} value={c.subSubLord} />
             </View>
           </View>
         </View>
@@ -1318,37 +1471,34 @@ function CuspLord({label, value}) {
   );
 }
 
-/** House significators — {1: [planets], …}. Rendered as a house-by-house grid. */
-export function KpSignificators({data, title = 'House Significators', index = 0}) {
+/** House significators — {1: [planets], …}. Rendered house by house. */
+export function KpSignificators({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
+  const heading = title || 'House Significators';
   if (!isObj(data)) {
-    return <SectionCard title={title} glyph="⌂" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="⌂" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
-  const houses = Object.keys(data)
-    .filter((k) => /^\d+$/.test(k))
-    .sort((a, b) => Number(a) - Number(b));
+  const houses = Object.keys(data).filter((k) => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
   if (!houses.length) {
-    return <SectionCard title={title} glyph="⌂" index={index}><GenericKeyVals data={data} /></SectionCard>;
+    return <SectionCard title={heading} glyph="⌂" index={index}><GenericKeyVals data={data} /></SectionCard>;
   }
   return (
-    <SectionCard title={title} glyph="⌂" subtitle="Planets signifying each house" index={index}>
-      {houses.map((h) => {
-        const planets = Array.isArray(data[h]) ? data[h] : [data[h]];
-        return (
-          <View key={h} style={styles.sigRow}>
-            <View style={styles.sigNum}>
-              <Text style={styles.sigNumText}>{h}</Text>
-            </View>
-            <View style={styles.sigPlanets}>
-              {planets.filter(Boolean).map((p, i) => (
-                <View key={i} style={styles.sigPlanet}>
-                  <Text style={styles.sigPlanetGlyph}>{PLANET_GLYPH[p] || '✦'}</Text>
-                  <Text style={styles.sigPlanetText}>{String(p)}</Text>
-                </View>
-              ))}
-            </View>
+    <SectionCard title={heading} glyph="⌂" subtitle={t('report.significatorsSub')} index={index}>
+      {houses.map((h) => (
+        <View key={h} style={styles.sigRow}>
+          <View style={styles.sigNum}>
+            <Text style={styles.sigNumText}>{h}</Text>
           </View>
-        );
-      })}
+          <View style={styles.sigPlanets}>
+            {asList(data[h]).map((p, i) => (
+              <View key={i} style={styles.sigPlanet}>
+                <Text style={styles.sigPlanetGlyph}>{PLANET_GLYPH[p] || '✦'}</Text>
+                <Text style={styles.sigPlanetText}>{String(p)}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
     </SectionCard>
   );
 }
@@ -1358,36 +1508,37 @@ export function KpSignificators({data, title = 'House Significators', index = 0}
 /* ------------------------------------------------------------------ */
 
 /**
- * The ascendant payload is by far the richest prose in the kundli report — it
- * carries qualities, a gem, a fasting day and a gayatri mantra alongside the
- * predictions, and every one of those was collapsing into a single grey
- * paragraph. Broken out here into things a reader can actually pick up.
+ * The ascendant payload is the richest prose in the kundli report — qualities, a gem, a
+ * fasting day and a gayatri mantra alongside two predictions — and all of it was
+ * collapsing into a single grey paragraph. Broken out into things a reader can pick up.
  */
-export function AscendantReport({data, title = 'Ascendant Report', index = 0}) {
+export function AscendantReport({data, title, index = 0}) {
+  const {t} = useContext(LanguageContext);
   const rows = Array.isArray(data) ? data.filter(isObj) : data ? [data] : [];
   if (!rows.length) return null;
   const r = rows[0];
+  const heading = title || t('report.ascendant');
   const split = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
 
   return (
     <SectionCard
-      title={title}
+      title={heading}
       glyph={ZODIAC_GLYPH[r.ascendant] || '↑'}
-      subtitle={r.ascendant ? `${r.ascendant} ascendant${r.symbol ? ` · ${r.symbol}` : ''}` : undefined}
+      subtitle={[r.ascendant, r.symbol].filter(Boolean).join(' · ') || undefined}
       index={index}>
       <View style={styles.signRow}>
         {!!r.ascendant_lord && (
           <View style={styles.signCard}>
             <Text style={styles.signGlyph}>{PLANET_GLYPH[r.ascendant_lord] || '✦'}</Text>
-            <Text style={styles.signValue} numberOfLines={1}>{r.ascendant_lord}</Text>
-            <Text style={styles.signLabel}>Lagna Lord</Text>
+            <Text style={styles.signValue}>{r.ascendant_lord}</Text>
+            <Text style={styles.signLabel}>{t('report.lagnaLord')}</Text>
           </View>
         )}
         {!!r.ascendant_lord_house_location && (
           <View style={styles.signCard}>
             <Text style={styles.signGlyph}>⌂</Text>
-            <Text style={styles.signValue}>House {r.ascendant_lord_house_location}</Text>
-            <Text style={styles.signLabel}>Placed In</Text>
+            <Text style={styles.signValue}>{t('report.house')} {r.ascendant_lord_house_location}</Text>
+            <Text style={styles.signLabel}>{t('report.placedIn')}</Text>
           </View>
         )}
         {!!r.ascendant_lord_strength && (
@@ -1396,21 +1547,21 @@ export function AscendantReport({data, title = 'Ascendant Report', index = 0}) {
             <Text
               style={[
                 styles.signValue,
-                {color: /strong/i.test(r.ascendant_lord_strength) ? ASTRO.good : ASTRO.warn},
-              ]}
-              numberOfLines={1}>
+                {color: /strong|प्रबल|मजबूत/i.test(r.ascendant_lord_strength) ? ASTRO.good : ASTRO.warn},
+              ]}>
               {r.ascendant_lord_strength}
             </Text>
-            <Text style={styles.signLabel}>Strength</Text>
+            <Text style={styles.signLabel}>{t('report.strength')}</Text>
           </View>
         )}
       </View>
 
+      {!!r.verbal_location && <Text style={styles.sourceLine}>{String(r.verbal_location)}</Text>}
       {!!r.general_prediction && <><Divider /><Prose>{String(r.general_prediction)}</Prose></>}
       {!!r.personalised_prediction && (
         <>
           <Divider />
-          <Text style={styles.subLabel}>For You Specifically</Text>
+          <Text style={styles.subLabel}>{t('report.forYouSpecifically')}</Text>
           <Prose>{String(r.personalised_prediction)}</Prose>
         </>
       )}
@@ -1418,8 +1569,8 @@ export function AscendantReport({data, title = 'Ascendant Report', index = 0}) {
       {(!!r.good_qualities || !!r.bad_qualities) && (
         <>
           <Divider />
-          <PillRow label="Strengths" items={split(r.good_qualities)} tone="good" />
-          <PillRow label="Watch Out For" items={split(r.bad_qualities)} tone="bad" />
+          <PillRow label={t('report.strengths')} items={split(r.good_qualities)} tone="good" />
+          <PillRow label={t('report.watchOutFor')} items={split(r.bad_qualities)} tone="bad" />
         </>
       )}
 
@@ -1428,34 +1579,36 @@ export function AscendantReport({data, title = 'Ascendant Report', index = 0}) {
           <Divider />
           <ChipGrid
             items={[
-              {label: 'Lucky Gem', value: r.lucky_gem},
-              {label: 'Fasting Day', value: r.day_for_fasting},
-              {label: 'Nature', value: r.zodiac_characteristics},
+              {label: t('report.luckyGem'), value: r.lucky_gem},
+              {label: t('report.fastingDay'), value: r.day_for_fasting},
+              {label: t('report.nature'), value: r.zodiac_characteristics},
             ]}
           />
         </>
       )}
 
       {!!r.gayatri_mantra && (
-        <Collapsible title="Gayatri Mantra" glyph="ॐ">
+        <Collapsible title={t('report.gayatriMantra')} glyph="ॐ">
           <Text style={styles.mantra}>{String(r.gayatri_mantra)}</Text>
         </Collapsible>
       )}
       {!!r.flagship_qualities && (
-        <Collapsible title="Flagship qualities" glyph="★">
+        <Collapsible title={t('report.flagshipQualities')} glyph="★">
           <Prose>{String(r.flagship_qualities)}</Prose>
         </Collapsible>
       )}
       {!!r.spirituality_advice && (
-        <Collapsible title="Spiritual guidance" glyph="✦">
+        <Collapsible title={t('report.spiritualGuidance')} glyph="✦">
           <Prose>{String(r.spirituality_advice)}</Prose>
         </Collapsible>
       )}
 
       {rows.length > 1 && (
-        <Collapsible title="Additional readings" count={rows.length - 1} glyph="◈">
+        <Collapsible title={t('report.additionalReadings')} count={rows.length - 1} glyph="◈">
           {rows.slice(1).map((extra, i) => (
-            <Prose key={i}>{String(extra.general_prediction || extra.prediction || '')}</Prose>
+            <View key={i} style={{marginBottom: verticalScale(8)}}>
+              <GenericKeyVals data={extra} />
+            </View>
           ))}
         </Collapsible>
       )}
@@ -1489,6 +1642,11 @@ const styles = StyleSheet.create({
   bullet: {
     fontSize: moderateScale(12), lineHeight: moderateScale(18),
     fontFamily: 'Lato-Regular', color: ASTRO.ink, marginBottom: 2,
+  },
+  // Verbatim API sentence kept beneath a headline tile — see rule 1 at the top.
+  sourceLine: {
+    fontSize: moderateScale(10.5), lineHeight: moderateScale(16), fontFamily: 'Lato-Regular',
+    color: ASTRO.muted, marginTop: verticalScale(3),
   },
   mantra: {
     fontSize: moderateScale(13), lineHeight: moderateScale(22), fontFamily: 'Lato-Bold',
@@ -1526,33 +1684,41 @@ const styles = StyleSheet.create({
   pMiniValue: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.ink},
 
   /* headline sign cards */
-  signRow: {flexDirection: 'row', marginHorizontal: -scale(4)},
+  signRow: {flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -scale(4)},
   signCard: {
-    flex: 1, margin: scale(4), backgroundColor: COLORS.white, borderRadius: moderateScale(10),
-    borderWidth: 1, borderColor: ASTRO.line, alignItems: 'center',
-    paddingVertical: verticalScale(10), paddingHorizontal: scale(4),
+    flexGrow: 1, flexBasis: '28%', margin: scale(4), backgroundColor: COLORS.white,
+    borderRadius: moderateScale(10), borderWidth: 1, borderColor: ASTRO.line,
+    alignItems: 'center', paddingVertical: verticalScale(10), paddingHorizontal: scale(4),
   },
   signGlyph: {fontSize: moderateScale(22), color: ASTRO.gold},
-  signValue: {fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.ink, marginTop: 3},
+  signValue: {
+    fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.ink,
+    marginTop: 3, textAlign: 'center',
+  },
   signLabel: {
     fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: ASTRO.muted,
-    textTransform: 'uppercase', letterSpacing: 0.3, marginTop: 1,
+    textTransform: 'uppercase', letterSpacing: 0.3, marginTop: 1, textAlign: 'center',
   },
 
-  stoneRow: {flexDirection: 'row', marginHorizontal: -scale(4)},
+  stoneRow: {flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -scale(4)},
   stone: {
-    flex: 1, margin: scale(4), backgroundColor: '#FFFBF1', borderRadius: moderateScale(10),
-    borderWidth: 1, borderColor: ASTRO.goldSoft, alignItems: 'center', paddingVertical: verticalScale(9),
+    flexGrow: 1, flexBasis: '28%', margin: scale(4), backgroundColor: '#FFFBF1',
+    borderRadius: moderateScale(10), borderWidth: 1, borderColor: ASTRO.goldSoft,
+    alignItems: 'center', paddingVertical: verticalScale(9),
   },
   stoneGlyph: {fontSize: moderateScale(17), color: ASTRO.gold},
-  stoneValue: {fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.maroon, marginTop: 2},
-  stoneLabel: {fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: ASTRO.muted, textTransform: 'uppercase'},
+  stoneValue: {
+    fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: ASTRO.maroon,
+    marginTop: 2, textAlign: 'center',
+  },
+  stoneLabel: {
+    fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: ASTRO.muted,
+    textTransform: 'uppercase', textAlign: 'center',
+  },
 
   /* dosha */
   verdictHero: {flexDirection: 'row', alignItems: 'center'},
-  verdictIconBox: {
-    width: moderateScale(76), alignItems: 'center', justifyContent: 'center',
-  },
+  verdictIconBox: {width: moderateScale(76), alignItems: 'center', justifyContent: 'center'},
   verdictSide: {flex: 1, marginLeft: scale(12)},
   verdictLine: {
     fontSize: moderateScale(12), lineHeight: moderateScale(19), fontFamily: 'Lato-Regular',
@@ -1598,9 +1764,8 @@ const styles = StyleSheet.create({
   },
   periodRail: {alignItems: 'center', width: scale(18), alignSelf: 'stretch'},
   periodDot: {
-    width: scale(9), height: scale(9), borderRadius: scale(5),
-    backgroundColor: ASTRO.line, marginTop: verticalScale(5),
-    borderWidth: 2, borderColor: ASTRO.parchment,
+    width: scale(9), height: scale(9), borderRadius: scale(5), backgroundColor: ASTRO.line,
+    marginTop: verticalScale(5), borderWidth: 2, borderColor: ASTRO.parchment,
   },
   periodDotCurrent: {backgroundColor: ASTRO.good, borderColor: '#CDE8CE'},
   periodLine: {flex: 1, width: 1.5, backgroundColor: ASTRO.line, marginTop: 1},
@@ -1633,17 +1798,18 @@ const styles = StyleSheet.create({
 
   /* numerology misc */
   phone: {
-    fontSize: moderateScale(17), fontFamily: 'Lato-Bold', color: ASTRO.maroon,
-    letterSpacing: 1.5, textAlign: 'center', marginBottom: verticalScale(8),
+    fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: ASTRO.maroon,
+    textAlign: 'center', marginBottom: verticalScale(8),
   },
   sumRow: {flexDirection: 'row', alignItems: 'center'},
-  digitRow: {flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(7)},
+  digitRow: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: verticalScale(8)},
   digitBadge: {
     width: moderateScale(28), height: moderateScale(28), borderRadius: moderateScale(14),
     backgroundColor: ASTRO.goldSoft, alignItems: 'center', justifyContent: 'center', marginRight: scale(9),
   },
   digitBadgeText: {fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
-  digitMeaning: {flex: 1, fontSize: moderateScale(12), fontFamily: 'Lato-Regular', color: ASTRO.ink},
+  digitTitle: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
+  digitMeaning: {fontSize: moderateScale(12), fontFamily: 'Lato-Regular', color: ASTRO.ink},
   pyHero: {flexDirection: 'row', alignItems: 'center'},
   pyTitle: {fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
 
@@ -1653,15 +1819,17 @@ const styles = StyleSheet.create({
 
   /* lal kitab 12-house grid */
   hGrid: {flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -scale(3)},
-  hCell: {
-    width: '33.33%', padding: scale(3),
+  hCell: {width: '33.33%', padding: scale(3)},
+  hCellInner: {
+    borderWidth: 1, borderColor: ASTRO.line, borderRadius: moderateScale(8),
+    backgroundColor: COLORS.white, padding: scale(6), minHeight: verticalScale(70),
   },
-  hCellFull: {},
+  hCellOccupied: {backgroundColor: '#FFFBF1', borderColor: ASTRO.goldSoft},
   hCellTop: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   hCellNum: {fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: ASTRO.muted},
   hCellGlyph: {fontSize: moderateScale(13), color: ASTRO.gold},
   hCellName: {fontSize: moderateScale(10.5), fontFamily: 'Lato-Bold', color: ASTRO.ink, marginTop: 1},
-  hCellPlanets: {flexDirection: 'row', flexWrap: 'wrap', marginTop: verticalScale(4), minHeight: verticalScale(20)},
+  hCellPlanets: {flexDirection: 'row', flexWrap: 'wrap', marginTop: verticalScale(4)},
   hPlanet: {
     backgroundColor: ASTRO.goldSoft, borderRadius: 5, paddingHorizontal: scale(4),
     paddingVertical: 1, marginRight: 3, marginBottom: 3,
@@ -1684,14 +1852,13 @@ const styles = StyleSheet.create({
   sleepBadge: {backgroundColor: ASTRO.parchmentDeep, borderRadius: 20, paddingHorizontal: scale(7), paddingVertical: 1},
   sleepBadgeText: {fontSize: moderateScale(9), fontFamily: 'Lato-Bold', color: ASTRO.muted},
   khanaSub: {fontSize: moderateScale(10.5), fontFamily: 'Lato-Regular', color: ASTRO.muted, marginTop: 2, marginBottom: 4},
-  khanaPills: {},
 
   debt: {
     borderWidth: 1, borderColor: ASTRO.line, borderRadius: moderateScale(10),
     backgroundColor: '#FFFDF7', padding: scale(10), marginBottom: verticalScale(9),
   },
   debtHead: {flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(5)},
-  debtName: {fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: ASTRO.maroon, marginLeft: scale(6)},
+  debtName: {fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: ASTRO.maroon, marginLeft: scale(6), flex: 1},
 
   /* kp */
   cusp: {

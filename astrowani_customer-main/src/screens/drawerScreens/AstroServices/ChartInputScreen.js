@@ -23,7 +23,7 @@ export default function ChartInputScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [values, setValues] = useState({isComplete: false});
   const [division, setDivision] = useState(null);
-  const {service, submitting, submit} = useAstroPurchase('chart');
+  const {service, submitting, submit, resultParams} = useAstroPurchase('chart');
 
   const isComplete = values.isComplete && Boolean(division);
 
@@ -31,7 +31,7 @@ export default function ChartInputScreen({navigation}) {
     const data = await submit({
       date: values.date, time: values.time, latitude: values.latitude, longitude: values.longitude, tz: values.tz, division,
     });
-    if (data) navigation.navigate('ChartResultScreen', {data});
+    if (data) navigation.navigate('ChartResultScreen', resultParams(data));
   };
 
   return (

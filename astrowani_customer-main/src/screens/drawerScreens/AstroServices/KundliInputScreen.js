@@ -9,13 +9,13 @@ import {LanguageContext} from '../../../context/LanguageContext';
 export default function KundliInputScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [values, setValues] = useState({isComplete: false});
-  const {service, submitting, submit} = useAstroPurchase('kundli');
+  const {service, submitting, submit, resultParams} = useAstroPurchase('kundli');
 
   const onSubmit = async () => {
     const data = await submit({
       date: values.date, time: values.time, latitude: values.latitude, longitude: values.longitude, tz: values.tz,
     });
-    if (data) navigation.navigate('KundliResultScreen', {data});
+    if (data) navigation.navigate('KundliResultScreen', resultParams(data));
   };
 
   return (

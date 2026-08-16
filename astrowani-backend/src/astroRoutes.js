@@ -81,6 +81,27 @@ function missingFields(body, fields) {
   return fields.filter((f) => body[f] === undefined || body[f] === null || body[f] === '');
 }
 
+/**
+ * Has this exact report already been paid for? Looks for the ledger row the atomic wallet
+ * function writes under `idempotency_key`.
+ *
+ * Fails CLOSED (returns false) on any error: a false negative merely re-applies the normal
+ * balance gate, whereas a false positive would hand out a report for free.
+ */
+async function isAlreadyPurchased(idempotencyKey) {
+  try {
+    const { data, error } = await db
+      .from('wallet_transactions')
+      .select('id')
+      .eq('idempotency_key', idempotencyKey)
+      .limit(1);
+    if (error) return false;
+    return Array.isArray(data) && data.length > 0;
+  } catch (_) {
+    return false;
+  }
+}
+
 function birthQuery(body, { latKey = 'latitude', lonKey = 'longitude' } = {}) {
   return {
     date: body.date,
@@ -407,7 +428,21 @@ module.exports = function registerAstroRoutes(app) {
 
     const price = Number(service.price) || 0;
     const balance = Number(customer.wallet_balance) || 0;
-    if (balance < price) {
+
+    // Idempotency key is derived here (before the balance gate) because it is also what
+    // tells us whether this exact report has ALREADY been paid for. See the note at the
+    // debit below for why `lang` is excluded.
+    const { lang: _lang, ...billableBody } = req.body || {};
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify(billableBody)).digest('hex').slice(0, 16);
+    const idempotencyKey = `astro-report:${customer.id}:${key}:${requestHash}`;
+
+    // Already-paid check. Without it, a customer who buys a report and then flips it to
+    // Hindi is refused with "Insufficient balance" the moment their remaining balance
+    // dips under the price — even though the debit below would dedupe to zero. The
+    // language toggle must keep working regardless of what the wallet holds afterwards.
+    const alreadyPaid = await isAlreadyPurchased(idempotencyKey);
+
+    if (!alreadyPaid && balance < price) {
       return res.status(400).json({ success: false, message: 'Insufficient balance' });
     }
 
@@ -434,9 +469,12 @@ module.exports = function registerAstroRoutes(app) {
     // every call look "new" and defeated the atomic function's replay protection entirely) —
     // so a genuine retry of the SAME request is deduped, while a different request (even the
     // same report type, e.g. two Kundli Matching reports for different people) still charges.
-    const requestHash = crypto.createHash('sha256').update(JSON.stringify(req.body || {})).digest('hex').slice(0, 16);
-    const idempotencyKey = `astro-report:${customer.id}:${key}:${requestHash}`;
-
+    //
+    // `lang` is deliberately EXCLUDED from the hash (see where it is built above). The
+    // report screens let a reader flip between English and Hindi, which re-runs the same
+    // report with lang='hi'; that is the same purchase in another language, not a second
+    // purchase, so it must hash identically and dedupe here. (It still costs us an upstream
+    // call, which is the intended trade — the customer paid for the content once.)
     let newBalance;
     try {
       newBalance = await wallet.adjustCustomerWallet(customer.id, -price, {

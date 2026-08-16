@@ -9,13 +9,13 @@ import {LanguageContext} from '../../../context/LanguageContext';
 export default function DashaInputScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [values, setValues] = useState({isComplete: false});
-  const {service, submitting, submit} = useAstroPurchase('dasha');
+  const {service, submitting, submit, resultParams} = useAstroPurchase('dasha');
 
   const onSubmit = async () => {
     const data = await submit({
       date: values.date, time: values.time, latitude: values.latitude, longitude: values.longitude, tz: values.tz,
     });
-    if (data) navigation.navigate('DashaResultScreen', {data});
+    if (data) navigation.navigate('DashaResultScreen', resultParams(data));
   };
 
   return (

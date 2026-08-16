@@ -44,15 +44,31 @@ export const ASTRO = {
 
 // Unicode glyphs — authentic astrological symbols with no image assets to ship
 // or fail to load.
+//
+// The Devanagari keys are NOT decoration: when a report is fetched with lang=hi the API
+// returns sign and planet names in Hindi ("कर्क", "चंद्रमा"), so an English-only map
+// silently drops every glyph the moment a reader switches language. Verified against live
+// lang=hi responses 2026-08-16.
 export const ZODIAC_GLYPH = {
   Aries: '♈', Taurus: '♉', Gemini: '♊', Cancer: '♋', Leo: '♌', Virgo: '♍',
   Libra: '♎', Scorpio: '♏', Sagittarius: '♐', Capricorn: '♑', Aquarius: '♒', Pisces: '♓',
+  // Hindi
+  'मेष': '♈', 'वृषभ': '♉', 'वृष': '♉', 'मिथुन': '♊', 'कर्क': '♋', 'सिंह': '♌',
+  'कन्या': '♍', 'तुला': '♎', 'वृश्चिक': '♏', 'धनु': '♐', 'मकर': '♑',
+  'कुंभ': '♒', 'कुम्भ': '♒', 'मीन': '♓',
 };
 
 export const PLANET_GLYPH = {
   Sun: '☉', Moon: '☽', Mars: '♂', Mercury: '☿', Jupiter: '♃', Venus: '♀',
   Saturn: '♄', Rahu: '☊', Ketu: '☋', Ascendant: '↑', As: '↑', Uranus: '♅',
   Neptune: '♆', Pluto: '♇',
+  // The API also emits these upper-case forms (Lal Kitab) and Rahu/Ketu as a pair.
+  SUN: '☉', MOON: '☽', MARS: '♂', MERCURY: '☿', JUPITER: '♃', VENUS: '♀',
+  SATURN: '♄', RAHU: '☊', KETU: '☋', 'Rahu/Ketu': '☊',
+  // Hindi
+  'सूर्य': '☉', 'चंद्रमा': '☽', 'चंद्र': '☽', 'चन्द्र': '☽', 'मंगल': '♂',
+  'बुध': '☿', 'गुरु': '♃', 'बृहस्पति': '♃', 'शुक्र': '♀', 'शनि': '♄',
+  'राहु': '☊', 'केतु': '☋', 'राहु/केतु': '☊', 'लग्न': '↑',
 };
 
 export function humanize(key) {
@@ -108,7 +124,9 @@ export function StatTile({label, value, hint, tone = 'default'}) {
     tone === 'good' ? ASTRO.good : tone === 'bad' ? ASTRO.bad : tone === 'warn' ? ASTRO.warn : ASTRO.maroon;
   return (
     <View style={styles.tile}>
-      <Text style={[styles.tileValue, {color: toneColor}]} numberOfLines={1}>{value}</Text>
+      {/* No numberOfLines: values here can be a gemstone name or a list, and clipping
+          them would silently drop text the customer paid for. */}
+      <Text style={[styles.tileValue, {color: toneColor}]}>{value}</Text>
       <Text style={styles.tileLabel}>{label}</Text>
       {!!hint && <Text style={styles.tileHint}>{hint}</Text>}
     </View>
@@ -347,7 +365,7 @@ export function NumberedList({items, tone = 'gold'}) {
  * These were printing as the literal strings "false"/"true" in two columns —
  * information the reader has to decode. A tick, a cross and a colour say it.
  */
-export function CompareRow({label, left, right, invert = false}) {
+export function CompareRow({label, left, right, invert = false, yesLabel = 'Yes', noLabel = 'No'}) {
   const cell = (raw) => {
     if (typeof raw === 'boolean') {
       // `invert` flags rows where "true" is the bad outcome (a dosha present).
@@ -355,7 +373,7 @@ export function CompareRow({label, left, right, invert = false}) {
       return {
         icon: raw ? 'close-circle' : 'checkmark-circle',
         color: good ? ASTRO.good : ASTRO.bad,
-        text: raw ? 'Yes' : 'No',
+        text: raw ? yesLabel : noLabel,
       };
     }
     return {icon: null, color: ASTRO.ink, text: raw === undefined || raw === null ? '—' : String(raw)};
@@ -365,7 +383,7 @@ export function CompareRow({label, left, right, invert = false}) {
 
   return (
     <View style={styles.cmpRow}>
-      <Text style={styles.cmpLabel} numberOfLines={2}>{label}</Text>
+      <Text style={styles.cmpLabel}>{label}</Text>
       <View style={styles.cmpCell}>
         {!!l.icon && <Ionicons name={l.icon} size={moderateScale(15)} color={l.color} />}
         <Text style={[styles.cmpValue, {color: l.color}]}>{l.text}</Text>
@@ -454,7 +472,7 @@ export function Chip({label, value}) {
   return (
     <View style={styles.chip}>
       <Text style={styles.chipLabel}>{label}</Text>
-      <Text style={styles.chipValue} numberOfLines={2}>{value ?? '—'}</Text>
+      <Text style={styles.chipValue}>{value ?? '—'}</Text>
     </View>
   );
 }

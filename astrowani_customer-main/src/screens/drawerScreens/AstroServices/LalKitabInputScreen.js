@@ -9,13 +9,13 @@ import {LanguageContext} from '../../../context/LanguageContext';
 export default function LalKitabInputScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [values, setValues] = useState({isComplete: false});
-  const {service, submitting, submit} = useAstroPurchase('lal-kitab');
+  const {service, submitting, submit, resultParams} = useAstroPurchase('lal-kitab');
 
   const onSubmit = async () => {
     const data = await submit({
       date: values.date, time: values.time, latitude: values.latitude, longitude: values.longitude, tz: values.tz,
     });
-    if (data) navigation.navigate('LalKitabResultScreen', {data});
+    if (data) navigation.navigate('LalKitabResultScreen', resultParams(data));
   };
 
   return (

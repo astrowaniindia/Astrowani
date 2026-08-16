@@ -2,10 +2,9 @@ import React from 'react';
 import {ScrollView, StyleSheet, View, Text} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
-import {
-  ASTRO, ReportShell, SectionCard, PLANET_GLYPH,
-} from '../../../components/astro/AstroUI';
+import {ASTRO, ReportShell, SectionCard, PLANET_GLYPH} from '../../../components/astro/AstroUI';
 import {DashaTimeline, InfoSection} from '../../../components/astro/AstroBlocks';
+import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 /**
@@ -13,28 +12,29 @@ import {LanguageContext} from '../../../context/LanguageContext';
  *
  * current-mahadasha-full returns `order_of_dashas` — major → minor → sub-minor →
  * sub-sub-minor → sub-sub-sub-minor, each {name, start, end}. That is the single
- * most-wanted answer in a dasha report ("what period am I in?") and it was
- * previously spread across five separate timelines the reader had to reassemble.
+ * most-wanted answer in a dasha report ("what period am I in?") and it was previously
+ * spread across five separate timelines the reader had to reassemble.
  */
 const LEVELS = [
-  ['major', 'Mahadasha', 'Major period'],
-  ['minor', 'Antardasha', 'Sub period'],
-  ['sub_minor', 'Pratyantardasha', 'Sub-sub period'],
-  ['sub_sub_minor', 'Sookshma Dasha', 'Finer period'],
-  ['sub_sub_sub_minor', 'Prana Dasha', 'Finest period'],
+  ['major', 'Mahadasha', 'report.majorPeriod'],
+  ['minor', 'Antardasha', 'report.subPeriod'],
+  ['sub_minor', 'Pratyantardasha', 'report.subSubPeriod'],
+  ['sub_sub_minor', 'Sookshma Dasha', 'report.finerPeriod'],
+  ['sub_sub_sub_minor', 'Prana Dasha', 'report.finestPeriod'],
 ];
 
 function CurrentStack({order, index}) {
+  const {t} = React.useContext(LanguageContext);
   const rows = LEVELS
-    .map(([key, label, hint]) => ({...(order?.[key] || {}), label, hint}))
+    .map(([key, label, hintKey]) => ({...(order?.[key] || {}), label, hint: t(hintKey)}))
     .filter((r) => r.name);
   if (!rows.length) return null;
 
   return (
     <SectionCard
-      title="Running Right Now"
+      title={t('report.runningNow')}
       glyph="◉"
-      subtitle="Your five active dasha levels, outermost first"
+      subtitle={t('report.runningNowSub')}
       index={index}>
       {rows.map((r, i) => (
         <View key={r.label} style={styles.lvl}>
@@ -42,6 +42,7 @@ function CurrentStack({order, index}) {
             <View style={[styles.lvlDot, {opacity: 1 - i * 0.14}]} />
             {i < rows.length - 1 && <View style={styles.lvlLine} />}
           </View>
+          {/* Indent grows with depth so the nesting is visible, not just stated. */}
           <View style={[styles.lvlCard, {marginLeft: scale(i * 6)}]}>
             <View style={styles.lvlTop}>
               <Text style={styles.lvlName}>
@@ -58,31 +59,36 @@ function CurrentStack({order, index}) {
   );
 }
 
-export default function DashaResultScreen({route}) {
+export default function DashaResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
-  const {data} = route.params || {};
+  const {data, busy} = useReportLanguage(route, navigation);
   const cur = data?.currentMahadashaFull;
 
   return (
-    <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
-      <ReportShell title={t('result.currentMahadasha')} subtitle="Planetary periods across your life">
-        <CurrentStack order={cur?.order_of_dashas} index={0} />
+    <View style={styles.main}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <ReportShell title={t('result.currentMahadasha')} subtitle={t('report.dashaSub')}>
+          <CurrentStack order={cur?.order_of_dashas} index={0} />
 
-        {/* Each level is also a full sequence. DashaTimeline opens on the period
-            that contains today and folds the rest away, so the reader lands on
-            what is relevant instead of scrolling from 1998. */}
-        <DashaTimeline title="Mahadasha" periods={cur?.mahadasha} subtitle="Major periods" index={1} />
-        <DashaTimeline title="Antardasha" periods={cur?.antardasha} subtitle="Within the current Mahadasha" index={2} />
-        <DashaTimeline title="Pratyantardasha" periods={cur?.paryantardasha} subtitle="Within the current Antardasha" index={3} />
+          {/* Each level is also a full sequence. DashaTimeline opens on the period that
+              contains today and folds the rest away, so the reader lands on what is
+              relevant instead of scrolling from 1998. */}
+          <DashaTimeline title="Mahadasha" periods={cur?.mahadasha} subtitle={t('report.majorPeriods')} index={1} />
+          <DashaTimeline title="Antardasha" periods={cur?.antardasha} subtitle={t('report.withinMahadasha')} index={2} />
+          <DashaTimeline title="Pratyantardasha" periods={cur?.paryantardasha} subtitle={t('report.withinAntardasha')} index={3} />
 
-        {/* Parallel-array shape — zipped inside DashaTimeline (see AstroBlocks). */}
-        <DashaTimeline title={t('result.mahadashaTimeline')} periods={data?.mahadasha} subtitle="Vimshottari sequence" index={4} />
-        <DashaTimeline title={t('result.yoginiDashaMain')} periods={data?.yoginiDashaMain} subtitle="Yogini major periods" index={5} />
-        <DashaTimeline title={t('result.yoginiDashaSub')} periods={data?.yoginiDashaSub} subtitle="Yogini sub periods" index={6} />
+          {/* Parallel-array shapes — zipped inside DashaTimeline / DashaGroups. */}
+          <DashaTimeline title={t('result.mahadashaTimeline')} periods={data?.mahadasha} subtitle={t('report.vimshottariSequence')} index={4} />
+          <DashaTimeline title={t('result.yoginiDashaMain')} periods={data?.yoginiDashaMain} subtitle={t('report.yoginiMajor')} index={5} />
+          {/* yoginiDashaSub is a list of GROUPS each holding its own parallel arrays —
+              DashaTimeline detects that shape and hands off to DashaGroups. */}
+          <DashaTimeline title={t('result.yoginiDashaSub')} periods={data?.yoginiDashaSub} subtitle={t('report.yoginiSub')} index={6} />
 
-        {!cur && !data?.mahadasha && <InfoSection title="Dasha" data={data} />}
-      </ReportShell>
-    </ScrollView>
+          {!cur && !data?.mahadasha && <InfoSection title={t('result.currentMahadasha')} data={data} />}
+        </ReportShell>
+      </ScrollView>
+      <TranslatingOverlay visible={busy} label={t('report.translating')} />
+    </View>
   );
 }
 

@@ -24,13 +24,13 @@ export default function NumerologyInputScreen({navigation}) {
   const [gender, setGender] = useState(null);
   const [dob, setDob] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const {service, submitting, submit} = useAstroPurchase('numerology');
+  const {service, submitting, submit, resultParams} = useAstroPurchase('numerology');
 
   const isComplete = Boolean(name && phone && gender && dob);
 
   const onSubmit = async () => {
     const data = await submit({date: toApiDate(dob), name, phone, gender});
-    if (data) navigation.navigate('NumerologyResultScreen', {data});
+    if (data) navigation.navigate('NumerologyResultScreen', resultParams(data));
   };
 
   return (

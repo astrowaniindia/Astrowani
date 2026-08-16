@@ -19,7 +19,7 @@
 // Gesture stack is react-native-gesture-handler + reanimated (both already in the app —
 // IntroSplash.js uses reanimated, App.js already mounts GestureHandlerRootView, and the
 // babel plugin is configured), so this ships over-the-air with no native change.
-import React, {useMemo, useState} from 'react';
+import React, {useContext, useMemo, useState} from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Dimensions, StatusBar,
 } from 'react-native';
@@ -30,6 +30,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {ASTRO} from './AstroUI';
+import {LanguageContext} from '../../context/LanguageContext';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 
 /**
@@ -71,7 +72,7 @@ function clamp(v, lo, hi) {
 }
 
 /** Full-screen pinch/pan viewer. */
-function ChartLightbox({xml, title, visible, onClose}) {
+function ChartLightbox({xml, title, visible, onClose, hint}) {
   const {width, height} = Dimensions.get('window');
   const box = Math.min(width, height) * 0.92;
 
@@ -170,7 +171,7 @@ function ChartLightbox({xml, title, visible, onClose}) {
           </View>
         </GestureDetector>
 
-        <Text style={styles.lightboxHint}>Pinch to zoom · drag to move · double-tap to reset</Text>
+        <Text style={styles.lightboxHint}>{hint}</Text>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -181,6 +182,7 @@ function ChartLightbox({xml, title, visible, onClose}) {
  * house is ever cut off), and opens the lightbox on tap.
  */
 export default function ZoomableChart({svg, title = 'Chart', caption}) {
+  const {t} = useContext(LanguageContext);
   const xml = useMemo(() => normalizeSvg(svg), [svg]);
   const [open, setOpen] = useState(false);
 
@@ -188,7 +190,7 @@ export default function ZoomableChart({svg, title = 'Chart', caption}) {
     return (
       <View style={styles.emptyWrap}>
         <Ionicons name="alert-circle-outline" size={moderateScale(26)} color={ASTRO.muted} />
-        <Text style={styles.empty}>This chart could not be generated. Please try again.</Text>
+        <Text style={styles.empty}>{t('report.chartFailed')}</Text>
       </View>
     );
   }
@@ -201,10 +203,10 @@ export default function ZoomableChart({svg, title = 'Chart', caption}) {
 
       <View style={styles.footer}>
         <Ionicons name="scan-outline" size={moderateScale(13)} color={ASTRO.gold} />
-        <Text style={styles.footerText}>{caption || 'Tap the chart to enlarge and zoom'}</Text>
+        <Text style={styles.footerText}>{caption || t('report.tapToEnlarge')}</Text>
       </View>
 
-      <ChartLightbox xml={xml} title={title} visible={open} onClose={() => setOpen(false)} />
+      <ChartLightbox xml={xml} title={title} visible={open} onClose={() => setOpen(false)} hint={t('report.pinchHint')} />
     </View>
   );
 }

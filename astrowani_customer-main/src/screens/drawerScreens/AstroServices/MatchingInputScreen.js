@@ -10,7 +10,7 @@ export default function MatchingInputScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [boy, setBoy] = useState({isComplete: false});
   const [girl, setGirl] = useState({isComplete: false});
-  const {service, submitting, submit} = useAstroPurchase('matching');
+  const {service, submitting, submit, resultParams} = useAstroPurchase('matching');
 
   const isComplete = boy.isComplete && girl.isComplete;
 
@@ -19,7 +19,7 @@ export default function MatchingInputScreen({navigation}) {
       boy_date: boy.date, boy_time: boy.time, boy_latitude: boy.latitude, boy_longitude: boy.longitude, boy_tz: boy.tz,
       girl_date: girl.date, girl_time: girl.time, girl_latitude: girl.latitude, girl_longitude: girl.longitude, girl_tz: girl.tz,
     });
-    if (data) navigation.navigate('MatchingResultScreen', {data});
+    if (data) navigation.navigate('MatchingResultScreen', resultParams(data));
   };
 
   return (
