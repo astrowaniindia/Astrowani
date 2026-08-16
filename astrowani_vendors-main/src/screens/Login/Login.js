@@ -19,6 +19,7 @@ import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import {LanguageContext} from '../../context/LanguageContext';
 import LanguageToggle from '../../components/LanguageToggle';
+import {sanitizePhoneInput} from '../../utils/phoneInput';
 
 const Login = ({navigation}) => {
   const {t} = useContext(LanguageContext);
@@ -117,11 +118,14 @@ const Login = ({navigation}) => {
           </TouchableOpacity>
           <TextInput
             style={styles.input}
-            maxLength={10}
+            maxLength={12}
             placeholder={t('login.phoneNumber')}
             keyboardType="phone-pad"
             value={phoneNumber}
-            onChangeText={setPhoneNumber}
+            // Was maxLength={10} with no filtering — pasting a number with the
+            // country code truncated it to the first 10 CHARACTERS, silently
+            // dropping real digits. See utils/phoneInput.js.
+            onChangeText={(text) => setPhoneNumber(sanitizePhoneInput(text))}
           />
         </View>
 

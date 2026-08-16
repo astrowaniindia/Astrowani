@@ -26,6 +26,7 @@ import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
+import { sanitizePhoneInput } from '../../utils/phoneInput';
 import TermsAcceptance from '../../components/TermsAcceptance';
 
 export default function Register({ navigation }) {
@@ -339,8 +340,11 @@ export default function Register({ navigation }) {
           placeholder={t('register.mobileNumber')}
           value={mobile}
           keyboardType="phone-pad"
-          onChangeText={setMobile}
-          maxLength={15}
+          // maxLength={15} with no filtering let non-digit characters (and up
+          // to 15 of them) straight into the value the backend has to
+          // interpret as a phone number. See utils/phoneInput.js.
+          onChangeText={(text) => setMobile(sanitizePhoneInput(text))}
+          maxLength={12}
         />
 
         <TextInput

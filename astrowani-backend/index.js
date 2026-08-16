@@ -820,12 +820,35 @@ function generateReferralCode() {
   return code;
 }
 
-// EnableX requires E.164 numbers (with country code). Assumes India (+91) for bare 10-digit numbers.
-function toE164(phoneNumber) {
-  const digits = String(phoneNumber).replace(/\D/g, '');
-  if (phoneNumber.startsWith('+')) return phoneNumber;
-  if (digits.length === 10) return `+91${digits}`;
-  return `+${digits}`;
+/**
+ * Validates and normalizes a phone number for actually SENDING an SMS.
+ * Returns a `+91XXXXXXXXXX` E.164 string, or null if the input cannot
+ * confidently be turned into one — the caller must refuse to send rather than
+ * guess, because a wrong-but-plausible-looking number either bounces silently
+ * at the carrier or (worse) reaches a real person who isn't the customer.
+ *
+ * Replaces a previous `toE164` whose fallback for anything that wasn't
+ * exactly-10-plain-digits was `'+' + digits` — accepting literally any digit
+ * string. Reported 2026-08-16 as "OTP works for my number, not my friend's":
+ * both apps' phone fields only ever checked "at least 10 characters long", so
+ * a pasted country code, a leading landline-style 0, or a stray character all
+ * slipped through as a plausible-looking but wrong number, and EnableX/the
+ * carrier then either rejected it or queued it and silently never delivered
+ * — indistinguishable, from the app's side, from a real send.
+ *
+ * Handles the three common ways a legitimate 10-digit Indian mobile number
+ * arrives mangled: pasted with the country code (12 digits, "91" prefix),
+ * typed with a leading landline-style 0 (11 digits), or with stray
+ * formatting characters (spaces, dashes, parens) that a plain \D strip
+ * already removes. Anything else — too short, too long, doesn't start with
+ * 6-9 after normalization — is rejected rather than sent anyway.
+ */
+function toE164Strict(phoneNumber) {
+  let digits = String(phoneNumber || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  if (!/^[6-9]\d{9}$/.test(digits)) return null;
+  return `+91${digits}`;
 }
 
 // EnableX accepting a send (result:0 + job_id) only means it was queued — the
@@ -887,6 +910,26 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
 
   if (!phoneNumber) {
     return res.status(400).json({ success: false, message: 'Phone number is required' });
+  }
+
+  // Fail fast and cheaply on a malformed number — before it can consume this
+  // number's throttle budget or reach EnableX at all. Reported 2026-08-16:
+  // "OTP works for my number but not for my friend's" — the most likely
+  // explanation for a report shaped exactly like that (one specific number
+  // fails, everything else about the flow works) is the number itself being
+  // entered wrong: a pasted country code, a leading landline-style 0, or a
+  // stray character. Both apps' phone fields only ever checked "is this at
+  // least 10 characters", so any of those slipped straight through to
+  // EnableX, which either rejects it (visible) or queues it and never
+  // delivers (silent — indistinguishable from a working send). This does not
+  // apply to the reviewer bypass just below, which is a fixed known-good
+  // number.
+  if (phoneNumber !== PLAY_STORE_REVIEWER_PHONE && !toE164Strict(phoneNumber)) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_PHONE_NUMBER',
+      message: 'That does not look like a valid 10-digit Indian mobile number. Please check it and try again.',
+    });
   }
 
   if (phoneNumber === PLAY_STORE_REVIEWER_PHONE) {
@@ -990,7 +1033,7 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
 
       const payload = {
         from: ENABLEX_SMS_SENDER_ID,
-        to: [toE164(phoneNumber)],
+        to: [toE164Strict(phoneNumber)],
         type: 'sms',
         campaign_id: ENABLEX_SMS_CAMPAIGN_ID,
         template_id: ENABLEX_SMS_TEMPLATE_ID,
@@ -1017,7 +1060,7 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
       const jobId = enxResponse.data?.job_id;
       if (enxResult !== 0 || !jobId) {
         logError('enablex-sms', new Error('EnableX rejected the SMS send'), {
-          phone: toE164(phoneNumber),
+          phone: toE164Strict(phoneNumber),
           enxResult,
           enxBody: enxResponse.data,
         });
@@ -1028,14 +1071,14 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
         });
       }
 
-      console.log(`EnableX SMS accepted for ${toE164(phoneNumber)}. job_id: ${jobId}`);
+      console.log(`EnableX SMS accepted for ${toE164Strict(phoneNumber)}. job_id: ${jobId}`);
 
       // Acceptance is not delivery. Confirm the carrier actually delivered it and
       // log the failure if not — without this there is no record tying a "no OTP
       // arrived" report to what really happened, which is why the 2026-08-15
       // failures could not be diagnosed after the fact. Fire-and-forget so the
       // OTP response is not delayed by the carrier round-trip.
-      verifyEnxDelivery(jobId, toE164(phoneNumber), authHeader);
+      verifyEnxDelivery(jobId, toE164Strict(phoneNumber), authHeader);
     } catch (error) {
       // Previously swallowed: the app was told success:true even when no SMS was
       // actually sent, so a real delivery failure looked identical to a working

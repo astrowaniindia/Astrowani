@@ -27,6 +27,7 @@ import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import GuideAvatar from '../../components/GuideAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sanitizePhoneInput } from '../../utils/phoneInput';
 
 const Login = ({navigation}) => {
   const { t, language, changeLanguage } = React.useContext(LanguageContext);
@@ -160,12 +161,16 @@ const Login = ({navigation}) => {
             </TouchableOpacity>
             <TextInput
               style={[styles.input, styles.phoneInput]}
-              maxLength={10}
+              maxLength={12}
               placeholder={t('login.phoneNumber')}
               placeholderTextColor={COLORS.placeholder}
               keyboardType="phone-pad"
               value={phoneNumber}
-              onChangeText={setPhoneNumber}
+              // Was maxLength={10} with no filtering — pasting a number with the
+              // country code truncated it to the first 10 CHARACTERS, silently
+              // dropping real digits, rather than cleaning it up. See
+              // utils/phoneInput.js.
+              onChangeText={(text) => setPhoneNumber(sanitizePhoneInput(text))}
             />
           </View>
 

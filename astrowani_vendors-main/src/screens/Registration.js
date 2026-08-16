@@ -22,6 +22,7 @@ import ImagePicker from 'react-native-image-crop-picker';
 import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
 import { getFCMToken } from '../utils/Firebase';
+import { sanitizePhoneInput } from '../utils/phoneInput';
 
 const Registration = ({ navigation }) => {
   const { t } = React.useContext(LanguageContext);
@@ -365,7 +366,11 @@ const Registration = ({ navigation }) => {
             style={styles.input}
             keyboardType="number-pad"
             value={user.phoneNumber}
-            onChangeText={text => handleInputChange('phoneNumber', text)}
+            // Had no maxLength or filtering at all — any pasted text, digits or
+            // not, went straight into the value sent to the backend. See
+            // utils/phoneInput.js.
+            onChangeText={text => handleInputChange('phoneNumber', sanitizePhoneInput(text))}
+            maxLength={12}
           />
         </View>
         {/* Tick box and link text are SEPARATE touch targets on purpose: tapping
