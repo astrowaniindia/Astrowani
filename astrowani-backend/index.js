@@ -3539,6 +3539,91 @@ app.get('/api/vendor/wallet', async (req, res) => {
   }
 });
 
+// Profile fields a registrant is allowed to set on their own astrologers row.
+// Deliberately the exact set the Registration form collects and nothing more —
+// every other column is either server-owned (see buildVendorRegistrationRow) or
+// admin-owned.
+const VENDOR_REG_TEXT_FIELDS = ['first_name', 'last_name', 'email', 'gender', 'fcm_token'];
+const VENDOR_REG_ARRAY_FIELDS = ['languages', 'specialties'];
+
+/**
+ * Build the astrologers row for a new registration.
+ *
+ * This exists because /api/vendor/register used to spread req.body straight into
+ * the insert. Every column on the table was therefore settable by whoever was
+ * registering: approval_status (register yourself pre-approved, skipping admin
+ * review), wallet_balance and total_earnings (credit yourself), the three
+ * *_charge_per_minute values (which customers are billed), is_suspended, badge,
+ * average_rating. A verified phone number and curl were the only prerequisites.
+ *
+ * The allow-list drops anything not named. The server-owned block underneath
+ * then sets the sensitive columns unconditionally, so they hold even if a future
+ * client stops sending them — "the current app happens to send the right values"
+ * is not a security property.
+ */
+function buildVendorRegistrationRow(body, verifiedPhone) {
+  const src = body && typeof body === 'object' ? body : {};
+  const row = {};
+
+  for (const key of VENDOR_REG_TEXT_FIELDS) {
+    const value = src[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) row[key] = trimmed.slice(0, 300);
+  }
+
+  for (const key of VENDOR_REG_ARRAY_FIELDS) {
+    const value = src[key];
+    if (!Array.isArray(value)) continue;
+    row[key] = value
+      .filter((item) => typeof item === 'string' && item.trim())
+      .slice(0, 40)
+      .map((item) => item.trim().slice(0, 120));
+  }
+
+  // Only accept a photo URL our own upload endpoint could have produced. Without
+  // the scheme check this is an arbitrary string rendered as an image URL in both
+  // apps and the admin dashboard.
+  if (typeof src.profile_pic_url === 'string' && /^https:\/\/\S+$/i.test(src.profile_pic_url.trim())) {
+    row.profile_pic_url = src.profile_pic_url.trim().slice(0, 1000);
+  }
+
+  // Years of experience, clamped to what a human could plausibly claim.
+  const experience = Number.parseInt(src.experience, 10);
+  row.experience = Number.isFinite(experience) ? Math.min(Math.max(experience, 0), 80) : 0;
+
+  return {
+    ...row,
+    // From the verified JWT, never the body.
+    phone_number: verifiedPhone,
+
+    // ---- server-owned: not settable by the registrant, at any value ----
+    approval_status: 'pending',   // nobody approves their own account
+    is_suspended: false,
+    badge: null,                  // recognition badges are admin-assigned
+    wallet_balance: 0,
+    total_earnings: 0,
+    today_earnings: 0,
+    average_rating: 0,
+    total_reviews: 0,
+    is_live: false,
+    is_online: false,
+    // Services start off and charges start at zero: the astrologer is hidden
+    // everywhere until they set charges (EditProfile) and enable services
+    // (HomeScreen), which is what the client was asking for anyway.
+    is_available: false,
+    is_chat_enabled: false,
+    is_call_enabled: false,
+    is_video_call_enabled: false,
+    chat_charge_per_minute: 0,
+    call_charge_per_minute: 0,
+    video_charge_per_minute: 0,
+    chat_price: 0,
+    audio_price: 0,
+    video_price: 0,
+  };
+}
+
 // Vendor registration — replaces the vendor app's direct client-side INSERT into
 // astrologers (VerifyOtp.js). The phone number comes from the JWT issued by the
 // preceding /api/users/mobile-otp-verify call, not from the request body, so a
@@ -3560,22 +3645,12 @@ app.post('/api/vendor/register', async (req, res) => {
       return res.status(409).json({ success: false, message: 'This number is already registered' });
     }
 
-    // The terms columns are stripped from the body and re-stamped server-side.
-    // This endpoint spreads req.body straight into the insert, so without the
-    // strip a modified app could post its own terms_accepted_at and the record
-    // would prove nothing.
-    //
-    // NOTE: that same spread is a broader mass-assignment hole — any column on
-    // `astrologers` can be set by the registrant, including wallet_balance,
-    // approval_status and the per-minute charges. Out of scope for this change;
-    // it needs an explicit allow-list of registration fields.
-    const {
-      terms_accepted_at: _ta, terms_version: _tv, terms_accepted_source: _ts,
-      ...clientFields
-    } = req.body || {};
+    // Allow-listed + server-owned. The terms columns are not in the allow-list,
+    // so a client-sent terms_accepted_at is dropped here and re-stamped by
+    // insertAccountRow from the server's own clock.
     const { data: created, error } = await insertAccountRow(
       'astrologers',
-      { ...clientFields, phone_number: decoded.phone },
+      buildVendorRegistrationRow(req.body, decoded.phone),
       'signup_form',
     );
     if (error) throw error;
