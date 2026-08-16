@@ -1252,3 +1252,49 @@ a coordinated app change first and say so explicitly.
   alone — no room for a legible badge on that scale, and it doesn't show a name/price anyway.
 - **Not done**: no vendor-app surface shows the badge (vendor doesn't need to see its own
   recognition badge to do their job); no push/notification when a badge is granted.
+
+---
+
+## Subsystem reworked 2026-08-16: Astro report presentation layer
+
+### X. Reports rebuilt as visual documents (customer app)
+
+- **The problem**: all 13 report/service screens rendered as label/value text inside boxes.
+  Three specific failure modes, all visible in production screenshots:
+  parallel arrays printed as disconnected lists (dasha), boolean pairs printed as the
+  literal words "false"/"false" (matching), and ten-paragraph remedy lists flattening
+  every other section off the screen (dosha, Lal Kitab).
+- **Design system** — `src/components/astro/AstroUI.js` (primitives) + `AstroBlocks.js`
+  (payload-specific blocks). New primitives: `Reveal` (staggered mount animation, wraps
+  every `SectionCard`), `RingGauge` (animated `react-native-svg` arc with a counting
+  number), `Collapsible`, `NumberedList`, `CompareRow`/`CompareHeader`, `Callout`,
+  `PillRow`. `ScoreBar` fills are animated and staggered by an `index` prop.
+  **Changing the look of all 13 screens means changing these two files, not the screens.**
+- **`ZoomableChart.js`** (new) — the API returns `<svg height="330" width="330">` with
+  **no viewBox**, so `SvgXml width="100%"` clipped the right-hand houses. `normalizeSvg()`
+  injects `viewBox="0 0 W H"` read off the width/height already present. Charts render
+  square + full-bleed (`aspectRatio: 1`, never a magic pixel height) and open full-screen
+  with pinch/pan/double-tap via gesture-handler + reanimated. **Any future chart must go
+  through this component** — a raw `SvgXml` will be cropped again.
+- **Parallel-array shapes**: `normalizePeriods()` in `AstroBlocks.js` zips
+  `{mahadasha, mahadasha_order}` and `{dasha_list, dasha_end_dates, dasha_lord_list}` into
+  one `[{name, start, end, lord}]`. Dates arrive in two formats
+  (`Sat 31 Oct 1998` and `Mon, May 27, 2002, 12:00:00 AM`); `parseDate()` strips the
+  leading weekday so `Date.parse` handles both. Timelines open on the period containing
+  today and fold earlier/later ones away.
+- **Blocks that replaced raw dumps**: `AggregateMatch` (was five repetitions of
+  "MANGLIKDOSH SATURN POINTS / Boy false / Girl false"), `LalKitabHoroscope` (12-house
+  grid), `LalKitabHouses`, `LalKitabRemedies` (one collapsible per planet),
+  `LalKitabDebts`, `KpCusps`, `KpSignificators`, `NameAnalysis`, `MobileAnalysis`,
+  `LuckyThings`, `PersonalYear`, `AscendantReport`. The Lo Shu grid is drawn as the
+  3×3 magic square (missing cells ARE the reading) inside `NumerologyNumbers`.
+  `PlanetTable` moved from a six-column sideways-scrolling table to one card per planet.
+- Every block stays **progressive** — it checks for the shape it expects and falls back to
+  `GenericKeyVals` otherwise, so an upstream payload change degrades rather than crashes.
+- **PDF report 502**: NOT a code bug. `/api/pdf/*` bills from a separate, exhausted credit
+  pool at the provider (429 `Insufficient credits`) while every other endpoint answers 200.
+  See the `jyotisham_pdf_credit_pool` memory. `jyotishamClient.js` tags it `quotaExhausted`;
+  `astroRoutes.js` returns a 503 stating the customer was not charged (they aren't — the
+  debit runs only after a successful fetch). `astroApi.js` no longer treats the provider's
+  "Insufficient credits" as an insufficient-WALLET-balance error, and no longer surfaces
+  axios's bare "Request failed with status code NNN" to a customer.
