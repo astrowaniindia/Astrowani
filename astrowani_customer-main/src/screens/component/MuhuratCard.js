@@ -157,7 +157,7 @@
 //       >
 //         <View style={styles.headerContainer}>
 //           <GooglePlacesAutocomplete
-//             placeholder="Enter your location"
+//             placeholder={t('panchang.enterLocation')}
 //             onPress={(data, details = null) => {
 //               setLocation(data.description);
 //               setLatitude(details?.geometry?.location?.lat?.toString() || '');
@@ -340,18 +340,29 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { FREE_SERVICES_URL } from '../../config/api';
 import { LanguageContext } from '../../context/LanguageContext';
 import { ASTRO, Reveal } from '../../components/astro/AstroUI';
+import { apiLang } from '../../components/astro/ReportLanguage';
 
 // Choghadiya / Hora / Rahu Kaal all report a "type" per window. These are the
 // classical classifications; anything unrecognised stays neutral rather than
 // being guessed at, since calling an inauspicious window auspicious is worse
 // than saying nothing.
-const GOOD_TYPES = ['shubh', 'amrit', 'labh', 'char', 'amruta', 'good', 'auspicious', 'shubha'];
-const BAD_TYPES = ['rog', 'kaal', 'udveg', 'kala', 'bad', 'inauspicious', 'rahu', 'yamaganda', 'gulika'];
+const GOOD_TYPES = [
+  'shubh', 'amrit', 'labh', 'char', 'amruta', 'good', 'auspicious', 'shubha',
+  'शुभ', 'अमृत', 'लाभ', 'चर',
+];
+const BAD_TYPES = [
+  'rog', 'kaal', 'udveg', 'kala', 'bad', 'inauspicious', 'rahu', 'yamaganda', 'gulika',
+  'अशुभ', 'रोग', 'काल', 'उद्वेग', 'राहु', 'यमगण्ड', 'गुलिक',
+];
 
 function muhuratTone(item) {
   const hay = `${item?.description || ''} ${item?.name || ''}`.toLowerCase();
-  if (GOOD_TYPES.some(w => hay.includes(w))) return 'good';
+  // BAD is tested FIRST and this order is load-bearing: "अशुभ" (inauspicious) contains
+  // "शुभ" (auspicious) as a substring, so testing good-first would classify every
+  // inauspicious Hindi window as auspicious — the exact opposite of the truth, on a
+  // screen people use to decide when to do things.
   if (BAD_TYPES.some(w => hay.includes(w))) return 'bad';
+  if (GOOD_TYPES.some(w => hay.includes(w))) return 'good';
   return 'neutral';
 }
 
@@ -397,7 +408,11 @@ const muStyles = StyleSheet.create({
 });
 
 const MuhuratCard = ({ title }) => {
-  const { t } = useContext(LanguageContext);
+  const { t, language } = useContext(LanguageContext);
+  // The backend has always accepted ?language= on these endpoints and forwards it to
+  // JyotishamAstroAPI as `lang`; the app just never sent it, which is why the muhurat
+  // names and types stayed English while the rest of the screen turned Hindi.
+  const apiLanguage = apiLang(language);
   const [location, setLocation] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
@@ -452,22 +467,23 @@ const MuhuratCard = ({ title }) => {
   useEffect(() => {
     if (latitude && longitude && date && currentEndpoint) {
       fetchMuhuratData();
-      console.log("Fetching data for:", currentEndpoint);
     }
-  }, [latitude, longitude, date, currentEndpoint]);
+    // `apiLanguage` is a dependency: flipping the header toggle must re-request the
+    // timings in the other language, not just relabel the chrome around them.
+  }, [latitude, longitude, date, currentEndpoint, apiLanguage]);
 
-  // 'Gowri Panchangam' has no live backend endpoint (getApiEndpoint's default case returns
-  // '' for it), so the fetch-gating effect above never fires and isLoading — which starts
-  // true — was never being flipped back to false, leaving this tab spinning forever. It
-  // renders a hardcoded sample (see formatMuhuratData's 'Gowri Panchangam' case) entirely
-  // client-side, so bypass the network path for it instead of waiting on an endpoint that
-  // will never come.
+  // A title with no endpoint can never resolve, so the fetch-gating effect above never
+  // fires and `isLoading` — which starts true — would never flip back, leaving the tab
+  // spinning forever. Fail visibly instead of hanging. (This previously special-cased
+  // 'Gowri Panchangam' into hardcoded sample data; see formatMuhuratData for why that
+  // tab is gone.)
   useEffect(() => {
-    if (title === 'Gowri Panchangam') {
-      setProcessedData(formatMuhuratData());
+    if (!getApiEndpoint()) {
+      setProcessedData([]);
       setError(null);
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title]);
 
   const handlePlaceSelect = (picked) => {
@@ -543,26 +559,15 @@ const MuhuratCard = ({ title }) => {
           icon:""
         })) || [];
 
-      case 'Gowri Panchangam':
-        return [
-          {
-            time: '06:02 - 07:37',
-            description: 'Mars',
-          },
-          {
-            time: '07:37 - 09:11',
-            description: 'Sun',
-          },
-          {
-            time: '06:02 - 07:37',
-            description: 'Mars',
-          },
-          {
-            time: '07:37 - 09:11',
-            description: 'Sun',
-          }
-        ];
-
+      // NOTE: there used to be a 'Gowri Panchangam' case here returning four
+      // HARDCODED windows ("06:02 - 07:37 Mars", "07:37 - 09:11 Sun", then those
+      // same two again). They were not computed from anything — not from the
+      // date, not from the location — so every user saw identical timings for
+      // every day and every place. Neither our backend nor JyotishamAstroAPI has
+      // a Gowri/Nalla-Neram endpoint (probed 2026-08-16: all candidate paths
+      // 404), so the tab has been removed from ShubhMuhurat rather than shipping
+      // invented muhurat timings people might plan around. Restore the tab when a
+      // real endpoint exists.
       default:
         console.error("Unknown title:", title);
         return [];
@@ -582,7 +587,7 @@ const MuhuratCard = ({ title }) => {
       };
 
       const response = await fetch(
-        `${FREE_SERVICES_URL}/api/free-services/shubh-muhurat${currentEndpoint}`,
+        `${FREE_SERVICES_URL}/api/free-services/shubh-muhurat${currentEndpoint}?language=${apiLanguage}`,
         {
           method: 'POST',
           headers: {
@@ -614,6 +619,11 @@ const MuhuratCard = ({ title }) => {
   const renderItem = ({ item, index }) => {
     const tone = muhuratTone(item);
     const active = isNow(item);
+    // Some feeds carry only a `description` and no `name`, in which case the
+    // description IS the title — showing it again as a tag rendered "Mars" twice
+    // in the same card. Resolve the title first, then only tag what it isn't.
+    const title_ = item.name || item.description;
+    const showTag = !!item.description && item.description !== title_;
     const accent = tone === 'good' ? ASTRO.good : tone === 'bad' ? ASTRO.bad : ASTRO.gold;
     const toneLabel = tone === 'good' ? t('free.auspicious')
       : tone === 'bad' ? t('free.inauspicious') : t('free.neutral');
@@ -626,7 +636,7 @@ const MuhuratCard = ({ title }) => {
           <View style={[muStyles.accent, { backgroundColor: accent }]} />
           <View style={muStyles.body}>
             <View style={muStyles.topRow}>
-              <Text style={muStyles.name}>{item.name || item.description}</Text>
+              <Text style={muStyles.name}>{title_}</Text>
               {active && (
                 <View style={muStyles.nowPill}>
                   <Text style={muStyles.nowPillText}>{t('free.now')}</Text>
@@ -640,7 +650,7 @@ const MuhuratCard = ({ title }) => {
               </View>
             )}
             <View style={muStyles.tagRow}>
-              {!!item.description && item.description !== item.name && (
+              {showTag && (
                 <View style={[muStyles.tag, { borderColor: accent }]}>
                   <Text style={[muStyles.tagText, { color: accent }]}>{item.description}</Text>
                 </View>
@@ -697,10 +707,10 @@ const MuhuratCard = ({ title }) => {
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.AstroMaroon} />
-            <Text style={styles.loadingText}>Loading data...</Text>
+            <Text style={styles.loadingText}>{t('panchang.loading')}</Text>
           </View>
         ) : error ? (
-          <Text style={styles.errorText}>Error: {error}</Text>
+          <Text style={styles.errorText}>{error}</Text>
         ) : (
           <FlatList
             data={processedData}
@@ -719,7 +729,7 @@ export default MuhuratCard;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.AstroSoftOrange,
+    backgroundColor: ASTRO.parchmentDeep,
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -770,14 +780,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Bold',
   },
   header: {
-    fontSize: moderateScale(17),
+    fontSize: moderateScale(15),
     fontFamily: 'Lato-Bold',
-    color: '#000',
-    marginVertical: verticalScale(15),
+    color: ASTRO.maroon,
+    marginTop: verticalScale(14),
+    marginBottom: verticalScale(8),
     marginHorizontal: scale(15),
-    backgroundColor: COLORS.lightTurquoise,
-    padding: scale(7),
-    borderRadius: moderateScale(8),
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   flatListContent: {
     paddingHorizontal: scale(15),

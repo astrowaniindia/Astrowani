@@ -21,9 +21,11 @@ import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import axios from 'axios';
 import { FREE_SERVICES_URL } from '../../../config/api';
 import { LanguageContext } from '../../../context/LanguageContext';
+import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
 
 
 const KundaliMatchScreen = ({navigation}) => {
+  const { apiLanguage } = useFreeServiceLanguage(navigation);
   const { t } = React.useContext(LanguageContext);
   const [boygender, setBoyGender] = useState(null);
   const [girlgender, setGirlGender] = useState(null);
@@ -139,7 +141,7 @@ const KundaliMatchScreen = ({navigation}) => {
 
     try {
       const response = await axios.post(
-        `${FREE_SERVICES_URL}/api/free-services/kundali-match?ayanamsa=1&language=en`,
+        `${FREE_SERVICES_URL}/api/free-services/kundali-match?ayanamsa=1&language=${apiLanguage}`,
         requestBody
       );
       // Navigate to the report screen with the response data

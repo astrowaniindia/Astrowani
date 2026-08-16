@@ -16,9 +16,11 @@ import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import { LanguageContext } from '../../../context/LanguageContext';
+import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
 import { FREE_SERVICES_URL } from '../../../config/api';
 
 const JanamKundaliScreen = ({navigation}) => {
+  const { apiLanguage } = useFreeServiceLanguage(navigation);
   const { t } = React.useContext(LanguageContext);
   const [gender, setGender] = useState(null);
   const [name, setName] = useState('');
@@ -88,7 +90,7 @@ const JanamKundaliScreen = ({navigation}) => {
 
     try {
       setLoading(true);
-      const url = `${FREE_SERVICES_URL}/api/free-services/janam-kundali?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=en`;
+      const url = `${FREE_SERVICES_URL}/api/free-services/janam-kundali?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=${apiLanguage}`;
       
       const response = await fetch(url, {
         method: 'POST',

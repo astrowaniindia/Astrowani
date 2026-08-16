@@ -474,6 +474,11 @@ export function SegmentedTabs({tabs, active, onChange, scrollable = false}) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      // flexGrow/flexShrink 0 are LOAD-BEARING. A ScrollView inside a column flex
+      // parent stretches along the main axis by default, so this horizontal tab
+      // strip claimed most of the screen's height and pushed the content below it
+      // off the bottom — the large empty band under the Shubh Muhurat tabs.
+      style={styles.tabsScrollView}
       contentContainerStyle={styles.tabsScrollContent}>
       {body}
     </ScrollView>
@@ -750,6 +755,7 @@ const styles = StyleSheet.create({
   pillText: {fontSize: moderateScale(11), fontFamily: 'Lato-Bold'},
 
   tabsWrap: {paddingHorizontal: scale(14), paddingTop: verticalScale(10)},
+  tabsScrollView: {flexGrow: 0, flexShrink: 0},
   tabsScrollContent: {paddingHorizontal: scale(14), paddingTop: verticalScale(10)},
   tabsTrack: {
     flexDirection: 'row', backgroundColor: ASTRO.parchment, borderRadius: 30,

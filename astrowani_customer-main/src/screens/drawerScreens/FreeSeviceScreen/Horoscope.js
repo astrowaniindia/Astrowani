@@ -20,6 +20,7 @@ import {FREE_SERVICES_URL} from '../../../config/api';
 import {
   ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH, Reveal,
 } from '../../../components/astro/AstroUI';
+import {useFreeServiceLanguage} from '../../../components/astro/ReportLanguage';
 
 const ZODIAC_SIGNS = [
   {sign: 'aries', name: 'Aries', element: 'fire', dateRange: {start: '2024-03-21', end: '2024-04-19'}},
@@ -41,6 +42,11 @@ const ELEMENT_COLOR = {fire: '#C0392B', earth: '#6B8E23', air: '#4A7CA8', water:
 
 export default function Horoscope({navigation}) {
   const {t} = React.useContext(LanguageContext);
+  // Mounts the EN | हिं pill in the header. `apiLanguage` is threaded into the
+  // request AND into the effect deps, so switching language re-fetches the
+  // prediction itself — previously the chrome went Hindi while the prediction
+  // text stayed English, because the app never sent ?language= at all.
+  const {apiLanguage} = useFreeServiceLanguage(navigation);
   const zodiacName = (sign) => t(`zodiac.${sign}`);
   const [selected, setSelected] = useState(ZODIAC_SIGNS[0]);
   const [horoscopeData, setHoroscopeData] = useState(null);
@@ -58,7 +64,7 @@ export default function Horoscope({navigation}) {
 
   const fetchHoroscope = async (sign) => {
     const response = await fetch(
-      `${FREE_SERVICES_URL}/api/free-services/horoscope?sign=${sign}`,
+      `${FREE_SERVICES_URL}/api/free-services/horoscope?sign=${sign}&language=${apiLanguage}`,
       {method: 'POST', headers: {'Content-Type': 'application/json'}},
     );
     return response.json();
@@ -96,7 +102,7 @@ export default function Horoscope({navigation}) {
     // overwriting the sign they actually landed on.
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
+  }, [selected, apiLanguage]);
 
   const tint = ELEMENT_COLOR[selected.element] || ASTRO.maroon;
 
@@ -133,10 +139,10 @@ export default function Horoscope({navigation}) {
             {translateY: heroAnim.interpolate({inputRange: [0, 1], outputRange: [16, 0]})},
           ],
         }}>
-        <SectionCard
-          title={t('horoscope.title', {sign: zodiacName(selected.sign)})}
-          glyph={ZODIAC_GLYPH[selected.name]}
-          subtitle={`${formatDate(selected.dateRange.start)} – ${formatDate(selected.dateRange.end)}`}>
+        {/* No card title/glyph here on purpose: the hero below already states the
+            sign and its dates, and having both made the screen say the same thing
+            twice in a row. The hero IS the header. */}
+        <SectionCard>
           {loading ? (
             <View style={styles.indicator}>
               <ActivityIndicator size="small" color={ASTRO.maroon} />
@@ -149,7 +155,14 @@ export default function Horoscope({navigation}) {
                 <Text style={[styles.heroGlyph, {color: tint}]}>{ZODIAC_GLYPH[selected.name]}</Text>
                 <View style={styles.heroSide}>
                   <Text style={styles.heroName}>{horoscopeData.zodiacSign}</Text>
-                  {!!horoscopeData.date && <Text style={styles.heroDate}>{horoscopeData.date}</Text>}
+                  <Text style={styles.heroRange}>
+                    {formatDate(selected.dateRange.start)} – {formatDate(selected.dateRange.end)}
+                  </Text>
+                  {!!horoscopeData.date && (
+                    <View style={styles.heroDateBadge}>
+                      <Text style={styles.heroDateBadgeText}>{horoscopeData.date}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
               {/* The prediction was previously behind a tap. It is the point of the
@@ -200,7 +213,12 @@ const styles = StyleSheet.create({
   heroGlyph: {fontSize: moderateScale(42)},
   heroSide: {flex: 1, marginLeft: scale(12)},
   heroName: {fontSize: moderateScale(18), fontFamily: 'Lato-Bold', color: ASTRO.ink},
-  heroDate: {fontSize: moderateScale(11), fontFamily: 'Lato-Regular', color: ASTRO.muted, marginTop: 2},
+  heroRange: {fontSize: moderateScale(11), fontFamily: 'Lato-Regular', color: ASTRO.muted, marginTop: 1},
+  heroDateBadge: {
+    alignSelf: 'flex-start', backgroundColor: ASTRO.goldSoft, borderRadius: 20,
+    paddingHorizontal: scale(9), paddingVertical: verticalScale(2), marginTop: verticalScale(5),
+  },
+  heroDateBadgeText: {fontSize: moderateScale(10), fontFamily: 'Lato-Bold', color: ASTRO.maroon},
 
   moreBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

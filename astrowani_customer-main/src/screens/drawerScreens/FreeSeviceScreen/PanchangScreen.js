@@ -266,12 +266,17 @@ import {
   ASTRO, SectionCard, StatTile, TileRow, Divider,
 } from '../../../components/astro/AstroUI';
 import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
+import { useNavigation } from '@react-navigation/native';
 import { LanguageContext } from '../../../context/LanguageContext';
+import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
 import { FREE_SERVICES_URL } from '../../../config/api';
 
 
 const PanchangScreen = () => {
   const { t } = React.useContext(LanguageContext);
+  // Mounts the EN | हिं pill in the header and yields 'en'|'hi' for the request.
+  // This screen has no `navigation` prop (it is rendered without one), hence useNavigation.
+  const { apiLanguage } = useFreeServiceLanguage(useNavigation());
   const [location, setLocation] = useState('New Delhi, NCT, India');
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -292,7 +297,7 @@ const PanchangScreen = () => {
       try {
         setLoading(true);
         const isoDate = date.toISOString();
-        const url = `${FREE_SERVICES_URL}/api/free-services/panchang?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=en`;
+        const url = `${FREE_SERVICES_URL}/api/free-services/panchang?latitude=${coordinates.latitude}&longitude=${coordinates.longitude}&ayanamsa=1&language=${apiLanguage}`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -309,7 +314,9 @@ const PanchangScreen = () => {
       }
     };
     fetchPanchangData();
-  }, [date, coordinates.latitude, coordinates.longitude]);
+    // apiLanguage included so switching language re-requests the panchang itself,
+    // not just the labels around it.
+  }, [date, coordinates.latitude, coordinates.longitude, apiLanguage]);
 
   const handleLocationChange = newLocation => setLocation(newLocation);
 

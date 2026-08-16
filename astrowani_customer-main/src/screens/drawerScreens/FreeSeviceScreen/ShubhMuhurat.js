@@ -7,21 +7,29 @@
 import React, {useState} from 'react';
 import {View, StyleSheet} from 'react-native';
 import {ASTRO, SegmentedTabs} from '../../../components/astro/AstroUI';
+import {useFreeServiceLanguage} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
 import MuhuratCard from '../../component/MuhuratCard';
 
 // `key` is the string MuhuratCard switches on to pick its endpoint — it must stay
 // English regardless of display language, so the label is translated separately.
+//
+// 'Gowri Panchangam' was REMOVED (2026-08-16). It had no endpoint on our backend and
+// none at JyotishamAstroAPI either (every candidate path 404s), so the tab was showing
+// four hardcoded windows — the same timings for every date and every location, invented
+// rather than calculated. Wrong muhurat timings are worse than an absent tab, because
+// people plan around them. Add it back when a real endpoint exists.
 const TABS = [
   {key: 'Day Choghadiya', labelKey: 'free.choghadiya'},
   {key: 'Day Hora', labelKey: 'free.shubhHora'},
-  {key: 'Gowri Panchangam', labelKey: 'free.gowriPanchangam'},
   {key: 'Rahu Kaal', labelKey: 'free.rahuKaal'},
 ];
 
-export default function ShubhMuhurat() {
+export default function ShubhMuhurat({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [active, setActive] = useState(TABS[0].key);
+  // Mounts the EN | हिं pill in the header; MuhuratCard re-fetches off `language`.
+  useFreeServiceLanguage(navigation);
 
   return (
     <View style={styles.main}>

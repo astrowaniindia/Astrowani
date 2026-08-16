@@ -81,14 +81,46 @@ function toDDMMYYYY(yyyyMmDd) {
 // any day <=12). Convert to unambiguous ISO-local so its existing formatTime() (which just does
 // `new Date(x).toLocaleTimeString()`) round-trips the same wall-clock time regardless of device
 // locale/timezone — no frontend changes needed.
-function jyotishamTimestampToIso(raw) {
-  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4}),\s*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i.exec(String(raw || '').trim());
-  if (!m) return raw;
-  const [, dd, mm, yyyy, h, min, ss, ampm] = m;
+// With lang=hi the upstream LOCALIZES its timestamps as well as its prose — the same field
+// that reads "16/08/2026, 6:00:00 AM" in English comes back as
+// "16 अगस्त 2026, 6:00:00 पूर्वाह्न". The English-only regex below used to fail on that and
+// `return raw`, so the app received an unparseable string: muhurat times rendered as the raw
+// Devanagari datetime and "is this window happening now?" could never be computed, because
+// Date.parse gave NaN. Times are DATA, not prose — they must leave this backend in one
+// stable ISO shape whatever language the text is in. (Verified live 2026-08-16.)
+const HI_MONTHS = {
+  'जनवरी': 1, 'फरवरी': 2, 'फ़रवरी': 2, 'मार्च': 3, 'अप्रैल': 4, 'मई': 5, 'जून': 6,
+  'जुलाई': 7, 'अगस्त': 8, 'सितंबर': 9, 'सितम्बर': 9, 'अक्तूबर': 10, 'अक्टूबर': 10,
+  'नवंबर': 11, 'नवम्बर': 11, 'दिसंबर': 12, 'दिसम्बर': 12,
+};
+
+function toIsoLocal(yyyy, mm, dd, h, min, ss, isPm, isAm) {
   let hh = parseInt(h, 10);
-  if (/pm/i.test(ampm) && hh !== 12) hh += 12;
-  if (/am/i.test(ampm) && hh === 12) hh = 0;
-  return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${String(hh).padStart(2, '0')}:${min}:${ss}`;
+  if (isPm && hh !== 12) hh += 12;
+  if (isAm && hh === 12) hh = 0;
+  return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}` +
+    `T${String(hh).padStart(2, '0')}:${min}:${ss || '00'}`;
+}
+
+function jyotishamTimestampToIso(raw) {
+  const s = String(raw || '').trim();
+
+  // English: "16/08/2026, 6:00:00 AM"
+  const en = /^(\d{1,2})\/(\d{1,2})\/(\d{4}),\s*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i.exec(s);
+  if (en) {
+    const [, dd, mm, yyyy, h, min, ss, ampm] = en;
+    return toIsoLocal(yyyy, mm, dd, h, min, ss, /pm/i.test(ampm), /am/i.test(ampm));
+  }
+
+  // Hindi: "16 अगस्त 2026, 6:00:00 पूर्वाह्न"  (पूर्वाह्न = AM, अपराह्न = PM)
+  const hi = /^(\d{1,2})\s+(\S+)\s+(\d{4}),\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(पूर्वाह्न|अपराह्न)$/.exec(s);
+  if (hi) {
+    const [, dd, monthName, yyyy, h, min, ss, mer] = hi;
+    const mm = HI_MONTHS[monthName];
+    if (mm) return toIsoLocal(yyyy, mm, dd, h, min, ss, mer === 'अपराह्न', mer === 'पूर्वाह्न');
+  }
+
+  return raw;
 }
 
 // Same idea for the plain "H:MM AM to H:MM PM" / "H:MM AM - H:MM PM" ranges the panchang

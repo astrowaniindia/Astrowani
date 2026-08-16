@@ -116,6 +116,40 @@ export function useReportLanguage(route, navigation) {
 }
 
 /**
+ * Header toggle for the FREE (₹1) service screens.
+ *
+ * Much simpler than the paid-report version: the free endpoints all take a
+ * `?language=` param and cost nothing to re-request (the ₹1 charge is a separate
+ * `/api/free-services/charge` call made once when the card is tapped, not per
+ * fetch), so there is no wallet bookkeeping to do. Flipping the app language is
+ * enough — each screen re-fetches because its effect depends on `language`.
+ *
+ * Returns the current language so callers can thread it into their request.
+ */
+export function useFreeServiceLanguage(navigation) {
+  const {language, changeLanguage} = useContext(LanguageContext);
+
+  // Same ref trick as above: LanguageProvider rebuilds changeLanguage inline on
+  // every render, so depending on it directly would re-run setOptions forever.
+  const changeRef = useRef(changeLanguage);
+  changeRef.current = changeLanguage;
+
+  const switchTo = useCallback((next) => changeRef.current(next), []);
+
+  useEffect(() => {
+    if (!navigation?.setOptions) return;
+    navigation.setOptions({
+      headerRight: () => (
+        <ReportLanguageToggle language={language} busy={false} onSwitch={switchTo} />
+      ),
+    });
+  }, [navigation, language, switchTo]);
+
+  // 'en' | 'hi' — what the free-services endpoints expect as ?language=
+  return {language, apiLanguage: apiLang(language)};
+}
+
+/**
  * The EN | हिं pill for the navigation header's right side.
  *
  * Deliberately a segmented control rather than a single toggle button: with one button a
