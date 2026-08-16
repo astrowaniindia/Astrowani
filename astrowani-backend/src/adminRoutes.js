@@ -235,12 +235,19 @@ module.exports = function registerAdminRoutes(app) {
 
   app.put('/api/admin/live-aarti-channels/:id', requireAdmin, h(async (req, res) => {
     const body = pickAarti(req.body);
-    // Re-resolve only when the link actually changed — resolution can cost 100
-    // quota units for a /c/ vanity URL, and renaming a channel shouldn't.
+    // Re-resolve when the link changed — resolution can cost 100 quota units
+    // for a /c/ vanity URL, so renaming a channel shouldn't trigger it.
+    //
+    // ALSO re-resolve when the row has no channel_id yet. Without this a row
+    // that failed to resolve is permanently stuck: the link is already correct,
+    // so saving it again changes nothing and never retries, and the only way
+    // out is to delete and re-add. Resolution fails for transient reasons —
+    // a mis-scoped API key, a quota blip — that are fixed elsewhere and then
+    // need exactly this retry.
     if (body.channel_url) {
       const { data: existing } = await db
-        .from('live_aarti_channels').select('channel_url').eq('id', req.params.id).single();
-      if (!existing || existing.channel_url !== body.channel_url) {
+        .from('live_aarti_channels').select('channel_url, channel_id').eq('id', req.params.id).single();
+      if (!existing || existing.channel_url !== body.channel_url || !existing.channel_id) {
         const resolved = await liveAarti.resolveChannelId(body.channel_url);
         body.channel_id = resolved.channelId || null;
         body.resolve_error = resolved.error || null;
@@ -271,10 +278,23 @@ module.exports = function registerAdminRoutes(app) {
     const { data: row, error } = await db
       .from('live_aarti_channels').select('*').eq('id', req.params.id).single();
     if (error) throw error;
-    if (!row?.channel_id) {
-      return res.status(400).json({ success: false, message: row?.resolve_error || 'This channel link has not been resolved yet.' });
+
+    // An unresolved row used to dead-end here, repeating the stored error
+    // forever. "Check now" is the obvious button to press after fixing whatever
+    // broke resolution, so make it actually retry.
+    let channelId = row?.channel_id;
+    if (!channelId) {
+      const resolved = await liveAarti.resolveChannelId(row.channel_url);
+      await db.from('live_aarti_channels')
+        .update({ channel_id: resolved.channelId || null, resolve_error: resolved.error || null })
+        .eq('id', row.id);
+      if (!resolved.channelId) {
+        return res.status(400).json({ success: false, message: resolved.error || 'Could not resolve this channel link.' });
+      }
+      channelId = resolved.channelId;
     }
-    const result = await liveAarti.forceCheckChannel(row.channel_id);
+
+    const result = await liveAarti.forceCheckChannel(channelId);
     if (result.error) return res.status(502).json({ success: false, message: result.error });
 
     const now = new Date().toISOString();
