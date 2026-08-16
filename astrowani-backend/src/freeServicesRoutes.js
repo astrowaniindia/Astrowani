@@ -110,6 +110,41 @@ function timeRangeToIso(range, yyyyMmDd) {
   };
 }
 
+// The panchang response also carries bare clock times with no date attached —
+// `advanced_details.sun_rise` ("5:52:05 AM") and `advanced_details.abhijitMuhurta.{start,end}`
+// ("12:00:38 PM"). PanchangScreen.js feeds these straight into `new Date(x)`, which yields
+// Invalid Date for a bare time, so anchor them to the response's own date. Emitted as
+// ISO-local (no Z) for the same reason as jyotishamTimestampToIso above: the device's
+// `new Date(...).toLocaleTimeString()` then shows the same wall clock the API meant.
+function clockTimeToIso(clock, yyyyMmDd) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(String(clock || '').trim());
+  if (!m || !yyyyMmDd) return null;
+  const [, h, min, sec, ampm] = m;
+  let hh = parseInt(h, 10);
+  if (/pm/i.test(ampm) && hh !== 12) hh += 12;
+  if (/am/i.test(ampm) && hh === 12) hh = 0;
+  return `${yyyyMmDd}T${String(hh).padStart(2, '0')}:${min}:${sec || '00'}`;
+}
+
+// `bhadrakaal` is the odd one out: a full datetime range
+// ("Sun, Aug 16, 2026 4:40:10 AM - Sun, Aug 16, 2026 4:27:24 PM") rather than the bare
+// "H:MM AM to H:MM PM" the other kaal fields use, because Bhadra follows the Vishti karana
+// and can cross midnight. Parsed and re-emitted through local getters so the wall clock
+// survives whatever timezone the server runs in.
+function dateTimeRangeToIso(range) {
+  const parts = String(range || '').split(' - ');
+  if (parts.length !== 2) return null;
+  const toIso = (s) => {
+    const d = new Date(s.trim());
+    if (Number.isNaN(d.getTime())) return null;
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
+  const start = toIso(parts[0]);
+  const end = toIso(parts[1]);
+  return start && end ? { start, end } : null;
+}
+
 const VEDIC_PLANET_NAMES = {
   Sun: 'Ravi', Moon: 'Chandra', Mars: 'Mangal', Mercury: 'Budh',
   Jupiter: 'Guru', Venus: 'Shukra', Saturn: 'Shani',
@@ -238,13 +273,58 @@ module.exports = function registerFreeServicesRoutes(app) {
       const { data } = await callJyotisham('/api/panchang/panchang', {
         date, time, latitude, longitude, tz: '5.5', lang: language || 'en',
       });
+
+      // Anchor date for every bare clock time below. The API echoes its own date as
+      // "YYYY/MM/DD"; fall back to the date we asked for (dd/mm/yyyy) if it ever stops.
+      const adv = data.advanced_details || {};
+      const [reqDd, reqMm, reqYyyy] = String(date).split('/');
+      const anchor = /^\d{4}\/\d{2}\/\d{2}$/.test(String(data.date || ''))
+        ? String(data.date).replace(/\//g, '-')
+        : `${reqYyyy}-${reqMm}-${reqDd}`;
+
+      // Abhijit Muhurta is the only auspicious window this endpoint exposes. The fuller
+      // auspicious/inauspicious breakdown lives in the Choghadiya and Hora endpoints, which
+      // the Shubh Muhurat screen already calls separately — not duplicated here.
+      const abhijit = adv.abhijitMuhurta || {};
+      const abhijitStart = clockTimeToIso(abhijit.start, anchor);
+      const abhijitEnd = clockTimeToIso(abhijit.end, anchor);
+      const auspicious_period = abhijitStart && abhijitEnd
+        ? [{ name: 'Abhijit Muhurta', period: [{ start: abhijitStart, end: abhijitEnd }] }]
+        : [];
+
+      // rahukaal/gulika/yamakanta are "H:MM AM to|- H:MM PM" strings on this same response
+      // (the Rahu Kaal endpoint below reads the identical three fields); bhadrakaal is a full
+      // datetime range and needs the other parser.
+      const inauspicious_period = [
+        ...[
+          { key: 'rahukaal', name: 'Rahu Kaal' },
+          { key: 'gulika', name: 'Gulika Kaal' },
+          { key: 'yamakanta', name: 'Yamaganda Kaal' },
+        ].map(({ key, name }) => {
+          const period = timeRangeToIso(data[key], anchor);
+          return period ? { name, period: [period] } : null;
+        }),
+        (() => {
+          const period = dateTimeRangeToIso(data.bhadrakaal);
+          return period ? { name: 'Bhadra Kaal', period: [period] } : null;
+        })(),
+      ].filter(Boolean);
+
       return res.status(200).json({
         data: {
-          vaara: data.advanced_details?.vaara,
+          vaara: adv.vaara,
           nakshatra: [{ name: data.nakshatra?.name }],
           tithi: [{ name: data.tithi?.name, paksha: data.tithi?.type }],
           karana: [{ name: data.karana?.name }],
           yoga: [{ name: data.yoga?.name }],
+          // These four were never sent, so the screen's "Additional Info" section rendered
+          // four "Invalid Date" rows for every user.
+          sunrise: clockTimeToIso(adv.sun_rise, anchor),
+          sunset: clockTimeToIso(adv.sun_set, anchor),
+          moonrise: clockTimeToIso(adv.moon_rise, anchor),
+          moonset: clockTimeToIso(adv.moon_set, anchor),
+          auspicious_period,
+          inauspicious_period,
         },
       });
     } catch (err) {
