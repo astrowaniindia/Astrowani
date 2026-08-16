@@ -3,6 +3,14 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: 'com.google.gms.google-services'
 
+// Sentry source-map upload. Without this every JS frame in a release crash resolves to
+// index.android.bundle line 1 (the whole app is one minified line), which is what blocked
+// root-causing REACT-NATIVE-2/3/5 — see bug_agent_log.md. This hooks the release bundling
+// task so the Hermes bundle + source map are uploaded and Sentry can symbolicate.
+// Auth comes from android/sentry.properties (org/project) + the SENTRY_AUTH_TOKEN env var;
+// with no token set, upload is skipped with a warning and the build still succeeds.
+apply from: new File(["node", "--print", "require.resolve('@sentry/react-native/package.json')"].execute(null, rootDir).text.trim(), "../sentry.gradle")
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
