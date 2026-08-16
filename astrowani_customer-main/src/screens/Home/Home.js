@@ -1170,17 +1170,22 @@ const Home = ({navigation}) => {
             renderItem={renderAstrologerList}
             horizontal
             showsHorizontalScrollIndicator={false}
-            // removeClippedSubviews alone (not a tight windowSize) is the fix here —
-            // the real cost was the 1000x-duplicated array (see MARQUEE_REPEAT
-            // above, now 6x), not virtualization tuning. A tight windowSize was
-            // tried here and reverted: the rewind below jumps back exactly one
-            // MARQUEE_REPEAT-th of the content width, which is wide enough that a
-            // tight window can unmount that region before the jump lands, risking
-            // a blank-frame flicker at every wraparound. FlatList's own default
-            // windowSize (21) keeps enough on both sides for the jump to always
-            // land on already-mounted content, at negligible cost given the array
-            // is now only 6 copies.
-            removeClippedSubviews={true}
+            // MUST stay false (Sentry REACT-NATIVE-5, https://astrowani.sentry.io/issues/7665434814/):
+            // this FlatList is horizontal, nested inside the outer vertical
+            // ScrollView above, and driven by a programmatic scrollToOffset()
+            // auto-advance interval (see isAutoScrolling / the setInterval near the
+            // top of this component) — the exact combination that hits a
+            // long-documented Android ClassCastException in RN's clipping/
+            // view-recycling path (ReactClippingViewManager.getChildCount tries to
+            // reattach a clipped ReactHorizontalScrollView as a plain
+            // ReactViewGroup). This was briefly re-enabled in b2aff4b under the
+            // belief that trimming the duplicated array (MARQUEE_REPEAT) addressed
+            // the crash — it doesn't; the crash is about the clipping/reattachment
+            // mechanism itself, not item count, so a smaller array still hits it.
+            // A tight windowSize was tried separately and reverted for an unrelated
+            // reason (blank-frame flicker at wraparound); that's independent of
+            // this flag and unaffected by setting it back to false.
+            removeClippedSubviews={false}
             contentContainerStyle={styles.astrologerList}
             onContentSizeChange={(w) => { contentWidthRef.current = w; }}
             onScroll={(e) => {
