@@ -18,7 +18,7 @@ import { COLORS } from '../Theme/Colors';
 import ImagePicker from 'react-native-image-crop-picker';
 import { supabase } from '../api/SupabaseClient';
 import Instance from '../api/ApiCall';
-import messaging from '@react-native-firebase/messaging';
+import { getFCMToken } from '../utils/Firebase';
 
 const Registration = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
@@ -28,15 +28,16 @@ const Registration = ({ navigation }) => {
   const [error, setError] = useState('');
 
 
-  const getFCMToken = async () => {
-    // Silence the modular deprecation warning from Firebase
-    globalThis.RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
-    let token = await messaging().getToken();
-    setFcmToken(token);
-  };
-
   useEffect(() => {
-    getFCMToken();
+    // Use the shared getFCMToken (utils/Firebase.js), not a raw messaging().getToken():
+    // it reads the cached token from AsyncStorage first and only asks Firebase when there
+    // isn't one, and it catches its own errors. The local copy this replaced did neither,
+    // so once a device hit Firebase's per-project registration cap the rejected promise
+    // went unhandled and crashed this screen (Sentry ASTROWANI-VENDOR-1,
+    // [messaging/unknown] TOO_MANY_REGISTRATIONS).
+    getFCMToken().then(token => {
+      if (token) setFcmToken(token);
+    });
   }, []);
   
   const [user, setUser] = useState({

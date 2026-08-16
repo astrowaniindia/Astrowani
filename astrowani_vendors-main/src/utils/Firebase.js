@@ -7,6 +7,12 @@ import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displa
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
 
+// Silence the modular deprecation warning from Firebase. Set here, at module scope, so it
+// covers every messaging() call in this file (including the module-level handlers below) —
+// it used to live inside Registration.js's own getFCMToken, where it only covered that one
+// call site and disappeared when that copy was removed.
+global.RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
+
 const INCOMING_REQUEST_TYPES = ['incoming_call', 'incoming_video_call', 'chat_request'];
 const CANCEL_REQUEST_TYPE = 'cancel_incoming_request';
 
