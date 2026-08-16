@@ -339,7 +339,7 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { FREE_SERVICES_URL } from '../../config/api';
 import { LanguageContext } from '../../context/LanguageContext';
-import { ASTRO, Reveal } from '../../components/astro/AstroUI';
+import { ASTRO, Reveal, ConsultCta } from '../../components/astro/AstroUI';
 import { apiLang } from '../../components/astro/ReportLanguage';
 
 // Choghadiya / Hora / Rahu Kaal all report a "type" per window. These are the
@@ -718,6 +718,10 @@ const MuhuratCard = ({ title }) => {
             keyExtractor={(item, index) => index.toString()}
             contentContainerStyle={styles.flatListContent}
             ListEmptyComponent={<Text style={styles.emptyText}>{t('common.noDataAvailable')}</Text>}
+            // Footer rather than a sibling below the list: as a sibling it would
+            // occupy a fixed band above the tab bar on every tab, permanently
+            // shortening the timing list it is meant to follow.
+            ListFooterComponent={<ConsultCta source="muhurat" style={styles.consultSpacer} />}
           />
         )}
       </KeyboardAvoidingView>
@@ -727,6 +731,7 @@ const MuhuratCard = ({ title }) => {
 
 export default MuhuratCard;
 const styles = StyleSheet.create({
+  consultSpacer: {marginTop: verticalScale(10), marginBottom: verticalScale(20)},
   container: {
     flex: 1,
     backgroundColor: ASTRO.parchmentDeep,

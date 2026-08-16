@@ -18,7 +18,7 @@ import {COLORS} from '../../../Theme/Colors';
 import {LanguageContext} from '../../../context/LanguageContext';
 import {FREE_SERVICES_URL} from '../../../config/api';
 import {
-  ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH, Reveal,
+  ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH, Reveal, ConsultCta,
 } from '../../../components/astro/AstroUI';
 import {useFreeServiceLanguage} from '../../../components/astro/ReportLanguage';
 
@@ -180,12 +180,19 @@ export default function Horoscope({navigation}) {
           ) : null}
         </SectionCard>
       </Animated.View>
+
+      {/* Only once a prediction is actually on screen — offering a paid
+          consultation next to a spinner or an error is the wrong moment. */}
+      {!loading && !error && !!horoscopeData && (
+        <ConsultCta source="horoscope" style={styles.consultSpacer} />
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   main: {flex: 1, backgroundColor: ASTRO.parchmentDeep},
+  consultSpacer: {marginBottom: verticalScale(24)},
   grid: {
     flexDirection: 'row', flexWrap: 'wrap',
     paddingHorizontal: scale(11), paddingTop: verticalScale(12),

@@ -18,8 +18,11 @@ import {
 } from 'react-native';
 import Svg, {Circle, G} from 'react-native-svg';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {useNavigation} from '@react-navigation/native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+import {LanguageContext} from '../../context/LanguageContext';
+import {captureEvent} from '../../utils/Analytics';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -80,7 +83,7 @@ export function humanize(key) {
  * parchment ground and bottom padding, plus an optional title banner, so the
  * set reads as one product instead of nine differently-shaped lists.
  */
-export function ReportShell({title, subtitle, children}) {
+export function ReportShell({title, subtitle, children, consult = true}) {
   return (
     <View style={styles.shell}>
       {!!title && (
@@ -90,7 +93,71 @@ export function ReportShell({title, subtitle, children}) {
         </View>
       )}
       {children}
+      {/* Every report ends on the same question — "so what does this mean for
+          me?" — which is the moment to offer a real astrologer. Pass
+          consult={false} on a screen where the reader has not reached a result
+          yet (an input form, an error state). */}
+      {consult && <ConsultCta source="report" />}
     </View>
+  );
+}
+
+/**
+ * The "talk to a real astrologer" call to action that closes every report and
+ * ₹1 service result.
+ *
+ * Navigation is deliberately the FULL nested path
+ * (DrawerNavigator → BottomTabs → tab) rather than a bare navigate('Chat').
+ * Most of these screens are registered on the ROOT stack, and React Navigation
+ * only bubbles an action UP the tree — it never searches back down into a
+ * sibling navigator. From a root-stack screen, navigate('Chat') therefore
+ * reaches the root stack, finds no route by that name, and is dropped with
+ * nothing but a dev-only warning. That is exactly what the first version of
+ * this button (inline in KundaliMatchingReport) did: it looked fine and did
+ * nothing.
+ */
+export function ConsultCta({source = 'report', style}) {
+  const {t} = React.useContext(LanguageContext);
+  const navigation = useNavigation();
+
+  const go = (tab) => {
+    captureEvent('consult_cta_click', {source, target: tab});
+    navigation.navigate('DrawerNavigator', {
+      screen: 'BottomTabs',
+      params: {screen: tab},
+    });
+  };
+
+  return (
+    <Reveal style={style}>
+      <View style={styles.consultCard}>
+        <View style={styles.consultHead}>
+          <View style={styles.consultGlyphBadge}>
+            <Ionicons name="sparkles" size={moderateScale(15)} color={ASTRO.maroon} />
+          </View>
+          <View style={{flex: 1}}>
+            <Text style={styles.consultTitle}>{t('consult.title')}</Text>
+            <Text style={styles.consultSub}>{t('consult.subtitle')}</Text>
+          </View>
+        </View>
+        <View style={styles.consultRow}>
+          <TouchableOpacity
+            style={[styles.consultBtn, styles.consultBtnPrimary]}
+            activeOpacity={0.85}
+            onPress={() => go('Chat')}>
+            <Ionicons name="chatbubble-ellipses" size={moderateScale(15)} color={COLORS.white} />
+            <Text style={styles.consultBtnTextPrimary}>{t('consult.chat')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.consultBtn, styles.consultBtnGhost]}
+            activeOpacity={0.85}
+            onPress={() => go('Call')}>
+            <Ionicons name="call" size={moderateScale(15)} color={ASTRO.maroon} />
+            <Text style={styles.consultBtnTextGhost}>{t('consult.call')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Reveal>
   );
 }
 
@@ -599,6 +666,44 @@ const styles = StyleSheet.create({
   },
   bannerTitle: {fontSize: moderateScale(17), fontFamily: 'Lato-Bold', color: COLORS.white},
   bannerSub: {fontSize: moderateScale(11), fontFamily: 'Lato-Regular', color: ASTRO.goldSoft, marginTop: 2},
+
+  // Consult CTA. Deliberately NOT a SectionCard: it is an offer, not a section
+  // of the report, so it carries the gold ground and dashed rule to read as a
+  // footer rather than as one more thing to read.
+  consultCard: {
+    marginHorizontal: scale(15),
+    marginTop: verticalScale(4),
+    backgroundColor: ASTRO.goldSoft,
+    borderRadius: moderateScale(14),
+    borderWidth: 1,
+    borderColor: ASTRO.gold,
+    borderStyle: 'dashed',
+    padding: scale(14),
+  },
+  consultHead: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: verticalScale(11)},
+  consultGlyphBadge: {
+    width: moderateScale(30), height: moderateScale(30), borderRadius: moderateScale(15),
+    backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center',
+    marginRight: scale(10), borderWidth: 1, borderColor: ASTRO.gold,
+  },
+  consultTitle: {fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: ASTRO.ink},
+  consultSub: {
+    fontSize: moderateScale(11), fontFamily: 'Lato-Regular', color: ASTRO.maroonSoft,
+    marginTop: 2, lineHeight: verticalScale(15),
+  },
+  consultRow: {flexDirection: 'row'},
+  consultBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderRadius: moderateScale(10), paddingVertical: verticalScale(10),
+  },
+  consultBtnPrimary: {backgroundColor: ASTRO.maroon, marginRight: scale(8)},
+  consultBtnGhost: {backgroundColor: COLORS.white, borderWidth: 1, borderColor: ASTRO.maroon},
+  consultBtnTextPrimary: {
+    fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: COLORS.white, marginLeft: scale(6),
+  },
+  consultBtnTextGhost: {
+    fontSize: moderateScale(12.5), fontFamily: 'Lato-Bold', color: ASTRO.maroon, marginLeft: scale(6),
+  },
   card: {
     backgroundColor: ASTRO.parchment,
     borderRadius: moderateScale(14),

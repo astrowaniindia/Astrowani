@@ -14,7 +14,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import {
-  ASTRO, SectionCard, SegmentedTabs, RingGauge, Callout, Badge, Divider,
+  ASTRO, SectionCard, SegmentedTabs, RingGauge, Callout, Badge, Divider, ConsultCta,
 } from '../../../components/astro/AstroUI';
 import {LanguageContext} from '../../../context/LanguageContext';
 import BasicDetails from './BasicDetails';
@@ -76,13 +76,6 @@ export default function KundaliMatchingReport({navigation}) {
           {!!d?.message?.description && (
             <Callout tone={tone} icon="heart">{d.message.description}</Callout>
           )}
-          <TouchableOpacity
-            style={styles.consult}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('Chat')}>
-            <Ionicons name="chatbubble-ellipses" size={moderateScale(15)} color={COLORS.white} />
-            <Text style={styles.consultText}>{t('home.chatWithAstrologer')}</Text>
-          </TouchableOpacity>
         </SectionCard>
 
         <SectionCard title={t('report.doshaComparison')} glyph="⚖" index={1}>
@@ -110,6 +103,13 @@ export default function KundaliMatchingReport({navigation}) {
             />
           </View>
         </SectionCard>
+
+        {/* Was an inline "Chat with Astrologer" button inside the score card that
+            called navigate('Chat'). This screen is registered on the ROOT stack,
+            which has no route by that name, and React Navigation only bubbles an
+            action upward — so the button rendered correctly and did nothing.
+            The shared component navigates the full nested path. */}
+        <ConsultCta source="kundali_matching" />
       </ScrollView>
     );
   };
@@ -128,16 +128,6 @@ const styles = StyleSheet.create({
   body: {flex: 1},
   scroll: {paddingTop: verticalScale(12), paddingBottom: verticalScale(28)},
   scoreHero: {alignItems: 'center', marginBottom: verticalScale(10)},
-
-  consult: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: ASTRO.maroon, borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(11), marginTop: verticalScale(8),
-  },
-  consultText: {
-    fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: COLORS.white,
-    marginLeft: scale(7),
-  },
 
   pair: {flexDirection: 'row', alignItems: 'center'},
   person: {flex: 1, alignItems: 'center'},

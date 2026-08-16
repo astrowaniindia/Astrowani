@@ -36,6 +36,12 @@ const translations = {
     'home.cancelRequest': 'Cancel Request',
     'home.chatWithAstrologer': 'Chat with Astrologer',
     'home.talkToAstrologer': 'Talk To Astrologer',
+    // Shared consult CTA (ConsultCta in components/astro/AstroUI.js) — appears at
+    // the foot of every report and ₹1 service result.
+    'consult.title': 'Questions about this reading?',
+    'consult.subtitle': 'Talk to a verified astrologer and get it explained for your own chart.',
+    'consult.chat': 'Chat Now',
+    'consult.call': 'Call Now',
     'home.guideHint': "Don't know what to do? Start your first chat!",
 
     // Common labels / actions
@@ -850,6 +856,10 @@ const translations = {
     'home.cancelRequest': 'अनुरोध रद्द करें',
     'home.chatWithAstrologer': 'ज्योतिषी से चैट करें',
     'home.talkToAstrologer': 'ज्योतिषी से बात करें',
+    'consult.title': 'इस रिपोर्ट को लेकर कोई सवाल है?',
+    'consult.subtitle': 'किसी सत्यापित ज्योतिषी से बात करें और अपनी कुंडली के अनुसार इसे समझें।',
+    'consult.chat': 'अभी चैट करें',
+    'consult.call': 'अभी कॉल करें',
     'home.guideHint': 'क्या करना है समझ नहीं आ रहा? अपनी पहली चैट शुरू करें!',
 
     // Common labels / actions

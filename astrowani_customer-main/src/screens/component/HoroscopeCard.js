@@ -9,7 +9,7 @@ import {View, Text, StyleSheet, ScrollView} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import {
-  ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH,
+  ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH, ConsultCta,
 } from '../../components/astro/AstroUI';
 import {LanguageContext} from '../../context/LanguageContext';
 
@@ -59,6 +59,8 @@ export default function HoroscopeCard({data, tab}) {
           ? <Prose>{text}</Prose>
           : <Callout icon="information-circle">{t('horoscope.unableToFetch')}</Callout>}
       </SectionCard>
+
+      {!!text && <ConsultCta source="horoscope_detail" />}
     </ScrollView>
   );
 }

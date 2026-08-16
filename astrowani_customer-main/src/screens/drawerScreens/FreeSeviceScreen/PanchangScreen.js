@@ -263,7 +263,7 @@ import { moderateScale, scale, verticalScale } from '../../../utils/Scaling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import DetailList from '../../component/DetailsList';
 import {
-  ASTRO, SectionCard, StatTile, TileRow, Divider,
+  ASTRO, SectionCard, StatTile, TileRow, Divider, ConsultCta,
 } from '../../../components/astro/AstroUI';
 import PlaceAutocomplete from '../../../components/PlaceAutocomplete';
 import { useNavigation } from '@react-navigation/native';
@@ -443,6 +443,7 @@ const PanchangScreen = () => {
               tone="bad"
               periods={panchangData?.inauspicious_period}
             />
+            <ConsultCta source="panchang" style={styles.consultSpacer} />
           </>
         )}
       </ScrollView>
@@ -553,6 +554,7 @@ function PeriodList({title, glyph, tone, periods}) {
 }
 
 const styles = StyleSheet.create({
+  consultSpacer: {marginTop: verticalScale(6), marginBottom: verticalScale(24)},
   container: {
     flex: 1,
     backgroundColor: ASTRO.parchmentDeep,

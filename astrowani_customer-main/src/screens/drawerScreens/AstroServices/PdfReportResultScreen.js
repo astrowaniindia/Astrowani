@@ -3,6 +3,7 @@ import {View, Text, TouchableOpacity, StyleSheet, Linking} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {ConsultCta} from '../../../components/astro/AstroUI';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function PdfReportResultScreen({route}) {
@@ -22,11 +23,13 @@ export default function PdfReportResultScreen({route}) {
           <Text style={styles.buttonText}>{t('result.viewReport')}</Text>
         </TouchableOpacity>
       </View>
+      <ConsultCta source="pdf_report" style={styles.consultSpacer} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  consultSpacer: {marginTop: verticalScale(18)},
   main: {flex: 1, backgroundColor: COLORS.AstroSoftOrange, justifyContent: 'center'},
   card: {
     backgroundColor: COLORS.white, borderRadius: moderateScale(12), marginHorizontal: scale(15),
