@@ -949,42 +949,43 @@ const ENABLEX_SMS_CAMPAIGN_ID = '1245560';
 const ENABLEX_SMS_TEMPLATE_ID = '463430427'; // "OTP for astrowani" (DLT 1207172007863021380)
 const ENABLEX_SMS_SENDER_ID = 'ASTRWI';
 
-// ⚠️ KNOWN BROKEN AS OF 2026-08-18 — OTP SMS ARE NOT BEING DELIVERED.
+// SMS delivery here is INTERMITTENT, not systematically broken. This payload is
+// correct — `var1` is the template's variable and it substitutes and delivers.
+// Do not "fix" the payload; that has been tried and measured, see below.
 //
-// The fix is NOT in this file. Do not "fix" it by changing the payload below;
-// the payload is correct and every plausible variation was measured.
+// 2026-08-18 investigation, and a WRONG conclusion recorded so nobody re-derives
+// it. Two sends carrying a real code (09:12, 09:20 UTC) stuck at `sent` and
+// never arrived. Three sends whose `data` key did NOT match the template — so
+// the message went out still containing the literal `{$var1}` — delivered in
+// 1-2s (09:31, 09:33). That looked like proof that the DLT template had been
+// registered with `{$var1}` as literal approved TEXT, so only unsubstituted
+// messages matched the operator's content check.
 //
-// The DLT template is registered with the literal characters `{$var1}` as part
-// of the approved message TEXT, rather than as a variable slot. The operator
-// matches outgoing content against the approved body, so:
+// It was not. The variable was confounded with TIME: all the failures fell in
+// one 13-minute window and all the successes after it. A controlled re-test
+// firing both variants CONCURRENTLY had every one delivered, including two
+// carrying real codes:
 //
-//   "...your OTP is {$var1} for login on..."  -> matches   -> DELIVERED
-//   "...your OTP is 482913 for login on..."   -> no match  -> silently dropped
+//   data {var1:'771001'} -> delivered (SX_SUCCESSFULLY_DELIVERED)
+//   data omitted         -> delivered
+//   data {var1:'771002'} -> delivered
 //
-// i.e. the message only arrives while it still contains the placeholder, which
-// makes it worthless as an OTP. Measured against +917877724833 on 2026-08-18,
-// same sender/campaign/template, only the `data` object varying:
+// Independent corroboration: `customers` and `astrologers` both hold rows for
+// +917877724833 created on 2026-08-18, and a row cannot exist without a
+// successful OTP verify — so real codes were being delivered and used the same
+// day, both before and after that window.
 //
-//   data {var1:<otp>}  substitutes  -> status stuck at `sent`, never delivered
-//   data omitted       no substitution -> delivered in 2s
-//   data {var:...}     key unmatched   -> delivered in 2s
-//   data {otp:...}     key unmatched   -> delivered in 1s
+// The real behaviour to design around is therefore a transient delivery failure
+// (carrier/operator congestion), not a content mismatch. That is what the
+// retry/backoff in verifyEnxDelivery is for: it polls to a terminal status
+// instead of declaring failure at 20s, so an intermittent stall is visible in
+// the logs as exactly that rather than being misread as a systematic fault —
+// which is precisely the mistake made above.
 //
-// `var1` IS the correct variable name — it is the only key that actually merges,
-// which is precisely why it is the only one that fails to deliver. Recipient
-// confirmed all delivered messages showed `{$var1}` literally, no digits.
-//
-// TO ACTUALLY FIX (EnableX portal + DLT portal, no code change):
-//   1. Re-register the DLT template with a real variable slot, written `{#var#}`
-//      on the DLT platform:  "Hi user, your OTP is {#var#} for login on <domain>"
-//   2. Wait for operator approval (typically 4-6h).
-//   3. Confirm EnableX template 463430427 maps its `{$var1}` to that slot.
-// Also confirm the true approved body: this comment previously claimed
-// "...for Login on – Astrowaniindia" while a received message read
-// "...for login on astrowani.in". One of those is stale.
-//
-// Non-delivery is now visible in the logs — see verifyEnxDelivery, which no
-// longer misreports EnableX's normal in-flight `sent` status as a failure.
+// `role` (customer vs vendor) does NOT affect this payload at all; it only
+// selects which table the account-existence check reads. Both apps send an
+// identical SMS, so "works in one app but not the other" can never be explained
+// by anything in this block.
 
 // Referral codes — 7 chars, excludes visually-ambiguous characters (0/O, 1/I).
 function generateReferralCode() {
