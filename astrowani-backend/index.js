@@ -7,7 +7,7 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
 const { computeAstrologerMetrics } = require('./src/astrologerMetrics');
-const { logError } = require('./src/errorLogger');
+const { logError, installStreamErrorGuards } = require('./src/errorLogger');
 const { checkAstrologerBusy, buildBusyMap, checkCustomerBusy } = require('./src/busyStatus');
 const { notifyWaitlistIfFree } = require('./src/waitlist');
 const { initSentry } = require('./src/sentry');
@@ -28,6 +28,11 @@ initSentry();
 // agent instead of only scrolling past in console output. Neither handler
 // changes existing crash/restart behavior — errors are logged, not swallowed
 // into a process.exit() that wasn't there before.
+// Must run before anything can log: without it, an EPIPE on stdout/stderr
+// becomes an uncaughtException, whose handler logs, which writes to stdout,
+// which throws EPIPE again — the loop that produced a 26 GB errors.log.
+installStreamErrorGuards();
+
 process.on('uncaughtException', (err) => logError('uncaughtException', err));
 process.on('unhandledRejection', (reason) => logError('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason))));
 

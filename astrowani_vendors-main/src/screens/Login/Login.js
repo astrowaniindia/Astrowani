@@ -7,15 +7,11 @@ import {
   StatusBar,
   TextInput,
   TouchableOpacity,
-  Modal,
-  FlatList,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import {LanguageContext} from '../../context/LanguageContext';
 import LanguageToggle from '../../components/LanguageToggle';
@@ -23,21 +19,8 @@ import {sanitizePhoneInput} from '../../utils/phoneInput';
 
 const Login = ({navigation}) => {
   const {t} = useContext(LanguageContext);
-  const [countryCode, setCountryCode] = useState('IN');
-  const [callingCode, setCallingCode] = useState('91');
-  const [isPickerVisible, setPickerVisible] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, SetLoading] = useState(false);
-
-  const togglePicker = () => {
-    setPickerVisible(!isPickerVisible);
-  };
-
-  const selectCountry = country => {
-    setCountryCode(country.code);
-    setCallingCode(country.callingCode);
-    setPickerVisible(false);
-  };
 
   const validateFields = () => {
     if (!phoneNumber) {
@@ -103,19 +86,21 @@ const Login = ({navigation}) => {
       <Text style={styles.subTitle}>{t('login.forAstrologers')}</Text>
       <View style={styles.loginContainer}>
         <View style={styles.numberInput}>
-          <TouchableOpacity
-            style={styles.countryPicker}
-            onPress={togglePicker}>
-            <Text style={styles.flag}>
-              {countries.find(c => c.code === countryCode).flag}
-            </Text>
-            <Text style={styles.callingCode}>+{callingCode}</Text>
-            <Icon
-              name="keyboard-arrow-down"
-              size={24}
-              color={COLORS.AstroMaroon}
-            />
-          </TouchableOpacity>
+          {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
+              There WAS a working country selector here, but its `callingCode`
+              was never sent to the backend — /api/users/mobile-otp-request
+              hardcodes +91, and the EnableX DLT template and ASTRWI sender ID
+              are India-only. So picking any other country showed the user a
+              different dial code while their number was still dispatched to a
+              +91 number: either bouncing at the carrier, or reaching an
+              unrelated real person. Showing a fixed +91 is the honest state of
+              what the backend can actually do. If international numbers are
+              ever supported, send callingCode and validate per-country
+              server-side rather than reinstating a decorative picker. */}
+          <View style={styles.countryPicker}>
+            <Text style={styles.flag}>🇮🇳</Text>
+            <Text style={styles.callingCode}>+91</Text>
+          </View>
           <TextInput
             style={styles.input}
             maxLength={12}
@@ -155,34 +140,6 @@ const Login = ({navigation}) => {
           <Text style={styles.register}>{t('login.noAccount')}</Text>
         </TouchableOpacity>
       </View>
-      <Modal
-        visible={isPickerVisible}
-        onRequestClose={togglePicker}
-        transparent={true}
-        animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <FlatList
-              data={countries}
-              keyExtractor={item => item.code}
-              showsVerticalScrollIndicator={false}
-              renderItem={({item}) => (
-                <TouchableOpacity
-                  style={styles.countryItem}
-                  onPress={() => selectCountry(item)}>
-                  <Text style={styles.flag}>{item.flag}</Text>
-                  <Text style={styles.countryName}>
-                    {item.name} (+{item.callingCode})
-                  </Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity onPress={togglePicker}>
-              <Text style={styles.closeText}>{t('login.close')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };

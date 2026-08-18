@@ -7,8 +7,6 @@ import {
   StatusBar,
   TextInput,
   TouchableOpacity,
-  Modal,
-  FlatList,
   Alert,
   ActivityIndicator,
   ScrollView,
@@ -19,8 +17,6 @@ import {
 import {LEGAL_LINKS} from '../../config/legal';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import {countries} from './Country';
 import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -33,9 +29,6 @@ const Login = ({navigation}) => {
   const { t, language, changeLanguage } = React.useContext(LanguageContext);
   const insets = useSafeAreaInsets();
   const toggleLanguage = () => changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
-  const [countryCode, setCountryCode] = useState('IN');
-  const [callingCode, setCallingCode] = useState('91');
-  const [isPickerVisible, setPickerVisible] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, SetLoading] = useState(false);
   // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config) —
@@ -51,14 +44,6 @@ const Login = ({navigation}) => {
     return () => { cancelled = true; };
   }, []);
 
-  const togglePicker = () => {
-    setPickerVisible(!isPickerVisible);
-  };
-  const selectCountry = country => {
-    setCountryCode(country.code);
-    setCallingCode(country.callingCode);
-    setPickerVisible(false);
-  };
   const validateFields = () => {
     if (!phoneNumber) {
       showAlert(t('login.validationError'), t('login.phoneEmpty'), 'error');
@@ -146,19 +131,21 @@ const Login = ({navigation}) => {
           </View>
 
           <View style={styles.inputContainer}>
-            <TouchableOpacity
-              style={styles.countryPicker}
-              onPress={togglePicker}>
-              <Text style={styles.flag}>
-                {countries.find(c => c.code === countryCode).flag}
-              </Text>
-              <Text style={styles.callingCode}>+{callingCode}</Text>
-              <Icon
-                name="keyboard-arrow-down"
-                size={24}
-                color={COLORS.AstroMaroon}
-              />
-            </TouchableOpacity>
+          {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
+              There WAS a working country selector here, but its `callingCode`
+              was never sent to the backend — /api/users/mobile-otp-request
+              hardcodes +91, and the EnableX DLT template and ASTRWI sender ID
+              are India-only. So picking any other country showed the user a
+              different dial code while their number was still dispatched to a
+              +91 number: either bouncing at the carrier, or reaching an
+              unrelated real person. Showing a fixed +91 is the honest state of
+              what the backend can actually do. If international numbers are
+              ever supported, send callingCode and validate per-country
+              server-side rather than reinstating a decorative picker. */}
+            <View style={styles.countryPicker}>
+              <Text style={styles.flag}>🇮🇳</Text>
+              <Text style={styles.callingCode}>+91</Text>
+            </View>
             <TextInput
               style={[styles.input, styles.phoneInput]}
               maxLength={12}
@@ -211,37 +198,6 @@ const Login = ({navigation}) => {
           </View>
         </View>
 
-        <Modal
-          visible={isPickerVisible}
-          onRequestClose={togglePicker}
-          transparent={true}
-          animationType="slide">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>{t('login.selectCountry')}</Text>
-              <FlatList
-                data={countries}
-                keyExtractor={item => item.code}
-                showsVerticalScrollIndicator={false}
-                renderItem={({item}) => (
-                  <TouchableOpacity
-                    style={styles.countryItem}
-                    onPress={() => selectCountry(item)}>
-                    <Text style={styles.flag}>{item.flag}</Text>
-                    <Text style={styles.countryName}>
-                      {item.name} (+{item.callingCode})
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              />
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={togglePicker}>
-                <Text style={styles.closeText}>{t('login.close')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       </ScrollView>
 
       {guideAvatarConfig?.login?.enabled !== false && (
