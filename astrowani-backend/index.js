@@ -946,8 +946,45 @@ const ENABLEX_APP_KEY = process.env.ENABLEX_APP_KEY_otp_message;
 
 // EnableX SMS project "OTP Atrowani" — Campaign Cloud campaign "OTP astrowani"
 const ENABLEX_SMS_CAMPAIGN_ID = '1245560';
-const ENABLEX_SMS_TEMPLATE_ID = '463430427'; // "OTP for astrowani" (DLT 1207172007863021380): "Hi user, your OTP is {$var1} for Login on – Astrowaniindia"
+const ENABLEX_SMS_TEMPLATE_ID = '463430427'; // "OTP for astrowani" (DLT 1207172007863021380)
 const ENABLEX_SMS_SENDER_ID = 'ASTRWI';
+
+// ⚠️ KNOWN BROKEN AS OF 2026-08-18 — OTP SMS ARE NOT BEING DELIVERED.
+//
+// The fix is NOT in this file. Do not "fix" it by changing the payload below;
+// the payload is correct and every plausible variation was measured.
+//
+// The DLT template is registered with the literal characters `{$var1}` as part
+// of the approved message TEXT, rather than as a variable slot. The operator
+// matches outgoing content against the approved body, so:
+//
+//   "...your OTP is {$var1} for login on..."  -> matches   -> DELIVERED
+//   "...your OTP is 482913 for login on..."   -> no match  -> silently dropped
+//
+// i.e. the message only arrives while it still contains the placeholder, which
+// makes it worthless as an OTP. Measured against +917877724833 on 2026-08-18,
+// same sender/campaign/template, only the `data` object varying:
+//
+//   data {var1:<otp>}  substitutes  -> status stuck at `sent`, never delivered
+//   data omitted       no substitution -> delivered in 2s
+//   data {var:...}     key unmatched   -> delivered in 2s
+//   data {otp:...}     key unmatched   -> delivered in 1s
+//
+// `var1` IS the correct variable name — it is the only key that actually merges,
+// which is precisely why it is the only one that fails to deliver. Recipient
+// confirmed all delivered messages showed `{$var1}` literally, no digits.
+//
+// TO ACTUALLY FIX (EnableX portal + DLT portal, no code change):
+//   1. Re-register the DLT template with a real variable slot, written `{#var#}`
+//      on the DLT platform:  "Hi user, your OTP is {#var#} for login on <domain>"
+//   2. Wait for operator approval (typically 4-6h).
+//   3. Confirm EnableX template 463430427 maps its `{$var1}` to that slot.
+// Also confirm the true approved body: this comment previously claimed
+// "...for Login on – Astrowaniindia" while a received message read
+// "...for login on astrowani.in". One of those is stale.
+//
+// Non-delivery is now visible in the logs — see verifyEnxDelivery, which no
+// longer misreports EnableX's normal in-flight `sent` status as a failure.
 
 // Referral codes — 7 chars, excludes visually-ambiguous characters (0/O, 1/I).
 function generateReferralCode() {
@@ -1026,43 +1063,105 @@ function normalizePhone(phoneNumber) {
 
 // EnableX accepting a send (result:0 + job_id) only means it was queued — the
 // carrier can still fail it afterwards (DND, invalid number, operator drop).
-// Poll the job once after a short delay and log anything that is not delivered,
-// so a "the OTP never arrived" report can actually be traced to a cause instead
-// of guessing. Deliberately fire-and-forget: never blocks or fails the OTP
+// Poll the job until it reaches a terminal state and log the outcome, so a "the
+// OTP never arrived" report can actually be traced to a cause instead of
+// guessing. Deliberately fire-and-forget: never blocks or fails the OTP
 // response, and never throws into the request path.
-function verifyEnxDelivery(jobId, e164, authHeader, refund, delayMs = 20000) {
-  setTimeout(async () => {
-    try {
-      const { data } = await axios.get(`https://api.enablex.io/sms/v1/messages/${jobId}`, {
-        headers: { Authorization: `Basic ${authHeader}` },
-        timeout: 15000,
-      });
-      const detail = data?.detailed?.[0] || {};
+//
+// STATUS SEMANTICS — from EnableX's published spec, re-read and confirmed
+// against live API responses on 2026-08-18:
+//
+//   sent      Message accepted and queued for delivery. An ordinary IN-FLIGHT
+//             state, NOT a failure. Indian carrier delivery receipts routinely
+//             take longer than a few seconds to come back.
+//   delivered Reached the handset. Terminal success.
+//   failed    Terminal failure; error_code / error_des carry the reason.
+//   unknown   The carrier never returned a final status.
+//
+// THE BUG THIS REPLACES (found 2026-08-18). This polled exactly ONCE, 20s after
+// sending, and treated anything that was not yet `delivered` as a delivery
+// failure — so a message merely still in flight at the 20s mark was logged as
+// "SMS not delivered" and had its send refunded. Two consequences, both real:
+//
+//   1. It poisoned the ONLY signal we have for answering "did this user's OTP
+//      actually arrive?". The log filled with failures that were not failures —
+//      which is exactly how a genuine non-delivery was misread as a carrier
+//      fault during this very audit, from our own log line.
+//   2. The refund fired on sends that had not failed, so `sends_in_window`
+//      under-counted and a number could quietly exceed OTP_MAX_SENDS_PER_WINDOW.
+//
+// Now: poll on a backoff until a terminal status, and only refund on an outcome
+// the user demonstrably could not use — an explicit `failed`, or a code still
+// undelivered by the time it is too stale to be worth typing.
+const ENX_DELIVERY_POLLS_MS = [20000, 60000, 150000]; // last poll is still inside OTP_TTL_MS
+
+function verifyEnxDelivery(jobId, e164, authHeader, refund, schedule = ENX_DELIVERY_POLLS_MS) {
+  const settle = async (reason, detail, summary) => {
+    logError('enablex-sms', new Error(`SMS not delivered: ${reason}`), {
+      phone: e164,
+      jobId,
+      status: detail?.status,
+      errorCode: detail?.error_code,
+      errorDesc: detail?.error_des,
+      summary,
+    });
+    // The user never got a usable code — don't spend their send budget on it.
+    // Without this, a run of real delivery failures is precisely what pushes
+    // someone into the lockout described at OTP_MAX_SENDS_PER_WINDOW.
+    if (refund) {
+      const refunded = await refund();
+      console.log(`[enablex-sms] send-budget refund for ${e164}: ${refunded ? 'applied' : 'skipped (row changed or gone)'}`);
+    }
+  };
+
+  const poll = (index) => {
+    setTimeout(async () => {
+      let detail;
+      let summary;
+      try {
+        // Documented path is SINGULAR /message/{job_id}; the plural form is the
+        // send collection and answers "Invalid job id" without one.
+        const { data } = await axios.get(`https://api.enablex.io/sms/v1/message/${jobId}`, {
+          headers: { Authorization: `Basic ${authHeader}` },
+          timeout: 15000,
+        });
+        detail = data?.detailed?.[0] || {};
+        summary = data?.summary;
+      } catch (err) {
+        // Status lookup is diagnostics only — its failure must stay silent-ish,
+        // and must not be mistaken for the SMS itself failing. Retry on the
+        // next tick if there is one.
+        console.log(`[enablex-sms] status check failed for job ${jobId}: ${err.message}`);
+        if (index + 1 < schedule.length) poll(index + 1);
+        return;
+      }
+
       if (detail.status === 'delivered') {
         console.log(`[enablex-sms] delivered ${e164} (job ${jobId})`);
         return;
       }
-      logError('enablex-sms', new Error(`SMS not delivered: ${detail.status || 'unknown'}`), {
-        phone: e164,
-        jobId,
-        status: detail.status,
-        errorCode: detail.error_code,
-        errorDesc: detail.error_des,
-        summary: data?.summary,
-      });
 
-      // The user never got this code — don't make them pay for it out of their
-      // send budget. Without this, a run of carrier-side failures is precisely
-      // what pushes someone into the lockout described at OTP_MAX_SENDS_PER_WINDOW.
-      if (refund) {
-        const refunded = await refund();
-        console.log(`[enablex-sms] send-budget refund for ${e164}: ${refunded ? 'applied' : 'skipped (row changed or gone)'}`);
+      if (detail.status === 'failed') {
+        // Terminal, and the carrier told us why — no point waiting longer.
+        await settle(detail.error_des || 'failed', detail, summary);
+        return;
       }
-    } catch (err) {
-      // Status lookup is diagnostics only — its failure must stay silent-ish.
-      console.log(`[enablex-sms] status check failed for job ${jobId}: ${err.message}`);
-    }
-  }, delayMs).unref?.();
+
+      // 'sent' or 'unknown' — still inconclusive. Wait for a later poll rather
+      // than declaring a failure that has not happened.
+      if (index + 1 < schedule.length) {
+        poll(index + 1);
+        return;
+      }
+
+      // Out of polls. The code is now too old to be worth typing, so whatever
+      // the carrier eventually decides, this one did not reach the user in time.
+      // Logged as a distinct reason from `failed` so the two stay tellable apart.
+      await settle(`no delivery receipt after ${Math.round(schedule[schedule.length - 1] / 1000)}s (last status: ${detail.status || 'none'})`, detail, summary);
+    }, schedule[index]).unref?.();
+  };
+
+  poll(0);
 }
 
 // Google Play reviewer test account (both apps) — real phone+SMS OTP login is
