@@ -1372,20 +1372,8 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     });
   }
 
-  // Rows written by the PREVIOUS code path are keyed by the raw string, so a
-  // code that was requested just before this deploy would not be found under
-  // its canonical key and the user would see "No OTP requested for this
-  // number" through no fault of their own. Fall back to the raw key for those,
-  // and delete whichever key actually matched.
-  //
-  // Remove this fallback once OTP_TTL_MS (5 minutes) has elapsed past the
-  // deploy — after that no legacy-keyed row can still be live.
-  let otpKey = phoneNumber;
-  let storedData = await otpStore.get(phoneNumber);
-  if (!storedData && rawPhoneNumber !== phoneNumber) {
-    storedData = await otpStore.get(rawPhoneNumber);
-    if (storedData) otpKey = rawPhoneNumber;
-  }
+  const otpKey = phoneNumber;
+  const storedData = await otpStore.get(phoneNumber);
 
   if (!storedData) {
     return res.status(400).json({ success: false, message: 'No OTP requested for this number' });
