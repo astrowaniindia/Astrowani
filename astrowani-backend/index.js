@@ -553,9 +553,40 @@ require('./src/uploadRoutes')(app);
 // that and far below what makes abuse worthwhile.
 const OTP_MAX_ATTEMPTS = 5;                       // wrong guesses before the code is burned
 const OTP_RESEND_COOLDOWN_MS = 45 * 1000;         // min gap between sends to one number
-const OTP_SEND_WINDOW_MS = 60 * 60 * 1000;        // rolling window for the send cap
-const OTP_MAX_SENDS_PER_WINDOW = 8;               // max SMS to one number per window
+const OTP_SEND_WINDOW_MS = 20 * 60 * 1000;        // rolling window for the send cap
+const OTP_MAX_SENDS_PER_WINDOW = 25;              // max SMS to one number per window
 const OTP_TTL_MS = 5 * 60 * 1000;
+
+// WHY THESE TWO WERE LOOSENED (audit 2026-08-18): they were 8 sends per 60
+// minutes, and the row carrying the counter is deleted only on a SUCCESSFUL
+// verify. That combination aims squarely at the one user who most needs to get
+// through — the person whose OTP never arrived. They tap Resend; the UI timer
+// is 60s; eight sends is about eight minutes of ordinary retrying. Then they
+// are locked out for the rest of the hour, and cannot clear it, because
+// clearing it requires verifying a code they never received. That is the
+// reported "after multiple attempts it stops working", exactly.
+//
+// 25 sends per 20 minutes makes a lockout drain in minutes rather than an hour.
+// The protection that actually matters against brute force is OTP_MAX_ATTEMPTS,
+// which is keyed to the code rather than to the sender, and is unchanged.
+//
+// BE AWARE OF WHAT THIS CAP NOW DOES, before "tidying" either number: at 25 it
+// is close to non-binding. OTP_RESEND_COOLDOWN_MS already forces a 45s gap, so
+// the most sends physically possible inside a 20-minute window is
+// 1200 / 45 ~= 27. A cap of 25 therefore only ever trips for someone hammering
+// Resend at almost exactly the cooldown boundary for the full 20 minutes — in
+// practice the cooldown, not this cap, is what limits a single number.
+//
+// That is a deliberate choice: the cost of blocking a real user mid-login is
+// judged higher than the cost of the extra SMS. The remaining protections are
+// the 45s cooldown (one number), OTP_MAX_ATTEMPTS (brute force), and
+// OTP_GLOBAL_HOURLY_CAP (a spray across many numbers). If SMS spend ever needs
+// reining in, lower this number rather than raising the cooldown — the cooldown
+// is what real users feel.
+//
+// The counter is also now REFUNDED when the carrier does not deliver (see
+// verifyEnxDelivery) — a send the user never received should not spend their
+// budget.
 
 // Identifies WHICH terms a user accepted. Bump this whenever the published
 // Terms & Conditions change materially — an acceptance record that doesn't say
@@ -648,8 +679,12 @@ const otpStore = {
   // the throttle state on the same row as the code, so it survives restarts
   // and is shared across processes — an in-memory counter would reset on every
   // deploy and would not be seen by a second PM2 worker.
+  // Returns the `last_sent_at` it wrote. That value identifies THIS specific
+  // send, so the delivery check can later refund the send counter without
+  // clobbering a newer send that has since replaced the row.
   async set(phoneNumber, { otp, sessionId, expiresAt, sendMeta }) {
     const now = new Date();
+    const lastSentAt = now.toISOString();
     await supabaseService.from('otp_codes').upsert({
       phone_number: phoneNumber,
       otp: null,                  // never persist the code itself
@@ -657,10 +692,39 @@ const otpStore = {
       session_id: sessionId,
       expires_at: new Date(expiresAt).toISOString(),
       attempts: 0,                // a new code gets a fresh guess budget
-      last_sent_at: now.toISOString(),
+      last_sent_at: lastSentAt,
       sends_in_window: sendMeta?.sendsInWindow ?? 1,
       window_started_at: (sendMeta?.windowStartedAt ?? now).toISOString(),
     });
+    return lastSentAt;
+  },
+
+  /**
+   * Give back one send from the rolling window, for an SMS the carrier never
+   * delivered. The user did not receive that code, so it must not spend their
+   * budget — otherwise a run of carrier failures is exactly what locks out the
+   * person already struggling to log in.
+   *
+   * Compare-and-set on `last_sent_at`: if a newer send has replaced the row
+   * since, or the row is gone (verified, expired, purged), this does nothing
+   * rather than corrupting a counter that no longer belongs to this send.
+   */
+  async refundSend(phoneNumber, expectedLastSentAt) {
+    const { data } = await supabaseService
+      .from('otp_codes')
+      .select('sends_in_window, last_sent_at')
+      .eq('phone_number', phoneNumber)
+      .eq('last_sent_at', expectedLastSentAt)
+      .maybeSingle();
+    if (!data) return false;
+
+    const next = Math.max(0, (data.sends_in_window ?? 1) - 1);
+    const { error } = await supabaseService
+      .from('otp_codes')
+      .update({ sends_in_window: next })
+      .eq('phone_number', phoneNumber)
+      .eq('last_sent_at', expectedLastSentAt);
+    return !error;
   },
 
   async get(phoneNumber) {
@@ -844,11 +908,47 @@ function generateReferralCode() {
  * 6-9 after normalization — is rejected rather than sent anyway.
  */
 function toE164Strict(phoneNumber) {
+  const digits = normalizePhone(phoneNumber);
+  return digits ? `+91${digits}` : null;
+}
+
+/**
+ * THE canonical form of a phone number everywhere in this system: bare 10
+ * digits, no country code, no punctuation. Returns null if the input cannot
+ * confidently be turned into one.
+ *
+ * WHY THIS EXISTS (audit 2026-08-18). toE164Strict was previously the only
+ * normalizer, and it was applied ONLY to the EnableX `to:` field. The raw
+ * request-body string was still what keyed everything that establishes
+ * *identity*:
+ *
+ *   - otp_codes.phone_number   (primary key, and therefore the throttle key)
+ *   - customers.mobile         (both the lookup and the insert)
+ *   - astrologers.phone_number (via the JWT `phone` claim -> /api/vendor/register)
+ *   - the `phone` claim in every issued JWT
+ *
+ * Both apps accept 10, 11 or 12 digits, so "9876543210", "09876543210" and
+ * "919876543210" all text the same handset but were three different *people*
+ * as far as the database was concerned. Verified in production: a real
+ * customer stored as "+919119395097" got 404 NO_ACCOUNT (and therefore no SMS
+ * at all, ever) when they typed their number normally, and one astrologer had
+ * two separate accounts under "8600638210" and "918600638210".
+ *
+ * Ten bare digits is the canonical form rather than E.164 because 44 of the 48
+ * account rows already in production are in that shape, so it is the form that
+ * requires the least migration. toE164Strict is now derived from this, which
+ * keeps the two definitions from drifting apart again.
+ *
+ * Normalizing at the two OTP endpoints is sufficient to fix the whole chain:
+ * every downstream identity write draws either from the verify lookup or from
+ * the JWT claim minted there, so there is no second write path.
+ */
+function normalizePhone(phoneNumber) {
   let digits = String(phoneNumber || '').replace(/\D/g, '');
   if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
   else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
   if (!/^[6-9]\d{9}$/.test(digits)) return null;
-  return `+91${digits}`;
+  return digits;
 }
 
 // EnableX accepting a send (result:0 + job_id) only means it was queued — the
@@ -857,11 +957,12 @@ function toE164Strict(phoneNumber) {
 // so a "the OTP never arrived" report can actually be traced to a cause instead
 // of guessing. Deliberately fire-and-forget: never blocks or fails the OTP
 // response, and never throws into the request path.
-function verifyEnxDelivery(jobId, e164, authHeader, delayMs = 20000) {
+function verifyEnxDelivery(jobId, e164, authHeader, refund, delayMs = 20000) {
   setTimeout(async () => {
     try {
       const { data } = await axios.get(`https://api.enablex.io/sms/v1/messages/${jobId}`, {
         headers: { Authorization: `Basic ${authHeader}` },
+        timeout: 15000,
       });
       const detail = data?.detailed?.[0] || {};
       if (detail.status === 'delivered') {
@@ -876,6 +977,14 @@ function verifyEnxDelivery(jobId, e164, authHeader, delayMs = 20000) {
         errorDesc: detail.error_des,
         summary: data?.summary,
       });
+
+      // The user never got this code — don't make them pay for it out of their
+      // send budget. Without this, a run of carrier-side failures is precisely
+      // what pushes someone into the lockout described at OTP_MAX_SENDS_PER_WINDOW.
+      if (refund) {
+        const refunded = await refund();
+        console.log(`[enablex-sms] send-budget refund for ${e164}: ${refunded ? 'applied' : 'skipped (row changed or gone)'}`);
+      }
     } catch (err) {
       // Status lookup is diagnostics only — its failure must stay silent-ish.
       console.log(`[enablex-sms] status check failed for job ${jobId}: ${err.message}`);
@@ -906,11 +1015,18 @@ const PLAY_STORE_REVIEWER_OTP = '123456';
  * Endpoint to request an OTP
  */
 app.post('/api/users/mobile-otp-request', async (req, res) => {
-  const { phoneNumber, role, intent } = req.body;
+  const { phoneNumber: rawPhoneNumber, role, intent } = req.body;
 
-  if (!phoneNumber) {
+  if (!rawPhoneNumber) {
     return res.status(400).json({ success: false, message: 'Phone number is required' });
   }
+
+  // Canonicalize ONCE, here, and use the result for everything below — the OTP
+  // row key, the throttle key, the account lookup, and the JWT that verify will
+  // later mint. Before this, the raw string was used for all of those while only
+  // the SMS itself was normalized, so the same handset could be several
+  // different accounts depending on how the number was typed. See normalizePhone.
+  const phoneNumber = normalizePhone(rawPhoneNumber);
 
   // Fail fast and cheaply on a malformed number — before it can consume this
   // number's throttle budget or reach EnableX at all. Reported 2026-08-16:
@@ -922,9 +1038,10 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
   // least 10 characters", so any of those slipped straight through to
   // EnableX, which either rejects it (visible) or queues it and never
   // delivers (silent — indistinguishable from a working send). This does not
-  // apply to the reviewer bypass just below, which is a fixed known-good
-  // number.
-  if (phoneNumber !== PLAY_STORE_REVIEWER_PHONE && !toE164Strict(phoneNumber)) {
+  // apply to the reviewer bypass just below: PLAY_STORE_REVIEWER_PHONE is
+  // itself a well-formed 10-digit number, so it passes normalizePhone on its
+  // own and no longer needs to be special-cased out of this check.
+  if (!phoneNumber) {
     return res.status(400).json({
       success: false,
       code: 'INVALID_PHONE_NUMBER',
@@ -1014,7 +1131,7 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
   const sessionId = Date.now().toString(); // Simple session ID
 
   // Store the OTP (hashed — see otpStore) with the rolling send counters.
-  await otpStore.set(phoneNumber, {
+  const sentAt = await otpStore.set(phoneNumber, {
     otp,
     sessionId,
     expiresAt: Date.now() + OTP_TTL_MS,
@@ -1041,11 +1158,23 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
         data_coding: 'plain',
       };
 
+      // TIMEOUT (audit 2026-08-18). This call previously had none, so the HTTP
+      // response to the app was blocked on EnableX for as long as EnableX felt
+      // like taking. The vendor app gives up at its own 15s client timeout and
+      // shows "Failed to send OTP" — while the backend carries on, sends the
+      // SMS and stores the row. The user then has a code AND an error, taps
+      // Resend, and hits the 45s cooldown 429. Indistinguishable from random
+      // breakage, and most likely exactly when the carrier is already slow.
+      //
+      // 10s here is deliberately well below both apps' client timeouts (now
+      // 20s) so the BACKEND is always the party that decides a send failed, and
+      // can roll the stored OTP back accordingly. Never raise this above those.
       const enxResponse = await axios.post('https://api.enablex.io/sms/v1/messages/', payload, {
         headers: {
           'Authorization': `Basic ${authHeader}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000,
       });
 
       // EnableX signals business-level failures (DND block, exhausted credits,
@@ -1078,7 +1207,12 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
       // arrived" report to what really happened, which is why the 2026-08-15
       // failures could not be diagnosed after the fact. Fire-and-forget so the
       // OTP response is not delayed by the carrier round-trip.
-      verifyEnxDelivery(jobId, toE164Strict(phoneNumber), authHeader);
+      verifyEnxDelivery(
+        jobId,
+        toE164Strict(phoneNumber),
+        authHeader,
+        () => otpStore.refundSend(phoneNumber, sentAt),
+      );
     } catch (error) {
       // Previously swallowed: the app was told success:true even when no SMS was
       // actually sent, so a real delivery failure looked identical to a working
@@ -1112,20 +1246,45 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // `termsAccepted` tells us the account came from the Register screen's explicit
   // checkbox rather than the Login screen's passive notice. It is a label only —
   // the timestamp itself is stamped server-side (see termsAcceptanceFields).
-  const { phoneNumber, otp, fcmToken, role, referralCode, termsAccepted } = req.body;
+  const { phoneNumber: rawPhoneNumber, otp, fcmToken, role, referralCode, termsAccepted } = req.body;
 
-  if (!phoneNumber || !otp) {
+  if (!rawPhoneNumber || !otp) {
     return res.status(400).json({ success: false, message: 'Phone number and OTP are required' });
   }
 
-  const storedData = await otpStore.get(phoneNumber);
+  // Same canonicalization as the request endpoint — this is what makes the
+  // account lookup below and the JWT `phone` claim consistent regardless of how
+  // the number was typed. See normalizePhone.
+  const phoneNumber = normalizePhone(rawPhoneNumber);
+  if (!phoneNumber) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_PHONE_NUMBER',
+      message: 'That does not look like a valid 10-digit Indian mobile number. Please check it and try again.',
+    });
+  }
+
+  // Rows written by the PREVIOUS code path are keyed by the raw string, so a
+  // code that was requested just before this deploy would not be found under
+  // its canonical key and the user would see "No OTP requested for this
+  // number" through no fault of their own. Fall back to the raw key for those,
+  // and delete whichever key actually matched.
+  //
+  // Remove this fallback once OTP_TTL_MS (5 minutes) has elapsed past the
+  // deploy — after that no legacy-keyed row can still be live.
+  let otpKey = phoneNumber;
+  let storedData = await otpStore.get(phoneNumber);
+  if (!storedData && rawPhoneNumber !== phoneNumber) {
+    storedData = await otpStore.get(rawPhoneNumber);
+    if (storedData) otpKey = rawPhoneNumber;
+  }
 
   if (!storedData) {
     return res.status(400).json({ success: false, message: 'No OTP requested for this number' });
   }
 
   if (Date.now() > storedData.expiresAt) {
-    await otpStore.delete(phoneNumber);
+    await otpStore.delete(otpKey);
     return res.status(400).json({ success: false, message: 'OTP has expired' });
   }
 
@@ -1136,7 +1295,7 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // actually makes a short numeric OTP safe, because it is keyed to the code
   // rather than to the caller's IP (which CGNAT makes meaningless anyway).
   if (storedData.attempts >= OTP_MAX_ATTEMPTS) {
-    await otpStore.delete(phoneNumber);
+    await otpStore.delete(otpKey);
     return res.status(429).json({
       success: false,
       code: 'OTP_ATTEMPTS_EXCEEDED',
@@ -1153,10 +1312,10 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     : storedData.otp === submitted;
 
   if (!matches) {
-    const used = await otpStore.recordFailedAttempt(phoneNumber, storedData.attempts);
+    const used = await otpStore.recordFailedAttempt(otpKey, storedData.attempts);
     const remaining = Math.max(0, OTP_MAX_ATTEMPTS - used);
     if (remaining === 0) {
-      await otpStore.delete(phoneNumber);
+      await otpStore.delete(otpKey);
       return res.status(429).json({
         success: false,
         code: 'OTP_ATTEMPTS_EXCEEDED',
@@ -1172,7 +1331,7 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   }
 
   // OTP is valid!
-  await otpStore.delete(phoneNumber); // Clear OTP after successful use
+  await otpStore.delete(otpKey); // Clear OTP after successful use
 
   const isVendor = role === 'astrologer' || role === 'vendor';
   let supabaseCustomerId = null;

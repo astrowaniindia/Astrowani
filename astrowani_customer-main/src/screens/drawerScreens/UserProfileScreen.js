@@ -18,7 +18,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Instance from '../../api/ApiCall';
+import Instance, {LONG_REQUEST_TIMEOUT_MS} from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
 import { supabase } from '../../api/SupabaseClient';
@@ -240,10 +240,12 @@ const UserProfileScreen = ({navigation, route}) => {
       // and use the resulting URL instead, so we never write base64 into the DB.
       const uploadIfNeeded = async (value) => {
         if (!value || !value.startsWith('data:')) return value || null;
+        // A base64 photo is often 1-3 MB; the 20s client default is not enough
+        // on mobile data. See LONG_REQUEST_TIMEOUT_MS.
         const uploadRes = await Instance.post(
           '/api/upload-image',
           { base64: value, folder: 'customer-profiles' },
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` }, timeout: LONG_REQUEST_TIMEOUT_MS }
         );
         return uploadRes.data.url;
       };

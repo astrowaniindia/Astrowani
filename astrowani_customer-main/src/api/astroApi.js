@@ -2,7 +2,7 @@
 // /api/astro-services, /api/wallet). Centralizes JWT-header attachment and the
 // "insufficient balance" error shape so screens don't repeat this boilerplate.
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Instance from './ApiCall';
+import Instance, { LONG_REQUEST_TIMEOUT_MS } from './ApiCall';
 
 async function authHeaders() {
   const token = await AsyncStorage.getItem('token');
@@ -26,7 +26,9 @@ export async function getWalletBalance() {
 export async function runAstroReport(key, payload) {
   const headers = await authHeaders();
   try {
-    const res = await Instance.post(`/api/astro/${key}`, payload, { headers });
+    // Report generation waits on the third-party Jyotisham API, so it needs
+    // longer than the client's 20s default. See LONG_REQUEST_TIMEOUT_MS.
+    const res = await Instance.post(`/api/astro/${key}`, payload, { headers, timeout: LONG_REQUEST_TIMEOUT_MS });
     return res.data?.data;
   } catch (err) {
     const status = err.response?.status;

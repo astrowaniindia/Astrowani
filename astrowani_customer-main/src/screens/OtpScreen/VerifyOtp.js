@@ -16,7 +16,7 @@ import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {OtpInput} from 'react-native-otp-entry';
-import Instance from '../../api/ApiCall';
+import Instance, {LONG_REQUEST_TIMEOUT_MS} from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
@@ -91,10 +91,12 @@ const VerifyOtp = ({navigation, route}) => {
           try {
             let profilePic = profileData.profilePic;
             if (profilePic && profilePic.startsWith('data:')) {
+              // A base64 photo is often 1-3 MB; the 20s client default is not
+              // enough on mobile data. See LONG_REQUEST_TIMEOUT_MS.
               const uploadRes = await Instance.post(
                 '/api/upload-image',
                 {base64: profilePic, folder: 'customer-profiles'},
-                {headers: {Authorization: `Bearer ${res.data.token}`}}
+                {headers: {Authorization: `Bearer ${res.data.token}`}, timeout: LONG_REQUEST_TIMEOUT_MS}
               );
               profilePic = uploadRes.data.url;
             }
