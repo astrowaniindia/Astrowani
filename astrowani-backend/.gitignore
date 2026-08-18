@@ -6,3 +6,7 @@ yarn-error.log
 firebase-service-account*.json
 *firebase-adminsdk*.json
 logs/
+
+# Local-only DB backups taken before destructive migrations. Contain PII and
+# money records — never commit.
+backups/
