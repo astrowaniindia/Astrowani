@@ -684,6 +684,11 @@ const otpStore = {
   // the throttle state on the same row as the code, so it survives restarts
   // and is shared across processes — an in-memory counter would reset on every
   // deploy and would not be seen by a second PM2 worker.
+  // Unconditional upsert. ONLY the Play Store reviewer path uses this now — a
+  // single fixed number with no concurrency to worry about, which must always
+  // succeed. Every real send goes through claimAndSet below, which is race-safe.
+  // Do not reach for this one for normal sends.
+  //
   // Returns the `last_sent_at` it wrote. That value identifies THIS specific
   // send, so the delivery check can later refund the send counter without
   // clobbering a newer send that has since replaced the row.
@@ -746,9 +751,72 @@ const otpStore = {
       expiresAt: new Date(data.expires_at).getTime(),
       attempts: data.attempts ?? 0,
       lastSentAt: data.last_sent_at ? new Date(data.last_sent_at).getTime() : 0,
+      // The DB's own representation, kept verbatim for the compare-and-set in
+      // claimAndSet. Parsing to ms and back would risk not matching the stored
+      // value exactly, which would silently turn every claim into a lost race.
+      lastSentAtRaw: data.last_sent_at || null,
       sendsInWindow: data.sends_in_window ?? 0,
       windowStartedAt: data.window_started_at ? new Date(data.window_started_at) : new Date(),
     };
+  },
+
+  /**
+   * Store a new code, but only if no concurrent request has already done so.
+   *
+   * WHY (audit 2026-08-18, double-tap race). The throttle was read-then-write:
+   * two requests for the same number could both call get(), both see the same
+   * state, both pass checkOtpSendThrottle, and both send an SMS. The upsert
+   * then kept only the LAST hash — so the user received two codes and the one
+   * that happened to arrive FIRST was already dead. They type it, get "Invalid
+   * OTP", and burn an attempt for something they did nothing wrong to cause.
+   *
+   * The fix makes claiming the send atomic, using the row itself as the lock,
+   * with no new table, migration or stored procedure:
+   *
+   *   - No row existed: plain INSERT (never upsert). The primary key on
+   *     phone_number IS the mutex — the loser gets 23505.
+   *   - A row existed: UPDATE guarded by the exact last_sent_at that was read.
+   *     Only one writer can advance it; everyone else matches 0 rows.
+   *
+   * `expectedLastSentAt` is existing.lastSentAtRaw, or null when get() found
+   * nothing. Returns {ok:true, lastSentAt} to the winner, {ok:false} to a loser.
+   */
+  async claimAndSet(phoneNumber, { otp, sessionId, expiresAt, sendMeta }, expectedLastSentAt) {
+    const now = new Date();
+    const lastSentAt = now.toISOString();
+    const row = {
+      phone_number: phoneNumber,
+      otp: null,                  // never persist the code itself
+      otp_hash: hashOtp(otp),
+      session_id: sessionId,
+      expires_at: new Date(expiresAt).toISOString(),
+      attempts: 0,                // a new code gets a fresh guess budget
+      last_sent_at: lastSentAt,
+      sends_in_window: sendMeta?.sendsInWindow ?? 1,
+      window_started_at: (sendMeta?.windowStartedAt ?? now).toISOString(),
+    };
+
+    if (expectedLastSentAt) {
+      const { data, error } = await supabaseService
+        .from('otp_codes')
+        .update(row)
+        .eq('phone_number', phoneNumber)
+        .eq('last_sent_at', expectedLastSentAt)
+        .select('phone_number');
+      if (error) throw error;
+      if (data && data.length > 0) return { ok: true, lastSentAt };
+      // 0 rows can mean either "a concurrent request advanced it" (lost) or
+      // "the row was deleted under us" (a successful verify, an expiry, or the
+      // purge sweep). Those are different, and treating the second as a lost
+      // race would tell a user to wait 45s when nothing is actually in flight.
+      // Fall through to the insert, which distinguishes them: it succeeds if
+      // the row really is gone, and 23505s if someone else holds it.
+    }
+
+    const { error } = await supabaseService.from('otp_codes').insert(row);
+    if (!error) return { ok: true, lastSentAt };
+    if (error.code === '23505') return { ok: false };  // unique_violation — lost the race
+    throw error;
   },
 
   async recordFailedAttempt(phoneNumber, currentAttempts) {
@@ -1136,12 +1204,47 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
   const sessionId = Date.now().toString(); // Simple session ID
 
   // Store the OTP (hashed — see otpStore) with the rolling send counters.
-  const sentAt = await otpStore.set(phoneNumber, {
-    otp,
-    sessionId,
-    expiresAt: Date.now() + OTP_TTL_MS,
-    sendMeta: throttle.sendMeta,
-  });
+  // Atomic claim — see otpStore.claimAndSet. checkOtpSendThrottle above is a
+  // read-then-write and cannot, on its own, stop two simultaneous requests for
+  // the same number from both passing it.
+  // claimAndSet THROWS on an unexpected DB error (unlike the old fire-and-forget
+  // upsert, which swallowed everything). This handler has no outer try/catch, so
+  // an uncaught rejection here would leave the request hanging with no response
+  // at all — the customer app has a 20s timeout and the vendor app 20s, but the
+  // user still sits on a dead spinner until then, which is the exact failure
+  // mode this audit exists to remove. Fail loudly and quickly instead.
+  let claim;
+  try {
+    claim = await otpStore.claimAndSet(
+      phoneNumber,
+      { otp, sessionId, expiresAt: Date.now() + OTP_TTL_MS, sendMeta: throttle.sendMeta },
+      existingOtpRow?.lastSentAtRaw || null,
+    );
+  } catch (err) {
+    logError('otp-claim', err instanceof Error ? err : new Error(JSON.stringify(err)), { phone: phoneNumber });
+    return res.status(503).json({
+      success: false,
+      message: 'Could not send the OTP right now. Please try again in a moment.',
+    });
+  }
+
+  if (!claim.ok) {
+    // Another request for this same number is already sending a code. Answering
+    // with the normal throttle shape is the honest outcome: an OTP genuinely is
+    // on its way, and both apps already adopt retryAfterSeconds into their
+    // resend countdown. Critically, we do NOT send a second SMS — that is the
+    // whole bug, since the upsert would leave the first-arriving code dead.
+    const retryAfterSeconds = Math.ceil(OTP_RESEND_COOLDOWN_MS / 1000);
+    res.set('Retry-After', String(retryAfterSeconds));
+    return res.status(429).json({
+      success: false,
+      code: 'OTP_THROTTLED',
+      retryAfterSeconds,
+      message: 'An OTP was just sent. Please wait a few seconds before requesting another.',
+    });
+  }
+
+  const sentAt = claim.lastSentAt;
 
   // The code itself is deliberately NOT logged. It was previously printed in
   // full, which put live credentials into PM2 logs (and anywhere those get
