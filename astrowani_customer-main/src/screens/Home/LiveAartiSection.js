@@ -24,12 +24,26 @@ import {
   View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity,
   ActivityIndicator, Image, Linking,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+
+// Guarded require, not a static import: react-native-webview is a NATIVE module.
+// OTA (Hot Updater) can only ship this file's JS — it cannot add the native module to
+// binaries that were built before this feature existed. A static import's top-level
+// `TurboModuleRegistry.getEnforcing('RNCWebViewModule')` call ran unconditionally as soon
+// as this file was required (from Home.js, on app start), fatally crashing EVERY user still
+// on an older native build the moment the OTA bundle landed. This try/catch makes the
+// absence of the native module a normal, recoverable condition instead.
+let WebView = null;
+try {
+  // eslint-disable-next-line global-require
+  WebView = require('react-native-webview').WebView;
+} catch (_) {
+  WebView = null;
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const H_PADDING = scale(15);
@@ -142,9 +156,12 @@ function LiveCard({ channel, isActive, t }) {
   };
 
   // The server already told us this channel forbids embedding — don't even
-  // mount a player that is guaranteed to fail.
+  // mount a player that is guaranteed to fail. Same treatment when this
+  // install's native binary doesn't have react-native-webview compiled in
+  // (see the guarded require above) — WebView would be null and rendering
+  // it would crash instead of falling back.
   const cannotEmbed = channel.embeddable === false;
-  const showFallback = cannotEmbed || state === 'failed';
+  const showFallback = cannotEmbed || state === 'failed' || !WebView;
 
   return (
     <View style={styles.card}>
