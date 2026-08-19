@@ -35,6 +35,49 @@ const INTER_REQUEST_DELAY_MS = 350;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ── Circuit breaker ──────────────────────────────────────────────────────────
+//
+// ADDED 2026-08-19 after this module rate-limited itself into a permanent
+// outage on the VPS. The first version had no failure handling at all: a blog
+// whose translation failed kept its column empty, so the next /api/blogs
+// request re-queued it, which failed again, forever. Every app launch that
+// loaded blogs fired more requests at a provider that was already refusing us.
+// Production logs were a solid wall of "Request failed with status code 429" —
+// the limit was real, but OUR RETRY LOOP is what made it permanent, because a
+// rate limit only clears if you stop knocking.
+//
+// So: on repeated failure, stop calling entirely for a cooling-off period. Any
+// backoff would do; what matters is that the failure path can no longer sustain
+// itself. Successful calls reset the counter, so a transient blip costs one
+// pause rather than latching off.
+const FAILURES_BEFORE_TRIP = 3;
+const COOLDOWN_MS = 60 * 60 * 1000; // an hour — these are daily quotas
+let consecutiveFailures = 0;
+let cooldownUntil = 0;
+
+function breakerOpen() {
+  if (Date.now() < cooldownUntil) return true;
+  if (cooldownUntil && Date.now() >= cooldownUntil) {
+    // Cooldown elapsed — allow exactly one probe rather than a fresh stampede.
+    cooldownUntil = 0;
+    consecutiveFailures = FAILURES_BEFORE_TRIP - 1;
+  }
+  return false;
+}
+
+function noteFailure(err) {
+  consecutiveFailures += 1;
+  if (consecutiveFailures >= FAILURES_BEFORE_TRIP && !cooldownUntil) {
+    cooldownUntil = Date.now() + COOLDOWN_MS;
+    console.log(`[autoTranslate] ${consecutiveFailures} consecutive failures (${err}) — pausing translation for ${COOLDOWN_MS / 60000}min`);
+  }
+}
+
+function noteSuccess() {
+  consecutiveFailures = 0;
+  cooldownUntil = 0;
+}
+
 /** Split text into <= MAX_CHUNK pieces, preferring sentence then word boundaries. */
 function chunk(text) {
   const out = [];
@@ -52,6 +95,7 @@ function chunk(text) {
 }
 
 async function translateChunk(piece) {
+  if (breakerOpen()) throw new Error('circuit breaker open (cooling off after repeated failures)');
   const params = { q: piece, langpair: 'en|hi' };
   // Supplying a contact address raises the daily allowance roughly 10x. It is
   // sent to a third party, so it is opt-in via env rather than hardcoded.
@@ -71,6 +115,7 @@ async function translateChunk(piece) {
   if (/MYMEMORY WARNING|QUERY LENGTH LIMIT/i.test(translated)) {
     throw new Error(`quota/limit hit: ${translated.slice(0, 120)}`);
   }
+  noteSuccess();
   return translated;
 }
 
@@ -89,6 +134,7 @@ async function translateText(text) {
     }
     return out.join('');
   } catch (err) {
+    noteFailure(err.message);
     console.log(`[autoTranslate] text failed: ${err.message}`);
     return null;
   }
@@ -131,6 +177,7 @@ async function translateHtml(html) {
     return out.join('');
   } catch (err) {
     // Partial HTML translation would be worse than none — abandon the whole body.
+    noteFailure(err.message);
     console.log(`[autoTranslate] html failed: ${err.message}`);
     return null;
   }
