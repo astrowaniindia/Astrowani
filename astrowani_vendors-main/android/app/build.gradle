@@ -4,9 +4,17 @@ apply plugin: "com.facebook.react"
 
 // Sentry source-map upload — see the identical block in the customer app's build.gradle.
 // Without it every JS frame in a release crash resolves to index.android.bundle line 1.
-// Auth comes from android/sentry.properties (org/project) + the SENTRY_AUTH_TOKEN env var;
-// with no token set, upload is skipped with a warning and the build still succeeds.
+// Auth comes from android/sentry.properties (org/project) + the SENTRY_AUTH_TOKEN env var.
 apply from: new File(["node", "--print", "require.resolve('@sentry/react-native/package.json')"].execute(null, rootDir).text.trim(), "../sentry.gradle")
+
+// Upload only when a token actually exists — see the identical block in the customer app's
+// build.gradle for the full reasoning. Short version: the old comment claimed a missing
+// token meant "skipped with a warning", but the upload task actually ran and failed the
+// release build, so both AABs on 2026-08-18 had to be built by hand with
+// SENTRY_DISABLE_AUTO_UPLOAD=true. This makes the behaviour match the promise.
+project.ext.shouldSentryAutoUploadGeneral = {
+    System.getenv("SENTRY_DISABLE_AUTO_UPLOAD") != "true" && System.getenv("SENTRY_AUTH_TOKEN") != null
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.

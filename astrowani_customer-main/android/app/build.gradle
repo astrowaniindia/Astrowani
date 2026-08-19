@@ -7,9 +7,26 @@ apply plugin: 'com.google.gms.google-services'
 // index.android.bundle line 1 (the whole app is one minified line), which is what blocked
 // root-causing REACT-NATIVE-2/3/5 — see bug_agent_log.md. This hooks the release bundling
 // task so the Hermes bundle + source map are uploaded and Sentry can symbolicate.
-// Auth comes from android/sentry.properties (org/project) + the SENTRY_AUTH_TOKEN env var;
-// with no token set, upload is skipped with a warning and the build still succeeds.
+// Auth comes from android/sentry.properties (org/project) + the SENTRY_AUTH_TOKEN env var.
 apply from: new File(["node", "--print", "require.resolve('@sentry/react-native/package.json')"].execute(null, rootDir).text.trim(), "../sentry.gradle")
+
+// Upload only when a token actually exists.
+//
+// The line above used to claim "with no token set, upload is skipped with a warning and
+// the build still succeeds". That was NOT true: with no SENTRY_AUTH_TOKEN the upload task
+// still ran and failed, taking the release build with it. Both AABs on 2026-08-18 had to
+// be built by hand with SENTRY_DISABLE_AUTO_UPLOAD=true, which is not something a release
+// process should depend on somebody remembering.
+//
+// shouldSentryAutoUploadGeneral is an ext hook sentry.gradle.kts publishes specifically so
+// it can be overridden right after `apply from` (the Expo disableAutoUpload plugin uses the
+// same seam), and it is read once at configuration time. Overriding it here makes the
+// behaviour match what the comment always promised: no token -> upload is skipped and the
+// build succeeds; token present -> upload happens automatically with no flags to remember.
+// SENTRY_DISABLE_AUTO_UPLOAD is still honoured as a manual override.
+project.ext.shouldSentryAutoUploadGeneral = {
+    System.getenv("SENTRY_DISABLE_AUTO_UPLOAD") != "true" && System.getenv("SENTRY_AUTH_TOKEN") != null
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.
