@@ -1987,55 +1987,6 @@ app.get('/api/categories', async (req, res) => {
 
 // Blogs — admin-authored & published (table `blogs`), mapped to the shape that
 // BlogList.js / BlogScreen.js / Home.js already consume.
-// Serialises Hindi backfill across requests. Without this, several readers
-// hitting /api/blogs at once would each start translating the SAME blogs —
-// burning the free daily character allowance many times over on duplicate work
-// and racing each other's writes. One worker, one queue, skip what's in flight.
-const { backfillBlogHindi } = require('./src/autoTranslate');
-const blogHindiQueued = new Set();
-let blogHindiWorking = false;
-
-function queueBlogHindiBackfill(rows) {
-  for (const b of rows) {
-    if (!b || !b.id || blogHindiQueued.has(b.id)) continue;
-    // Nothing missing -> nothing to do. Checked here so the common case (every
-    // blog already translated) costs a field test rather than a queue entry.
-    // Column-aware, for the same reason as backfillBlogHindi: `excerpt_hi` and
-    // `meta_description_hi` do not exist on this table, so a plain `!b.excerpt_hi`
-    // is permanently true and would re-queue every blog on every request forever,
-    // each time doing nothing. Test only columns the row actually has.
-    const missing = (col, source) =>
-      Object.prototype.hasOwnProperty.call(b, col) && !b[col] && !!source;
-    const needs = missing('title_hi', b.title) || missing('excerpt_hi', b.excerpt)
-      || missing('meta_description_hi', b.meta_description) || missing('content_hi', b.content_en);
-    if (!needs) continue;
-    blogHindiQueued.add(b.id);
-    blogHindiPending.push(b);
-  }
-  drainBlogHindiQueue();
-}
-
-const blogHindiPending = [];
-async function drainBlogHindiQueue() {
-  if (blogHindiWorking) return;
-  blogHindiWorking = true;
-  try {
-    while (blogHindiPending.length) {
-      const blog = blogHindiPending.shift();
-      try {
-        await backfillBlogHindi(supabaseService, blog);
-      } catch (err) {
-        // Already fail-soft inside, but never let one bad row stop the queue.
-        console.log(`[autoTranslate] blog ${blog.id} skipped: ${err.message}`);
-      } finally {
-        blogHindiQueued.delete(blog.id);
-      }
-    }
-  } finally {
-    blogHindiWorking = false;
-  }
-}
-
 app.get('/api/blogs', async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 10));
@@ -2066,17 +2017,11 @@ app.get('/api/blogs', async (req, res) => {
       },
     }));
 
-    // Blogs are authored in English only, but the app has a Hindi toggle and
-    // already prefers `hindi.title` over `title` (BlogList.js). The *_hi columns
-    // existed but nothing ever filled them, so Hindi readers saw English cards.
-    //
-    // Fill them opportunistically, AFTER responding: translation is a slow
-    // third-party call and must never sit in the path of a blog list render.
-    // The result is written back to the row, so each blog is translated once and
-    // every later request — in either language — is served straight from the DB.
-    // Failures are swallowed inside autoTranslate and simply leave the column
-    // empty, which falls back to English exactly as before.
-    queueBlogHindiBackfill(data || []);
+    // NOTE: Hindi translation is NOT triggered here. It used to be, and that was
+    // the wrong place — see src/autoTranslate.js. A read path making third-party
+    // calls meant volume scaled with app launches rather than with content, which
+    // rate-limited the provider into refusing us outright. Translation now happens
+    // when an admin SAVES a blog (adminRoutes.js crud('blogs') afterWrite).
 
     return res.status(200).json({
       data: mapped,

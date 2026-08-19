@@ -13,6 +13,7 @@ const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
 const liveAarti = require('./liveAarti');
+const { queueBlogTranslation } = require('./autoTranslate');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -110,7 +111,10 @@ module.exports = function registerAdminRoutes(app) {
 
   // ── Generic CRUD factory for simple content tables ────────────────────────
   // Registers GET (list), POST (create), PUT/:id (update), DELETE/:id for a table.
-  function crud(resource, table, { orderBy = 'created_at', ascending = false, allowed } = {}) {
+  // afterWrite(row): optional side effect run once a create/update has succeeded.
+  // Deliberately NOT awaited — it is for work that must not delay the admin's
+  // save response or make a save look failed if the side effect fails.
+  function crud(resource, table, { orderBy = 'created_at', ascending = false, allowed, afterWrite } = {}) {
     const pick = (body) => {
       if (!allowed) return body;
       const out = {};
@@ -130,6 +134,7 @@ module.exports = function registerAdminRoutes(app) {
       // No-op for resources the customer-facing routes don't cache (e.g. blogs,
       // support-tickets) — invalidate() on a prefix with no matching keys is safe.
       contentCache.invalidate(`${resource}:`);
+      if (afterWrite) afterWrite(data);
       return res.json({ success: true, data });
     }));
 
@@ -140,6 +145,7 @@ module.exports = function registerAdminRoutes(app) {
       const { data, error } = await db.from(table).update(body).eq('id', req.params.id).select().single();
       if (error) throw error;
       contentCache.invalidate(`${resource}:`);
+      if (afterWrite) afterWrite(data);
       return res.json({ success: true, data });
     }));
 
@@ -151,9 +157,14 @@ module.exports = function registerAdminRoutes(app) {
     }));
   }
 
+  // Blogs are written in English only; the Hindi columns are filled by machine
+  // translation here, on SAVE. Fire-and-forget so publishing stays instant, and
+  // it only ever fills columns the admin left empty — hand-written or corrected
+  // Hindi is never overwritten. See src/autoTranslate.js.
   crud('blogs', 'blogs', {
     allowed: ['title', 'excerpt', 'excerpt_hi', 'meta_description', 'meta_description_hi', 'thumbnail', 'category_id',
       'title_en', 'content_en', 'title_hi', 'content_hi', 'is_published'],
+    afterWrite: (row) => queueBlogTranslation(db, row),
   });
   crud('banners', 'banners', {
     orderBy: 'sort_order', ascending: true,

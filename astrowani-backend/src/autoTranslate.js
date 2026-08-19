@@ -233,4 +233,51 @@ async function backfillBlogHindi(supabase, blog) {
   return true;
 }
 
-module.exports = { translateText, translateHtml, backfillBlogHindi };
+// ── Write-path queue ─────────────────────────────────────────────────────────
+//
+// Translation is triggered when an admin SAVES a blog, not when a reader loads
+// the list. The first design hung it off GET /api/blogs, which was wrong twice
+// over: a read path should not be making third-party calls and writing rows at
+// all, and it scaled with traffic rather than with content — every app launch
+// that showed blogs was another opportunity to hammer the provider. Volume now
+// scales with how often you publish, which is a handful of calls per post and
+// sits comfortably inside any free tier.
+//
+// Still serialised through one worker: an admin editing several posts quickly
+// should not fire overlapping translation runs at a rate-limited API.
+const pending = [];
+const queued = new Set();
+let working = false;
+
+async function drain(supabase) {
+  if (working) return;
+  working = true;
+  try {
+    while (pending.length) {
+      const blog = pending.shift();
+      try {
+        await backfillBlogHindi(supabase, blog);
+      } catch (err) {
+        console.log(`[autoTranslate] blog ${blog.id} skipped: ${err.message}`);
+      } finally {
+        queued.delete(blog.id);
+      }
+    }
+  } finally {
+    working = false;
+  }
+}
+
+/**
+ * Queue a just-saved blog for Hindi backfill. Fire-and-forget: the admin's save
+ * response must not wait on a slow third-party call, and a translation failure
+ * must never make a save look like it failed.
+ */
+function queueBlogTranslation(supabase, blog) {
+  if (!blog || !blog.id || queued.has(blog.id)) return;
+  queued.add(blog.id);
+  pending.push(blog);
+  drain(supabase).catch((err) => console.log(`[autoTranslate] queue error: ${err.message}`));
+}
+
+module.exports = { translateText, translateHtml, backfillBlogHindi, queueBlogTranslation };
