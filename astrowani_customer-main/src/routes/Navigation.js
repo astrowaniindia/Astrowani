@@ -16,6 +16,7 @@ import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import CustomHeader from './CustomHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LanguageContext } from '../context/LanguageContext';
 import Chat from '../screens/chat/Chat';
 import CustomDrawerContent from './CustomDrawerContent'; // Your custom drawer content
@@ -704,6 +705,16 @@ function BottomTabNavigator() {
   // Consumed here (not just in the drawer below) so switching language
   // re-renders the tab bar with the new labels.
   const { t } = React.useContext(LanguageContext);
+  // The tab bar floats (position:'absolute'), so nothing lays it out above the
+  // system navigation for us. Its offset was a hardcoded verticalScale(12),
+  // which assumes a device with no navigation inset at all — from Android 15
+  // apps draw edge-to-edge by default and at targetSdk 36 there is no opting
+  // out, so on a gesture-nav or 3-button-nav device that 12dp puts the bar
+  // straight into the system navigation area. Play Console flags exactly this
+  // ("Edge-to-edge may not display for all users"). Max() rather than addition:
+  // adding would float the bar uselessly high on 3-button devices with a large
+  // inset, while max() keeps today's spacing wherever the inset is small.
+  const insets = useSafeAreaInsets();
 
   const TabBarLabel = ({ focused, children }) => {
     return (
@@ -801,7 +812,7 @@ function BottomTabNavigator() {
             backgroundColor: '#fff',
             borderRadius: 30,
             position: 'absolute',
-            bottom: verticalScale(12),
+            bottom: Math.max(verticalScale(12), insets.bottom),
             marginHorizontal: scale(12),
             elevation: 15,
             shadowColor: '#000',
