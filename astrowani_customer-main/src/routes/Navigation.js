@@ -684,11 +684,26 @@ function WalletBalanceHeaderTitle() {
   );
 }
 
+// react-navigation route name -> i18n key. Kept beside the <Tab.Screen> list
+// below; adding a tab means adding a line here and the two strings in
+// LanguageContext, otherwise that tab silently renders its English route name.
+const TAB_LABEL_KEYS = {
+  Home: 'nav.home',
+  Chat: 'nav.chat',
+  Call: 'nav.call',
+  Video: 'nav.video',
+  Live: 'nav.live',
+  Remedies: 'nav.remedies',
+};
+
 function BottomTabNavigator() {
   // Shared poll (see useWalletBalance.js) — 20s means this display can lag a
   // live per-minute billing tick briefly, which is an acceptable trade for
   // not reading `customers` directly (see DATABASE_HARDENING_HANDOFF.md §3.1/§3.2).
   const walletBalance = useWalletBalance();
+  // Consumed here (not just in the drawer below) so switching language
+  // re-renders the tab bar with the new labels.
+  const { t } = React.useContext(LanguageContext);
 
   const TabBarLabel = ({ focused, children }) => {
     return (
@@ -747,7 +762,7 @@ function BottomTabNavigator() {
                     color: focused ? COLORS.AstroMaroon : 'black',
                     lineHeight: moderateScale(13),
                   }}>
-                  Home
+                  {t('nav.home')}
                 </Text>
                 {walletBalance !== null && (
                   <Text
@@ -763,7 +778,15 @@ function BottomTabNavigator() {
               </View>
             );
           }
-          return <TabBarLabel focused={focused}>{route.name}</TabBarLabel>;
+          // route.name is react-navigation's internal identifier and is always
+          // English ('Chat', 'Call', …). Rendering it directly is why the tab bar
+          // ignored the Hindi toggle. Map it to an i18n key instead, falling back
+          // to the raw name if a new tab is ever added without a translation.
+          return (
+            <TabBarLabel focused={focused}>
+              {t(TAB_LABEL_KEYS[route.name]) || route.name}
+            </TabBarLabel>
+          );
         },
         tabBarActiveTintColor: COLORS.AstroMaroon,
         tabBarInactiveTintColor: 'gray',

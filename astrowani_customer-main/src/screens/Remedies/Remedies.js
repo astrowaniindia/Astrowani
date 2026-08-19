@@ -59,8 +59,25 @@ const Remedies = () => {
     const fallbackTitle = t(keys.title);
     const fallbackDescription = t(keys.description);
     const fromApi = (categories || []).find((c) => c.type === type);
-    const title = language === 'Hindi' ? (fromApi?.hindi?.title || fromApi?.title) : fromApi?.title;
-    const description = language === 'Hindi' ? (fromApi?.hindi?.description || fromApi?.description) : fromApi?.description;
+    // Precedence matters, and getting it wrong is why this screen stayed English
+    // under the Hindi toggle (reported 2026-08-19). It used to read:
+    //
+    //   language === 'Hindi' ? (fromApi?.hindi?.title || fromApi?.title) : ...
+    //
+    // so as soon as an admin had saved an English title — which they had for
+    // every category — the Hindi branch fell straight through to that English
+    // string. Being truthy, it then satisfied the `title || fallbackTitle` below,
+    // so the perfectly good bundled Hindi translation was never reached.
+    //
+    // Correct order in Hindi is: admin's Hindi > our bundled Hindi > admin's
+    // English as an absolute last resort (better a real category name than a
+    // blank card). English is unchanged: admin's text, else the bundled string.
+    const pick = (apiHindi, apiEnglish, bundled) =>
+      language === 'Hindi'
+        ? (apiHindi || bundled || apiEnglish)
+        : (apiEnglish || bundled);
+    const title = pick(fromApi?.hindi?.title, fromApi?.title, fallbackTitle);
+    const description = pick(fromApi?.hindi?.description, fromApi?.description, fallbackDescription);
     return {
       id: type,
       type,

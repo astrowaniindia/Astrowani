@@ -54,6 +54,16 @@ const translations = {
     'home.service.kundaliMatch': 'Kundali Match',
     'home.service.freeHoroscope': 'Free Horoscope',
     'home.service.shubhMuhurat': 'Shubh Muhurat',
+    // Bottom tab bar (routes/Navigation.js). These previously rendered the raw
+    // react-navigation route name, which is an internal identifier and is always
+    // English — so the tab bar stayed English even with the Hindi toggle on.
+    'nav.home': 'Home',
+    'nav.chat': 'Chat',
+    'nav.call': 'Call',
+    'nav.video': 'Video',
+    'nav.live': 'Live',
+    'nav.remedies': 'Remedies',
+
     // Remedies / Services tab (screens/Remedies/Remedies.js) — bundled fallback
     // shown until an admin sets Hindi text for a category in the dashboard.
     'remedies.servicesTitle': 'Services',
@@ -909,6 +919,15 @@ const translations = {
     'home.service.kundaliMatch': 'कुंडली मिलान',
     'home.service.freeHoroscope': 'मुफ़्त राशिफल',
     'home.service.shubhMuhurat': 'शुभ मुहूर्त',
+
+    // Bottom tab bar — see the English block for why these keys exist.
+    'nav.home': 'होम',
+    'nav.chat': 'चैट',
+    'nav.call': 'कॉल',
+    'nav.video': 'वीडियो',
+    'nav.live': 'लाइव',
+    'nav.remedies': 'उपाय',
+
     'remedies.servicesTitle': 'सेवाएं',
     'remedies.puja.title': 'पूजा',
     'remedies.puja.description': 'आशीर्वाद और सकारात्मकता के लिए प्रसिद्ध पुरोहितों और पंडितों के साथ सामूहिक अनुष्ठान में शामिल हों।',
