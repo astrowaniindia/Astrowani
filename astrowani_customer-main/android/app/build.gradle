@@ -81,9 +81,23 @@ react {
 }
 
 /**
- * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ * Run R8 on release builds to minify the Java bytecode.
+ *
+ * Turned on 2026-08-19 — Play Console flagged "Your app is not optimized" on
+ * release 31 (24.0). See android/app/proguard-rules.pro, which was EMPTY until
+ * that change; enabling this without those keep rules would strip classes that
+ * are only reached reflectively or over JNI (Razorpay checkout, WebRTC, Firebase
+ * messaging, Glide) and crash at runtime in the release variant only.
+ *
+ * If a release-only crash ever appears right after a dependency bump, set this
+ * back to false to confirm whether R8 is implicated before debugging anything
+ * else — that one flag isolates the entire class of failure.
+ *
+ * shrinkResources is deliberately NOT enabled alongside this: it removes
+ * resources it believes are unreferenced, which breaks anything resolved by
+ * name at runtime. One risk at a time.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -107,7 +121,7 @@ android {
         applicationId "com.astrowanicustomer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 31
+        versionCode 32
         versionName "24.0"
     }
     signingConfigs {
