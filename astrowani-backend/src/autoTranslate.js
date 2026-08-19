@@ -144,14 +144,30 @@ async function translateHtml(html) {
  * Returns true if anything was written.
  */
 async function backfillBlogHindi(supabase, blog) {
+  // Only target columns this table actually HAS. `blog` is a `select('*')` row,
+  // so its own keys are the schema.
+  //
+  // This guard is not theoretical (2026-08-19): the first version wrote
+  // excerpt_hi and meta_description_hi because /api/blogs *reads* them — but
+  // only title_hi and content_hi exist on the table. PostgREST rejects the
+  // WHOLE update on one unknown column ("Could not find the 'excerpt_hi'
+  // column"), so every translation was computed, paid for against the free
+  // daily allowance, and then thrown away at the write. Silently: the queue
+  // logged a persist failure nobody was reading, and blogs simply stayed
+  // English. Skipping absent columns means the fields that DO exist still get
+  // filled, and if excerpt_hi/meta_description_hi are added later this starts
+  // populating them with no code change.
+  const exists = (column) => Object.prototype.hasOwnProperty.call(blog, column);
   const jobs = [];
-  if (!blog.title_hi && blog.title) jobs.push(['title_hi', translateText(blog.title)]);
-  if (!blog.excerpt_hi && blog.excerpt) jobs.push(['excerpt_hi', translateText(blog.excerpt)]);
-  if (!blog.meta_description_hi && blog.meta_description) {
-    jobs.push(['meta_description_hi', translateText(blog.meta_description)]);
-  }
-  const englishBody = blog.content_hi ? null : (blog.content_en || null);
-  if (englishBody) jobs.push(['content_hi', translateHtml(englishBody)]);
+  const want = (column, current, source, translate) => {
+    if (!exists(column) || current || !source) return;
+    jobs.push([column, translate(source)]);
+  };
+
+  want('title_hi', blog.title_hi, blog.title, translateText);
+  want('excerpt_hi', blog.excerpt_hi, blog.excerpt, translateText);
+  want('meta_description_hi', blog.meta_description_hi, blog.meta_description, translateText);
+  want('content_hi', blog.content_hi, blog.content_en, translateHtml);
   if (!jobs.length) return false;
 
   const update = {};

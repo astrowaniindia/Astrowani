@@ -2000,8 +2000,14 @@ function queueBlogHindiBackfill(rows) {
     if (!b || !b.id || blogHindiQueued.has(b.id)) continue;
     // Nothing missing -> nothing to do. Checked here so the common case (every
     // blog already translated) costs a field test rather than a queue entry.
-    const needs = (!b.title_hi && b.title) || (!b.excerpt_hi && b.excerpt)
-      || (!b.meta_description_hi && b.meta_description) || (!b.content_hi && b.content_en);
+    // Column-aware, for the same reason as backfillBlogHindi: `excerpt_hi` and
+    // `meta_description_hi` do not exist on this table, so a plain `!b.excerpt_hi`
+    // is permanently true and would re-queue every blog on every request forever,
+    // each time doing nothing. Test only columns the row actually has.
+    const missing = (col, source) =>
+      Object.prototype.hasOwnProperty.call(b, col) && !b[col] && !!source;
+    const needs = missing('title_hi', b.title) || missing('excerpt_hi', b.excerpt)
+      || missing('meta_description_hi', b.meta_description) || missing('content_hi', b.content_en);
     if (!needs) continue;
     blogHindiQueued.add(b.id);
     blogHindiPending.push(b);
