@@ -14,6 +14,7 @@ const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
+const smsProviders = require('./src/smsProviders');
 const { TtlCache } = require('./src/ttlCache');
 const { contentCache } = require('./src/contentCache');
 const { createLiveAartiPoller } = require('./src/liveAarti');
@@ -1367,142 +1368,52 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
   // shipped) for anyone with server or log access to read and use.
   console.log(`Generated OTP for ${phoneNumber} (role: ${role || 'unspecified'}, intent: ${intent || 'unspecified'}, session: ${sessionId})`);
 
-  // Send OTP via EnableX SMS API using the DLT-approved "OTP for astrowani" template
-  if (ENABLEX_APP_ID && ENABLEX_APP_KEY) {
-    try {
-      const authHeader = Buffer.from(`${ENABLEX_APP_ID}:${ENABLEX_APP_KEY}`).toString('base64');
+  // Send the OTP, with automatic failover between providers (src/smsProviders.js).
+  //
+  // Was a single inline EnableX call. On 2026-08-20 OTP delivery stopped, and the
+  // investigation showed the cause was NOT in this codebase — a message sent from
+  // EnableX's own dashboard, with our backend entirely out of the loop, failed
+  // identically. The real defect was that one provider going quiet took down
+  // login and signup for both apps with no alternative route. sendOtpSms tries
+  // the primary, confirms it actually DISPATCHED (acceptance is not dispatch —
+  // that outage returned result:0 with a job id and every counter zero), and
+  // falls through to a second provider when it can prove the first did nothing.
+  //
+  // The same `otp` goes to every provider on purpose: only one code is stored,
+  // so issuing a fresh one per provider would risk the first SMS to arrive being
+  // the dead one.
+  if (smsProviders.enablexConfigured()) {
+    const result = await smsProviders.sendOtpSms(toE164Strict(phoneNumber), otp, logError);
 
-      const payload = {
-        from: ENABLEX_SMS_SENDER_ID,
-        to: [toE164Strict(phoneNumber)],
-        type: 'sms',
-        campaign_id: ENABLEX_SMS_CAMPAIGN_ID,
-        template_id: ENABLEX_SMS_TEMPLATE_ID,
-        data: { var1: otp }, // fills {$var1} in the approved template
-        data_coding: 'plain',
-      };
-
-      // TIMEOUT (audit 2026-08-18). This call previously had none, so the HTTP
-      // response to the app was blocked on EnableX for as long as EnableX felt
-      // like taking. The vendor app gives up at its own 15s client timeout and
-      // shows "Failed to send OTP" — while the backend carries on, sends the
-      // SMS and stores the row. The user then has a code AND an error, taps
-      // Resend, and hits the 45s cooldown 429. Indistinguishable from random
-      // breakage, and most likely exactly when the carrier is already slow.
-      //
-      // 10s here is deliberately well below both apps' client timeouts (now
-      // 20s) so the BACKEND is always the party that decides a send failed, and
-      // can roll the stored OTP back accordingly. Never raise this above those.
-      const enxResponse = await axios.post('https://api.enablex.io/sms/v1/messages/', payload, {
-        headers: {
-          'Authorization': `Basic ${authHeader}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000,
+    if (!result.ok) {
+      logError('otp-sms', new Error('Every SMS provider failed to send the OTP'), {
+        phone: toE164Strict(phoneNumber),
+        attempts: result.attempts,
       });
-
-      // EnableX signals business-level failures (DND block, exhausted credits,
-      // DLT/template rejection, per-number throttling) in the response BODY as a
-      // non-zero `result`, while still answering HTTP 200 — so axios does not
-      // throw and the catch below never runs. This was previously unchecked: the
-      // backend logged "sent successfully", returned success:true, and the app
-      // opened the OTP screen for an SMS that was never actually sent. Reported
-      // in production 2026-08-15 (vendor login OTP never arrived while the API
-      // reported success). Treat anything other than result:0 as a real failure.
-      const enxResult = enxResponse.data?.result;
-      const jobId = enxResponse.data?.job_id;
-      if (enxResult !== 0 || !jobId) {
-        logError('enablex-sms', new Error('EnableX rejected the SMS send'), {
-          phone: toE164Strict(phoneNumber),
-          enxResult,
-          enxBody: enxResponse.data,
-        });
-        await otpStore.delete(phoneNumber);
-        return res.status(502).json({
-          success: false,
-          message: 'Could not send the OTP SMS right now. Please try again in a moment.',
-        });
-      }
-
-      console.log(`EnableX SMS accepted for ${toE164Strict(phoneNumber)}. job_id: ${jobId}`);
-
-      // ACCEPTANCE IS NOT DISPATCH — and neither is `result: 0`.
-      //
-      // Found 2026-08-20 while chasing "OTP sometimes works, sometimes not".
-      // It was not intermittent at all: every send from 2026-08-20T04:26 onward
-      // came back result:0 WITH a job_id, and every one of them had
-      // `summary.sent = 0, credit_used = 0` when the job was fetched afterwards.
-      // The SMS credit balance had run out. EnableX still accepts the request
-      // and still issues a job id in that state — the only place the truth
-      // appears is the job's own summary. So the backend answered
-      // "OTP sent successfully", the app opened the OTP screen, and the user
-      // waited for a message that was never dispatched. Yesterday's sends to
-      // the same number all show credit_used:1 / SX_SUCCESSFULLY_DELIVERED.
-      //
-      // The `result !== 0` check above was added on 2026-08-15 for exactly this
-      // class of bug and did not go far enough: it catches a REJECTED send, not
-      // an ACCEPTED-but-never-dispatched one.
-      //
-      // This confirms dispatch before telling the app anything. It is a short,
-      // blocking round-trip on the OTP path, which is normally something to
-      // avoid — but answering "sent" for a message that does not exist is far
-      // worse than ~1.5s of latency, and the timeout below keeps the worst case
-      // bounded and well inside both apps' 20s client timeouts. On any doubt
-      // (network error, unparseable body) we say nothing and let the existing
-      // delivery poller handle it — this must only fail the request on a
-      // POSITIVE confirmation that nothing was sent.
-      try {
-        await new Promise((r) => setTimeout(r, 1500)); // let the job register
-        const { data: jobData } = await axios.get(`https://api.enablex.io/sms/v1/message/${jobId}`, {
-          headers: { Authorization: `Basic ${authHeader}` },
-          timeout: 5000,
-        });
-        const summary = jobData?.summary;
-        const nothingSent = summary
-          && Number(summary.total) === 0
-          && Number(summary.sent) === 0
-          && Number(summary.failed) === 0
-          && Number(summary.credit_used) === 0;
-        if (nothingSent) {
-          logError('enablex-sms', new Error('SMS accepted but never dispatched — provider credit balance is likely exhausted'), {
-            phone: toE164Strict(phoneNumber),
-            jobId,
-            summary,
-          });
-          await otpStore.delete(phoneNumber);
-          return res.status(502).json({
-            success: false,
-            code: 'OTP_SEND_NOT_DISPATCHED',
-            message: 'We could not send the OTP right now. Please try again in a few minutes.',
-          });
-        }
-      } catch (dispatchErr) {
-        // Diagnostics only — never turn "we could not check" into "it failed".
-        console.log(`[enablex-sms] dispatch check skipped for job ${jobId}: ${dispatchErr.message}`);
-      }
-
-      // Acceptance is not delivery. Confirm the carrier actually delivered it and
-      // log the failure if not — without this there is no record tying a "no OTP
-      // arrived" report to what really happened, which is why the 2026-08-15
-      // failures could not be diagnosed after the fact. Fire-and-forget so the
-      // OTP response is not delayed by the carrier round-trip.
-      verifyEnxDelivery(
-        jobId,
-        toE164Strict(phoneNumber),
-        authHeader,
-        () => otpStore.refundSend(phoneNumber, sentAt),
-      );
-    } catch (error) {
-      // Previously swallowed: the app was told success:true even when no SMS was
-      // actually sent, so a real delivery failure looked identical to a working
-      // request — the OTP screen would open and nothing would ever arrive. Undo
-      // the stored OTP and tell the app the truth instead.
-      console.error('Failed to send SMS via EnableX:', error?.response?.data || error.message);
+      // Roll the stored code back — telling the app it was sent when it was not
+      // is what made the 2026-08-20 outage look random instead of like an outage.
       await otpStore.delete(phoneNumber);
       return res.status(502).json({
         success: false,
-        message: 'Could not send the OTP SMS right now. Please try again in a moment.',
+        code: 'OTP_SEND_FAILED',
+        message: 'We could not send the OTP right now. Please try again in a few minutes.',
       });
+    }
+
+    console.log(`OTP SMS sent via ${result.provider} for ${toE164Strict(phoneNumber)} (id: ${result.id})`);
+
+    // Acceptance is still not DELIVERY. Confirm the carrier actually delivered it
+    // and log the outcome, so a "no OTP arrived" report can be traced to a cause
+    // instead of guessed at. Fire-and-forget: never delays the OTP response.
+    // Only EnableX exposes a job-status API we poll; a fallback send is left to
+    // its own provider's reporting.
+    if (result.provider === 'enablex') {
+      verifyEnxDelivery(
+        result.id,
+        toE164Strict(phoneNumber),
+        Buffer.from(`${ENABLEX_APP_ID}:${ENABLEX_APP_KEY}`).toString('base64'),
+        () => otpStore.refundSend(phoneNumber, sentAt),
+      );
     }
   } else {
     console.log('EnableX keys not configured. Skipping actual SMS sending. OTP is:', otp);
