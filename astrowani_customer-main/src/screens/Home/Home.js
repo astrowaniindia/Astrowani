@@ -56,6 +56,7 @@ import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import useBlogListSync from '../../hooks/useBlogListSync';
 import useChatRequest from '../../hooks/useChatRequest';
 import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
+import { buildRemedyCategories } from '../Remedies/remedyCategories';
 import RequestingPopup from '../../components/RequestingPopup';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
@@ -248,6 +249,18 @@ const Home = ({navigation}) => {
     getAstroServices()
       .then(list => setAstroServices(list))
       .catch(err => console.log('Failed to load astro services:', err.message));
+  }, []);
+
+  // Remedy categories for the Home row below Astro Reports. Null until the first
+  // response; buildRemedyCategories treats null the same as an empty list and
+  // returns the four bundled fallbacks, so the row renders immediately and is
+  // simply overwritten with admin-set titles/images once they arrive — no
+  // spinner, and no empty gap if the request fails outright.
+  const [remedyCategories, setRemedyCategories] = useState(null);
+  React.useEffect(() => {
+    Instance.get('/api/remedy-categories')
+      .then(res => setRemedyCategories(res?.data?.data || []))
+      .catch(err => console.log('Failed to load remedy categories:', err.message));
   }, []);
 
   const ASTRO_SERVICE_ICONS = {
@@ -1026,6 +1039,14 @@ const Home = ({navigation}) => {
               </Text>
             </TouchableOpacity>
           ) : (
+            /* Chat AND Call, each carrying its own per-minute rate. The card
+               used to offer chat only and showed no price at all, so the two
+               services were indistinguishable in cost until you were already
+               inside one. The rates come from different columns and are
+               genuinely different numbers — chatPrice is
+               chat_charge_per_minute, chargePerMinute is
+               call_charge_per_minute — which is exactly why each price sits on
+               its own button rather than one shared "from ₹X" line. */
             <View style={styles.actionRow}>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -1034,8 +1055,53 @@ const Home = ({navigation}) => {
                     ? handleChatPress(item)
                     : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
                 }
-                style={item.isChatEnabled ? styles.chatBtn : styles.unavailableBtn}>
-                <Text style={item.isChatEnabled ? styles.chatBtnTxt : styles.unavailableBtnTxt}>{item.isChatEnabled ? t('common.chat') : t('common.noChat')}</Text>
+                style={[styles.dualBtn, item.isChatEnabled ? styles.dualBtnChat : styles.dualBtnOff]}>
+                <View style={styles.dualBtnHead}>
+                  <MaterialIcons
+                    name={item.isChatEnabled ? 'chat-bubble-outline' : 'block'}
+                    size={moderateScale(11)}
+                    color={item.isChatEnabled ? '#fff' : '#fff'}
+                    style={styles.dualBtnIcon}
+                  />
+                  <Text style={styles.dualBtnLabel} numberOfLines={1}>
+                    {item.isChatEnabled ? t('common.chat') : t('common.noChat')}
+                  </Text>
+                </View>
+                {item.isChatEnabled && (
+                  <Text style={styles.dualBtnPrice} numberOfLines={1}>
+                    {t('common.perMinute', {price: Number(item.chatPrice || 0)})}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() =>
+                  item.isCallEnabled
+                    ? getRoomTokenWebCall(item)
+                    : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableCall', {name: item.name || 'This astrologer'}))
+                }
+                style={[styles.dualBtn, item.isCallEnabled ? styles.dualBtnCall : styles.dualBtnOff]}>
+                <View style={styles.dualBtnHead}>
+                  <MaterialIcons
+                    name={item.isCallEnabled ? 'call' : 'block'}
+                    size={moderateScale(11)}
+                    color={item.isCallEnabled ? COLORS.AstroMaroon : '#fff'}
+                    style={styles.dualBtnIcon}
+                  />
+                  <Text
+                    style={[styles.dualBtnLabel, item.isCallEnabled && styles.dualBtnLabelOutline]}
+                    numberOfLines={1}>
+                    {item.isCallEnabled ? t('common.call') : t('common.noCall')}
+                  </Text>
+                </View>
+                {item.isCallEnabled && (
+                  <Text
+                    style={[styles.dualBtnPrice, styles.dualBtnPriceOutline]}
+                    numberOfLines={1}>
+                    {t('common.perMinute', {price: Number(item.chargePerMinute || item.pricing || 0)})}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           )}
@@ -1210,17 +1276,21 @@ const Home = ({navigation}) => {
           />
         )}
 
-        {/* Call With Astrologers — moved up here (directly under "India's Best
-            Astrologers", above "Astrowani's Categories") at the user's request,
-            2026-08-16. It used to sit far down the page, between Astro Reports
-            and the Blog carousel. */}
+        {/* Video Call With Astrologers — moved up here (directly under "India's
+            Best Astrologers", above "Astrowani's Categories") at the user's
+            request, 2026-08-16. It used to sit far down the page, between Astro
+            Reports and the Blog carousel.
+            Converted from audio to VIDEO 2026-08-20: the card above now carries
+            the audio Call button (with its rate), so this carousel repeating the
+            same audio action was redundant — it's the only Home surface offering
+            video. */}
         {!loadingAstrologer && !errorAstrologer && astrologerToShow?.length > 0 && (
           <>
             <View style={styles.separator} />
             <View style={styles.topAstrologers}>
-              <Text style={styles.topAstrologerTxt}>{t('home.callWithAstrologers')}</Text>
+              <Text style={styles.topAstrologerTxt}>{t('home.videoCallWithAstrologers')}</Text>
             </View>
-            <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={getRoomTokenWebCall} />
+            <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={initiateVideoCall} />
           </>
         )}
 
@@ -1329,6 +1399,39 @@ const Home = ({navigation}) => {
           }))}
           onServiceSelect={handleAstroServiceSelect}
           showPrice
+          variant="image"
+        />
+
+        <View style={styles.separator} />
+
+        {/* Remedies — added below Astro Reports 2026-08-20, in the same
+            image-card row as Astro Reports so the two read as one family of
+            offerings. Same four categories as the Remedies tab (shared via
+            remedyCategories.js), so an admin edit shows up in both places.
+            No price badge: unlike a report, a remedy's cost depends on the
+            individual item picked inside RemedyShop, so a single number here
+            would be wrong for most of them. */}
+        <View style={styles.topAstrologers}>
+          <Text style={styles.topAstrologerTxt}>{t('home.remedies')}</Text>
+          <TouchableOpacity
+            style={styles.viewAllBtn}
+            onPress={() => {
+              captureEvent('home_screen_click', {section: 'view_all_remedies'});
+              navigation.navigate('Remedies');
+            }}>
+            <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
+          </TouchableOpacity>
+        </View>
+        <FreeServicesScreen
+          services={buildRemedyCategories(remedyCategories, language, t).map(c => ({
+            id: c.id,
+            title: c.title,
+            icon: c.image?.uri || c.image,
+          }))}
+          onServiceSelect={item => {
+            captureEvent('home_screen_click', {section: 'remedy_card', label: item.title});
+            navigation.navigate('RemedyShop', {type: item.id, title: item.title});
+          }}
           variant="image"
         />
 
@@ -1787,11 +1890,16 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
+    // NOT 'wrap'. The two children are flex:1, so they shrink to share the row —
+    // but with wrapping enabled a long translated label (Hindi "कॉल उपलब्ध नहीं")
+    // can push the second button onto its own line, leaving one full-width button
+    // stacked under another. Nowrap keeps them side by side and lets the labels
+    // ellipsize instead.
+    flexWrap: 'nowrap',
+    alignItems: 'stretch',
     justifyContent: 'center',
     width: '100%',
-    gap: 4,
+    gap: scale(5),
   },
   chatBtn: {
     backgroundColor: COLORS.AstroMaroon,
@@ -1829,6 +1937,64 @@ const styles = StyleSheet.create({
     color: 'white',
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(13),
+  },
+  // Two-up Chat/Call buttons on the "India's Best Astrologers" card. Each is a
+  // two-line stack (label above, rate below) rather than one line: the card is
+  // only scale(160) wide, and "Chat ₹12/min" on a single line either truncates
+  // or forces a font size too small for the rate to be readable — which would
+  // defeat the point of showing it.
+  dualBtn: {
+    flex: 1,
+    borderRadius: moderateScale(16),
+    paddingVertical: verticalScale(5),
+    paddingHorizontal: scale(4),
+    marginVertical: verticalScale(4),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+  },
+  dualBtnChat: {
+    backgroundColor: COLORS.AstroMaroon,
+    borderColor: COLORS.AstroMaroon,
+  },
+  dualBtnCall: {
+    backgroundColor: '#fff',
+    borderColor: COLORS.AstroMaroon,
+  },
+  dualBtnOff: {
+    backgroundColor: '#C0392B',
+    borderColor: '#C0392B',
+    opacity: 0.9,
+  },
+  dualBtnHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dualBtnIcon: {
+    marginRight: scale(3),
+  },
+  dualBtnLabel: {
+    color: '#fff',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(11),
+  },
+  dualBtnLabelOutline: {
+    color: COLORS.AstroMaroon,
+  },
+  dualBtnPrice: {
+    color: '#fff',
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(9),
+    marginTop: verticalScale(1),
+    opacity: 0.95,
+  },
+  dualBtnPriceOutline: {
+    color: COLORS.AstroMaroon,
   },
   unavailableBtn: {
     backgroundColor: '#C0392B',

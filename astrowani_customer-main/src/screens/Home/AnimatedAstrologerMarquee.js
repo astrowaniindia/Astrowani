@@ -1,4 +1,4 @@
-// Call-only astrologer carousel shown just above the Blogs section on Home —
+// Video-call astrologer carousel shown under "India's Best Astrologers" on Home —
 // same astrologers as "India's Best Astrologers" above (shuffled into a
 // different order). Exactly one big, full-opacity card sits centered at a
 // time, with the next/previous cards peeking in small and dimmed on either
@@ -129,7 +129,7 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
     return (
       <Animated.View style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
         {/* Tap-tracking only — no navigation added here (that would be a UI/UX
-            change beyond what was asked for). Separate from the Call button
+            change beyond what was asked for). Separate from the Video Call button
             below on purpose: that one already fires call_initiated once the
             call actually goes through, tracked independently. */}
         <TouchableWithoutFeedback onPress={() => captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name})}>
@@ -150,9 +150,13 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
             <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
           </Animated.View>
         </TouchableWithoutFeedback>
+        {/* Video, not audio — this carousel was converted to video calling on
+            2026-08-20. The "India's Best Astrologers" cards above now carry the
+            audio Call button, so an identical audio action here was duplicated
+            reach for one service and no reach at all for the other. */}
         <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => onCallPress(item)}>
-          <MaterialIcons name="call" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
-          <Text style={styles.callBtnText}>{t('common.call')}</Text>
+          <MaterialIcons name="videocam" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
+          <Text style={styles.callBtnText}>{t('common.videoCall')}</Text>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -197,7 +201,7 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       onScrollBeginDrag={() => { pausedRef.current = true; }}
       onScrollEndDrag={() => {
         // A drag doesn't always end in momentum (a short flick, or the touch
-        // getting partly absorbed by the Call button inside the card) — if
+        // getting partly absorbed by the Video Call button inside the card) — if
         // un-pausing only happened in onMomentumScrollEnd below, a drag that
         // never triggers momentum left auto-advance paused forever. This
         // guarantees it always resumes; onMomentumScrollEnd (when it does

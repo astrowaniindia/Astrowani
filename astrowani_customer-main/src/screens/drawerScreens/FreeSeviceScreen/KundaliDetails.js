@@ -19,6 +19,7 @@ import {
   ASTRO, ReportShell, SectionCard, ChipGrid, Prose, Callout, Badge, Divider,
   ZODIAC_GLYPH,
 } from '../../../components/astro/AstroUI';
+import ZoomableChart from '../../../components/astro/ZoomableChart';
 import {LanguageContext} from '../../../context/LanguageContext';
 
 export default function KundaliDetails() {
@@ -62,11 +63,30 @@ export default function KundaliDetails() {
   const hasDosha = kundaliData?.mangal_dosha?.has_dosha;
   const doshaKnown = typeof hasDosha === 'boolean';
   const yogas = Array.isArray(kundaliData?.yoga_details) ? kundaliData.yoga_details : [];
+  const chartSvg = kundaliData?.chartSvg;
+
+  // Reveal's stagger is driven by card position, so the indices have to stay
+  // contiguous as cards appear/disappear — the birth chart is conditional (the
+  // backend degrades to no chart rather than failing the whole report), and
+  // hardcoded indices would leave a visible gap in the entrance animation when
+  // it's absent.
+  let cardIndex = 0;
+  const nextIndex = () => cardIndex++;
 
   return (
     <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
       <ReportShell title={name || t('free.birthSummary')} subtitle={t('free.nakshatraDetails')}>
-        <SectionCard title={t('free.nakshatraDetails')} glyph="✦" index={0}>
+        {/* The birth chart itself — the headline of a kundali, and the one thing
+            this screen never showed. Goes through ZoomableChart (never a raw
+            SvgXml): the provider returns an SVG with no viewBox, which renders
+            cropped on the right-hand houses unless normalized. */}
+        {!!chartSvg && (
+          <SectionCard title={t('free.birthChart')} glyph="✧" subtitle="D1" index={nextIndex()}>
+            <ZoomableChart svg={chartSvg} title={t('free.birthChart')} />
+          </SectionCard>
+        )}
+
+        <SectionCard title={t('free.nakshatraDetails')} glyph="✦" index={nextIndex()}>
           {!!signs.length && (
             <View style={styles.signRow}>
               {signs.map((s) => (
@@ -83,7 +103,7 @@ export default function KundaliDetails() {
         </SectionCard>
 
         {doshaKnown && (
-          <SectionCard title={t('result.mangalDosh')} glyph="♂" index={1}>
+          <SectionCard title={t('result.mangalDosh')} glyph="♂" index={nextIndex()}>
             <View style={styles.doshaRow}>
               <Ionicons
                 name={hasDosha ? 'alert-circle' : 'shield-checkmark'}
@@ -104,7 +124,7 @@ export default function KundaliDetails() {
         )}
 
         {!!yogas.length && (
-          <SectionCard title={t('free.doshasAndYogas')} glyph="◈" subtitle={`${yogas.length}`} index={2}>
+          <SectionCard title={t('free.doshasAndYogas')} glyph="◈" subtitle={`${yogas.length}`} index={nextIndex()}>
             {yogas.map((y, i) => (
               <View key={i} style={styles.yoga}>
                 <View style={styles.yogaHead}>
@@ -122,7 +142,7 @@ export default function KundaliDetails() {
         )}
 
         {!doshaKnown && !yogas.length && (
-          <SectionCard glyph="◆" title={t('free.doshasAndYogas')} index={1}>
+          <SectionCard glyph="◆" title={t('free.doshasAndYogas')} index={nextIndex()}>
             <Callout icon="information-circle">{t('free.noKundaliData')}</Callout>
           </SectionCard>
         )}

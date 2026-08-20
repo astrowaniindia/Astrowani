@@ -13,28 +13,9 @@ import { COLORS } from '../../Theme/Colors';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
-
-// Bundled fallback images — used whenever the admin hasn't set a category's
-// image yet (or the fetch fails), so this screen never breaks or goes blank.
-// See astrowani-admin's Remedies page → "Edit ... section" for the
-// admin-editable version of these (table remedy_categories). Title/description
-// text now comes from i18n (below), not this object — the fallback used to be
-// English-only regardless of the app's language, so it stayed "Puja" /
-// "Gemstones" / etc. even with the Hindi toggle on.
-const IMAGE_DEFAULTS = {
-  puja: require('../../assets/images/specificPuja.jpg'),
-  gemstone: require('../../assets/images/gemsStones.jpg'),
-  specific_puja: require('../../assets/images/groupPuja.jpg'),
-  life_report: require('../../assets/images/specificPuja.jpg'),
-};
-// Maps each category type to its i18n key pair.
-const TEXT_KEYS = {
-  puja: {title: 'remedies.puja.title', description: 'remedies.puja.description'},
-  gemstone: {title: 'remedies.gemstone.title', description: 'remedies.gemstone.description'},
-  specific_puja: {title: 'remedies.specificPuja.title', description: 'remedies.specificPuja.description'},
-  life_report: {title: 'remedies.lifeReport.title', description: 'remedies.lifeReport.description'},
-};
-const ORDER = ['puja', 'gemstone', 'specific_puja', 'life_report'];
+// The four categories, their bundled fallbacks and the admin-override merge now
+// live in one place — Home's Remedies row renders the same four cards.
+import { buildRemedyCategories } from './remedyCategories';
 
 const Remedies = () => {
   const navigation = useNavigation();
@@ -49,43 +30,7 @@ const Remedies = () => {
 
   useFocusEffect(React.useCallback(() => { fetchCategories(); }, [fetchCategories]));
 
-  // Merge admin-set fields over the bundled fallback, per type, in the fixed
-  // display order — an admin can set only some fields (e.g. just the image) and
-  // the rest still falls back cleanly. The fallback text is now translated
-  // (TEXT_KEYS via t()), not a fixed English string, so a category the admin
-  // hasn't filled in yet still respects the Hindi toggle.
-  const data = ORDER.map((type) => {
-    const keys = TEXT_KEYS[type];
-    const fallbackTitle = t(keys.title);
-    const fallbackDescription = t(keys.description);
-    const fromApi = (categories || []).find((c) => c.type === type);
-    // Precedence matters, and getting it wrong is why this screen stayed English
-    // under the Hindi toggle (reported 2026-08-19). It used to read:
-    //
-    //   language === 'Hindi' ? (fromApi?.hindi?.title || fromApi?.title) : ...
-    //
-    // so as soon as an admin had saved an English title — which they had for
-    // every category — the Hindi branch fell straight through to that English
-    // string. Being truthy, it then satisfied the `title || fallbackTitle` below,
-    // so the perfectly good bundled Hindi translation was never reached.
-    //
-    // Correct order in Hindi is: admin's Hindi > our bundled Hindi > admin's
-    // English as an absolute last resort (better a real category name than a
-    // blank card). English is unchanged: admin's text, else the bundled string.
-    const pick = (apiHindi, apiEnglish, bundled) =>
-      language === 'Hindi'
-        ? (apiHindi || bundled || apiEnglish)
-        : (apiEnglish || bundled);
-    const title = pick(fromApi?.hindi?.title, fromApi?.title, fallbackTitle);
-    const description = pick(fromApi?.hindi?.description, fromApi?.description, fallbackDescription);
-    return {
-      id: type,
-      type,
-      title: title || fallbackTitle,
-      description: description || fallbackDescription,
-      image: fromApi?.image ? { uri: fromApi.image } : IMAGE_DEFAULTS[type],
-    };
-  });
+  const data = buildRemedyCategories(categories, language, t);
 
   const handleBookPuja = item => {
     navigation.navigate('RemedyShop', { type: item.type, title: item.title });

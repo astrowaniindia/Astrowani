@@ -24,7 +24,10 @@ type ServiceItem = {
   // FREE_SERVICE_ROUTES is keyed by the English title string), so the actual
   // on-screen text is a separate field rather than overwriting `title`.
   displayTitle?: string;
-  icon: string;
+  // A remote URL, or a bundled require() asset (RN hands those back as a
+  // number). Home's Remedies row falls back to bundled images when an admin
+  // hasn't uploaded one, so both shapes reach here.
+  icon: string | number;
   description?: string;
   price?: number;
 };
@@ -62,7 +65,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
           <View style={styles.imageCardImageWrap}>
             {item.icon ? (
               <Image
-                source={{ uri: item.icon }}
+                source={typeof item.icon === 'number' ? item.icon : { uri: item.icon }}
                 style={styles.imageCardImage}
                 resizeMode="cover"
                 onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
@@ -100,7 +103,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
         <View style={styles.iconBadge}>
           {item.icon ? (
             <Image
-              source={{ uri: item.icon }}
+              source={typeof item.icon === 'number' ? item.icon : { uri: item.icon }}
               style={styles.icon}
               resizeMode="contain"
               onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}

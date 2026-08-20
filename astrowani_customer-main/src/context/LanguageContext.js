@@ -15,6 +15,7 @@ const translations = {
     'home.search': 'Search Here',
     'home.bestAstrologers': "India's Best Astrologers",
     'home.callWithAstrologers': 'Call with Astrologers',
+    'home.videoCallWithAstrologers': 'Video Call with Astrologers',
     'home.viewAll': 'View All',
     'home.remedies': 'Astrowani Remedies',
     'home.bookPuja': 'Book VIP Puja',
@@ -47,6 +48,7 @@ const translations = {
     // Common labels / actions
     'common.chat': 'Chat',
     'common.call': 'Call',
+    'common.videoCall': 'Video Call',
     'common.expYears': 'Exp: {{count}} years',
     // Home "₹1 Services" card titles (screens/Home/Astrologers.js `services`).
     'home.service.panchang': "Today's Panchang",
@@ -77,6 +79,10 @@ const translations = {
     'remedies.lifeReport.description': 'One-time detailed reports on your career, marriage, health, or finances.',
     'common.video': 'Video',
     'common.noChat': 'No Chat',
+    // Per-minute rate shown on the Home card's Chat/Call buttons. Kept as one
+    // key (not "₹" + number concatenated at the call site) so the currency
+    // symbol and the "/min" suffix are translatable together.
+    'common.perMinute': '₹{{price}}/min',
     'common.noCall': 'No Call',
     'common.noVideo': 'No Video',
     'common.offline': 'Offline',
@@ -604,6 +610,7 @@ const translations = {
     'free.doshasAndYogas': 'Doshas & Yogas',
     'free.noKundaliData': 'No Kundali data available',
     'free.birthSummary': 'Birth Summary',
+    'free.birthChart': 'Birth Chart',
     'free.sunAndMoon': 'Sun & Moon',
     'free.dayLength': 'Day length',
     'free.result': 'Result',
@@ -883,6 +890,7 @@ const translations = {
     'home.search': 'यहाँ खोजें',
     'home.bestAstrologers': 'भारत के सर्वश्रेष्ठ ज्योतिषी',
     'home.callWithAstrologers': 'ज्योतिषी से कॉल करें',
+    'home.videoCallWithAstrologers': 'ज्योतिषी से वीडियो कॉल करें',
     'home.viewAll': 'सभी देखें',
     'home.remedies': 'एस्ट्रोवाणी के उपाय',
     'home.bookPuja': 'वीआईपी पूजा बुक करें',
@@ -913,6 +921,7 @@ const translations = {
     // Common labels / actions
     'common.chat': 'चैट',
     'common.call': 'कॉल',
+    'common.videoCall': 'वीडियो कॉल',
     'common.expYears': 'अनुभव: {{count}} वर्ष',
     'home.service.panchang': 'आज का पंचांग',
     'home.service.janamKundali': 'जन्म कुंडली',
@@ -939,6 +948,7 @@ const translations = {
     'remedies.lifeReport.description': 'आपके करियर, विवाह, स्वास्थ्य या वित्त पर एकबारगी विस्तृत रिपोर्ट।',
     'common.video': 'वीडियो',
     'common.noChat': 'चैट उपलब्ध नहीं',
+    'common.perMinute': '₹{{price}}/मिनट',
     'common.noCall': 'कॉल उपलब्ध नहीं',
     'common.noVideo': 'वीडियो उपलब्ध नहीं',
     'common.offline': 'ऑफ़लाइन',
@@ -1465,6 +1475,7 @@ const translations = {
     'free.doshasAndYogas': 'दोष और योग',
     'free.noKundaliData': 'कोई कुंडली डेटा उपलब्ध नहीं है',
     'free.birthSummary': 'जन्म सारांश',
+    'free.birthChart': 'जन्म कुंडली चक्र',
     'free.sunAndMoon': 'सूर्य और चंद्र',
     'free.dayLength': 'दिन की अवधि',
     'free.result': 'परिणाम',

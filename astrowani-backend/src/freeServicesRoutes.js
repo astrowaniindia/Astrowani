@@ -375,10 +375,26 @@ module.exports = function registerFreeServicesRoutes(app) {
       }
       const { date, time } = splitDateTime(datetime);
       const q = { date, time, latitude, longitude, tz: '5.5', lang: req.query.language || 'en' };
-      const [extendedKundali, mangalDosh, yogasList] = await Promise.all([
+      // The D1 (Lagna) chart. This is the one thing a "kundali" is expected to
+      // show and it was missing — the screen rendered nakshatra text, a dosha
+      // verdict and yogas, but never the square chart itself.
+      //
+      // `style` is REQUIRED by chart_image/* despite reading as cosmetic: without
+      // it the endpoint 400s with "Please enter all required fields" (same trap
+      // documented on astroRoutes.js's chartQuery).
+      //
+      // Fetched with its own .catch rather than inside the bare Promise.all: a
+      // chart failure must degrade to "no chart" rather than 502 the whole
+      // report, which is what would happen if it shared the others' rejection.
+      // KundaliDetails renders the chart card only when chartSvg is present.
+      const [extendedKundali, mangalDosh, yogasList, chart] = await Promise.all([
         callJyotisham('/api/extended_horoscope/extended_kundali', q),
         callJyotisham('/api/dosha/mangal_dosh', q),
         callJyotisham('/api/extended_horoscope/yogas_list', q),
+        callJyotisham('/api/chart_image/d1', { ...q, style: 'north' }).catch((err) => {
+          console.error('[free-services] janam-kundali chart failed (continuing without it):', err.message);
+          return null;
+        }),
       ]);
       const payload = buildKundaliPayload({
         extendedKundali: extendedKundali.data,
@@ -392,6 +408,7 @@ module.exports = function registerFreeServicesRoutes(app) {
           nakshatra_details: payload.nakshatra_details,
           mangal_dosha: payload.mangal_dosha,
           yoga_details: payload.yoga_details,
+          chartSvg: chart ? chart.data : null,
         },
       });
     } catch (err) {
