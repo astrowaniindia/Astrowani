@@ -57,6 +57,7 @@ import useBlogListSync from '../../hooks/useBlogListSync';
 import useChatRequest from '../../hooks/useChatRequest';
 import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import { buildRemedyCategories } from '../Remedies/remedyCategories';
+import { astroServiceLabel } from '../../utils/astroServiceLabel';
 import RequestingPopup from '../../components/RequestingPopup';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
@@ -1060,15 +1061,19 @@ const Home = ({navigation}) => {
                   <MaterialIcons
                     name={item.isChatEnabled ? 'chat-bubble-outline' : 'block'}
                     size={moderateScale(11)}
-                    color={item.isChatEnabled ? '#fff' : '#fff'}
+                    color={item.isChatEnabled ? COLORS.AstroMaroon : '#fff'}
                     style={styles.dualBtnIcon}
                   />
-                  <Text style={styles.dualBtnLabel} numberOfLines={1}>
+                  <Text
+                    style={[styles.dualBtnLabel, item.isChatEnabled && styles.dualBtnLabelOutline]}
+                    numberOfLines={1}>
                     {item.isChatEnabled ? t('common.chat') : t('common.noChat')}
                   </Text>
                 </View>
                 {item.isChatEnabled && (
-                  <Text style={styles.dualBtnPrice} numberOfLines={1}>
+                  <Text
+                    style={[styles.dualBtnPrice, styles.dualBtnPriceOutline]}
+                    numberOfLines={1}>
                     {t('common.perMinute', {price: Number(item.chatPrice || 0)})}
                   </Text>
                 )}
@@ -1086,19 +1091,15 @@ const Home = ({navigation}) => {
                   <MaterialIcons
                     name={item.isCallEnabled ? 'call' : 'block'}
                     size={moderateScale(11)}
-                    color={item.isCallEnabled ? COLORS.AstroMaroon : '#fff'}
+                    color="#fff"
                     style={styles.dualBtnIcon}
                   />
-                  <Text
-                    style={[styles.dualBtnLabel, item.isCallEnabled && styles.dualBtnLabelOutline]}
-                    numberOfLines={1}>
+                  <Text style={styles.dualBtnLabel} numberOfLines={1}>
                     {item.isCallEnabled ? t('common.call') : t('common.noCall')}
                   </Text>
                 </View>
                 {item.isCallEnabled && (
-                  <Text
-                    style={[styles.dualBtnPrice, styles.dualBtnPriceOutline]}
-                    numberOfLines={1}>
+                  <Text style={styles.dualBtnPrice} numberOfLines={1}>
                     {t('common.perMinute', {price: Number(item.chargePerMinute || item.pricing || 0)})}
                   </Text>
                 )}
@@ -1393,7 +1394,11 @@ const Home = ({navigation}) => {
             id: s.id,
             key: s.key,
             title: s.name,
-            displayTitle: language === 'Hindi' ? (s.name_hi || s.name) : s.name,
+            // Was `s.name_hi || s.name` — but name_hi is empty for every service,
+            // so this row stayed English under the Hindi toggle. The helper adds
+            // a bundled translation between those two, keyed by the stable
+            // service key. Admin-set name_hi still wins.
+            displayTitle: astroServiceLabel(s, language, t),
             icon: s.image || ASTRO_SERVICE_ICONS[s.category],
             price: s.price,
           }))}
@@ -1819,7 +1824,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: verticalScale(15),
     marginTop: verticalScale(45),
-    width: scale(160),
+    // Widened from 160 when the card gained a second action button (2026-08-20).
+    // Two buttons plus the gap consumed the full inner width, so they sat flush
+    // against the card's rounded edges with no margin at all.
+    width: scale(178),
     backgroundColor: '#fff',
     borderRadius: moderateScale(20),
     marginRight: scale(15),
@@ -1886,7 +1894,11 @@ const styles = StyleSheet.create({
   btnView: {
     width: '100%',
     alignItems: 'center',
-    paddingHorizontal: scale(6),
+    // The inset that actually keeps the buttons off the card's edge — the extra
+    // card width above gives them room to stay their old size while this pushes
+    // them inward. Raising only one of the two would either crowd the edge again
+    // or squeeze the labels.
+    paddingHorizontal: scale(12),
   },
   actionRow: {
     flexDirection: 'row',
@@ -1958,12 +1970,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 2,
   },
+  // Chat is the outlined one, Call is the filled one (swapped 2026-08-20).
   dualBtnChat: {
-    backgroundColor: COLORS.AstroMaroon,
+    backgroundColor: '#fff',
     borderColor: COLORS.AstroMaroon,
   },
   dualBtnCall: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.AstroMaroon,
     borderColor: COLORS.AstroMaroon,
   },
   dualBtnOff: {
@@ -2309,7 +2322,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: scale(5),
     marginVertical: verticalScale(15),
-    justifyContent: 'space-between',
+    // 'center' with a small gap, NOT 'space-between' — the latter pinned the two
+    // pills to opposite screen edges, leaving a wide dead gap between them and
+    // making them read as two unrelated controls rather than a pair.
+    justifyContent: 'center',
     alignItems: 'center',
   },
   fixedBtn: {
@@ -2325,7 +2341,9 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.3,
     shadowRadius: 6,
-    marginHorizontal: scale(10),
+    // Was scale(10) each side (a 20-unit trough between them); scale(3) puts
+    // them side by side as one control pair.
+    marginHorizontal: scale(3),
   },
   fixedBtnTxt: {
     color: COLORS.AstroMaroon,

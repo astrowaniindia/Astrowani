@@ -13,7 +13,7 @@ const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
 const liveAarti = require('./liveAarti');
-const { queueBlogTranslation } = require('./autoTranslate');
+const { queueBlogTranslation, queueRemedyItemTranslation, queueRemedyCategoryTranslation, queueCategoryTranslation } = require('./autoTranslate');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -177,11 +177,17 @@ module.exports = function registerAdminRoutes(app) {
   crud('categories', 'categories', {
     orderBy: 'sort_order', ascending: true,
     allowed: ['name', 'name_hi', 'image', 'sort_order'],
+    afterWrite: (row) => queueCategoryTranslation(db, row),
   });
   // Remedy shop items (type = puja | gemstone | specific_puja). Admin UI filters by tab.
   crud('remedies', 'remedy_items', {
     orderBy: 'sort_order', ascending: true,
     allowed: ['type', 'title', 'title_hi', 'description', 'description_hi', 'price', 'image', 'is_active', 'sort_order'],
+    // Auto-translate to Hindi on save, same as blogs. These are admin-authored
+    // product names with no bundled translation anywhere in the app, so machine
+    // translation is the only path by which they ever become Hindi. Only fills
+    // empty columns, so hand-written Hindi is never overwritten.
+    afterWrite: (row) => queueRemedyItemTranslation(db, row),
   });
   // The 4 top-level category cards (Puja/Gemstones/Specific Puja/Life Reports) on the
   // Remedies landing screen — distinct from remedy_items above (the items *inside*
@@ -190,6 +196,7 @@ module.exports = function registerAdminRoutes(app) {
   crud('remedy-categories', 'remedy_categories', {
     orderBy: 'sort_order', ascending: true,
     allowed: ['title', 'title_hi', 'description', 'description_hi', 'image', 'sort_order'],
+    afterWrite: (row) => queueRemedyCategoryTranslation(db, row),
   });
   // Live-stream gift catalog.
   crud('gifts', 'gifts', {

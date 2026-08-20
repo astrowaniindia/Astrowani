@@ -9,6 +9,7 @@ import {getAstroServices, getWalletBalance, runAstroReport} from '../../../api/a
 import {LanguageContext} from '../../../context/LanguageContext';
 import {showStatusPopup} from '../../../components/StatusPopup';
 import {apiLang} from '../../../components/astro/ReportLanguage';
+import {astroServiceLabel} from '../../../utils/astroServiceLabel';
 
 export default function useAstroPurchase(serviceKey) {
   const {t} = useContext(LanguageContext);
@@ -56,7 +57,9 @@ export default function useAstroPurchase(serviceKey) {
         showStatusPopup({
           variant: 'confirmPay',
           title: t('astro.confirmPurchase'),
-          message: t('astro.confirmPurchaseMsg', {price: freshService.price, name: freshService.name}),
+          // Translated name, not the raw English one — this message is otherwise
+          // fully Hindi, so `name` was the single English word in the sentence.
+          message: t('astro.confirmPurchaseMsg', {price: freshService.price, name: astroServiceLabel(freshService, language, t)}),
           confirmText: t('astro.payAmount', {price: freshService.price}),
           cancelText: t('common.cancel'),
           onConfirm: () => resolve(true),

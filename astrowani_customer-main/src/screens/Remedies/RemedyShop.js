@@ -111,7 +111,7 @@ const RemedyShop = ({ route, navigation }) => {
   // thinking they completed a purchase that nobody will ever act on.
   const placeOrder = () => {
     if (!phone.trim()) {
-      Alert.alert('Phone required', 'Please enter a contact phone number.');
+      Alert.alert(t('order.phoneRequired'), t('order.phoneRequiredMsg'));
       return;
     }
     const total = (selected?.price || 0) * qty;
@@ -121,9 +121,27 @@ const RemedyShop = ({ route, navigation }) => {
     setUnavailable(true);
   };
 
+  // One place that decides an item's display language, used by the card, the
+  // order sheet and the "not delivering yet" message. They used to disagree:
+  // the CARD showed the Hindi title while the order sheet below it showed the
+  // raw English one for the very same product.
+  //
+  // The `!== item.title` guard mirrors remedyCategories.js — /api/remedies
+  // builds Hindi as `title_hi || title`, so an untranslated row comes back with
+  // the English string wearing a Hindi label. Falling back explicitly is
+  // equivalent here (both yield English), but it keeps the two screens reading
+  // the same way rather than one quietly relying on that coincidence.
+  const localized = (item, field) => {
+    if (!item) return '';
+    const en = item[field];
+    if (language !== 'Hindi') return en;
+    const hi = item.hindi?.[field];
+    return hi && hi !== en ? hi : en;
+  };
+
   const renderItem = ({ item }) => {
-    const title = language === 'Hindi' ? (item.hindi?.title || item.title) : item.title;
-    const description = language === 'Hindi' ? (item.hindi?.description || item.description) : item.description;
+    const title = localized(item, 'title');
+    const description = localized(item, 'description');
     return (
       <View style={styles.card}>
         <Image
@@ -153,10 +171,10 @@ const RemedyShop = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       {error ? (
-        <Text style={styles.errorText}>Error: {error}</Text>
+        <Text style={styles.errorText}>{t('common.error')}: {error}</Text>
       ) : items.length === 0 ? (
         <View style={styles.loaderContainer}>
-          <Text style={styles.emptyText}>No {headerTitle.toLowerCase()} available right now.</Text>
+          <Text style={styles.emptyText}>{t('remedies.noneAvailable')}</Text>
         </View>
       ) : (
         <FlatList
@@ -182,24 +200,24 @@ const RemedyShop = ({ route, navigation }) => {
               <View style={styles.successBox}>
                 <Text style={styles.successTitle}>{popupTitle}</Text>
                 <Text style={styles.successMsg}>
-                  {popupMessage.replace('{item}', selected?.title || 'this item')}
+                  {popupMessage.replace('{item}', localized(selected, 'title') || selected?.title || 'this item')}
                 </Text>
                 <TouchableOpacity style={styles.doneBtn} onPress={() => setSelected(null)}>
-                  <Text style={styles.placeBtnTxt}>Done</Text>
+                  <Text style={styles.placeBtnTxt}>{t('order.done')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalHeading}>Place Order</Text>
+                <Text style={styles.modalHeading}>{t('order.placeOrder')}</Text>
                 <View style={styles.itemRow}>
                   <Image source={{ uri: selected?.image }} style={styles.itemThumb} />
                   <View style={{ flex: 1, marginLeft: scale(10) }}>
-                    <Text style={styles.itemTitle}>{selected?.title}</Text>
+                    <Text style={styles.itemTitle}>{localized(selected, 'title')}</Text>
                     <Text style={styles.itemPrice}>₹{selected?.price}</Text>
                   </View>
                 </View>
 
-                <Text style={styles.label}>Quantity</Text>
+                <Text style={styles.label}>{t('order.quantity')}</Text>
                 <View style={styles.qtyRow}>
                   <TouchableOpacity style={styles.qtyBtn} onPress={() => setQty(q => Math.max(1, q - 1))}>
                     <Text style={styles.qtyBtnTxt}>−</Text>
@@ -210,33 +228,33 @@ const RemedyShop = ({ route, navigation }) => {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.label}>Your name</Text>
-                <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor="#999" />
+                <Text style={styles.label}>{t('order.yourName')}</Text>
+                <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={t('order.fullName')} placeholderTextColor="#999" />
 
-                <Text style={styles.label}>Contact phone *</Text>
-                <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="Phone number" placeholderTextColor="#999" keyboardType="phone-pad" />
+                <Text style={styles.label}>{t('order.contactPhone')}</Text>
+                <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={t('order.phoneNumber')} placeholderTextColor="#999" keyboardType="phone-pad" />
 
-                <Text style={styles.label}>Address / notes</Text>
+                <Text style={styles.label}>{t('order.addressNotes')}</Text>
                 <TextInput
                   style={[styles.input, { height: verticalScale(70), textAlignVertical: 'top' }]}
                   value={address}
                   onChangeText={setAddress}
-                  placeholder="Delivery address or special instructions"
+                  placeholder={t('order.addressPlaceholder')}
                   placeholderTextColor="#999"
                   multiline
                 />
 
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalLabel}>{t('order.total')}</Text>
                   <Text style={styles.totalVal}>₹{(selected?.price || 0) * qty}</Text>
                 </View>
 
                 <View style={styles.modalActions}>
                   <TouchableOpacity style={styles.cancelBtn} onPress={() => setSelected(null)}>
-                    <Text style={styles.cancelBtnTxt}>Cancel</Text>
+                    <Text style={styles.cancelBtnTxt}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.placeBtn} onPress={placeOrder}>
-                    <Text style={styles.placeBtnTxt}>Place Order</Text>
+                    <Text style={styles.placeBtnTxt}>{t('order.placeOrder')}</Text>
                   </TouchableOpacity>
                 </View>
               </ScrollView>

@@ -116,6 +116,13 @@ async function translateChunk(piece) {
     throw new Error(`quota/limit hit: ${translated.slice(0, 120)}`);
   }
   noteSuccess();
+  // MyMemory sometimes appends a question mark the source never had — it turned
+  // the category "Tarot Reading" into "टैरो रीडिंग?" on a live row. Strip trailing
+  // '?' ONLY when the source had none, so a genuinely interrogative sentence
+  // keeps its punctuation.
+  if (!/\?\s*$/.test(piece) && /\?\s*$/.test(translated)) {
+    return translated.replace(/\s*\?+\s*$/, '');
+  }
   return translated;
 }
 
@@ -184,37 +191,38 @@ async function translateHtml(html) {
 }
 
 /**
- * Fill in whichever Hindi fields a blog row is missing, and persist them.
+ * Fill in whichever Hindi columns a row is missing, and persist them.
+ *
+ * Generic over table and column mapping — `fields` is a list of
+ * `{source, target, html}` describing "translate row[source] into row[target]".
+ * Blogs, remedy items and remedy categories are all the same operation with
+ * different column names, so they share this rather than each growing a copy
+ * with its own subtly different guards.
  *
  * Only ever WRITES columns that are currently empty, so an admin who hand-writes
  * or corrects a Hindi field will never have it overwritten by the machine.
  * Returns true if anything was written.
  */
-async function backfillBlogHindi(supabase, blog) {
-  // Only target columns this table actually HAS. `blog` is a `select('*')` row,
+async function backfillRowHindi(supabase, table, row, fields) {
+  // Only target columns this table actually HAS. `row` comes from a `select('*')`,
   // so its own keys are the schema.
   //
-  // This guard is not theoretical (2026-08-19): the first version wrote
-  // excerpt_hi and meta_description_hi because /api/blogs *reads* them — but
-  // only title_hi and content_hi exist on the table. PostgREST rejects the
-  // WHOLE update on one unknown column ("Could not find the 'excerpt_hi'
-  // column"), so every translation was computed, paid for against the free
-  // daily allowance, and then thrown away at the write. Silently: the queue
-  // logged a persist failure nobody was reading, and blogs simply stayed
-  // English. Skipping absent columns means the fields that DO exist still get
-  // filled, and if excerpt_hi/meta_description_hi are added later this starts
-  // populating them with no code change.
-  const exists = (column) => Object.prototype.hasOwnProperty.call(blog, column);
-  const jobs = [];
-  const want = (column, current, source, translate) => {
-    if (!exists(column) || current || !source) return;
-    jobs.push([column, translate(source)]);
-  };
+  // This guard is not theoretical (2026-08-19): an earlier version wrote blogs'
+  // excerpt_hi and meta_description_hi because /api/blogs *reads* them — but only
+  // title_hi and content_hi exist on that table. PostgREST rejects the WHOLE
+  // update on one unknown column ("Could not find the 'excerpt_hi' column"), so
+  // every translation was computed, paid for against the free daily allowance,
+  // and then thrown away at the write. Silently: the queue logged a persist
+  // failure nobody was reading, and blogs simply stayed English. Skipping absent
+  // columns means the fields that DO exist still get filled, and if the others
+  // are added later this starts populating them with no code change.
+  const exists = (column) => Object.prototype.hasOwnProperty.call(row, column);
 
-  want('title_hi', blog.title_hi, blog.title, translateText);
-  want('excerpt_hi', blog.excerpt_hi, blog.excerpt, translateText);
-  want('meta_description_hi', blog.meta_description_hi, blog.meta_description, translateText);
-  want('content_hi', blog.content_hi, blog.content_en, translateHtml);
+  const jobs = [];
+  for (const { source, target, html } of fields) {
+    if (!exists(target) || row[target] || !row[source]) continue;
+    jobs.push([target, (html ? translateHtml : translateText)(row[source])]);
+  }
   if (!jobs.length) return false;
 
   const update = {};
@@ -224,14 +232,39 @@ async function backfillBlogHindi(supabase, blog) {
   }
   if (!Object.keys(update).length) return false;
 
-  const { error } = await supabase.from('blogs').update(update).eq('id', blog.id);
+  const { error } = await supabase.from(table).update(update).eq('id', row.id);
   if (error) {
-    console.log(`[autoTranslate] persist failed for blog ${blog.id}: ${error.message}`);
+    console.log(`[autoTranslate] persist failed for ${table} ${row.id}: ${error.message}`);
     return false;
   }
-  console.log(`[autoTranslate] filled ${Object.keys(update).join(', ')} for blog ${blog.id}`);
+  console.log(`[autoTranslate] filled ${Object.keys(update).join(', ')} for ${table} ${row.id}`);
   return true;
 }
+
+// Column mappings per table. `content_en`/`content_hi` on blogs is HTML; every
+// other field is plain text.
+const BLOG_FIELDS = [
+  { source: 'title', target: 'title_hi' },
+  { source: 'excerpt', target: 'excerpt_hi' },
+  { source: 'meta_description', target: 'meta_description_hi' },
+  { source: 'content_en', target: 'content_hi', html: true },
+];
+
+// Remedy shop items and the four category cards share a shape: an admin-authored
+// title + description, neither of which has any bundled translation in the app
+// (unlike the fixed category names), so machine translation is the only way they
+// ever become Hindi.
+const REMEDY_FIELDS = [
+  { source: 'title', target: 'title_hi' },
+  { source: 'description', target: 'description_hi' },
+];
+
+// Astrologer categories (Tarot Reading, Marriage, Vastu, …) use `name`, not
+// `title`. Admin-managed and open-ended, so like remedy items there is no fixed
+// set the app could bundle translations for.
+const CATEGORY_FIELDS = [{ source: 'name', target: 'name_hi' }];
+
+const backfillBlogHindi = (supabase, blog) => backfillRowHindi(supabase, 'blogs', blog, BLOG_FIELDS);
 
 // ── Write-path queue ─────────────────────────────────────────────────────────
 //
@@ -254,18 +287,31 @@ async function drain(supabase) {
   working = true;
   try {
     while (pending.length) {
-      const blog = pending.shift();
+      const { table, row, fields } = pending.shift();
       try {
-        await backfillBlogHindi(supabase, blog);
+        await backfillRowHindi(supabase, table, row, fields);
       } catch (err) {
-        console.log(`[autoTranslate] blog ${blog.id} skipped: ${err.message}`);
+        console.log(`[autoTranslate] ${table} ${row.id} skipped: ${err.message}`);
       } finally {
-        queued.delete(blog.id);
+        queued.delete(`${table}:${row.id}`);
       }
     }
   } finally {
     working = false;
   }
+}
+
+// ONE queue shared by every table, deliberately — not a queue per table. The
+// thing being protected is the provider's rate limit, which is global to us, so
+// two per-table queues draining concurrently would be exactly the burst the
+// single worker exists to prevent.
+function enqueue(supabase, table, row, fields) {
+  if (!row || !row.id) return;
+  const key = `${table}:${row.id}`;
+  if (queued.has(key)) return;
+  queued.add(key);
+  pending.push({ table, row, fields });
+  drain(supabase).catch((err) => console.log(`[autoTranslate] queue error: ${err.message}`));
 }
 
 /**
@@ -274,10 +320,34 @@ async function drain(supabase) {
  * must never make a save look like it failed.
  */
 function queueBlogTranslation(supabase, blog) {
-  if (!blog || !blog.id || queued.has(blog.id)) return;
-  queued.add(blog.id);
-  pending.push(blog);
-  drain(supabase).catch((err) => console.log(`[autoTranslate] queue error: ${err.message}`));
+  enqueue(supabase, 'blogs', blog, BLOG_FIELDS);
 }
 
-module.exports = { translateText, translateHtml, backfillBlogHindi, queueBlogTranslation };
+/** Same, for a remedy shop item (remedy_items). */
+function queueRemedyItemTranslation(supabase, item) {
+  enqueue(supabase, 'remedy_items', item, REMEDY_FIELDS);
+}
+
+/** Same, for one of the four remedy category cards (remedy_categories). */
+function queueRemedyCategoryTranslation(supabase, category) {
+  enqueue(supabase, 'remedy_categories', category, REMEDY_FIELDS);
+}
+
+/** Same, for an astrologer category (categories.name → name_hi). */
+function queueCategoryTranslation(supabase, category) {
+  enqueue(supabase, 'categories', category, CATEGORY_FIELDS);
+}
+
+module.exports = {
+  translateText,
+  translateHtml,
+  backfillRowHindi,
+  backfillBlogHindi,
+  BLOG_FIELDS,
+  REMEDY_FIELDS,
+  CATEGORY_FIELDS,
+  queueBlogTranslation,
+  queueRemedyItemTranslation,
+  queueRemedyCategoryTranslation,
+  queueCategoryTranslation,
+};

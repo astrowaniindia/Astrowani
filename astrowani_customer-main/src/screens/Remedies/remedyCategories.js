@@ -62,9 +62,22 @@ export function buildRemedyCategories(apiCategories, language, t) {
     // Correct order in Hindi is: admin's Hindi > our bundled Hindi > admin's
     // English as an absolute last resort (better a real category name than a
     // blank card). English is unchanged: admin's text, else the bundled string.
+    //
+    // The `apiHindi !== apiEnglish` guard is the second half of that fix, added
+    // 2026-08-20 after the cards were STILL English. /api/remedy-categories
+    // builds its Hindi as `title_hi || title`, so an unfilled Hindi column comes
+    // back holding the English string — a translation that never happened,
+    // wearing a Hindi label. Precedence alone can't help: `apiHindi` is truthy,
+    // so it wins and the bundled Hindi is never reached. Treating "Hindi that is
+    // character-for-character the English" as absent is what actually unblocks
+    // the fallback. The backend now returns null instead, but this guard stays:
+    // it makes the screen correct against BOTH the old and new server, which
+    // matters because an installed app meets whichever backend is deployed, not
+    // the one that shipped with it.
+    const isRealTranslation = (hi, en) => !!hi && hi !== en;
     const pick = (apiHindi, apiEnglish, bundled) =>
       language === 'Hindi'
-        ? (apiHindi || bundled || apiEnglish)
+        ? ((isRealTranslation(apiHindi, apiEnglish) ? apiHindi : null) || bundled || apiEnglish)
         : (apiEnglish || bundled);
 
     const title = pick(fromApi?.hindi?.title, fromApi?.title, fallbackTitle);

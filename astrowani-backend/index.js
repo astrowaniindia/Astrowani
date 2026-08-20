@@ -2093,7 +2093,15 @@ app.get('/api/remedy-categories', async (req, res) => {
           title: r.title,
           description: r.description,
           image: r.image || null,
-          hindi: { title: r.title_hi || r.title, description: r.description_hi || r.description },
+          // NULL when the admin hasn't written Hindi — NOT the English text.
+          // This used to read `r.title_hi || r.title`, so an unfilled Hindi
+          // column came back holding the English string. The app cannot tell
+          // that apart from a real admin-authored Hindi title, so it preferred
+          // it over its own bundled Hindi translation, and the Remedies cards
+          // stayed English under the Hindi toggle even though a perfectly good
+          // translation was sitting in LanguageContext all along. Reporting the
+          // absence honestly is what lets the client fall back to it.
+          hindi: { title: r.title_hi || null, description: r.description_hi || null },
         })),
       };
     });
@@ -2101,7 +2109,10 @@ app.get('/api/remedy-categories', async (req, res) => {
   } catch (err) {
     console.error('GET /api/remedy-categories error:', err.message);
     return res.status(200).json({
-      data: REMEDY_CATEGORY_DEFAULTS.map((d) => ({ ...d, image: null, hindi: { title: d.title, description: d.description } })),
+      // Null Hindi here too — these hardcoded defaults are English-only, and
+      // echoing them as "Hindi" would suppress the app's bundled translation on
+      // exactly the failure path where the fallback matters most.
+      data: REMEDY_CATEGORY_DEFAULTS.map((d) => ({ ...d, image: null, hindi: { title: null, description: null } })),
     });
   }
 });
@@ -4389,14 +4400,22 @@ app.post('/api/gift/send', async (req, res) => {
       return res.status(400).json({ success: false, message: 'astrologerId and giftId required' });
     }
 
-    // Resolve real customer row
+    // Resolve real customer row.
+    //
+    // `name` is selected here specifically for the live gift toast below. It used
+    // to read the sender's name off the JWT (`decoded.name`), but the customer
+    // token is signed as { id, userId, phone, role } — there is no name claim in
+    // it at all, so that was undefined on EVERY request and the toast always
+    // rendered the "Someone" fallback. Reading it from the row is also the right
+    // source on principle: it's the authoritative name, and unlike a
+    // client-supplied one it can't be spoofed into someone else's credit.
     let customer = null;
     if (decoded.phone) {
-      const { data } = await supabase.from('customers').select('id, wallet_balance').eq('mobile', decoded.phone).limit(1);
+      const { data } = await supabase.from('customers').select('id, name, wallet_balance').eq('mobile', decoded.phone).limit(1);
       if (data && data.length) customer = data[0];
     }
     if (!customer && String(userId).includes('-')) {
-      const { data } = await supabase.from('customers').select('id, wallet_balance').eq('id', userId).single();
+      const { data } = await supabase.from('customers').select('id, name, wallet_balance').eq('id', userId).single();
       if (data) customer = data;
     }
     if (!customer) return res.status(400).json({ success: false, message: 'Customer not found' });
@@ -4458,8 +4477,14 @@ app.post('/api/gift/send', async (req, res) => {
       const { data: ls } = await supabaseService.from('live_sessions').select('total_gift_amount').eq('id', sessionId).single();
       await supabaseService.from('live_sessions')
         .update({ total_gift_amount: (Number(ls?.total_gift_amount) || 0) + amount }).eq('id', sessionId);
+      // The viewer/broadcaster feeds render this as "<name> sent <gift> (₹N)",
+      // and both already fall back to their own localized "Someone" when `name`
+      // is blank — so send the real name and let a genuinely nameless account
+      // (profile never filled in) hit that fallback, rather than sending the
+      // literal English word "Someone" to a Hindi viewer.
+      const senderName = (customer.name || '').trim() || null;
       io.to('live_' + sessionId).emit('live_gift', {
-        sessionId, giftName: gift.name, amount, name: decoded.name || 'Someone',
+        sessionId, giftName: gift.name, amount, name: senderName,
       });
     }
 

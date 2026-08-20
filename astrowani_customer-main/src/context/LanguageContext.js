@@ -68,6 +68,23 @@ const translations = {
 
     // Remedies / Services tab (screens/Remedies/Remedies.js) — bundled fallback
     // shown until an admin sets Hindi text for a category in the dashboard.
+    // Astro Reports card titles (Home "Astro Reports" row). These rows are
+    // admin-managed in `astro_services`, whose name_hi column is empty for every
+    // one of them — so with no bundled fallback the row stayed English under the
+    // Hindi toggle. Keyed by the service `key`, which is a stable identifier the
+    // admin doesn't edit (unlike `name`). An admin-written name_hi still wins
+    // over these; this is only the floor.
+    'astroService.kundli': 'Kundli Report',
+    'astroService.matching': 'Kundli Matching',
+    'astroService.chart': 'Divisional Chart',
+    'astroService.dasha': 'Dasha Report',
+    'astroService.dosh': 'Dosh Report',
+    'astroService.numerology': 'Numerology Report',
+    'astroService.lal-kitab': 'Lal Kitab Report',
+    'astroService.kp-astrology': 'KP Astrology Report',
+    'astroService.tarot': 'Tarot Reading',
+    'astroService.pdf-report': 'PDF Astrology Report',
+
     'remedies.servicesTitle': 'Services',
     'remedies.puja.title': 'Puja',
     'remedies.puja.description': 'Join shared rituals by renowned Purohits and Pandits for blessings and positivity.',
@@ -174,6 +191,22 @@ const translations = {
     'remedies.specificPuja': 'Specific Puja',
     'remedies.lifeReports': 'Life Reports',
     'remedies.buyNow': 'Buy Now',
+    // Remedy order sheet (screens/Remedies/RemedyShop.js). Every string here was
+    // hardcoded English, so the whole checkout stayed English under the Hindi
+    // toggle even once the product names themselves were translated.
+    'remedies.noneAvailable': 'Nothing available here right now.',
+    'order.placeOrder': 'Place Order',
+    'order.quantity': 'Quantity',
+    'order.yourName': 'Your name',
+    'order.fullName': 'Full name',
+    'order.contactPhone': 'Contact phone *',
+    'order.phoneNumber': 'Phone number',
+    'order.addressNotes': 'Address / notes',
+    'order.addressPlaceholder': 'Delivery address or special instructions',
+    'order.total': 'Total',
+    'order.phoneRequired': 'Phone required',
+    'order.phoneRequiredMsg': 'Please enter a contact phone number.',
+    'order.done': 'Done',
     'pujaDetail.pujaSold': 'Puja Sold',
     'pujaDetail.details': 'Details:',
     'pujaDetail.duration': 'Duration',
@@ -937,6 +970,17 @@ const translations = {
     'nav.live': 'लाइव',
     'nav.remedies': 'उपाय',
 
+    'astroService.kundli': 'कुंडली रिपोर्ट',
+    'astroService.matching': 'कुंडली मिलान',
+    'astroService.chart': 'वर्ग कुंडली',
+    'astroService.dasha': 'दशा रिपोर्ट',
+    'astroService.dosh': 'दोष रिपोर्ट',
+    'astroService.numerology': 'अंक ज्योतिष रिपोर्ट',
+    'astroService.lal-kitab': 'लाल किताब रिपोर्ट',
+    'astroService.kp-astrology': 'के.पी. ज्योतिष रिपोर्ट',
+    'astroService.tarot': 'टैरो रीडिंग',
+    'astroService.pdf-report': 'पीडीएफ ज्योतिष रिपोर्ट',
+
     'remedies.servicesTitle': 'सेवाएं',
     'remedies.puja.title': 'पूजा',
     'remedies.puja.description': 'आशीर्वाद और सकारात्मकता के लिए प्रसिद्ध पुरोहितों और पंडितों के साथ सामूहिक अनुष्ठान में शामिल हों।',
@@ -1040,6 +1084,19 @@ const translations = {
     'remedies.specificPuja': 'विशिष्ट पूजा',
     'remedies.lifeReports': 'जीवन रिपोर्ट',
     'remedies.buyNow': 'अभी खरीदें',
+    'remedies.noneAvailable': 'यहाँ अभी कुछ उपलब्ध नहीं है।',
+    'order.placeOrder': 'ऑर्डर करें',
+    'order.quantity': 'मात्रा',
+    'order.yourName': 'आपका नाम',
+    'order.fullName': 'पूरा नाम',
+    'order.contactPhone': 'संपर्क फ़ोन *',
+    'order.phoneNumber': 'फ़ोन नंबर',
+    'order.addressNotes': 'पता / निर्देश',
+    'order.addressPlaceholder': 'डिलीवरी पता या विशेष निर्देश',
+    'order.total': 'कुल',
+    'order.phoneRequired': 'फ़ोन नंबर आवश्यक है',
+    'order.phoneRequiredMsg': 'कृपया संपर्क फ़ोन नंबर दर्ज करें।',
+    'order.done': 'ठीक है',
     'pujaDetail.pujaSold': 'पूजा बेची गई',
     'pujaDetail.details': 'विवरण:',
     'pujaDetail.duration': 'अवधि',
