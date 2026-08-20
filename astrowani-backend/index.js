@@ -1158,7 +1158,23 @@ function verifyEnxDelivery(jobId, e164, authHeader, refund, schedule = ENX_DELIV
       // Out of polls. The code is now too old to be worth typing, so whatever
       // the carrier eventually decides, this one did not reach the user in time.
       // Logged as a distinct reason from `failed` so the two stay tellable apart.
-      await settle(`no delivery receipt after ${Math.round(schedule[schedule.length - 1] / 1000)}s (last status: ${detail.status || 'none'})`, detail, summary);
+      //
+      // Distinguish "never dispatched" from "dispatched, no receipt". These read
+      // identically in `detail` (both leave status empty), and conflating them
+      // actively misled a live investigation on 2026-08-20: an exhausted SMS
+      // credit balance was logged as "no delivery receipt after 150s", which
+      // reads like a slow carrier and sent the diagnosis toward the network
+      // instead of the account. The summary counters are what tell them apart —
+      // a real in-flight message has sent >= 1 and credit_used >= 1.
+      const neverDispatched = summary
+        && Number(summary.total) === 0
+        && Number(summary.sent) === 0
+        && Number(summary.failed) === 0
+        && Number(summary.credit_used) === 0;
+      const reason = neverDispatched
+        ? 'never dispatched by the provider (0 sent, 0 credits used) — SMS credit balance is likely exhausted'
+        : `no delivery receipt after ${Math.round(schedule[schedule.length - 1] / 1000)}s (last status: ${detail.status || 'none'})`;
+      await settle(reason, detail, summary);
     }, schedule[index]).unref?.();
   };
 
@@ -1409,6 +1425,61 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
       }
 
       console.log(`EnableX SMS accepted for ${toE164Strict(phoneNumber)}. job_id: ${jobId}`);
+
+      // ACCEPTANCE IS NOT DISPATCH — and neither is `result: 0`.
+      //
+      // Found 2026-08-20 while chasing "OTP sometimes works, sometimes not".
+      // It was not intermittent at all: every send from 2026-08-20T04:26 onward
+      // came back result:0 WITH a job_id, and every one of them had
+      // `summary.sent = 0, credit_used = 0` when the job was fetched afterwards.
+      // The SMS credit balance had run out. EnableX still accepts the request
+      // and still issues a job id in that state — the only place the truth
+      // appears is the job's own summary. So the backend answered
+      // "OTP sent successfully", the app opened the OTP screen, and the user
+      // waited for a message that was never dispatched. Yesterday's sends to
+      // the same number all show credit_used:1 / SX_SUCCESSFULLY_DELIVERED.
+      //
+      // The `result !== 0` check above was added on 2026-08-15 for exactly this
+      // class of bug and did not go far enough: it catches a REJECTED send, not
+      // an ACCEPTED-but-never-dispatched one.
+      //
+      // This confirms dispatch before telling the app anything. It is a short,
+      // blocking round-trip on the OTP path, which is normally something to
+      // avoid — but answering "sent" for a message that does not exist is far
+      // worse than ~1.5s of latency, and the timeout below keeps the worst case
+      // bounded and well inside both apps' 20s client timeouts. On any doubt
+      // (network error, unparseable body) we say nothing and let the existing
+      // delivery poller handle it — this must only fail the request on a
+      // POSITIVE confirmation that nothing was sent.
+      try {
+        await new Promise((r) => setTimeout(r, 1500)); // let the job register
+        const { data: jobData } = await axios.get(`https://api.enablex.io/sms/v1/message/${jobId}`, {
+          headers: { Authorization: `Basic ${authHeader}` },
+          timeout: 5000,
+        });
+        const summary = jobData?.summary;
+        const nothingSent = summary
+          && Number(summary.total) === 0
+          && Number(summary.sent) === 0
+          && Number(summary.failed) === 0
+          && Number(summary.credit_used) === 0;
+        if (nothingSent) {
+          logError('enablex-sms', new Error('SMS accepted but never dispatched — provider credit balance is likely exhausted'), {
+            phone: toE164Strict(phoneNumber),
+            jobId,
+            summary,
+          });
+          await otpStore.delete(phoneNumber);
+          return res.status(502).json({
+            success: false,
+            code: 'OTP_SEND_NOT_DISPATCHED',
+            message: 'We could not send the OTP right now. Please try again in a few minutes.',
+          });
+        }
+      } catch (dispatchErr) {
+        // Diagnostics only — never turn "we could not check" into "it failed".
+        console.log(`[enablex-sms] dispatch check skipped for job ${jobId}: ${dispatchErr.message}`);
+      }
 
       // Acceptance is not delivery. Confirm the carrier actually delivered it and
       // log the failure if not — without this there is no record tying a "no OTP
