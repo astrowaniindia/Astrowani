@@ -1393,10 +1393,22 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
       // Roll the stored code back — telling the app it was sent when it was not
       // is what made the 2026-08-20 outage look random instead of like an outage.
       await otpStore.delete(phoneNumber);
-      return res.status(502).json({
+      // HTTP 200 with success:false, NOT a 5xx — deliberate, and load-bearing.
+      // backend.astrowani.com sits behind Cloudflare (confirmed: `Server:
+      // cloudflare`), which REPLACES the body of any 5xx from the origin with
+      // its own "error code: 502" page. The first version of this returned 502
+      // and the apps showed a bare "something went wrong": axios threw, and
+      // `error.response.data.message` did not exist because Cloudflare had
+      // discarded our JSON. The explanation never reached the user.
+      //
+      // Both apps already branch on `res.data.success` and display
+      // `res.data.message` when it is false (see Login.js in each app), so a
+      // 200 carrying success:false is the one shape guaranteed to surface the
+      // real reason through the CDN. Do not "fix" this back to a 5xx.
+      return res.status(200).json({
         success: false,
         code: 'OTP_SEND_FAILED',
-        message: 'We could not send the OTP right now. Please try again in a few minutes.',
+        message: 'We could not send the OTP right now. Our SMS provider is not delivering messages at the moment. Please try again shortly.',
       });
     }
 
