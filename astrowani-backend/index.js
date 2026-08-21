@@ -545,6 +545,11 @@ require('./src/freeServicesRoutes')(app);
 // Image upload — base64 -> Supabase Storage URL (POST /api/upload-image)
 require('./src/uploadRoutes')(app);
 
+// Remedies commerce — saved addresses, multi-item cart checkout (Razorpay + wallet),
+// order history and cancellation. Owns /api/addresses/* and all of /api/orders/*,
+// including the GET /api/orders/mine that used to live in this file.
+require('./src/orderRoutes')(app);
+
 // OTPs are persisted in Supabase (table: otp_codes), not an in-memory Map —
 // a plain Map is wiped on every process restart, and `pm2 restart` runs on
 // every single deploy. A user mid-login when that happens would have their
@@ -2048,6 +2053,15 @@ app.get('/api/remedies', async (req, res) => {
           description: r.description,
           price: r.price,
           image: r.image,
+          // Retail presentation, added with the cart checkout (2026-08-21). mrp drives the
+          // struck-through "was ₹X" and the discount badge; unitLabel is the "5.25 ratti"
+          // line under the name. All three are null on rows an admin hasn't filled in yet,
+          // and the product card simply omits whatever is missing.
+          mrp: r.mrp,
+          unitLabel: r.unit_label,
+          // Exposed only as a boolean: the app needs to grey out a sold-out card, but has
+          // no business knowing inventory counts. NULL stock means unlimited.
+          inStock: r.stock === null || r.stock === undefined ? true : r.stock > 0,
           hindi: { title: r.title_hi || r.title, description: r.description_hi || r.description },
         })),
       };
@@ -2111,82 +2125,14 @@ app.get('/api/remedy-categories', async (req, res) => {
   }
 });
 
-// Place an order for a remedy item (payment gateway wired later).
-app.post('/api/orders', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
-
-    const { itemId, quantity, customerName, customerPhone, address } = req.body || {};
-    if (!itemId) return res.status(400).json({ success: false, message: 'itemId required' });
-
-    // Resolve the item (server-trusted price/title/type)
-    const { data: item, error: itemErr } = await supabase
-      .from('remedy_items').select('*').eq('id', itemId).single();
-    if (itemErr || !item) return res.status(404).json({ success: false, message: 'Item not found' });
-
-    // Resolve the real customer UUID (JWT phone → customers.id), same pattern as wallet.
-    let customerId = decoded.userId || decoded.id;
-    if (decoded.phone) {
-      const { data: cData } = await supabase
-        .from('customers').select('id').eq('mobile', decoded.phone).limit(1);
-      if (cData && cData.length > 0) customerId = cData[0].id;
-    }
-    if (!customerId || !String(customerId).includes('-')) customerId = null;
-
-    const qty = Math.max(1, parseInt(quantity, 10) || 1);
-    const { data: order, error } = await supabaseService.from('orders').insert([{
-      customer_id: customerId,
-      item_id: item.id,
-      item_title: item.title,
-      item_type: item.type,
-      price: item.price,
-      quantity: qty,
-      total: Number(item.price) * qty,
-      customer_name: customerName || null,
-      customer_phone: customerPhone || decoded.phone || null,
-      address: address || null,
-      status: 'placed',
-      payment_status: 'pending',
-    }]).select().single();
-    if (error) throw error;
-
-    return res.status(200).json({ success: true, order });
-  } catch (err) {
-    console.error('POST /api/orders error:', err.message);
-    return res.status(500).json({ success: false, message: 'Failed to place order' });
-  }
-});
-
-// Customer's own order history — needed for life_report orders, where the finished
-// report_content (written by admin once prepared) is delivered here rather than shipped.
-app.get('/api/orders/mine', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
-
-    let customerId = decoded.userId || decoded.id;
-    if (decoded.phone) {
-      const { data: cData } = await supabase
-        .from('customers').select('id').eq('mobile', decoded.phone).limit(1);
-      if (cData && cData.length > 0) customerId = cData[0].id;
-    }
-
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('customer_id', customerId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-
-    return res.status(200).json({ success: true, data: data || [] });
-  } catch (err) {
-    console.error('GET /api/orders/mine error:', err.message);
-    return res.status(500).json({ success: false, message: 'Failed to fetch orders' });
-  }
-});
+// Remedy orders moved to src/orderRoutes.js (2026-08-21).
+//
+// POST /api/orders was a single-item insert with no payment leg and no caller — the app's
+// Place Order deliberately never called it. GET /api/orders/mine re-implemented the
+// JWT-phone-to-UUID lookup inline and fed a legacy `user_<timestamp>` id straight into
+// .eq() on a uuid column, which is an unconditional 500 for anyone holding an old token.
+// Both are replaced by the cart-aware, payment-verified versions in that module, which
+// also owns /api/addresses/*. Registered near the other route modules above.
 
 const MOCK_ASTROLOGERS = [
   { _id: 1, userId: "astro_1", name: 'Aacharya Sharma', profileImage: 'https://astrowani.onrender.com/public/images/astro1.png', chargePerMinute: 15, isFree: false, specialties: [{name: 'Vedic Astrology'}], experience: 10, language: ['English', 'Hindi'], rating: 4.8 },
