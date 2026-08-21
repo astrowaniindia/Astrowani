@@ -182,7 +182,14 @@ module.exports = function registerAdminRoutes(app) {
   // Remedy shop items (type = puja | gemstone | specific_puja). Admin UI filters by tab.
   crud('remedies', 'remedy_items', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['type', 'title', 'title_hi', 'description', 'description_hi', 'price', 'image', 'is_active', 'sort_order'],
+    allowed: [
+      'type', 'title', 'title_hi', 'description', 'description_hi', 'price', 'image',
+      'is_active', 'sort_order',
+      // Retail fields added with the cart checkout (2026-08-21). mrp is the struck-through
+      // "was" price, unit_label the "5.25 ratti" line, stock NULL = unlimited (which is
+      // what every pre-existing row means — is_active used to be the only switch).
+      'mrp', 'stock', 'unit_label',
+    ],
     // Auto-translate to Hindi on save, same as blogs. These are admin-authored
     // product names with no bundled translation anywhere in the app, so machine
     // translation is the only path by which they ever become Hindi. Only fills
@@ -809,36 +816,169 @@ module.exports = function registerAdminRoutes(app) {
 
   // ── Orders (view + update status) ─────────────────────────────────────────
   app.get('/api/admin/orders', requireAdmin, h(async (req, res) => {
-    const { data, error } = await db
+    // 'pending_payment' rows are abandoned checkouts, not orders to fulfil — excluded by
+    // default so the queue isn't padded with things nobody paid for. ?includeUnpaid=1 shows
+    // them, which is how you'd investigate a customer saying "I paid but see no order".
+    let query = db
       .from('orders')
-      .select('*')
+      .select('*, order_items(*), order_status_events(id, status, note, created_by, created_at)')
       .order('created_at', { ascending: false })
       .limit(300);
+    if (!req.query.includeUnpaid) query = query.neq('status', 'pending_payment');
+    if (req.query.status) query = query.eq('status', req.query.status);
+    if (req.query.type) query = query.eq('item_type', req.query.type);
+    const { data, error } = await query;
     if (error) throw error;
     return res.json({ success: true, data: data || [] });
   }));
+
+  // Statuses an admin may set, in fulfilment order. 'pending_payment' is deliberately NOT
+  // here — that state is owned by the payment flow in src/orderRoutes.js, and an admin
+  // pushing an order back into it would make a paid order look unpaid.
+  const ADMIN_SETTABLE_STATUSES = [
+    'placed', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'completed', 'cancelled',
+  ];
+
+  // What the customer is told when their order moves. Only the states worth interrupting
+  // someone for — 'confirmed' and 'packed' are internal steps they can see in the app.
+  const STATUS_PUSH = {
+    shipped: { title: 'Your order has shipped!', body: (o) => `${o.item_title} is on its way.` },
+    out_for_delivery: { title: 'Out for delivery', body: (o) => `${o.item_title} arrives today.` },
+    completed: { title: 'Order delivered', body: (o) => `${o.item_title} has been delivered. Enjoy!` },
+    cancelled: { title: 'Order cancelled', body: (o) => `Your order for ${o.item_title} was cancelled.` },
+  };
 
   app.patch('/api/admin/orders/:id', requireAdmin, h(async (req, res) => {
     const allowed = ['status', 'payment_status', 'report_content'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+
+    // The status column now carries a CHECK constraint (sql/remedy_commerce_schema.sql).
+    // Rejecting the value here means a typo'd status returns a readable message instead of
+    // a raw Postgres constraint error surfacing in the admin UI.
+    if ('status' in body && !ADMIN_SETTABLE_STATUSES.includes(body.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `status must be one of: ${ADMIN_SETTABLE_STATUSES.join(', ')}`,
+      });
+    }
+
     // Writing the finished report content IS the delivery action for life_report orders.
     const isDelivering = 'report_content' in body && body.report_content;
     if (isDelivering) {
       body.delivered_at = new Date().toISOString();
       body.status = 'completed';
     }
+    if (body.status === 'cancelled') body.cancelled_at = new Date().toISOString();
+
+    // Read the previous status first: the whole point of the history table is knowing what
+    // changed, and an admin re-selecting the current value shouldn't log a phantom event.
+    const { data: before } = await db.from('orders')
+      .select('status, payment_status').eq('id', req.params.id).single();
+
+    // A cancelled order is terminal. Reviving one would put an order the customer was
+    // already REFUNDED for back into the fulfilment queue — i.e. ship goods nobody paid
+    // for. Enforced here rather than only by hiding the dropdown, because the UI is never
+    // the enforcement point (same reasoning as the per-category ordering gate).
+    if (before?.status === 'cancelled' && body.status && body.status !== 'cancelled') {
+      return res.status(409).json({
+        success: false,
+        code: 'ORDER_CANCELLED',
+        message: 'This order was cancelled'
+          + (before.payment_status === 'refunded' ? ' and refunded' : '')
+          + '. Reviving it would mark a refunded order as fulfillable — place a new order instead.',
+      });
+    }
+
+    // Same reasoning for payment_status: an admin must not flip a refunded order back to
+    // paid, which would make a refund look like revenue.
+    if (before?.payment_status === 'refunded' && body.payment_status && body.payment_status !== 'refunded') {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_REFUNDED',
+        message: 'This order has already been refunded; its payment status cannot be changed.',
+      });
+    }
+
     const { data, error } = await db.from('orders').update(body).eq('id', req.params.id).select().single();
     if (error) throw error;
 
-    if (isDelivering && data.customer_id) {
+    // An admin cancelling a PAID order must refund it. Without this, choosing "cancelled"
+    // from the dropdown left the customer out of pocket with no trace — only the
+    // customer-facing POST /api/orders/:id/cancel ever refunded.
+    //
+    // The idempotency key is deliberately IDENTICAL to the one that endpoint uses
+    // (`order-refund:<id>`), so whichever path runs first wins and the other becomes a
+    // no-op: a customer cancelling and an admin cancelling the same order cannot both
+    // refund it. Razorpay-paid orders can't be refunded through our own ledger, so they are
+    // flagged for manual processing instead, matching the customer path.
+    if (body.status === 'cancelled' && before?.status !== 'cancelled'
+        && data.payment_status === 'paid' && data.customer_id) {
+      const amount = Number(data.grand_total ?? data.total) || 0;
+      if (amount > 0 && data.payment_method === 'wallet') {
+        try {
+          await wallet.adjustCustomerWallet(data.customer_id, amount, {
+            description: `Refund for admin-cancelled remedy order ${data.id}`,
+            idempotencyKey: `order-refund:${data.id}`,
+          });
+          await db.from('orders').update({ payment_status: 'refunded' }).eq('id', data.id);
+          data.payment_status = 'refunded';
+          try {
+            await wallet.adjustAdminWallet(-amount, {
+              description: `Refund: admin-cancelled remedy order ${data.id}`,
+              customerId: data.customer_id,
+              idempotencyKey: `order-refund:${data.id}:admin`,
+            });
+          } catch (e) {
+            console.error(`[orders] admin ledger reversal failed for ${data.id}:`, e.message);
+          }
+        } catch (e) {
+          // Surfaced, not swallowed: an admin who thinks they cancelled-and-refunded but
+          // didn't is exactly the situation that produces an angry customer.
+          console.error(`[orders] REFUND FAILED for admin-cancelled ${data.id}:`, e.message);
+          return res.status(500).json({
+            success: false,
+            code: 'REFUND_FAILED',
+            message: 'The order was cancelled but the refund did not go through. Refund manually before telling the customer.',
+          });
+        }
+      } else if (amount > 0) {
+        await db.from('orders').update({ payment_status: 'refund_pending' }).eq('id', data.id);
+        data.payment_status = 'refund_pending';
+      }
+    }
+
+    // Status history — orders.status is a single mutable column, so without this row a
+    // status change leaves no record of when it happened or who made it.
+    if (body.status && before && body.status !== before.status) {
+      await db.from('order_status_events').insert([{
+        order_id: data.id,
+        status: body.status,
+        note: req.body?.note || null,
+        created_by: req.admin?.email || 'admin',
+      }]).then(({ error: e }) => {
+        if (e) console.error('[orders] status event insert failed:', e.message);
+      });
+    }
+
+    // Push, on the states a customer actually wants to hear about.
+    if (data.customer_id) {
       const { data: cust } = await db.from('customers').select('fcm_token').eq('id', data.customer_id).single();
       if (cust?.fcm_token) {
-        sendPush(cust.fcm_token, {
-          title: 'Your report is ready!',
-          body: `Your ${data.item_title} report has been delivered — open the app to view it.`,
-          data: { type: 'report_delivered', orderId: data.id },
-        }).catch((e) => console.error('[orders] push error:', e.message));
+        if (isDelivering) {
+          sendPush(cust.fcm_token, {
+            title: 'Your report is ready!',
+            body: `Your ${data.item_title} report has been delivered — open the app to view it.`,
+            data: { type: 'report_delivered', orderId: data.id },
+          }).catch((e) => console.error('[orders] push error:', e.message));
+        } else if (body.status && before && body.status !== before.status && STATUS_PUSH[body.status]) {
+          const tmpl = STATUS_PUSH[body.status];
+          sendPush(cust.fcm_token, {
+            title: tmpl.title,
+            body: tmpl.body(data),
+            data: { type: 'order_update', orderId: data.id, status: body.status },
+          }).catch((e) => console.error('[orders] push error:', e.message));
+        }
       }
     }
 
