@@ -61,19 +61,53 @@ done; both apps' `index.js` point at a real Edge Function URL, not a placeholder
 
 **To ship a JS-only fix**, from the changed app's directory:
 ```bash
-NODE_OPTIONS="--max-old-space-size=8192" npx hot-updater deploy -p android
+NODE_OPTIONS="--max-old-space-size=8192 --require ./scripts/ota-ws-polyfill.js" \
+  npx hot-updater deploy -p android
 ```
-The extra heap is not optional in practice — a plain `npx hot-updater deploy -p android` ran
-out of memory mid-bundle on this project's size on 2026-08-10; the larger heap fixed it on the
-first retry. Also give it real time to finish (5–10 minutes, mostly the Hermes bundle build) —
-don't wrap it in a short shell `timeout`, a premature kill mid-build looks like a different,
-unrelated failure (a killed Metro/jest worker process).
+
+Both `NODE_OPTIONS` flags are load-bearing:
+
+- **`--max-old-space-size=8192`** — a plain `npx hot-updater deploy -p android` ran out of
+  memory mid-bundle on this project's size on 2026-08-10; the larger heap fixed it on the
+  first retry.
+- **`--require ./scripts/ota-ws-polyfill.js`** (added 2026-08-21, present in BOTH apps) —
+  without it the deploy fails on **Node 20** at the upload step with a misleading error:
+
+  ```
+  📦 Uploading to Storage (Android • supabaseStorage)
+  ■ fetch failed
+  ■ Failed to upload bundle to storage
+  ```
+
+  This is **not** a network problem, and chasing it as one wastes a lot of time — the Hermes
+  build succeeds first, so it looks specifically like the upload is broken. The real cause is
+  that `@hot-updater/supabase` builds its storage client with `@supabase/supabase-js`'s
+  `createClient()`, which constructs a Realtime client at import time and needs a **global
+  `WebSocket`** — native only from Node 22. On Node 20 `createClient()` throws
+  `"Node.js 20 detected without native WebSocket support"`, and hot-updater surfaces that as
+  `fetch failed`.
+
+  Diagnosed by eliminating every other layer: Supabase reachable (200), bucket present,
+  service-role key valid, and the identical 5 MB `bundle.zip` uploading in ~4s via both raw
+  `fetch` and the plugin's own supabase-js code path. The only difference was the global.
+  Drop the flag once this project moves to Node 22+.
+
+Also give it real time to finish (5–10 minutes, mostly the Hermes bundle build) — don't wrap
+it in a short shell `timeout`, a premature kill mid-build looks like a different, unrelated
+failure (a killed Metro/jest worker process).
 
 **Confirmed working end-to-end on 2026-08-10**: both `astrowani_customer-main` (targeting
 installed version `24.x`) and `astrowani_vendors-main` (targeting `6.5.x`) deployed
 successfully — build → Hermes compile → Supabase upload → DB record, each returning a real
 deployment ID. A signup-flow fix (missing photo-picker modal + a backend OTP bug) shipped this
 way and was verified working in a running app afterward.
+
+**Shipped again 2026-08-21** — `astrowani_customer-main`, deployment
+`01a0245f-b41e-7f9c-8792-c2890b56391a`, targeting `24.0.x`, carrying the remedies
+cart/checkout flow and its UI pass. Verified in the `bundles` table as the newest row with
+`enabled: true`. Note what could NOT go this way in that release: the delivery-address
+"Use my current location" button needs `ACCESS_FINE_LOCATION` in the manifest, which is a
+native change — see the OTA limitation below.
 
 - **Native changes** (new native module, permissions, Gradle/manifest edits, new native
   library) still require the full build-and-Play-Store-release process above — OTA cannot
