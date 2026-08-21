@@ -1298,3 +1298,275 @@ a coordinated app change first and say so explicitly.
   debit runs only after a successful fetch). `astroApi.js` no longer treats the provider's
   "Insufficient credits" as an insufficient-WALLET-balance error, and no longer surfaces
   axios's bare "Request failed with status code NNN" to a customer.
+
+
+---
+
+## Subsystem added 2026-08-21: Remedies shop → real commerce (cart, addresses, payments)
+
+### Y. The gemstone/remedy shop became an actual store
+
+- **What it was**: a 2-column catalogue whose only action was "Buy Now" → a bottom-sheet
+  form (qty / name / phone / free-text address) whose Place Order **deliberately did
+  nothing**. `RemedyShop.js`'s `placeOrder()` never called `POST /api/orders` and never
+  touched the wallet; it showed the admin-editable "We're not currently delivering {item}
+  to your location" popup. The backend's `POST /api/orders` had **no caller anywhere in
+  either app** — `orders` had no live writer at all, `payment_status` was only ever flipped
+  by hand from the admin, and there was no cart, no line items, no address book, no
+  delivery fee, no stock, no order history and no payment leg.
+- **What it is now**: ADD → inline `− qty +` stepper → sticky cart bar → cart with a
+  server-computed bill → saved-address book → **Razorpay or wallet** payment → confirmation
+  → tracked order in My Orders. Gemstones go live first (see the gate below).
+
+**The three rules this subsystem is built on — do not weaken them:**
+
+1. **The client never computes money.** `POST /api/orders/quote` is the single source of
+   truth for every figure the cart and payment screens display; `POST /api/orders/checkout`
+   re-derives the identical numbers from `remedy_items` + `app_settings` and ignores
+   anything money-shaped in the request body. `CartContext`'s `subtotalEstimate` is a cached
+   running tally for instant paint only — it is labelled "subtotal", never "to pay", and is
+   never sent anywhere.
+2. **Every payment is replay-safe.** `POST /api/orders/verify-payment` is a structural clone
+   of `POST /api/wallet/verify-payment`: HMAC verify → atomic claim scoped
+   `.eq('razorpay_order_id').eq('customer_id').eq('status','pending_payment')` → 0 rows
+   claimed means somebody already handled it, which returns **200 `{alreadyProcessed:true}`,
+   not an error**. Wallet payments key `adjustCustomerWallet` on `order:<orderId>`; refunds
+   on `order-refund:<orderId>`. Both Razorpay ids carry partial UNIQUE indexes.
+3. **Ordering is gated per category, server-side.** `app_settings`
+   `remedy_orders_enabled_<type>` (gemstone `true`, the rest `false`) is read by the app via
+   `hooks/useRemedyOrderingGate.js` (direct Supabase, public-read, same pattern as
+   `applySessionReplaySetting`) **and re-checked in `/api/orders/checkout`, which 403s a
+   blocked category** — so a stale installed build cannot slip an order through. The gate
+   **fails CLOSED**: a missing key or a failed read means "not delivering yet". A blocked
+   category still shows a normal ADD button; tapping it is how the customer learns why.
+
+### Backend — `astrowani-backend/src/orderRoutes.js` (new module)
+
+Registered via `require('./src/orderRoutes')(app)` alongside the other ten route modules.
+Owns `/api/addresses/*` and **all** of `/api/orders/*`. The old `POST /api/orders` and
+`GET /api/orders/mine` were **deleted from `index.js`** (a comment marks the spot) — the POST
+had no caller, and the GET fed a legacy `user_<timestamp>` id straight into `.eq()` on a uuid
+column, an unconditional 500 for anyone holding a pre-UUID token. Everything now uses the
+shared `resolveCustomer` pattern from `astroRoutes.js`.
+
+| Route | Notes |
+|---|---|
+| `GET/POST/PUT/DELETE /api/addresses` | Setting a default clears the old one first (a real UNIQUE index enforces one per customer). Deleting the default promotes the newest survivor. A concurrent double-save that collides on that index is retried as non-default rather than 500ing. |
+| `POST /api/orders/quote` | Reprices from the DB, **enforces `is_active`** (the old route didn't — a deactivated item was still orderable by id), merges duplicate lines, clamps to 20 lines × 10 units, returns `blockedTypes` + `outOfStock` + `canCheckout`. Never leaks `stock` counts to the client, only an `inStock` boolean. |
+| `POST /api/orders/checkout` | Order is deliberate: address → reprice → gate (403) → stock (409) → create order `pending_payment` → **only then** move money. Wallet insufficiency returns **402 with the exact `shortfall`**. `'cod'` returns 400 `COD_COMING_SOON`. |
+| `POST /api/orders/verify-payment` | See rule 2. Also where stock is decremented — never at add-to-cart, so an abandoned checkout holds no inventory. |
+| `GET /api/orders/mine` | Joins `order_items` + `order_status_events`; **synthesises a single `items[]` line from the legacy inline columns** for rows that predate the child table, so the app has one render path. Hides `pending_payment`. |
+| `POST /api/orders/:id/cancel` | Only while `placed`/`confirmed`, claimed atomically. Wallet-paid refunds instantly and reverses the `admin_wallet` credit; Razorpay-paid is flagged `refund_pending` for manual processing (there is no gateway refund call in this codebase). |
+
+Wallet-paid orders credit `admin_wallet` non-blockingly after the customer is charged, exactly
+as `astroRoutes.js` does. Razorpay-paid orders deliberately do **not** touch `admin_wallet` —
+that money never enters our ledger; the `razorpay_payment_id` on the order is the record.
+
+### DB — `sql/remedy_commerce_schema.sql` (idempotent, **NOT yet applied**)
+
+New: `customer_addresses` (pincode CHECK, partial unique index for one default per customer),
+`order_items` (all columns snapshots), `order_status_events` (the audit trail + the app's
+tracking timeline — `orders.status` is a single mutable column with no history). Additive on
+`orders`: `subtotal / delivery_fee / handling_fee / grand_total / payment_method /
+razorpay_order_id / razorpay_payment_id / paid_at / address_id / delivery_address jsonb /
+cancelled_at`. Additive on `remedy_items`: `mrp / stock / unit_label`.
+
+- **`orders` is live for `item_type='life_report'`** — those rows are read by
+  `MyOrdersScreen` and delivered via admin `report_content`. The inline single-item columns
+  therefore **stay and keep being written**: cart orders fill them with a *summary*
+  (`item_title` = "X + 2 more items", `total` = grand total, `item_id` = null) purely so
+  pre-existing readers keep showing something sensible. `order_items` is the real record.
+- `remedy_orders_enabled_life_report` is seeded **false** on purpose: a life report is a
+  digital good needing no delivery address, and it was never actually buyable before this
+  either. Forcing it through an address-required cart would be wrong.
+- The status/payment CHECKs are added only if no existing row violates them, otherwise a
+  `RAISE NOTICE` names the count — an admin has been able to PATCH `status` to any string.
+  The `address_id` FK is `NOT VALID` so legacy rows can't fail the migration.
+- Deliberately **not** added to `supabase_realtime`: `orders` has been in the publication
+  since 2026-06-21 with no consumer at all, and three more unread tables would only widen
+  the WAL. The app polls `/api/orders/mine` on focus.
+
+### Customer app
+
+New: `context/CartContext.js` (AsyncStorage-persisted, **keyed to `customerId` so a
+different account never inherits a cart**), `components/shop/{ProductCard,QtyStepper,CartBar,
+BillSummary}.js`, `api/OrdersApi.js`, `hooks/useRemedyOrderingGate.js`, and
+`screens/Remedies/{ProductDetail,CartScreen,AddressList,AddressForm,PaymentScreen,
+OrderSuccess}.js`. All new screens live in the **root** stack next to `RemedyShop`, so
+`navigate('Cart')` resolves from the Remedies tab, the drawer and the Home row alike.
+
+Cart storage is **client-side on purpose** — no `carts` table. Cross-device sync isn't worth
+the schema, and it is safe precisely because of rule 1: a stale cart price is corrected by the
+quote before any money moves.
+
+Rewritten: `RemedyShop.js` (grid of `ProductCard`, Place Order modal **deleted**),
+`MyOrdersScreen.js` (multi-item + fee breakdown + tracking timeline + cancel; the
+`life_report` branch untouched), `Navigation.js` (`CartProvider` outside
+`NavigationContainer` so the cart survives navigation resets; `CartHeaderButton` with a live
+badge), `PushNotification.js` (`order_update` deep-links to My Orders alongside
+`report_delivered`). ~79 new i18n keys in **both** EN and HI.
+
+### Admin
+
+`pages/Remedies.jsx` gains an **"Accepting orders"** card (the four per-category toggles plus
+delivery / free-delivery-above / handling fees — all through the existing generic
+`/api/admin/settings` PATCH, no new backend routes) and `mrp` / `stock` / `unit_label` inputs
+and columns. Blank is not 0 for mrp and stock, so `numOrNull` maps blank/missing/non-numeric
+to null. `pages/Orders.jsx` is now a fulfilment view: search + status/type filters, an
+"include abandoned checkouts" toggle, expandable line items, fee breakdown, structured
+address with the pincode called out, Razorpay ids, and the status history. Status changes
+confirm first and say when a push will be sent. `adminRoutes.js` validates status against
+`ADMIN_SETTABLE_STATUSES`, writes an `order_status_events` row on every change, and pushes on
+shipped / out-for-delivery / delivered / cancelled.
+
+### Outstanding — blocks real orders, not the code
+
+1. **All three SQL files are APPLIED and VERIFIED (2026-08-21)** —
+   `remedy_commerce_schema.sql`, `remedy_commerce_client_request_id.sql`, and
+   `hardening_07_admin_wallet_where_clause.sql`. Final run against the live database:
+   **89 assertions, 0 failures** across the core wallet-checkout flow (57), stock /
+   constraints / platform revenue / concurrency (20), and checkout de-duplication (12).
+   The test account finished on its exact starting balance with zero live or unpaid orders
+   left behind.
+2. Set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in the VPS process env if not already
+   present — `/api/orders/checkout` 503s the online-payment path without them (the wallet
+   path works regardless).
+3. Fill in `mrp` / `unit_label` / `stock` on the gemstone items from the admin, or the cards
+   render without a discount badge or unit line (they degrade cleanly, they don't break).
+
+### Verified against the live database (2026-08-21)
+
+Tested by mounting `src/orderRoutes.js` on a bare Express app rather than booting
+`index.js` — **never boot the full backend just to test routes**, it starts sessionManager's
+billing worker against production (see the `local-backend-bills-production` memory). All
+rupees moved during testing were reversed; the seeded "Test User" (`550e8400-…`) ended on
+its exact starting balance.
+
+Confirmed working: address validation + CRUD, quote arithmetic, duplicate-line merging and
+the 10-unit clamp, `is_active` enforcement, the per-category gate (403, no money moved),
+COD refusal, the 402 + exact `shortfall` with the unpayable order **voided rather than left
+pending**, the wallet debit (exactly ONE ledger row, keyed `order:<id>`), the address
+snapshot, the legacy-column summary that keeps old readers working, order history including
+the synthetic single line for pre-migration rows, stock decrement/restore, and
+cancel + refund (a second cancel 409s and does **not** double-refund).
+
+### TWO REAL PROBLEMS THIS TESTING FOUND
+
+**1. `adjust_admin_wallet` has never once succeeded — platform revenue was never recorded.**
+Not caused by this feature; found by it. `sql/hardening_04_atomic_admin_wallet.sql` reasoned
+that "admin_wallet is a singleton table … so no id/WHERE clause is needed" and wrote a
+WHERE-less `UPDATE`. This database rejects those ("UPDATE requires a WHERE clause", a
+pg_safeupdate-style guard) **including inside SECURITY DEFINER functions**. Both call sites
+correctly wrap it in a log-only try/catch — the customer has already been charged by then, so
+a ledger failure must not fail their purchase — so it failed **silently**. Evidence:
+`admin_wallet_transactions` had **zero rows** and `admin_wallet.balance` was still 0 despite
+the row existing since 2026-07-08. **`astroRoutes.js`'s paid-report revenue is affected the
+same way.** Customer and vendor wallets are fine — those functions were always keyed by id.
+Fix: **`sql/hardening_07_admin_wallet_where_clause.sql`** (adds `WHERE id =` plus a
+`FOR UPDATE` row lock, which is what actually makes it atomic). **Applied and verified** —
+the function now credits on checkout and reverses on cancel, and `admin_wallet_transactions`
+has written its first-ever rows. **Paid astro reports now record revenue too.** Not
+backfilled — the history is reconstructible from `wallet_transactions` but doing it
+automatically risks double-counting against any manual bookkeeping.
+
+**2. A retried or raced checkout used to charge twice.** The wallet debit is keyed on the
+order id, which guarantees one order can't be charged twice — but every checkout call mints a
+**new** order id, so the key never deduped two *calls*. Measured: two simultaneous identical
+wallet checkouts produced two orders and charged ₹2000 twice. (An earlier note in this file
+claiming the idempotency key covered this was wrong.) Fixed with a client-supplied
+per-attempt token, the same approach Stripe and Razorpay expose:
+`orders.client_request_id` + a `(customer_id, client_request_id)` partial unique index
+(**`sql/remedy_commerce_client_request_id.sql`**). `PaymentScreen` mints one per mount and
+holds it in a ref, so retries of one attempt dedupe while a deliberate second purchase (new
+mount → new token) still works. The endpoint checks for a duplicate first *and* handles
+losing the insert race, returning the winner's order — so it is "cannot double-charge", not
+"usually deduped". Voided attempts are excluded from the duplicate check, so topping up and
+retrying after a 402 still works. **Deploy order does not matter**: without the column,
+checkout keeps working un-deduped and logs one loud warning, same posture as `src/wallet.js`
+(both the degraded and the guarded behaviour were verified).
+
+Verified with the column in place: a sequentially retried checkout and a genuinely
+simultaneous one both collapse to ONE order charged ONCE, a different token is still a real
+second purchase, and omitting the token still works. **Note the guard latches per process** —
+`dedupeAvailable` is set false on first sighting of a missing column, so a backend that
+booted before the migration keeps the guard OFF until it is restarted. Restart the VPS
+process after applying that file.
+
+### TWO MORE FOUND BY BROWSER-VERIFYING THE ADMIN PAGES
+
+Both were bugs in the new admin UI itself, found by driving it in a browser against a
+harness that mounts `adminRoutes` + `orderRoutes` without booting `index.js`. Fixed in
+`adminRoutes.js` **server-side as well as in the UI**, because the UI is never the
+enforcement point:
+
+**3. A cancelled, already-REFUNDED order could be set back to "placed."** The status
+dropdown rendered for every non-`pending_payment` row, so an admin could revive a refunded
+order into the fulfilment queue — i.e. ship goods the customer had their money back for.
+Now: cancelled is terminal and renders as a read-only badge, and `PATCH
+/api/admin/orders/:id` 409s `ORDER_CANCELLED` on any attempt to revive one, plus
+`ALREADY_REFUNDED` on any attempt to flip a refunded payment_status back to paid. Verified:
+both 409, the row is unchanged, and a legitimate `packed → shipped` still returns 200.
+
+**4. An admin choosing "cancelled" did NOT refund the customer.** Only the customer-facing
+`POST /api/orders/:id/cancel` ever refunded; the admin dropdown just set the column, leaving
+the customer out of pocket with no trace. The admin PATCH now performs the refund for a paid
+wallet order (and flags `refund_pending` for a Razorpay one, matching the customer path).
+**It reuses the IDENTICAL idempotency key `order-refund:<id>`**, so whichever path runs first
+wins and the other is a no-op — a customer and an admin cancelling the same order cannot both
+refund it. A refund that fails now returns 500 `REFUND_FAILED` with explicit "refund manually
+before telling the customer" wording rather than being logged and swallowed: an admin who
+believes they refunded but didn't is the situation that produces an angry customer. Verified:
+₹4100 refunded on admin-cancel, ₹0 on a repeat, balance back to baseline.
+
+Also verified in the browser: the per-category toggles read the live `app_settings` (gemstone
+on, the rest off), the fee inputs, the new Unit / MRP / Stock columns rendering "Unlimited"
+and "—" correctly, and the full item write path — saving `mrp` / `unit_label` / `stock` from
+the modal persists and makes `/api/remedies` serve the fields the product card needs (a
+₹2000 item with MRP ₹2500 yields the "20% OFF" badge). The Orders detail panel renders line
+items, the fee breakdown, the structured address with pincode, and the status history with
+correct attribution (`by system` for automated steps, the admin's email for manual ones).
+
+### Dead-code purge that followed (2026-08-21)
+
+Eight files deleted, ~50 KB of source, once the cart flow superseded them. The trigger was
+`screens/Home/GemStoneBuy.tsx`: it held a **hardcoded LIVE Razorpay key**, called
+`RazorpayCheckout.open()` with a hardcoded `amount: 20` (paise — ₹0.20), prefilled dummy
+customer details, and treated success as a client-side `Alert` with **no server-side
+verification at all**. Deleted rather than just de-keyed, because a dead screen containing a
+payment flow is the kind of thing that gets copy-pasted.
+
+Gone, with their `Navigation.js` imports and `<Stack.Screen>` registrations:
+`screens/Home/GemStoneBuy.tsx` (registered as route `GemstoneDetails`),
+`screens/Home/VipPuja.jsx` (`SpecificPuja`), `screens/Remedies/GemstoneList.js`,
+`screens/Remedies/GemstoneDetails.js` (entirely commented out),
+`screens/Remedies/PujaDetails.js`, `screens/Remedies/BookPujaScreen.js`,
+`screens/Remedies/HomeRemedies.js` (never imported), and the 0-byte
+`screens/drawerScreens/WalletScreen.js`. A comment at the `RemedyShop` registration records
+where they went.
+
+**Why deletion was provably safe** — they formed a *closed* unreachable subgraph: the only
+navigations into any of them came from each other (`GemstoneList → GemstoneDetails`,
+`PujaDetails → BookPujaScreen`) or from already-commented-out lines, with no live entry
+point. Static greps alone are not sufficient proof in this app though, because it has two
+**admin-driven dynamic** navigation paths — `PlacementBanner.js` passes a banner's
+`action_value` straight to `navigate()` when `action_type === 'screen'`, and
+`PushNotification.js` navigates to `data.screen` from an FCM payload. Both were checked
+against production: all 7 banners are `action_type: 'none'`, and no notification has ever
+carried a `screen`. **Check those two tables before deleting any route in future** — a grep
+of `src/` will not reveal an admin-configured target.
+
+Verified after: the app bundles clean (7,341,965 bytes, ~29 KB smaller) and `GemstoneList`'s
+two real `no-dupe-keys` eslint errors went with it.
+
+**The live Razorpay key is still in git history.** Deleting the file does not un-expose it —
+**rotate that key in the Razorpay dashboard.** History was deliberately NOT rewritten.
+
+### Known gap, still deliberately out of scope
+
+There is **no Razorpay webhook**. If a customer's payment succeeds but the app dies before
+`verify-payment` lands, the order stays `pending_payment` — money taken, order invisible in
+their history. The recovery path exists (admin Orders → "Include abandoned checkouts" →
+"Mark paid") but it is manual. A `payment.captured` webhook that runs the same atomic claim
+is the proper fix and is the first thing to add if this sees real volume. Note the Razorpay
+leg itself is the one part of this flow **not** yet exercised against the gateway — it needs
+test keys in the backend env.
