@@ -24,6 +24,88 @@ const EMPTY = {
 // just hiding a button.
 const ORDER_TOGGLE_KEY = (type) => `remedy_orders_enabled_${type}`;
 
+// Three linked price inputs: MRP, discount %, and the selling price. Edit any one and the
+// others follow, because the natural way to think about this is "give 20% off" while the
+// DB stores what the customer actually pays.
+//
+// The discount is NOT stored. It is always derived from mrp vs price, so there is exactly
+// one source of truth — a stored percentage would silently drift out of step the moment
+// someone edited either price directly, and then the card and the admin would disagree
+// about the same item.
+function PriceFields({ price, mrp, onChange }) {
+  const p = Number(price) || 0;
+  const m = Number(mrp) || 0;
+  const hasDiscount = m > p && p > 0;
+  const pct = hasDiscount ? Math.round(((m - p) / m) * 100) : 0;
+
+  // Typing a discount % sets the SELLING price from the MRP (rather than raising the MRP),
+  // because MRP is the fixed, printed number and the sale price is the lever being pulled.
+  const applyPct = (raw) => {
+    const next = Math.max(0, Math.min(99, Number(raw) || 0));
+    if (!m) return; // No MRP to discount from — leave price alone rather than zero it.
+    onChange({ price: Math.round(m * (1 - next / 100)) });
+  };
+
+  return (
+    <>
+      <div className="two-col">
+        <div className="field">
+          <label>MRP (₹) — the struck-through "was" price</label>
+          <input
+            type="number"
+            value={mrp ?? ''}
+            onChange={(e) => onChange({ mrp: e.target.value })}
+            placeholder="Blank = no discount badge"
+          />
+        </div>
+        <div className="field">
+          <label>Discount %</label>
+          <input
+            type="number"
+            value={hasDiscount ? pct : ''}
+            onChange={(e) => applyPct(e.target.value)}
+            placeholder={m ? 'e.g. 20' : 'Set an MRP first'}
+            disabled={!m}
+          />
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Selling price (₹) — what the customer actually pays</label>
+        <input type="number" value={price} onChange={(e) => onChange({ price: e.target.value })} />
+      </div>
+
+      {/* Live preview of the exact three figures the app will render, so a mistake is
+          obvious here instead of on a customer's phone. */}
+      <div className="card" style={{ margin: '0 0 12px', padding: 12, background: 'rgba(0,0,0,0.03)' }}>
+        {p <= 0 ? (
+          <span className="muted">Enter a selling price to see how the card will look.</span>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="muted">Customer sees:</span>
+            <b style={{ fontSize: 17 }}>₹{p}</b>
+            {hasDiscount ? (
+              <>
+                <span className="muted" style={{ textDecoration: 'line-through' }}>₹{m}</span>
+                <span className="badge green">{pct}% OFF</span>
+                <span style={{ color: '#2E7D32', fontWeight: 600 }}>Save ₹{m - p}</span>
+              </>
+            ) : (
+              <span className="muted">no discount badge</span>
+            )}
+          </div>
+        )}
+        {m > 0 && m <= p ? (
+          <div style={{ marginTop: 8 }}>
+            <span className="badge red">MRP is not above the selling price</span>{' '}
+            <span className="muted">— no badge will show. Raise the MRP or lower the price.</span>
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
 // Blank / missing / non-numeric → null, so an empty box clears the column rather than
 // writing 0 (which would mean something quite different for both mrp and stock).
 function numOrNull(v) {
@@ -286,7 +368,23 @@ export default function Remedies() {
                 <td>{r.title}</td>
                 <td className="muted">{r.unit_label || '—'}</td>
                 <td><b>{r.price}</b></td>
-                <td className="muted">{r.mrp ? r.mrp : '—'}</td>
+                <td className="muted">
+                  {r.mrp ? (
+                    <>
+                      {r.mrp}
+                      {/* At-a-glance check that a discount is actually live: an MRP that
+                          isn't above the price shows no badge in the app, which is easy to
+                          create by accident and invisible from a bare number. */}
+                      {Number(r.mrp) > Number(r.price) ? (
+                        <span className="badge green" style={{ marginLeft: 6 }}>
+                          {Math.round(((r.mrp - r.price) / r.mrp) * 100)}%
+                        </span>
+                      ) : (
+                        <span className="badge gray" style={{ marginLeft: 6 }}>no badge</span>
+                      )}
+                    </>
+                  ) : '—'}
+                </td>
                 <td>
                   {r.stock === null || r.stock === undefined
                     ? <span className="muted">Unlimited</span>
@@ -317,13 +415,11 @@ export default function Remedies() {
           <div className="field"><label>Description (Hindi)</label>
             <textarea value={editing.description_hi || ''} onChange={(e) => set('description_hi', e.target.value)} placeholder="हिंदी में विवरण" /></div>
           <ImageField label="Item image (URL or upload)" value={editing.image} onChange={(v) => set('image', v)} />
-          <div className="two-col">
-            <div className="field"><label>Price (₹) — what the customer pays</label>
-              <input type="number" value={editing.price} onChange={(e) => set('price', e.target.value)} /></div>
-            <div className="field"><label>MRP (₹) — optional, shown struck through</label>
-              <input type="number" value={editing.mrp ?? ''} onChange={(e) => set('mrp', e.target.value)}
-                placeholder="Leave blank for no discount badge" /></div>
-          </div>
+          <PriceFields
+            price={editing.price}
+            mrp={editing.mrp}
+            onChange={(patch) => setEditing((prev) => ({ ...prev, ...patch }))}
+          />
           <div className="two-col">
             <div className="field"><label>Unit label — optional</label>
               <input type="text" value={editing.unit_label ?? ''} onChange={(e) => set('unit_label', e.target.value)}

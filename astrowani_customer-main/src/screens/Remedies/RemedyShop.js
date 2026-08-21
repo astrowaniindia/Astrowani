@@ -111,6 +111,7 @@ const RemedyShop = ({ route, navigation }) => {
       blocked={gate.enabled === false}
       addLabel={t('cart.add')}
       soldOutLabel={t('cart.soldOut')}
+      saveLabel={t('cart.save')}
       onPress={() => openProduct(item)}
       onAdd={() => handleAdd(item)}
       onIncrement={() => cart.increment(item._id)}
