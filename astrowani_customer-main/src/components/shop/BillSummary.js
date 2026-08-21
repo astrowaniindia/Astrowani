@@ -8,8 +8,9 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { COLORS } from '../../Theme/Colors';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import SHOP, { cardShadow, shopStyles } from './shopTheme';
 
 const Row = ({ label, value, free, strong }) => (
   <View style={styles.row}>
@@ -42,6 +43,10 @@ const BillSummary = ({ quote, labels = {} }) => {
 
   return (
     <View style={styles.card}>
+      {labels.heading ? (
+        <Text style={shopStyles.sectionLabel}>{labels.heading}</Text>
+      ) : null}
+
       <Row label={itemTotal} value={quote.subtotal} />
       <Row label={delivery} value={quote.deliveryFee} free={Number(quote.deliveryFee) === 0} />
       {Number(quote.handlingFee) > 0 ? <Row label={handling} value={quote.handlingFee} /> : null}
@@ -51,6 +56,7 @@ const BillSummary = ({ quote, labels = {} }) => {
 
       {saved > 0 ? (
         <View style={styles.savingsBanner}>
+          <Icon name="savings" size={moderateScale(15)} color={SHOP.success} />
           <Text style={styles.savingsText}>{savings} ₹{Math.round(saved)}</Text>
         </View>
       ) : null}
@@ -59,34 +65,34 @@ const BillSummary = ({ quote, labels = {} }) => {
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: COLORS.white,
-    borderRadius: moderateScale(12),
-    padding: scale(14),
-    marginTop: verticalScale(12),
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
+  card: { ...cardShadow, padding: scale(14), marginTop: verticalScale(12) },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: verticalScale(5),
   },
-  label: { fontSize: moderateScale(13), color: '#666' },
-  labelStrong: { fontSize: moderateScale(15), color: COLORS.black, fontFamily: 'Lato-Bold' },
-  value: { fontSize: moderateScale(13), color: '#333' },
-  valueStrong: { fontSize: moderateScale(17), color: COLORS.AstroMaroon, fontFamily: 'Lato-Bold' },
-  freeValue: { fontSize: moderateScale(13), color: '#2E7D32', fontFamily: 'Lato-Bold' },
-  divider: { height: 1, backgroundColor: '#eee', marginVertical: verticalScale(6) },
+  label: { fontSize: moderateScale(13), color: SHOP.textSoft },
+  labelStrong: { fontSize: moderateScale(15), color: SHOP.text, fontFamily: 'Lato-Bold' },
+  value: { fontSize: moderateScale(13), color: SHOP.text },
+  valueStrong: { fontSize: moderateScale(18), color: SHOP.brand, fontFamily: 'Lato-Bold' },
+  freeValue: { fontSize: moderateScale(13), color: SHOP.success, fontFamily: 'Lato-Bold' },
+  divider: { height: 1, backgroundColor: SHOP.border, marginVertical: verticalScale(7) },
   savingsBanner: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: moderateScale(8),
-    paddingVertical: verticalScale(6),
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: verticalScale(10),
+    justifyContent: 'center',
+    backgroundColor: SHOP.successBg,
+    borderRadius: moderateScale(9),
+    paddingVertical: verticalScale(7),
+    marginTop: verticalScale(11),
   },
-  savingsText: { color: '#2E7D32', fontFamily: 'Lato-Bold', fontSize: moderateScale(12) },
+  savingsText: {
+    color: SHOP.success,
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(12.5),
+    marginLeft: scale(6),
+  },
 });
 
 export default BillSummary;

@@ -14,6 +14,7 @@ import BillSummary from '../../components/shop/BillSummary';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
 import { razorpayPrefill } from '../../utils/customerIdentity';
+import SHOP, { shopStyles, cardShadow } from '../../components/shop/shopTheme';
 
 // Module scope on purpose: defined inside PaymentScreen, React would see a brand-new
 // component type on every render and tear down all three rows each time `method` changed.
@@ -25,14 +26,17 @@ const PaymentOption = ({ active, icon, title, subtitle, disabled, badge, onPress
     <Icon
       name={active && !disabled ? 'radio-button-checked' : 'radio-button-unchecked'}
       size={moderateScale(20)}
-      color={disabled ? '#ccc' : active ? COLORS.AstroMaroon : '#bbb'}
+      color={disabled ? '#CFC4BC' : active ? SHOP.brand : '#C9BDB4'}
     />
-    <Icon
-      name={icon}
-      size={moderateScale(20)}
-      color={disabled ? '#ccc' : COLORS.AstroMaroon}
-      style={styles.optionIcon}
-    />
+    {/* The icon sits in a tinted well so the three options read as a set of cards rather
+        than three lines of text with glyphs in front of them. */}
+    <View style={[styles.iconWell, disabled && styles.iconWellDisabled]}>
+      <Icon
+        name={icon}
+        size={moderateScale(19)}
+        color={disabled ? '#C9BDB4' : SHOP.brand}
+      />
+    </View>
     <View style={styles.optionBody}>
       <View style={styles.optionTitleRow}>
         <Text style={[styles.optionTitle, disabled && styles.textDisabled]}>{title}</Text>
@@ -205,7 +209,7 @@ const PaymentScreen = ({ navigation, route }) => {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.heading}>{t('checkout.choosePayment')}</Text>
+        <Text style={shopStyles.sectionLabel}>{t('checkout.choosePayment')}</Text>
 
         <PaymentOption
           active={method === 'wallet'}
@@ -242,6 +246,7 @@ const PaymentScreen = ({ navigation, route }) => {
         <BillSummary
           quote={quote}
           labels={{
+            heading: t('cart.billDetails'),
             itemTotal: t('cart.itemTotal'),
             delivery: t('cart.deliveryCharge'),
             handling: t('cart.handlingCharge'),
@@ -251,7 +256,7 @@ const PaymentScreen = ({ navigation, route }) => {
         />
       </ScrollView>
 
-      <View style={styles.payBar}>
+      <View style={shopStyles.stickyBar}>
         <View>
           <Text style={styles.payBarLabel}>{t('cart.toPay')}</Text>
           <Text style={styles.payBarAmount}>₹{amount}</Text>
@@ -274,64 +279,56 @@ const PaymentScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
-  scroll: { padding: scale(12), paddingBottom: verticalScale(24) },
-  heading: {
-    fontSize: moderateScale(12),
-    fontFamily: 'Lato-Bold',
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: verticalScale(10),
-  },
+  container: { flex: 1, backgroundColor: SHOP.screenBg },
+  scroll: { padding: scale(14), paddingBottom: verticalScale(24) },
+
   option: {
+    ...cardShadow,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
-    borderRadius: moderateScale(12),
     padding: scale(13),
-    marginBottom: verticalScale(10),
-    borderWidth: 1.5,
-    borderColor: '#eee',
+    marginBottom: verticalScale(11),
   },
-  optionActive: { borderColor: COLORS.AstroMaroon },
-  optionDisabled: { backgroundColor: '#fafafa' },
-  optionIcon: { marginHorizontal: scale(10) },
+  optionActive: { borderColor: SHOP.brand, borderWidth: 1.5, backgroundColor: '#FFFBF8' },
+  optionDisabled: { backgroundColor: '#FAF8F6', elevation: 0, shadowOpacity: 0 },
+
+  iconWell: {
+    width: scale(34),
+    height: scale(34),
+    borderRadius: moderateScale(9),
+    backgroundColor: SHOP.brandTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: scale(11),
+  },
+  iconWellDisabled: { backgroundColor: '#F0EBE7' },
+
   optionBody: { flex: 1 },
   optionTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  optionTitle: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: COLORS.black },
-  optionSub: { fontSize: moderateScale(11), color: '#777', marginTop: verticalScale(2) },
-  textDisabled: { color: '#bbb' },
+  optionTitle: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: SHOP.text },
+  optionSub: { fontSize: moderateScale(11.5), color: SHOP.textMuted, marginTop: verticalScale(2) },
+  textDisabled: { color: '#B5AAA2' },
+
   soonPill: {
-    backgroundColor: '#EEE',
+    backgroundColor: '#EFE9E4',
     borderRadius: moderateScale(5),
     paddingHorizontal: scale(6),
     paddingVertical: verticalScale(1),
     marginLeft: scale(8),
   },
-  soonPillText: { fontSize: moderateScale(9), color: '#888', fontFamily: 'Lato-Bold' },
-  payBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.white,
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(10),
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    elevation: 8,
-  },
-  payBarLabel: { fontSize: moderateScale(11), color: '#888' },
-  payBarAmount: { fontSize: moderateScale(18), fontFamily: 'Lato-Bold', color: COLORS.black },
+  soonPillText: { fontSize: moderateScale(9), color: SHOP.textMuted, fontFamily: 'Lato-Bold' },
+
+  payBarLabel: { fontSize: moderateScale(11), color: SHOP.textMuted },
+  payBarAmount: { fontSize: moderateScale(19), fontFamily: 'Lato-Bold', color: SHOP.text },
   payBtn: {
-    backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(10),
+    backgroundColor: SHOP.brand,
+    borderRadius: moderateScale(11),
     paddingVertical: verticalScale(13),
     paddingHorizontal: scale(34),
-    minWidth: scale(120),
+    minWidth: scale(126),
     alignItems: 'center',
   },
-  payBtnDisabled: { backgroundColor: '#bdbdbd' },
+  payBtnDisabled: { backgroundColor: '#CFC4BC' },
   payBtnText: { color: COLORS.white, fontFamily: 'Lato-Bold', fontSize: moderateScale(15) },
 });
 

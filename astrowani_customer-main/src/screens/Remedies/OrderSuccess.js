@@ -4,6 +4,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
+import SHOP, { cardShadow } from '../../components/shop/shopTheme';
 
 // Order confirmed. Reached with navigation.replace, so the hardware back button can't walk
 // the customer back into the payment screen and re-trigger a paid checkout.
@@ -22,8 +23,10 @@ const OrderSuccess = ({ navigation, route }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.iconCircle}>
-        <Icon name="check" size={moderateScale(44)} color={COLORS.white} />
+      <View style={styles.iconRing}>
+        <View style={styles.iconCircle}>
+          <Icon name="check" size={moderateScale(42)} color={COLORS.white} />
+        </View>
       </View>
 
       <Text style={styles.title}>{t('checkout.orderPlaced')}</Text>
@@ -71,55 +74,58 @@ const OrderSuccess = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: SHOP.surface,
     alignItems: 'center',
     justifyContent: 'center',
     padding: scale(24),
   },
+  // Concentric ring in the success tint, so the tick reads as a stamp of confirmation
+  // instead of a bare coloured disc.
+  iconRing: {
+    width: scale(112),
+    height: scale(112),
+    borderRadius: scale(56),
+    backgroundColor: SHOP.successBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconCircle: {
-    width: scale(84),
-    height: scale(84),
-    borderRadius: scale(42),
-    backgroundColor: '#2E7D32',
+    width: scale(80),
+    height: scale(80),
+    borderRadius: scale(40),
+    backgroundColor: SHOP.success,
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
     fontSize: moderateScale(21),
     fontFamily: 'Lato-Bold',
-    color: COLORS.black,
+    color: SHOP.text,
     marginTop: verticalScale(20),
   },
   subtitle: {
     fontSize: moderateScale(13),
-    color: '#777',
+    color: SHOP.textMuted,
     textAlign: 'center',
     marginTop: verticalScale(8),
-    lineHeight: verticalScale(19),
+    lineHeight: verticalScale(20),
   },
-  card: {
-    alignSelf: 'stretch',
-    backgroundColor: '#FAFAFA',
-    borderRadius: moderateScale(12),
-    padding: scale(14),
-    marginTop: verticalScale(24),
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
+  card: { ...cardShadow, alignSelf: 'stretch', padding: scale(15), marginTop: verticalScale(24) },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: verticalScale(4),
+    alignItems: 'center',
+    paddingVertical: verticalScale(5),
   },
-  rowLabel: { fontSize: moderateScale(13), color: '#777' },
-  rowValue: { fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: COLORS.black },
+  rowLabel: { fontSize: moderateScale(13), color: SHOP.textMuted },
+  rowValue: { fontSize: moderateScale(13.5), fontFamily: 'Lato-Bold', color: SHOP.text },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'stretch',
-    backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(10),
+    backgroundColor: SHOP.brand,
+    borderRadius: moderateScale(11),
     paddingVertical: verticalScale(14),
     marginTop: verticalScale(26),
   },
@@ -129,9 +135,9 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(15),
     marginLeft: scale(8),
   },
-  secondaryBtn: { paddingVertical: verticalScale(14) },
+  secondaryBtn: { paddingVertical: verticalScale(15) },
   secondaryBtnText: {
-    color: COLORS.AstroMaroon,
+    color: SHOP.brand,
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(14),
   },

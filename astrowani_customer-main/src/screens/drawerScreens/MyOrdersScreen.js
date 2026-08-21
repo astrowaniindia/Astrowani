@@ -10,6 +10,7 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import { listOrders, cancelOrder } from '../../api/OrdersApi';
+import SHOP, { cardShadow } from '../../components/shop/shopTheme';
 
 const TYPE_LABEL_KEY = {
   puja: 'orders.typePuja',
@@ -23,10 +24,13 @@ const TYPE_LABEL_KEY = {
 // this is only what the remaining steps are called.
 const TRACK_STEPS = ['placed', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'completed'];
 
+// Warm, brand-consistent status colours. 'placed' is amber (in the queue), the middle
+// fulfilment states are blue (moving), delivered is green, cancelled is red.
 function statusColor(status) {
-  if (status === 'completed') return '#4CAF50';
-  if (status === 'cancelled') return '#D32F2F';
-  return '#F5A623';
+  if (status === 'completed') return SHOP.success;
+  if (status === 'cancelled') return SHOP.danger;
+  if (status === 'placed' || status === 'pending_payment') return '#D98A00';
+  return '#2E6DA4';
 }
 
 const MyOrdersScreen = ({ navigation }) => {
@@ -93,7 +97,7 @@ const MyOrdersScreen = ({ navigation }) => {
         <View style={styles.timeline}>
           {(order.timeline || []).map((ev) => (
             <View key={ev.id} style={styles.trackRow}>
-              <Icon name="cancel" size={moderateScale(15)} color="#D32F2F" />
+              <Icon name="cancel" size={moderateScale(15)} color={SHOP.danger} />
               <View style={styles.trackTextCol}>
                 <Text style={styles.trackLabelDone}>{t(`orders.status_${ev.status}`)}</Text>
                 {ev.note ? <Text style={styles.trackNote}>{ev.note}</Text> : null}
@@ -122,7 +126,7 @@ const MyOrdersScreen = ({ navigation }) => {
               <Icon
                 name={done ? 'check-circle' : 'radio-button-unchecked'}
                 size={moderateScale(15)}
-                color={done ? '#4CAF50' : '#ccc'}
+                color={done ? SHOP.success : '#D6CCC4'}
               />
               <View style={styles.trackTextCol}>
                 <Text style={done ? styles.trackLabelDone : styles.trackLabel}>
@@ -304,7 +308,9 @@ const MyOrdersScreen = ({ navigation }) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchOrders(true)} />}
         ListEmptyComponent={
           <View style={styles.emptyBox}>
-            <Icon name="shopping-bag" size={40} color="#ccc" />
+            <View style={styles.emptyIconCircle}>
+              <Icon name="shopping-bag" size={moderateScale(36)} color={SHOP.textMuted} />
+            </View>
             <Text style={styles.emptyText}>{t('orders.noOrders')}</Text>
             <TouchableOpacity
               style={styles.shopBtn}
@@ -333,100 +339,162 @@ const MyOrdersScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
-  containerCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: SHOP.screenBg },
+  containerCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: SHOP.surface },
   list: { padding: scale(14) },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: moderateScale(12),
-    padding: scale(14),
-    marginBottom: verticalScale(12),
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+
+  card: { ...cardShadow, padding: scale(14), marginBottom: verticalScale(12) },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: verticalScale(3) },
+  itemTitle: {
+    fontSize: moderateScale(14.5),
+    fontFamily: 'Lato-Bold',
+    color: SHOP.text,
+    flex: 1,
+    marginRight: scale(8),
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  itemTitle: { fontSize: moderateScale(15), fontWeight: 'bold', color: '#222', flex: 1, marginRight: scale(8) },
-  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  statusPillText: { fontSize: 10, fontWeight: 'bold', color: '#fff' },
-  thumbRow: { flexDirection: 'row', marginVertical: verticalScale(6) },
+  statusPill: { paddingHorizontal: scale(9), paddingVertical: verticalScale(3), borderRadius: moderateScale(12) },
+  statusPillText: { fontSize: moderateScale(9.5), fontFamily: 'Lato-Bold', color: '#fff', letterSpacing: 0.4 },
+
+  thumbRow: { flexDirection: 'row', marginVertical: verticalScale(8) },
   thumb: {
-    width: scale(38), height: scale(38), borderRadius: moderateScale(6),
-    backgroundColor: '#f0f0f0', marginRight: scale(6),
+    width: scale(42),
+    height: scale(42),
+    borderRadius: moderateScale(8),
+    backgroundColor: SHOP.surfaceAlt,
+    marginRight: scale(6),
   },
-  thumbMore: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#eee' },
-  thumbMoreText: { fontSize: moderateScale(11), color: '#777', fontWeight: 'bold' },
-  itemMeta: { fontSize: moderateScale(13), color: '#777', marginBottom: 2 },
-  itemDate: { fontSize: moderateScale(11), color: '#aaa' },
-  reportReadyRow: { flexDirection: 'row', alignItems: 'center', marginTop: verticalScale(8) },
-  reportReadyText: { fontSize: moderateScale(13), color: COLORS.AstroMaroon, fontWeight: '600', marginLeft: 6 },
-  reportPendingText: { fontSize: moderateScale(12), color: '#999', marginTop: verticalScale(8), fontStyle: 'italic' },
+  thumbMore: { alignItems: 'center', justifyContent: 'center', backgroundColor: SHOP.brandTint },
+  thumbMoreText: { fontSize: moderateScale(11), color: SHOP.brand, fontFamily: 'Lato-Bold' },
+
+  itemMeta: { fontSize: moderateScale(12.5), color: SHOP.textSoft, marginBottom: verticalScale(1) },
+  itemDate: { fontSize: moderateScale(11), color: SHOP.textMuted },
+
+  reportReadyRow: { flexDirection: 'row', alignItems: 'center', marginTop: verticalScale(9) },
+  reportReadyText: {
+    fontSize: moderateScale(13),
+    color: SHOP.brand,
+    fontFamily: 'Lato-Bold',
+    marginLeft: scale(6),
+  },
+  reportPendingText: {
+    fontSize: moderateScale(12),
+    color: SHOP.textMuted,
+    marginTop: verticalScale(9),
+    fontStyle: 'italic',
+  },
 
   expandRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: verticalScale(8), paddingTop: verticalScale(6),
-    borderTopWidth: 1, borderTopColor: '#f2f2f2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: verticalScale(9),
+    paddingTop: verticalScale(8),
+    borderTopWidth: 1,
+    borderTopColor: SHOP.border,
   },
-  expandText: { fontSize: moderateScale(12), color: COLORS.AstroMaroon, fontWeight: 'bold' },
+  expandText: { fontSize: moderateScale(12), color: SHOP.brand, fontFamily: 'Lato-Bold' },
+
   details: { marginTop: verticalScale(6) },
-  detailLine: { flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(4) },
-  detailLineTitle: { flex: 1, fontSize: moderateScale(12), color: '#333' },
-  detailLineQty: { fontSize: moderateScale(12), color: '#888', marginHorizontal: scale(8) },
-  detailLineTotal: { fontSize: moderateScale(12), color: '#333', fontWeight: 'bold', minWidth: scale(50), textAlign: 'right' },
-  feeBlock: { marginTop: verticalScale(8), borderTopWidth: 1, borderTopColor: '#f2f2f2', paddingTop: verticalScale(6) },
+  detailLine: { flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(5) },
+  detailLineTitle: { flex: 1, fontSize: moderateScale(12.5), color: SHOP.textSoft },
+  detailLineQty: { fontSize: moderateScale(12), color: SHOP.textMuted, marginHorizontal: scale(8) },
+  detailLineTotal: {
+    fontSize: moderateScale(12.5),
+    color: SHOP.text,
+    fontFamily: 'Lato-Bold',
+    minWidth: scale(52),
+    textAlign: 'right',
+  },
+
+  feeBlock: {
+    marginTop: verticalScale(9),
+    borderTopWidth: 1,
+    borderTopColor: SHOP.border,
+    paddingTop: verticalScale(8),
+  },
   feeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: verticalScale(2) },
-  feeLabel: { fontSize: moderateScale(12), color: '#777' },
-  feeValue: { fontSize: moderateScale(12), color: '#333' },
-  feeLabelStrong: { fontSize: moderateScale(13), color: '#222', fontWeight: 'bold' },
-  feeValueStrong: { fontSize: moderateScale(14), color: COLORS.AstroMaroon, fontWeight: 'bold' },
+  feeLabel: { fontSize: moderateScale(12), color: SHOP.textMuted },
+  feeValue: { fontSize: moderateScale(12), color: SHOP.textSoft },
+  feeLabelStrong: { fontSize: moderateScale(13), color: SHOP.text, fontFamily: 'Lato-Bold' },
+  feeValueStrong: { fontSize: moderateScale(14.5), color: SHOP.brand, fontFamily: 'Lato-Bold' },
+
   addressBlock: { marginTop: verticalScale(12) },
   blockHeading: {
-    fontSize: moderateScale(11), color: '#888', fontWeight: 'bold',
-    textTransform: 'uppercase', letterSpacing: 0.5, marginTop: verticalScale(12),
-    marginBottom: verticalScale(4),
+    fontSize: moderateScale(10.5),
+    color: SHOP.textMuted,
+    fontFamily: 'Lato-Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginTop: verticalScale(13),
+    marginBottom: verticalScale(5),
   },
-  addressText: { fontSize: moderateScale(12), color: '#555', lineHeight: verticalScale(17) },
-  timeline: { marginTop: verticalScale(2) },
-  trackRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(4) },
-  trackTextCol: { flex: 1, marginLeft: scale(8) },
-  trackLabel: { fontSize: moderateScale(12), color: '#aaa' },
-  trackLabelDone: { fontSize: moderateScale(12), color: '#333', fontWeight: 'bold' },
-  trackNote: { fontSize: moderateScale(11), color: '#999' },
-  trackTime: { fontSize: moderateScale(10), color: '#aaa' },
-  cancelBtn: {
-    borderWidth: 1, borderColor: COLORS.red, borderRadius: moderateScale(8),
-    paddingVertical: verticalScale(9), alignItems: 'center', marginTop: verticalScale(14),
-  },
-  cancelBtnText: { color: COLORS.red, fontWeight: 'bold', fontSize: moderateScale(13) },
+  addressText: { fontSize: moderateScale(12.5), color: SHOP.textSoft, lineHeight: verticalScale(18) },
 
-  emptyBox: { alignItems: 'center', paddingVertical: verticalScale(80) },
-  emptyText: { fontSize: moderateScale(14), color: '#999', marginTop: verticalScale(12) },
-  shopBtn: {
-    backgroundColor: COLORS.AstroMaroon, borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(11), paddingHorizontal: scale(26), marginTop: verticalScale(18),
+  timeline: { marginTop: verticalScale(2) },
+  trackRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(5) },
+  trackTextCol: { flex: 1, marginLeft: scale(9) },
+  trackLabel: { fontSize: moderateScale(12), color: '#BDB1A8' },
+  trackLabelDone: { fontSize: moderateScale(12), color: SHOP.text, fontFamily: 'Lato-Bold' },
+  trackNote: { fontSize: moderateScale(11), color: SHOP.textMuted },
+  trackTime: { fontSize: moderateScale(10), color: SHOP.textMuted },
+
+  cancelBtn: {
+    borderWidth: 1.5,
+    borderColor: SHOP.danger,
+    borderRadius: moderateScale(10),
+    paddingVertical: verticalScale(10),
+    alignItems: 'center',
+    marginTop: verticalScale(15),
   },
-  shopBtnText: { color: '#fff', fontWeight: 'bold', fontSize: moderateScale(14) },
+  cancelBtnText: { color: SHOP.danger, fontFamily: 'Lato-Bold', fontSize: moderateScale(13) },
+
+  emptyBox: { alignItems: 'center', paddingVertical: verticalScale(70) },
+  emptyIconCircle: {
+    width: scale(80),
+    height: scale(80),
+    borderRadius: scale(40),
+    backgroundColor: SHOP.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: moderateScale(14.5),
+    fontFamily: 'Lato-Bold',
+    color: SHOP.text,
+    marginTop: verticalScale(14),
+  },
+  shopBtn: {
+    backgroundColor: SHOP.brand,
+    borderRadius: moderateScale(11),
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(28),
+    marginTop: verticalScale(20),
+  },
+  shopBtnText: { color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(14) },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalCard: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: moderateScale(20),
-    borderTopRightRadius: moderateScale(20),
+    backgroundColor: SHOP.surface,
+    borderTopLeftRadius: moderateScale(22),
+    borderTopRightRadius: moderateScale(22),
     padding: scale(20),
     maxHeight: '75%',
   },
-  modalTitle: { fontSize: moderateScale(18), fontWeight: 'bold', color: COLORS.AstroMaroon, marginBottom: verticalScale(12) },
+  modalTitle: {
+    fontSize: moderateScale(17),
+    fontFamily: 'Lato-Bold',
+    color: SHOP.brand,
+    marginBottom: verticalScale(12),
+  },
   modalScroll: { marginBottom: verticalScale(16) },
-  reportText: { fontSize: moderateScale(14), color: '#333', lineHeight: 22 },
+  reportText: { fontSize: moderateScale(13.5), color: SHOP.textSoft, lineHeight: verticalScale(21) },
   closeBtn: {
-    backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(12),
+    backgroundColor: SHOP.brand,
+    borderRadius: moderateScale(11),
+    paddingVertical: verticalScale(13),
     alignItems: 'center',
   },
-  closeBtnText: { color: '#fff', fontWeight: 'bold', fontSize: moderateScale(15) },
+  closeBtnText: { color: '#fff', fontFamily: 'Lato-Bold', fontSize: moderateScale(15) },
 });
 
 export default MyOrdersScreen;

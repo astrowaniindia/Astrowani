@@ -10,6 +10,7 @@ import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
 import { createAddress, updateAddress, listAddresses } from '../../api/OrdersApi';
 import { getCustomerIdentity } from '../../utils/customerIdentity';
+import SHOP, { shopStyles } from '../../components/shop/shopTheme';
 import { reverseGeocode } from '../../utils/geocoding';
 import { captureEvent } from '../../utils/Analytics';
 
@@ -203,7 +204,7 @@ const AddressForm = ({ navigation, route }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.sectionLabel}>{t('address.saveAs')}</Text>
+        <Text style={shopStyles.sectionLabel}>{t('address.saveAs')}</Text>
         <View style={styles.labelRow}>
           {LABELS.map((l) => {
             const active = label === l.key;
@@ -225,7 +226,7 @@ const AddressForm = ({ navigation, route }) => {
           })}
         </View>
 
-        <Text style={styles.sectionLabel}>{t('address.contact')}</Text>
+        <Text style={shopStyles.sectionLabel}>{t('address.contact')}</Text>
         {renderField({
           value: fullName, onChangeText: setFullName,
           placeholder: t('address.fullName'), error: errors.fullName,
@@ -236,7 +237,7 @@ const AddressForm = ({ navigation, route }) => {
           keyboardType: 'phone-pad', maxLength: 10,
         })}
 
-        <Text style={styles.sectionLabel}>{t('address.whereToDeliver')}</Text>
+        <Text style={shopStyles.sectionLabel}>{t('address.whereToDeliver')}</Text>
 
         {/* Fills city / state / pincode / area from a GPS fix. The flat or house number
             still has to be typed — no location API can know it. */}
@@ -295,72 +296,78 @@ const AddressForm = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
+  container: { flex: 1, backgroundColor: SHOP.surface },
   scroll: { padding: scale(16), paddingBottom: verticalScale(20) },
-  sectionLabel: {
-    fontSize: moderateScale(12),
-    fontFamily: 'Lato-Bold',
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: verticalScale(14),
-    marginBottom: verticalScale(8),
-  },
-  labelRow: { flexDirection: 'row' },
+
+  labelRow: { flexDirection: 'row', marginBottom: verticalScale(4) },
   labelChip: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(20),
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(6),
+    borderColor: SHOP.border,
+    backgroundColor: SHOP.surfaceAlt,
+    borderRadius: moderateScale(22),
+    paddingHorizontal: scale(13),
+    paddingVertical: verticalScale(7),
     marginRight: scale(8),
   },
-  labelChipActive: { backgroundColor: COLORS.AstroMaroon },
+  labelChipActive: { backgroundColor: SHOP.brand, borderColor: SHOP.brand },
   labelChipText: {
-    color: COLORS.AstroMaroon,
+    color: SHOP.textSoft,
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(12),
     marginLeft: scale(5),
   },
   labelChipTextActive: { color: COLORS.white },
+
+  // Dashed, so it reads as an assist rather than the screen's primary action — which is
+  // Save at the bottom.
   locBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: COLORS.AstroMaroon,
+    borderColor: SHOP.brand,
     borderStyle: 'dashed',
-    borderRadius: moderateScale(9),
-    paddingVertical: verticalScale(10),
-    marginBottom: verticalScale(12),
+    borderRadius: moderateScale(10),
+    backgroundColor: '#FFFBF8',
+    paddingVertical: verticalScale(11),
+    marginBottom: verticalScale(14),
   },
   locBtnText: {
-    color: COLORS.AstroMaroon,
+    color: SHOP.brand,
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(13),
     marginLeft: scale(7),
   },
-  fieldWrap: { marginBottom: verticalScale(10) },
+
+  fieldWrap: { marginBottom: verticalScale(11) },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: moderateScale(9),
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(10),
-    fontSize: moderateScale(14),
-    color: COLORS.black,
-    backgroundColor: '#fafafa',
-  },
-  inputError: { borderColor: COLORS.red },
-  errorText: { color: COLORS.red, fontSize: moderateScale(11), marginTop: verticalScale(3), marginLeft: scale(3) },
-  saveBtn: {
-    backgroundColor: COLORS.AstroMaroon,
-    margin: scale(16),
+    borderColor: SHOP.border,
     borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(14),
+    paddingHorizontal: scale(13),
+    paddingVertical: verticalScale(11),
+    fontSize: moderateScale(14),
+    color: SHOP.text,
+    backgroundColor: SHOP.surfaceAlt,
+  },
+  inputError: { borderColor: SHOP.danger, backgroundColor: '#FFF6F5' },
+  errorText: {
+    color: SHOP.danger,
+    fontSize: moderateScale(11),
+    marginTop: verticalScale(4),
+    marginLeft: scale(3),
+  },
+
+  saveBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: SHOP.brand,
+    margin: scale(16),
+    borderRadius: moderateScale(11),
+    paddingVertical: verticalScale(14),
   },
   saveBtnText: { color: COLORS.white, fontFamily: 'Lato-Bold', fontSize: moderateScale(15) },
 });

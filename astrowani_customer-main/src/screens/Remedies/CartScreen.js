@@ -12,6 +12,7 @@ import { useCart } from '../../context/CartContext';
 import { getQuote, listAddresses } from '../../api/OrdersApi';
 import BillSummary from '../../components/shop/BillSummary';
 import QtyStepper from '../../components/shop/QtyStepper';
+import SHOP, { shopStyles, cardShadow } from '../../components/shop/shopTheme';
 import { captureEvent } from '../../utils/Analytics';
 
 const FALLBACK_IMAGE = 'https://astrowaniindia.com/wp-content/uploads/2024/05/second-300x300.jpg';
@@ -90,6 +91,7 @@ const CartScreen = ({ navigation }) => {
 
   const blocked = quote?.blockedTypes?.length ? quote.blockedTypes : null;
   const outOfStock = quote?.outOfStock?.length ? quote.outOfStock : null;
+
   // With no address saved the button is still LIVE — it just goes to the address book
   // instead of to payment. Disabling it and labelling it "Add address" would leave the
   // customer reading an instruction they can't act on.
@@ -109,21 +111,26 @@ const CartScreen = ({ navigation }) => {
 
   if (!cart.count) {
     return (
-      <View style={styles.emptyWrap}>
-        <Icon name="shopping-cart" size={moderateScale(56)} color="#ddd" />
-        <Text style={styles.emptyTitle}>{t('cart.empty')}</Text>
-        <Text style={styles.emptySub}>{t('cart.emptyHint')}</Text>
+      <View style={[shopStyles.screen, styles.emptyScreen]}>
+        <View style={styles.emptyIconCircle}>
+          <Icon name="shopping-cart" size={moderateScale(40)} color={SHOP.textMuted} />
+        </View>
+        <Text style={shopStyles.emptyTitle}>{t('cart.empty')}</Text>
+        <Text style={shopStyles.emptySub}>{t('cart.emptyHint')}</Text>
         <TouchableOpacity style={styles.shopBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.shopBtnText}>{t('cart.startShopping')}</Text>
+          <Text style={shopStyles.primaryBtnText}>{t('cart.startShopping')}</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={shopStyles.screen}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Line items */}
+        <Text style={shopStyles.sectionLabel}>
+          {cart.totalUnits} {cart.totalUnits === 1 ? t('cart.item') : t('cart.items')}
+        </Text>
         <View style={styles.card}>
           {cart.items.map((line, index) => (
             <View
@@ -137,7 +144,12 @@ const CartScreen = ({ navigation }) => {
               <View style={styles.lineInfo}>
                 <Text style={styles.lineTitle} numberOfLines={2}>{titleOf(line)}</Text>
                 {line.unitLabel ? <Text style={styles.lineUnit}>{line.unitLabel}</Text> : null}
-                <Text style={styles.linePrice}>₹{line.price}</Text>
+                <View style={styles.linePriceRow}>
+                  <Text style={styles.linePrice}>₹{line.price}</Text>
+                  {Number(line.mrp) > Number(line.price) ? (
+                    <Text style={styles.lineMrp}>₹{line.mrp}</Text>
+                  ) : null}
+                </View>
               </View>
               <View style={styles.lineActions}>
                 <QtyStepper
@@ -155,67 +167,79 @@ const CartScreen = ({ navigation }) => {
         {/* Anything that would make checkout fail, said before they tap the button rather
             than as an error after it. */}
         {blocked ? (
-          <View style={styles.warnCard}>
-            <Icon name="local-shipping" size={moderateScale(18)} color="#B26A00" />
-            <Text style={styles.warnText}>{t('cart.categoryBlocked')}</Text>
+          <View style={[shopStyles.notice, styles.noticeSpacing]}>
+            <Icon name="local-shipping" size={moderateScale(18)} color={SHOP.warn} />
+            <Text style={shopStyles.noticeText}>{t('cart.categoryBlocked')}</Text>
           </View>
         ) : null}
 
         {outOfStock ? (
-          <View style={styles.warnCard}>
-            <Icon name="error-outline" size={moderateScale(18)} color="#B26A00" />
-            <Text style={styles.warnText}>
+          <View style={[shopStyles.notice, styles.noticeSpacing]}>
+            <Icon name="error-outline" size={moderateScale(18)} color={SHOP.warn} />
+            <Text style={shopStyles.noticeText}>
               {outOfStock.map((o) => o.title).join(', ')} — {t('cart.soldOut')}
             </Text>
           </View>
         ) : null}
 
         {quoteError ? (
-          <View style={styles.warnCard}>
-            <Icon name="error-outline" size={moderateScale(18)} color="#B26A00" />
-            <Text style={styles.warnText}>{quoteError}</Text>
+          <View style={[shopStyles.notice, styles.noticeSpacing]}>
+            <Icon name="error-outline" size={moderateScale(18)} color={SHOP.warn} />
+            <Text style={shopStyles.noticeText}>{quoteError}</Text>
           </View>
         ) : null}
 
         {/* Deliver to */}
+        <Text style={[shopStyles.sectionLabel, styles.labelSpacing]}>{t('cart.deliverTo')}</Text>
         <TouchableOpacity
           style={styles.card}
           activeOpacity={0.8}
           onPress={() => navigation.navigate('Addresses', { selectMode: true })}>
-          <View style={styles.addressHeader}>
-            <Icon name="place" size={moderateScale(18)} color={COLORS.AstroMaroon} />
-            <Text style={styles.addressLabel}>{t('cart.deliverTo')}</Text>
-            <Text style={styles.addressChange}>
-              {address ? t('cart.change') : t('address.addNew')}
-            </Text>
-          </View>
           {loadingAddress ? (
-            <ActivityIndicator size="small" color={COLORS.AstroMaroon} style={{ alignSelf: 'flex-start' }} />
+            <ActivityIndicator size="small" color={SHOP.brand} style={styles.addrLoader} />
           ) : address ? (
-            <>
-              <Text style={styles.addressName}>
-                {address.full_name} · {address.phone}
-              </Text>
-              <Text style={styles.addressLine}>
-                {[address.house_flat, address.street_area, address.landmark, address.city, address.state, address.pincode]
-                  .filter(Boolean).join(', ')}
-              </Text>
-            </>
+            <View style={styles.addrRow}>
+              <View style={styles.addrPin}>
+                <Icon name="place" size={moderateScale(18)} color={SHOP.brand} />
+              </View>
+              <View style={styles.addrBody}>
+                <View style={styles.addrTop}>
+                  <View style={styles.addrLabelPill}>
+                    <Text style={styles.addrLabelText}>{t(`address.label_${address.label}`)}</Text>
+                  </View>
+                  <Text style={styles.addrChange}>{t('cart.change')}</Text>
+                </View>
+                <Text style={styles.addrName}>{address.full_name} · {address.phone}</Text>
+                <Text style={styles.addrLine}>
+                  {[address.house_flat, address.street_area, address.landmark, address.city, address.state, address.pincode]
+                    .filter(Boolean).join(', ')}
+                </Text>
+              </View>
+            </View>
           ) : (
-            <Text style={styles.addressMissing}>{t('cart.noAddress')}</Text>
+            <View style={styles.addrRow}>
+              <View style={styles.addrPin}>
+                <Icon name="add-location-alt" size={moderateScale(18)} color={SHOP.warn} />
+              </View>
+              <View style={styles.addrBody}>
+                <Text style={styles.addrMissing}>{t('cart.noAddress')}</Text>
+              </View>
+              <Icon name="chevron-right" size={moderateScale(20)} color={SHOP.textMuted} />
+            </View>
           )}
         </TouchableOpacity>
 
         {/* Bill — server-computed */}
         {quoting && !quote ? (
           <View style={styles.quoteLoading}>
-            <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+            <ActivityIndicator size="small" color={SHOP.brand} />
             <Text style={styles.quoteLoadingText}>{t('cart.calculating')}</Text>
           </View>
         ) : (
           <BillSummary
             quote={quote}
             labels={{
+              heading: t('cart.billDetails'),
               itemTotal: t('cart.itemTotal'),
               delivery: t('cart.deliveryCharge'),
               handling: t('cart.handlingCharge'),
@@ -226,20 +250,19 @@ const CartScreen = ({ navigation }) => {
         )}
       </ScrollView>
 
-      {/* Pay bar */}
-      <View style={styles.payBar}>
+      <View style={shopStyles.stickyBar}>
         <View>
-          <Text style={styles.payBarLabel}>{t('cart.toPay')}</Text>
-          <Text style={styles.payBarAmount}>₹{quote ? quote.grandTotal : cart.subtotalEstimate}</Text>
+          <Text style={styles.barLabel}>{t('cart.toPay')}</Text>
+          <Text style={styles.barAmount}>₹{quote ? quote.grandTotal : cart.subtotalEstimate}</Text>
         </View>
         <TouchableOpacity
-          style={[styles.payBtn, !ctaEnabled && styles.payBtnDisabled]}
+          style={[styles.payBtn, !ctaEnabled && shopStyles.primaryBtnDisabled]}
           disabled={!ctaEnabled}
           onPress={onCtaPress}>
-          <Text style={styles.payBtnText}>
+          <Text style={shopStyles.primaryBtnText}>
             {needsAddress ? t('cart.addAddress') : t('cart.proceedToPay')}
           </Text>
-          <Icon name="chevron-right" size={moderateScale(20)} color={COLORS.white} />
+          <Icon name="chevron-right" size={moderateScale(19)} color={COLORS.white} />
         </TouchableOpacity>
       </View>
     </View>
@@ -247,85 +270,113 @@ const CartScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
-  scroll: { padding: scale(12), paddingBottom: verticalScale(24) },
+  scroll: { padding: scale(14), paddingBottom: verticalScale(24) },
+  card: { ...cardShadow, padding: scale(12), marginBottom: verticalScale(6) },
 
-  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', padding: scale(24) },
-  emptyTitle: { fontSize: moderateScale(17), fontFamily: 'Lato-Bold', color: COLORS.black, marginTop: verticalScale(14) },
-  emptySub: { fontSize: moderateScale(13), color: '#888', marginTop: verticalScale(6), textAlign: 'center' },
-  shopBtn: {
-    backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(11),
-    paddingHorizontal: scale(28),
-    marginTop: verticalScale(20),
-  },
-  shopBtnText: { color: COLORS.white, fontFamily: 'Lato-Bold', fontSize: moderateScale(14) },
-
-  card: {
-    backgroundColor: COLORS.white,
-    borderRadius: moderateScale(12),
-    padding: scale(12),
-    marginBottom: verticalScale(12),
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  lineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(8) },
-  lineDivider: { borderBottomWidth: 1, borderBottomColor: '#f2f2f2' },
-  lineThumb: { width: scale(54), height: scale(54), borderRadius: moderateScale(8), backgroundColor: '#f0f0f0' },
-  lineInfo: { flex: 1, marginLeft: scale(10) },
-  lineTitle: { fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: COLORS.black },
-  lineUnit: { fontSize: moderateScale(11), color: '#999', marginTop: verticalScale(1) },
-  linePrice: { fontSize: moderateScale(12), color: '#666', marginTop: verticalScale(2) },
-  lineActions: { alignItems: 'flex-end', width: scale(80) },
-  lineTotal: { fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: COLORS.black, marginTop: verticalScale(6) },
-
-  warnCard: {
-    flexDirection: 'row',
+  emptyScreen: { alignItems: 'center', justifyContent: 'center', backgroundColor: SHOP.surface },
+  emptyIconCircle: {
+    width: scale(84),
+    height: scale(84),
+    borderRadius: scale(42),
+    backgroundColor: SHOP.surfaceAlt,
     alignItems: 'center',
-    backgroundColor: '#FFF8E1',
-    borderRadius: moderateScale(10),
-    padding: scale(11),
-    marginBottom: verticalScale(12),
-    borderWidth: 1,
-    borderColor: '#FFE082',
+    justifyContent: 'center',
   },
-  warnText: { flex: 1, marginLeft: scale(8), fontSize: moderateScale(12), color: '#7A4F00', lineHeight: verticalScale(17) },
+  shopBtn: {
+    backgroundColor: SHOP.brand,
+    borderRadius: moderateScale(11),
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(30),
+    marginTop: verticalScale(22),
+  },
 
-  addressHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(6) },
-  addressLabel: { flex: 1, marginLeft: scale(6), fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: COLORS.black },
-  addressChange: { fontSize: moderateScale(12), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
-  addressName: { fontSize: moderateScale(13), color: COLORS.black, fontFamily: 'Lato-Bold' },
-  addressLine: { fontSize: moderateScale(12), color: '#666', marginTop: verticalScale(2), lineHeight: verticalScale(17) },
-  addressMissing: { fontSize: moderateScale(12), color: '#B26A00' },
+  lineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: verticalScale(9) },
+  lineDivider: { borderBottomWidth: 1, borderBottomColor: SHOP.border },
+  lineThumb: {
+    width: scale(58),
+    height: scale(58),
+    borderRadius: moderateScale(10),
+    backgroundColor: SHOP.surfaceAlt,
+  },
+  lineInfo: { flex: 1, marginLeft: scale(11) },
+  lineTitle: { fontSize: moderateScale(13), fontFamily: 'Lato-Bold', color: SHOP.text, lineHeight: verticalScale(17) },
+  lineUnit: { fontSize: moderateScale(10.5), color: SHOP.textMuted, marginTop: verticalScale(1) },
+  linePriceRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: verticalScale(3) },
+  linePrice: { fontSize: moderateScale(13), color: SHOP.text, fontFamily: 'Lato-Bold' },
+  lineMrp: {
+    fontSize: moderateScale(11),
+    color: SHOP.strike,
+    textDecorationLine: 'line-through',
+    marginLeft: scale(5),
+  },
+  lineActions: { alignItems: 'flex-end', width: scale(84) },
+  lineTotal: {
+    fontSize: moderateScale(13),
+    fontFamily: 'Lato-Bold',
+    color: SHOP.text,
+    marginTop: verticalScale(7),
+  },
 
-  quoteLoading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: verticalScale(18) },
-  quoteLoadingText: { marginLeft: scale(8), fontSize: moderateScale(12), color: '#888' },
+  noticeSpacing: { marginBottom: verticalScale(10) },
+  labelSpacing: { marginTop: verticalScale(10) },
 
-  payBar: {
+  addrLoader: { alignSelf: 'flex-start' },
+  addrRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  addrPin: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: SHOP.brandTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: scale(10),
+  },
+  addrBody: { flex: 1 },
+  // space-between, and the pill must NOT flex — with flex:1 it grew across the row and the
+  // "Change" link ended up butted straight against it, rendering as "HomeChange".
+  addrTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: COLORS.white,
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(10),
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    elevation: 8,
+    marginBottom: verticalScale(4),
   },
-  payBarLabel: { fontSize: moderateScale(11), color: '#888' },
-  payBarAmount: { fontSize: moderateScale(18), fontFamily: 'Lato-Bold', color: COLORS.black },
+  addrLabelPill: {
+    backgroundColor: SHOP.brandTint,
+    borderRadius: moderateScale(5),
+    paddingHorizontal: scale(7),
+    paddingVertical: verticalScale(2),
+    alignSelf: 'flex-start',
+  },
+  addrLabelText: {
+    color: SHOP.brand,
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(9.5),
+    letterSpacing: 0.3,
+  },
+  addrChange: { color: SHOP.brand, fontFamily: 'Lato-Bold', fontSize: moderateScale(12) },
+  addrName: { fontSize: moderateScale(13), color: SHOP.text, fontFamily: 'Lato-Bold' },
+  addrLine: {
+    fontSize: moderateScale(12),
+    color: SHOP.textSoft,
+    marginTop: verticalScale(2),
+    lineHeight: verticalScale(17),
+  },
+  addrMissing: { fontSize: moderateScale(12.5), color: SHOP.warn, fontFamily: 'Lato-Bold' },
+
+  quoteLoading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: verticalScale(20) },
+  quoteLoadingText: { marginLeft: scale(8), fontSize: moderateScale(12), color: SHOP.textMuted },
+
+  barLabel: { fontSize: moderateScale(11), color: SHOP.textMuted },
+  barAmount: { fontSize: moderateScale(19), fontFamily: 'Lato-Bold', color: SHOP.text },
   payBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(12),
+    backgroundColor: SHOP.brand,
+    borderRadius: moderateScale(11),
+    paddingVertical: verticalScale(13),
     paddingLeft: scale(20),
     paddingRight: scale(12),
   },
-  payBtnDisabled: { backgroundColor: '#bdbdbd' },
-  payBtnText: { color: COLORS.white, fontFamily: 'Lato-Bold', fontSize: moderateScale(14) },
 });
 
 export default CartScreen;
