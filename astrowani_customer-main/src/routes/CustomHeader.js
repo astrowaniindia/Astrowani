@@ -19,8 +19,12 @@ import useNotificationBadgeSync from '../hooks/useNotificationBadgeSync';
 import useWalletBalance, { refreshWalletBalance } from '../hooks/useWalletBalance';
 
 import { LanguageContext } from '../context/LanguageContext';
+import CartButton from '../components/shop/CartButton';
 
-const CustomHeader = ({title, showLanguage}) => {
+// showCart puts the remedies cart icon on the right. Separate from showLanguage because
+// the Remedies ("Services") header shows no wallet/language/notification cluster at all,
+// so its entire right-hand block was hidden and the cart had nowhere to live.
+const CustomHeader = ({title, showLanguage, showCart}) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   // Shared poll (see hooks/useWalletBalance.js) — this header mounts on 6 main
@@ -109,8 +113,11 @@ const CustomHeader = ({title, showLanguage}) => {
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
         </View>
-        {showLanguage && (
-          <View style={styles.notificationView}>
+        {(showLanguage || showCart) && (
+          <View style={showLanguage ? styles.notificationView : styles.rightSlot}>
+            {showCart && <CartButton />}
+            {showLanguage && (
+            <>
             <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={{flexDirection: 'row', alignItems: 'center'}}>
               <Text style={styles.balanceText}>₹ {walletBalance}</Text>
               <Ionicons name="wallet-outline" color="white" size={24} />
@@ -132,6 +139,8 @@ const CustomHeader = ({title, showLanguage}) => {
                 </View>
               )}
             </TouchableOpacity>
+            </>
+            )}
           </View>
         )}
       </View>
@@ -157,6 +166,12 @@ const styles = StyleSheet.create({
     marginLeft: scale(10),
     color: 'white',
     fontFamily: 'Lato-Bold',
+  },
+  // Used when only the cart is shown (Remedies header) — no fixed width, so the icon
+  // hugs the right edge instead of floating in the middle of a 150px space-between row.
+  rightSlot: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   notificationView: {
     flexDirection: 'row',

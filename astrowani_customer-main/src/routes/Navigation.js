@@ -28,7 +28,8 @@ import Call from '../screens/Call/Call';
 import Live from '../screens/Live/Live';
 import LiveViewerScreen from '../screens/Live/LiveViewerScreen';
 import { StatusPopupHost } from '../components/StatusPopup';
-import { CartProvider, useCart } from '../context/CartContext';
+import { CartProvider } from '../context/CartContext';
+import CartButton from '../components/shop/CartButton';
 import ProductDetail from '../screens/Remedies/ProductDetail';
 import CartScreen from '../screens/Remedies/CartScreen';
 import AddressList from '../screens/Remedies/AddressList';
@@ -485,7 +486,7 @@ export default function Navigation({ initialRoute }) {
             headerTitleStyle: {
               fontSize: moderateScale(18),
             },
-            headerRight: () => <CartHeaderButton navigation={navigation} />,
+            headerRight: () => <CartButton style={{ marginRight: scale(6) }} />,
             tabBarStyle: { display: 'none' },
           })}
         />
@@ -501,7 +502,7 @@ export default function Navigation({ initialRoute }) {
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
-            headerRight: () => <CartHeaderButton navigation={navigation} />,
+            headerRight: () => <CartButton style={{ marginRight: scale(6) }} />,
             tabBarStyle: { display: 'none' },
           })}
         />
@@ -965,41 +966,10 @@ function LiveStack() {
 // stayed English even with the Hindi toggle on.
 function RemediesHeader() {
   const { t } = React.useContext(LanguageContext);
-  return <CustomHeader title={t('remedies.servicesTitle')} />;
-}
-
-// Cart icon with a live count, shown in the shop and product-detail headers. A separate
-// component rather than inline JSX in `options` because it needs useCart() — `options` is
-// not a component and cannot call hooks. Renders nothing when the cart is empty, so it
-// never draws an icon that would lead to an empty screen.
-function CartHeaderButton({ navigation }) {
-  const cart = useCart();
-  if (!cart.count) return null;
-  return (
-    <TouchableOpacity
-      style={{ marginRight: scale(14) }}
-      onPress={() => navigation.navigate('Cart')}
-      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-      <MaterialIcons name="shopping-cart" size={24} color="#fff" />
-      <View
-        style={{
-          position: 'absolute',
-          top: -verticalScale(5),
-          right: -scale(7),
-          minWidth: scale(16),
-          height: scale(16),
-          borderRadius: scale(8),
-          backgroundColor: '#2E7D32',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: scale(3),
-        }}>
-        <Text style={{ color: '#fff', fontSize: moderateScale(9), fontFamily: 'Lato-Bold' }}>
-          {cart.totalUnits}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+  // showCart puts the cart icon at the right of this header too — a customer who added
+  // something, backed out to the category list and wanted their cart previously had no
+  // way to reach it from here.
+  return <CustomHeader title={t('remedies.servicesTitle')} showCart />;
 }
 
 function RemediesStack() {
