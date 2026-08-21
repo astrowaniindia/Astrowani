@@ -167,7 +167,10 @@ function handleNotificationTap(remoteMessage) {
     navigate('NotificationScreen');
   } else if (type === 'voice_note') {
     navigate('VoiceNotes');
-  } else if (type === 'report_delivered') {
+  } else if (type === 'report_delivered' || type === 'order_update') {
+    // 'order_update' is the shipped / out-for-delivery / delivered / cancelled push sent
+    // from the admin Orders page (adminRoutes.js STATUS_PUSH). Same destination as a
+    // delivered report — My Orders is where the tracking timeline lives.
     navigate('MyOrders');
   } else if (type === 'active_session') {
     handleActiveSessionTap(remoteMessage.data);

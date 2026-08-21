@@ -28,6 +28,13 @@ import Call from '../screens/Call/Call';
 import Live from '../screens/Live/Live';
 import LiveViewerScreen from '../screens/Live/LiveViewerScreen';
 import { StatusPopupHost } from '../components/StatusPopup';
+import { CartProvider, useCart } from '../context/CartContext';
+import ProductDetail from '../screens/Remedies/ProductDetail';
+import CartScreen from '../screens/Remedies/CartScreen';
+import AddressList from '../screens/Remedies/AddressList';
+import AddressForm from '../screens/Remedies/AddressForm';
+import PaymentScreen from '../screens/Remedies/PaymentScreen';
+import OrderSuccess from '../screens/Remedies/OrderSuccess';
 import { ReviewPromptHost } from '../components/ReviewPrompt';
 import { ReferralPromptHost } from '../components/ReferralPromptHost';
 import Remedies from '../screens/Remedies/Remedies';
@@ -43,8 +50,6 @@ import BlogScreen from '../screens/Home/BlogScreen';
 import SearchScreen from '../screens/Home/SearchScreen';
 import NotificationScreen from '../screens/Home/NotificationScreen';
 import AddReview from '../screens/Home/AddReview';
-import BookPujaScreen from '../screens/Remedies/BookPujaScreen';
-import PujaDetails from '../screens/Remedies/PujaDetails';
 import RemedyShop from '../screens/Remedies/RemedyShop';
 import CategoryAstrologers from '../screens/Category/CategoryAstrologers';
 import MySessionScreen from '../screens/drawerScreens/MySessionScreen';
@@ -72,14 +77,10 @@ import Settings from '../screens/drawerScreens/Settings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
 import FaqScreen from '../screens/drawerScreens/FaqScreen';
 import SupportScreen from '../screens/drawerScreens/SupportScreen';
-// import GemstoneDetails from '../screens/Remedies/GemstoneDetails';
-import GemstoneList from '../screens/Remedies/GemstoneList';
 import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails';
 
 import VoiceCallScreen from '../screens/Video/VoiceCallScreen';
 import VideoCallScreen from '../screens/Video/VideoCallScreen';
-import GemstoneDetails from '../screens/Home/GemStoneBuy';
-import VipPuja from '../screens/Home/VipPuja';
 import Register from '../screens/Register/Register';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -134,6 +135,10 @@ export default function Navigation({ initialRoute }) {
 
   return (
     <>
+    {/* Outside NavigationContainer on purpose: the cart is plain state with no dependency
+        on navigation, and mounting it here means it survives every navigation reset (login,
+        logout, deep link) instead of being rebuilt. */}
+    <CartProvider>
     <NavigationContainer ref={navigationRef} onReady={() => consumePendingSessionNavigationWithRetry()}>
       {/* Must be inside NavigationContainer — PostHog's screen-autocapture hook reads
           navigation state via @react-navigation/native's own hooks, which only work
@@ -410,21 +415,6 @@ export default function Navigation({ initialRoute }) {
           })}
         />
         <Stack.Screen
-          name="SpecificPuja"
-          component={VipPuja}
-          options={({ route }) => ({
-            title: 'Specific Puja',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-            tabBarStyle: { display: 'none' },
-          })}
-        />
-        <Stack.Screen
           name="SupportScreen"
           component={SupportScreen}
           options={({ route }) => ({
@@ -474,10 +464,19 @@ export default function Navigation({ initialRoute }) {
             tabBarStyle: { display: 'none' },
           })}
         />
+        {/* The old gemstone/puja screens that used to live here (GemstoneList,
+            GemstoneDetails -> screens/Home/GemStoneBuy, PujaDetails, BookPujaScreen,
+            SpecificPuja -> screens/Home/VipPuja) were deleted on 2026-08-21. They were
+            unreachable — a closed subgraph that only navigated to each other, with no live
+            entry point — and superseded by the real cart flow below (RemedyShop ->
+            ProductDetail -> Cart -> Payment). GemStoneBuy in particular carried a
+            hardcoded LIVE Razorpay key and a ₹0.20 client-side "payment" with no
+            server-side verification, which is not a pattern to leave lying around to be
+            copy-pasted. */}
         <Stack.Screen
           name="RemedyShop"
           component={RemedyShop}
-          options={({ route }) => ({
+          options={({ route, navigation }) => ({
             title: route?.params?.title || 'Remedies',
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
@@ -486,68 +485,79 @@ export default function Navigation({ initialRoute }) {
             headerTitleStyle: {
               fontSize: moderateScale(18),
             },
+            headerRight: () => <CartHeaderButton navigation={navigation} />,
+            tabBarStyle: { display: 'none' },
+          })}
+        />
+
+        {/* ── Remedies commerce: product → cart → address → payment → confirmation ──
+            All in the root stack alongside RemedyShop, so navigate('Cart') resolves from
+            the Remedies tab, the drawer, and the Home row alike. */}
+        <Stack.Screen
+          name="ProductDetail"
+          component={ProductDetail}
+          options={({ route, navigation }) => ({
+            title: route?.params?.item?.title || 'Product',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+            headerRight: () => <CartHeaderButton navigation={navigation} />,
             tabBarStyle: { display: 'none' },
           })}
         />
         <Stack.Screen
-          name="BookPujaScreen"
-          component={BookPujaScreen}
-          options={({ route }) => ({
-            title: 'Book Puja',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
+          name="Cart"
+          component={CartScreen}
+          options={{
+            title: 'Cart',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
+            headerTitleStyle: { fontSize: moderateScale(18) },
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Stack.Screen
+          name="Addresses"
+          component={AddressList}
+          options={{
+            title: 'Delivery Address',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(18) },
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Stack.Screen
+          name="AddressForm"
+          component={AddressForm}
+          options={({ route }) => ({
+            title: route?.params?.address ? 'Edit Address' : 'Add Address',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(18) },
             tabBarStyle: { display: 'none' },
           })}
         />
         <Stack.Screen
-          name="PujaDetails"
-          component={PujaDetails}
-          options={({ route }) => ({
-            title: 'Puja Details',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
+          name="Payment"
+          component={PaymentScreen}
+          options={{
+            title: 'Payment',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
+            headerTitleStyle: { fontSize: moderateScale(18) },
             tabBarStyle: { display: 'none' },
-          })}
+          }}
         />
         <Stack.Screen
-          name="GemstoneDetails"
-          component={GemstoneDetails}
-          options={({ route }) => ({
-            title: 'Gemstone Details',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
+          name="OrderSuccess"
+          component={OrderSuccess}
+          options={{
+            // No header and no back button: the screen is reached with replace() after a
+            // real payment, and its own two buttons are the only ways out.
+            headerShown: false,
             tabBarStyle: { display: 'none' },
-          })}
-        />
-        <Stack.Screen
-          name="GemstoneList"
-          component={GemstoneList}
-          options={({ route }) => ({
-            title: 'Gemstones',
-            headerStyle: {
-              backgroundColor: COLORS.AstroMaroon,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontSize: moderateScale(18),
-            },
-            tabBarStyle: { display: 'none' },
-          })}
+          }}
         />
         <Stack.Screen
           name="FavoriteScreen"
@@ -613,6 +623,7 @@ export default function Navigation({ initialRoute }) {
       </Stack.Navigator>
       </PostHogProvider>
     </NavigationContainer>
+    </CartProvider>
     <StatusPopupHost />
     <ReviewPromptHost />
     <ReferralPromptHost />
@@ -955,6 +966,40 @@ function LiveStack() {
 function RemediesHeader() {
   const { t } = React.useContext(LanguageContext);
   return <CustomHeader title={t('remedies.servicesTitle')} />;
+}
+
+// Cart icon with a live count, shown in the shop and product-detail headers. A separate
+// component rather than inline JSX in `options` because it needs useCart() — `options` is
+// not a component and cannot call hooks. Renders nothing when the cart is empty, so it
+// never draws an icon that would lead to an empty screen.
+function CartHeaderButton({ navigation }) {
+  const cart = useCart();
+  if (!cart.count) return null;
+  return (
+    <TouchableOpacity
+      style={{ marginRight: scale(14) }}
+      onPress={() => navigation.navigate('Cart')}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+      <MaterialIcons name="shopping-cart" size={24} color="#fff" />
+      <View
+        style={{
+          position: 'absolute',
+          top: -verticalScale(5),
+          right: -scale(7),
+          minWidth: scale(16),
+          height: scale(16),
+          borderRadius: scale(8),
+          backgroundColor: '#2E7D32',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: scale(3),
+        }}>
+        <Text style={{ color: '#fff', fontSize: moderateScale(9), fontFamily: 'Lato-Bold' }}>
+          {cart.totalUnits}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
 }
 
 function RemediesStack() {
