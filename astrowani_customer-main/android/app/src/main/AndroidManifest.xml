@@ -44,9 +44,16 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   
-  <!-- Strip merged location permissions from third-party libraries -->
-  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
+  <!-- Foreground location, declared deliberately and requested at runtime only when the
+       customer taps "Use my current location" while saving a delivery address (see
+       screens/Remedies/AddressForm.js). It also lets the Shubh Muhurat card obtain the
+       coordinates its timings need — that call existed already but could never succeed
+       while these were stripped.
+       PLAY STORE: this needs a location-permission declaration in the console. It is
+       foreground-only and user-initiated; BACKGROUND location stays stripped below, since
+       nothing in this app has any business tracking a customer who isn't using it. -->
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" tools:node="remove" />
 
   <uses-sdk tools:overrideLibrary="com.rnenxrtc"/>

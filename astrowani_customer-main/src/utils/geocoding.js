@@ -32,10 +32,20 @@ export async function reverseGeocode(latitude, longitude) {
     j.countryName,
   ].filter(Boolean).join(', ');
   if (!label) throw new Error('Reverse geocode returned no place name');
+  // BigDataCloud nests finer-grained names in an administrative array ordered
+  // coarse -> fine; the last entry is the neighbourhood/suburb, which is the most useful
+  // thing to drop into a "street, area, locality" field.
+  const admin = Array.isArray(j.localityInfo?.administrative) ? j.localityInfo.administrative : [];
+  const finest = admin.length ? admin[admin.length - 1]?.name : '';
+
   return {
     label,
     city: j.city || j.locality || '',
     region: j.principalSubdivision || '',
     country: j.countryName || '',
+    // Empty strings rather than undefined, so callers can assign straight into form state.
+    postcode: j.postcode || '',
+    locality: j.locality || '',
+    area: [j.locality, finest].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '),
   };
 }

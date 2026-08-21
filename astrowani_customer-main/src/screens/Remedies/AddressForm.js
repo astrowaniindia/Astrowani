@@ -1,13 +1,15 @@
 import React, { useContext, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, PermissionsAndroid,
 } from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
 import { createAddress, updateAddress } from '../../api/OrdersApi';
+import { reverseGeocode } from '../../utils/geocoding';
 import { captureEvent } from '../../utils/Analytics';
 
 const LABELS = [
@@ -37,6 +39,64 @@ const AddressForm = ({ navigation, route }) => {
   const [pincode, setPincode] = useState(existing?.pincode || '');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [locating, setLocating] = useState(false);
+
+  /**
+   * "Use my current location" — GPS fix, then a keyless reverse lookup to fill in the
+   * parts of the address a phone can actually know.
+   *
+   * Deliberately fills ONLY city / state / pincode / area and leaves name, phone and
+   * flat-or-house-number alone: a GPS fix cannot know a door number, and silently
+   * overwriting what someone already typed is worse than asking them to finish it.
+   *
+   * Uses the app's existing keyless geocoder (utils/geocoding.js — Open-Meteo +
+   * BigDataCloud), NOT Google, because this project's Google Maps key had billing
+   * disabled and every call returned REQUEST_DENIED. Nothing here needs an API key.
+   */
+  const useCurrentLocation = async () => {
+    setLocating(true);
+    try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          setLocating(false);
+          Alert.alert(t('address.locationDeniedTitle'), t('address.locationDeniedMsg'));
+          return;
+        }
+      }
+
+      // Geolocation's callback API predates promises, so wrap it to keep the await flow.
+      const coords = await new Promise((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (pos) => resolve(pos.coords),
+          (err) => reject(new Error(err?.message || 'Could not get a location fix')),
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 },
+        );
+      });
+
+      const place = await reverseGeocode(coords.latitude, coords.longitude);
+
+      // Only overwrite a field if the lookup actually produced something for it, so a
+      // partial result can't blank out a value the customer already had.
+      if (place.city) setCity(place.city);
+      if (place.region) setState(place.region);
+      if (place.postcode) setPincode(place.postcode);
+      if (place.area) setStreetArea(place.area);
+      setErrors({});
+
+      // The pincode is the one field a reverse lookup often can't resolve, and it's
+      // required — so say so rather than leaving them to discover it on save.
+      if (!place.postcode) {
+        Alert.alert(t('address.locationFoundTitle'), t('address.locationNoPincode'));
+      }
+    } catch (err) {
+      Alert.alert(t('address.locationFailedTitle'), err.message || t('address.locationFailedMsg'));
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const validate = () => {
     const next = {};
@@ -139,6 +199,23 @@ const AddressForm = ({ navigation, route }) => {
         })}
 
         <Text style={styles.sectionLabel}>{t('address.whereToDeliver')}</Text>
+
+        {/* Fills city / state / pincode / area from a GPS fix. The flat or house number
+            still has to be typed — no location API can know it. */}
+        <TouchableOpacity
+          style={styles.locBtn}
+          onPress={locating ? undefined : useCurrentLocation}
+          disabled={locating}
+          activeOpacity={0.8}>
+          {locating ? (
+            <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+          ) : (
+            <Icon name="my-location" size={moderateScale(17)} color={COLORS.AstroMaroon} />
+          )}
+          <Text style={styles.locBtnText}>
+            {locating ? t('address.locating') : t('address.useCurrentLocation')}
+          </Text>
+        </TouchableOpacity>
         {renderField({
           value: houseFlat, onChangeText: setHouseFlat,
           placeholder: t('address.houseFlat'), error: errors.houseFlat,
@@ -210,6 +287,23 @@ const styles = StyleSheet.create({
     marginLeft: scale(5),
   },
   labelChipTextActive: { color: COLORS.white },
+  locBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.AstroMaroon,
+    borderStyle: 'dashed',
+    borderRadius: moderateScale(9),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(12),
+  },
+  locBtnText: {
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    fontSize: moderateScale(13),
+    marginLeft: scale(7),
+  },
   fieldWrap: { marginBottom: verticalScale(10) },
   input: {
     borderWidth: 1,
