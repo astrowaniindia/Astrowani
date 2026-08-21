@@ -13,6 +13,7 @@ import useWalletBalance, { refreshWalletBalance } from '../../hooks/useWalletBal
 import BillSummary from '../../components/shop/BillSummary';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
+import { razorpayPrefill } from '../../utils/customerIdentity';
 
 // Module scope on purpose: defined inside PaymentScreen, React would see a brand-new
 // component type on every render and tear down all three rows each time `method` changed.
@@ -116,6 +117,12 @@ const PaymentScreen = ({ navigation, route }) => {
       return;
     }
 
+    // Without prefill, Razorpay asks for the mobile number and email on EVERY payment,
+    // even though the app already knows both. Anything we can't resolve is simply omitted,
+    // so the customer is only ever asked for what's genuinely missing — and every field
+    // stays editable in the sheet if they want to use a different number.
+    const prefill = await razorpayPrefill();
+
     const payment = await RazorpayCheckout.open({
       description: t('checkout.remedyOrder'),
       currency: created.currency || 'INR',
@@ -123,6 +130,7 @@ const PaymentScreen = ({ navigation, route }) => {
       amount: Math.round(Number(created.amount) * 100),
       order_id: created.razorpayOrderId,
       name: 'Astrowani',
+      prefill,
       theme: { color: COLORS.AstroMaroon },
     });
 

@@ -19,6 +19,7 @@ import { COLORS } from '../../../Theme/Colors';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { SOCKET_URL } from '../../../config/api';
 import { captureEvent } from '../../../utils/Analytics';
+import { razorpayPrefill } from '../../../utils/customerIdentity';
 
 const presetAmounts = [50, 100, 200, 500, 1000, 2000];
 
@@ -51,6 +52,11 @@ const Wallet = ({navigation}) => {
       }
       const {orderId, amount: orderAmount, currency, keyId} = orderRes.data;
 
+      // Same reason as the remedy-order sheet: with no prefill, Razorpay re-asks for the
+      // mobile number and email on every single top-up. Blank fields are omitted rather
+      // than sent empty, and the customer can still edit anything in the sheet.
+      const prefill = await razorpayPrefill();
+
       const options = {
         description: 'Wallet Recharge',
         image: 'https://your-logo-url.com/logo.png',
@@ -59,6 +65,7 @@ const Wallet = ({navigation}) => {
         amount: Math.round(orderAmount * 100),
         order_id: orderId,
         name: 'Astrowani',
+        prefill,
         theme: {color: COLORS.AstroMaroon},
       };
 

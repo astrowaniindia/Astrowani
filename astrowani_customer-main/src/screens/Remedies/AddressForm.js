@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform, PermissionsAndroid,
@@ -8,7 +8,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
-import { createAddress, updateAddress } from '../../api/OrdersApi';
+import { createAddress, updateAddress, listAddresses } from '../../api/OrdersApi';
+import { getCustomerIdentity } from '../../utils/customerIdentity';
 import { reverseGeocode } from '../../utils/geocoding';
 import { captureEvent } from '../../utils/Analytics';
 
@@ -40,6 +41,43 @@ const AddressForm = ({ navigation, route }) => {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [locating, setLocating] = useState(false);
+
+  // Prefill name + phone for a NEW address. Opening this form completely blank made
+  // someone retype details the app already had on every single order.
+  //
+  // Priority is deliberate: the most recent SAVED address wins over the profile, because
+  // if a customer previously corrected the delivery name or number (a spouse's number, a
+  // shop's name) that correction is the better answer than whatever their account says.
+  // Only ever fills empty fields, so this can never clobber typing already in progress,
+  // and never runs when editing — an existing address's own values must stand.
+  useEffect(() => {
+    if (isEdit) return;
+    let cancelled = false;
+    (async () => {
+      let name = '';
+      let phone = '';
+      try {
+        const saved = await listAddresses();
+        if (saved.length) {
+          const latest = saved.find((a) => a.is_default) || saved[0];
+          name = latest.full_name || '';
+          phone = latest.phone || '';
+        }
+      } catch (_) {
+        // No saved addresses, or the call failed — fall back to the account below.
+      }
+      if (!name || !phone) {
+        const me = await getCustomerIdentity();
+        name = name || me.name;
+        phone = phone || me.phone;
+      }
+      if (cancelled) return;
+      if (name) setFullName((v) => v || name);
+      if (phone) setPhone((v) => v || phone);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * "Use my current location" — GPS fix, then a keyless reverse lookup to fill in the
