@@ -1650,13 +1650,6 @@ const Home = ({navigation}) => {
 export default Home;
 
 const styles = StyleSheet.create({
-  separator: {
-    height: verticalScale(1),
-    backgroundColor: COLORS.AstroMaroon,
-    marginHorizontal: scale(15),
-    marginVertical: verticalScale(10),
-    opacity: 0.15,
-  },
   main: {backgroundColor: 'white'},
   searchTxt: {
     paddingHorizontal: scale(5),
@@ -1680,20 +1673,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 6,
   },
-  backgroundImg: {
-    flex: 1,
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
-  },
-  imageBackWrapper: {
-    width: scale(320),
-    marginHorizontal: scale(15),
-    marginVertical: verticalScale(15),
-    height: verticalScale(120),
-    borderRadius: moderateScale(10),
-    overflow: 'hidden',
-  },
   textWrapper: {
     width: scale(180),
     marginVertical: verticalScale(13),
@@ -1706,44 +1685,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     alignSelf: 'center',
     marginTop: -45,
-  },
-  topAstro: {
-    color: 'white',
-    marginHorizontal: scale(5),
-    fontFamily: 'Lato-Bold',
-    fontSize: moderateScale(12),
-    marginVertical: verticalScale(4),
-    position: 'absolute',
-    bottom: 0,
-    left: moderateScale(150),
-  },
-  chatnowBtn: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: verticalScale(18),
-    width: scale(90),
-    backgroundColor: 'orange',
-    borderRadius: moderateScale(20),
-    // marginTop: verticalScale(30),
-    marginHorizontal: scale(10),
-  },
-  callnowBtn: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: verticalScale(18),
-    width: scale(90),
-    backgroundColor: 'red',
-    borderRadius: moderateScale(20),
-    // marginTop: verticalScale(30),
-    marginHorizontal: scale(10),
-  },
-  chatnowTxt: {
-    color: 'black',
-
-    fontSize: moderateScale(10),
-    fontFamily: 'Poppins-Bold',
   },
   topAstrologers: {
     marginHorizontal: scale(15),
@@ -2491,11 +2432,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Regular',
     marginHorizontal: scale(15),
   },
-  backgroundImg: {
-    flex: 1,
-    resizeMode: 'cover',
-    justifyContent: 'space-between',
-  },
 
   centerTextWrapper: {
     flex: 1,
@@ -2510,13 +2446,6 @@ const styles = StyleSheet.create({
     // justifyContent: "space-between",
     padding: 5,
   },
-  topAstro: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-    textAlign: 'center',
-    color: 'white',
-  },
 
   rowContainer: {
     flexDirection: 'row',
@@ -2524,32 +2453,5 @@ const styles = StyleSheet.create({
     gap: 5,
   },
 
-  chatnowBtn: {
-    backgroundColor: '#B71C1C',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 5,
-    paddingHorizontal: 8,
-  },
 
-  callnowBtn: {
-    backgroundColor: 'orange',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginLeft: 5,
-    paddingHorizontal: 8,
-  },
-  chatnowTxt: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 10,
-  },
-  backgroundImg: {
-    height: 200,
-  },
-  imageBackWrapper: {
-    flex: 2,
-  },
 });
