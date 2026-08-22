@@ -29,6 +29,46 @@ const FN_MISSING = new Set(['PGRST202', '42883']);
 const isMissingFn = (err) =>
   !!err && (FN_MISSING.has(err.code) || /Could not find the function/i.test(err.message || ''));
 
+// PostgREST reports an unresolvable function OVERLOAD as PGRST203. This is a
+// different failure from "function missing" and must NOT take the fallback path:
+// falling back would quietly abandon the atomicity guarantee these functions
+// exist to provide, on a money write, under exactly the conditions where two
+// overloads suggest a half-finished migration.
+//
+// This is not hypothetical. hardening_06_vendor_txn_counterparty.sql added a 9th
+// parameter to adjust_vendor_wallet with CREATE OR REPLACE, which in PostgreSQL
+// creates a second overload rather than replacing the function. Every
+// 8-named-argument call from this file then failed, and because the generic
+// `throw error` below surfaced as a plain 500, the vendor app showed only
+// "Withdrawal request failed" for weeks with no indication that the cause was a
+// schema problem. Fixed by sql/hardening_08_drop_duplicate_vendor_wallet_overload.sql;
+// this guard makes the same mistake self-diagnosing next time.
+const FN_AMBIGUOUS = new Set(['PGRST203']);
+const isAmbiguousFn = (err) =>
+  !!err && (FN_AMBIGUOUS.has(err.code) || /Could not choose the best candidate function/i.test(err.message || ''));
+
+class WalletFunctionAmbiguous extends Error {
+  constructor(fn, err) {
+    super(
+      `${fn}: the database holds MORE THAN ONE version of this function, so the call cannot be ` +
+      'resolved and no money moved. A migration used CREATE OR REPLACE FUNCTION with a changed ' +
+      'parameter list, which creates an overload instead of replacing. Drop the obsolete ' +
+      'signature — see sql/hardening_08_drop_duplicate_vendor_wallet_overload.sql. ' +
+      `PostgREST said: ${err?.message || 'unknown'}`,
+    );
+    this.name = 'WalletFunctionAmbiguous';
+    this.code = 'WALLET_FN_AMBIGUOUS';
+  }
+}
+
+// Loud on every occurrence, not once — this blocks a money path entirely, so it
+// should keep shouting until someone runs the migration.
+function throwIfAmbiguous(error, fn) {
+  if (!isAmbiguousFn(error)) return;
+  console.error(`[wallet] FATAL SCHEMA PROBLEM in ${fn} — vendor/customer money writes are DOWN. ${error.message}`);
+  throw new WalletFunctionAmbiguous(fn, error);
+}
+
 let warnedOnce = false;
 function warnFallback(fn) {
   if (!warnedOnce) {
@@ -81,6 +121,7 @@ async function adjustCustomerWallet(customerId, amount, opts = {}) {
 
   if (!error) return Number(data);
   if (isInsufficient(error)) throw new InsufficientFunds();
+  throwIfAmbiguous(error, 'adjustCustomerWallet');
   if (!isMissingFn(error)) throw error;
 
   warnFallback('adjustCustomerWallet');
@@ -117,6 +158,7 @@ async function adjustVendorWallet(astrologerId, amount, opts = {}) {
 
   if (!error) return Number(data);
   if (isInsufficient(error)) throw new InsufficientFunds();
+  throwIfAmbiguous(error, 'adjustVendorWallet');
   if (!isMissingFn(error)) throw error;
 
   warnFallback('adjustVendorWallet');
@@ -162,6 +204,7 @@ async function transferCustomerToVendor(customerId, astrologerId, amount, opts =
     };
   }
   if (isInsufficient(error)) throw new InsufficientFunds();
+  throwIfAmbiguous(error, 'transferCustomerToVendor');
   if (!isMissingFn(error)) throw error;
 
   warnFallback('transferCustomerToVendor');
@@ -195,6 +238,7 @@ async function adjustAdminWallet(amount, opts = {}) {
   });
 
   if (!error) return Number(data);
+  throwIfAmbiguous(error, 'adjustAdminWallet');
   if (!isMissingFn(error)) throw error;
 
   warnFallback('adjustAdminWallet');
@@ -286,4 +330,7 @@ module.exports = {
   transferCustomerToVendor,
   adjustAdminWallet,
   InsufficientFunds,
+  // Exported so a route can tell "our schema is broken" apart from "this user did
+  // something wrong" and answer 503 rather than a generic failure message.
+  WalletFunctionAmbiguous,
 };

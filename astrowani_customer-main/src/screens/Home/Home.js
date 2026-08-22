@@ -437,7 +437,7 @@ const Home = ({navigation}) => {
         return null;
       }
       if (balance < minRequired) {
-        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'call' });
         return null;
       }
 
@@ -572,7 +572,7 @@ const Home = ({navigation}) => {
         return null;
       }
       if (balance < minRequired) {
-        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'video' });
         return null;
       }
 

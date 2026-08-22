@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useMemo } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -10,6 +10,7 @@ import { useCart } from '../../context/CartContext';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
 import QtyStepper from '../../components/shop/QtyStepper';
+import { getRecommendations } from '../../api/OrdersApi';
 
 const FALLBACK_IMAGE = 'https://astrowaniindia.com/wp-content/uploads/2024/05/second-300x300.jpg';
 
@@ -42,6 +43,18 @@ const ProductDetail = ({ route, navigation }) => {
     const hi = item.hindi?.[field];
     return hi && hi !== en ? hi : en;
   }, [item, language]);
+
+  // Only this item's recommendation is needed here, but the endpoint returns the whole
+  // (small) map in one call — cheaper than a per-item lookup and it is already cached
+  // upstream by the shop screen's own fetch.
+  const [recommendedBy, setRecommendedBy] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    getRecommendations().then((map) => {
+      if (!cancelled) setRecommendedBy(map[item?._id] || null);
+    });
+    return () => { cancelled = true; };
+  }, [item?._id]);
 
   const title = localized('title');
   const description = localized('description');
@@ -101,6 +114,15 @@ const ProductDetail = ({ route, navigation }) => {
           {item.unitLabel ? (
             <View style={styles.unitChip}>
               <Text style={styles.unitChipText}>{item.unitLabel}</Text>
+            </View>
+          ) : null}
+
+          {recommendedBy ? (
+            <View style={styles.recoBanner}>
+              <Icon name="verified" size={moderateScale(15)} color={COLORS.AstroMaroon} />
+              <Text style={styles.recoBannerText}>
+                Recommended for you by <Text style={styles.recoBannerName}>{recommendedBy}</Text>
+              </Text>
             </View>
           ) : null}
 
@@ -234,6 +256,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
+  recoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    backgroundColor: 'rgba(89,42,25,0.07)',
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(7),
+    marginBottom: verticalScale(10),
+  },
+  recoBannerText: { flex: 1, fontSize: moderateScale(12), color: '#5C4A42' },
+  recoBannerName: { fontWeight: '700', color: COLORS.AstroMaroon },
   title: {
     color: '#2B1A11',
     fontSize: moderateScale(19),

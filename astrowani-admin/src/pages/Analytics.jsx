@@ -92,7 +92,7 @@ function DateRangeControl({ preset, from, to, onPreset, onCustom }) {
       </div>
       <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>
         Showing <b>{formatDateLabel(from)} – {formatDateLabel(to)}</b> — every card below
-        (except D1/D7 Retention, which is a rolling 30-day cohort window by its nature)
+        (except Retention, which is a rolling 30-day cohort window by its nature)
         reflects this range.
       </p>
     </div>
@@ -132,7 +132,7 @@ function FunnelRow({ label, count, total, color }) {
 // leave. `pctOfFirst` under each box is conversion relative to the very first stage
 // (usually "viewed the screen at all"), so both "where's the biggest single leak" (the
 // arrow labels) and "what fraction ever gets there" (the box labels) are visible at once.
-function StepFunnel({ stages }) {
+function StepFunnel({ stages, baseLabel = 'viewed' }) {
   const first = stages[0]?.count || 0;
   return (
     <div>
@@ -159,7 +159,7 @@ function StepFunnel({ stages }) {
               <span>{s.label}</span>
               <span>
                 <b>{s.count}</b>{' '}
-                <span className="muted" style={{ fontSize: 12 }}>({pctOfFirst}% of viewed)</span>
+                <span className="muted" style={{ fontSize: 12 }}>({pctOfFirst}% of {baseLabel})</span>
               </span>
             </div>
           </div>
@@ -192,6 +192,10 @@ export default function Analytics() {
   const [paymentFunnel, setPaymentFunnel] = useState(null);
   const [customerSplit, setCustomerSplit] = useState(null);
   const [retention, setRetention] = useState(null);
+  const [requestOutcomes, setRequestOutcomes] = useState(null);
+  const [astroPerf, setAstroPerf] = useState([]);
+  const [authFailures, setAuthFailures] = useState(null);
+  const [blockedAttempts, setBlockedAttempts] = useState(null);
   const [appHealth, setAppHealth] = useState(null);
   const [appHealthNotConfigured, setAppHealthNotConfigured] = useState(false);
   const [appTab, setAppTab] = useState('customer');
@@ -269,8 +273,11 @@ export default function Analytics() {
     try {
       const dateParams = { from: dateRange.from, to: dateRange.to };
       const [summaryRes, trendRes, screensRes, funnelRes, remediesFunnelRes, revenueRes, sessionsRes, retentionRes,
-        revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes] = await Promise.all([
-        client.get('/api/admin/analytics/summary', { params: dateParams }),
+        revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes,
+        outcomesRes, astroPerfRes, authFailuresRes, blockedRes] = await Promise.all([
+        // Summary is app-scoped now — DAU/WAU/MAU used to silently blend customer and
+        // vendor users, and astrologers keep their app open all day.
+        client.get('/api/admin/analytics/summary', { params: { ...dateParams, app: appTab } }),
         client.get('/api/admin/analytics/trend', { params: dateParams }),
         client.get('/api/admin/analytics/top-screens', { params: { ...dateParams, app: appTab } }),
         client.get('/api/admin/analytics/funnel', { params: dateParams }),
@@ -287,6 +294,13 @@ export default function Analytics() {
         // Customer-app-only (Home.js has no vendor equivalent) — not tied to appTab.
         client.get('/api/admin/analytics/home-interactions', { params: dateParams }),
         client.get('/api/admin/analytics/home-flow', { params: dateParams }),
+        // Supabase-backed: the outcome of every request that reached a request row.
+        client.get('/api/admin/analytics/request-outcomes', { params: dateParams }),
+        client.get('/api/admin/analytics/astrologer-performance', { params: { ...dateParams, limit: 50 } }),
+        // PostHog-backed: why signups/logins failed, and attempts blocked before a
+        // request row ever existed (low balance, busy, service off).
+        client.get('/api/admin/analytics/auth-failures', { params: dateParams }),
+        client.get('/api/admin/analytics/blocked-attempts', { params: dateParams }),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -301,6 +315,10 @@ export default function Analytics() {
       setCustomerSplit(customerSplitRes.data);
       setHomeInteractions(homeInteractionsRes.data.sections || []);
       setHomeFlow(homeFlowRes.data);
+      setRequestOutcomes(outcomesRes.data);
+      setAstroPerf(astroPerfRes.data.astrologers || []);
+      setAuthFailures(authFailuresRes.data);
+      setBlockedAttempts(blockedRes.data);
       setNotConfigured(false);
       setError('');
     } catch (e) {
@@ -437,16 +455,30 @@ export default function Analytics() {
     );
   }
 
+  const appLabel = appTab === 'vendor' ? 'vendor' : 'customer';
+  // DAU/WAU/MAU are fixed 1/7/30-day windows and are NOT affected by the date range
+  // control — labelled explicitly, because they used to be computed inside the
+  // range-filtered query and silently showed the range's number instead.
   const cards = [
-    { label: 'Screen Views', value: summary?.views },
-    { label: 'Unique Users', value: summary?.uniques },
-    { label: 'DAU', value: summary?.dau },
-    { label: 'WAU', value: summary?.wau },
-    { label: 'MAU', value: summary?.mau },
+    { label: `Screen Views (${appLabel})`, value: summary?.views },
+    { label: `Unique Users (${appLabel})`, value: summary?.uniques },
+    { label: 'DAU · last 1d', value: summary?.dau },
+    { label: 'WAU · last 7d', value: summary?.wau },
+    { label: 'MAU · last 30d', value: summary?.mau },
     { label: 'Revenue', value: revenue ? `₹${revenue.total.toLocaleString('en-IN')}` : undefined },
     { label: 'Sessions', value: sessionVolume?.totalSessions },
     { label: 'Session Minutes', value: sessionVolume?.totalMinutes },
   ];
+
+  // Any paged analytics query that hit its backstop — say so rather than showing a
+  // number that quietly under-reports.
+  const truncatedCards = [
+    revenue?.truncated && 'Revenue',
+    sessionVolume?.truncated && 'Sessions',
+    revenueByType?.truncated && 'Revenue by type',
+    paymentFunnel?.truncated && 'Payment funnel',
+    customerSplit?.truncated && 'New vs returning',
+  ].filter(Boolean);
 
   return (
     <div>
@@ -476,6 +508,30 @@ export default function Analytics() {
         ))}
       </div>
 
+      {sessionVolume?.implausibleSessions > 0 && (
+        <div className="card" style={{ marginTop: 18, borderLeft: '4px solid var(--amber)' }}>
+          <b>{sessionVolume.implausibleSessions} session{sessionVolume.implausibleSessions === 1 ? '' : 's'} excluded from Session Minutes.</b>
+          <p className="muted" style={{ margin: '6px 0 0' }}>
+            {sessionVolume.implausibleSessions === 1 ? 'It claims' : 'They claim'} a duration longer than{' '}
+            {Math.round(sessionVolume.maxPlausibleMinutes / 60)} hours
+            ({sessionVolume.implausibleMinutes.toLocaleString('en-IN')} minutes in total), which means the
+            session was never properly closed and its <code>ended_at</code> was stamped much later —
+            not real talk time. Still counted under Sessions. Worth cleaning up in the database:
+            these are rows where <code>is_active</code> was left true with no <code>next_billing_at</code>.
+          </p>
+        </div>
+      )}
+
+      {truncatedCards.length > 0 && (
+        <div className="card" style={{ marginTop: 18, borderLeft: '4px solid var(--red)' }}>
+          <b>Some totals are incomplete.</b>
+          <p className="muted" style={{ margin: '6px 0 0' }}>
+            These queries hit their row-count backstop, so the figures shown are a floor,
+            not a total: {truncatedCards.join(', ')}. Narrow the date range for exact numbers.
+          </p>
+        </div>
+      )}
+
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>App Health</h3>
         {appHealthNotConfigured ? (
@@ -499,34 +555,62 @@ export default function Analytics() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h3 style={{ marginTop: 0 }}>D1 / D7 Retention (customer app)</h3>
+        <h3 style={{ marginTop: 0 }}>Retention (customer app)</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
           Of everyone whose first-ever screen view fell on a given day, what fraction came back
-          the next day (D1) or a week later (D7). The more trustworthy "are people actually
-          coming back" number — screen-view counts alone can't tell you that.
+          the next day (D1), a week later (D7), or a month later (D30). Cohorts too recent to
+          have reached a mark are excluded from it, so a fresh cohort's unavoidable 0% can't
+          drag the average down and look like a regression.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: 10 }}>D1 Retention</div>
-            <FunnelRow
-              label="Returned next day"
-              count={retention?.d1?.returned ?? 0}
-              total={retention?.d1?.cohortSize ?? 0}
-              color="var(--maroon)"
-            />
-            <span className="muted">Cohort size: {retention?.d1?.cohortSize ?? 0}</span>
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: 10 }}>D7 Retention</div>
-            <FunnelRow
-              label="Returned after a week"
-              count={retention?.d7?.returned ?? 0}
-              total={retention?.d7?.cohortSize ?? 0}
-              color="var(--amber)"
-            />
-            <span className="muted">Cohort size: {retention?.d7?.cohortSize ?? 0}</span>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 24 }}>
+          {[
+            { key: 'd1', title: 'D1 — next day', color: 'var(--maroon)' },
+            { key: 'd7', title: 'D7 — after a week', color: 'var(--amber)' },
+            { key: 'd30', title: 'D30 — after a month', color: 'var(--green)' },
+          ].map((r) => (
+            <div key={r.key}>
+              <div style={{ fontWeight: 600, marginBottom: 10 }}>{r.title}</div>
+              <FunnelRow
+                label="Returned"
+                count={retention?.[r.key]?.returned ?? 0}
+                total={retention?.[r.key]?.cohortSize ?? 0}
+                color={r.color}
+              />
+              <span className="muted">
+                Cohort size: {retention?.[r.key]?.cohortSize ?? 0}
+                {retention?.[r.key]?.cohortsCounted != null && ` · ${retention[r.key].cohortsCounted} cohorts`}
+              </span>
+            </div>
+          ))}
         </div>
+
+        {/* The blended figures above show the LEVEL; this shows the TREND, which is the
+            only thing retention is actually useful for. The card used to show pooled
+            averages alone, so "is retention improving" was unanswerable. */}
+        {retention?.cohorts?.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Retention by cohort day</div>
+            <div className="table-wrap">
+              <ResponsiveContainer width="100%" height={240} minWidth={480}>
+                <LineChart data={retention.cohorts.map((c) => ({
+                  day: formatDateLabel(c.day),
+                  D1: c.cohortSize > 0 ? Math.round((c.d1 / c.cohortSize) * 1000) / 10 : 0,
+                  D7: c.cohortSize > 0 ? Math.round((c.d7 / c.cohortSize) * 1000) / 10 : 0,
+                  D30: c.cohortSize > 0 ? Math.round((c.d30 / c.cohortSize) * 1000) / 10 : 0,
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="day" fontSize={12} />
+                  <YAxis fontSize={12} unit="%" />
+                  <Tooltip formatter={(v) => `${v}%`} />
+                  <Legend />
+                  <Line type="monotone" dataKey="D1" stroke="var(--maroon)" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="D7" stroke="var(--amber)" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="D30" stroke="var(--green)" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
@@ -668,6 +752,36 @@ export default function Analytics() {
         ) : (
           <p className="muted" style={{ margin: 0 }}>Loading…</p>
         )}
+
+        {/* The funnel above shows WHERE people fall out; these show WHY. The apps have
+            been sending a `reason` on every signup_failed/login_failed all along and
+            nothing read it, so a cliff in the funnel came with no explanation. */}
+        {(() => {
+          const rows = (authFunnelType === 'login' ? authFailures?.login : authFailures?.signup) || [];
+          if (!rows.length) return null;
+          const total = rows.reduce((s, r) => s + r.count, 0);
+          return (
+            <div style={{ marginTop: 22 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                Failure reasons ({total} total)
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Reason</th><th>Count</th><th>Share</th></tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.reason}>
+                        <td>{formatSectionLabel(r.reason)}</td>
+                        <td>{r.count}</td>
+                        <td>{total > 0 ? Math.round((r.count / total) * 100) : 0}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
@@ -675,9 +789,12 @@ export default function Analytics() {
           <h3 style={{ margin: 0 }}>Call &amp; Chat Funnel (customer app)</h3>
         </div>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
-          Of everyone who tapped Call or Chat, how many actually connected. (Customer-only —
-          the vendor app only ever accepts, never initiates, so there's no equivalent funnel
-          there.)
+          Of everyone who tapped Call or Chat, how many actually connected. Counted as
+          <b> attempts</b>, not people — one person trying five times is five attempts.
+          (The Remedies funnel below counts distinct people instead, because it's a
+          drop-off question; the two percentages aren't directly comparable.) Customer-only —
+          the vendor app only ever accepts, never initiates. <b>Why</b> the rest didn't
+          connect is broken out in the two cards below.
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
           <div>
@@ -693,16 +810,159 @@ export default function Analytics() {
         </div>
       </div>
 
+      {/* ── Why attempts didn't connect ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Why requests didn't connect</h3>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
+          The outcome of every request that actually reached an astrologer, read straight from
+          the database — so it's exact, and it covers history from before any analytics
+          existed. <b>Rejected</b> and <b>missed</b> are the astrologer's doing;
+          <b> cancelled</b> is the customer changing their mind. They look identical in the
+          connect rate above and need completely different fixes.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th><th>Requests</th><th>Accepted</th><th>Rejected</th>
+                <th>Missed</th><th>Cancelled</th><th>Accept rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { key: 'chat', label: 'Chat' },
+                { key: 'audio', label: 'Audio call' },
+                { key: 'video', label: 'Video call' },
+                { key: 'combined', label: 'All' },
+              ].map((r) => {
+                const b = requestOutcomes?.[r.key];
+                const rate = b?.total > 0 ? Math.round((b.accepted / b.total) * 1000) / 10 : 0;
+                return (
+                  <tr key={r.key} style={r.key === 'combined' ? { fontWeight: 600 } : undefined}>
+                    <td>{r.label}</td>
+                    <td>{b?.total ?? 0}</td>
+                    <td>{b?.accepted ?? 0}</td>
+                    <td>{b?.rejected ?? 0}</td>
+                    <td>{b?.missed ?? 0}</td>
+                    <td>{b?.cancelled ?? 0}</td>
+                    <td style={{ color: rate < 50 ? 'var(--red)' : rate < 75 ? 'var(--amber)' : 'var(--green)' }}>
+                      {rate}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Attempts blocked before a request row ever existed ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Blocked before the request was even sent</h3>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
+          Customers who tried to start a consult and were stopped by a check first, so no
+          request row exists and the table above can't see them. <b>Low balance</b> is a
+          direct revenue leak — those customers wanted to pay and couldn't.
+        </p>
+        {(blockedAttempts?.reasons?.length ?? 0) === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No blocked attempts in this range.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Reason</th><th>Attempts</th><th>Share</th><th>By intent</th></tr>
+              </thead>
+              <tbody>
+                {blockedAttempts.reasons.map((r) => (
+                  <tr key={r.reason}>
+                    <td>{formatSectionLabel(r.reason)}</td>
+                    <td>{r.count}</td>
+                    <td>{blockedAttempts.total > 0 ? Math.round((r.count / blockedAttempts.total) * 100) : 0}%</td>
+                    <td className="muted">
+                      {Object.entries(r.byIntent || {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Per-astrologer performance ──
+          Nothing on this page was broken down per astrologer before, so an astrologer
+          who rejects or misses most requests was indistinguishable from one who accepts
+          everything — on a marketplace that's the most consequential difference there is.
+          All from Postgres, so it's exact and covers pre-instrumentation history. */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Astrologer performance</h3>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
+          Ranked by revenue in the selected range. <b>Accept rate</b> is the supply-side
+          number that matters most — a low one means you're losing demand you already paid
+          to acquire. <b>Repeat</b> is the share of this astrologer's customers who came
+          back for a second session, which is the closest thing to a quality signal that
+          doesn't depend on anyone leaving a review.
+        </p>
+        {astroPerf.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No astrologer activity in this range.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Astrologer</th><th>Requests</th><th>Accept rate</th><th>Rejected</th>
+                  <th>Missed</th><th>Sessions</th><th>Minutes</th><th>Revenue (₹)</th>
+                  <th>Customers</th><th>Repeat</th><th>Rating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {astroPerf.map((a) => (
+                  <tr key={a.astrologerId}>
+                    <td>
+                      {a.name}
+                      {a.badge && <span className="badge blue" style={{ marginLeft: 6 }}>{a.badge}</span>}
+                    </td>
+                    <td>{a.requests}</td>
+                    <td style={{ color: a.requests === 0 ? 'inherit' : a.acceptRatePercent < 50 ? 'var(--red)' : a.acceptRatePercent < 75 ? 'var(--amber)' : 'var(--green)' }}>
+                      {a.requests === 0 ? '—' : `${a.acceptRatePercent}%`}
+                    </td>
+                    <td>{a.rejected}</td>
+                    <td>{a.missed}</td>
+                    <td>{a.sessions}</td>
+                    <td>{a.minutes}</td>
+                    <td>{a.revenue.toLocaleString('en-IN')}</td>
+                    <td>{a.uniqueCustomers}</td>
+                    <td>{a.uniqueCustomers === 0 ? '—' : `${a.repeatRatePercent}%`}</td>
+                    <td>{a.totalReviews > 0 ? `${a.rating.toFixed(1)} (${a.totalReviews})` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Remedies commerce funnel ──
+          Was pointed at three events (remedy_buy_now_clicked / remedy_place_order_clicked /
+          remedy_order_placed) that no longer exist anywhere in the app after the cart
+          rewrite, so it rendered 0 → 0 → 0 permanently and read as "nobody is buying".
+          Now driven by the five events the cart flow actually fires. */}
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Remedies Purchase Funnel (customer app)</h3>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
-          Of everyone who tapped "Buy Now" on a remedy, how many actually placed an order.
-          "Order Placed" only counts a confirmed order (the POST actually succeeded), not just
-          the tap.
+          The full cart journey, counted as <b>distinct people</b> per stage. "Order placed"
+          only counts a confirmed order, not an attempt.
         </p>
-        <FunnelRow label="Buy Now tapped" count={remediesFunnel?.buyNowClicked ?? 0} total={remediesFunnel?.buyNowClicked ?? 0} color="var(--maroon)" />
-        <FunnelRow label="Place Order tapped" count={remediesFunnel?.placeOrderClicked ?? 0} total={remediesFunnel?.buyNowClicked ?? 0} color="var(--maroon)" />
-        <FunnelRow label="Order placed" count={remediesFunnel?.orderPlaced ?? 0} total={remediesFunnel?.buyNowClicked ?? 0} color="var(--amber)" />
+        <StepFunnel stages={remediesFunnel?.stages ?? []} baseLabel="added to cart" />
+        <div className="row-between" style={{ marginTop: 16, flexWrap: 'wrap', gap: 12 }}>
+          <span className="muted">
+            Payments failed: <b>{remediesFunnel?.paymentFailed ?? 0}</b> people
+          </span>
+          <span className="muted">
+            Tapped a category you aren't delivering yet:{' '}
+            <b>{remediesFunnel?.blockedCategoryTapped ?? 0}</b> people
+          </span>
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>

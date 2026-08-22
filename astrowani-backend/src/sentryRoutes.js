@@ -30,19 +30,48 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(502).json({ success: false, message: 'Sentry query failed' });
 });
 
+// Sentry doesn't return a reliable total-count header for this endpoint, so the count
+// has to come from walking the results. This used to read a single 100-item page and
+// report its length, which silently saturates at exactly 100 — the number then stops
+// moving and reads as "issues are stable" precisely when they are not.
+//
+// Follows the cursor in the Link header instead. MAX_PAGES is a bounded backstop
+// rather than a limit on correctness: when it trips, `atLeast` tells the caller the
+// number is a floor so the UI can render "100+" instead of a wrong exact figure.
+const MAX_PAGES = 10;
+
+function parseNextCursor(linkHeader) {
+  if (!linkHeader) return null;
+  // Sentry format: <url>; rel="next"; results="true"; cursor="0:100:0"
+  for (const part of linkHeader.split(',')) {
+    if (!/rel="next"/.test(part)) continue;
+    if (!/results="true"/.test(part)) return null; // no further results
+    const m = part.match(/cursor="([^"]+)"/);
+    return m ? m[1] : null;
+  }
+  return null;
+}
+
 async function fetchIssueCount(project, query, statsPeriod) {
-  const { data } = await axios.get(
-    `https://sentry.io/api/0/projects/${SENTRY_ORG}/${project}/issues/`,
-    {
-      headers: { Authorization: `Bearer ${SENTRY_AUTH_TOKEN}` },
-      params: { statsPeriod, query, per_page: 100 },
-      timeout: 15000,
-    }
-  );
-  // Sentry doesn't return a total count header for this endpoint reliably across
-  // plans, so we count the page — fine for this app's issue volume (dozens, not
-  // thousands); if that ever changes, switch to the cursor-paginated Link header.
-  return Array.isArray(data) ? data.length : 0;
+  let count = 0;
+  let cursor;
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const params = { statsPeriod, query, limit: 100 };
+    if (cursor) params.cursor = cursor;
+
+    const { data, headers } = await axios.get(
+      `https://sentry.io/api/0/projects/${SENTRY_ORG}/${project}/issues/`,
+      { headers: { Authorization: `Bearer ${SENTRY_AUTH_TOKEN}` }, params, timeout: 15000 }
+    );
+
+    count += Array.isArray(data) ? data.length : 0;
+    cursor = parseNextCursor(headers?.link);
+    if (!cursor) return { count, atLeast: false };
+  }
+
+  console.warn(`[sentryRoutes] issue count for ${project} hit the ${MAX_PAGES}-page cap — reporting a floor`);
+  return { count, atLeast: true };
 }
 
 module.exports = function registerSentryRoutes(app) {
@@ -59,7 +88,12 @@ module.exports = function registerSentryRoutes(app) {
         fetchIssueCount(project, 'is:unresolved', statsPeriod),
         fetchIssueCount(project, `is:unresolved firstSeen:-${days}d`, statsPeriod),
       ]);
-      results[appName] = { unresolved, newIssues };
+      results[appName] = {
+        unresolved: unresolved.count,
+        newIssues: newIssues.count,
+        // True when the count is a floor (pagination cap hit), so the UI can say "100+".
+        partial: unresolved.atLeast || newIssues.atLeast,
+      };
     }
 
     return res.json({ success: true, days, ...results });

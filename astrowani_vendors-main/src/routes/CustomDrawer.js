@@ -144,6 +144,13 @@ function CustomDrawer(props) {
           onPress={() => props.navigation.navigate('Profile')}
         />
         <DrawerItem
+          label="Referrals & Commission"
+          icon={() => (
+            <Icon name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => props.navigation.navigate('RemedyReferrals')}
+        />
+        <DrawerItem
           label={t('drawer.sessionHistory')}
           icon={() => (
             <Icon name="history" size={24} color={COLORS.AstroMaroon} />

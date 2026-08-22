@@ -18,6 +18,14 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
     <!-- To use Foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Required from Android 14 (API 34) to run a foreground service of type
+         "microphone". Without it, Android silences the mic as soon as the app leaves
+         the foreground, so the astrologer's voice stopped reaching the customer when
+         they switched apps. See CallForegroundService.kt. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <!-- A foreground service must post a notification, and from Android 13 that
+         needs this permission. The vendor app never declared it. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Required (Android 14+) for the incoming-call notification's fullScreenAction to
          actually launch the app over the lock screen / other apps instead of silently
@@ -63,5 +71,15 @@
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_icon"
         android:resource="@drawable/ic_notification" />
+
+      <!-- Keeps the microphone working while a call is in progress and the app is
+           backgrounded. The `microphone` type is the part that matters: from Android
+           14 it is the ONLY way to keep capturing audio outside the foreground.
+           exported=false — nothing outside this app may start it. -->
+      <service
+          android:name=".CallForegroundService"
+          android:enabled="true"
+          android:exported="false"
+          android:foregroundServiceType="microphone" />
     </application>
 </manifest>

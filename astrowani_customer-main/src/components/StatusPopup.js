@@ -20,7 +20,7 @@
 //   showStatusPopup({
 //     variant: 'insufficient', title: 'Insufficient Balance', message: '…',
 //     confirmText: 'Recharge', onConfirm: () => { … },
-//     extraText: 'Refer & Earn ₹25', onExtra: () => { … },
+//     extraText: 'Refer & Earn ₹50', onExtra: () => { … },
 //     cancelText: 'Cancel', onCancel: () => { … },
 //   });
 //
@@ -31,10 +31,33 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { LanguageContext } from '../context/LanguageContext';
+import { captureEvent } from '../utils/Analytics';
 
 let listener = null;
+// Reasons a consult never became a request row at all. These attempts leave NO trace
+// in Postgres — call_requests/chat_requests are only written after these checks pass —
+// so without an event here they were invisible everywhere, including the low-balance
+// case, which is a direct revenue leak. Instrumented centrally on the popup rather
+// than at the ~21 individual call sites, because every one of those paths ends here.
+const BLOCK_REASON_BY_VARIANT = {
+  busy: 'astrologer_busy',
+  insufficient: 'low_balance',
+  unavailable: 'service_off',
+};
+
 export const showStatusPopup = (opts) => {
-  if (listener) listener(opts || {});
+  const o = opts || {};
+  const reason = o.blockedReason || BLOCK_REASON_BY_VARIANT[o.variant];
+  if (reason) {
+    captureEvent('consult_blocked', {
+      reason,
+      // 'chat' | 'call' | 'video' where the caller knows it. Not every path can say
+      // (some popups are shown from shared list components), hence the fallback.
+      intent: o.intent || 'unknown',
+      ...(o.blockedMeta || {}),
+    });
+  }
+  if (listener) listener(o);
 };
 
 const VARIANTS = {

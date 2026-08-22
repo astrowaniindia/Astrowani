@@ -15,6 +15,7 @@ import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { resetAnalyticsIdentity } from '../utils/Analytics';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
+import { PLAY_STORE_URL } from '../config/api';
 
 function CustomDrawerContent(props, navigation) {
   const { t } = React.useContext(LanguageContext);
@@ -31,7 +32,13 @@ function CustomDrawerContent(props, navigation) {
   const handleShareApp = async () => {
     try {
       const shareOptions = {
-        message: 'Check out this awesome astrology app! Connect with top astrologers today.',
+        // The Play Store link was missing here — this was the only share path in the
+        // app without it, so "Share app" sent a recommendation with no way to act on
+        // it. The two referral share paths (ReferAndEarnScreen, ReferralPromptHost)
+        // already included it.
+        message:
+          'Check out this awesome astrology app! Connect with top astrologers today.\n\n' +
+          PLAY_STORE_URL,
       };
       await Share.share(shareOptions);
     } catch (error) {

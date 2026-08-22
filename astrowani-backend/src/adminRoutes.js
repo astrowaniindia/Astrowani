@@ -12,6 +12,8 @@ const { sendPush } = require('./push');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
+const { pagedSelect, chunkIds } = require('./pagedSelect');
+const { payoutOrderCommissions } = require('./remedyCommission');
 const liveAarti = require('./liveAarti');
 const { queueBlogTranslation, queueRemedyItemTranslation, queueRemedyCategoryTranslation, queueCategoryTranslation } = require('./autoTranslate');
 
@@ -948,6 +950,22 @@ module.exports = function registerAdminRoutes(app) {
       }
     }
 
+    // Astrologer referral commission is paid on DELIVERY, not at checkout — so a
+    // cancelled or refunded order never needs a clawback. Idempotent twice over
+    // (commission_paid_at plus wallet idempotency keys), so an admin re-selecting
+    // 'completed' cannot pay twice. Never throws: the delivery must still record even
+    // if a payout fails, and the lines stay unpaid so it can be retried.
+    if (body.status === 'completed' && before?.status !== 'completed') {
+      const payout = await payoutOrderCommissions(db, data.id);
+      if (payout.total > 0) {
+        console.log(`[orders] paid ₹${payout.total} referral commission on ${data.id} to ${payout.astrologers} astrologer(s)`);
+      }
+      if (payout.error) {
+        console.error(`[orders] commission payout incomplete for ${data.id}: ${payout.error}`);
+      }
+      data.commissionPayout = payout;
+    }
+
     // Status history — orders.status is a single mutable column, so without this row a
     // status change leaves no record of when it happened or who made it.
     if (body.status && before && body.status !== before.status) {
@@ -1099,10 +1117,13 @@ module.exports = function registerAdminRoutes(app) {
   // exclude here the way there is with product-analytics events from friends/family testers.
   app.get('/api/admin/analytics/revenue', requireAdmin, h(async (req, res) => {
     const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
-    let query = db.from('wallet_recharges').select('amount, paid_at').eq('status', 'paid').gte('paid_at', since);
-    if (until) query = query.lte('paid_at', until);
-    const { data, error } = await query;
-    if (error) throw error;
+    // Paged — a plain .select() stops at 1000 rows and silently under-reports revenue.
+    // See src/pagedSelect.js for why that failure mode is worse than an error.
+    const { rows: data, truncated } = await pagedSelect(() => {
+      let q = db.from('wallet_recharges').select('amount, paid_at').eq('status', 'paid').gte('paid_at', since).order('paid_at', { ascending: true });
+      if (until) q = q.lte('paid_at', until);
+      return q;
+    });
 
     const byDay = new Map();
     for (const row of data || []) {
@@ -1115,7 +1136,7 @@ module.exports = function registerAdminRoutes(app) {
       .sort((a, b) => a.day.localeCompare(b.day));
     const total = points.reduce((sum, p) => sum + p.revenue, 0);
 
-    return res.json({ success: true, total, points });
+    return res.json({ success: true, total, points, truncated });
   }));
 
   app.get('/api/admin/analytics/session-volume', requireAdmin, h(async (req, res) => {
@@ -1123,10 +1144,28 @@ module.exports = function registerAdminRoutes(app) {
     // No duration_minutes column exists on chat_sessions — duration is derived from
     // ended_at - started_at (still-active sessions with no ended_at yet count toward
     // the session total for their day, just contribute 0 minutes until they finish).
-    let sessQuery = db.from('chat_sessions').select('call_type, started_at, ended_at').not('started_at', 'is', null).gte('started_at', since);
-    if (until) sessQuery = sessQuery.lte('started_at', until);
-    const { data, error } = await sessQuery;
-    if (error) throw error;
+    const { rows: data, truncated } = await pagedSelect(() => {
+      let q = db.from('chat_sessions').select('call_type, started_at, ended_at').not('started_at', 'is', null).gte('started_at', since).order('started_at', { ascending: true });
+      if (until) q = q.lte('started_at', until);
+      return q;
+    });
+
+    // Duration outliers are excluded from MINUTES (but still counted as sessions).
+    //
+    // Measured 2026-08-21: two rows accounted for 144,409 of 145,553 total minutes —
+    // 99.2% of the reported figure from 1.8% of the rows. Both are the zombie sessions
+    // from the data-layer audit (is_active = true with next_billing_at = NULL, so
+    // sessionManager never billed or closed them); their ended_at was stamped ~50 days
+    // after started_at when they were finally cleaned up. That is a bookkeeping
+    // artifact, not talk time, and it made "Session Minutes" useless as a headline
+    // number — the real average is about 10 minutes.
+    //
+    // Excluded rather than clamped, and reported separately rather than dropped
+    // silently: a session that claims to run for days is a data-quality signal worth
+    // seeing, not something to quietly round down.
+    const MAX_PLAUSIBLE_SESSION_MINUTES = 12 * 60;
+    let implausibleSessions = 0;
+    let implausibleMinutes = 0;
 
     const byDay = new Map();
     for (const row of data || []) {
@@ -1136,7 +1175,13 @@ module.exports = function registerAdminRoutes(app) {
       const entry = byDay.get(day);
       entry.sessions += 1;
       if (row.ended_at) {
-        entry.minutes += Math.max(0, (new Date(row.ended_at) - new Date(row.started_at)) / 60000);
+        const mins = Math.max(0, (new Date(row.ended_at) - new Date(row.started_at)) / 60000);
+        if (mins > MAX_PLAUSIBLE_SESSION_MINUTES) {
+          implausibleSessions += 1;
+          implausibleMinutes += mins;
+        } else {
+          entry.minutes += mins;
+        }
       }
     }
     const points = Array.from(byDay.values())
@@ -1145,7 +1190,16 @@ module.exports = function registerAdminRoutes(app) {
     const totalSessions = points.reduce((sum, p) => sum + p.sessions, 0);
     const totalMinutes = points.reduce((sum, p) => sum + p.minutes, 0);
 
-    return res.json({ success: true, totalSessions, totalMinutes, points });
+    return res.json({
+      success: true,
+      totalSessions,
+      totalMinutes,
+      points,
+      truncated,
+      implausibleSessions,
+      implausibleMinutes: Math.round(implausibleMinutes),
+      maxPlausibleMinutes: MAX_PLAUSIBLE_SESSION_MINUTES,
+    });
   }));
 
   // ── Revenue by service type (chat / call / video) ──────────────────────────
@@ -1162,21 +1216,28 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/analytics/revenue-by-type', requireAdmin, h(async (req, res) => {
     const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
 
-    let txQuery = db.from('wallet_transactions').select('amount, session_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since);
-    if (until) txQuery = txQuery.lte('created_at', until);
-    const { data: txns, error: txErr } = await txQuery;
-    if (txErr) throw txErr;
+    // This is the route the 1000-row cap bites first — wallet_transactions gets one
+    // row per billed minute, so ~4 rows per session.
+    const { rows: txns, truncated } = await pagedSelect(() => {
+      let q = db.from('wallet_transactions').select('amount, session_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since).order('created_at', { ascending: true });
+      if (until) q = q.lte('created_at', until);
+      return q;
+    });
 
     const sessionIds = [...new Set((txns || []).map((t) => t.session_id))];
-    if (sessionIds.length === 0) return res.json({ success: true, chat: 0, call: 0, video: 0, total: 0 });
+    if (sessionIds.length === 0) return res.json({ success: true, chat: 0, call: 0, video: 0, total: 0, truncated });
 
-    const { data: sessions, error: sessErr } = await db
-      .from('chat_sessions')
-      .select('id, call_type')
-      .in('id', sessionIds);
-    if (sessErr) throw sessErr;
-
-    const typeById = new Map((sessions || []).map((s) => [s.id, s.call_type]));
+    // Chunked: a single .in() with thousands of UUIDs builds a query string large
+    // enough to 414 before it ever hits a row cap. See chunkIds() for the sizing.
+    const typeById = new Map();
+    for (const chunk of chunkIds(sessionIds)) {
+      const { data: sessions, error: sessErr } = await db
+        .from('chat_sessions')
+        .select('id, call_type')
+        .in('id', chunk);
+      if (sessErr) throw sessErr;
+      for (const s of sessions || []) typeById.set(s.id, s.call_type);
+    }
     const totals = { chat: 0, call: 0, video: 0 };
     for (const t of txns || []) {
       const rawType = typeById.get(t.session_id);
@@ -1184,7 +1245,7 @@ module.exports = function registerAdminRoutes(app) {
       if (bucket) totals[bucket] += Number(t.amount || 0);
     }
     const total = totals.chat + totals.call + totals.video;
-    return res.json({ success: true, ...totals, total });
+    return res.json({ success: true, ...totals, total, truncated });
   }));
 
   // ── Payment funnel: recharge started → actually paid ────────────────────────
@@ -1193,16 +1254,17 @@ module.exports = function registerAdminRoutes(app) {
   // never shows up anywhere else in the admin dashboard.
   app.get('/api/admin/analytics/payment-funnel', requireAdmin, h(async (req, res) => {
     const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
-    let query = db.from('wallet_recharges').select('status').gte('created_at', since);
-    if (until) query = query.lte('created_at', until);
-    const { data, error } = await query;
-    if (error) throw error;
+    const { rows: data, truncated } = await pagedSelect(() => {
+      let q = db.from('wallet_recharges').select('status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+      if (until) q = q.lte('created_at', until);
+      return q;
+    });
 
     const counts = { created: 0, paid: 0, failed: 0 };
     for (const row of data || []) {
       if (row.status in counts) counts[row.status] += 1;
     }
-    return res.json({ success: true, ...counts, total: (data || []).length });
+    return res.json({ success: true, ...counts, total: (data || []).length, truncated });
   }));
 
   // ── New vs. returning customer revenue split ────────────────────────────────
@@ -1217,13 +1279,16 @@ module.exports = function registerAdminRoutes(app) {
     // Deliberately fetches the customer's FULL history (no date filter on the query
     // itself) — "first ever" has to be checked against everything, not just this
     // window — then filters to the requested window in JS below.
-    const { data, error } = await db
+    // Paged, and this is the one that degrades PERMANENTLY rather than per-window:
+    // it has no date filter by design, so it grows with the business forever. Without
+    // paging, every customer past the first ~1000 paid recharges would be classified
+    // "new" on a repeat purchase, inverting the exact signal this card exists to show.
+    const { rows: data, truncated } = await pagedSelect(() => db
       .from('wallet_recharges')
       .select('customer_id, amount, paid_at')
       .eq('status', 'paid')
       .not('paid_at', 'is', null)
-      .order('paid_at', { ascending: true });
-    if (error) throw error;
+      .order('paid_at', { ascending: true }));
 
     const firstPaidAt = new Map();
     for (const row of data || []) {
@@ -1242,7 +1307,202 @@ module.exports = function registerAdminRoutes(app) {
       success: true,
       new: { revenue: newRevenue, count: newCount },
       returning: { revenue: returningRevenue, count: returningCount },
+      truncated,
     });
+  }));
+
+  // ── Why call/chat attempts didn't connect ───────────────────────────────────
+  // The PostHog funnel (call_initiated → call_connected) gives ONE conversion rate
+  // and no cause. That tells you there's a problem and nothing about which problem —
+  // "the astrologer was busy", "nobody picked up", "the astrologer rejected it" and
+  // "the customer changed their mind" are four completely different things to fix.
+  //
+  // No new instrumentation is needed for this: call_requests.status and
+  // chat_requests.status have recorded the outcome of every attempt all along
+  // (pending / accepted / rejected / cancelled / missed). Reading Postgres rather
+  // than events also makes this exact rather than a sampled proxy, and it works
+  // retroactively over data already collected.
+  //
+  // 'audio' and 'voice' are the same thing in call_type (a pre-existing
+  // inconsistency across the five call-initiation sites) and merge into one bucket.
+  const REQUEST_OUTCOMES = ['accepted', 'rejected', 'missed', 'cancelled', 'pending'];
+
+  function blankOutcomes() {
+    return REQUEST_OUTCOMES.reduce((acc, k) => { acc[k] = 0; return acc; }, { other: 0, total: 0 });
+  }
+
+  function tallyOutcome(bucket, status) {
+    const key = REQUEST_OUTCOMES.includes(status) ? status : 'other';
+    bucket[key] += 1;
+    bucket.total += 1;
+  }
+
+  app.get('/api/admin/analytics/request-outcomes', requireAdmin, h(async (req, res) => {
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
+
+    const [{ rows: calls }, { rows: chats }] = await Promise.all([
+      pagedSelect(() => {
+        let q = db.from('call_requests').select('status, call_type, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        if (until) q = q.lte('created_at', until);
+        return q;
+      }),
+      pagedSelect(() => {
+        let q = db.from('chat_requests').select('status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        if (until) q = q.lte('created_at', until);
+        return q;
+      }),
+    ]);
+
+    const audio = blankOutcomes();
+    const video = blankOutcomes();
+    const chat = blankOutcomes();
+    for (const r of calls) {
+      const t = r.call_type === 'video' ? video : audio; // audio | voice | null → audio
+      tallyOutcome(t, r.status);
+    }
+    for (const r of chats) tallyOutcome(chat, r.status);
+
+    const combined = blankOutcomes();
+    for (const b of [audio, video, chat]) {
+      for (const k of [...REQUEST_OUTCOMES, 'other', 'total']) combined[k] += b[k];
+    }
+
+    return res.json({ success: true, audio, video, chat, combined });
+  }));
+
+  // ── Per-astrologer performance ──────────────────────────────────────────────
+  // On a two-sided marketplace this is the supply-side question that matters most,
+  // and nothing in the dashboard answered it: an astrologer who rejects or misses
+  // most of their requests was previously indistinguishable from one who accepts
+  // everything. Both cost you demand; only one is worth promoting on the home screen.
+  //
+  // Sourced entirely from Postgres (requests, sessions, billing rows, cached rating)
+  // rather than from events, so the numbers are exact and cover history that predates
+  // any analytics instrumentation.
+  app.get('/api/admin/analytics/astrologer-performance', requireAdmin, h(async (req, res) => {
+    const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+
+    const [{ rows: calls }, { rows: chats }, { rows: sessions }] = await Promise.all([
+      pagedSelect(() => {
+        let q = db.from('call_requests').select('astrologer_id, status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        if (until) q = q.lte('created_at', until);
+        return q;
+      }),
+      pagedSelect(() => {
+        let q = db.from('chat_requests').select('receiver_id, status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        if (until) q = q.lte('created_at', until);
+        return q;
+      }),
+      pagedSelect(() => {
+        let q = db.from('chat_sessions').select('id, vendor_id, caller_id, started_at, ended_at').not('started_at', 'is', null).gte('started_at', since).order('started_at', { ascending: true });
+        if (until) q = q.lte('started_at', until);
+        return q;
+      }),
+    ]);
+
+    // Revenue per astrologer: billing rows carry no vendor_id, so map session → vendor.
+    const vendorBySession = new Map(sessions.map((s) => [s.id, s.vendor_id]));
+    const { rows: txns } = await pagedSelect(() => {
+      let q = db.from('wallet_transactions').select('amount, session_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since).order('created_at', { ascending: true });
+      if (until) q = q.lte('created_at', until);
+      return q;
+    });
+
+    const byAstro = new Map();
+    const ensure = (id) => {
+      if (!id) return null;
+      if (!byAstro.has(id)) {
+        byAstro.set(id, {
+          astrologerId: id, name: '', badge: null, rating: 0, totalReviews: 0,
+          requests: 0, accepted: 0, rejected: 0, missed: 0, cancelled: 0,
+          sessions: 0, minutes: 0, revenue: 0,
+          customers: new Set(), repeatCustomers: 0,
+        });
+      }
+      return byAstro.get(id);
+    };
+
+    const countRequest = (id, status) => {
+      const row = ensure(id);
+      if (!row) return;
+      row.requests += 1;
+      if (status === 'accepted') row.accepted += 1;
+      else if (status === 'rejected') row.rejected += 1;
+      else if (status === 'missed') row.missed += 1;
+      else if (status === 'cancelled') row.cancelled += 1;
+    };
+    for (const r of calls) countRequest(r.astrologer_id, r.status);
+    for (const r of chats) countRequest(r.receiver_id, r.status);
+
+    // Sessions per customer per astrologer, to derive the repeat rate below.
+    const sessionsPerPair = new Map();
+    for (const s of sessions) {
+      const row = ensure(s.vendor_id);
+      if (!row) continue;
+      row.sessions += 1;
+      if (s.ended_at) {
+        // Same outlier exclusion as /session-volume — a couple of never-closed zombie
+        // sessions would otherwise dominate one astrologer's minutes entirely.
+        const mins = Math.max(0, (new Date(s.ended_at) - new Date(s.started_at)) / 60000);
+        if (mins <= 12 * 60) row.minutes += mins;
+      }
+      if (s.caller_id) {
+        row.customers.add(s.caller_id);
+        const key = `${s.vendor_id}|${s.caller_id}`;
+        sessionsPerPair.set(key, (sessionsPerPair.get(key) || 0) + 1);
+      }
+    }
+    for (const [key, n] of sessionsPerPair) {
+      if (n > 1) {
+        const row = byAstro.get(key.split('|')[0]);
+        if (row) row.repeatCustomers += 1;
+      }
+    }
+
+    for (const t of txns) {
+      const vendorId = vendorBySession.get(t.session_id);
+      const row = vendorId ? byAstro.get(vendorId) : null;
+      if (row) row.revenue += Number(t.amount || 0);
+    }
+
+    // Names + cached rating, chunked so a large astrologer set can't build an
+    // oversized `in.(...)` query string.
+    const ids = [...byAstro.keys()];
+    for (const chunk of chunkIds(ids)) {
+      const { data, error } = await db
+        .from('astrologers')
+        .select('id, first_name, last_name, badge, average_rating, total_reviews')
+        .in('id', chunk);
+      if (error) throw error;
+      for (const a of data || []) {
+        const row = byAstro.get(a.id);
+        if (!row) continue;
+        row.name = `${a.first_name || ''} ${a.last_name || ''}`.trim() || '(unnamed)';
+        row.badge = a.badge || null;
+        row.rating = Number(a.average_rating) || 0;
+        row.totalReviews = Number(a.total_reviews) || 0;
+      }
+    }
+
+    const astrologers = [...byAstro.values()]
+      .map((r) => {
+        const uniqueCustomers = r.customers.size;
+        const { customers, ...rest } = r;
+        return {
+          ...rest,
+          minutes: Math.round(r.minutes),
+          revenue: Math.round(r.revenue * 100) / 100,
+          uniqueCustomers,
+          // Of everyone who ever connected with this astrologer, how many came back.
+          repeatRatePercent: uniqueCustomers > 0 ? Math.round((r.repeatCustomers / uniqueCustomers) * 1000) / 10 : 0,
+          acceptRatePercent: r.requests > 0 ? Math.round((r.accepted / r.requests) * 1000) / 10 : 0,
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue || b.sessions - a.sessions)
+      .slice(0, limit);
+
+    return res.json({ success: true, astrologers });
   }));
 
   // Audience segmentation by signup date — 'new' = joined within the last N days,

@@ -14,6 +14,13 @@ const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
+
+// What the app ADVERTISES for a referral ("Get ₹50 per friend"). This is display
+// only — the amount actually credited comes from referrals.reward_amount on the
+// row itself, set by that column's DEFAULT when the referral is created.
+// MUST match the default in sql/referral_reward_50.sql, or the app promises one
+// figure and pays another.
+const REFERRAL_REWARD_AMOUNT = 50;
 const smsProviders = require('./src/smsProviders');
 const { TtlCache } = require('./src/ttlCache');
 const { contentCache } = require('./src/contentCache');
@@ -549,6 +556,9 @@ require('./src/uploadRoutes')(app);
 // order history and cancellation. Owns /api/addresses/* and all of /api/orders/*,
 // including the GET /api/orders/mine that used to live in this file.
 require('./src/orderRoutes')(app);
+// Astrologer referral commission on remedy orders. Registered after orderRoutes
+// because it requires adminRoutes' requireAdmin, which is exported there.
+require('./src/remedyReferralRoutes')(app);
 
 // OTPs are persisted in Supabase (table: otp_codes), not an in-memory Map —
 // a plain Map is wiped on every process restart, and `pm2 restart` runs on
@@ -3293,7 +3303,7 @@ app.get('/api/customer/referral-info', async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: { code, totalReferred, totalEarned, rewardAmount: 25 },
+      data: { code, totalReferred, totalEarned, rewardAmount: REFERRAL_REWARD_AMOUNT },
     });
   } catch (err) {
     console.error('GET /api/customer/referral-info error:', err.message);
@@ -3672,6 +3682,16 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
     return res.status(200).json({ success: true, newBalance, withdrawal });
   } catch (err) {
     console.error('POST /vendor/wallet/withdraw error:', err.message, err.details, err.hint);
+    // A broken wallet function is our problem, not the astrologer's. Saying
+    // "Withdrawal request failed" for it reads as though they did something wrong
+    // and invites them to retry a call that cannot succeed. Nothing moved — the
+    // hold's own catch already removed the request row — so say so plainly.
+    if (err instanceof wallet.WalletFunctionAmbiguous) {
+      return res.status(503).json({
+        success: false,
+        message: 'Withdrawals are temporarily unavailable due to a server issue. Your balance is unchanged — please try again later.',
+      });
+    }
     return res.status(500).json({ success: false, message: 'Withdrawal request failed' });
   }
 });

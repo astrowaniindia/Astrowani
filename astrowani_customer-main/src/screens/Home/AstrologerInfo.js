@@ -180,7 +180,7 @@ const AstrologerInfo = ({route, navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'call' });
         return;
       }
 
@@ -351,7 +351,7 @@ const AstrologerInfo = ({route, navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'video' });
         return;
       }
 
@@ -640,11 +640,21 @@ const AstrologerInfo = ({route, navigation}) => {
   const busyElapsed = useElapsedSeconds(busySinceMs, isBusy);
   const [notifyMeSent, setNotifyMeSent] = useState(false);
 
-  const showUnavailable = key =>
+  // Plain Alerts, so not covered by StatusPopup.js's central consult_blocked hook.
+  const INTENT_BY_KEY = {
+    'alerts.notAvailableChat': 'chat',
+    'alerts.notAvailableCall': 'call',
+    'alerts.notAvailableVideo': 'video',
+  };
+  const showUnavailable = key => {
+    captureEvent('consult_blocked', { reason: 'service_off', intent: INTENT_BY_KEY[key] || 'unknown', astrologer_id: person.userId });
     Alert.alert(t('alerts.unavailable'), t(key, { name: person.name || 'This astrologer' }));
+  };
 
-  const showOffline = () =>
+  const showOffline = () => {
+    captureEvent('consult_blocked', { reason: 'astrologer_offline', intent: 'unknown', astrologer_id: person.userId });
     Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: person.name || 'This astrologer' }));
+  };
 
   const handleNotifyMe = async () => {
     const { ok } = await requestNotifyMe(person.userId || person._id, 'chat');

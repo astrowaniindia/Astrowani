@@ -35,6 +35,7 @@ import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions
 import { startRinging, stopRinging } from '../../utils/incomingRingtone';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 // Same key scheme as incomingRequestNotifications.js's idKeyFor — must match so accept/reject/
 // dismiss here also cancels the OS notification (and its ringtone tracking) for the same request.
@@ -134,7 +135,11 @@ const HomeScreen = () => {
           (item.roomId && p.roomId === item.roomId)
       );
       if (exists) return prev;
-      return [...prev, item];
+      // receivedAt stamps when the request actually reached this device, so
+      // incomingRequestActions.js can report how long the astrologer took to decide.
+      // Set here (not at accept time) because this is the only point that knows when
+      // the popup started ringing.
+      return [...prev, { ...item, receivedAt: Date.now() }];
     });
   };
 
@@ -482,10 +487,16 @@ const HomeScreen = () => {
     }
   };
 
+  // Single choke point for the master online switch AND the three per-service toggles,
+  // so one captureEvent here covers all four. Supply availability is usually the
+  // binding constraint on marketplace revenue, and none of it was measured: a drop in
+  // connect rates caused by astrologers going offline looked identical to one caused by
+  // customers losing interest.
   const updateToggleStatus = async (field, status) => {
     const astroId = await AsyncStorage.getItem('astroId');
     if (!astroId) return;
     await supabase.from('astrologers').update({ [field]: status }).eq('id', astroId);
+    captureEvent('availability_toggled', { field, enabled: !!status });
   };
 
   // Master online/offline switch — makes the astrologer show as offline everywhere in the
@@ -511,6 +522,9 @@ const HomeScreen = () => {
       .eq('id', astroId);
     if (!error) {
       setIsLive(newStatus);
+      // Separate from availability_toggled: GO LIVE gates the Live section only, and
+      // is a different decision from being reachable for calls and chats.
+      captureEvent('go_live_toggled', { live: newStatus });
       ToastAndroid.show(newStatus ? 'You are now live!' : 'You are offline', ToastAndroid.SHORT);
     }
   };

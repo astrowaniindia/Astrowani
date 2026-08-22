@@ -11,6 +11,7 @@ import { captureEvent } from '../../utils/Analytics';
 import { useCart } from '../../context/CartContext';
 import { showStatusPopup } from '../../components/StatusPopup';
 import ProductCard from '../../components/shop/ProductCard';
+import { getRecommendations } from '../../api/OrdersApi';
 import CartBar from '../../components/shop/CartBar';
 
 // Unified shop screen for every remedy type. route.params: { type, title }.
@@ -31,6 +32,10 @@ const RemedyShop = ({ route, navigation }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // itemId -> astrologer name. Fetched separately from the catalogue because
+  // /api/remedies is unauthenticated and cached for everyone; a per-customer field
+  // there would leak one customer's recommendations to all of them via that cache.
+  const [recommendations, setRecommendations] = useState({});
 
   const cart = useCart();
   const gate = useRemedyOrderingGate(type);
@@ -53,6 +58,14 @@ const RemedyShop = ({ route, navigation }) => {
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
+
+  // Independent of fetchItems: a failed/absent recommendation lookup must never stop the
+  // catalogue rendering. getRecommendations already resolves to {} rather than throwing.
+  useEffect(() => {
+    let cancelled = false;
+    getRecommendations().then((map) => { if (!cancelled) setRecommendations(map); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Was an unfiltered Supabase Realtime subscription on the whole `remedy_items` table,
   // opened once per remedy type — a customer browsing several types accumulated one
@@ -112,6 +125,7 @@ const RemedyShop = ({ route, navigation }) => {
       addLabel={t('cart.add')}
       soldOutLabel={t('cart.soldOut')}
       saveLabel={t('cart.save')}
+      recommendedBy={recommendations[item._id] || null}
       onPress={() => openProduct(item)}
       onAdd={() => handleAdd(item)}
       onIncrement={() => cart.increment(item._id)}

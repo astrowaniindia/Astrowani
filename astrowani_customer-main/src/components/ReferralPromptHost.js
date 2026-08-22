@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
+import { PLAY_STORE_URL } from '../config/api';
 
 let listener = null;
 // Both args optional — an admin-triggered popup (see Home.js's 'show_referral_popup'
@@ -25,7 +26,7 @@ export const showReferralPrompt = (customTitle, customMessage) => {
 export function ReferralPromptHost() {
   const [visible, setVisible] = useState(false);
   const [code, setCode] = useState(null);
-  const [rewardAmount, setRewardAmount] = useState(25);
+  const [rewardAmount, setRewardAmount] = useState(50);
   const [overrideTitle, setOverrideTitle] = useState(null);
   const [overrideMessage, setOverrideMessage] = useState(null);
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -64,8 +65,8 @@ export function ReferralPromptHost() {
 
   const share = async () => {
     const message = code
-      ? `Join me on Astrowani! Use my referral code ${code} when you sign up — download: https://play.google.com/store/apps/details?id=com.astrowanicustomer`
-      : `Join me on Astrowani! Download: https://play.google.com/store/apps/details?id=com.astrowanicustomer`;
+      ? `Join me on Astrowani! Use my referral code ${code} when you sign up — download: ${PLAY_STORE_URL}`
+      : `Join me on Astrowani! Download: ${PLAY_STORE_URL}`;
     try {
       await Share.share({ message });
     } catch (_) {}

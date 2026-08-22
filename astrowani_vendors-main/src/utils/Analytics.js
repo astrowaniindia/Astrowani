@@ -4,10 +4,14 @@
 // a separate, narrowly-scoped Personal API Key that never ships in either app — see
 // astrowani-backend/src/postHogRoutes.js.
 import PostHog from 'posthog-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../api/SupabaseClient';
 
-// TODO: replace with the real Project API Key once the PostHog project exists (see
-// CLAUDE.md "Product Analytics (PostHog)" subsystem for what's needed and why).
+// Real Project API Key — the PostHog project exists and is receiving events. Safe to
+// hardcode: it is write-only for ingestion (same trust level as the Sentry DSN). The
+// `disabled` guard below is a leftover safety net from when this was a placeholder; it
+// stays because it costs nothing and correctly disables the SDK if the key is ever
+// blanked out again.
 const POSTHOG_API_KEY = 'phc_xheDnkQ5TTg5BsjemUVoJyosxqF9hjJQiuyvo6boxetJ';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
@@ -31,23 +35,63 @@ export function resetAnalyticsIdentity() {
   } catch (_) {}
 }
 
-// 'test' | 'production' — see the matching comment in the customer app's Analytics.js.
-// Same admin toggle (app_settings.analytics_environment) drives both apps.
-let currentEnvironment = 'test';
+// ── Environment tag ('test' | 'production') ─────────────────────────────────────
+//
+// Derived from the BUILD synchronously at module load, not from an awaited network
+// read. See the long explanation in the customer app's Analytics.js: starting at
+// 'test' and waiting on app_settings meant the first $screen of every launch was
+// mistagged and permanently invisible, and a failed read discarded the whole
+// session. Same admin toggle (app_settings.analytics_environment) still drives both
+// apps; it just can no longer be the difference between a real session being counted
+// and being thrown away.
+const BUILD_ENVIRONMENT = typeof __DEV__ !== 'undefined' && __DEV__ ? 'test' : 'production';
+const ENV_CACHE_KEY = 'analytics_environment_cached';
+
+let currentEnvironment = BUILD_ENVIRONMENT;
 export function getAnalyticsEnvironment() {
   return currentEnvironment;
 }
 
+function normalizeEnv(value) {
+  return value === 'production' ? 'production' : value === 'test' ? 'test' : null;
+}
+
+// Super properties, so app + environment ride on EVERY event — including PostHog's own
+// lifecycle events ('Application Opened' / 'Backgrounded' / 'Installed'), which pass
+// through neither captureEvent() nor the navigation autocapture's routeToProperties and
+// were therefore arriving with no environment at all, invisible to every dashboard
+// query that filters on it. See the customer app's Analytics.js for the measured numbers.
+function applyEnvironmentSuperProperties() {
+  try {
+    posthog.register({ app: 'vendor', environment: currentEnvironment });
+  } catch (_) {}
+}
+applyEnvironmentSuperProperties();
+
 export async function loadAnalyticsEnvironment() {
+  // Cached last-known remote value first (fast, works offline), authoritative remote
+  // value second. A failed read keeps whatever we already have — never 'test'.
+  try {
+    const cached = normalizeEnv(await AsyncStorage.getItem(ENV_CACHE_KEY));
+    if (cached) { currentEnvironment = cached; applyEnvironmentSuperProperties(); }
+  } catch (_) {}
+
   try {
     const { data } = await supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'analytics_environment')
       .limit(1);
-    if (data && data.length) currentEnvironment = data[0].value === 'production' ? 'production' : 'test';
+    const remote = data && data.length ? normalizeEnv(data[0].value) : null;
+    if (remote) {
+      currentEnvironment = remote;
+      applyEnvironmentSuperProperties();
+      try {
+        await AsyncStorage.setItem(ENV_CACHE_KEY, remote);
+      } catch (_) {}
+    }
   } catch (_) {
-    // Analytics must never crash the app — stays 'test' on failure, which is the safe default.
+    // Analytics must never crash the app, and must never discard a session either.
   }
 }
 

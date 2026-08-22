@@ -28,6 +28,7 @@ const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const razorpay = require('./razorpay');
 const wallet = require('./wallet');
+const { resolveLineCommissions } = require('./remedyCommission');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -641,16 +642,29 @@ module.exports = (app) => {
       throw orderErr;
     }
 
-    const { error: linesErr } = await db.from('order_items').insert(quote.lines.map((l) => ({
-      order_id: order.id,
-      item_id: l.itemId,
-      item_title: l.title,
-      item_type: l.type,
-      image: l.image,
-      unit_price: l.unitPrice,
-      quantity: l.quantity,
-      line_total: l.lineTotal,
-    })));
+    // Astrologer referral commission, snapshotted per line. Runs AFTER pricing and
+    // annotates only — it can never change what the customer pays, because the
+    // commission comes out of the platform's margin. Never throws: an unattributed
+    // order is recoverable (an admin can attribute it), a blocked purchase is not.
+    // Actual payment happens on delivery — see remedyCommission.js.
+    const commissions = await resolveLineCommissions(db, customer.id, quote.lines);
+
+    const { error: linesErr } = await db.from('order_items').insert(quote.lines.map((l) => {
+      const c = commissions.get(l.itemId);
+      return {
+        order_id: order.id,
+        item_id: l.itemId,
+        item_title: l.title,
+        item_type: l.type,
+        image: l.image,
+        unit_price: l.unitPrice,
+        quantity: l.quantity,
+        line_total: l.lineTotal,
+        referred_by_astrologer_id: c ? c.astrologerId : null,
+        commission_percent: c ? c.percent : null,
+        commission_amount: c ? c.amount : null,
+      };
+    }));
     if (linesErr) throw linesErr;
 
     await logStatus(order.id, 'pending_payment', `Awaiting ${paymentMethod} payment`);

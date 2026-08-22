@@ -42,6 +42,13 @@
 
 
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <!-- Required from Android 14 (API 34) to run a foreground service of type
+       "microphone". Without it Android silences the mic as soon as the app leaves the
+       foreground, so a backgrounded call stopped transmitting voice until the user
+       came back. An `ongoing: true` notification (activeSessionNotification.js) looks
+       like a call notification but grants no such privilege. See
+       CallForegroundService.kt. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   
   <!-- Foreground location, declared deliberately and requested at runtime only when the
@@ -90,5 +97,15 @@
   <meta-data
     android:name="com.google.firebase.messaging.default_notification_icon"
     android:resource="@drawable/ic_notification" />
+
+  <!-- Keeps the microphone working while a call is in progress and the app is
+       backgrounded. The `microphone` type is the part that matters: from Android 14
+       it is the ONLY way to keep capturing audio outside the foreground.
+       exported=false — nothing outside this app may start it. -->
+  <service
+      android:name=".CallForegroundService"
+      android:enabled="true"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
     </application>
 </manifest>

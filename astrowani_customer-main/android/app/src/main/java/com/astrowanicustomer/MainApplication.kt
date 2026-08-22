@@ -21,6 +21,10 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
+              // Lives in this app rather than a node_module, so autolinking cannot see it.
+              // Keeps the mic alive while backgrounded during a call — see
+              // CallForegroundService.kt.
+              add(CallServicePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

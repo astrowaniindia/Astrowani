@@ -52,6 +52,11 @@ export default function Orders() {
   const [reportText, setReportText] = useState('');
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  // Referral commission owed to / paid to each astrologer. Its own endpoint rather than
+  // derived from the loaded page of orders, so the totals cover everything, not just
+  // whatever the current filter happens to show.
+  const [commissions, setCommissions] = useState(null);
+  const [showCommissions, setShowCommissions] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -59,6 +64,12 @@ export default function Orders() {
   const [search, setSearch] = useState('');
 
   const load = async () => {
+    // Independent of the orders fetch: a failure here (e.g. the commission migration not
+    // yet applied) must not stop the orders table rendering.
+    client.get('/api/admin/remedy-commissions')
+      .then(({ data }) => setCommissions(data))
+      .catch(() => setCommissions(null));
+
     setLoading(true);
     try {
       const params = {};
@@ -171,6 +182,42 @@ export default function Orders() {
         <button className="btn secondary sm" onClick={load}>Refresh</button>
       </div>
 
+      {commissions && (commissions.astrologers || []).length > 0 && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="row-between">
+            <h3 style={{ margin: 0 }}>Astrologer referral commission</h3>
+            <button className="btn secondary sm" onClick={() => setShowCommissions((v) => !v)}>
+              {showCommissions ? 'Hide' : 'Show'} breakdown
+            </button>
+          </div>
+          <p className="muted" style={{ margin: '6px 0 0' }}>
+            Paid <b>₹{commissions.totalPaid}</b> · Pending <b>₹{commissions.totalPending}</b>.
+            Pending is commission on orders that exist but have not been marked delivered yet —
+            it pays out on delivery and is never owed on a cancelled order. All of it comes out
+            of your margin, not the customer's price.
+          </p>
+          {showCommissions && (
+            <div className="table-wrap" style={{ marginTop: 12 }}>
+              <table>
+                <thead><tr><th>Astrologer</th><th>Orders</th><th>Paid (₹)</th><th>Pending (₹)</th></tr></thead>
+                <tbody>
+                  {commissions.astrologers.map((a) => (
+                    <tr key={a.astrologerId}>
+                      <td>{a.name}</td>
+                      <td>{a.orders}</td>
+                      <td>{a.paid.toLocaleString('en-IN')}</td>
+                      <td style={{ color: a.pending > 0 ? 'var(--amber)' : undefined }}>
+                        {a.pending.toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="table-wrap">
         <table>
           <thead><tr>
@@ -248,11 +295,26 @@ export default function Orders() {
                         <div style={{ minWidth: 280 }}>
                           <h4 style={{ margin: '0 0 6px' }}>Items</h4>
                           {items.length ? items.map((li) => (
-                            <div key={li.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '3px 0' }}>
-                              {li.image ? <img src={li.image} className="thumb" alt="" /> : null}
-                              <span style={{ flex: 1 }}>{li.item_title}</span>
-                              <span className="muted">× {li.quantity}</span>
-                              <b>₹{li.line_total}</b>
+                            <div key={li.id} style={{ padding: '3px 0' }}>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                {li.image ? <img src={li.image} className="thumb" alt="" /> : null}
+                                <span style={{ flex: 1 }}>{li.item_title}</span>
+                                <span className="muted">× {li.quantity}</span>
+                                <b>₹{li.line_total}</b>
+                              </div>
+                              {/* Astrologer referral commission on this line. Paid out of the
+                                  platform margin when the order is marked delivered — so
+                                  "pays on delivery" is the honest label until it happens. */}
+                              {li.referred_by_astrologer_id ? (
+                                <div className="muted" style={{ fontSize: 12, paddingLeft: 4 }}>
+                                  Referral commission ₹{li.commission_amount} ({li.commission_percent}%) —{' '}
+                                  {li.commission_paid_at
+                                    ? <span style={{ color: 'var(--green)' }}>
+                                        paid {new Date(li.commission_paid_at).toLocaleDateString('en-IN')}
+                                      </span>
+                                    : <span style={{ color: 'var(--amber)' }}>pays on delivery</span>}
+                                </div>
+                              ) : null}
                             </div>
                           )) : (
                             // Orders placed before order_items existed (every life_report)

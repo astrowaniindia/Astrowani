@@ -30,6 +30,7 @@ import { setActiveChatAstrologerId } from '../utils/PushNotification';
 import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
+import SessionIntroBanner from '../components/SessionIntroBanner';
 import { LanguageContext } from '../context/LanguageContext';
 
 const ChatSessionScreen = ({ route, navigation }) => {
@@ -479,6 +480,9 @@ const ChatSessionScreen = ({ route, navigation }) => {
           style={{ flex: 1 }} 
           imageStyle={{ opacity: 0.15 }}
         >
+          {/* Prompt to share birth details first. Presentational only — billing is
+              unchanged and starts when the session connects, exactly as before. */}
+          <SessionIntroBanner />
           <FlatList
             ref={flatListRef}
             data={messages}

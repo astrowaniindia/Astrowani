@@ -646,7 +646,7 @@ const CallsList = ({navigation}) => {
         return;
       }
       if (balance < minRequired) {
-        showInsufficientBalanceAlert({ navigation, minRequired, balance, t });
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'call' });
         return;
       }
 

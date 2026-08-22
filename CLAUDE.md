@@ -1570,3 +1570,700 @@ their history. The recovery path exists (admin Orders → "Include abandoned che
 is the proper fix and is the first thing to add if this sees real volume. Note the Razorpay
 leg itself is the one part of this flow **not** yet exercised against the gateway — it needs
 test keys in the backend env.
+
+---
+
+## Analytics audit + fixes 2026-08-21 — READ BEFORE TOUCHING THE ANALYTICS PAGE
+
+Full audit report: https://claude.ai/code/artifact/ade3a2a5-06a2-4354-8293-115443e5da11
+
+### Z. What was wrong, and the rules that came out of it
+
+The dashboard measured volume well (screen views, revenue, sessions) but could not answer
+*why* anything happened, and four correctness bugs made numbers wrong in ways that looked
+plausible. All fixed; the rules below are the durable part.
+
+**1. A query must never reference an event name the apps don't send.** The Remedies funnel
+asked for `remedy_buy_now_clicked` / `remedy_place_order_clicked` / `remedy_order_placed` —
+**zero occurrences in either app**. The cart rewrite (subsystem Y) replaced them and the query
+was never updated, so the card rendered `0 -> 0 -> 0` permanently and read as "nobody is
+buying." Now driven by the events the cart actually fires (`add_to_cart`, `cart_viewed`,
+`checkout_started`, `payment_method_selected`, `order_placed`, plus `order_payment_failed` and
+`remedy_blocked_category_tapped` as side stats). **When you rename or remove a client event,
+grep `postHogRoutes.js` in the same commit.**
+
+**2. The environment tag is a BUILD constant, not an awaited network read.**
+`currentEnvironment` used to start at `'test'` and wait on a Supabase `app_settings` fetch,
+while `PostHogProvider` captured its first `$screen` on mount — hundreds of ms earlier. So the
+first screen view of every launch was tagged `test` and permanently invisible, and `'test'` was
+also the *failure* default, meaning an offline cold start discarded the user's whole session
+(preferentially dropping users on bad connections and single-screen bounces — exactly what
+retention analysis needs). Now `BUILD_ENVIRONMENT = __DEV__ ? 'test' : 'production'`, resolved
+synchronously at module load; the remote override still applies but is cached in AsyncStorage
+and a failed read **keeps** the build default. Also registered via `posthog.register()` as
+**super properties**, so PostHog's own lifecycle events (`Application Opened` /
+`Backgrounded` / `Installed`) carry `app` + `environment` too — 873 events had a null
+environment and were invisible to every query. Do not reintroduce a network-gated default.
+
+**3. Any Supabase `.select()` that gets summed must be paged.** PostgREST caps at 1000 rows
+and does **not** error — it returns 1000 and the total silently stops growing. Use
+`src/pagedSelect.js` (`pagedSelect` + `chunkIds`). All five revenue/session routes now page,
+return `truncated`, and the admin renders a warning when it is set. `wallet_transactions` gets
+~4.2 rows per session (one per billed minute), so `/revenue-by-type` would have started
+truncating at ~240 sessions in the window. `chunkIds` also exists because a single
+`.in('id', ...)` with ~1000 UUIDs builds a ~37 KB query string and 414s before any row cap.
+Aggregating in Postgres would be better still, but the service-role key cannot run DDL from
+here (see `local-backend-bills-production` memory).
+
+**4. A fixed-window metric must not sit inside a range-filtered query.** DAU/WAU/MAU were
+computed as `now() - INTERVAL n DAY` *inside* a query already bounded by the page's date
+range, so with the default "This Week" the "MAU" card showed a 7-day number and all three
+converged for short ranges. Now a separate query with its own fixed 30-day bound. The summary
+also had **no `properties.app` filter**, blending customers with astrologers (who keep the
+vendor app open all day) into the headline "Unique Users"; it is app-scoped now and the labels
+say so.
+
+**5. Session minutes exclude implausible durations, and say that they did.** Measured: **two**
+rows held 144,409 of 145,553 total minutes — 99.2% from 1.8% of rows. Both are the zombie
+sessions from the data-layer audit (`is_active = true` with `next_billing_at = NULL`), whose
+`ended_at` was stamped ~50 days after `started_at` at cleanup. Real average is ~10 min.
+Durations over `MAX_PLAUSIBLE_SESSION_MINUTES` (12 h) are excluded from minutes, still counted
+as sessions, and surfaced in an admin warning — excluded rather than clamped, because a
+multi-day session is a data-quality signal worth seeing, not something to round down.
+
+### New endpoints
+
+| Route | Source | Answers |
+|---|---|---|
+| `/api/admin/analytics/request-outcomes` | Postgres | Outcome of every request that reached an astrologer (accepted/rejected/missed/cancelled) per type. **Needs no instrumentation — `call_requests.status` / `chat_requests.status` had this all along**, so it works retroactively. |
+| `/api/admin/analytics/astrologer-performance` | Postgres | Per-astrologer requests, accept rate, sessions, minutes, revenue, unique + repeat customers, rating. |
+| `/api/admin/analytics/auth-failures` | PostHog | `signup_failed` / `login_failed` grouped by their `reason` property (was captured, never read). |
+| `/api/admin/analytics/blocked-attempts` | PostHog | New `consult_blocked` event — attempts stopped *before* a request row existed. |
+
+### New client events
+
+- **`consult_blocked`** `{reason, intent, ...}` — reasons `low_balance` (with
+  `min_required`/`balance`/`shortfall`), `astrologer_busy`, `service_off`,
+  `astrologer_offline`. Captured **centrally in `showStatusPopup()`** (`StatusPopup.js`) via
+  `BLOCK_REASON_BY_VARIANT`, which covers all ~21 busy/insufficient call sites in one place;
+  the `service_off` / `astrologer_offline` paths use a plain `Alert` instead of StatusPopup so
+  they are instrumented explicitly in `ReusableList.js`, `ExpertsList.js` and
+  `AstrologerInfo.js`. `intent` is threaded through `showInsufficientBalanceAlert({intent})` at
+  all 8 balance-check sites. **These attempts leave NO trace in Postgres** — the checks run
+  before any request row is written — so this event is the only record that a customer wanted
+  to pay and couldn't.
+- **Vendor supply side** (the app had only 4 events, so half the marketplace was unmeasured):
+  `request_accepted` / `request_rejected` / `request_accept_failed` with `secondsToDecide`,
+  instrumented in **`utils/incomingRequestActions.js`** (not HomeScreen) because the
+  notification action buttons reach it with the app backgrounded or killed; `enqueuePopup`
+  stamps `receivedAt` so the decision latency can be derived. `availability_toggled`
+  `{field, enabled}` in `updateToggleStatus` (one choke point for the master online switch
+  *and* all three service toggles) and `go_live_toggled`.
+
+### Other changes
+
+- Retention returns **D1/D7/D30 plus a per-cohort-day curve**, not one blended average — the
+  level was visible but never the trend, which is the only thing retention is used for.
+  Cohorts too young to have reached a mark are excluded from that mark's blend.
+- Funnels now report their `basis`: call/chat counts **attempts**, remedies counts **distinct
+  persons**. Both are labelled in the UI so the percentages are never read as comparable.
+- `sentryRoutes.js` `fetchIssueCount` follows the `Link`-header cursor instead of counting one
+  100-item page (which saturated at exactly 100 and read as "stable"); returns `atLeast` so
+  the UI can show a floor.
+
+### Verified 2026-08-21
+
+Backend tested by mounting `adminRoutes` + `postHogRoutes` + `sentryRoutes` on a bare Express
+app — **never boot `index.js` to test routes**, it starts sessionManager's billing worker
+against production (`local-backend-bills-production` memory). All 13 analytics endpoints
+returned 200 with valid shapes. Every new HogQL query was additionally run against
+`environment='test'` (where the real pre-launch data lives) to prove it matches real events,
+not just that it parses: the rebuilt remedies funnel returns `[1,1,1,1,1]` (one real person
+through all five stages — the old query returned zeros), and `auth-failures` surfaces real
+reasons including `account_exists: 4` and `OTP_THROTTLED: 2`.
+
+Admin page browser-verified end to end (Vite + a gitignored `.env.local` pointing at the local
+harness, both removed afterwards): every new card renders, the excluded-sessions and truncation
+warnings appear correctly, the wide astrologer table scrolls inside its own `.table-wrap`
+without the page scrolling sideways, and `npm run build` succeeds. Both RN apps' changed files
+lint with no new errors (the 14 pre-existing errors are `react-hooks/exhaustive-deps` and
+duplicate StyleSheet keys in `Home.js`, none in the edited lines).
+
+**What the real data immediately showed** (168 requests, Jun–Aug): a **39.3% accept rate**,
+and the dominant cause is **`missed: 48` versus `rejected: 7`** — astrologers are not
+declining work, they are not answering. Chat is worst at 36.2%. That distinction was
+invisible before and points at notification reliability / availability discipline rather than
+pricing or demand.
+
+### Still outstanding (not code)
+
+1. `analytics_environment` is still `'test'` in `app_settings`, so every PostHog-backed card
+   reads zero by design. Flip it in the admin's Analytics page on launch day.
+2. `SENTRY_AUTH_TOKEN` is unset, so the App Health card 503s with an explanatory message.
+3. Historical events with a null `environment` (873 `$screen`) stay invisible — unavoidable,
+   they predate the tag and cannot be attributed to test or production after the fact.
+
+---
+
+## Bug fixed 2026-08-22: vendor withdrawals were down — duplicate wallet function overload
+
+### AA. "Withdrawal request failed" — root cause and the rule it produced
+
+**Symptom**: the vendor app showed "Withdrawal request failed" on every withdrawal attempt.
+That string is the generic 500 catch-all in `POST /vendor/wallet/withdraw`, so it carried no
+diagnostic information at all.
+
+**Root cause**: the database held **two** copies of `adjust_vendor_wallet`.
+`sql/hardening_03_atomic_wallet.sql` created the 8-parameter version;
+`sql/hardening_06_vendor_txn_counterparty.sql` then added a 9th parameter (`p_customer_id`)
+using `CREATE OR REPLACE FUNCTION`.
+
+> **THE RULE: in PostgreSQL, `CREATE OR REPLACE FUNCTION` can only replace a function with an
+> IDENTICAL argument list. Change the parameter count and you create a second, OVERLOADED
+> function — the old one stays.** `hardening_06`'s header comment asserted the opposite
+> ("a new trailing DEFAULT NULL parameter is backward compatible"). That assertion is wrong and
+> was the bug. **Any future change to a money function's parameter list must `DROP` the old
+> signature explicitly, in the same file.**
+
+Node's callers pass **8 named** arguments, which match both candidates (the 9th has a default),
+so PostgREST could not resolve the call and returned `PGRST203: Could not choose the best
+candidate function between …`.
+
+**Why session billing kept working** — and why this went unnoticed:
+`transfer_customer_to_vendor` calls `adjust_vendor_wallet` with **9 positional** arguments,
+which can only match the 9-arg version. Unambiguous. Only the API-level 8-named-argument calls
+broke. Confirmed against production: exactly one withdrawal ever succeeded (₹10 on 2026-07-19,
+before `hardening_06` was applied).
+
+**Everything that was broken** — all three callers of `wallet.adjustVendorWallet`:
+1. `POST /vendor/wallet/withdraw` (index.js) — the reported symptom.
+2. `POST /api/admin/astrologers/:id/wallet` (adminRoutes.js) — admin adjusting a vendor balance.
+3. Admin **rejecting** a withdrawal (adminRoutes.js) — so held money could not be returned
+   through the normal path.
+
+Customer wallets, `admin_wallet` and session billing were unaffected — verified by probing all
+four functions; only `adjust_vendor_wallet` was ambiguous.
+
+**No data was corrupted.** The endpoint creates the `withdrawal_requests` row *before* moving
+money and its own catch deletes that row if the hold fails, so failed attempts left no orphan
+rows and no lost balance. `withdrawal_requests` held exactly one (legitimate, paid) row.
+
+### The fix
+
+1. **`sql/hardening_08_drop_duplicate_vendor_wallet_overload.sql`** — drops the obsolete 8-arg
+   overload by explicit argument-type list, then **asserts** exactly one overload remains and
+   that it takes 9 arguments, raising an exception rather than leaving a money path quietly
+   broken. Ends with a query listing any duplicated money-function name (expect zero rows) —
+   run that after any future function migration. Idempotent.
+2. **`src/wallet.js`** — new `isAmbiguousFn()` / `WalletFunctionAmbiguous` / `throwIfAmbiguous()`,
+   wired into all four wrappers (`adjustCustomerWallet`, `adjustVendorWallet`,
+   `transferCustomerToVendor`, `adjustAdminWallet`).
+   - **PGRST203 deliberately does NOT take the legacy fallback path.** Falling back would
+     abandon the atomicity guarantee these functions exist to provide, on a money write, in
+     exactly the situation (two overloads) that signals a half-finished migration. It throws a
+     typed, self-diagnosing error naming the fix file instead.
+   - Logs on **every** occurrence, not once like `warnFallback` — a fully-blocked money path
+     should keep shouting until someone acts.
+3. **`index.js`** — the withdrawal endpoint answers **503** with "Withdrawals are temporarily
+   unavailable… your balance is unchanged" for `WalletFunctionAmbiguous`, instead of a 500
+   "Withdrawal request failed" that reads as the astrologer's fault and invites them to retry a
+   call that cannot succeed.
+
+### Verified 2026-08-22 — migration APPLIED, all paths confirmed working
+
+Tested in two stages, before and after the migration.
+
+**Before** (guard behaviour against the actually-broken schema):
+`wallet.adjustVendorWallet(..., 0, ...)` — amount 0, cannot move money — threw
+`WalletFunctionAmbiguous` with `code: WALLET_FN_AMBIGUOUS` and logged the fatal diagnostic.
+
+**After** `hardening_08` was applied to production:
+- All four money functions probed with `p_amount: 0` answer `ZERO_AMOUNT` /
+  `INVALID_AMOUNT` — i.e. each resolves to exactly one function. No ambiguity remains.
+- Withdrawal path, end to end, 10/10 assertions: request row created, `adjustVendorWallet`
+  succeeds, balance debited by exactly the amount, `today_earnings`/`total_earnings`
+  **unchanged** (`countEarnings:false` works), exactly ONE ledger row written, and a repeat
+  call with the same idempotency key does **not** double-debit.
+- Admin vendor-wallet adjust (`POST /api/admin/astrologers/:id/wallet`) returns **200** where
+  it previously 500'd, 4/4 assertions.
+
+Every rupee moved was reversed and every synthetic row deleted: the test account finished on
+its exact starting balance (₹5663), `withdrawal_requests` back to its one real row, zero
+leftover ledger rows. Tested by mounting `adminRoutes` on a bare Express app and calling
+`wallet.js` directly — **`index.js` was deliberately never booted**, since that starts
+sessionManager's billing worker *and* `checkEarningsResets()` (which would zero
+`today_earnings` across all astrologers) against the live database.
+
+`node --check` clean on both changed files.
+
+### Known adjacent gap (NOT fixed, deliberately out of scope)
+
+`wallet.adjustVendorWallet` still never passes `p_customer_id`, so the counterparty column that
+`hardening_06` added is only populated via `transfer_customer_to_vendor`. Profile gifting — the
+exact case that file was written for — still writes a vendor ledger row with no customer
+reference. Completing that means adding a `customerId` option to `adjustVendorWallet` and
+threading it from the gift path. Left out to keep this money-path diff minimal and reviewable.
+
+---
+
+## Changes 2026-08-22: referral ₹50 + Play Store link, and "Get" on astro service names
+
+### AB. Referral reward ₹25 → ₹50, and the missing Play Store link
+
+**The amount lives in the DB, not in code.** `referrals.reward_amount` is what actually gets
+credited (read off the row in `sessionManager.js` when the referred friend completes their first
+session). `sql/referral_reward_50.sql` sets that column's DEFAULT to 50 and updates
+still-`pending` rows — same policy as the `referral_reward_25.sql` it reverses: a pending
+referral hasn't been honoured yet so it gets the new rate, while already-`rewarded` rows are
+left alone so the ledger stays an accurate record of what was paid.
+
+`index.js` now has a named `REFERRAL_REWARD_AMOUNT = 50` constant instead of a magic `25`
+inline in the `/api/customer/referral-info` response. **That constant is DISPLAY ONLY** — it
+feeds "Get ₹50 per friend" in the app. It is not what gets credited. If it and the DB default
+ever disagree, the app advertises one figure and pays another, so they are cross-referenced in
+comments in both files.
+
+Copy updated to ₹50 in `insufficientBalanceAlert.js` (message + `extraText`),
+`ReferralPromptHost.js` (the pre-fetch fallback `useState`), and the doc comments in
+`StatusPopup.js` / `useChatRequest.js`. The `refer.*` i18n strings already interpolated
+`{{amount}}`, so no translation changes were needed. **Note `StatusPopup.js`'s "Pay ₹25" doc
+comment is a GIFT example, not the referral — deliberately left at ₹25.**
+
+**The Play Store link was only missing from one of three share paths.** `ReferAndEarnScreen`
+and `ReferralPromptHost` already included it; the drawer's **"Share app"**
+(`CustomDrawerContent.handleShareApp`) sent "Check out this awesome astrology app!" with no way
+to act on it. Fixed, and all three now import a single
+`PLAY_STORE_URL` from `src/config/api.js` rather than each holding their own copy of the URL —
+one edit if the package name ever changes. It must match `applicationId` in
+`android/app/build.gradle` (`com.astrowanicustomer`).
+
+### AC. "Get" prefixed to astro service names
+
+Card titles read "Get Kundli Report" instead of "Kundli Report" — an action, not a noun on a
+card. The buttons *inside* each report screen (`astro.getKundliReport` etc.) already read this
+way; this brings the titles in line.
+
+**Done in SQL, not code**, via `sql/astro_services_get_prefix.sql`.
+`astro_services.name` is the single source of truth for the English label —
+`astroServiceLabel()` returns `service.name` verbatim for any non-Hindi language — and it is
+admin-editable from the Astro Services page. Prefixing at render time would fight the admin:
+renaming a service to "Get Kundli Report" there would then display "Get Get Kundli Report". The
+migration is idempotent (`WHERE name NOT LIKE 'Get %'`), so a newly-added service can be
+prefixed by re-running it.
+
+`name_hi` is empty for all ten rows, so Hindi falls through to the bundled
+`astroService.<key>` translations in `LanguageContext.js`, which were updated alongside.
+**Hindi puts the verb LAST** — "कुंडली रिपोर्ट पाएं", not a "Get" prefix — matching the
+phrasing already used by `refer.getPerFriend`. An admin who later fills in `name_hi` overrides
+this and should include the verb themselves.
+
+**One knock-on fix**: `astro.confirmPurchaseMsg` embedded the service name mid-sentence
+("…debited from your wallet for Get Kundli Report."). Restructured in both languages so the
+name sits after a separator — in Hindi this was not merely awkward but ungrammatical, since
+"कुंडली रिपोर्ट पाएं के लिए" doesn't parse.
+
+### SQL to run for these two (Supabase SQL editor)
+
+1. `sql/referral_reward_50.sql`
+2. `sql/astro_services_get_prefix.sql`
+
+Both are idempotent and both `RAISE NOTICE` what they changed, so running them confirms the
+result. Nothing else is required — the app changes are pure JS and ship over OTA.
+
+### Verified 2026-08-22
+
+`node --check` clean on `index.js`. Changed customer-app files lint with **no new errors**
+(the one reported, `scaleAnim` exhaustive-deps in `ReferralPromptHost.js:62`, is pre-existing —
+the diff for that file only touches the `useState` default and the `PLAY_STORE_URL` import).
+All **922** i18n keys confirmed present in **both** English and Hindi after the edits, with all
+10 `astroService.*` keys in both. Every hardcoded `play.google.com` literal is gone from `src/`
+outside `config/api.js`, and no referral-₹25 copy remains.
+
+**Not yet verified on-device** — the two SQL files had not been applied at the time of writing,
+so the "Get …" titles and the ₹50 figure will not appear until they are run.
+
+---
+
+## Change 2026-08-22: profile fields directly editable (customer app)
+
+### AD. Removed the per-field "tap edit first" gate in UserProfileScreen
+
+**Which screen**: `astrowani_customer-main/src/screens/drawerScreens/UserProfileScreen.js`.
+Not the vendor app — vendor `Profile.js` just navigates to a separate `EditProfile` screen,
+which is a normal pattern. The customer profile was the one with the gate.
+
+**What it was**: an `editableFields` state object held a boolean per field, every field
+defaulted to `false`, and each row rendered an edit-pencil badge (`editIconBadge`) calling
+`toggleEditable(fieldKey)`. So changing anything took two taps, and a fully-filled profile
+rendered dimmed (`opacity: 0.85`, text `#666`) as though it were disabled.
+
+**Now**: `editableFields`, `toggleEditable` and the pencil are gone. Fields are editable
+immediately and render at full contrast.
+
+**The one judgement call — the phone number stays locked.**
+`PUT /api/users/profile` deliberately does **not** accept `mobile` (it is the OTP login
+identity — see the allowed-field list in `index.js`), and `UserProfileScreen`'s save payload
+never included `phoneNumber` either. So the old pencil let a customer tap edit, type a new
+number, press Save, and have it silently do nothing and revert on reload — the same "fake
+control" class of bug as the 2026-08-10 signup photo picker. Making it *freely* editable would
+have made that worse, not better.
+
+So `renderField` gained a `readOnly` flag, which is a **different concept from the old gate**:
+it marks a field the backend will not accept a change to. It renders muted
+(`textInputReadOnly`) with a `lock-outline` badge where the pencil used to sit (same
+`scale(24)` width, so rows stay aligned). Only `phoneNumber` passes it today.
+
+**Also removed**: the "Please enter your Mobile Number" validation. It guarded a field that is
+now read-only and whose value is never transmitted, so it could only ever produce an error the
+customer had no way to fix. The `userProfile.enterMobile` i18n key was orphaned by that and was
+deleted from **both** languages (note `astro.enterMobileNumber` is a different key, still in
+use).
+
+### Verified 2026-08-22
+
+`eslint --quiet` clean on both changed files (the three `no-unused-vars` warnings in
+UserProfileScreen — `Alert`, `launchCamera`, `supabase` — are pre-existing; `git diff` confirms
+no import lines were touched). No references to `isEditable` / `editableFields` /
+`toggleEditable` / `editIconBadge` remain. i18n parity re-checked: **921** distinct keys, zero
+present in only one language. Not exercised on-device.
+
+---
+
+## Fix 2026-08-22: microphone dies when a call is backgrounded (NATIVE — needs a store release)
+
+### AE. Why the mic cut out, and why an "ongoing" notification was never going to fix it
+
+**Reported**: mid-call, the astrologer switches apps or hits Home and their voice stops
+reaching the customer; it resumes when they return. Separately, the call itself was seen
+cutting once.
+
+**Root cause**: from Android 11 the OS silences the microphone for any app not in the
+foreground, and from **Android 14 (API 34) the only way to keep capturing is a running
+foreground service whose `foregroundServiceType` is `microphone`**. Measured state before the
+fix, in BOTH apps:
+
+- `targetSdkVersion = 36` — so every Android 14+ restriction applies.
+- `FOREGROUND_SERVICE` was declared but **`FOREGROUND_SERVICE_MICROPHONE` was not**.
+- **No `<service>` was declared at all**, in either manifest.
+- No dependency supplies one either (checked `react-native-incall-manager` and grepped every
+  `node_modules/*/android/src/main/AndroidManifest.xml` for `foregroundServiceType="microphone"`
+  — zero hits). Note the vendor app has `@notifee/react-native`, whose foreground service
+  declares no microphone type, so it would not have helped.
+
+**The trap worth remembering**: the customer app already had
+`utils/activeSessionNotification.js` posting an `ongoing: true` notification for the whole
+session. That looks exactly like a call notification and is why the problem seemed like it
+should already be handled — but **a plain ongoing notification grants no microphone
+privilege**. Only a real foreground service of type `microphone` does. The appearance had been
+built without the mechanism. (The vendor app had no such notification at all, which is
+consistent with the astrologer being the one who noticed.)
+
+Keeping the service alive also stops Android freezing/killing the backgrounded process, which
+is the most likely explanation for the rarer "call just cut" sighting.
+
+### What was added (per app: 3 Kotlin files + manifest + package registration)
+
+- **`CallForegroundService.kt`** — posts an ongoing, silent, `CATEGORY_CALL` notification and
+  calls `startForeground(..., FOREGROUND_SERVICE_TYPE_MICROPHONE)` on API 29+ (plain
+  two-arg call below that, where typed services don't exist and backgrounded mic wasn't gagged
+  anyway). `START_NOT_STICKY` on purpose — if the process dies the call is over, and
+  resurrecting the service would strand an undismissable notification. `onTaskRemoved` tears it
+  down if the app is swiped away. Small icon is the app's existing `ic_notification`
+  silhouette, already shipped in every density bucket.
+- **`CallServiceModule.kt`** — legacy `ReactContextBaseJavaModule` (correct: both apps have
+  `newArchEnabled=false`). `start`/`stop`. **Every method resolves rather than rejects** —
+  losing the service degrades a call, but must never break one by throwing into a call screen.
+  `stop` uses `stopService` only; routing a STOP action through `startService` would *start* the
+  service just to stop it when no call is running.
+- **`CallServicePackage.kt`** + `add(CallServicePackage())` in `MainApplication.kt` — it lives
+  in the app, not a node_module, so autolinking can't see it.
+- **Manifest**: `FOREGROUND_SERVICE_MICROPHONE`, and for the vendor app also
+  `POST_NOTIFICATIONS` (never declared — a foreground service must post a notification, and
+  Android 13+ gates that), plus the `<service … foregroundServiceType="microphone"
+  exported="false"/>` entry.
+
+### JS wiring
+
+- **`utils/callForegroundService.js`** (both apps) — safe no-op on iOS or if the native module
+  is absent; swallows failures.
+- **Customer**: `activeSessionNotification.js` gained a `kind` parameter.
+  `kind: 'call'` starts the foreground service (which posts its **own** notification, so there
+  is never a duplicate); `kind: 'chat'` keeps the plain local notification, because chat
+  captures no audio and a service there would be an unjustified always-on-mic privilege.
+  `hideActiveSessionNotification()` tears down **both** paths unconditionally, so a mismatched
+  show/hide can never leave a service holding the mic open after a call ends. The two call
+  screens pass `kind: 'call'`; their existing `doEndCall` already called hide.
+- **Vendor**: started right after `captureEvent('call_connected')` in `EnxScreenVoice.tsx` /
+  `EnxScreenVideo.tsx`, stopped at the top of each `doEndCall`.
+
+**Start position is load-bearing**: Android forbids starting a microphone-type foreground
+service from the background, and requires RECORD_AUDIO already granted. Both hold at the
+connect moment (call screen visible, permission requested during setup). Do not move these
+calls earlier or into a background handler.
+
+### ⚠️ This one cannot ship over OTA
+
+Manifest, permissions and native code — Hot Updater only replaces the JS bundle. **This needs a
+full Play Store release for both apps.** Everything else from 2026-08-21/22 is JS-only.
+
+### Verified 2026-08-22
+
+- `:app:compileDebugKotlin` — **BUILD SUCCESSFUL** for both apps (customer: 10 tasks executed,
+  so the new Kotlin genuinely compiled).
+- `:app:processDebugMainManifest` — **BUILD SUCCESSFUL** for both, and the merged manifest was
+  read back to confirm `FOREGROUND_SERVICE_MICROPHONE`, `POST_NOTIFICATIONS`, and
+  `<service android:name="….CallForegroundService" android:exported="false"
+  android:foregroundServiceType="microphone"/>` all landed.
+- `eslint --quiet` clean on every changed JS/TS file (the one reported error, unused
+  `SCREEN_WIDTH` in `VideoCallScreen.tsx:40`, is pre-existing — the diff there is four lines).
+- **Gradle must be driven from PowerShell on this machine, not the Bash tool** — bash mangles
+  the `JAVA_HOME` path and `./gradlew` dies with
+  `C;D:/Program Files/…/java: No such file or directory`. A bash run appears to "succeed" with
+  exit 0 while having compiled nothing, which is how a false pass can slip through.
+
+**Not verified on a device.** This is the one change here that genuinely needs a real
+two-device test: connect a call, background the astrologer's app, and confirm audio keeps
+flowing and the ongoing notification appears.
+
+---
+
+## Subsystem added 2026-08-22 (IN PROGRESS): astrologer referral commission on remedy orders
+
+### AF. Commission core — DB, money paths, API, admin rates
+
+An astrologer recommends a remedy item to a customer; if that customer buys it, the
+astrologer earns a share. Covers **all three commissionable types — gemstone, puja,
+specific_puja** — with the rate set **per type** from the admin. `life_report` is excluded
+(digital good, no delivery, no rate).
+
+**The three rules this is built on** (confirmed with the user before building):
+
+1. **Commission comes out of the PLATFORM's margin, never the customer's price.**
+   `resolveLineCommissions()` runs *after* the cart is priced and only annotates lines — it
+   cannot change what is charged. Payout credits the astrologer and debits `admin_wallet` by
+   the same figure.
+2. **Paid on DELIVERY** (`orders.status` → `completed`), not at checkout. This is what makes
+   the whole feature safe: a cancelled or refunded order simply never pays, so there is **no
+   clawback path to get wrong** — unlike the refund reversals the cart flow already needs.
+3. **Rates are SNAPSHOTTED per order line at checkout.** Changing a rate in the admin must
+   never retroactively alter what an already-placed order owes, so payout never re-reads
+   `app_settings` — it uses the number stored on the line.
+
+**Per LINE, not per order**, because rates differ by type and one cart can mix a gemstone
+with a puja.
+
+### Referral creation — both paths, deliberately
+
+- `source = 'vendor'` — the astrologer recommends from the vendor app.
+- `source = 'admin'` — an admin attributes one by hand. This exists because plenty of real
+  recommendations happen outside the app flow (phone consults, disputes, corrections) and
+  without it those would be unpayable.
+
+**The vendor write goes through the backend, never Supabase directly.** `remedy_referrals` has
+RLS on with no anon policy, and `astrologer_id` is taken from the verified JWT rather than the
+request body — otherwise any astrologer holding the publishable key could write themselves a
+commission on somebody else's customer.
+
+**Attribution**: history is kept, never overwritten. Multiple rows per (customer, item) are
+legal; checkout takes the **most recent inside the window** — "last recommendation wins".
+Overwriting would destroy the audit trail for a payment, which is the one thing needed when an
+astrologer disputes a commission.
+
+### Files
+
+| File | Role |
+|---|---|
+| `sql/remedy_referral_commission.sql` | `remedy_referrals` table (RLS on, service-role only), 4 additive `order_items` columns + CHECKs + 3 indexes, 4 seeded settings. Idempotent. |
+| `src/remedyCommission.js` | `resolveLineCommissions()` (checkout) and `payoutOrderCommissions()` (delivery). **Neither ever throws.** |
+| `src/remedyReferralRoutes.js` | vendor create/list, admin list/create/delete, admin per-astrologer commission report. |
+| `src/orderRoutes.js` | snapshots commission onto `order_items` at checkout. |
+| `src/adminRoutes.js` | pays out when status becomes `completed`. |
+| `astrowani-admin/src/pages/Remedies.jsx` | "Astrologer referral commission" card — 3 rates + window, clamped 0–100. |
+
+**Settings** (`app_settings`, seeded at 10% / 30 days):
+`remedy_commission_percent_{gemstone,puja,specific_puja}`, `remedy_referral_window_days`.
+
+### Failure posture — every path fails toward not-paying
+
+- `loadCommissionConfig` fails **CLOSED**: an unreadable/missing/out-of-range rate becomes 0.
+  Paying nothing is recoverable (an admin can attribute later); paying a wrong amount out of
+  the margin is not.
+- `resolveLineCommissions` never throws — an unattributed order is fixable, a blocked
+  purchase is not.
+- `payoutOrderCommissions` never throws — a delivery must stay recordable even if payout
+  fails, and unpaid lines stay retryable because `commission_paid_at` is stamped **only after**
+  the credit succeeds.
+- Idempotent twice over: `commission_paid_at` *and* wallet idempotency keys
+  (`remedy-commission:<orderId>:<astrologerId>`), so re-selecting "delivered" cannot double-pay.
+- One wallet write per astrologer per order, not per line — three gemstones from the same
+  astrologer read as one ledger entry.
+- `countEarnings: true` — commission is real earned income and belongs in
+  `today_earnings`/`total_earnings`.
+- **Razorpay-paid orders**: the `admin_wallet` debit is still recorded even though that money
+  never entered our ledger. The resulting negative is *accurate* — we owe an astrologer out of
+  revenue that went straight to the gateway. (`adjust_admin_wallet` has no sufficiency check,
+  verified, so the debit always lands.)
+- Deleting a referral affects **future orders only**; commission already snapshotted onto a
+  placed order is untouched.
+
+### Verified 2026-08-22 — migration APPLIED, money path proven end to end
+
+`node --check` clean on all five changed/new backend files; admin `npm run build` succeeds.
+
+**Before the migration** — 6/6: `loadCommissionConfig` returns zero rates,
+`resolveLineCommissions` returns an empty Map without throwing (so **checkout is completely
+unaffected**), and `payoutOrderCommissions` reports `paid: 0` with the missing-column error
+captured rather than raised. **Deploy order does not matter**, same posture as `src/wallet.js`.
+
+**After the migration — money path, 17/17** on a real gemstone (Rs.11,000 @ 10%):
+referral created -> commission resolved at Rs.1,100 and attributed to the right astrologer ->
+snapshotted onto the order line -> payout credited the astrologer (5663 -> 6763), counted it as
+real earnings, and debited `admin_wallet` by the **same** amount (0 -> -1100, i.e. straight out
+of the platform margin, never the customer) -> `commission_paid_at` stamped -> **re-delivering
+paid nothing** -> changing the rate to 50% did **not** rewrite the placed order -> a referral
+aged past the 30-day window stopped resolving. Every rupee reversed: astrologer and
+`admin_wallet` both finished on their exact starting values, `remedy_referrals` back to 0 rows,
+rate restored to 10.
+
+**API surface — 13/13** via a bare Express harness mounting `adminRoutes` +
+`remedyReferralRoutes` (**never `index.js`** — that starts sessionManager's billing worker and
+`checkEarningsResets()` against production): unauthenticated vendor create 401s, a **vendor
+token is rejected 403 on the admin routes**, vendor create 201s and returns the live rate +
+window, missing field 400s, unknown item 404s, vendor list returns referrals + split
+paid/pending earnings, admin attribution 201s and is tagged `source=admin` with `created_by`,
+admin list joins astrologer/customer/item, the commission report responds, and admin delete
+200s. All test rows removed.
+
+Note `admin_wallet` sits at 0 and therefore went negative during the test — expected and
+correct per the Razorpay note above.
+
+### AG. The UI layer (2026-08-22, same day)
+
+**Vendor app**
+- `screens/Drawer/MyCustomers.js` — a **Recommend** button beside the existing "Send voice
+  note", opening a remedy picker. Items are filtered to the three commissionable types, so
+  the astrologer can never tap something the backend would refuse with
+  `NOT_COMMISSIONABLE`. The confirmation state **replaces** the list (rather than stacking an
+  alert) and quotes the rate + window **returned by the server**, never a hardcoded number —
+  an admin can change the rate at any time and promising a stale percentage is worse than
+  saying nothing.
+- `screens/Drawer/RemedyReferrals.js` (new, drawer item "Referrals & Commission") — read-only
+  ledger. **Paid and Pending are shown separately on purpose**: one combined figure would tell
+  an astrologer they had earned money a cancellation could still remove. Admin-attributed rows
+  carry an "Added by Astrowani" pill, since the astrologer did not create those themselves.
+
+**Customer app**
+- New `GET /api/remedies/recommended` (customer JWT) → `{ [itemId]: 'Astrologer Name' }`.
+  **Deliberately a separate endpoint, not a field on `/api/remedies`** — that route is
+  unauthenticated and `contentCache`d, so a per-customer field there would either leak one
+  customer's recommendations to everyone through the cache or force the cache off for all.
+  Returns **only the name** — no commission figures; what an astrologer earns is not the
+  customer's business and showing it would make advice look like a sales incentive.
+  Honours the same window and the same "last recommendation wins" rule as checkout, so the
+  badge can never name an astrologer who would not actually be credited.
+- `components/shop/ProductCard.js` — `recommendedBy` prop renders a small verified-icon line
+  above the title. `screens/Remedies/ProductDetail.js` — a fuller "Recommended for you by X"
+  banner. Both fetched via `OrdersApi.getRecommendations()`, which **resolves to `{}` on any
+  failure** so a missing badge can never break the shop screen.
+
+**Admin**
+- `pages/Orders.jsx` — each expanded line shows `Referral commission ₹X (Y%)` with
+  **"paid <date>" in green or "pays on delivery" in amber**, plus a new "Astrologer referral
+  commission" card (Paid / Pending totals + a per-astrologer breakdown). The card reads
+  `GET /api/admin/remedy-commissions` rather than deriving from the loaded page, so totals
+  cover everything and not just the current filter. Its fetch is independent of the orders
+  fetch — a failure (e.g. migration not yet applied) cannot stop the table rendering.
+
+### Verified 2026-08-22 — UI driven in a real browser
+
+`GET /api/remedies/recommended` — **7/7**: no token and a malformed token both return an empty
+map with **200** (badges simply do not render rather than erroring), a customer with no
+referrals gets `{}`, a real referral returns the astrologer's name keyed by item id, the
+response contains **no commission/percent/amount fields**, and a referral aged past the window
+disappears.
+
+**Admin UI end-to-end in the browser** against a harness mounting `adminRoutes` +
+`orderRoutes` + `remedyReferralRoutes` (never `index.js`): seeded one referred order, then
+confirmed the commission card read **"Paid ₹0 · Pending ₹1100"** with the breakdown row
+`Manu Sharma | 1 | 0 | 1,100`, and the expanded line showed
+`Referral commission ₹1100 (10%) — pays on delivery`. Marking the order **completed through
+the real admin PATCH** then produced, in the database: `commission_paid_at` stamped, astrologer
+5663 → **6763**, `total_earnings` 5673 → **6773**, `admin_wallet` 0 → **−1100**, and exactly
+one ledger row keyed `remedy-commission:<orderId>:<astrologerId>`. Reloading the page flipped
+the card to **"Paid ₹1100 · Pending ₹0"**.
+
+Teardown verified clean: astrologer back to 5663/0/5673, `admin_wallet` back to 0,
+`remedy_referrals` at 0 rows, demo order removed, every synthetic ledger row deleted.
+`eslint --quiet` clean across all changed vendor and customer files (the two reported errors —
+`exhaustive-deps` in `NavigationScreen.js:122` and `SCREEN_WIDTH` in `VideoCallScreen.tsx:40` —
+are pre-existing, confirmed by `git diff`). Admin `npm run build` succeeds.
+
+### STILL TO DO
+
+Nothing functional. Optional polish if it ever matters: the customer app has no
+"recommendations for me" list screen (the badge only appears while browsing the shop), and the
+`NOT_COMMISSIONABLE` refusal path is untested because no `life_report` row exists in
+`remedy_items` to reject.
+
+---
+
+## Feature added 2026-08-22: session-start prompt ("share your birth details first")
+
+### AH. The "first minute" feature is COPY ONLY — no billing change, deliberately
+
+The original ask read as "add 1 minute free at the start". The user then clarified it is
+**a marketing/onboarding prompt, not a real free minute**: "this is not a real thing this is
+just a marketing gimmick… we are not leaving anything in money… these all will be banners".
+
+**So nothing here touches money.** No free-minute logic, no billing exemption, no discount, no
+change to `per_minute_charge`, `process_session_billing`, or any wallet path. A session is
+charged from the moment it connects exactly as before. Verified mechanically: every match for
+`wallet|charge|per_minute|billing|price|discount|refund` across the four new/changed files and
+the three session-screen diffs is **comment prose**, not code.
+
+**One judgement call recorded, because it will come up again**: the default wording
+deliberately does **not** claim the first minute is free. Billing starts on connect, so
+"1 minute free" is a claim the customer can check against their own wallet balance — and the
+usual outcome is a refund request or a one-star review, not a happier customer. The copy says
+what the minute is *for* ("share your name, date, time and place of birth — and double-check
+them with your astrologer") rather than what it costs. The text is admin-editable, so this is a
+default, not a lock.
+
+### How it works
+
+- `sql/session_intro_banner.sql` (idempotent) seeds three `app_settings` keys:
+  `session_intro_banner_enabled`, `session_intro_banner_text`,
+  `session_intro_banner_text_hi`.
+- `hooks/useSessionIntroBanner.js` reads them straight from Supabase — `app_settings` is
+  public-read and this mirrors `useRemedyOrderingGate` / `applySessionReplaySetting`, so no
+  bespoke endpoint. **Fails to OFF** rather than to a hardcoded fallback sentence: if the copy
+  can't be read, an admin may have reworded or disabled it deliberately, and showing stale
+  promotional text nobody approved is worse than showing none. Hindi falls back to English when
+  blank, the same convention `/api/remedies` uses for `title_hi`.
+- `components/SessionIntroBanner.js` — dismissible, auto-hides after 25s so it never sits on
+  top of a live chat. **Not** persisted as "seen forever": the reminder is useful at the start
+  of *every* session, since the details matter per-reading.
+- Wired into `ChatSessionScreen.js` (above the message list),
+  `VoiceCallScreen.tsx` and `VideoCallScreen.tsx`. **On the call screens it is gated on
+  `isActive`** — showing "start by telling them your details" while the phone is still ringing
+  would tell the customer to talk before anyone is there. On video it is absolutely positioned
+  below the top bar so it floats over the remote stream instead of displacing it.
+- Admin: a "Session start message" card at the top of `pages/Sessions.jsx` — on/off, English
+  and Hindi text. The card's own help text states that this is wording only and warns against
+  promising a free minute, so the next person to edit it sees the reasoning without having to
+  find this file.
+
+There is **no server-side counterpart**, and that is correct: the banner grants nothing and
+costs nothing, so a stale value in an old installed build is an out-of-date sentence, not a
+loophole. (Contrast the remedy ordering gate, which *is* re-checked server-side because it
+guards money.)
+
+### Verified 2026-08-22
+
+`eslint --quiet` clean on the two new files; the two errors reported in the touched screens
+(`exhaustive-deps` in `ChatSessionScreen.js:403`, unused `SCREEN_WIDTH` in
+`VideoCallScreen.tsx:41`) are **pre-existing** — `git diff` shows those files gained only an
+import and a 3-line insert. Admin `npm run build` succeeds. Not exercised on-device.
+
+**To activate**: run `sql/session_intro_banner.sql`. Until then the hook fails to OFF and no
+banner appears, so it is safe to ship the app change first.

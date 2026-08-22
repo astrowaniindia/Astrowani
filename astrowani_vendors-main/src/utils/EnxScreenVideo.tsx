@@ -29,6 +29,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
+import {startCallForegroundService, stopCallForegroundService} from './callForegroundService';
 import {LanguageContext} from '../context/LanguageContext';
 
 interface Props {
@@ -149,6 +150,9 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const doEndCall = useCallback(async () => {
     stopCallTimer();
     stopRipple();
+    // Drop the mic privilege and its notification promptly — a foreground service
+    // left running would hold the microphone open after the call ended.
+    stopCallForegroundService();
     cleanupWebRTC();
     captureEvent('call_ended', {
       call_type: 'video',
@@ -266,6 +270,14 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
             isConnectedRef.current = true;
             setIsConnected(true);
             captureEvent('call_connected', {call_type: 'video', session_id: sessionId});
+            // Android silences the mic for a backgrounded app (and from API 34 only a
+            // microphone-type foreground service prevents it). Started HERE because the
+            // screen is guaranteed foregrounded and RECORD_AUDIO already granted —
+            // Android rejects starting this type of service from the background.
+            startCallForegroundService(
+              'Call in progress',
+              callerName ? `On a call with ${callerName}` : 'Tap to return to your call',
+            );
             stopRipple();
             startCallTimer();
             if (socketRef.current && sessionId) {

@@ -10,6 +10,7 @@
 // it can't be swiped away — only cancelLocalNotification() (called when the session actually
 // ends) removes it, so it can't be dismissed by accident and leave the customer unaware.
 import PushNotification from 'react-native-push-notification';
+import { startCallForegroundService, stopCallForegroundService } from './callForegroundService';
 
 const CHANNEL_ID = 'astrowani-default'; // same channel PushNotification.js already created
 const NOTIFICATION_ID = 'active-session';
@@ -20,7 +21,24 @@ const NOTIFICATION_ID = 'active-session';
 // which only resumes the right screen if the app process is still alive — a tap after
 // Android has fully killed a backgrounded app would otherwise land on the normal start
 // screen instead of the call/chat room.
-export function showActiveSessionNotification({ title, message, screen, params }) {
+// `kind` decides the MECHANISM, and for calls the mechanism matters, not just the
+// notification. A plain ongoing notification keeps the user informed but does nothing
+// to stop Android silencing the microphone once the app leaves the foreground — which
+// it does from Android 11, and which from Android 14 only a foreground service of type
+// `microphone` prevents. So:
+//
+//   kind: 'call' → start the native foreground service, which posts its OWN ongoing
+//                  notification. Exactly one notification, and the mic keeps working.
+//   kind: 'chat' → the local notification as before. Chat captures no audio, so it
+//                  needs no service, and a service would be an unjustified
+//                  always-on-mic privilege.
+//
+// See utils/callForegroundService.js and android/.../CallForegroundService.kt.
+export function showActiveSessionNotification({ title, message, screen, params, kind = 'chat' }) {
+  if (kind === 'call') {
+    startCallForegroundService(title, message);
+    return;
+  }
   PushNotification.localNotification({
     id: NOTIFICATION_ID,
     channelId: CHANNEL_ID,
@@ -34,6 +52,11 @@ export function showActiveSessionNotification({ title, message, screen, params }
   });
 }
 
+// Tears down both paths unconditionally. Each is a harmless no-op if it was not the
+// one in use, and doing both means a mismatched show/hide pair can never leave an
+// undismissable notification — or worse, a foreground service holding the mic open
+// after the call has ended.
 export function hideActiveSessionNotification() {
   PushNotification.cancelLocalNotification(NOTIFICATION_ID);
+  stopCallForegroundService();
 }

@@ -124,9 +124,9 @@ const useChatRequest = (navigation) => {
             // customer through while Call/Video (which read the right field) blocked them.
             const charge = item.chatPrice ?? item.chat_charge_per_minute ?? item.chatChargePerMinute ?? 0;
             if (charge > 0 && balance < charge) {
-              // Same themed popup (Recharge / Refer & Earn ₹25 / Cancel) as the
+              // Same themed popup (Recharge / Refer & Earn ₹50 / Cancel) as the
               // call and video entry points — was previously a plain OK-only Alert.
-              showInsufficientBalanceAlert({ navigation, minRequired: charge, balance, t });
+              showInsufficientBalanceAlert({ navigation, minRequired: charge, balance, t, intent: 'chat' });
               return;
             }
           }

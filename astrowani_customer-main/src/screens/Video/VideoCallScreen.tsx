@@ -33,6 +33,7 @@ import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {captureEvent} from '../../utils/Analytics';
 import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
+import SessionIntroBanner from '../../components/SessionIntroBanner';
 import {LanguageContext} from '../../context/LanguageContext';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
@@ -301,6 +302,10 @@ const VideoCallScreen = ({route, navigation}: any) => {
               message: t('call.videoStillActive', {name: recieverName}),
               screen: 'VideoCallScreen',
               params: {sessionId: sessionIdRef.current, recieverName, recieverImage, recieverId},
+              // 'call' starts the native mic foreground service instead of a plain
+              // ongoing notification — without it Android gags the mic the moment
+              // this screen is backgrounded. See utils/callForegroundService.js.
+              kind: 'call',
             });
             stopRipple();
             stopRingCountdown();
@@ -489,6 +494,14 @@ const VideoCallScreen = ({route, navigation}: any) => {
         </View>
       )}
 
+      {/* Below the top bar so it never covers the remote video's face area, and only
+          once connected. Presentational only — billing is unchanged. */}
+      {isActive && (
+        <View style={styles.introBannerWrap} pointerEvents="box-none">
+          <SessionIntroBanner />
+        </View>
+      )}
+
       {/* Local video PiP */}
       {localStreamURL ? (
         <>
@@ -599,6 +612,8 @@ const styles = StyleSheet.create({
   },
   inCallName: {fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 4},
   statusPillSmall: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  // Absolute so it floats over the full-screen remote video rather than displacing it.
+  introBannerWrap: {position: 'absolute', top: 96, left: 0, right: 0, zIndex: 5},
   inCallTimer: {fontSize: 14, color: '#34C759', fontWeight: '500', fontVariant: ['tabular-nums']},
   localVideoPiP: {
     position: 'absolute',

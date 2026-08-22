@@ -142,6 +142,10 @@ export default function Remedies() {
   // Per-category "accepting orders" switches + the bill-summary fees, all app_settings.
   const [ordering, setOrdering] = useState({});
   const [fees, setFees] = useState({ delivery: '0', freeAbove: '0', handling: '0' });
+  // Referral commission per remedy type, plus how long a recommendation stays
+  // attributable. Comes out of the platform margin, never the customer's price.
+  const [commission, setCommission] = useState({ gemstone: '0', puja: '0', specific_puja: '0', windowDays: '30' });
+  const [commissionBusy, setCommissionBusy] = useState(false);
   const [orderingBusy, setOrderingBusy] = useState(false);
 
   const load = async () => {
@@ -167,6 +171,15 @@ export default function Remedies() {
         delivery: st.remedy_delivery_fee ?? '0',
         freeAbove: st.remedy_free_delivery_above ?? '0',
         handling: st.remedy_handling_fee ?? '0',
+      });
+      // Astrologer referral commission, one rate per remedy type. Paid out of the
+      // platform's margin when a referred order is delivered — the customer's price
+      // is unaffected. See astrowani-backend/src/remedyCommission.js.
+      setCommission({
+        gemstone: st.remedy_commission_percent_gemstone ?? '0',
+        puja: st.remedy_commission_percent_puja ?? '0',
+        specific_puja: st.remedy_commission_percent_specific_puja ?? '0',
+        windowDays: st.remedy_referral_window_days ?? '30',
       });
     } catch (e) {
       console.error('load popup settings failed (run remedy_unavailable_popup_schema.sql):', e.message);
@@ -214,6 +227,23 @@ export default function Remedies() {
       alert('Saved. New app sessions pick this up immediately.');
     } catch (e) { alert(e.response?.data?.message || e.message); }
     finally { setOrderingBusy(false); }
+  };
+
+  const saveCommission = async () => {
+    setCommissionBusy(true);
+    try {
+      // Clamped 0-100 here as well as by the DB CHECK — a typo'd 1000% would otherwise
+      // pay an astrologer ten times the order value out of the platform's margin.
+      const pct = (v) => String(Math.min(100, Math.max(0, Number(v) || 0)));
+      await Promise.all([
+        client.patch('/api/admin/settings', { key: 'remedy_commission_percent_gemstone', value: pct(commission.gemstone) }),
+        client.patch('/api/admin/settings', { key: 'remedy_commission_percent_puja', value: pct(commission.puja) }),
+        client.patch('/api/admin/settings', { key: 'remedy_commission_percent_specific_puja', value: pct(commission.specific_puja) }),
+        client.patch('/api/admin/settings', { key: 'remedy_referral_window_days', value: String(Math.max(1, Number(commission.windowDays) || 30)) }),
+      ]);
+      alert('Saved. Applies to orders placed from now on — orders already placed keep the rate they were priced at.');
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setCommissionBusy(false); }
   };
 
   const savePopup = async () => {
@@ -307,6 +337,45 @@ export default function Remedies() {
             onChange={(e) => setFees((p) => ({ ...p, handling: e.target.value }))} /></div>
         <button className="btn" onClick={saveOrdering} disabled={orderingBusy}>
           {orderingBusy ? 'Saving…' : 'Save ordering settings'}
+        </button>
+      </div>
+
+      {/* Astrologer referral commission — one rate per remedy type. */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <h3 style={{ margin: 0 }}>Astrologer referral commission</h3>
+        <p className="muted" style={{ marginTop: 4, marginBottom: 12 }}>
+          When an astrologer recommends a remedy and that customer buys it, the astrologer
+          earns this share of the item's price. It comes out of <b>your margin</b> — the
+          customer pays exactly the same either way. Paid only once the order is marked
+          <b> delivered</b>, so a cancelled or refunded order never pays a commission.
+          Changing a rate affects <b>future</b> orders only; orders already placed keep the
+          rate they were priced at.
+        </p>
+        <div className="two-col">
+          <div className="field"><label>Gemstone (%)</label>
+            <input type="number" min="0" max="100" value={commission.gemstone}
+              onChange={(e) => setCommission((p) => ({ ...p, gemstone: e.target.value }))} /></div>
+          <div className="field"><label>Puja (%)</label>
+            <input type="number" min="0" max="100" value={commission.puja}
+              onChange={(e) => setCommission((p) => ({ ...p, puja: e.target.value }))} /></div>
+        </div>
+        <div className="two-col">
+          <div className="field"><label>Specific Puja (%)</label>
+            <input type="number" min="0" max="100" value={commission.specific_puja}
+              onChange={(e) => setCommission((p) => ({ ...p, specific_puja: e.target.value }))} /></div>
+          <div className="field">
+            <label>Attribution window (days)</label>
+            <input type="number" min="1" value={commission.windowDays}
+              onChange={(e) => setCommission((p) => ({ ...p, windowDays: e.target.value }))} />
+          </div>
+        </div>
+        <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 13 }}>
+          The window is how long after a recommendation a purchase still credits that
+          astrologer. If two astrologers recommended the same item to the same customer,
+          the most recent one earns it.
+        </p>
+        <button className="btn" onClick={saveCommission} disabled={commissionBusy}>
+          {commissionBusy ? 'Saving…' : 'Save commission settings'}
         </button>
       </div>
 

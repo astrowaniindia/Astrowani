@@ -17,6 +17,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import FastImage from 'react-native-fast-image';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import QtyStepper from './QtyStepper';
@@ -36,6 +37,10 @@ const ProductCard = ({
   addLabel = 'ADD',
   soldOutLabel = 'Sold out',
   saveLabel = 'Save',
+  // Name of the astrologer who recommended this item to THIS customer, if any.
+  // Deliberately just a name: the commission they earn is not the customer's business,
+  // and showing it would make advice look like a sales incentive.
+  recommendedBy = null,
 }) => {
   const price = Number(item.price) || 0;
   const mrp = Number(item.mrp) || 0;
@@ -72,6 +77,13 @@ const ProductCard = ({
 
       <View style={styles.body}>
         {item.unitLabel ? <Text style={styles.unit}>{item.unitLabel}</Text> : null}
+
+        {recommendedBy ? (
+          <View style={styles.recoRow}>
+            <MaterialIcons name="verified" size={moderateScale(11)} color={COLORS.AstroMaroon} />
+            <Text style={styles.recoText} numberOfLines={1}>{recommendedBy}</Text>
+          </View>
+        ) : null}
 
         <Text style={styles.title} numberOfLines={2}>{title}</Text>
 
@@ -178,6 +190,18 @@ const styles = StyleSheet.create({
 
   body: { paddingHorizontal: scale(9), paddingTop: verticalScale(8), paddingBottom: verticalScale(10) },
 
+  recoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(3),
+    marginBottom: verticalScale(2),
+  },
+  recoText: {
+    flex: 1,
+    fontSize: moderateScale(9.5),
+    fontWeight: '600',
+    color: COLORS.AstroMaroon,
+  },
   unit: {
     color: '#9A8B80',
     fontSize: moderateScale(10.5),

@@ -43,18 +43,6 @@ const UserProfileScreen = ({navigation, route}) => {
   const [emailError, setEmailError] = useState(null);
   const [genderError, setGenderError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [editableFields, setEditableFields] = useState({
-    firstName: false,
-    phoneNumber: false,
-    email: false,
-    gender: false,
-    maritalStatus: false,
-    dateOfBirth: false,
-    timeOfBirth: false,
-    city: false,
-    state: false,
-  });
-
   const [customAlert, setCustomAlert] = useState({
     visible: false,
     title: '',
@@ -77,13 +65,6 @@ const UserProfileScreen = ({navigation, route}) => {
     });
   };
 
-  const toggleEditable = (fieldKey) => {
-    setEditableFields(prev => ({
-      ...prev,
-      [fieldKey]: !prev[fieldKey]
-    }));
-  };
-  
   const [userProfile, setUserProfile] = useState({
     profilePic: user.profilePic || '',
     handPic: user.handPic || '',
@@ -172,11 +153,11 @@ const UserProfileScreen = ({navigation, route}) => {
       return;
     }
 
-    // 3. Mobile Number validation
-    if (!userProfile.phoneNumber || !userProfile.phoneNumber.trim()) {
-      showCustomAlert(t('userProfile.validationError'), t('userProfile.enterMobile'));
-      return;
-    }
+    // Mobile number is NOT validated here on purpose. It is read-only (the OTP
+    // login identity, which PUT /api/users/profile never updates) and it is not
+    // part of the payload below. Blocking the save on it could only ever produce
+    // an error the customer has no way to fix — there is no longer a field for
+    // them to type into. It comes from the authenticated account instead.
 
     // 4. Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -296,10 +277,19 @@ const UserProfileScreen = ({navigation, route}) => {
     }
   };
 
+  // Fields are directly editable — there is no per-field "tap edit first" step.
+  // It previously took two taps to change anything and the dimmed, non-editable
+  // default made a filled-in profile look disabled.
+  //
+  // `readOnly` is a separate idea from the old gate: it marks a field the BACKEND
+  // will not accept a change to, so it must not look typeable. Only the phone
+  // number is that today — PUT /api/users/profile deliberately omits `mobile`
+  // from its allowed updates (it is the OTP login identity), so an editable phone
+  // field would accept typing, save nothing, and silently revert on reload.
   const renderField = (fieldKey, icon, placeholder, value, onChange, type = 'text', extraProps = {}) => {
-    const isEditable = editableFields[fieldKey];
+    const { readOnly = false, ...inputProps } = extraProps;
     return (
-      <View style={[styles.inputWrapper, !isEditable && { opacity: 0.85 }]}>
+      <View style={styles.inputWrapper}>
         <View style={styles.inputIcon}>
           <Ionicons name={icon} size={moderateScale(20)} color={COLORS.AstroMaroon} />
         </View>
@@ -307,13 +297,13 @@ const UserProfileScreen = ({navigation, route}) => {
           <Text style={styles.inputLabel}>{placeholder}</Text>
           {type === 'text' && (
             <TextInput
-              style={[styles.textInput, !isEditable && { color: '#666' }]}
+              style={[styles.textInput, readOnly && styles.textInputReadOnly]}
               value={value}
               onChangeText={onChange}
               placeholder={t('userProfile.enterField', { field: placeholder })}
               placeholderTextColor="#999"
-              editable={isEditable}
-              {...extraProps}
+              editable={!readOnly}
+              {...inputProps}
             />
           )}
           {/* Birth place is a lookup, not free text — the value is read verbatim
@@ -323,7 +313,7 @@ const UserProfileScreen = ({navigation, route}) => {
             <PlaceAutocomplete
               placeholder={t('userProfile.enterField', { field: placeholder })}
               initialValue={value || ''}
-              editable={isEditable}
+              editable={!readOnly}
               onSelect={(picked) => {
                 onChange(picked ? picked.label : '');
                 // City and State used to be two separate fields the customer
@@ -331,42 +321,46 @@ const UserProfileScreen = ({navigation, route}) => {
                 // already knows, and the two could disagree (a city typed in
                 // one state, a different state picked from the dropdown).
                 // Deriving it from the SAME lookup makes that impossible.
-                if (extraProps.onPlaceSelect) extraProps.onPlaceSelect(picked);
+                if (inputProps.onPlaceSelect) inputProps.onPlaceSelect(picked);
               }}
             />
           )}
           {type === 'dropdown' && (
             <Dropdown
               style={styles.dropdownInput}
-              data={extraProps.data}
+              data={inputProps.data}
               labelField="label"
               valueField="value"
               placeholder={t('userProfile.selectField', { field: placeholder })}
               placeholderStyle={{ color: '#999', fontSize: moderateScale(14) }}
-              selectedTextStyle={{ color: isEditable ? '#000' : '#666', fontSize: moderateScale(14) }}
+              selectedTextStyle={{ color: '#000', fontSize: moderateScale(14) }}
               containerStyle={styles.dropdownContainer}
               itemTextStyle={styles.dropdownItemText}
               activeColor="#f0f0f0"
-              disable={!isEditable}
+              disable={readOnly}
               value={value}
               onChange={item => onChange(item.value)}
             />
           )}
           {type === 'date' && (
-            <TouchableOpacity 
-              onPress={() => { if (isEditable) extraProps.onPress(); }} 
-              disabled={!isEditable} 
+            <TouchableOpacity
+              onPress={inputProps.onPress}
+              disabled={readOnly}
               style={styles.datePickerBtn}
             >
-              <Text style={{ color: value ? (isEditable ? '#000' : '#666') : '#999', fontSize: moderateScale(14) }}>
+              <Text style={{ color: value ? '#000' : '#999', fontSize: moderateScale(14) }}>
                 {value || t('userProfile.selectField', { field: placeholder })}
               </Text>
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity style={styles.editIconBadge} onPress={() => toggleEditable(fieldKey)}>
-          <MaterialIcons name="edit" size={moderateScale(16)} color={isEditable ? COLORS.AstroMaroon : '#888'} />
-        </TouchableOpacity>
+        {/* A lock, shown only for fields the backend won't accept a change to —
+            this replaces the per-field edit pencil that used to sit here. */}
+        {readOnly && (
+          <View style={styles.readOnlyBadge}>
+            <MaterialIcons name="lock-outline" size={moderateScale(16)} color="#888" />
+          </View>
+        )}
       </View>
     );
   };
@@ -409,7 +403,9 @@ const UserProfileScreen = ({navigation, route}) => {
             <View style={styles.formCard}>
               <Text style={styles.formSectionTitle}>{t('userProfile.basicDetails')}</Text>
               {renderField('firstName', 'person-outline', t('userProfile.fullName'), userProfile.firstName, v => handleInputChange('firstName', v))}
-              {renderField('phoneNumber', 'call-outline', t('userProfile.mobileNumber'), userProfile.phoneNumber, v => handleInputChange('phoneNumber', v), 'text', { keyboardType: 'phone-pad', maxLength: 10 })}
+              {/* readOnly: the backend never updates `mobile` (it's the OTP login
+                  identity), so this must not look typeable. */}
+              {renderField('phoneNumber', 'call-outline', t('userProfile.mobileNumber'), userProfile.phoneNumber, v => handleInputChange('phoneNumber', v), 'text', { keyboardType: 'phone-pad', maxLength: 10, readOnly: true })}
 
               {renderField('email', 'mail-outline', t('userProfile.emailAddress'), userProfile.email, v => handleInputChange('email', v), 'text', { keyboardType: 'email-address' })}
               {emailError && <Text style={styles.errorText}>{emailError}</Text>}
@@ -584,9 +580,14 @@ const styles = StyleSheet.create({
   inputContent: { flex: 1, marginLeft: scale(5) },
   inputLabel: { fontSize: moderateScale(11), color: '#888', fontFamily: 'Lato-Bold', textTransform: 'uppercase', marginBottom: verticalScale(2) },
   textInput: { padding: 0, margin: 0, color: '#000', fontSize: moderateScale(14), fontFamily: 'Lato-Regular' },
+  // Muted only for genuinely unchangeable fields — every editable field now renders
+  // at full contrast, where before all of them were dimmed until tapped.
+  textInputReadOnly: { color: '#777' },
   dropdownInput: { height: verticalScale(24), padding: 0, margin: 0 },
   datePickerBtn: { justifyContent: 'center', height: verticalScale(24) },
-  editIconBadge: { width: scale(24), alignItems: 'flex-end' },
+  // Replaced editIconBadge (the per-field "tap to edit" pencil). Same width so
+  // the rows that have it stay aligned with the ones that don't.
+  readOnlyBadge: { width: scale(24), alignItems: 'flex-end' },
   dropdownContainer: {
     borderRadius: 10,
     backgroundColor: '#fff',

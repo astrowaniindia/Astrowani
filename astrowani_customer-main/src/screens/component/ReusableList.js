@@ -21,6 +21,7 @@ import { LanguageContext } from '../../context/LanguageContext';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { ensureProfileComplete } from '../../utils/profileGate';
+import { captureEvent } from '../../utils/Analytics';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
   const navigation = useNavigation();
@@ -45,12 +46,16 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     const key = serviceKey === 'video' ? 'alerts.notAvailableVideo'
       : serviceKey === 'call' ? 'alerts.notAvailableCall'
       : 'alerts.notAvailableChat';
+    // Plain Alert, so not covered by StatusPopup.js's central consult_blocked hook.
+    captureEvent('consult_blocked', { reason: 'service_off', intent: serviceKey || 'unknown', astrologer_id: item.userId });
     Alert.alert(t('alerts.unavailable'), t(key, { name: item.name || 'This astrologer' }));
   };
 
   // Master offline switch overrides every per-service button with one unified red "Offline" pill.
-  const showOffline = (item) =>
+  const showOffline = (item) => {
+    captureEvent('consult_blocked', { reason: 'astrologer_offline', intent: buttonType || 'unknown', astrologer_id: item.userId });
     Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || 'This astrologer' }));
+  };
 
   // Busy overrides every per-service button too (chat/call/video are mutually exclusive —
   // an astrologer already occupied with one customer can't take a second request of any kind).

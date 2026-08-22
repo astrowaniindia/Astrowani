@@ -27,6 +27,7 @@ import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
+import SessionIntroBanner from '../../components/SessionIntroBanner';
 import VectorIcon from '../../common/component/VectorIcon';
 import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
@@ -281,6 +282,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
               message: t('call.stillActive', {name: recieverName}),
               screen: 'VoiceCallScreen',
               params: {sessionId: sessionIdRef.current, recieverName, recieverImage, recieverId},
+              // 'call' starts the native mic foreground service instead of a plain
+              // ongoing notification — without it Android gags the mic the moment
+              // this screen is backgrounded. See utils/callForegroundService.js.
+              kind: 'call',
             });
             stopRipple();
             stopRingCountdown();
@@ -450,6 +455,11 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           <View style={[styles.statusDot, isActive && styles.statusDotGreen]} />
           <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
+
+        {/* Only once connected — showing it while still ringing would tell the customer
+            to start talking before anyone is there. Presentational only: billing is
+            unchanged and runs from the moment the call connects, as before. */}
+        <SessionIntroBanner visible={isActive} style={{marginHorizontal: 0, marginTop: 14}} />
 
       </View>
 

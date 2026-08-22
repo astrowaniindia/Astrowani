@@ -4,10 +4,14 @@
 // a separate, narrowly-scoped Personal API Key that never ships in either app — see
 // astrowani-backend/src/postHogRoutes.js.
 import PostHog from 'posthog-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
 
-// TODO: replace with the real Project API Key once the PostHog project exists (see
-// CLAUDE.md "Product Analytics (PostHog)" subsystem for what's needed and why).
+// Real Project API Key — the PostHog project exists and is receiving events. Safe to
+// hardcode: it is write-only for ingestion (same trust level as the Sentry DSN). The
+// `disabled` guard below is a leftover safety net from when this was a placeholder; it
+// stays because it costs nothing and correctly disables the SDK if the key is ever
+// blanked out again.
 const POSTHOG_API_KEY = 'phc_xheDnkQ5TTg5BsjemUVoJyosxqF9hjJQiuyvo6boxetJ';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
@@ -31,27 +35,82 @@ export function resetAnalyticsIdentity() {
   } catch (_) {}
 }
 
-// 'test' | 'production' — read once at launch from app_settings (see
-// loadAnalyticsEnvironment below), tagged onto every event. The admin dashboard's HogQL
-// queries always filter to 'production', so pre-launch testing (friends/family acting as
-// astrologers) never contaminates real launch numbers — flip this in the admin Analytics
-// page's toggle when you actually go live. Defaults to 'test' until that fetch resolves,
-// which matches reality for anyone running a debug/dev build.
-let currentEnvironment = 'test';
+// ── Environment tag ('test' | 'production') ─────────────────────────────────────
+//
+// Tagged onto every event. The admin dashboard's HogQL queries filter to
+// 'production', so pre-launch testing (friends/family acting as astrologers) never
+// contaminates real launch numbers.
+//
+// THIS USED TO START AT 'test' AND WAIT ON A NETWORK READ, WHICH LOST DATA.
+// loadAnalyticsEnvironment() is an async Supabase fetch, but PostHog captures its
+// first $screen the moment the navigator mounts — hundreds of milliseconds earlier.
+// So the first screen view of every launch was tagged 'test' and became permanently
+// invisible to every dashboard query. Worse, 'test' was also the *failure* default:
+// an offline cold start or a failed app_settings read discarded that user's entire
+// session, which preferentially dropped users on poor connections and silently
+// deleted single-screen bounces — exactly the users retention analysis needs.
+//
+// The fix: environment is a property of the BUILD, known synchronously at module
+// load, so there is no window where events are mistagged. A release build reports
+// 'production' from its very first event; a debug build reports 'test'. The remote
+// override still works and is still honoured, but it can now only *correct* an
+// already-sane value instead of being the only thing standing between a real user
+// and a discarded session — and a failed read leaves the build default in place.
+const BUILD_ENVIRONMENT = typeof __DEV__ !== 'undefined' && __DEV__ ? 'test' : 'production';
+const ENV_CACHE_KEY = 'analytics_environment_cached';
+
+let currentEnvironment = BUILD_ENVIRONMENT;
 export function getAnalyticsEnvironment() {
   return currentEnvironment;
 }
 
+function normalizeEnv(value) {
+  return value === 'production' ? 'production' : value === 'test' ? 'test' : null;
+}
+
+// Register as SUPER PROPERTIES so every event carries app + environment, not just the
+// ones we tag by hand. captureEvent() and the navigation autocapture's
+// routeToProperties both set these explicitly, but PostHog's own lifecycle events
+// ($screen aside — 'Application Opened', 'Application Backgrounded', 'Application
+// Installed') go through neither, so they were arriving with no environment at all and
+// were invisible to every dashboard query that filters on it. Measured against the
+// live project: 873 events with a null environment. Super properties close that gap
+// for anything added later too, instead of requiring each new call site to remember.
+function applyEnvironmentSuperProperties() {
+  try {
+    posthog.register({ app: 'customer', environment: currentEnvironment });
+  } catch (_) {}
+}
+applyEnvironmentSuperProperties();
+
 export async function loadAnalyticsEnvironment() {
+  // 1. Last known remote value, cached locally. Resolves in a few ms rather than a
+  //    network round-trip, so a returning user is correctly tagged almost immediately
+  //    even on a cold, offline start.
+  try {
+    const cached = normalizeEnv(await AsyncStorage.getItem(ENV_CACHE_KEY));
+    if (cached) { currentEnvironment = cached; applyEnvironmentSuperProperties(); }
+  } catch (_) {}
+
+  // 2. Authoritative remote value. On failure we deliberately keep whatever we have
+  //    (cache, else build default) — never fall back to 'test', which is what made a
+  //    transient network error cost a whole session's worth of data.
   try {
     const { data } = await supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'analytics_environment')
       .limit(1);
-    if (data && data.length) currentEnvironment = data[0].value === 'production' ? 'production' : 'test';
+    const remote = data && data.length ? normalizeEnv(data[0].value) : null;
+    if (remote) {
+      currentEnvironment = remote;
+      applyEnvironmentSuperProperties();
+      try {
+        await AsyncStorage.setItem(ENV_CACHE_KEY, remote);
+      } catch (_) {}
+    }
   } catch (_) {
-    // Analytics must never crash the app — stays 'test' on failure, which is the safe default.
+    // Analytics must never crash the app, and must never discard a session either.
   }
 }
 

@@ -24,6 +24,7 @@ import ChatHistory from '../screens/Drawer/ChatHistory';
 import LiveCallHistory from '../screens/HIstory/LiveCallHistory';
 import VideoCallHistory from '../screens/HIstory/VideoCallHistory';
 import MyCustomers from '../screens/Drawer/MyCustomers';
+import RemedyReferrals from '../screens/Drawer/RemedyReferrals';
 import DetailedChat from '../screens/Drawer/DetailedChat';
 import AstrologersListScreen from '../screens/AstrologersScreen';
 import { COLORS } from '../Theme/Colors';
@@ -323,6 +324,16 @@ function NavigationScreen() {
           component={MyCustomers}
           options={({ route }) => ({
             title: 'My Customers',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+          })}
+        />
+        <Stack.Screen
+          name="RemedyReferrals"
+          component={RemedyReferrals}
+          options={() => ({
+            title: 'Referrals & Commission',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },

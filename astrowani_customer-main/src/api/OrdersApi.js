@@ -32,6 +32,22 @@ function normalizeError(err, fallbackMessage) {
 
 // ── Addresses ───────────────────────────────────────────────────────────────
 
+/**
+ * Which remedy items an astrologer has recommended to THIS customer, as
+ * { [itemId]: 'Astrologer Name' }. Drives the "Recommended by" line on a product card.
+ *
+ * Resolves to {} on any failure — a missing badge is invisible, whereas letting this
+ * reject would break the whole shop screen for a decoration.
+ */
+export async function getRecommendations() {
+  try {
+    const res = await Instance.get('/api/remedies/recommended', await authHeader());
+    return res.data?.recommendations || {};
+  } catch (_) {
+    return {};
+  }
+}
+
 export async function listAddresses() {
   try {
     const res = await Instance.get('/api/addresses', await authHeader());

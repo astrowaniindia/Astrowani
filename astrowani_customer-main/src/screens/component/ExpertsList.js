@@ -67,11 +67,17 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
   const goProfile = item => navigation.navigate('AstrologerInfo', { person: item });
 
   const UNAVAILABLE_KEY = { chat: 'alerts.notAvailableChat', call: 'alerts.notAvailableCall', video: 'alerts.notAvailableVideo' };
-  const showUnavailable = (item, label) =>
+  const showUnavailable = (item, label) => {
+    // These paths use a plain Alert rather than StatusPopup, so they aren't covered by
+    // the central consult_blocked hook in StatusPopup.js — captured explicitly here.
+    captureEvent('consult_blocked', { reason: 'service_off', intent: label || 'unknown', astrologer_id: item.userId });
     Alert.alert(t('alerts.unavailable'), t(UNAVAILABLE_KEY[label] || 'alerts.notAvailableChat', { name: item.name || t('common.astrologer') }));
+  };
 
-  const showOffline = (item) =>
+  const showOffline = (item) => {
+    captureEvent('consult_blocked', { reason: 'astrologer_offline', intent: 'unknown', astrologer_id: item.userId });
     Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || t('common.astrologer') }));
+  };
 
   // Tell the vendor the customer abandoned the pending request (dismisses their popup).
   const notifyVendorCancelled = (status = 'cancelled') => {
@@ -134,7 +140,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
         return;
       }
       if (balance < minRequired) {
-        showInsufficientBalanceAlert({ navigation, minRequired, balance });
+        showInsufficientBalanceAlert({ navigation, minRequired, balance, intent: type === 'video' ? 'video' : 'call' });
         return;
       }
 
