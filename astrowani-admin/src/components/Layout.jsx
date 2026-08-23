@@ -11,7 +11,6 @@ const links = [
   { to: '/thoughts', label: 'Thought of the Day' },
   { to: '/categories', label: 'Categories' },
   { to: '/remedies', label: 'Remedies Shop' },
-  { to: '/store', label: 'Astrowani Store' },
   { to: '/orders', label: 'Orders' },
   { to: '/gifts', label: 'Gifts' },
   { to: '/astro-services', label: 'Astro Services' },
