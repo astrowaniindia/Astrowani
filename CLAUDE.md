@@ -1164,6 +1164,35 @@ ad-hoc in the Supabase dashboard at the start of the project — `customers`, `a
 the session state. When adding to them, bring them up to the newer standard rather than
 matching what is already there.
 
+> **Verified 2026-08-23 — four items previously listed here as open are FIXED.** They were
+> corrected in the 2026-08-07/08 hardening pass and the 2026-08-13/14 performance pass, but
+> this file was never updated, so it kept reporting them as live problems. That cost real
+> debugging time: a crash investigation was misdirected into blaming the "Realtime amplifier"
+> that no longer exists. Each correction below was re-verified against the code, not against
+> another document.
+>
+> - **Realtime amplifier — GONE.** `Home.js`, `Chat.js`, `Video.js` and `Call.js` all use
+>   `hooks/useAstrologerListSync.js`: ONE backend-side subscription
+>   (`astrowani-backend/src/astrologerFanout.js`) rebroadcast over the existing Socket.io
+>   connection. No per-client unfiltered subscription on `astrologers` remains anywhere in the
+>   customer app. `src/tableFanout.js` does the same for `blogs`, `live_sessions` and
+>   `remedy_items`. The rule still stands: never add a new unfiltered table-wide subscription.
+> - **Wallet mutations are ATOMIC.** `astrowani-backend/src/wallet.js` calls Postgres RPCs
+>   (`adjust_customer_wallet`, `adjust_vendor_wallet`, `transfer_customer_to_vendor`,
+>   `adjust_admin_wallet`) — balance change and ledger insert in one function. Defined in
+>   `sql/hardening_03_atomic_wallet.sql`, `_04`, `_07`. Not a read-modify-write.
+> - **`process_session_billing` IS version-controlled**, at
+>   `astrowani-backend/sql/process_session_billing.sql`. Not dashboard-only, not unrecoverable.
+> - **The core-table indexes ARE applied to production.** `hardening_01_core_tables.sql`'s set
+>   was confirmed present by querying `pg_indexes`. The billing poll, busy checks and
+>   stale-request sweep were never doing full table scans. See
+>   `MD files/performance-audit-2026-08-13.md`, which also records two indexes that turned out
+>   to be duplicates and were dropped.
+>
+> **When this file and `MD files/` disagree, `MD files/` is newer.** Those per-pass reports are
+> written at the end of each audit; this summary is not always updated alongside them. Verify
+> against the code before acting on any "open issue" below.
+
 **Open issues (NOT yet fixed — do not assume any of these are handled):**
 - **RLS is OFF on the core tables.** The publishable key shipped in both APKs can INSERT and
   UPDATE `customers`, `astrologers`, `chat_sessions`, `call_requests` — including
@@ -1174,23 +1203,11 @@ matching what is already there.
   expressible. Turning RLS on today breaks every direct-from-app query without securing
   anything. The working path is column-level `GRANT`/`REVOKE` on the `anon` role — see
   `sql/hardening_02_access_control.sql`, which is sequenced and commented.
-- **Every wallet mutation is a non-atomic read-modify-write** (`SELECT wallet_balance` → add in
-  Node → `UPDATE`) with the ledger insert as a *separate* statement. ₹5,865 of drift across 3
-  accounts already exists. Any new money code must instead do the balance change and the ledger
-  write in one transaction / one Postgres function — copy the `wallet_recharges` pattern.
-- **Zero indexes** beyond primary keys on all 8 hot tables. `sql/hardening_01_core_tables.sql`
-  has the 16 that the current query patterns need. Add the index with the query from now on.
-- **Realtime amplifier**: `Home.js`, `Chat.js`, `Video.js`, `Call.js` each subscribe to
-  `{event:'*', table:'astrologers'}` **unfiltered** and refetch the whole list on any change.
-  This scales as users × astrologer-activity and is the most likely cause of a sudden outage.
-  Never add another unfiltered table-wide subscription.
 - **Zombie-session trap**: `is_active = true` with `next_billing_at = NULL` is invisible to
   `sessionManager.checkActiveSessions` (which filters `next_billing_at <= now`) but still counts
   as busy in `busyStatus.js` — so the astrologer is locked out of all work, silently and
   indefinitely. Two such rows had been live since 2026-06-18. Any code that sets `is_active`
   must set `next_billing_at` in the same write.
-- `process_session_billing` exists **only in the Supabase dashboard** — it is not in the repo,
-  has never been reviewed, and cannot be restored. Export and commit it before changing billing.
 - No rate limiting, no `helmet`, no compression; `cors()` is fully open.
 
 ### V. Things that are now enforced — do not undo them
