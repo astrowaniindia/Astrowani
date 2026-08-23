@@ -63,3 +63,9 @@ temp/
 **/bg-removal-service/venv/
 **/__pycache__/
 *.pyc
+
+# Source photography for the shop storefront (astrowani-store-images/) — the original
+# multi-megabyte PNGs the site's images were cut from. ~65 MB and nothing builds from
+# them: astrowani-shop/assets/ holds the optimised, content-hashed derivatives that
+# actually ship. Keep the originals backed up outside git.
+astrowani-store-images/*.png

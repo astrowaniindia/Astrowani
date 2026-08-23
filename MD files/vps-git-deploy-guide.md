@@ -22,14 +22,19 @@ actually worked, and exactly what to run by hand when it doesn't.
 
 ## What auto-deploys, and on what trigger
 
-Four workflows live in `.github/workflows/`:
+Five workflows live in `.github/workflows/`:
 
 | File | Triggers on a push touching… | Does |
 |---|---|---|
 | `deploy-backend.yml` | `astrowani-backend/**` | SSHes in, `git reset --hard origin/main`, `npm install --production`, `pm2 restart astrowani-backend` |
 | `deploy-admin.yml` | `astrowani-admin/**` | SSHes in, `git reset --hard origin/main`, `npm install && npm run build` **on the VPS itself**, copies `dist/` to `/var/www/astrowani/admin/dist/` |
+| `deploy-shop.yml` | `astrowani-shop/**` | SSHes in, `git reset --hard origin/main`, copies the folder to `/var/www/astrowani/shop/`, prunes stale hashed assets, reloads Nginx. **No build step** — the storefront is committed already built |
 | `ci.yml` | (see file) | Test/lint checks — doesn't touch the VPS |
 | `uptime-check.yml` | scheduled | Pings the live backend, not a deploy |
+
+All three deploy workflows share the same `flock` on `/tmp/astrowani-deploy.lock`, so a
+commit touching more than one of the watched folders makes them queue rather than race over
+the shared `/var/www/astrowani-monorepo` checkout.
 
 Both deploy workflows use the **same path-filter trigger pattern**: a push
 that touches *only* `astrowani_customer-main/` or `astrowani_vendors-main/`

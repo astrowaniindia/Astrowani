@@ -217,6 +217,12 @@ module.exports = function registerAdminRoutes(app) {
     orderBy: 'sort_order', ascending: true,
     allowed: ['key', 'name', 'name_hi', 'description', 'description_hi', 'category', 'price', 'image', 'is_active', 'sort_order'],
   });
+  // Astrowani Store catalog — an isolated table (see sql/store_products_schema.sql),
+  // deliberately NOT remedy_items. No customer-facing screen reads this yet.
+  crud('store-products', 'store_products', {
+    orderBy: 'sort_order', ascending: true,
+    allowed: ['category', 'name', 'description', 'tags', 'benefits', 'price', 'mrp', 'unit_label', 'image', 'is_active', 'sort_order'],
+  });
 
   // ── Live Aarti / Pooja channels ──────────────────────────────────────────
   // Not the generic crud() factory: adding or editing a channel has to RESOLVE
