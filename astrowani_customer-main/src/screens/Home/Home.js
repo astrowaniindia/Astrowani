@@ -305,8 +305,12 @@ const Home = ({navigation}) => {
         const u = userStr ? JSON.parse(userStr) : null;
         if (u?.id) socketRef.current.emit('join_room', u.id);
       });
+      // console.LOG, not console.error: a transient socket timeout is expected on a
+      // flaky connection (the client retries on its own) and is not an error the user
+      // or a dev needs a full-screen LogBox redbox for. Same convention already applied
+      // to the vendor app's connect_error handler for exactly this reason.
       socketRef.current.on('connect_error', err =>
-        console.error('[HomeScreen] Socket error:', err.message),
+        console.log('[HomeScreen] Socket error:', err.message),
       );
       // Real-time popup for when a referral of theirs pays out (sessionManager's
       // maybeRewardReferral emits this to the referrer's personal room) — the FCM
@@ -334,14 +338,26 @@ const Home = ({navigation}) => {
   
   // Marquee buffer — was Array(1000).fill(...).flat(), a 30,000+ element array
   // for a ~30-astrologer list, held for as long as Home is mounted. 6 copies is
-  // enough for the wraparound below (contentWidthRef) to always have content on
-  // both sides; the rewind makes this loop indefinitely without needing a huge
-  // buffer to "outrun" the interval.
-  const MARQUEE_REPEAT = 6;
+  // Repeated copies are what make this carousel loop endlessly: the interval
+  // below scrolls continuously and silently rewinds by exactly one copy's width
+  // once it crosses into the last copy. Identical content makes that invisible.
+  //
+  // The count ADAPTS to the list length rather than being a fixed 6, because this
+  // list is no longer virtualized (see the ScrollView note further down) -- every
+  // copy is a real mounted view now, so a fixed multiplier would hold 6x a long
+  // astrologer list in memory. Bounding the TOTAL keeps memory flat however many
+  // astrologers exist, while still giving a short list enough copies that one copy
+  // stays comfortably wider than the screen (with only 2-3 astrologers two copies
+  // can be narrower than the viewport, which makes the rewind visible and leaves
+  // the list barely scrollable).
+  const MARQUEE_REPEAT = React.useMemo(() => {
+    const n = astrologerToShow?.length || 0;
+    return n > 0 ? Math.max(2, Math.ceil(12 / n)) : 2;
+  }, [astrologerToShow]);
   const loopedAstrologers = React.useMemo(() => {
     if (!astrologerToShow || astrologerToShow.length === 0) return [];
     return Array(MARQUEE_REPEAT).fill(astrologerToShow).flat();
-  }, [astrologerToShow]);
+  }, [astrologerToShow, MARQUEE_REPEAT]);
 
   // Measured native content width of the looped list (all MARQUEE_REPEAT copies).
   // Used to silently rewind by exactly one copy's width once we scroll into the
@@ -377,7 +393,7 @@ const Home = ({navigation}) => {
       }
     }, 16);
     return () => clearInterval(timer);
-  }, [loopedAstrologers.length]);
+  }, [loopedAstrologers.length, MARQUEE_REPEAT]);
 
   // Cancel the in-flight call request and tear down listeners/timeout.
   // Also marks the request 'cancelled' in Supabase + tells the vendor so their
@@ -1243,21 +1259,20 @@ const Home = ({navigation}) => {
             renderItem={renderAstrologerList}
             horizontal
             showsHorizontalScrollIndicator={false}
-            // MUST stay false (Sentry REACT-NATIVE-5, https://astrowani.sentry.io/issues/7665434814/):
-            // this FlatList is horizontal, nested inside the outer vertical
-            // ScrollView above, and driven by a programmatic scrollToOffset()
-            // auto-advance interval (see isAutoScrolling / the setInterval near the
-            // top of this component) — the exact combination that hits a
-            // long-documented Android ClassCastException in RN's clipping/
-            // view-recycling path (ReactClippingViewManager.getChildCount tries to
-            // reattach a clipped ReactHorizontalScrollView as a plain
-            // ReactViewGroup). This was briefly re-enabled in b2aff4b under the
-            // belief that trimming the duplicated array (MARQUEE_REPEAT) addressed
-            // the crash — it doesn't; the crash is about the clipping/reattachment
-            // mechanism itself, not item count, so a smaller array still hits it.
-            // A tight windowSize was tried separately and reverted for an unrelated
-            // reason (blank-frame flicker at wraparound); that's independent of
-            // this flag and unaffected by setting it back to false.
+            // Stays false: this horizontal list is nested in the outer vertical
+            // ScrollView and is driven by the programmatic scroll interval above, a
+            // combination that hits a documented Android crash in RN's clipping/
+            // view-recycling path.
+            //
+            // NOTE (2026-08-23): converting this to a non-virtualized ScrollView was
+            // tried as a fix for
+            //   IllegalViewOperationException: Trying to add unknown view tag: N
+            // on the theory that view recycling caused it. It does NOT -- the crash
+            // still reproduced (74s) with recycling removed entirely, so the change
+            // was reverted. That exception's cause remains unidentified; don't spend
+            // time re-testing virtualization. MARQUEE_REPEAT above was made adaptive
+            // in the same pass and is KEPT -- that is an independent memory win
+            // (2x duplication instead of a flat 6x), unrelated to the crash.
             removeClippedSubviews={false}
             contentContainerStyle={styles.astrologerList}
             onContentSizeChange={(w) => { contentWidthRef.current = w; }}

@@ -139,6 +139,73 @@ secret is actually in use.
 
 ---
 
+## 8. Animated nodes created inside `renderItem` (native Animated node-graph teardown races)
+
+**Symptom**: the app dies with one of a *family* of fatal Android exceptions, intermittently
+(anywhere from 6 seconds to 4 minutes on the same screen), with **no JS error logged first**:
+
+- `JSApplicationIllegalArgumentException: disconnectAnimatedNodeFromView: Animated node with tag [N] does not exist`
+- `JSApplicationIllegalArgumentException: disconnectAnimatedNodes: Animated node with tag (parent) [N] does not exist`
+- `IllegalViewOperationException: Trying to add unknown view tag: N` (at `UIImplementation.setChildren`)
+
+They look like three separate bugs and were filed as three separate Sentry issues
+(REACT-NATIVE-7/8/9, 2026-08-23). They are one root cause.
+
+**Root cause pattern**: calling `someAnimatedValue.interpolate({...})` (or constructing any
+other Animated node) **inside** a `renderItem` / render body. `interpolate()` is not a pure
+getter — every call **mints a new native animated node**. In a virtualized list that means a
+fresh pair of nodes per item on every re-render, attached to recycled views. The superseded
+nodes get dropped natively while views still reference them, so the queued
+`disconnectAnimatedNodes`/`disconnectAnimatedNodeFromView` batch executes against tags that
+no longer exist, and the same churn desynchronizes the shadow tree into the `setChildren`
+"unknown view tag" variant.
+
+The amplifier is anything that changes the list's `data` identity often — a parent that
+refetches on focus, or a socket/Realtime signal that triggers a refetch. That only changes
+*how often* it crashes, not whether the code is wrong.
+
+**Do not be misled by `ReanimatedUIManager` in the stack trace.** It appears in all three
+traces because `react-native-reanimated` installs a global UIManager wrapper as soon as it is
+a dependency. These crashes are RN's **own** `Animated` API. Grep for
+`react-native-reanimated` importers before spending any time there — on Home, for instance,
+there are none.
+
+**Fix pattern**: never construct Animated nodes during render. Cache one node (or set of nodes)
+per stable key and reuse it. In a list, `inputRange` is usually a pure function of `index`
+and a constant item width, so a per-index cache is correct for the life of the list:
+
+```js
+const interpCacheRef = useRef(new Map());
+const getInterpolations = (index) => {
+  let entry = interpCacheRef.current.get(index);
+  if (!entry) {
+    const inputRange = [(index - 1) * ITEM_WIDTH, index * ITEM_WIDTH, (index + 1) * ITEM_WIDTH];
+    entry = {
+      cardScale: scrollX.interpolate({ inputRange, outputRange: [0.72, 1, 0.72], extrapolate: 'clamp' }),
+      opacity:   scrollX.interpolate({ inputRange, outputRange: [0.4, 1, 0.4],  extrapolate: 'clamp' }),
+    };
+    interpCacheRef.current.set(index, entry);
+  }
+  return entry;
+};
+```
+
+Also demote any `Animated.View` that animates nothing back to a plain `View` — each one is
+another native node attached to every recycled row.
+
+**How to confirm it is this and not something else**: the exceptions are thrown on the
+`mqt_native_modules` thread with no preceding `ReactNativeJS` error, and they stop entirely
+if you `return null` from the suspect component. Bisect that way — these crashes are too
+intermittent to attribute by reading a single stack trace, and the three variants make it easy
+to think you fixed one when you have only changed the timing.
+
+*First caught*: `astrowani_customer-main/src/screens/Home/AnimatedAstrologerMarquee.js`,
+2026-08-23 — `scrollX.interpolate()` ×2 inside `renderItem` on an `Animated.FlatList`.
+Verified by bisect (disable → 90s clean; re-enable with the cache → 5m42s of scroll-stress
+with zero crashes, where the old build died within 6–60s).
+
+---
+
 ## Template for a new entry
 
 ```markdown

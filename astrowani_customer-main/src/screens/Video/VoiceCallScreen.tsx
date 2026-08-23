@@ -404,10 +404,30 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   }, []);
 
   // ─── Derived UI ─────────────────────────────────────────────────────────────
-  const ring1Scale = ring1Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]});
-  const ring1Opacity = ring1Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
-  const ring2Scale = ring2Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]});
-  const ring2Opacity = ring2Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]});
+  // Memoized, NOT recomputed per render. Animated.Value.interpolate() is not a
+  // pure getter -- each call mints a new native animated node, and this screen
+  // re-renders every second (useElapsedSeconds drives the duration display), so
+  // recomputing these inline churned ~4 native nodes/second: ~2,400 create+destroy
+  // cycles over a ten-minute call, each one a chance for the teardown batch to
+  // race the view and kill the call mid-session. Same root cause as the Home
+  // carousel crash family -- see MD files/recurring-bugs-playbook.md #8.
+  //
+  // Component-lifetime memoization is correct HERE (unlike inside a virtualized
+  // list, where it is not): the ripple rings mount once while the call is
+  // ringing/connecting and unmount permanently when it connects -- that state
+  // transition is one-way -- so these nodes are created once, attached once, and
+  // destroyed on unmount. They are never reconnected after the native node is
+  // dropped, which is the failure mode a cache would otherwise introduce
+  // (connectAnimatedNodes: node with tag (child) [N] does not exist).
+  const {ring1Scale, ring1Opacity, ring2Scale, ring2Opacity} = React.useMemo(
+    () => ({
+      ring1Scale: ring1Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]}),
+      ring1Opacity: ring1Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]}),
+      ring2Scale: ring2Anim.interpolate({inputRange: [0, 1], outputRange: [1, 1.9]}),
+      ring2Opacity: ring2Anim.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.45, 0.15, 0]}),
+    }),
+    [ring1Anim, ring2Anim],
+  );
 
   const statusLabel =
     callState === 'connecting' ? t('call.connecting') :

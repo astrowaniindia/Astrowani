@@ -6,7 +6,7 @@
 // card slides into center and grows/brightens) — still fully swipeable
 // manually at any time, which pauses the auto-advance until the swipe ends.
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Animated, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
+import { Animated, View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
@@ -23,18 +23,28 @@ const ITEM_WIDTH = Math.round(SCREEN_WIDTH * 0.62);
 const CARD_WIDTH = ITEM_WIDTH - CARD_MARGIN * 2;
 const SIDE_INSET = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
 const ADVANCE_INTERVAL_MS = 2800;
-// A finite, repeated copy of the shuffled list — not truly infinite data,
-// but once the scroll position gets deep into it we silently snap back to
-// the equivalent early position with no animation. Since that position
-// holds identical content (same shuffled order repeating), the reset is
-// imperceptible, so it behaves as an endless loop: the last astrologer is
-// immediately followed by the first again, forever. 8 copies is enough
-// margin for that wrap to always land on already-rendered neighbors (this
-// list advances one discrete snapped index at a time, not a continuous
-// pixel scroll, so it needs far less buffer than a freely-scrolling
-// marquee) — was 40, which meant holding up to 40x the astrologer list in
-// memory for no visible benefit.
-const LOOP_COUNT = 8;
+// The list is repeated so the carousel can loop endlessly: once the scroll gets
+// deep into the copies we silently snap back to the equivalent early position.
+// Every copy holds identical content, so the reset is imperceptible and the last
+// astrologer is followed straight back into the first, forever.
+//
+// The count ADAPTS to the list length instead of being fixed, because this list
+// is no longer virtualized (see the ScrollView note below) -- every copy is a
+// real mounted view now, so a fixed multiplier would mean 8x a long astrologer
+// list all held in memory at once. Bounding the TOTAL instead keeps memory flat
+// regardless of how many astrologers exist, while still giving short lists
+// enough copies that one copy is comfortably wider than the screen (with only
+// 2-3 astrologers, two copies could be narrower than the viewport, which makes
+// the wrap visible or leaves the list barely scrollable):
+//
+//   2 astrologers  -> 6 copies -> 12 cards
+//   5 astrologers  -> 3 copies -> 15 cards
+//   10 astrologers -> 2 copies -> 20 cards
+//   20 astrologers -> 2 copies -> 40 cards
+const MIN_LOOP_COUNT = 2;
+const TARGET_TOTAL_CARDS = 12;
+const loopCountFor = (n) =>
+  n > 0 ? Math.max(MIN_LOOP_COUNT, Math.ceil(TARGET_TOTAL_CARDS / n)) : MIN_LOOP_COUNT;
 
 function shuffledCopy(arr) {
   const a = [...arr];
@@ -44,6 +54,89 @@ function shuffledCopy(arr) {
   }
   return a;
 }
+
+// One card = one mount = one set of native animated nodes.
+//
+// Creating the interpolations here (inside the item, memoized on index) is the
+// only lifecycle that is actually correct. The two alternatives both crash:
+//
+//   * Calling scrollX.interpolate() inline in renderItem mints TWO NEW native
+//     nodes on every render and attaches them to a recycled view. The superseded
+//     nodes are dropped natively while views still reference them, so the queued
+//     teardown hits tags that no longer exist:
+//       disconnectAnimatedNodeFromView: Animated node with tag [N] does not exist
+//       disconnectAnimatedNodes: Animated node with tag (parent) [N] does not exist
+//     and the same churn desyncs the shadow tree into
+//       IllegalViewOperationException: Trying to add unknown view tag: N
+//
+//   * Caching the interpolations for the PARENT's lifetime (keyed by index) fixes
+//     those but breaks the other direction: RN destroys a native animated node
+//     when its last attached view unmounts, and FlatList virtualization unmounts
+//     offscreen items constantly. Scrolling a recycled index back into view then
+//     reconnects an already-dead node:
+//       connectAnimatedNodes: Animated node with tag (child) [N] does not exist
+//
+// Owning them per mounted item means node lifetime == view lifetime: created on
+// mount, destroyed on unmount, never recreated mid-life and never reused after
+// death. React.memo keeps a mounted card from re-rendering (and so from
+// rebuilding its nodes) when only its siblings change.
+//
+// NOTE: ReanimatedUIManager appears in all of those stack traces purely because
+// react-native-reanimated installs a global UIManager wrapper when present. This
+// is RN's own Animated API - nothing on Home imports reanimated.
+const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCallPress, t }) {
+  const { cardScale, opacity } = React.useMemo(() => {
+    const inputRange = [
+      (index - 1) * ITEM_WIDTH,
+      index * ITEM_WIDTH,
+      (index + 1) * ITEM_WIDTH,
+    ];
+    return {
+      cardScale: scrollX.interpolate({
+        inputRange, outputRange: [0.72, 1, 0.72], extrapolate: 'clamp',
+      }),
+      opacity: scrollX.interpolate({
+        inputRange, outputRange: [0.4, 1, 0.4], extrapolate: 'clamp',
+      }),
+    };
+  }, [index, scrollX]);
+
+
+    return (
+      <Animated.View style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
+        {/* Tap-tracking only — no navigation added here (that would be a UI/UX
+            change beyond what was asked for). Separate from the Video Call button
+            below on purpose: that one already fires call_initiated once the
+            call actually goes through, tracked independently. */}
+        <TouchableWithoutFeedback onPress={() => captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name})}>
+          <View style={styles.infoBlock}>
+            <View style={styles.avatarWrap}>
+              <Image
+                resizeMode="cover"
+                source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
+                style={styles.avatar}
+              />
+              <AstrologerBadge type={item.badgeType} size={scale(84)} />
+            </View>
+            <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
+            <Text style={styles.specialty} numberOfLines={1}>
+              {item.specialties?.[0]?.name || 'Vedic Astrology'}
+            </Text>
+            <Text style={styles.meta} numberOfLines={1}>{t('common.expYears', {count: item.experience || '0'})}</Text>
+            <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
+          </View>
+        </TouchableWithoutFeedback>
+        {/* Video, not audio — this carousel was converted to video calling on
+            2026-08-20. The "India's Best Astrologers" cards above now carry the
+            audio Call button, so an identical audio action here was duplicated
+            reach for one service and no reach at all for the other. */}
+        <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => onCallPress(item)}>
+          <MaterialIcons name="videocam" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
+          <Text style={styles.callBtnText}>{t('common.videoCall')}</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+});
 
 export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) {
   const { t } = React.useContext(LanguageContext);
@@ -71,14 +164,16 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
     return fresh;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [astrologers]);
+  const loopCount = loopCountFor(shuffled.length);
   const looped = useMemo(
-    () => (shuffled.length ? Array(LOOP_COUNT).fill(shuffled).flat() : []),
-    [shuffled],
+    () => (shuffled.length ? Array(loopCount).fill(shuffled).flat() : []),
+    [shuffled, loopCount],
   );
   const listRef = useRef(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const indexRef = useRef(0);
   const pausedRef = useRef(false);
+
 
   // Once within the last full cycle of the buffer, wrap back to the
   // equivalent low index — content there is identical, so this is invisible.
@@ -88,7 +183,7 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
   const maybeWrap = () => {
     const n = shuffled.length;
     if (!n) return false;
-    const safeCeiling = n * (LOOP_COUNT - 1);
+    const safeCeiling = n * (loopCount - 1);
     if (indexRef.current >= safeCeiling) {
       indexRef.current = indexRef.current % n;
       try {
@@ -117,50 +212,15 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
 
   if (!looped.length) return null;
 
-  const renderItem = ({ item, index }) => {
-    const inputRange = [(index - 1) * ITEM_WIDTH, index * ITEM_WIDTH, (index + 1) * ITEM_WIDTH];
-    const cardScale = scrollX.interpolate({
-      inputRange, outputRange: [0.72, 1, 0.72], extrapolate: 'clamp',
-    });
-    const opacity = scrollX.interpolate({
-      inputRange, outputRange: [0.4, 1, 0.4], extrapolate: 'clamp',
-    });
-
-    return (
-      <Animated.View style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
-        {/* Tap-tracking only — no navigation added here (that would be a UI/UX
-            change beyond what was asked for). Separate from the Video Call button
-            below on purpose: that one already fires call_initiated once the
-            call actually goes through, tracked independently. */}
-        <TouchableWithoutFeedback onPress={() => captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name})}>
-          <Animated.View style={styles.infoBlock}>
-            <Animated.View style={styles.avatarWrap}>
-              <Image
-                resizeMode="cover"
-                source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
-                style={styles.avatar}
-              />
-              <AstrologerBadge type={item.badgeType} size={scale(84)} />
-            </Animated.View>
-            <Text style={styles.name} numberOfLines={1}>{item.name || 'Astrologer'}</Text>
-            <Text style={styles.specialty} numberOfLines={1}>
-              {item.specialties?.[0]?.name || 'Vedic Astrology'}
-            </Text>
-            <Text style={styles.meta} numberOfLines={1}>{t('common.expYears', {count: item.experience || '0'})}</Text>
-            <Text style={styles.meta} numberOfLines={1}>{item.language?.join(', ') || 'Hindi'}</Text>
-          </Animated.View>
-        </TouchableWithoutFeedback>
-        {/* Video, not audio — this carousel was converted to video calling on
-            2026-08-20. The "India's Best Astrologers" cards above now carry the
-            audio Call button, so an identical audio action here was duplicated
-            reach for one service and no reach at all for the other. */}
-        <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => onCallPress(item)}>
-          <MaterialIcons name="videocam" size={moderateScale(16)} color="#fff" style={{ marginRight: scale(6) }} />
-          <Text style={styles.callBtnText}>{t('common.videoCall')}</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
+  const renderItem = ({ item, index }) => (
+    <MarqueeCard
+      item={item}
+      index={index}
+      scrollX={scrollX}
+      onCallPress={onCallPress}
+      t={t}
+    />
+  );
 
   return (
     <Animated.FlatList
@@ -170,33 +230,70 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
       renderItem={renderItem}
       horizontal
       showsHorizontalScrollIndicator={false}
-      // MUST stay false (Sentry REACT-NATIVE-5, https://astrowani.sentry.io/issues/7665434814/):
-      // a horizontal FlatList nested inside another ScrollView and driven by
-      // programmatic scrollToOffset() (see the auto-advance interval above) hits a
-      // long-documented Android ClassCastException in RN's clipping/view-recycling
-      // path (ReactClippingViewManager.getChildCount tries to reattach a clipped
-      // ReactHorizontalScrollView as a plain ReactViewGroup). This was briefly
-      // re-enabled in f01662e under the belief that shrinking LOOP_COUNT (this
-      // list's buffer size) addressed the crash — it doesn't; the crash is about
-      // the clipping/reattachment mechanism itself, not item count, so a smaller
-      // buffer still hits it. Do not re-enable without removing the nested
-      // auto-scrolling FlatList pattern entirely.
+      // Stays false: this horizontal list is nested in the outer vertical
+      // ScrollView, a combination that hits a documented Android crash in RN's
+      // clipping/view-recycling path.
+      //
+      // NOTE (2026-08-23): converting this list to a non-virtualized ScrollView was
+      // tried as a fix for
+      //   IllegalViewOperationException: Trying to add unknown view tag: N
+      // on the theory that view recycling was the cause. It is NOT -- the crash
+      // still reproduced (74s) with recycling removed entirely, so that change was
+      // reverted. The cause of that exception is still unidentified; do not spend
+      // time re-testing virtualization. What IS fixed is the separate family of
+      // NativeAnimatedNodesManager crashes, via useNativeDriver:false below.
       removeClippedSubviews={false}
       snapToInterval={ITEM_WIDTH}
       decelerationRate="fast"
       contentContainerStyle={{ paddingHorizontal: SIDE_INSET, paddingVertical: verticalScale(14) }}
       scrollEventThrottle={16}
-      // useNativeDriver: true — opacity and transform.scale (the only styles
-      // scrollX drives, see renderItem below) are both native-drivable, so
-      // this animation runs entirely on the UI thread instead of competing
-      // with everything else on the JS thread (including the other
-      // auto-scrolling marquee higher up on this same screen). Previously
-      // false: under any JS-thread load, the opacity/scale interpolation
-      // could visibly fall behind the real scroll position and appear
-      // "stuck" mid-transition at a dimmed, small size.
+      // useNativeDriver MUST stay false here. This is not a performance
+      // preference -- it is the only configuration of this list that does not
+      // crash.
+      //
+      // A native-driven scroll event feeding PER-ITEM interpolations inside a
+      // VIRTUALIZED list is unsafe, because virtualization mounts and unmounts
+      // item views continuously while the auto-advance interval above is
+      // programmatically scrolling. Every mount/unmount has to connect or
+      // disconnect that item's native animated nodes, and those operations are
+      // queued and executed asynchronously (NativeAnimatedModule's
+      // ConcurrentOperationQueue) -- so they routinely execute against a node
+      // or view the other side of the race has already dropped. On 2026-08-23
+      // this produced FIVE different fatal exceptions, all from
+      // NativeAnimatedNodesManager, all on this one list:
+      //
+      //   disconnectAnimatedNodeFromView: node with tag [N] does not exist
+      //   disconnectAnimatedNodes:        node with tag (parent) [N] does not exist
+      //   connectAnimatedNodes:           node with tag (child) [N] does not exist
+      //   connectAnimatedNodeToView:      node with tag [N] does not exist
+      //   IllegalViewOperationException:  Trying to add unknown view tag: N
+      //
+      // Two structural fixes were tried first and BOTH failed, from opposite
+      // directions -- recording them so nobody burns the time again:
+      //
+      //   1. Caching the interpolations for the parent's lifetime (keyed by
+      //      index) stopped the per-render node churn and the disconnect
+      //      crashes, but RN destroys a native node when its last attached view
+      //      unmounts, so scrolling a recycled index back into view reconnected
+      //      an already-dead node -> connectAnimatedNodes (child).
+      //   2. Owning them per mounted item (a React.memo'd card with useMemo, so
+      //      node lifetime == view lifetime) is the textbook-correct ownership
+      //      and still crashed at ~13 min -> connectAnimatedNodeToView. The
+      //      race is in the queue, not in the ownership.
+      //
+      // With useNativeDriver false the interpolation is computed in JS and NO
+      // native animated nodes exist for this list at all, which removes the
+      // entire failure class rather than moving it. The documented cost is real
+      // and accepted: under heavy JS-thread load the scale/opacity can lag the
+      // true scroll position for a frame or two. A briefly imprecise transition
+      // is not comparable to a fatal crash on the app's first screen.
+      //
+      // Do not "optimise" this back to true. If the UI-thread smoothness is
+      // ever genuinely needed, the list itself has to stop being virtualized
+      // (or stop being programmatically auto-scrolled) first.
       onScroll={Animated.event(
         [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-        { useNativeDriver: true },
+        { useNativeDriver: false },
       )}
       onScrollBeginDrag={() => { pausedRef.current = true; }}
       onScrollEndDrag={() => {
