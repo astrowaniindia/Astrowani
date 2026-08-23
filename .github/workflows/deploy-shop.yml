@@ -49,6 +49,25 @@ jobs:
           done
 
           chown -R www-data:www-data /var/www/astrowani/shop
+
+          # Install the Nginx site on first deploy only. Without a block matching
+          # shop.astrowani.com, Nginx falls through to the VPS default server, which is why
+          # the subdomain served an unrelated site before this existed.
+          #
+          # The "only if absent" guard is load-bearing: certbot rewrites this file IN PLACE
+          # to add the 443 block and the http->https redirect. Copying the repo version over
+          # it on every deploy would silently strip TLS off the site the first time anyone
+          # pushed a product change. Edit the live file by hand if the config needs to change
+          # after certbot has run.
+          SITE=/etc/nginx/sites-available/astrowani-shop
+          if [ ! -f "$SITE" ]; then
+            echo "installing nginx site (first deploy)"
+            cp vps-deployment/nginx/astrowani-shop.conf "$SITE"
+            ln -sf "$SITE" /etc/nginx/sites-enabled/astrowani-shop
+          else
+            echo "nginx site already present, leaving it alone"
+          fi
+
           nginx -t && systemctl reload nginx
           echo "shop deployed: $(ls -1 /var/www/astrowani/shop/assets | wc -l) assets"
           REMOTE_SCRIPT
