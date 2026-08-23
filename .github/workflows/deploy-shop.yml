@@ -1,0 +1,67 @@
+name: Deploy shop storefront to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'astrowani-shop/**'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy (retries the connection, serializes against the other deploys)
+        # Same flock path as deploy-backend.yml / deploy-admin.yml, for the same reason:
+        # all three reset the SAME shared checkout (/var/www/astrowani-monorepo), and two
+        # concurrent `git reset --hard` runs against one working tree corrupt each other.
+        # See MD files/vps-git-deploy-guide.md.
+        #
+        # Unlike the admin, there is no build step: astrowani-shop/ is committed already
+        # built (plain HTML + hashed image files), so this is purely a copy.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
+          set -e
+          exec 9>/tmp/astrowani-deploy.lock
+          flock -w 300 9 || { echo "Timed out waiting for another deploy to finish"; exit 1; }
+
+          cd /var/www/astrowani-monorepo
+          git fetch origin main
+          git reset --hard origin/main
+
+          mkdir -p /var/www/astrowani/shop
+          # Copy the new files in BEFORE deleting anything: a visitor loading the page
+          # mid-deploy then still finds every asset, instead of getting a half-empty
+          # directory for the second or two a delete-then-copy would leave behind.
+          cp -r astrowani-shop/. /var/www/astrowani/shop/
+          # Then drop assets that are no longer referenced (old content hashes).
+          find /var/www/astrowani/shop/assets -type f -printf '%P\n' 2>/dev/null | while read -r f; do
+            [ -f "astrowani-shop/assets/$f" ] || rm -f "/var/www/astrowani/shop/assets/$f"
+          done
+
+          chown -R www-data:www-data /var/www/astrowani/shop
+          nginx -t && systemctl reload nginx
+          echo "shop deployed: $(ls -1 /var/www/astrowani/shop/assets | wc -l) assets"
+          REMOTE_SCRIPT
+
+          attempt=1
+          max_attempts=5
+          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
+            -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "SSH deploy failed after $max_attempts attempts — giving up."
+              exit 1
+            fi
+            echo "SSH deploy attempt $attempt/$max_attempts failed, retrying in 20s..."
+            attempt=$((attempt + 1))
+            sleep 20
+          done
