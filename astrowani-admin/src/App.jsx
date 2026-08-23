@@ -10,6 +10,8 @@ import Astrologers from './pages/Astrologers';
 import Customers from './pages/Customers';
 import Sessions from './pages/Sessions';
 import Remedies from './pages/Remedies';
+import Store from './pages/Store';
+import StoreProducts from './pages/StoreProducts';
 import Orders from './pages/Orders';
 import Gifts from './pages/Gifts';
 import LiveAarti from './pages/LiveAarti';
@@ -40,6 +42,8 @@ export default function App() {
         <Route path="thoughts" element={<Thoughts />} />
         <Route path="categories" element={<Categories />} />
         <Route path="remedies" element={<Remedies />} />
+        <Route path="store" element={<Store />} />
+        <Route path="store-products" element={<StoreProducts />} />
         <Route path="orders" element={<Orders />} />
         <Route path="gifts" element={<Gifts />} />
         <Route path="live-aarti" element={<LiveAarti />} />
