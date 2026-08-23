@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "astrowani-admin-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "astrowani-admin", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

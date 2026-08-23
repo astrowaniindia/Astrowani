@@ -139,3 +139,25 @@ constraints.
 
 Not measured, needs a real device/build to confirm: the marquee's wraparound smoothness, the iOS
 build succeeding cleanly after the `pbxproj` edit, and any actual before/after latency numbers.
+
+## Addendum, 2026-08-14: perceived-load fix (stale-while-revalidate on Home)
+
+Separate from the audit above but same theme — Home's sections (banners, astrologer carousel,
+categories, blogs, top reviews) rendered blank/spinner until their own fetch resolved, so app
+open showed items popping in one at a time. New `src/utils/cacheFetch.js` (`readCache`/
+`writeCache`, `AsyncStorage`-backed, `cache_v1_` prefix, fails silently on any read/write error)
+is now used by `Home.js`'s five fetchers and `PlacementBanner.js`: each hydrates instantly from
+its last-fetched cache while a background refetch silently replaces it once the network call
+resolves. No money-relevant state involved (astrologer prices/availability shown from cache are
+always re-verified server-side the moment a call/chat is actually initiated — see
+`money-billing-audit-2026-08-14.md`), so a stale cached price or busy-status flickering for a
+moment on Home has no financial consequence, purely cosmetic.
+
+**Reviewed, one minor un-fixed nit**: `PlacementBanner.js`'s interval-fallback line
+(`const freshIntervalMs = secs > 0 ? secs * 1000 : intervalMs;`) reads `intervalMs` from the
+closure captured when the effect was created, not the value just set by the cache-hydration
+branch above it in the same effect run (that `setIntervalMs` call hasn't committed yet when the
+network `.then` closure was created). If the API response ever omits `intervalSeconds`, this
+falls back to the *default* 4000ms instead of whatever the cache actually had, and writes that
+default back into the cache. Purely a banner-rotation-speed cosmetic issue, not user-visible in
+any meaningful way and not money-relevant — left as-is, not worth the added complexity to fix.
