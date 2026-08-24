@@ -142,7 +142,7 @@
      inside its own file, so the mark optically sits closer to the edge than the measured
      gutter says it does; this puts the cluster back where the eye expects it. Applied to
      the logo rather than the gutter so the rest of the page keeps its alignment. */
-  .logo{display:inline-flex; align-items:center; gap:10px; text-decoration:none; white-space:nowrap; min-width:0; margin-left:7px;}
+  .logo{display:inline-flex; align-items:center; gap:10px; text-decoration:none; white-space:nowrap; min-width:0; margin-left:12px;}
   /* object-fit stops a non-square source being stretched, and the explicit box keeps the
      star from resizing as the image loads — that reflow was what made the bar look like
      the mark and the name had been set separately. */
@@ -163,7 +163,9 @@
   }
   nav.main a:hover{color:var(--gold); border-bottom-color:var(--gold);}
 
-  .header-actions{display:flex; align-items:center; gap:9px; justify-self:end;}
+  /* Mirrors the logo's own offset on the other side, so the bar's two clusters sit in
+     from the page gutter by the same amount rather than hugging the screen edges. */
+  .header-actions{display:flex; align-items:center; gap:9px; justify-self:end; margin-right:12px;}
   .icon-btn{
     width:38px; height:38px; border-radius:999px;
     border:1px solid color-mix(in srgb, var(--cream) 26%, var(--brown) 74%);
@@ -741,9 +743,10 @@
 
     /* Header: the wordmark alone is enough at this width. */
     .header-row{padding:11px 0; gap:12px;}
+    .header-actions{margin-right:10px;}
     .logo-mark{width:38px; height:38px; margin:-6px 0;}
     .logo-name{font-size:18px;}
-    .logo{gap:7px; margin-left:6px;}
+    .logo{gap:7px; margin-left:10px;}
     .icon-btn{width:36px; height:36px;}
     .icon-btn svg{width:17px; height:17px;}
 
