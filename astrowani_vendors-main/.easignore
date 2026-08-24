@@ -1,0 +1,74 @@
+# What NOT to upload to EAS Build.
+#
+# WHY THIS FILE EXISTS: the first iOS build failed at the upload step, not at
+# compile — the project archive came to 347 MB and the connection reset partway
+# through. The cause was android/app/build, which is 1.5 GB of local Android
+# build output.
+#
+# Those paths ARE in .gitignore (verified with `git check-ignore`), but EAS did
+# not honour it, almost certainly because this is a monorepo: the git root is
+# the repository above this directory while the EAS project root is this
+# directory. So the exclusions have to be restated here.
+#
+# ⚠️ IMPORTANT: when .easignore is present, EAS uses it INSTEAD OF .gitignore,
+# not in addition to it. That is why obvious things like node_modules are listed
+# below — omitting them would upload them.
+#
+# Keep this in sync with the customer app's copy.
+
+# ---------------------------------------------------------------------------
+# Dependencies — EAS runs a fresh install on the builder.
+# ---------------------------------------------------------------------------
+node_modules/
+
+# ---------------------------------------------------------------------------
+# Build output. This is the 1.5 GB that broke the first upload.
+# ---------------------------------------------------------------------------
+android/app/build/
+android/build/
+android/.gradle/
+android/app/.cxx/
+android/captures/
+.gradle/
+
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/
+ios/DerivedData/
+
+# hot-updater OTA bundle output and its artifact cache — regenerated, never
+# needed by a native build. .hot-updater/output alone was 188 MB of cached
+# bundle zips and brotli upload artifacts, the second-largest cause of the
+# failed first upload after android/app/build.
+dist/
+.hot-updater/
+
+# ---------------------------------------------------------------------------
+# Local / editor / OS noise
+# ---------------------------------------------------------------------------
+.git/
+.expo/
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# Tests and local tooling — not needed to produce a binary.
+# ---------------------------------------------------------------------------
+__tests__/
+coverage/
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT ignored, so nobody "tidies" them away:
+#   android/app/google-services.json       Firebase config, required
+#   ios/**/GoogleService-Info.plist        Firebase config, required
+#   credentials.json                       eas.json uses credentialsSource local
+#   patches/ + scripts/                    run from postinstall
+#   src/assets/                            fonts linked into the iOS bundle
+#   app.json, eas.json, metro/babel config build inputs
+# ---------------------------------------------------------------------------
