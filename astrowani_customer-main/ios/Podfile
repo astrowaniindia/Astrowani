@@ -5,8 +5,57 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
-platform :ios, min_ios_version_supported
+# react-native-permissions: only the handlers listed in setup_permissions! are
+# compiled into the binary. Anything omitted is absent entirely, which is what
+# keeps App Review from asking why the app links a permission it never uses.
+# The five below are exactly the ones this app needs:
+#   Microphone / Camera  -> WebRTC voice + video consultations
+#   Notifications        -> FCM prompt (iOS needs an explicit ask; Android
+#                           handles this via POST_NOTIFICATIONS)
+#   LocationWhenInUse    -> delivery address + Shubh Muhurat timings
+#   PhotoLibrary         -> profile picture
+require_relative '../node_modules/react-native-permissions/scripts/setup'
+
+platform :ios, min_ios_version_supported   # 15.1 for RN 0.77 - keep the Xcode
+                                           # project's IPHONEOS_DEPLOYMENT_TARGET
+                                           # matching, or pods and app disagree.
 prepare_react_native_project!
+
+setup_permissions([
+  'Camera',
+  'LocationWhenInUse',
+  'Microphone',
+  'Notifications',
+  'PhotoLibrary',
+])
+
+# ---------------------------------------------------------------------------
+# FIRST-BUILD TROUBLESHOOTING - read this before changing anything here.
+#
+# This app links react-native-webrtc + @react-native-firebase/* +
+# react-native-razorpay + react-native-fast-image, which is the combination most
+# likely to fail on a first `pod install` by disagreeing about framework
+# linkage. Try in this order, and change ONE thing at a time:
+#
+#   1. Plain `pod install` (this file as-is). Firebase's iOS SDK supports static
+#      libraries, so this usually just works. Try it first.
+#
+#   2. If Swift/modular-header errors appear (typically from FirebaseCoreInternal
+#      or GoogleUtilities), rebuild with static frameworks:
+#         USE_FRAMEWORKS=static pod install
+#      The `linkage` block below already reads that env var, and
+#      $RNFirebaseAsStaticFramework is set for exactly this case.
+#
+#   3. Only if 2 fails, look at individual `:modular_headers => true` on the
+#      offending pod. Do NOT reach for `use_frameworks! :linkage => :dynamic` -
+#      react-native-webrtc does not cooperate with it.
+#
+# Never commit a Podfile.lock produced by an experiment that did not build.
+# ---------------------------------------------------------------------------
+
+# Required when Firebase is built as a static framework (path 2 above).
+# Harmless otherwise.
+$RNFirebaseAsStaticFramework = true
 
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil

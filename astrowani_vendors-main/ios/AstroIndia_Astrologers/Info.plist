@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>AstroIndia_Astrologers</string>
+	<string>Astrowani Astrologer</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,20 +24,50 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
+	<!-- Kept strict. Do not set NSAllowsArbitraryLoads to true — the
+	     backend and Supabase are both HTTPS. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+
+	<!-- ================================================================
+	     Permission usage strings — shown verbatim in the iOS dialog and
+	     read by App Review. Vague text is a Guideline 5.1.1 rejection.
+	     ================================================================ -->
 	<key>NSCameraUsageDescription</key>
-	<string>We need to use the camera</string>
+	<string>Astrowani Astrologer needs camera access so you can take video consultations, go live, and set your profile photo.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>We need to use the microphone</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Astrowani Astrologer needs microphone access so your client can hear you during voice and video consultations, when you go live, and when you record a voice note.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Astrowani Astrologer needs access to your photos so you can choose and crop your profile picture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Astrowani Astrologer saves images to your photo library when you choose to download them.</string>
+
+	<!-- ================================================================
+	     Background modes.
+	     "audio" is the iOS counterpart of the Android microphone
+	     foreground service (CallForegroundService.kt, CLAUDE.md subsystem
+	     AE) — this is the astrologer-facing app where the backgrounded-mic
+	     bug was actually reported, so this key is the fix, not a nicety.
+	     It also keeps voice-note recording alive across a backgrounding.
+	     "voip" is deliberately NOT declared — it requires a PushKit +
+	     CallKit implementation and declaring it unused is a rejection
+	     reason. See docs/IOS_PORT.md.
+	     ================================================================ -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
+
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -52,5 +82,19 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+
+	<!-- react-native-vector-icons families imported in src/. Every family
+	     must be listed or its glyphs render as blank boxes on iOS:
+	     MaterialIcons(20) Ionicons(20) MaterialCommunityIcons(3)
+	     FontAwesome(2) EvilIcons(1). This app bundles no custom brand
+	     fonts (no react-native.config.js assets entry, no .ttf in src). -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>MaterialIcons.ttf</string>
+		<string>Ionicons.ttf</string>
+		<string>MaterialCommunityIcons.ttf</string>
+		<string>FontAwesome.ttf</string>
+		<string>EvilIcons.ttf</string>
+	</array>
 </dict>
 </plist>

@@ -3,7 +3,7 @@ const Astrologers = [
     id: 1,
     name: 'Astrologer A',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 50,
     isFree: false,
     specialty: 'Vedic Astrology',
@@ -12,7 +12,7 @@ const Astrologers = [
     id: 2,
     name: 'Astrologer B',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 0,
     isFree: true, // Currently offering free sessions
     specialty: 'Western Astrology',
@@ -21,7 +21,7 @@ const Astrologers = [
     id: 3,
     name: 'Astrologer C',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 70,
     isFree: false,
     specialty: 'Numerology',
@@ -30,7 +30,7 @@ const Astrologers = [
     id: 4,
     name: 'Astrologer D',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 0,
     isFree: true, // Currently offering free sessions
     specialty: 'Vedic Astrology',
@@ -39,7 +39,7 @@ const Astrologers = [
     id: 5,
     name: 'Astrologer E',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 60,
     isFree: false,
     specialty: 'Palmistry',
@@ -48,7 +48,7 @@ const Astrologers = [
     id: 6,
     name: 'Astrologer F',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 0,
     isFree: true, // Currently offering free sessions
     specialty: 'Tarot Reading',
@@ -57,7 +57,7 @@ const Astrologers = [
     id: 7,
     name: 'Astrologer G',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 80,
     isFree: false,
     specialty: 'Vedic Astrology',
@@ -66,7 +66,7 @@ const Astrologers = [
     id: 8,
     name: 'Astrologer H',
     image:
-      'http://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
+      'https://ts4.mm.bing.net/th?id=OIP.d9KeJDVFEDBgK5_EyzEDiwHaK_&pid=15.1',
     chargePerMinute: 0,
     isFree: true, // Currently offering free sessions
     specialty: 'Western Astrology',

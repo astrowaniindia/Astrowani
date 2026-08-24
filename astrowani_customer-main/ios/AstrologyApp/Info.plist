@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>AstrologyApp</string>
+	<string>Astrowani</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,6 +24,16 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
+	<!-- ================================================================
+	     App Transport Security
+	     Kept STRICT (NSAllowsArbitraryLoads = false). The backend is
+	     https://backend.astrowani.com and Supabase/PostHog/Sentry are all
+	     HTTPS, so nothing legitimate needs a cleartext exception.
+	     NOTE: Android sets usesCleartextTraffic="true"; iOS deliberately
+	     does not match that. Any plain-http image URL will silently fail
+	     to load here rather than downgrading the whole app's security.
+	     ================================================================ -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -31,18 +41,89 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+
+	<!-- ================================================================
+	     Permission usage strings.
+	     These are shown verbatim in the iOS permission dialog and are read
+	     by App Review. Vague text ("We need to use the camera") is a
+	     documented rejection reason under Guideline 5.1.1 — each string
+	     below states WHAT is accessed and WHY.
+	     ================================================================ -->
 	<key>NSCameraUsageDescription</key>
-	<string>We need to use the camera</string>
+	<string>Astrowani needs camera access so you can make video calls with an astrologer and set your profile photo.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>We need to use the microphone</string>
+	<string>Astrowani needs microphone access so the astrologer can hear you during voice and video consultations.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Astrowani needs access to your photos so you can choose a profile picture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Astrowani saves your astrology report to your photo library when you choose to download it.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string/>
+	<string>Astrowani uses your location to fill in your delivery address and to calculate accurate Shubh Muhurat timings for where you are.</string>
+
+	<!-- ================================================================
+	     Background modes.
+	     "audio" is the iOS counterpart of the Android microphone
+	     foreground service (CallForegroundService.kt, CLAUDE.md subsystem
+	     AE): without it iOS suspends the app on backgrounding and the
+	     microphone stops feeding WebRTC mid-call — the exact bug the
+	     astrologer reported on Android.
+	     "remote-notification" lets FCM data-only pushes wake the app.
+	     "voip" is deliberately NOT declared: it requires a PushKit +
+	     CallKit implementation, and declaring an unused VoIP background
+	     mode is itself a rejection reason. See the CallKit note in
+	     docs/IOS_PORT.md.
+	     ================================================================ -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
+
+	<!-- Razorpay opens UPI apps to complete a payment. Without these
+	     schemes declared, iOS refuses the canOpenURL check and the UPI
+	     options are hidden from the checkout sheet. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tez</string>
+		<string>phonepe</string>
+		<string>paytmmp</string>
+		<string>bhim</string>
+		<string>credpay</string>
+		<string>upi</string>
+	</array>
+
+	<!-- Return URL Razorpay/UPI apps use to hand control back to us. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.astrowanicustomer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>astrowani</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Declares that the app uses only standard HTTPS/TLS cryptography,
+	     which is exempt from US export regulations. Setting this suppresses
+	     the export-compliance questionnaire on every TestFlight upload.
+	     Confirm this is accurate before your first submission. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
 	</array>
+	<!-- Left matching the Android build, which does not lock orientation
+	     (MainActivity handles rotation via configChanges rather than
+	     pinning portrait). Lock this down only if the UI is verified
+	     portrait-only on a device. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -51,6 +132,12 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+
+	<!-- Bundled brand fonts (react-native.config.js assets) followed by the
+	     react-native-vector-icons families actually imported in src/. Every
+	     family must be listed here or its glyphs render as blank boxes on
+	     iOS: MaterialIcons(43) Ionicons(29) FontAwesome(9)
+	     MaterialCommunityIcons(4) AntDesign(1). -->
 	<key>UIAppFonts</key>
 	<array>
 		<string>Lato-Bold.ttf</string>
@@ -58,6 +145,11 @@
 		<string>Poppins-Bold.ttf</string>
 		<string>Poppins-Light.ttf</string>
 		<string>Poppins-Regular.ttf</string>
+		<string>MaterialIcons.ttf</string>
+		<string>Ionicons.ttf</string>
+		<string>FontAwesome.ttf</string>
+		<string>MaterialCommunityIcons.ttf</string>
+		<string>AntDesign.ttf</string>
 	</array>
 </dict>
 </plist>
