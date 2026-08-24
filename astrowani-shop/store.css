@@ -210,16 +210,40 @@
   .hero .btn-gold{font-size:16px; padding:16px 34px;}
 
 
-  /* ================= LIGHT-PHOTOGRAPH HERO =================
-     The stock hero carries legibility with type shadow alone and no wash, which works
-     because the gemstone photograph is dark. The puja photograph is bright cream, so it
-     takes a light brown veil - just enough to hold the cream type without reading as a
-     tint over the photo. One flat value, so it is easy to dial: raise or lower the .10.
-     ::after sits above .hero::before (same z-index, later in paint order) and below
-     .hero-inner (z-index 1), so it veils the photo without touching the type. */
-  .hero-wash::after{
-    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
-    background:rgba(89,42,25,.10);
+  /* ================= DARK-TYPE HERO =================
+     The stock hero puts cream type over a dark photograph, and carries legibility with a
+     brown shadow. Over a BRIGHT photograph that cannot work at any shadow strength: the
+     letterforms are the same value as what sits behind them, so the type greys out no
+     matter how heavy the halo. Tinting the photo fixes it but costs the photo.
+     So this hero inverts instead - brand brown ink, with a pale halo for edge definition
+     rather than a dark one. Same three colours as the rest of the site; only the ink and
+     its shadow change, and the photograph is left completely untouched.
+     Placed after the .hero type rules above so it wins on source order. */
+  .hero-ink-dark h1,
+  .hero-ink-dark p.lede,
+  .hero-ink-dark .eyebrow{
+    color:var(--brown);
+    text-shadow:
+      0 1px 2px rgba(244,216,188,.95),
+      0 0 12px rgba(244,216,188,.98),
+      0 0 34px rgba(244,216,188,.9),
+      0 0 70px rgba(244,216,188,.75);
+  }
+  /* Small type cannot take a wide halo - at 13px the 70px glow above just washes the
+     letters out. The eyebrow gets a tight halo and extra weight instead. */
+  .hero-ink-dark .eyebrow{
+    color:var(--brown);
+    font-weight:700;
+    text-shadow:0 1px 2px rgba(244,216,188,.98), 0 0 8px rgba(244,216,188,1);
+  }
+  /* The lede is smaller, so it needs the halo tighter and the ink at full strength to
+     hold together against the busy patterned tablecloth it crosses. */
+  .hero-ink-dark p.lede{
+    font-weight:500;
+    text-shadow:
+      0 1px 2px rgba(244,216,188,.98),
+      0 0 10px rgba(244,216,188,1),
+      0 0 26px rgba(244,216,188,.92);
   }
 
   .btn{
