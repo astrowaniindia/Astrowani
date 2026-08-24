@@ -141,11 +141,17 @@
   /* One line, one type size: the real brand star, then "Astrowani Store" set as a single
      wordmark. The earlier stacked version rendered "STORE" as a tiny caption under the
      name, which read as two separate things rather than one shop name. */
-  .logo{display:inline-flex; align-items:center; gap:11px; text-decoration:none; white-space:nowrap;}
-  .logo-mark{width:34px; height:34px; flex-shrink:0; display:block;}
+  .logo{display:inline-flex; align-items:center; gap:10px; text-decoration:none; white-space:nowrap; min-width:0;}
+  /* object-fit stops a non-square source being stretched, and the explicit box keeps the
+     star from resizing as the image loads — that reflow was what made the bar look like
+     the mark and the name had been set separately. */
+  .logo-mark{width:32px; height:32px; flex-shrink:0; display:block; object-fit:contain;}
   .logo-name{
     font-family:var(--font-display); font-weight:700; font-size:21px; letter-spacing:.01em;
-    color:var(--cream); line-height:1;
+    color:var(--cream);
+    /* line-height:1 clipped the descenders and pushed the word off the star's centre.
+       A real line box, with the block centred on it, sits the two on one optical line. */
+    line-height:1.15; display:block; overflow:hidden; text-overflow:ellipsis;
   }
 
   nav.main{display:flex; gap:32px; justify-self:center;}
@@ -732,9 +738,10 @@
     .eyebrow{font-size:11px; letter-spacing:.13em;}
 
     /* Header: the wordmark alone is enough at this width. */
-    .header-row{padding:10px 0; gap:12px;}
-    .logo-mark{width:28px; height:28px;}
-    .logo-name{font-size:17px;}
+    .header-row{padding:11px 0; gap:12px;}
+    .logo-mark{width:29px; height:29px;}
+    .logo-name{font-size:18px;}
+    .logo{gap:9px;}
     .icon-btn{width:36px; height:36px;}
     .icon-btn svg{width:16px; height:16px;}
 
@@ -838,8 +845,9 @@
       </button>
       <button class="icon-btn" id="cartBtn" title="Cart" aria-label="Open cart">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 8h14l-1.2 11.2a1.6 1.6 0 0 1-1.6 1.4H7.8a1.6 1.6 0 0 1-1.6-1.4Z"/>
-          <path d="M9 8V6.2a3 3 0 0 1 6 0V8"/>
+          <path d="M2.5 3.5h2.2l2.1 10.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.2l1.6-6.3H6"/>
+          <circle cx="9.5" cy="19.5" r="1.5"/>
+          <circle cx="17" cy="19.5" r="1.5"/>
         </svg>
         <span class="cart-badge hidden" id="cartCount">0</span>
       </button>
