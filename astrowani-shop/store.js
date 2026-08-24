@@ -46,6 +46,35 @@
     });
   }
 
+  /* ---- backstop for the reveal animation ----
+     The animation is decorative. Content being visible is not. On an in-app webview these
+     elements were reported stranded at opacity 0 even after scrolling to them, with the
+     DOM correct and no script error thrown - i.e. the observer simply was not delivering.
+     That failure mode is near-impossible to reproduce off-device and catastrophic in use
+     (a whole section reads as a blank page), so it is backstopped twice:
+       - a throttled scroll/resize pass reveals anything already inside the viewport
+       - a final sweep a few seconds after load reveals whatever is still hidden
+     Elements are only ever revealed, never re-hidden, so these cannot fight the observer.
+     The cost when everything is working is one rAF-throttled getBoundingClientRect pass
+     per scroll frame over a shrinking set, and nothing once the set is empty. */
+  function sweepVisible(all){
+    if (!revealReady) return;
+    var pending = document.querySelectorAll('[data-reveal]:not(.is-in)');
+    if (!pending.length) return;
+    var h = window.innerHeight || document.documentElement.clientHeight;
+    Array.prototype.forEach.call(pending, function(el){
+      if (all) { showNow(el); return; }
+      var r = el.getBoundingClientRect();
+      if (r.top < h && r.bottom > 0) showNow(el);
+    });
+  }
+  var sweepQueued = false;
+  function queueSweep(){
+    if (sweepQueued) return;
+    sweepQueued = true;
+    requestAnimationFrame(function(){ sweepQueued = false; sweepVisible(false); });
+  }
+
   function initReveal(){
     revealReady = true;
     if (REDUCED || !('IntersectionObserver' in window)) {
@@ -64,6 +93,13 @@
       });
     }, { rootMargin: '0px 0px -6% 0px', threshold: 0.06 });
     observeNew(document.querySelectorAll('[data-reveal]'));
+    window.addEventListener('scroll', queueSweep, {passive:true});
+    window.addEventListener('resize', queueSweep);
+    queueSweep();
+    // Last resort: whatever is still hidden after this is revealed outright. Content
+    // the reader has not reached yet loses its entrance, which nobody can perceive;
+    // content stranded invisible is a broken page.
+    setTimeout(function(){ sweepVisible(true); }, 6000);
   }
 
   // Marks a freshly-rendered group for reveal, cascading the delay across it. Capped so a
