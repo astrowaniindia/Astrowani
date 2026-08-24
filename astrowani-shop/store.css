@@ -863,6 +863,18 @@
     color:var(--ink-soft); font-family:var(--font-body); font-size:13px; cursor:pointer; transition:all .18s ease;}
   .pj-chip:hover{border-color:var(--brown);}
   .pj-chip.on{background:var(--brown); border-color:var(--brown); color:var(--cream);}
+  /* The gemstone purpose tiles never needed a selected state - they set a filter and
+     the page scrolls away from them. These stay on screen and toggle, so they show it. */
+  .purpose-tile.on{outline:3px solid var(--gold); outline-offset:-3px;}
+  .pj-active-cat{
+    display:inline-flex; align-items:center; gap:8px; margin-left:10px;
+    padding:6px 12px; border-radius:999px; cursor:pointer;
+    background:var(--brown); color:var(--cream); border:1px solid var(--brown);
+    font-family:var(--font-body); font-size:12.5px; font-weight:600;
+  }
+  .pj-active-cat span{opacity:.75; font-size:11px;}
+  .pj-active-cat:hover span{opacity:1;}
+
   .pj-card .card-body{gap:4px;}
   .pj-hi{font-size:13px; color:var(--ink-faint); line-height:1.35; min-height:18px;}
   .pj-meta{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; flex-wrap:wrap;}

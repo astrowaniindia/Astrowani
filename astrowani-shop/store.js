@@ -1819,70 +1819,70 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   }
 
   var PUJAS = [
-    {"id":"pj1","n":"Gauri Ganesh Puja","h":"गौरी गणेश पूजा","d":"2 hrs","m":120,"p":2100,"img":"Gauri-Ganesh-pooja.jpg"},
-    {"id":"pj2","n":"Puja for Early Marriage","h":"शादी फेरे","d":"4 hrs","m":240,"p":5100,"img":"pandit-ji-marriage.webp"},
-    {"id":"pj3","n":"Havan / Yagya","h":"हवन/यज्ञ","d":"2 hrs","m":120,"p":2100,"img":"Hawan-2.jpeg"},
-    {"id":"pj4","n":"Navgrah Shanti Puja","h":"नवग्रह शांति पूजा","d":"3 hrs","m":180,"p":2100,"img":"1776066332.webp"},
-    {"id":"pj5","n":"Lakshmi Narayan Puja","h":"लक्ष्मी नारायण पूजा","d":"3 hrs","m":180,"p":2100,"img":"1776066330.webp"},
-    {"id":"pj6","n":"Kalash sthapna puja","h":"कलश स्थापना/घट स्थापना पूजा","d":"2 hrs","m":120,"p":2100,"img":"kalash-sthapna-puja.webp"},
-    {"id":"pj7","n":"Shree Khatu shyam ji puja","h":"श्री खाटू श्याम पूजा","d":"2 hrs","m":120,"p":2100,"img":"1774709279.webp"},
-    {"id":"pj8","n":"Sunderkand Path","h":"","d":"4 hrs","m":240,"p":2100,"img":"sunderkand-path.webp"},
-    {"id":"pj9","n":"Vijay Mantra Jaap","h":"विजय मन्त्र जाप","d":"1 day","m":1440,"p":7100,"img":"1776420712.png"},
-    {"id":"pj10","n":"Hanuman Puja","h":"हनुमान पूजा","d":"2 hrs","m":120,"p":2100,"img":"1776066329.webp"},
-    {"id":"pj11","n":"Namkaran Sanskar","h":"नामकरण संस्कार","d":"2 hrs","m":120,"p":2100,"img":"1776066331.webp"},
-    {"id":"pj12","n":"Gajender moksh stoter","h":"गजेन्द्रमोक्ष स्तोत्र","d":"3 hrs","m":180,"p":3100,"img":"gajender-moksh-stoter.webp"},
-    {"id":"pj13","n":"Mangal Dosh Puja","h":"मंगल दोष निवारण पूजा","d":"3 days","m":4320,"p":11000,"img":"1776420709.png"},
-    {"id":"pj14","n":"Gopal Sahastranaam Path","h":"गोपाल सहस्त्रनाम","d":"3 hrs","m":180,"p":3100,"img":"1776420704.webp"},
-    {"id":"pj15","n":"Durga Saptashati Path","h":"दुर्गा सप्तशती पाठ","d":"9 days","m":12960,"p":11000,"img":"1776066327.webp"},
-    {"id":"pj16","n":"Griha Pravesh Puja","h":"गृह प्रवेश पूजा","d":"3 hrs","m":180,"p":3100,"img":"1776066328.webp"},
-    {"id":"pj17","n":"Lalita Sahasranama Stotram","h":"ललिता सहस्त्रनाम स्तोत्र","d":"4 hrs","m":240,"p":4100,"img":"lalita-sahasranama-stotram.png"},
-    {"id":"pj18","n":"Pitra Dosh nivaran Puja Hawan","h":"पितृ दोष निवारण पूजा हवन","d":"5 days","m":7200,"p":41000,"img":"1776420710.png"},
-    {"id":"pj19","n":"Kaal Sarp Dosh Puja","h":"काल सर्प दोष निवारण पूजा जप","d":"3 days","m":4320,"p":11000,"img":"1776420706.png"},
-    {"id":"pj20","n":"Vishnu Sahasrananam Path","h":"विष्णु सहस्त्रनाम पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776147243.webp"},
-    {"id":"pj21","n":"Kamya Puja","h":"काम्य पूजा मनोकामना पूर्ण","d":"4 hrs","m":240,"p":4100,"img":"1776420706.png"},
-    {"id":"pj22","n":"Mairt Sanjivani Anushthan","h":"मृत संजीवनी अनुष्ठान","d":"7 days","m":10080,"p":125000,"img":"Mrit-Sanjivini.jpeg"},
-    {"id":"pj23","n":"Vastu Shanti Puja","h":"वास्तु शांति पूजा","d":"4 hrs","m":240,"p":3100,"img":"1776066335.webp"},
-    {"id":"pj24","n":"Lagan sagai puja","h":"लगन सगाई पूजा","d":"2 hrs","m":120,"p":3100,"img":"Puja-for-Marriage.jpeg"},
-    {"id":"pj25","n":"Kubera Puja","h":"कुबेर पूजा","d":"2 hrs","m":120,"p":3100,"img":"1776066330.webp"},
-    {"id":"pj26","n":"Kul Devi Puja","h":"कुल देवी पूजा","d":"2 hrs","m":120,"p":3100,"img":"1776420707.png"},
-    {"id":"pj27","n":"Shri Sukt Strotam path","h":"श्री सूक्त पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776420711.png"},
-    {"id":"pj28","n":"Kanak Dhara Stotram","h":"कनक धारा स्तोत्र","d":"3 hrs","m":180,"p":4100,"img":"1776420707.png"},
-    {"id":"pj29","n":"Satyanarayan Katha","h":"सत्यनारायण कथा","d":"3 hrs","m":180,"p":3100,"img":"1776066333.webp"},
-    {"id":"pj30","n":"Mool Shanti Puja","h":"मूल शांति","d":"3 hrs","m":180,"p":3100,"img":"1776420709.png"},
-    {"id":"pj31","n":"Rahu Ketu Mantra Jaap","h":"राहु केतु पूजा अनुष्ठान","d":"2 days","m":2880,"p":7100,"img":"1776420710.png"},
-    {"id":"pj32","n":"Shani Vrat Udyapan","h":"शनि व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147232.webp"},
-    {"id":"pj33","n":"Mangala Gauri Vrat Udyapan","h":"मंगला गौरी व्रत उद्यापन","d":"3 hrs","m":180,"p":4100,"img":"1776147533.webp"},
-    {"id":"pj34","n":"Vaibhav Lakshmi Vrat Udyapan","h":"वैभव लक्ष्मी व्रत उद्यापन","d":"2 hrs","m":120,"p":3100,"img":"1776147234.webp"},
-    {"id":"pj35","n":"Gayatri Mantra Jaap","h":"गायत्री मंत्र जाप","d":"5 days","m":7200,"p":51000,"img":"1776147818.webp"},
-    {"id":"pj36","n":"Janeu Sanskar Puja","h":"जनेऊ संस्कार पूजा","d":"3 hrs","m":180,"p":3100,"img":"1776420705.webp"},
-    {"id":"pj37","n":"Ram Raksha Stotram Path","h":"राम रक्षा स्तोत्र पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776148577.png"},
-    {"id":"pj38","n":"Rudrabhishek","h":"रुद्राभिषेक","d":"3 hrs","m":180,"p":4100,"img":"1776066332.webp"},
-    {"id":"pj39","n":"Shiv mahapuran katha","h":"शिव महापुराण कथा","d":"7 days","m":10080,"p":71000,"img":"shiv-mahapuran-katha.png"},
-    {"id":"pj40","n":"Surya Jaap","h":"सूर्य जाप","d":"4 hrs","m":240,"p":5100,"img":"1776420712.png"},
-    {"id":"pj41","n":"Garud puran","h":"गरुड़ पुराण","d":"7 days","m":10080,"p":7100,"img":"Garud.png"},
-    {"id":"pj42","n":"Harivansh Puran path","h":"हरिवंश पुराण","d":"7 days","m":10080,"p":71000,"img":"1776420705.webp"},
-    {"id":"pj43","n":"Mundan Sanskar","h":"मुंडन संस्कार","d":"2 hrs","m":120,"p":2100,"img":"1776066331.webp"},
-    {"id":"pj44","n":"Murti Pran Pratishtha","h":"मूर्ति प्राण प्रतिष्ठा","d":"5 days","m":7200,"p":51000,"img":"murti-pran-pratishtha.png"},
-    {"id":"pj45","n":"Somvar Vrat Udyapan","h":"सोलह सोमवार उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147233.webp"},
-    {"id":"pj46","n":"Chandra Jaap","h":"चन्द्र जाप","d":"5 hrs","m":300,"p":5100,"img":"1776420702.png"},
-    {"id":"pj47","n":"Chatrapal Puja","h":"क्षेत्रपाल पूजा","d":"4 hrs","m":240,"p":11000,"img":"1776420703.png"},
-    {"id":"pj48","n":"Durga Mantra Jaap","h":"दुर्गा मंत्र जाप","d":"3 days","m":4320,"p":21000,"img":"1776148405.webp"},
-    {"id":"pj49","n":"Ekadashi Vrat Udyapan","h":"एकादशी व्रत उद्यापन","d":"2 days","m":2880,"p":3100,"img":"1776147676.webp"},
-    {"id":"pj50","n":"Gita path","h":"गीता पाठ","d":"5 days","m":7200,"p":21000,"img":"1776420704.webp"},
-    {"id":"pj51","n":"Katyani jap","h":"कात्यानी जाप","d":"2 days","m":2880,"p":11000,"img":"1776420708.png"},
-    {"id":"pj52","n":"Mangalwar Vrat Udyapan","h":"मंगलवार व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776420977.png"},
-    {"id":"pj53","n":"Shani Grah Jaap","h":"शनि ग्रह जाप","d":"3 days","m":4320,"p":7100,"img":"1776420711.png"},
-    {"id":"pj54","n":"Vishakrma puja","h":"विश्कर्मा पूजा","d":"2 hrs","m":120,"p":2100,"img":"vishakrma-puja.png"},
-    {"id":"pj55","n":"Akhand Ramayan Path","h":"अखंड रामायण पाठ","d":"2 days","m":2880,"p":11000,"img":"1776066325.webp"},
-    {"id":"pj56","n":"Baglamukhi Jaap","h":"बगलामुखी जाप","d":"9 days","m":12960,"p":100000,"img":"1776066326.webp"},
-    {"id":"pj57","n":"Batuk Bharab Stotram","h":"बटुक भैरव स्तोत्र","d":"3 hrs","m":180,"p":5100,"img":"1776420700.png"},
-    {"id":"pj58","n":"Maha Mrityunjaya Jaap","h":"महा मृत्युंजय जाप","d":"7 days","m":10080,"p":71000,"img":"1776066330.webp"},
-    {"id":"pj59","n":"Purnima Virat Udyapan","h":"पूर्णिमा व्रत उद्यापन","d":"2 hrs","m":120,"p":3100,"img":"1776421300.png"},
-    {"id":"pj60","n":"Santoshi Mata Vrat Udyapan","h":"संतोषी माता व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147146.webp"},
-    {"id":"pj61","n":"Saraswati Puja","h":"सरस्वती पूजा","d":"2 days","m":2880,"p":4100,"img":"1776066333.webp"},
-    {"id":"pj62","n":"Shradh aur Tarpan","h":"श्राद्ध एवं तर्पण","d":"3 hrs","m":180,"p":3100,"img":"Tarpan.png"},
-    {"id":"pj63","n":"Shrimad Bhagwat Mool Path","h":"श्रीमद् भागवत मूल पाठ","d":"7 days","m":10080,"p":51000,"img":"1776420702.png"},
-    {"id":"pj64","n":"Tulsi Vivah","h":"तुलसी विवाह","d":"4 hrs","m":240,"p":5100,"img":"1776066334.webp"}
+    {"id":"pj1","n":"Gauri Ganesh Puja","h":"गौरी गणेश पूजा","d":"2 hrs","m":120,"p":2100,"img":"Gauri-Ganesh-pooja.jpg","c":["marriage"]},
+    {"id":"pj2","n":"Puja for Early Marriage","h":"शादी फेरे","d":"4 hrs","m":240,"p":5100,"img":"pandit-ji-marriage.webp","c":["marriage"]},
+    {"id":"pj3","n":"Havan / Yagya","h":"हवन/यज्ञ","d":"2 hrs","m":120,"p":2100,"img":"Hawan-2.jpeg","c":["home"]},
+    {"id":"pj4","n":"Navgrah Shanti Puja","h":"नवग्रह शांति पूजा","d":"3 hrs","m":180,"p":2100,"img":"1776066332.webp","c":["dosh"]},
+    {"id":"pj5","n":"Lakshmi Narayan Puja","h":"लक्ष्मी नारायण पूजा","d":"3 hrs","m":180,"p":2100,"img":"1776066330.webp","c":["wealth"]},
+    {"id":"pj6","n":"Kalash sthapna puja","h":"कलश स्थापना/घट स्थापना पूजा","d":"2 hrs","m":120,"p":2100,"img":"kalash-sthapna-puja.webp","c":["home"]},
+    {"id":"pj7","n":"Shree Khatu shyam ji puja","h":"श्री खाटू श्याम पूजा","d":"2 hrs","m":120,"p":2100,"img":"1774709279.webp","c":["protection"]},
+    {"id":"pj8","n":"Sunderkand Path","h":"","d":"4 hrs","m":240,"p":2100,"img":"sunderkand-path.webp","c":["path","protection"]},
+    {"id":"pj9","n":"Vijay Mantra Jaap","h":"विजय मन्त्र जाप","d":"1 day","m":1440,"p":7100,"img":"1776420712.png","c":["protection","path"]},
+    {"id":"pj10","n":"Hanuman Puja","h":"हनुमान पूजा","d":"2 hrs","m":120,"p":2100,"img":"1776066329.webp","c":["protection"]},
+    {"id":"pj11","n":"Namkaran Sanskar","h":"नामकरण संस्कार","d":"2 hrs","m":120,"p":2100,"img":"1776066331.webp","c":["sanskar"]},
+    {"id":"pj12","n":"Gajender moksh stoter","h":"गजेन्द्रमोक्ष स्तोत्र","d":"3 hrs","m":180,"p":3100,"img":"gajender-moksh-stoter.webp","c":["path","health"]},
+    {"id":"pj13","n":"Mangal Dosh Puja","h":"मंगल दोष निवारण पूजा","d":"3 days","m":4320,"p":11000,"img":"1776420709.png","c":["dosh","marriage"]},
+    {"id":"pj14","n":"Gopal Sahastranaam Path","h":"गोपाल सहस्त्रनाम","d":"3 hrs","m":180,"p":3100,"img":"1776420704.webp","c":["path"]},
+    {"id":"pj15","n":"Durga Saptashati Path","h":"दुर्गा सप्तशती पाठ","d":"9 days","m":12960,"p":11000,"img":"1776066327.webp","c":["path","protection"]},
+    {"id":"pj16","n":"Griha Pravesh Puja","h":"गृह प्रवेश पूजा","d":"3 hrs","m":180,"p":3100,"img":"1776066328.webp","c":["home"]},
+    {"id":"pj17","n":"Lalita Sahasranama Stotram","h":"ललिता सहस्त्रनाम स्तोत्र","d":"4 hrs","m":240,"p":4100,"img":"lalita-sahasranama-stotram.png","c":["path"]},
+    {"id":"pj18","n":"Pitra Dosh nivaran Puja Hawan","h":"पितृ दोष निवारण पूजा हवन","d":"5 days","m":7200,"p":41000,"img":"1776420710.png","c":["dosh","sanskar"]},
+    {"id":"pj19","n":"Kaal Sarp Dosh Puja","h":"काल सर्प दोष निवारण पूजा जप","d":"3 days","m":4320,"p":11000,"img":"1776420706.png","c":["dosh"]},
+    {"id":"pj20","n":"Vishnu Sahasrananam Path","h":"विष्णु सहस्त्रनाम पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776147243.webp","c":["path"]},
+    {"id":"pj21","n":"Kamya Puja","h":"काम्य पूजा मनोकामना पूर्ण","d":"4 hrs","m":240,"p":4100,"img":"1776420706.png","c":["wealth","path"]},
+    {"id":"pj22","n":"Mairt Sanjivani Anushthan","h":"मृत संजीवनी अनुष्ठान","d":"7 days","m":10080,"p":125000,"img":"Mrit-Sanjivini.jpeg","c":["health"]},
+    {"id":"pj23","n":"Vastu Shanti Puja","h":"वास्तु शांति पूजा","d":"4 hrs","m":240,"p":3100,"img":"1776066335.webp","c":["home","dosh"]},
+    {"id":"pj24","n":"Lagan sagai puja","h":"लगन सगाई पूजा","d":"2 hrs","m":120,"p":3100,"img":"Puja-for-Marriage.jpeg","c":["marriage"]},
+    {"id":"pj25","n":"Kubera Puja","h":"कुबेर पूजा","d":"2 hrs","m":120,"p":3100,"img":"1776066330.webp","c":["wealth"]},
+    {"id":"pj26","n":"Kul Devi Puja","h":"कुल देवी पूजा","d":"2 hrs","m":120,"p":3100,"img":"1776420707.png","c":["marriage"]},
+    {"id":"pj27","n":"Shri Sukt Strotam path","h":"श्री सूक्त पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776420711.png","c":["wealth","path"]},
+    {"id":"pj28","n":"Kanak Dhara Stotram","h":"कनक धारा स्तोत्र","d":"3 hrs","m":180,"p":4100,"img":"1776420707.png","c":["wealth","path"]},
+    {"id":"pj29","n":"Satyanarayan Katha","h":"सत्यनारायण कथा","d":"3 hrs","m":180,"p":3100,"img":"1776066333.webp","c":["path","home"]},
+    {"id":"pj30","n":"Mool Shanti Puja","h":"मूल शांति","d":"3 hrs","m":180,"p":3100,"img":"1776420709.png","c":["dosh"]},
+    {"id":"pj31","n":"Rahu Ketu Mantra Jaap","h":"राहु केतु पूजा अनुष्ठान","d":"2 days","m":2880,"p":7100,"img":"1776420710.png","c":["dosh"]},
+    {"id":"pj32","n":"Shani Vrat Udyapan","h":"शनि व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147232.webp","c":["vrat"]},
+    {"id":"pj33","n":"Mangala Gauri Vrat Udyapan","h":"मंगला गौरी व्रत उद्यापन","d":"3 hrs","m":180,"p":4100,"img":"1776147533.webp","c":["vrat","marriage"]},
+    {"id":"pj34","n":"Vaibhav Lakshmi Vrat Udyapan","h":"वैभव लक्ष्मी व्रत उद्यापन","d":"2 hrs","m":120,"p":3100,"img":"1776147234.webp","c":["vrat","wealth"]},
+    {"id":"pj35","n":"Gayatri Mantra Jaap","h":"गायत्री मंत्र जाप","d":"5 days","m":7200,"p":51000,"img":"1776147818.webp","c":["path"]},
+    {"id":"pj36","n":"Janeu Sanskar Puja","h":"जनेऊ संस्कार पूजा","d":"3 hrs","m":180,"p":3100,"img":"1776420705.webp","c":["sanskar"]},
+    {"id":"pj37","n":"Ram Raksha Stotram Path","h":"राम रक्षा स्तोत्र पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776148577.png","c":["protection","path"]},
+    {"id":"pj38","n":"Rudrabhishek","h":"रुद्राभिषेक","d":"3 hrs","m":180,"p":4100,"img":"1776066332.webp","c":["path","health"]},
+    {"id":"pj39","n":"Shiv mahapuran katha","h":"शिव महापुराण कथा","d":"7 days","m":10080,"p":71000,"img":"shiv-mahapuran-katha.png","c":["path"]},
+    {"id":"pj40","n":"Surya Jaap","h":"सूर्य जाप","d":"4 hrs","m":240,"p":5100,"img":"1776420712.png","c":["dosh","path"]},
+    {"id":"pj41","n":"Garud puran","h":"गरुड़ पुराण","d":"7 days","m":10080,"p":7100,"img":"Garud.png","c":["sanskar","path"]},
+    {"id":"pj42","n":"Harivansh Puran path","h":"हरिवंश पुराण","d":"7 days","m":10080,"p":71000,"img":"1776420705.webp","c":["path"]},
+    {"id":"pj43","n":"Mundan Sanskar","h":"मुंडन संस्कार","d":"2 hrs","m":120,"p":2100,"img":"1776066331.webp","c":["sanskar"]},
+    {"id":"pj44","n":"Murti Pran Pratishtha","h":"मूर्ति प्राण प्रतिष्ठा","d":"5 days","m":7200,"p":51000,"img":"murti-pran-pratishtha.png","c":["home"]},
+    {"id":"pj45","n":"Somvar Vrat Udyapan","h":"सोलह सोमवार उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147233.webp","c":["vrat"]},
+    {"id":"pj46","n":"Chandra Jaap","h":"चन्द्र जाप","d":"5 hrs","m":300,"p":5100,"img":"1776420702.png","c":["dosh"]},
+    {"id":"pj47","n":"Chatrapal Puja","h":"क्षेत्रपाल पूजा","d":"4 hrs","m":240,"p":11000,"img":"1776420703.png","c":["protection"]},
+    {"id":"pj48","n":"Durga Mantra Jaap","h":"दुर्गा मंत्र जाप","d":"3 days","m":4320,"p":21000,"img":"1776148405.webp","c":["protection","path"]},
+    {"id":"pj49","n":"Ekadashi Vrat Udyapan","h":"एकादशी व्रत उद्यापन","d":"2 days","m":2880,"p":3100,"img":"1776147676.webp","c":["vrat"]},
+    {"id":"pj50","n":"Gita path","h":"गीता पाठ","d":"5 days","m":7200,"p":21000,"img":"1776420704.webp","c":["path"]},
+    {"id":"pj51","n":"Katyani jap","h":"कात्यानी जाप","d":"2 days","m":2880,"p":11000,"img":"1776420708.png","c":["marriage"]},
+    {"id":"pj52","n":"Mangalwar Vrat Udyapan","h":"मंगलवार व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776420977.png","c":["vrat"]},
+    {"id":"pj53","n":"Shani Grah Jaap","h":"शनि ग्रह जाप","d":"3 days","m":4320,"p":7100,"img":"1776420711.png","c":["dosh"]},
+    {"id":"pj54","n":"Vishakrma puja","h":"विश्कर्मा पूजा","d":"2 hrs","m":120,"p":2100,"img":"vishakrma-puja.png","c":["home","wealth"]},
+    {"id":"pj55","n":"Akhand Ramayan Path","h":"अखंड रामायण पाठ","d":"2 days","m":2880,"p":11000,"img":"1776066325.webp","c":["path"]},
+    {"id":"pj56","n":"Baglamukhi Jaap","h":"बगलामुखी जाप","d":"9 days","m":12960,"p":100000,"img":"1776066326.webp","c":["protection"]},
+    {"id":"pj57","n":"Batuk Bharab Stotram","h":"बटुक भैरव स्तोत्र","d":"3 hrs","m":180,"p":5100,"img":"1776420700.png","c":["protection"]},
+    {"id":"pj58","n":"Maha Mrityunjaya Jaap","h":"महा मृत्युंजय जाप","d":"7 days","m":10080,"p":71000,"img":"1776066330.webp","c":["health"]},
+    {"id":"pj59","n":"Purnima Virat Udyapan","h":"पूर्णिमा व्रत उद्यापन","d":"2 hrs","m":120,"p":3100,"img":"1776421300.png","c":["vrat"]},
+    {"id":"pj60","n":"Santoshi Mata Vrat Udyapan","h":"संतोषी माता व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147146.webp","c":["vrat"]},
+    {"id":"pj61","n":"Saraswati Puja","h":"सरस्वती पूजा","d":"2 days","m":2880,"p":4100,"img":"1776066333.webp","c":["path"]},
+    {"id":"pj62","n":"Shradh aur Tarpan","h":"श्राद्ध एवं तर्पण","d":"3 hrs","m":180,"p":3100,"img":"Tarpan.png","c":["sanskar"]},
+    {"id":"pj63","n":"Shrimad Bhagwat Mool Path","h":"श्रीमद् भागवत मूल पाठ","d":"7 days","m":10080,"p":51000,"img":"1776420702.png","c":["path"]},
+    {"id":"pj64","n":"Tulsi Vivah","h":"तुलसी विवाह","d":"4 hrs","m":240,"p":5100,"img":"1776066334.webp","c":["marriage","path"]}
   ];
 
   var PUJA_BANDS = [
@@ -1891,7 +1891,24 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {id:'short', label:'2 to 3 days',      test:function(p){ return p.m > 1440 && p.m <= 4320; }},
     {id:'long',  label:'5 days and above', test:function(p){ return p.m > 4320; }}
   ];
-  var pujaState = { q:'', band:'all', sort:'featured' };
+  /* A puja is chosen by what it is FOR, which is a different question from how long it
+     takes - so the purpose tiles filter alongside the duration chips rather than
+     replacing them. `rep` names the puja whose photograph stands in for the category;
+     when dedicated artwork arrives, add it to PUJA_CAT_PHOTOS and nothing else changes. */
+  var PUJA_CATS = [
+    {id:'dosh',       label:'Dosh Nivaran',        rep:'pj4'},
+    {id:'wealth',     label:'Wealth & Prosperity', rep:'pj25'},
+    {id:'marriage',   label:'Marriage & Family',   rep:'pj2'},
+    {id:'health',     label:'Health & Long Life',  rep:'pj22'},
+    {id:'home',       label:'Home & Vastu',        rep:'pj16'},
+    {id:'protection', label:'Protection',          rep:'pj10'},
+    {id:'path',       label:'Path, Katha & Jaap',  rep:'pj20'},
+    {id:'vrat',       label:'Vrat Udyapan',        rep:'pj45'},
+    {id:'sanskar',    label:'Sanskar & Shradh',    rep:'pj43'}
+  ];
+  var PUJA_CAT_PHOTOS = {};
+
+  var pujaState = { q:'', band:'all', sort:'featured', cat:'all' };
 
   function pujaImg(p){ return PUJA_IMG_BASE + encodeURIComponent(p.img); }
   function pujaRupees(n){ return '₹' + n.toLocaleString('en-IN'); }
@@ -1899,6 +1916,50 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   var pujaGrid  = document.getElementById('pujaGrid');
   var pujaChips = document.getElementById('pjChips');
   var pujaCount = document.getElementById('pjCount');
+
+  function pujaCatPhoto(cat){
+    if (PUJA_CAT_PHOTOS[cat.id]) return PUJA_CAT_PHOTOS[cat.id];
+    var rep = PUJAS.find(function(p){ return p.id === cat.rep; });
+    return rep ? pujaImg(rep) : '';
+  }
+
+  var pujaPurposeGrid = document.getElementById('pujaPurposeGrid');
+  function renderPujaPurposeTiles(){
+    pujaPurposeGrid.innerHTML = '';
+    PUJA_CATS.forEach(function(cat){
+      // <button>, not <div>: these filter the list, so they should be reachable by
+      // keyboard and announced as buttons. Same reasoning as the gemstone tiles.
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'purpose-tile' + (pujaState.cat === cat.id ? ' on' : '');
+      var photo = pujaCatPhoto(cat);
+      el.innerHTML = (photo ? '<img src="'+photo+'" alt="" loading="lazy">' : '') +
+        '<span class="pt-label">'+cat.label+'</span>';
+      el.addEventListener('click', function(){
+        // Tapping the tile that is already on clears it, so the tiles can be switched
+        // off without hunting for the pill.
+        pujaState.cat = (pujaState.cat === cat.id) ? 'all' : cat.id;
+        renderPujaPurposeTiles();
+        renderPujas();
+        document.getElementById('puja').scrollIntoView({behavior:'smooth', block:'start'});
+      });
+      pujaPurposeGrid.appendChild(el);
+    });
+    stagger(pujaPurposeGrid.children, 70);
+  }
+
+  var pujaActiveCat = document.getElementById('pjActiveCat');
+  function renderPujaActiveCat(){
+    var cat = PUJA_CATS.find(function(c){ return c.id === pujaState.cat; });
+    if (!cat) { pujaActiveCat.innerHTML = ''; return; }
+    pujaActiveCat.innerHTML = '<button type="button" class="pj-active-cat">' +
+      cat.label + '<span aria-hidden="true">&#10005;</span></button>';
+    pujaActiveCat.querySelector('button').addEventListener('click', function(){
+      pujaState.cat = 'all';
+      renderPujaPurposeTiles();
+      renderPujas();
+    });
+  }
 
   function renderPujaChips(){
     pujaChips.innerHTML = '';
@@ -1918,7 +1979,8 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     var list = PUJAS.filter(function(p){
       // Hindi is matched too, so someone typing a Devanagari word finds the puja.
       var okQ = !q || p.n.toLowerCase().indexOf(q) !== -1 || (p.h && p.h.indexOf(pujaState.q.trim()) !== -1);
-      return okQ && band.test(p);
+      var okCat = pujaState.cat === 'all' || (p.c && p.c.indexOf(pujaState.cat) !== -1);
+      return okQ && okCat && band.test(p);
     });
     var s = pujaState.sort;
     if (s === 'price-asc')  list.sort(function(a,b){ return a.p - b.p; });
@@ -1931,6 +1993,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   function renderPujas(){
     var list = filteredPujas();
     pujaCount.textContent = list.length + (list.length === 1 ? ' puja' : ' pujas');
+    renderPujaActiveCat();
     pujaGrid.innerHTML = '';
     if (!list.length){
       pujaGrid.innerHTML = '<div class="pj-empty">No puja matches that search. Try a shorter word, or clear the filter.</div>';
@@ -2045,6 +2108,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     });
   }
 
+  renderPujaPurposeTiles();
   renderPujaChips();
   renderPujas();
 
