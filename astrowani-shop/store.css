@@ -1,0 +1,888 @@
+  /* ---------- tokens ----------
+     Deliberately three colours only: brown (ink + dark bands), cream (page + cards),
+     gold (the one accent). Everything else below is an opacity/mix of these three —
+     no fourth hue introduced anywhere, including shadows and overlays. One fixed
+     look, no light/dark toggle — a minimal jewellery-store palette, not a system
+     that needs to flex. */
+  :root{
+    --brown:#592a19;
+    --cream:#f4d8bc;
+    --gold:#ffd700;
+    /* One deliberate off-palette accent, used ONLY for the promo ticker so it reads as a
+       separate strip rather than part of the storefront. Deep emerald sits beside the brown
+       without clashing, and it happens to be a stone the shop actually sells. */
+    --accent:#16543d;
+
+    --bg:var(--cream);
+    --bg-elev:color-mix(in srgb, var(--cream) 88%, var(--brown) 12%);
+    --surface:var(--cream);
+    --ink:var(--brown);
+    --ink-soft:color-mix(in srgb, var(--brown) 68%, var(--cream) 32%);
+    --ink-faint:color-mix(in srgb, var(--brown) 42%, var(--cream) 58%);
+    --gold-soft:var(--gold);
+    --gold-ink:var(--brown);
+    --tag:var(--brown);
+    --border:color-mix(in srgb, var(--brown) 26%, var(--cream) 74%);
+    --border-soft:color-mix(in srgb, var(--brown) 15%, var(--cream) 85%);
+    --shadow:rgba(89,42,25,.16);
+    --overlay:rgba(89,42,25,.55);
+    --focus:var(--gold);
+
+    --font-display:'Fraunces',Georgia,'Times New Roman',serif;
+    --font-body:'Work Sans',-apple-system,'Segoe UI',Roboto,sans-serif;
+    --font-mono:'Space Mono','SFMono-Regular',Consolas,monospace;
+
+    --radius:14px;
+    --radius-sm:8px;
+    --container:1440px;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto;} *{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important;} }
+
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:16px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  img,svg{display:block; max-width:100%;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+  :focus-visible{outline:2px solid var(--focus); outline-offset:2px;}
+
+  .wrap{max-width:var(--container); margin:0 auto; padding:0 28px;}
+  @media (max-width:640px){ .wrap{padding:0 18px;} }
+
+  h1,h2,h3,h4{font-family:var(--font-display); font-weight:600; margin:0; text-wrap:balance;}
+  .eyebrow{
+    font-family:var(--font-mono); font-size:12.5px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--ink); font-weight:700;
+  }
+  .lede{color:var(--ink-soft); max-width:60ch;}
+  .price{font-family:var(--font-mono);}
+
+  /* ---------- top strip: infinite promo ticker ----------
+     Two identical tracks sit side by side and both slide left by exactly their own width.
+     As the first clears the viewport the second is already in its place, so the loop is
+     seamless with no jump — and because the message set is repeated until a track is wider
+     than the screen, there is never a blank stretch on a wide monitor. */
+  .topstrip{
+    background:var(--accent); color:var(--cream);
+    font-family:var(--font-mono); font-size:12.5px; letter-spacing:.03em;
+    padding:9px 0; overflow:hidden;
+  }
+  .marquee{display:flex; width:max-content;}
+  .marquee-track{
+    display:flex; flex-shrink:0; align-items:center;
+    animation:marquee-scroll 42s linear infinite;
+  }
+  .topstrip:hover .marquee-track{animation-play-state:paused;}
+  /* Padding moved onto the separator itself so the rule sits an equal distance from the
+     message on either side; with padding on the item it hugged its own text and left a
+     double gap before the next one. */
+  .marquee-item{padding:0; white-space:nowrap; display:inline-flex; align-items:center;}
+  .marquee-item .sep{
+    margin:0 28px; color:color-mix(in srgb, var(--cream) 38%, var(--accent) 62%);
+    font-weight:400;
+  }
+  .topstrip strong{color:var(--gold); font-weight:700;}
+  .topstrip .clock{color:var(--gold); font-weight:700; font-variant-numeric:tabular-nums;}
+  @keyframes marquee-scroll{ from{transform:translateX(0);} to{transform:translateX(-100%);} }
+  /* Motion off: park the tracks and let the strip scroll naturally instead. */
+  @media (prefers-reduced-motion:reduce){
+    .marquee-track{animation:none;}
+    .topstrip{overflow-x:auto;}
+  }
+
+  /* ---------- category quick-nav ---------- */
+  .catnav{display:flex; gap:22px; overflow-x:auto; padding:26px 0 6px;}
+  .catnav-item{display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; flex-shrink:0; width:84px;}
+  .catnav-item img{width:64px; height:64px; border-radius:50%; border:1px solid var(--border-soft); background:var(--cream); object-fit:cover;}
+  .catnav-item:hover img{border-color:var(--ink);}
+  .catnav-item span{font-size:12px; font-weight:600; text-align:center; color:var(--ink-soft);}
+
+  /* ---------- header ----------
+     Three zones on a grid (1fr / auto / 1fr) rather than flexbox, so the nav sits in the
+     TRUE centre of the page — with flex it was pinned next to the logo and left a dead
+     gap across the middle of the bar. The two 1fr rails stay equal whatever the logo and
+     the buttons happen to measure. */
+  header.site{
+    position:sticky; top:0; z-index:40;
+    background:var(--brown);
+    border-bottom:1px solid color-mix(in srgb, var(--cream) 18%, var(--brown) 82%);
+  }
+  .header-row{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:24px; padding:13px 0;}
+
+
+  /* One line, one type size: the real brand star, then "Astrowani Store" set as a single
+     wordmark. The earlier stacked version rendered "STORE" as a tiny caption under the
+     name, which read as two separate things rather than one shop name. */
+  /* Nudged in from the page gutter. The star art carries transparent margin on its left
+     inside its own file, so the mark optically sits closer to the edge than the measured
+     gutter says it does; this puts the cluster back where the eye expects it. Applied to
+     the logo rather than the gutter so the rest of the page keeps its alignment. */
+  .logo{display:inline-flex; align-items:center; gap:10px; text-decoration:none; white-space:nowrap; min-width:0; margin-left:12px;}
+  /* object-fit stops a non-square source being stretched, and the explicit box keeps the
+     star from resizing as the image loads — that reflow was what made the bar look like
+     the mark and the name had been set separately. */
+  .logo-mark{width:42px; height:42px; margin:-6px 0; flex-shrink:0; display:block; object-fit:contain;}
+  .logo-name{
+    font-family:var(--font-display); font-weight:700; font-size:21px; letter-spacing:.01em;
+    color:var(--cream);
+    /* line-height:1 clipped the descenders and pushed the word off the star's centre.
+       A real line box, with the block centred on it, sits the two on one optical line. */
+    line-height:1.15; display:block; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  nav.main{display:flex; gap:32px; justify-self:center;}
+  nav.main a{
+    font-family:var(--font-body); font-size:11.5px; font-weight:700; letter-spacing:.11em; text-transform:uppercase;
+    color:color-mix(in srgb, var(--cream) 76%, var(--brown) 24%); text-decoration:none; white-space:nowrap;
+    padding-bottom:3px; border-bottom:1.5px solid transparent; transition:color .15s, border-color .15s;
+  }
+  nav.main a:hover{color:var(--gold); border-bottom-color:var(--gold);}
+
+  /* Mirrors the logo's own offset on the other side, so the bar's two clusters sit in
+     from the page gutter by the same amount rather than hugging the screen edges. */
+  .header-actions{display:flex; align-items:center; gap:9px; justify-self:end; margin-right:12px;}
+  .icon-btn{
+    width:38px; height:38px; border-radius:999px;
+    border:1px solid color-mix(in srgb, var(--cream) 26%, var(--brown) 74%);
+    background:color-mix(in srgb, var(--cream) 7%, transparent);
+    color:var(--cream); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; position:relative; padding:0; transition:background .15s, border-color .15s, color .15s;
+  }
+  .icon-btn svg{
+    width:18px; height:18px; display:block;
+    fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round;
+  }
+  .icon-btn:hover{border-color:var(--gold); color:var(--gold); background:color-mix(in srgb, var(--cream) 8%, transparent);}
+  .cart-badge{
+    position:absolute; top:-5px; right:-5px; background:var(--gold); color:var(--ink);
+    font-family:var(--font-mono); font-size:10px; font-weight:700; min-width:18px; height:18px;
+    border-radius:999px; display:flex; align-items:center; justify-content:center; padding:0 4px;
+    border:2px solid var(--brown);
+  }
+  @media (max-width:900px){
+    nav.main{display:none;}
+    /* Nav gone: collapse to a plain two-end bar instead of leaving its empty middle rail. */
+    .header-row{grid-template-columns:1fr auto;}
+  }
+
+  /* ---------- hero ---------- */
+  /* One flat brown band, centred, three short lines and a single button — no imagery. */
+  /* Fills the full first screen (minus the sticky bar + header above it), so the brown
+     band is what greets you — no sliver of the page below peeking into view before you
+     scroll. */
+  .hero{
+    position:relative; overflow:hidden;
+    background:var(--brown); color:var(--cream); text-align:center;
+    min-height:calc(100vh - 104px); display:flex; align-items:center; justify-content:center;
+  }
+  /* The photograph lives on a pseudo-element rather than the section itself so it can be
+     transformed independently of the text: a very slow push-in gives the opening screen
+     some life without anything actually moving under the reader's eye. */
+  .hero::before{
+    content:''; position:absolute; inset:0; z-index:0;
+    background-image:var(--hero-img); background-size:cover; background-position:center;
+    transform:scale(1.02); transform-origin:center;
+    animation:hero-drift 26s ease-out forwards;
+  }
+  @keyframes hero-drift{ to{ transform:scale(1.11); } }
+  /* No wash at all — the photograph shows at full strength. Legibility is carried entirely
+     by shadow on the type instead of by tinting the image: a tight dark shadow for edge
+     definition plus a wide soft one that acts as a local halo, which is what keeps the
+     cream heading readable where it crosses the bright cream box interior. */
+  .hero-inner{position:relative; z-index:1; padding:40px 0; max-width:760px; margin:0 auto;}
+  .hero h1, .hero p.lede, .hero .eyebrow{
+    text-shadow:0 1px 3px rgba(89,42,25,.85), 0 2px 22px rgba(89,42,25,.9), 0 0 60px rgba(89,42,25,.7);
+  }
+  .hero .eyebrow{color:var(--gold); font-size:13px; letter-spacing:.2em;}
+  .hero h1{font-size:clamp(42px,7vw,78px); line-height:1.06; color:var(--cream); margin-top:18px;}
+  .hero p.lede{
+    color:var(--cream); font-size:clamp(17px,2vw,22px); margin:22px auto 38px; max-width:34ch;
+  }
+  .hero .btn-gold{font-size:16px; padding:16px 34px;}
+
+
+  /* ================= LIGHT-PHOTOGRAPH HERO =================
+     The stock hero deliberately carries legibility with type shadow alone and no wash,
+     which works because the gemstone photograph is dark. The puja photograph is bright
+     cream, so cream text on it is close to invisible. That hero opts into a wash via
+     this modifier; the gemstone hero is untouched.
+     ::after sits above .hero::before (same z-index, later in paint order) and below
+     .hero-inner (z-index 1), so it darkens the photo without touching the type. */
+  .hero-wash::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(ellipse 78% 70% at 50% 46%,
+      rgba(89,42,25,.74) 0%, rgba(89,42,25,.58) 45%, rgba(89,42,25,.34) 100%);
+  }
+  .btn{
+    font-family:var(--font-body); font-weight:600; font-size:14.5px; padding:13px 26px; border-radius:999px;
+    border:1px solid transparent; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:8px;
+    transition:transform .15s ease, background .15s ease;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn-gold{background:var(--gold); color:var(--ink);}
+  .btn-gold:hover{background:color-mix(in srgb, var(--gold) 85%, var(--cream) 15%);}
+  .btn-line{background:transparent; border-color:var(--border); color:var(--ink);}
+  .btn-line:hover{border-color:var(--ink);}
+  .btn-full{width:100%; justify-content:center;}
+  .btn[disabled]{opacity:.45; cursor:not-allowed;}
+  .gem-result-thumb{width:56px; height:56px; flex-shrink:0; border-radius:8px; overflow:hidden; background:var(--cream);}
+  .gem-result-thumb img{width:100%; height:100%; object-fit:cover;}
+
+  /* ---------- purpose tiles ---------- */
+  .section{padding:72px 0;}
+  .section-head{display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:38px; flex-wrap:wrap;}
+  .section-head h2{font-size:clamp(30px,3.6vw,48px); line-height:1.12; margin-top:12px;}
+
+  /* Two rows of three rather than one row of six: at six across each tile was too narrow
+     to hold a photograph, which is why the old version fell back to an emoji in a circle
+     and read as clip-art. Three across gives each image a real frame. */
+  .purpose-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+  @media (max-width:900px){ .purpose-grid{grid-template-columns:repeat(2,1fr); gap:14px;} }
+  @media (max-width:520px){ .purpose-grid{grid-template-columns:1fr;} }
+
+  .purpose-tile{
+    position:relative; display:block; width:100%; padding:0; border:none; overflow:hidden;
+    aspect-ratio:3/2; border-radius:var(--radius); background:var(--bg-elev);
+    cursor:pointer; font-family:inherit; color:inherit; text-align:left;
+  }
+  .purpose-tile img{width:100%; height:100%; object-fit:cover; display:block; transition:transform .45s ease;}
+  .purpose-tile:hover img{transform:scale(1.045);}
+  /* Scrim only along the bottom, so the label is legible without burying the photograph. */
+  .purpose-tile::after{
+    content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
+    background:linear-gradient(to top, rgba(89,42,25,.92) 0%, rgba(89,42,25,.55) 30%, rgba(89,42,25,.05) 62%);
+  }
+  .purpose-tile .pt-label{
+    position:absolute; z-index:2; left:0; right:0; bottom:0; padding:20px 22px;
+    font-family:var(--font-display); font-weight:600; font-size:clamp(17px,1.5vw,21px);
+    color:var(--cream); line-height:1.2;
+  }
+  .purpose-tile .pt-label::after{
+    content:'→'; display:inline-block; margin-left:9px; color:var(--gold);
+    transform:translateX(-4px); opacity:0; transition:transform .25s ease, opacity .25s ease;
+  }
+  .purpose-tile:hover .pt-label::after{transform:translateX(0); opacity:1;}
+
+  /* ---------- shop ---------- */
+  .shop-layout{display:block;}
+
+  /* Filter bar sits ABOVE the grid, full width, groups flowing left-to-right so the
+     product grid itself keeps the whole row instead of losing a column to a sidebar. */
+  .filter-panel{
+    display:flex; flex-wrap:wrap; align-items:flex-start; gap:22px 40px;
+    background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius);
+    padding:18px 24px; margin-bottom:26px;
+  }
+  .filter-group{display:flex; flex-direction:column; min-width:150px;}
+  .filter-title{font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:10px;}
+  .filter-opt{display:flex; align-items:center; gap:9px; font-size:13.5px; padding:4px 0; cursor:pointer; color:var(--ink-soft); white-space:nowrap;}
+  .filter-opt:hover{color:var(--ink);}
+  .filter-opt input{accent-color:var(--ink); width:15px; height:15px; flex-shrink:0;}
+  .filter-opt.active-cat{color:var(--ink); font-weight:700;}
+  .clear-filters{font-size:12.5px; color:var(--ink); background:none; border:none; cursor:pointer; text-decoration:underline; padding:0; text-align:left; align-self:flex-end; margin-left:auto;}
+  @media (max-width:760px){ .filter-panel{flex-direction:column; gap:20px;} .clear-filters{align-self:flex-start; margin-left:0;} }
+
+  .toolbar{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;}
+  .toolbar .count{font-size:13.5px; color:var(--ink-soft);}
+  .toolbar select, .pj-controls select{
+    padding:9px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink);
+    font-family:var(--font-body); font-size:13.5px; font-weight:600;
+  }
+
+  /* auto-fill so the grid always uses the full row — however many cards fit at the
+     current width, rather than a fixed column count that leaves space unused. */
+  .product-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:22px;}
+  @media (max-width:520px){ .product-grid{grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:14px;} }
+
+  .card{
+    background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius);
+    overflow:hidden; display:flex; flex-direction:column; transition:box-shadow .15s, border-color .15s;
+  }
+  .card:hover{box-shadow:0 10px 26px var(--shadow); border-color:var(--border);}
+  .card-media{
+    aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; position:relative; overflow:hidden; background:var(--cream);
+  }
+  .card-media img{width:100%; height:100%; object-fit:cover; transition:transform .3s ease;}
+  .card:hover .card-media img{transform:scale(1.05);}
+  .card-tag{
+    position:absolute; top:10px; left:10px; font-family:var(--font-mono); font-size:10px; font-weight:700;
+    letter-spacing:.04em; background:var(--brown); color:var(--cream); padding:3px 8px; border-radius:5px; z-index:2;
+  }
+  .wishlist-btn{
+    position:absolute; top:8px; right:8px; z-index:2; width:32px; height:32px; border-radius:50%;
+    background:color-mix(in srgb, var(--cream) 88%, transparent); border:none; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:15px; color:var(--ink-faint); box-shadow:0 2px 6px var(--shadow);
+  }
+  .wishlist-btn.on{color:var(--brown);}
+  .card-body{padding:16px 16px 18px; display:flex; flex-direction:column; gap:6px; flex:1;}
+  .card-cat{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint);}
+  .card-name{font-family:var(--font-display); font-weight:600; font-size:16.5px; cursor:pointer; line-height:1.3;}
+  .card-name:hover{color:var(--ink); text-decoration:underline;}
+  .rating-row{display:flex; align-items:center; gap:6px; font-size:12px;}
+  .rating-row .stars-sm{color:var(--ink); letter-spacing:1px; font-size:12px;}
+  .rating-row .rcount{color:var(--ink-faint);}
+  .card-price-row{display:flex; align-items:baseline; gap:8px;}
+  .card-price{font-size:16px; font-weight:700;}
+  .card-mrp{font-size:12.5px; color:var(--ink-faint); text-decoration:line-through;}
+  .stock-line{font-size:11.5px; font-weight:600; color:var(--ink-soft);}
+  .stock-line.low{color:var(--brown);}
+  .card-actions{display:flex; gap:8px; margin-top:6px;}
+  .btn-sm{padding:9px 14px; font-size:13px; border-radius:8px;}
+
+  .empty-note{color:var(--ink-faint); font-size:14px; padding:40px 0; text-align:center;}
+
+  /* ---------- admin mode (local-only catalog editing) ---------- */
+  #adminToggle.on{background:var(--gold); color:var(--ink); border-color:var(--gold);}
+  .admin-bar{
+    background:var(--brown); color:color-mix(in srgb, var(--cream) 82%, var(--brown) 18%); border-radius:var(--radius); padding:16px 20px; margin-bottom:22px;
+  }
+  .admin-bar.hidden{display:none;}
+  .admin-bar-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+  .admin-bar-head .muted{color:color-mix(in srgb, var(--cream) 65%, var(--brown) 35%);}
+  .admin-pill{
+    font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.04em;
+    background:var(--gold); color:var(--ink); padding:4px 10px; border-radius:999px;
+  }
+  .admin-bar-cats{display:flex; gap:16px; flex-wrap:wrap;}
+  .admin-cat-opt{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; cursor:pointer;}
+  .admin-cat-opt input{accent-color:var(--gold-soft); width:15px; height:15px;}
+
+  .card-admin-actions{display:none; gap:8px; margin-top:6px;}
+  body.admin-on .card-actions{display:none;}
+  body.admin-on .card-admin-actions{display:flex;}
+  body.admin-on .wishlist-btn{display:none;}
+
+  .product-card-add{
+    border:2px dashed var(--border); background:transparent; border-radius:var(--radius);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    color:var(--ink-faint); font-weight:600; font-size:13.5px; cursor:pointer; min-height:280px;
+    font-family:var(--font-body);
+  }
+  .product-card-add:hover{border-color:var(--ink); color:var(--ink);}
+  .product-card-add-plus{font-size:32px; line-height:1; color:var(--ink);}
+
+  .admin-field-row{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .admin-tag-grid{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px;}
+  .admin-tag-opt{
+    display:flex; align-items:center; gap:7px; font-size:13px; border:1px solid var(--border); border-radius:999px;
+    padding:6px 12px; cursor:pointer;
+  }
+  .admin-tag-opt input{accent-color:var(--ink); width:14px; height:14px;}
+  .admin-photo-row{display:flex; align-items:center; gap:14px; margin-bottom:16px; flex-wrap:wrap;}
+  .admin-photo-preview{width:70px; height:70px; border-radius:8px; overflow:hidden; background:var(--bg-elev); flex-shrink:0;}
+  .admin-photo-preview img{width:100%; height:100%; object-fit:cover;}
+  .admin-tint-row{display:flex; align-items:center; gap:10px;}
+  .admin-tint-row input[type="color"]{width:40px; height:34px; border:1px solid var(--border); border-radius:8px; padding:2px; background:var(--surface);}
+
+  /* ---------- calculators ---------- */
+  .calc-section{background:var(--bg-elev); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft);}
+  /* stretch, not start: the campaign image is naturally taller than the two tool cards, and
+     with align-items:start that difference showed up as dead space under the cards. The
+     cards now fill the row height and their buttons are pushed to the bottom edge, so the
+     three columns finish on the same line. */
+  .calc-grid{display:grid; grid-template-columns:.72fr 1fr 1fr; gap:28px; align-items:stretch;}
+  /* At two columns the image would take one cell and leave the second card orphaned beside
+     an empty one, so it spans the full row and the two tools sit together beneath it. */
+  @media (max-width:1040px){
+    .calc-grid{grid-template-columns:1fr 1fr;}
+    /* On its own row it has no sibling to take height from, so give it an explicit ratio. */
+    .calc-portrait{grid-column:1 / -1; max-width:460px; margin:0 auto; aspect-ratio:4/3;}
+  }
+  @media (max-width:820px){ .calc-grid{grid-template-columns:1fr;} }
+  .calc-card{
+    background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:28px;
+    display:flex; flex-direction:column;
+  }
+  /* Takes up whatever slack is left after the heading, copy and field — this is what
+     bottom-aligns the two buttons with each other and with the image's lower edge. */
+  .calc-card > .btn{margin-top:auto;}
+
+  /* Real reference content, not spacer: the worked example shows how the two numbers are
+     derived, and the key lists what each number actually maps to. Both are things someone
+     using these tools wants anyway, and they're what fills the cards to the image's height
+     instead of an empty gap. */
+  .calc-aside{
+    margin:4px 0 20px; padding:16px 18px; border-radius:10px;
+    background:color-mix(in srgb, var(--brown) 6%, var(--cream) 94%);
+    border:1px solid var(--border-soft);
+  }
+  .calc-aside-title{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--ink-faint); font-weight:700; margin-bottom:9px;
+  }
+  .calc-aside p{margin:0; font-size:13px; line-height:1.8; color:var(--ink-soft);}
+  .calc-aside b{color:var(--ink); font-weight:700;}
+  .planet-key{display:grid; grid-template-columns:1fr 1fr; gap:5px 14px; margin:0; padding:0; list-style:none;}
+  .planet-key li{font-size:12px; color:var(--ink-soft); display:flex; gap:6px; align-items:baseline; line-height:1.5;}
+  .planet-key li b{font-family:var(--font-mono); font-size:11px; color:var(--ink); width:9px; flex-shrink:0;}
+  .calc-card h3{font-size:19px; margin-bottom:6px;}
+  .calc-card .lede{font-size:14px; margin-bottom:18px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:6px;}
+  .field input, .field select, .field textarea{
+    width:100%; padding:11px 13px; border-radius:8px; border:1px solid var(--border); background:var(--bg-elev);
+    color:var(--ink); font-family:var(--font-body); font-size:14.5px;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{border-color:var(--ink);}
+  .calc-result{
+    margin-top:16px; padding:16px; border-radius:10px; background:var(--bg); border:1px dashed var(--border);
+    display:none;
+  }
+  .calc-result.show{display:block;}
+  .calc-result .num-big{font-family:var(--font-mono); font-size:34px; font-weight:700; color:var(--ink);}
+  .calc-result .num-sub{font-size:12px; color:var(--ink-faint); margin-top:-4px;}
+  .calc-result p{margin:10px 0 0; font-size:14px; color:var(--ink-soft);}
+  .calc-result .rec{
+    margin-top:12px; display:flex; align-items:center; gap:10px; font-size:13.5px; font-weight:600;
+    background:var(--surface); padding:8px 12px; border-radius:8px;
+  }
+
+  /* ---------- testimonials ---------- */
+  /* ---------- testimonials ----------
+     Compact quote cards with a small round portrait by the name — the photograph is a
+     credential here, not the subject, so it stays at avatar scale. */
+  .testi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:20px;}
+  @media (max-width:820px){ .testi-grid{grid-template-columns:1fr;} }
+  .testi-card{background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:22px;}
+  .stars{color:var(--ink); font-size:14px; letter-spacing:2px; margin-bottom:10px;}
+  .testi-card p{font-size:14.5px; color:var(--ink-soft); font-style:italic; margin:0;}
+  .testi-who{display:flex; align-items:center; gap:11px; margin-top:16px;}
+  .testi-avatar{
+    width:44px; height:44px; border-radius:50%; overflow:hidden; flex-shrink:0;
+    background:var(--bg-elev); border:1px solid var(--border-soft);
+  }
+  .testi-avatar img{width:100%; height:100%; object-fit:cover; display:block;}
+  .testi-name{font-size:13.5px; font-weight:600;}
+  .testi-loc{font-size:12px; color:var(--ink-faint);}
+
+  /* ---------- campaign artwork ----------
+     Images 5 and 4 are finished campaign creatives with their own typography baked in, so
+     they are NEVER cropped — width:100%/height:auto only. Cropping to fill a fixed band
+     would slice their own headlines off, which is exactly the bug that makes stock banners
+     look broken on phones. Images without text (about/verify) can safely use object-fit. */
+  .campaign{display:block; width:100%; background:var(--bg-elev);}
+  .campaign img{width:100%; height:auto; display:block;}
+
+  /* The campaign headline that used to be baked into this image has been cropped off, which
+     is what finally lets it behave like a normal photo: object-fit:cover means it fills the
+     row height the two cards set, so all three columns are genuinely the same size instead
+     of the image ending short. */
+  .calc-portrait{border-radius:var(--radius); overflow:hidden; background:var(--bg-elev);}
+  .calc-portrait img{width:100%; height:100%; object-fit:cover; display:block;}
+  @media (max-width:820px){ .calc-portrait{max-width:380px; margin:0 auto;} }
+
+  /* ---------- about band ---------- */
+  /* These two headings live outside .section-head, so they'd otherwise fall back to the
+     browser's default h2 and sit noticeably smaller than every other section title. */
+  .about-band h2{font-size:clamp(28px,3.2vw,42px); line-height:1.14; margin-top:12px;}
+  .about-band{display:grid; grid-template-columns:.9fr 1.1fr; gap:44px; align-items:center;}
+  @media (max-width:820px){ .about-band{grid-template-columns:1fr;} }
+  .about-band.reverse{grid-template-columns:1.1fr .9fr;}
+  @media (max-width:820px){
+    .about-band.reverse{grid-template-columns:1fr;}
+    /* Keep the picture above its copy on mobile in both directions, so the two
+       alternating sections don't read differently once they stack. */
+    .about-band.reverse .editorial-media{order:-1;}
+  }
+  .editorial-media{border-radius:var(--radius); overflow:hidden; aspect-ratio:4/3; background:var(--bg-elev);}
+  .editorial-media img{width:100%; height:100%; object-fit:cover; display:block;}
+  .badge-row{display:flex; gap:22px; flex-wrap:wrap; margin-top:22px;}
+  .badge-row div{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); font-weight:600;}
+
+  /* ---------- footer ----------
+     The brand column is given real width and the link columns are pushed to the right rail,
+     so the footer reads as "who we are, then where to go" rather than four columns of equal
+     weight competing with each other. */
+  footer{background:var(--brown); color:color-mix(in srgb, var(--cream) 70%, var(--brown) 30%); padding:72px 0 0;}
+  .foot-grid{display:grid; grid-template-columns:1.6fr repeat(3, minmax(140px, .8fr)); gap:32px 40px;}
+  @media (max-width:900px){ .foot-grid{grid-template-columns:1fr 1fr; gap:36px 28px;} }
+  @media (max-width:560px){ .foot-grid{grid-template-columns:1fr;} }
+  .foot-brand{max-width:34ch;}
+  .foot-tag{font-size:14px; line-height:1.65; margin:16px 0 0; color:color-mix(in srgb, var(--cream) 70%, var(--brown) 30%);}
+
+  footer h4{
+    color:var(--cream); font-family:var(--font-mono); font-size:10.5px; font-weight:700;
+    letter-spacing:.16em; text-transform:uppercase; margin:0 0 16px;
+  }
+  footer a{
+    display:block; font-size:14px; text-decoration:none; margin-bottom:11px; width:fit-content;
+    color:color-mix(in srgb, var(--cream) 72%, var(--brown) 28%);
+    transition:color .15s;
+  }
+  footer a:hover{color:var(--gold);}
+
+  /* Newsletter gets its own labelled block instead of a bare input floating under the
+     tagline, which was the main thing making this corner look unfinished. */
+  .foot-news-block{margin-top:26px;}
+  .foot-news-label{
+    font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--cream); margin-bottom:10px;
+  }
+  .foot-news{display:flex; gap:0; max-width:340px; border-radius:10px; overflow:hidden;
+    border:1px solid color-mix(in srgb, var(--cream) 26%, var(--brown) 74%);}
+  .foot-news input{
+    flex:1; min-width:0; padding:13px 15px; border:none; outline:none;
+    background:color-mix(in srgb, var(--cream) 7%, var(--brown) 93%);
+    color:var(--cream); font-size:14px; font-family:var(--font-body);
+  }
+  .foot-news input::placeholder{color:color-mix(in srgb, var(--cream) 45%, var(--brown) 55%);}
+  .foot-news input:focus{background:color-mix(in srgb, var(--cream) 12%, var(--brown) 88%);}
+  .foot-news .btn{border-radius:0; padding:13px 22px; font-size:14px; flex-shrink:0;}
+
+  /* Reassurance row: the three things a first-time buyer of an expensive stone wants to
+     know, which the footer had no answer for at all before. */
+  .foot-assure{
+    display:flex; flex-wrap:wrap; gap:14px 40px; margin-top:56px; padding-top:28px;
+    border-top:1px solid color-mix(in srgb, var(--cream) 16%, var(--brown) 84%);
+  }
+  .foot-assure div{display:flex; align-items:center; gap:10px; font-size:13.5px; color:color-mix(in srgb, var(--cream) 78%, var(--brown) 22%);}
+  .foot-assure svg{width:17px; height:17px; flex-shrink:0; fill:none; stroke:var(--gold); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;}
+
+  .foot-bottom{
+    border-top:1px solid color-mix(in srgb, var(--cream) 16%, var(--brown) 84%);
+    margin-top:28px; padding:20px 0 26px;
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:12.5px; color:color-mix(in srgb, var(--cream) 50%, var(--brown) 50%);
+    flex-wrap:wrap; gap:10px;
+  }
+  .foot-bottom a{display:inline; margin:0 0 0 20px; font-size:12.5px;}
+
+  /* ---------- cart drawer ---------- */
+  .scrim{
+    position:fixed; inset:0; background:var(--overlay); z-index:60; opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .scrim.show{opacity:1; pointer-events:auto;}
+  .drawer{
+    position:fixed; top:0; right:0; height:100%; width:min(420px,92vw); background:var(--surface); z-index:70;
+    transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column;
+    box-shadow:-10px 0 30px var(--shadow);
+  }
+  .drawer.show{transform:translateX(0);}
+  .drawer-head{display:flex; align-items:center; justify-content:space-between; padding:20px 22px; border-bottom:1px solid var(--border-soft);}
+  .drawer-head h3{font-size:19px;}
+  .close-x{background:none; border:none; font-size:20px; cursor:pointer; color:var(--ink-soft); line-height:1;}
+  .drawer-body{flex:1; overflow-y:auto; padding:16px 22px;}
+  .cart-line{display:flex; gap:12px; padding:14px 0; border-bottom:1px solid var(--border-soft);}
+  .cart-line .cl-media{width:60px; height:60px; border-radius:8px; flex-shrink:0; overflow:hidden; background:var(--cream);}
+  .cart-line .cl-media img{width:100%; height:100%; object-fit:cover;}
+  .cart-line .cl-info{flex:1; min-width:0;}
+  .cart-line .cl-name{font-size:13.5px; font-weight:600; margin-bottom:4px;}
+  .cart-line .cl-price{font-size:12.5px; color:var(--ink-faint);}
+  .qty-stepper{display:flex; align-items:center; gap:0; border:1px solid var(--border); border-radius:7px; width:fit-content; margin-top:8px;}
+  .qty-stepper button{width:26px; height:26px; background:none; border:none; cursor:pointer; font-size:14px; color:var(--ink);}
+  .qty-stepper span{width:26px; text-align:center; font-family:var(--font-mono); font-size:12.5px;}
+  .cl-remove{background:none; border:none; color:var(--ink-faint); cursor:pointer; font-size:12px; text-decoration:underline; margin-top:6px;}
+  .drawer-foot{padding:18px 22px 22px; border-top:1px solid var(--border-soft);}
+  .sum-row{display:flex; justify-content:space-between; font-size:13.5px; color:var(--ink-soft); margin-bottom:6px;}
+  .sum-row.total{font-size:16px; font-weight:700; color:var(--ink); margin-top:10px;}
+  .empty-cart{text-align:center; padding:60px 10px; color:var(--ink-faint);}
+
+  /* ---------- modal ---------- */
+  .modal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; padding:20px;
+    opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .modal.show{opacity:1; pointer-events:auto;}
+  .modal-scrim{position:absolute; inset:0; background:var(--overlay);}
+  .modal-box{
+    position:relative; background:var(--surface); border-radius:16px; max-width:560px; width:100%;
+    max-height:88vh; overflow-y:auto; padding:30px; box-shadow:0 20px 60px var(--shadow);
+  }
+  .modal-box.wide{max-width:640px;}
+  .modal-close{position:absolute; top:16px; right:16px; background:none; border:none; font-size:20px; cursor:pointer; color:var(--ink-soft);}
+
+  .pv-media{border-radius:12px; margin-bottom:10px; overflow:hidden; background:var(--cream); aspect-ratio:1;}
+  .pv-media img{width:100%; height:100%; object-fit:cover;}
+  .pv-thumbs{display:flex; gap:8px; margin-bottom:18px;}
+  .pv-thumb{width:60px; height:60px; border-radius:8px; overflow:hidden; background:var(--cream); cursor:pointer; border:2px solid transparent;}
+  .pv-thumb.sel{border-color:var(--ink);}
+  .pv-thumb img{width:100%; height:100%; object-fit:cover;}
+  .pv-cat{font-family:var(--font-mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink);}
+  .pv-name{font-size:24px; margin:6px 0 8px;}
+  .pv-rating-row{display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:12px;}
+  .pv-rating-row .stars-sm{color:var(--ink); letter-spacing:1px;}
+  .pv-price-row{display:flex; align-items:baseline; gap:10px; margin-bottom:14px;}
+  .pv-price{font-size:22px; font-weight:700;}
+  .pv-mrp{color:var(--ink-faint); text-decoration:line-through; font-size:14px;}
+  .pv-off{background:var(--gold); color:var(--ink); font-size:12px; font-weight:700; padding:2px 8px; border-radius:5px;}
+  .pv-stock{font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:14px;}
+  .pv-stock.low{color:var(--brown);}
+  .pv-actions{display:flex; align-items:center; gap:12px; margin-bottom:22px;}
+
+  .pv-tabs{display:flex; gap:4px; border-bottom:1px solid var(--border-soft); margin-bottom:16px;}
+  .pv-tab{
+    font-family:var(--font-body); font-size:13.5px; font-weight:600; color:var(--ink-faint); background:none; border:none;
+    padding:9px 4px; cursor:pointer; border-bottom:2px solid transparent; margin-right:18px;
+  }
+  .pv-tab.sel{color:var(--ink); border-bottom-color:var(--ink);}
+  .pv-panel{display:none;}
+  .pv-panel.sel{display:block;}
+  .pv-desc{color:var(--ink-soft); font-size:14.5px; margin-bottom:14px;}
+  .pv-benefits{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;}
+  .pv-benefits li{font-size:13.5px; color:var(--ink-soft); display:flex; gap:8px;}
+  .pv-benefits li::before{content:"✦"; color:var(--ink); flex-shrink:0;}
+
+  .pincode-row{display:flex; gap:8px; margin:6px 0 10px;}
+  .pincode-row input{
+    flex:1; padding:9px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-elev); color:var(--ink); font-size:13.5px;
+  }
+  .pincode-result{font-size:13px; color:var(--ink-soft); min-height:18px;}
+
+  .review-item{border-bottom:1px solid var(--border-soft); padding:14px 0;}
+  .review-item:last-child{border-bottom:none;}
+  .review-item .stars-sm{color:var(--ink); letter-spacing:1px; font-size:12.5px;}
+  .review-item .rev-name{font-size:13px; font-weight:700; margin-top:4px;}
+  .review-item .rev-date{font-size:11.5px; color:var(--ink-faint); font-weight:400; margin-left:6px;}
+  .review-item p{font-size:13.5px; color:var(--ink-soft); margin:6px 0 0;}
+
+  .co-steps{display:flex; gap:8px; margin-bottom:22px;}
+  .co-step{flex:1; height:4px; background:var(--border-soft); border-radius:2px;}
+  .co-step.on{background:var(--gold);}
+  .field-row{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .pay-opt{
+    display:flex; align-items:center; gap:10px; border:1px solid var(--border); border-radius:9px; padding:12px 14px;
+    margin-bottom:10px; cursor:pointer; font-size:14px; font-weight:600;
+  }
+  .pay-opt.sel{border-color:var(--ink); background:var(--bg-elev);}
+  .checkout-note{font-size:12px; color:var(--ink-faint); background:var(--bg-elev); padding:10px 12px; border-radius:8px; margin:16px 0;}
+
+  .confirm{text-align:center; padding:10px 0;}
+  .confirm .tick{
+    width:64px; height:64px; border-radius:50%; background:var(--gold); color:var(--ink); font-size:30px;
+    display:flex; align-items:center; justify-content:center; margin:0 auto 18px;
+  }
+  .confirm .ordno{font-family:var(--font-mono); font-weight:700; color:var(--ink); font-size:18px; margin:6px 0 18px;}
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); z-index:90;
+    background:var(--brown); color:var(--cream); padding:12px 20px; border-radius:999px; font-size:13.5px; font-weight:600;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  .hidden{display:none !important;}
+
+  /* ==================== MOTION ====================
+     Everything here is gated behind .js-anim, a class JS adds to <html> on boot. That
+     ordering matters: the hidden "before" state is never applied unless the script that
+     removes it is definitely running, so a JS failure leaves a fully visible page rather
+     than a blank one. Only opacity and transform are animated, both GPU-composited. */
+  .js-anim [data-reveal]{opacity:0; transform:translateY(20px);}
+  [data-reveal].is-in{
+    opacity:1; transform:none;
+    transition:opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1);
+  }
+
+  /* Hero copy rises in sequence on load. */
+  .js-anim .hero-inner > *{opacity:0; transform:translateY(24px);}
+  .hero-in .hero-inner > *{animation:rise .9s cubic-bezier(.22,.61,.36,1) forwards;}
+  .hero-in .hero-inner > *:nth-child(1){animation-delay:.15s;}
+  .hero-in .hero-inner > *:nth-child(2){animation-delay:.28s;}
+  .hero-in .hero-inner > *:nth-child(3){animation-delay:.41s;}
+  .hero-in .hero-inner > *:nth-child(4){animation-delay:.54s;}
+  @keyframes rise{ to{ opacity:1; transform:none; } }
+
+  /* Header gains a shadow once the page moves, so it detaches from the hero rather than
+     floating ambiguously over it. */
+  header.site{transition:box-shadow .25s ease, background .25s ease;}
+  header.site.scrolled{box-shadow:0 6px 24px rgba(89,42,25,.28);}
+
+  .card{transition:box-shadow .22s ease, border-color .22s ease, transform .22s ease;}
+  .card:hover{transform:translateY(-4px);}
+  .purpose-tile{transition:transform .25s ease, box-shadow .25s ease;}
+  .purpose-tile:hover{transform:translateY(-4px); box-shadow:0 14px 30px var(--shadow);}
+  .btn{transition:transform .18s ease, background .15s ease, border-color .15s ease, color .15s ease;}
+  .btn-gold:hover, .btn-line:hover{transform:translateY(-2px);}
+  .btn:active{transform:translateY(0) scale(.97);}
+  .testi-card{transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease;}
+  .testi-card:hover{transform:translateY(-3px); box-shadow:0 12px 28px var(--shadow);}
+  .icon-btn{transition:background .15s, border-color .15s, color .15s, transform .15s;}
+  .icon-btn:active{transform:scale(.92);}
+  .cart-badge{animation:pop .32s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes pop{ from{ transform:scale(.4); } to{ transform:scale(1); } }
+
+  /* Calculator result slides open instead of snapping into place. */
+  .calc-result.show{animation:rise .5s cubic-bezier(.22,.61,.36,1) backwards;}
+
+  /* One global off-switch. Anything added above must be covered by this. */
+  @media (prefers-reduced-motion:reduce){
+    .js-anim [data-reveal],
+    .js-anim .hero-inner > *{opacity:1 !important; transform:none !important;}
+    [data-reveal].is-in{transition:none;}
+    .hero::before{animation:none; transform:none;}
+    .hero-in .hero-inner > *,
+    .calc-result.show,
+    .cart-badge{animation:none;}
+    .card:hover, .purpose-tile:hover, .testi-card:hover,
+    .btn-gold:hover, .btn-line:hover{transform:none;}
+  }
+
+  /* ==================== PHONE ====================
+     One block, last in the sheet, so it overrides cleanly and desktop is untouched.
+     Written against a 360-430px viewport, which is where nearly all real traffic sits. */
+  @media (max-width: 640px){
+
+    /* Gutters: 28px each side eats 15% of a 360px screen. */
+    .wrap{padding:0 16px;}
+    .section{padding:40px 0;}
+    .section-head{margin-bottom:22px; gap:10px;}
+    .section-head h2{font-size:26px; line-height:1.18; margin-top:8px;}
+    .eyebrow{font-size:11px; letter-spacing:.13em;}
+
+    /* Header: the wordmark alone is enough at this width. */
+    .header-row{padding:11px 0; gap:12px;}
+    .header-actions{margin-right:10px;}
+    .logo-mark{width:38px; height:38px; margin:-6px 0;}
+    .logo-name{font-size:18px;}
+    .logo{gap:7px; margin-left:10px;}
+    .icon-btn{width:36px; height:36px;}
+    .icon-btn svg{width:17px; height:17px;}
+
+    /* Ticker: smaller and tighter, it is a strip not a headline. */
+    .topstrip{font-size:11px; padding:7px 0;}
+    .marquee-item .sep{margin:0 18px;}
+
+    /* Hero: 100vh minus a desktop header left almost nothing visible above the fold on a
+       phone. Sized to the content instead, with type that fits 360px without wrapping
+       into six lines. */
+    .hero{min-height:auto;}
+    .hero-inner{padding:56px 4px 60px; max-width:none;}
+    .hero h1{font-size:34px; line-height:1.14;}
+    .hero p.lede{font-size:15px; margin:12px auto 26px; max-width:30ch;}
+    .hero .btn-gold{font-size:15px; padding:14px 28px;}
+
+    /* Products: two across. One is too sparse to browse, three is what made the text
+       unreadable in the screenshots. */
+    .product-grid{grid-template-columns:repeat(2, 1fr); gap:12px;}
+    .card{border-radius:12px;}
+    .card-body{padding:11px 11px 13px; gap:5px;}
+    .card-name{font-size:13.5px; line-height:1.3;}
+    .wishlist-btn{width:28px; height:28px; font-size:13px; top:6px; right:6px;}
+    .card-tag{font-size:9px; padding:2px 6px; top:7px; left:7px;}
+    .toolbar{gap:10px; margin-bottom:14px;}
+    .toolbar .count{font-size:12.5px;}
+    .toolbar select, .pj-controls select{font-size:12.5px; padding:8px 10px;}
+
+    /* Purpose tiles: two across, and shorter, so all six are reachable without a long
+       scroll past them. */
+    .purpose-grid{grid-template-columns:repeat(2, 1fr); gap:11px;}
+    .purpose-tile{aspect-ratio:4/3; border-radius:12px;}
+    .purpose-tile .pt-label{padding:12px 13px; font-size:14px;}
+    .purpose-tile .pt-label::after{display:none;}   /* hover arrow is meaningless on touch */
+
+    /* Editorial blocks stack; the image should not be a letterbox sliver. */
+    .about-band{gap:22px;}
+    .about-band h2{font-size:24px;}
+    .editorial-media{aspect-ratio:3/2;}
+    .calc-card{padding:20px;}
+    .calc-card h3{font-size:17px;}
+    .testi-card{padding:18px;}
+    .testi-card p{font-size:14px;}
+
+    /* Cart and modals: full-height sheets rather than floating desktop panels. */
+    .drawer{width:100%;}
+    .modal{padding:0; align-items:flex-end;}
+    .modal-box{
+      max-width:none; width:100%; border-radius:18px 18px 0 0;
+      max-height:92vh; padding:22px 18px calc(22px + env(safe-area-inset-bottom));
+    }
+    .modal-close{top:12px; right:12px;}
+
+    /* Touch targets: 44px is the accessibility floor, several of these were under 34. */
+    .btn{padding:13px 20px; min-height:44px;}
+    .btn-sm{padding:11px 12px; font-size:12.5px; min-height:40px;}
+    .card-actions{gap:6px;}
+    .qty-stepper button{width:34px; height:34px;}
+
+    .foot-grid{gap:26px 20px;}
+    .foot-assure{gap:12px 20px; margin-top:34px;}
+  }
+
+  /* Very small phones (<=360px): one column reads better than two cramped ones. */
+  @media (max-width: 360px){
+    .product-grid{grid-template-columns:1fr;}
+    .purpose-grid{grid-template-columns:1fr;}
+    .hero h1{font-size:30px;}
+  }
+
+
+  /* ================= PUJA SECTION =================
+     A puja is a scheduled ritual, not a boxed product, so it deliberately does NOT go
+     through the gemstone cart: no "Add to cart", no delivery-ETA pincode box, no stock
+     count. Two further reasons it stays its own section rather than a category of the
+     product grid:
+       1. recomputeCatalog() replaces the whole catalogue with the live rows whenever
+          /api/remedies returns anything, so anything hardcoded into PRODUCTS is invisible
+          in production. PUJAS is read directly by renderPujas() and is never subject to
+          that override.
+       2. app_settings.remedy_orders_enabled_puja is deliberately false and
+          POST /api/orders/checkout 403s a blocked category server-side. An "Add to cart"
+          here would be a control that always fails - the same fake-control bug this
+          codebase has already had twice. Booking is an enquiry until that flag is on. */
+  .puja-section{background:var(--bg-elev); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft);}
+  .pj-lede{margin-top:12px; max-width:60ch;}
+  .pj-controls{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px;}
+  .pj-search{flex:1; min-width:210px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--surface); color:var(--ink); font-family:var(--font-body); font-size:14.5px;}
+  .pj-search:focus{outline:2px solid var(--focus); outline-offset:1px;}
+  .pj-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;}
+  .pj-chip{padding:7px 14px; border-radius:999px; border:1px solid var(--border); background:transparent;
+    color:var(--ink-soft); font-family:var(--font-body); font-size:13px; cursor:pointer; transition:all .18s ease;}
+  .pj-chip:hover{border-color:var(--brown);}
+  .pj-chip.on{background:var(--brown); border-color:var(--brown); color:var(--cream);}
+  .pj-card .card-body{gap:4px;}
+  .pj-hi{font-size:13px; color:var(--ink-faint); line-height:1.35; min-height:18px;}
+  .pj-meta{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .pj-dur{display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--ink-soft);
+    background:color-mix(in srgb, var(--brown) 8%, transparent); border-radius:999px; padding:4px 10px;}
+  .pj-price{font-size:16px; font-weight:600; color:var(--ink);}
+  .pj-book{margin-top:10px; width:100%;}
+  .pj-empty{grid-column:1/-1; text-align:center; padding:40px 10px; color:var(--ink-faint);}
+  .pj-modal-media{border-radius:var(--radius); overflow:hidden; aspect-ratio:5/3; background:var(--bg-elev); margin-bottom:16px;}
+  .pj-modal-media img{width:100%; height:100%; object-fit:cover; display:block;}
+  .pj-facts{display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 16px;}
+  .pj-fact{flex:1; min-width:130px; border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:10px 12px;}
+  .pj-fact-k{font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-faint);}
+  .pj-fact-v{font-size:17px; margin-top:3px; color:var(--ink);}
+  .pj-steps{margin:0 0 18px; padding-left:18px; color:var(--ink-soft); font-size:14px; line-height:1.75;}
+  @media (max-width:520px){
+    .pj-hi{font-size:12px;}
+    .pj-price{font-size:15px;}
+    .pj-book{font-size:13px; padding:9px 12px;}
+  }
+  /* ================= STORE ENTRY (landing page) =================
+     Two doors, nothing else to decide. Built on the same photo-tile pattern as the
+     purpose tiles rather than a new visual language, so the front page reads as part
+     of the same shop. */
+  .gate-grid{display:grid; grid-template-columns:repeat(2, 1fr); gap:22px;}
+  .gate-tile{
+    position:relative; display:block; border-radius:var(--radius); overflow:hidden;
+    aspect-ratio:4/3; text-decoration:none; border:1px solid var(--border-soft);
+    box-shadow:0 2px 14px var(--shadow); transition:transform .22s ease, box-shadow .22s ease;
+  }
+  .gate-tile:hover{transform:translateY(-3px); box-shadow:0 10px 30px var(--shadow);}
+  .gate-tile img{width:100%; height:100%; object-fit:cover; display:block; transition:transform .35s ease;}
+  .gate-tile:hover img{transform:scale(1.05);}
+  .gate-label{
+    position:absolute; left:0; right:0; bottom:0; padding:22px 22px 20px;
+    background:linear-gradient(to top, rgba(89,42,25,.96) 0%, rgba(89,42,25,.88) 38%, rgba(89,42,25,.55) 68%, rgba(89,42,25,0) 100%);
+    color:var(--cream);
+  }
+  .gate-label h3{font-family:var(--font-display); font-size:clamp(20px,2.4vw,28px); line-height:1.15;}
+  .gate-label p{font-size:14px; margin-top:6px; color:color-mix(in srgb, var(--cream) 86%, var(--brown) 14%);}
+  .gate-go{display:inline-flex; align-items:center; gap:7px; margin-top:12px; font-size:13.5px; font-weight:600; color:var(--gold);}
+  @media (max-width:640px){
+    .gate-grid{grid-template-columns:1fr; gap:14px;}
+    .gate-tile{aspect-ratio:16/10;}
+    .gate-label{padding:16px 16px 14px;}
+    .gate-label p{font-size:13px;}
+  }

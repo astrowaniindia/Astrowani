@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#592a19">
 <meta name="format-detection" content="telephone=no">
-<title>Astrowani Store</title>
+<title>Book a Puja — Astrowani Store</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -59,32 +59,37 @@
 
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
-<section class="section" id="entry" style="padding-top:52px;">
+<section class="hero hero-wash" style="--hero-img:url(&quot;/assets/pujas-banner.jpg&quot;);">
+  <div class="wrap hero-inner">
+    <p class="eyebrow">Wani Puja</p>
+    <h1>Pujas, performed for you</h1>
+    <p class="lede">Sixty-four pujas, paths and sanskars, each done with the full vidhi by our own pandits.</p>
+    <a href="#puja" class="btn btn-gold">See every puja</a>
+  </div>
+</section>
+
+<section class="section puja-section" id="puja">
   <div class="wrap">
     <div class="section-head">
       <div>
-        <p class="eyebrow">Astrowani Store</p>
-        <h2>What are you here for?</h2>
+        <p class="eyebrow">Wani Puja</p>
+        <h2>Book a puja with our pandits</h2>
+        <p class="lede pj-lede">Sixty-four pujas, paths and sanskars, each performed by Astrowani&rsquo;s own pandits with the full vidhi. Pick one and we will confirm the muhurat, the samagri and the final cost with you before anything is paid.</p>
       </div>
     </div>
-    <div class="gate-grid">
-      <a class="gate-tile" href="/gemstones/">
-        <img src="/assets/9063ec9a65d8.jpg" alt="Certified astrological gemstones in a jeweller's box.">
-        <div class="gate-label">
-          <h3>Gemstones</h3>
-          <p>Certified stones, chosen against your chart and verified before they reach you.</p>
-          <span class="gate-go">Shop gemstones &rarr;</span>
-        </div>
-      </a>
-      <a class="gate-tile" href="/pujas/">
-        <img src="/assets/pujas-banner.jpg" alt="A puja thali, kalash and lit diya set out on a low table.">
-        <div class="gate-label">
-          <h3>Pujas</h3>
-          <p>Sixty-four pujas, paths and sanskars, performed with the full vidhi by our pandits.</p>
-          <span class="gate-go">Book a puja &rarr;</span>
-        </div>
-      </a>
+    <div class="pj-controls">
+      <input class="pj-search" id="pjSearch" type="search" placeholder="Search a puja, path or sanskar&hellip;" aria-label="Search pujas">
+      <select id="pjSort" aria-label="Sort pujas">
+        <option value="featured">Sort: Featured</option>
+        <option value="price-asc">Sort: Price, low to high</option>
+        <option value="price-desc">Sort: Price, high to low</option>
+        <option value="dur-asc">Sort: Shortest first</option>
+        <option value="name">Sort: A to Z</option>
+      </select>
     </div>
+    <div class="pj-chips" id="pjChips"></div>
+    <div class="toolbar"><span class="count" id="pjCount"></span></div>
+    <div class="product-grid" id="pujaGrid"></div>
   </div>
 </section>
 

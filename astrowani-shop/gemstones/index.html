@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#592a19">
 <meta name="format-detection" content="telephone=no">
-<title>Astrowani Store</title>
+<title>Gemstones — Astrowani Store</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -59,31 +59,167 @@
 
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
-<section class="section" id="entry" style="padding-top:52px;">
+<section class="hero">
+  <div class="wrap hero-inner">
+    <p class="eyebrow">Certified Vedic Gemstones</p>
+    <h1>Gemstones, chosen by chart</h1>
+    <p class="lede">Certified stones, verified before they reach you.</p>
+    <a href="#shop" class="btn btn-gold">Shop the collection</a>
+  </div>
+</section>
+
+<section class="section" id="purpose">
   <div class="wrap">
     <div class="section-head">
       <div>
-        <p class="eyebrow">Astrowani Store</p>
-        <h2>What are you here for?</h2>
+        <p class="eyebrow">Shop by Purpose</p>
+        <h2>What's asking for a remedy right now?</h2>
       </div>
     </div>
-    <div class="gate-grid">
-      <a class="gate-tile" href="/gemstones/">
-        <img src="/assets/9063ec9a65d8.jpg" alt="Certified astrological gemstones in a jeweller's box.">
-        <div class="gate-label">
-          <h3>Gemstones</h3>
-          <p>Certified stones, chosen against your chart and verified before they reach you.</p>
-          <span class="gate-go">Shop gemstones &rarr;</span>
+    <div class="purpose-grid" id="purposeGrid"></div>
+  </div>
+</section>
+
+<section class="section" id="shop" style="padding-top:32px;">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">The Collection</p>
+        <h2>Certified gemstones, by planet</h2>
+      </div>
+    </div>
+    <div class="admin-bar hidden" id="adminBar">
+      <div class="admin-bar-head">
+        <span class="admin-pill">🛠 Admin mode</span>
+        <span class="muted" style="font-size:12.5px;">Changes save to this browser only. Nothing here touches a real server.</span>
+      </div>
+      <div class="admin-bar-cats" id="adminCatToggles"></div>
+    </div>
+    <div class="shop-layout">
+      <div>
+        <div class="toolbar">
+          <span class="count" id="resultCount"></span>
+          <select id="sortSelect">
+            <option value="popularity">Sort: Popularity</option>
+            <option value="price-asc">Sort: Price, low to high</option>
+            <option value="price-desc">Sort: Price, high to low</option>
+            <option value="newest">Sort: Newest</option>
+          </select>
         </div>
-      </a>
-      <a class="gate-tile" href="/pujas/">
-        <img src="/assets/pujas-banner.jpg" alt="A puja thali, kalash and lit diya set out on a low table.">
-        <div class="gate-label">
-          <h3>Pujas</h3>
-          <p>Sixty-four pujas, paths and sanskars, performed with the full vidhi by our pandits.</p>
-          <span class="gate-go">Book a puja &rarr;</span>
+        <div class="product-grid" id="productGrid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section calc-section" id="calculators">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Free Astro Tools</p>
+        <h2>Know your number before you buy</h2>
+      </div>
+    </div>
+    <div class="calc-grid">
+      <div class="calc-portrait">
+        <img id="imgDiscover" alt="A woman seated holding a yellow sapphire and a blue sapphire, wearing a sapphire ring.">
+      </div>
+      <div class="calc-card">
+        <h3>Moolank &amp; Bhagyank Calculator</h3>
+        <p class="lede">Enter your date of birth. Moolank comes from your birth date alone; Bhagyank from your full date of birth.</p>
+        <div class="field">
+          <label for="dobInput">Date of birth</label>
+          <input type="date" id="dobInput">
         </div>
-      </a>
+        <div class="calc-aside">
+          <div class="calc-aside-title">Worked example</div>
+          <p>
+            Born <b>27 March 1994</b><br>
+            Moolank, the day alone: 2 + 7 = <b>9</b><br>
+            Bhagyank, the whole date: 2+7+3+1+9+9+4 = 35 → 3 + 5 = <b>8</b>
+          </p>
+        </div>
+        <button class="btn btn-line btn-full" id="calcMoolankBtn">Calculate</button>
+        <div class="calc-result" id="moolankResult"></div>
+      </div>
+      <div class="calc-card">
+        <h3>Gemstone Finder</h3>
+        <p class="lede">A quick match based on your Moolank's ruling planet. Not a substitute for a full chart reading, but a fair starting point.</p>
+        <div class="field">
+          <label for="moolankSelect">Your Moolank (1–9)</label>
+          <select id="moolankSelect">
+            <option value="">Select a number…</option>
+            <option value="1">1 · Sun</option>
+            <option value="2">2 · Moon</option>
+            <option value="3">3 · Jupiter</option>
+            <option value="4">4 · Rahu</option>
+            <option value="5">5 · Mercury</option>
+            <option value="6">6 · Venus</option>
+            <option value="7">7 · Ketu</option>
+            <option value="8">8 · Saturn</option>
+            <option value="9">9 · Mars</option>
+          </select>
+        </div>
+        <div class="calc-aside">
+          <div class="calc-aside-title">Number · planet · stone</div>
+          <ul class="planet-key">
+            <li><b>1</b> Sun · Ruby</li>
+            <li><b>6</b> Venus · Diamond</li>
+            <li><b>2</b> Moon · Pearl</li>
+            <li><b>7</b> Ketu · Cat's Eye</li>
+            <li><b>3</b> Jupiter · Pukhraj</li>
+            <li><b>8</b> Saturn · Neelam</li>
+            <li><b>4</b> Rahu · Gomed</li>
+            <li><b>9</b> Mars · Moonga</li>
+            <li><b>5</b> Mercury · Panna</li>
+          </ul>
+        </div>
+        <button class="btn btn-line btn-full" id="calcGemBtn">Find my stone</button>
+        <div class="calc-result" id="gemResult"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">From our clients</p>
+        <h2>Read by chart, chosen by hand</h2>
+      </div>
+    </div>
+    <div class="testi-grid" id="testiGrid"></div>
+  </div>
+</section>
+
+<section class="section" id="about" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap about-band">
+    <div class="editorial-media">
+      <img id="imgBoxes" alt="A blue sapphire and an emerald resting in open wooden presentation boxes on stone.">
+    </div>
+    <div>
+      <p class="eyebrow">About the House</p>
+      <h2 style="margin-bottom:14px;">Guided by Acharya Lavbhushan</h2>
+      <p class="lede">Twenty years of chart readings, temple sourcing trips to Nepal and Sri Lanka, and a simple rule: a stone only enters the catalogue after Acharya Lavbhushan has verified its origin himself.</p>
+      <div class="badge-row">
+        <div>🔬 Independently lab-certified</div>
+        <div>🛕 Ritually energised before dispatch</div>
+        <div>↩ 7-day return window</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap about-band reverse">
+    <div>
+      <p class="eyebrow">Before it ships</p>
+      <h2 style="margin-bottom:14px;">Every stone is checked by hand.</h2>
+      <p class="lede">Each piece is examined under a loupe, matched against its lab report, and packed with that certificate in the box. If the paperwork and the stone disagree, it never leaves the workshop.</p>
+    </div>
+    <div class="editorial-media">
+      <img id="imgTray" alt="A tray of loose emeralds, sapphires, citrine and rubies beside a jeweller's loupe and a certificate booklet.">
     </div>
   </div>
 </section>
