@@ -247,14 +247,18 @@
     text-shadow:none;
     box-shadow:0 2px 10px rgba(89,42,25,.28);
   }
-  /* The lede is smaller, so it needs the halo tighter and the ink at full strength to
-     hold together against the busy patterned tablecloth it crosses. */
+  /* The lede crosses the horoscope scroll, whose ink is close in value to the type, so a
+     soft wide glow just greys the whole area. Several TIGHT shadows stacked at full
+     opacity instead: they compound right at the glyph edge into a crisp light rim that
+     cuts the letters out of the linework, while the one wider stop keeps the block from
+     looking cut out. Weight goes up a step for the same reason. */
   .hero-ink-dark p.lede{
-    font-weight:500;
+    font-weight:600;
     text-shadow:
-      0 1px 2px rgba(244,216,188,.98),
-      0 0 10px rgba(244,216,188,1),
-      0 0 26px rgba(244,216,188,.92);
+      0 0 3px rgba(244,216,188,1),
+      0 0 6px rgba(244,216,188,1),
+      0 1px 2px rgba(244,216,188,1),
+      0 0 18px rgba(244,216,188,.95);
   }
 
   .btn{
