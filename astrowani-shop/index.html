@@ -1463,11 +1463,91 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
   var adminVisibleCats = adminLoad('visibleCats', ['gemstone']);
   var adminMode = adminLoad('mode', false);
 
+
+  /* ================= LIVE CATALOG =================
+     The hardcoded PRODUCTS array below is a fallback, not the shop. Real checkout can only
+     sell rows that exist in remedy_items (POST /api/orders/quote looks each itemId up
+     there by uuid), so the catalogue is fetched from the backend and the local array is
+     used only when that fetch fails — a shopper on a flaky connection still sees a shop
+     rather than an empty page, they just can't buy until it loads. */
+  var API_BASE = 'https://backend.astrowani.com';
+
+  // remedy_items has no tags column, so the "Shop by Purpose" tiles infer a purpose from
+  // the stone. Keyed on the planet each stone answers to, which is what the purpose tiles
+  // actually mean. Anything unrecognised gets no tag and simply doesn't appear under a
+  // purpose filter, rather than being mis-filed under a wrong one.
+  var PURPOSE_BY_STONE = [
+    [/ruby|manik/i,                        ['career','marriage']],
+    [/pearl|moti|moonstone/i,              ['love','health']],
+    [/yellow sapphire|pukhraj|pitambari/i, ['wealth','marriage']],
+    [/hessonite|gomed/i,                   ['protection','career']],
+    [/emerald|panna|peridot/i,             ['career','health']],
+    [/diamond|heera|zircon|white sapphire|white topaz/i, ['love','wealth']],
+    [/cat.?s eye|lehsunia/i,               ['protection','health']],
+    [/blue sapphire|neelam|corundum|iolite|neeli/i, ['career','protection']],
+    [/coral|moonga|spinel/i,               ['career','protection']],
+    [/amethyst|jamunia|turquoise|feroza/i, ['health','protection']],
+    [/citrine|sunela|topaz/i,              ['wealth']],
+    [/hakik|onyx|tourmaline/i,             ['protection','health']],
+    [/opal|pink sapphire|rose quartz/i,    ['love']],
+    [/alexandrite|padparadscha/i,          ['wealth','protection']]
+  ];
+  function purposesFor(title){
+    for (var i=0;i<PURPOSE_BY_STONE.length;i++){
+      if (PURPOSE_BY_STONE[i][0].test(title)) return PURPOSE_BY_STONE[i][1];
+    }
+    return [];
+  }
+
+  // The public endpoint returns `_id` (the uuid). That is the ONLY id checkout accepts, so
+  // it becomes the product's id here — the cart, the quote and the order all key off it.
+  function fromApi(row){
+    return {
+      id: row._id,
+      name: row.title,
+      cat: row.type,
+      tags: purposesFor(row.title || ''),
+      price: Number(row.price) || 0,
+      mrp: row.mrp ? Number(row.mrp) : null,
+      unitLabel: row.unitLabel || null,
+      inStock: row.inStock !== false,
+      desc: row.description || '',
+      benefits: [],
+      photo: row.image || null,
+      icon: 'gem',
+      tint: '#c8973c',
+      live: true            // came from the server, therefore genuinely orderable
+    };
+  }
+
+  var LIVE_PRODUCTS = null;   // null until the fetch resolves; [] means "loaded, empty"
+
+  function loadLiveCatalog(){
+    return fetch(API_BASE + '/api/remedies')
+      .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(d){
+        var rows = Array.isArray(d) ? d : (d.data || d.items || []);
+        LIVE_PRODUCTS = rows.filter(function(r){ return r && r._id; }).map(fromApi);
+        recomputeCatalog();
+        renderCatNav();
+        renderFilterPanel();
+        renderGrid();
+        renderCart();      // prices may have moved since the cart was saved
+      })
+      .catch(function(e){
+        // Deliberately silent for the shopper: the fallback catalogue is already on screen.
+        console.warn('live catalogue unavailable, showing offline catalogue:', e.message);
+      });
+  }
+
   var byId = {};
   var VISIBLE_PRODUCTS = [];
   var PRESENT_CATS = [];
   function recomputeCatalog(){
-    var merged = PRODUCTS.map(function(p){
+    // Live rows win outright when present. Mixing them with the offline array would put
+    // unbuyable products next to buyable ones with no way for the shopper to tell.
+    var base = (LIVE_PRODUCTS && LIVE_PRODUCTS.length) ? LIVE_PRODUCTS : PRODUCTS;
+    var merged = base.map(function(p){
       var o = adminOverrides[p.id];
       return o ? Object.assign({}, p, o) : p;
     }).filter(function(p){ return adminDeleted.indexOf(p.id) === -1; });
@@ -1479,6 +1559,19 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
     PRESENT_CATS = CATS.filter(function(c){
       return adminVisibleCats.indexOf(c.id) !== -1 && merged.some(function(p){ return p.cat === c.id; });
     });
+    reconcileCart();
+  }
+
+  // A cart saved against the offline catalogue holds ids (p1..p48) that do not exist once
+  // the live uuids arrive. Those keys must be dropped, not merely skipped at render time:
+  // cartSubtotal() reads byId[id].price directly and would throw on the first stale entry.
+  function reconcileCart(){
+    if (typeof cart !== 'object' || !cart) return;
+    var dropped = 0;
+    Object.keys(cart).forEach(function(id){
+      if (!byId[id]) { delete cart[id]; dropped++; }
+    });
+    if (dropped) { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch(e){} }
   }
   recomputeCatalog();
 
@@ -2106,8 +2199,13 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
     renderCart();
   }
 
-  function cartCount(){ return Object.keys(cart).reduce(function(s,id){ return s+cart[id]; }, 0); }
-  function cartSubtotal(){ return Object.keys(cart).reduce(function(s,id){ return s + byId[id].price*cart[id]; }, 0); }
+  function cartCount(){ return Object.keys(cart).reduce(function(s,id){ return byId[id] ? s+cart[id] : s; }, 0); }
+  function cartSubtotal(){
+    return Object.keys(cart).reduce(function(s,id){
+      var p = byId[id];
+      return p ? s + p.price * cart[id] : s;
+    }, 0);
+  }
 
   function renderCart(){
     var count = cartCount();
@@ -2408,6 +2506,10 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
     });
 
     initReveal();
+
+    // Kick the live catalogue fetch after first paint: the offline catalogue is already
+    // on screen, so this upgrades the page rather than blocking it.
+    loadLiveCatalog();
 
     // Hero copy: fires on the next frame so the starting (hidden) state is painted first,
     // otherwise the browser can skip straight to the end and there is no animation at all.
