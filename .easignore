@@ -1,0 +1,104 @@
+# What NOT to upload to EAS Build — MONOREPO ROOT copy.
+#
+# WHY THIS IS HERE AND NOT ONLY IN EACH APP:
+# A .easignore was added inside astrowani_customer-main/ first. It had almost no
+# effect — the archive went 347 MB -> 339 MB, when excluding android/app/build
+# (1.5 GB) and .hot-updater/output (188 MB) should have taken it to single digits.
+# That means EAS is building the archive from the GIT REPOSITORY ROOT (this
+# directory), not from the app subdirectory, so an ignore file inside the app is
+# never consulted. This copy is the one that actually applies.
+#
+# ⚠️ .easignore REPLACES .gitignore for EAS rather than adding to it, which is why
+# obvious entries like node_modules appear below. Omitting them uploads them.
+#
+# Patterns are matched anywhere in the tree, so a single `node_modules/` covers
+# every sub-project.
+
+# ---------------------------------------------------------------------------
+# Dependencies — EAS runs a fresh install on the builder.
+# ---------------------------------------------------------------------------
+node_modules/
+
+# ---------------------------------------------------------------------------
+# Native build output. android/app/build alone was 1.5 GB.
+# ---------------------------------------------------------------------------
+build/
+.gradle/
+.gradle_cache/
+.cxx/
+captures/
+ios/build/
+ios/Pods/
+DerivedData/
+*.xcworkspace/
+
+# ---------------------------------------------------------------------------
+# hot-updater OTA output + artifact cache (188 MB of bundle zips and brotli
+# blobs). Regenerated on demand; a native build never reads it.
+# ---------------------------------------------------------------------------
+dist/
+.hot-updater/
+
+# ---------------------------------------------------------------------------
+# Sub-projects that are not part of an app binary. The mobile builds do not
+# compile the backend, the admin dashboard or the storefront.
+# ---------------------------------------------------------------------------
+astrowani-backend/
+astrowani-admin/
+astrowani-shop/
+astrowani-store-images/
+vps-deployment/
+
+# ---------------------------------------------------------------------------
+# Documentation and scratch — large and irrelevant to a build.
+# ---------------------------------------------------------------------------
+MD files/
+docs/
+*.md
+*.png
+*.jpeg
+*.jpg
+*.pem
+
+# ---------------------------------------------------------------------------
+# Local / editor / OS noise
+# ---------------------------------------------------------------------------
+.git/
+.github/
+.expo/
+.claude/
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+*.log
+hs_err_pid*
+replay_pid*
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+__tests__/
+coverage/
+
+# ---------------------------------------------------------------------------
+# Re-include app assets that the blanket image rules above would otherwise
+# strip. These ARE build inputs: launcher icons, the iOS asset catalog and the
+# bundled fonts/images the apps ship.
+# ---------------------------------------------------------------------------
+!astrowani_customer-main/android/app/src/main/res/**
+!astrowani_customer-main/ios/**/Images.xcassets/**
+!astrowani_customer-main/src/assets/**
+!astrowani_vendors-main/android/app/src/main/res/**
+!astrowani_vendors-main/ios/**/Images.xcassets/**
+!astrowani_vendors-main/src/assets/**
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT ignored, so nobody "tidies" them away:
+#   */android/app/google-services.json     Firebase config, required
+#   */ios/**/GoogleService-Info.plist      Firebase config, required
+#   */credentials.json                     eas.json credentialsSource: local
+#   */patches/ + */scripts/                run from postinstall
+#   */app.json, */eas.json, metro/babel    build inputs
+# ---------------------------------------------------------------------------
