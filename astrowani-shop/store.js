@@ -1,46 +1,3 @@
-/* ================= ON-DEVICE DIAGNOSTIC (TEMPORARY) =================
-   Auto-arms INSIDE THE APP (window.ReactNativeWebView present), or anywhere with
-   ?debug=1. The store renders correctly in mobile Chrome on the same handset - verified
-   at a real 360x668 viewport - but not in the app's webview, and that is the one context
-   that cannot be opened with a URL bar to be inspected. So it reports itself.
-   REMOVE once the app case is understood. */
-(function(){
-  var inApp = typeof window !== 'undefined' && !!window.ReactNativeWebView;
-  if (!inApp && String(location.search).indexOf('debug=1') === -1) return;
-  var errs = [];
-  window.addEventListener('error', function(e){
-    errs.push((e.message || '?') + ' @' + String(e.filename || '?').split('/').pop() + ':' + (e.lineno || '?'));
-  });
-  window.addEventListener('unhandledrejection', function(e){ errs.push('promise: ' + e.reason); });
-  function line(k, v){ return '<div><b>' + k + ':</b> ' + v + '</div>'; }
-  setTimeout(function(){
-    var n = function(sel){ try { return document.querySelectorAll(sel).length; } catch(e){ return 'ERR'; } };
-    var box = document.createElement('div');
-    box.setAttribute('style',
-      'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:60vh;overflow:auto;' +
-      'background:#111;color:#0f0;font:11px/1.5 monospace;padding:10px 12px;white-space:pre-wrap;');
-    var css = document.querySelector('link[rel=stylesheet][href*=store]');
-    var js  = document.querySelector('script[src*=store]');
-    box.innerHTML =
-      line('IN APP', inApp) +
-      line('script', 'RAN TO END: ' + (window.__astrowaniDebug === true)) +
-      line('errors', errs.length ? errs.join(' | ') : 'none') +
-      line('url', location.pathname + location.search) +
-      line('viewport', window.innerWidth + 'x' + window.innerHeight + ' dpr' + (window.devicePixelRatio || 1)) +
-      line('tiles', n('.purpose-tile') + ' (hidden ' + n('.purpose-tile:not(.is-in)') + ')') +
-      line('puja cards', n('.pj-card') + ' (hidden ' + n('.pj-card:not(.is-in)') + ')') +
-      line('gem cards', n('.card:not(.pj-card)')) +
-      line('chips', n('.pj-chip')) +
-      line('marked/hidden', n('[data-reveal]') + ' / ' + n('[data-reveal]:not(.is-in)')) +
-      line('color-mix', (window.CSS && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red 50%, blue)')) ? 'yes' : 'NO') +
-      line('IntObserver', ('IntersectionObserver' in window) ? 'yes' : 'NO') +
-      line('CSS BUILD', css ? css.getAttribute('href') : 'MISSING') +
-      line('JS BUILD', js ? js.getAttribute('src') : 'MISSING') +
-      line('ua', navigator.userAgent);
-    document.body.appendChild(box);
-  }, 2500);
-})();
-
 /* ================= SHARED STORE SCRIPT =================
    One script serves all three pages (/, /gemstones/, /pujas/). Every page carries the
    same chrome - header, ticker, cart drawer, modals, footer - but only the sections it
@@ -1359,6 +1316,12 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   var cart = {};
   try { cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}'); } catch(e){ cart = {}; }
 
+  // reconcileCart() is also called from recomputeCatalog(), but that runs far above this
+  // line, where `cart` is only hoisted - so its own `typeof cart !== 'object'` guard makes
+  // it return immediately and it has never actually dropped anything. Running it here,
+  // where the cart exists, is what the guard was written to do.
+  reconcileCart();
+
   function saveCart(){ try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch(e){} }
 
   function addToCart(id, qty){
@@ -1387,7 +1350,11 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
     var body = document.getElementById('cartBody');
     var foot = document.getElementById('cartFoot');
-    var ids = Object.keys(cart);
+    // Filtered, not raw: cartCount() and cartSubtotal() both already skip ids with no
+    // product, but this loop did not - it passed byId[id] straight to renderIcon(), so one
+    // stale id threw on p.photo and took the whole script down with it, before initReveal()
+    // had run. That is why a single leftover cart entry blanked every section of the page.
+    var ids = Object.keys(cart).filter(function(id){ return !!byId[id]; });
 
     if (!ids.length){
       body.innerHTML = '<div class="empty-cart">'
@@ -2190,6 +2157,5 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   renderPujaPurposeTiles();
   renderPujaChips();
   renderPujas();
-  window.__astrowaniDebug = true;   // read by the diagnostic panel above
 
 })();
