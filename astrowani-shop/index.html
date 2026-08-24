@@ -1795,7 +1795,7 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
       '<div class="pv-actions">'+
         '<div class="qty-stepper"><button data-pv-dec>−</button><span id="pvQtyNum">1</span><button data-pv-inc>+</button></div>'+
         '<button class="btn btn-line" id="pvAdd" style="flex:1;">Add to cart</button>'+
-        '<button class="btn btn-gold" id="pvBuy" style="flex:1;">Buy now</button>'+
+        '<button class="btn btn-gold" id="pvBuy" style="flex:1;">Enquire</button>'+
       '</div>'+
       '<div class="pv-tabs">'+
         '<button class="pv-tab sel" data-tab="desc">Description</button>'+
@@ -2149,7 +2149,7 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
       '<div class="sum-row"><span>Subtotal</span><span class="price">₹'+subtotal.toLocaleString('en-IN')+'</span></div>'+
       '<div class="sum-row"><span>Shipping</span><span class="price">'+(shipping? '₹'+shipping : 'Free')+'</span></div>'+
       '<div class="sum-row total"><span>Total</span><span class="price">₹'+total.toLocaleString('en-IN')+'</span></div>'+
-      '<button class="btn btn-gold btn-full" style="margin-top:14px;" id="checkoutBtn">Proceed to checkout</button>';
+      '<button class="btn btn-gold btn-full" style="margin-top:14px;" id="checkoutBtn">Enquire about these</button>';
 
     foot.querySelector('#checkoutBtn').addEventListener('click', function(){ closeCartDrawer(); openCheckout(); });
 
@@ -2167,74 +2167,93 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
   document.getElementById('closeCart').addEventListener('click', closeCartDrawer);
   scrim.addEventListener('click', closeCartDrawer);
 
-  /* ================= CHECKOUT ================= */
+  /* ================= ENQUIRY =================
+     This deliberately does NOT take payment. The page is a static site with no server
+     behind it, so a "Place order" button here could only ever show a made-up order number
+     while taking no money, recording nothing and shipping nothing — worse than having no
+     checkout at all. Instead the cart becomes an enquiry: the customer's details and their
+     chosen stones are handed to a channel a human actually reads.
+
+     WhatsApp is used when a number is configured below, e-mail otherwise. Fill in
+     ENQUIRY_WHATSAPP (digits only, with country code, e.g. '919812345678') to switch the
+     primary button over — nothing else needs changing. */
+  var ENQUIRY_WHATSAPP = '';                        // '' = e-mail only
+  var ENQUIRY_EMAIL    = 'support@astrowani.com';
+
   var coContent = document.getElementById('coContent');
-  var paymentMethod = 'upi';
 
   function openCheckout(){
     if (!cartCount()) { showToast('Your cart is empty'); return; }
-    paymentMethod = 'upi';
-    renderCheckoutForm();
+    renderEnquiryForm();
     openModal('coModal');
   }
 
-  function renderCheckoutForm(){
-    var subtotal = cartSubtotal();
-    var shipping = subtotal >= 999 ? 0 : 79;
-    var total = subtotal + shipping;
-    coContent.innerHTML =
-      '<div class="co-steps"><div class="co-step on"></div><div class="co-step"></div></div>'+
-      '<h3 style="font-size:20px; margin-bottom:16px;">Delivery details</h3>'+
-      '<div class="field"><label for="coName">Full name</label><input id="coName" placeholder="As on ID"></div>'+
-      '<div class="field-row">'+
-        '<div class="field"><label for="coPhone">Phone number</label><input id="coPhone" placeholder="10-digit mobile"></div>'+
-        '<div class="field"><label for="coPin">Pincode</label><input id="coPin" placeholder="6-digit pincode"></div>'+
-      '</div>'+
-      '<div class="field"><label for="coAddr">Address</label><textarea id="coAddr" rows="2" placeholder="House no., street, locality"></textarea></div>'+
-      '<div class="field-row">'+
-        '<div class="field"><label for="coCity">City</label><input id="coCity" placeholder="City"></div>'+
-        '<div class="field"><label for="coState">State</label><input id="coState" placeholder="State"></div>'+
-      '</div>'+
-      '<h3 style="font-size:16px; margin:18px 0 10px;">Payment method</h3>'+
-      '<div class="pay-opt sel" data-pay="upi">📱 &nbsp; UPI</div>'+
-      '<div class="pay-opt" data-pay="card">💳 &nbsp; Credit / Debit card</div>'+
-      '<div class="pay-opt" data-pay="cod">💵 &nbsp; Cash on delivery</div>'+
-      '<div class="checkout-note">No real payment is processed. Nothing you enter here leaves your browser.</div>'+
-      '<div class="sum-row"><span>Subtotal</span><span class="price">₹'+subtotal.toLocaleString('en-IN')+'</span></div>'+
-      '<div class="sum-row"><span>Shipping</span><span class="price">'+(shipping? '₹'+shipping : 'Free')+'</span></div>'+
-      '<div class="sum-row total"><span>Total</span><span class="price">₹'+total.toLocaleString('en-IN')+'</span></div>'+
-      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="placeOrderBtn">Place order</button>';
-
-    coContent.querySelectorAll('[data-pay]').forEach(function(el){
-      el.addEventListener('click', function(){
-        paymentMethod = el.getAttribute('data-pay');
-        coContent.querySelectorAll('[data-pay]').forEach(function(o){ o.classList.remove('sel'); });
-        el.classList.add('sel');
-      });
+  // Plain-text summary of the cart, shared by both the WhatsApp and e-mail handoffs.
+  function enquirySummary(details){
+    var lines = ['Gemstone enquiry from shop.astrowani.com', ''];
+    Object.keys(cart).forEach(function(id){
+      var p = byId[id];
+      if (!p) return;
+      lines.push('- ' + p.name + '  x' + cart[id] + '  (Rs ' + (p.price * cart[id]).toLocaleString('en-IN') + ')');
     });
+    lines.push('', 'Approx total: Rs ' + cartSubtotal().toLocaleString('en-IN'));
+    lines.push('', 'Name: ' + details.name, 'Phone: ' + details.phone);
+    if (details.city) lines.push('City: ' + details.city);
+    if (details.note) lines.push('Note: ' + details.note);
+    return lines.join('\n');
+  }
 
-    coContent.querySelector('#placeOrderBtn').addEventListener('click', function(){
-      var name = coContent.querySelector('#coName').value.trim();
-      var phone = coContent.querySelector('#coPhone').value.trim();
-      var pin = coContent.querySelector('#coPin').value.trim();
-      var addr = coContent.querySelector('#coAddr').value.trim();
-      if (!name || !phone || !pin || !addr){ showToast('Please fill in name, phone, pincode and address'); return; }
-      renderConfirmation(total);
-      cart = {};
-      saveCart();
-      renderCart();
+  function renderEnquiryForm(){
+    var subtotal = cartSubtotal();
+    coContent.innerHTML =
+      '<h3 style="font-size:20px; margin-bottom:6px;">Enquire about these stones</h3>'+
+      '<p class="lede" style="font-size:14px; margin:0 0 18px;">Leave your details and we will call you back to confirm the stone, its certificate and the final price before anything is paid.</p>'+
+      '<div class="field"><label for="coName">Your name</label><input id="coName" placeholder="Full name"></div>'+
+      '<div class="field-row">'+
+        '<div class="field"><label for="coPhone">Phone number</label><input id="coPhone" inputmode="numeric" placeholder="10-digit mobile"></div>'+
+        '<div class="field"><label for="coCity">City (optional)</label><input id="coCity" placeholder="City"></div>'+
+      '</div>'+
+      '<div class="field"><label for="coNote">Anything we should know? (optional)</label><textarea id="coNote" rows="2" placeholder="Birth details, a stone you were advised, a question"></textarea></div>'+
+      '<div class="checkout-note">No payment is taken here and no card details are asked for. We confirm availability and price with you first.</div>'+
+      '<div class="sum-row total"><span>'+cartCount()+' item'+(cartCount()===1?'':'s')+'</span><span class="price">Rs '+subtotal.toLocaleString('en-IN')+'</span></div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="sendEnquiryBtn">'+
+        (ENQUIRY_WHATSAPP ? 'Send enquiry on WhatsApp' : 'Send enquiry by e-mail')+
+      '</button>';
+
+    coContent.querySelector('#sendEnquiryBtn').addEventListener('click', function(){
+      var details = {
+        name:  coContent.querySelector('#coName').value.trim(),
+        phone: coContent.querySelector('#coPhone').value.trim(),
+        city:  coContent.querySelector('#coCity').value.trim(),
+        note:  coContent.querySelector('#coNote').value.trim()
+      };
+      if (!details.name || !details.phone){ showToast('Please add your name and phone number'); return; }
+      if (!/^[0-9+\-\s]{8,15}$/.test(details.phone)){ showToast('That phone number does not look right'); return; }
+
+      var body = enquirySummary(details);
+      var url = ENQUIRY_WHATSAPP
+        ? 'https://wa.me/' + ENQUIRY_WHATSAPP + '?text=' + encodeURIComponent(body)
+        : 'mailto:' + ENQUIRY_EMAIL + '?subject=' + encodeURIComponent('Gemstone enquiry') + '&body=' + encodeURIComponent(body);
+
+      // The cart is intentionally NOT cleared: the handoff can fail (no WhatsApp
+      // installed, no mail client), and wiping their basket on the way out would lose
+      // the selection with nothing to show for it.
+      window.open(url, '_blank');
+      renderEnquirySent(details);
     });
   }
 
-  function renderConfirmation(total){
-    var orderNo = 'ASW-' + Math.floor(10000 + Math.random()*89999);
+  function renderEnquirySent(details){
     coContent.innerHTML =
       '<div class="confirm">'+
         '<div class="tick">✓</div>'+
-        '<h3 style="font-size:22px;">Order confirmed</h3>'+
-        '<div class="ordno price">'+orderNo+'</div>'+
-        '<p class="lede" style="margin:0 auto 18px; max-width:38ch;">Paid via '+({upi:'UPI', card:'card', cod:'cash on delivery'}[paymentMethod])+' · Total ₹'+total.toLocaleString('en-IN')+'<br>Expected delivery in 5–7 business days.</p>'+
-        '<button class="btn btn-gold" id="continueShopping">Continue shopping</button>'+
+        '<h3 style="font-size:22px;">Enquiry ready to send</h3>'+
+        '<p class="lede" style="margin:10px auto 18px; max-width:40ch;">'+
+          (ENQUIRY_WHATSAPP ? 'WhatsApp should have opened with your enquiry filled in. Press send there and we will call you back on ' : 'Your e-mail app should have opened with the enquiry filled in. Send it and we will call you back on ')+
+          '<strong>'+details.phone+'</strong>.'+
+        '</p>'+
+        '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13.5px;">Nothing has been charged, and your basket is still here if you want to change it.</p>'+
+        '<button class="btn btn-gold" id="continueShopping">Keep browsing</button>'+
       '</div>';
     coContent.querySelector('#continueShopping').addEventListener('click', function(){ closeModal('coModal'); });
   }
