@@ -2144,16 +2144,31 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
      leave rather than doing anything itself, because only the app knows what "home" is.
      No fallback to history.back(): the store is the first page in that WebView, so there is
      nothing behind it. */
-  (function wireAppExit(){
+  /* Exposed rather than run once, because the app hands us window.__ASTROWANI__ through
+     injectedJavaScriptBeforeContentLoaded, and on Android that is not reliably ahead of
+     this script: one run in five the button simply never appeared. The app now calls this
+     again after load, so the outcome no longer depends on winning that race. Idempotent -
+     re-running it re-reads the handshake and rebinds nothing twice. */
+  var exitWired = false;
+  window.__astrowaniApplyAppMode = function(){
+    if (!APP && typeof window !== 'undefined' && window.__ASTROWANI__) {
+      APP = window.__ASTROWANI__;
+      if (!AUTH_TOKEN && APP.token) AUTH_TOKEN = APP.token;
+      if (!API_BASE && APP.apiBase) API_BASE = APP.apiBase;
+    }
     var btn = document.getElementById('exitBtn');
     if (!btn) return;
     var inApp = !!(APP && APP.platform === 'app' && window.ReactNativeWebView);
     if (!inApp) return;
     btn.classList.remove('hidden');
+    if (exitWired) return;
+    exitWired = true;
     btn.addEventListener('click', function(){
       try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'exit' })); } catch (e) {}
     });
-  })();
+  };
+  window.__astrowaniApplyAppMode();
+  document.addEventListener('DOMContentLoaded', window.__astrowaniApplyAppMode);
 
   var adminBar = document.getElementById('adminBar');
   var adminCatToggles = document.getElementById('adminCatToggles');

@@ -173,6 +173,11 @@ export default function StoreWebView() {
     true;
   `;
 
+  const injectAuthAfterLoad = `${injectAuth}
+    if (window.__astrowaniApplyAppMode) window.__astrowaniApplyAppMode();
+    true;
+  `;
+
   return (
     <View style={styles.flex}>
       {statusBarFill}
@@ -181,6 +186,12 @@ export default function StoreWebView() {
         ref={webRef}
         source={{ uri: STORE_URL }}
         injectedJavaScriptBeforeContentLoaded={injectAuth}
+        // Sent a second time after load. On Android the "before content loaded" injection
+        // is not reliably ahead of the page's own first script, and when it lost that race
+        // the page came up as though it were on the open web - no exit button, no real
+        // checkout. Re-applying afterwards makes that outcome deterministic rather than a
+        // matter of timing; the page's handler is idempotent.
+        injectedJavaScript={injectAuthAfterLoad}
         style={styles.flex}
         // Cream, matching the site's own background, so the gap before first paint isn't
         // a white flash against the app's theme.
