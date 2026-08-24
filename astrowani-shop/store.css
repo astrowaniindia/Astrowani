@@ -28,7 +28,7 @@
     --overlay:rgba(89,42,25,.55);
     --focus:var(--gold);
 
-    --font-display:'Fraunces',Georgia,'Times New Roman',serif;
+    --font-display:'Playfair Display',Georgia,'Times New Roman',serif;
     --font-body:'Work Sans',-apple-system,'Segoe UI',Roboto,sans-serif;
     --font-mono:'Space Mono','SFMono-Regular',Consolas,monospace;
 
