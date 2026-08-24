@@ -1543,7 +1543,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       order_id: res.razorpayOrderId,
       amount: res.amount,
       currency: 'INR',
-      name: 'Astrowani Store',
+      name: 'Wani Shop',
       description: 'Gemstone order',
       handler: function(resp){
         // This callback does NOT mean the order is confirmed. Only the server's signature

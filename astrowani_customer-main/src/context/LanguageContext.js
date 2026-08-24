@@ -64,7 +64,7 @@ const translations = {
     'nav.call': 'Call',
     'nav.video': 'Video',
     'nav.live': 'Live',
-    'nav.remedies': 'Remedies',
+    'nav.remedies': 'Wani Shop',
 
     // Remedies / Services tab (screens/Remedies/Remedies.js) — bundled fallback
     // shown until an admin sets Hindi text for a category in the dashboard.
@@ -138,7 +138,7 @@ const translations = {
     // Drawer
     'drawer.myWallet': 'My Wallet',
     'drawer.mySessions': 'My Sessions',
-    'drawer.remedies': 'Remedies',
+    'drawer.remedies': 'Wani Shop',
     'drawer.chatWithAstrologer': 'Chat With Astrologer',
     'drawer.blogs': 'Astrowani Blogs',
     'drawer.myFavorites': 'My Favorites',
@@ -1093,7 +1093,7 @@ const translations = {
     'nav.call': 'कॉल',
     'nav.video': 'वीडियो',
     'nav.live': 'लाइव',
-    'nav.remedies': 'उपाय',
+    'nav.remedies': 'वाणी शॉप',
 
     'astroService.kundli': 'कुंडली रिपोर्ट पाएं',
     'astroService.matching': 'कुंडली मिलान पाएं',
@@ -1156,7 +1156,7 @@ const translations = {
     // Drawer
     'drawer.myWallet': 'मेरा वॉलेट',
     'drawer.mySessions': 'मेरे सत्र',
-    'drawer.remedies': 'उपाय',
+    'drawer.remedies': 'वाणी शॉप',
     'drawer.chatWithAstrologer': 'ज्योतिषी से चैट करें',
     'drawer.blogs': 'एस्ट्रोवाणी ब्लॉग',
     'drawer.myFavorites': 'मेरे पसंदीदा',
