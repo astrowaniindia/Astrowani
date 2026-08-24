@@ -18,6 +18,7 @@
 		D84682AAFD4D427997CC1F49 /* Poppins-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1D90EC86BD7841C3A632A77B /* Poppins-Regular.ttf */; };
 		F042215836E84E478621FC09 /* Poppins-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E2741B9553984AA5B8AC2822 /* Poppins-Light.ttf */; };
 		1A2B3C4D5E6F708192A3B4C6 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F708192A3B4C5 /* GoogleService-Info.plist */; };
+		1A2B3C4D5E6F708192A3B4C8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -252,6 +253,7 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				1A2B3C4D5E6F708192A3B4C8 /* PrivacyInfo.xcprivacy in Resources */,
 				1A2B3C4D5E6F708192A3B4C6 /* GoogleService-Info.plist in Resources */,
 				599B747142F143908241367C /* Lato-Bold.ttf in Resources */,
 				C75C86AECEC0477291F8B4A5 /* Lato-Regular.ttf in Resources */,

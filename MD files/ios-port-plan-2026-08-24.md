@@ -122,11 +122,64 @@ Xcode here. A full Xcode project/target rename was deliberately NOT attempted �
 zero user-visible benefit, since `CFBundleDisplayName` already controls the home-screen name.
 The internal target remaining `AstrologyApp` is cosmetic only.
 
-### Phase 1 remaining — VENDOR APP
+### Phase 1 status — VENDOR APP COMPLETE (2026-08-24)
 
-Vendor has only its `Info.plist` done. Everything from 1.1–1.12 above still needs repeating
-for it, which is deliberate: per the agreed sequencing, the customer app goes through the
-first EAS build so the pod/linkage fight is solved once before being repeated.
+| Step | Status | Detail |
+|---|---|---|
+| 1.1 | ✅ | App bundle id was already `com.astrowaniVendor`. **But the TEST target shared it** — Xcode requires distinct ids; retargeted to `com.astrowaniVendor.AstroIndiaAstrologersTests`. |
+| 1.2 | ✅ | `AstroIndia_Astrologers.entitlements` created and wired into both app build configs (test target untouched). |
+| 1.3 | ✅ | `AppDelegate.mm`: guarded `[FIRApp configure]`. **No** `RCTLinkingManager` — unlike the customer app there is no Razorpay return and no configured deep link. |
+| 1.4 | ✅ | `PrivacyInfo.xcprivacy` rewritten — see the differences note below. |
+| 1.5 | ✅ | Podfile: `$RNFirebaseAsStaticFramework`, ordered troubleshooting runbook, and a documented reason for having **no** `setup_permissions!` block. |
+| 1.6 | ✅ | `eas.json`: `production`, `preview`, `ios-simulator`. |
+| 1.7 | ✅ | Nothing to fix — zero cleartext `http://` URLs in vendor `src/`. |
+| 1.8 | ✅ | No change needed; `Pods/`, `xcuserdata`, `*.xcuserstate` and `**/ios/build/` already ignored. |
+| 1.9 | ✅ | Deployment target 13.4 → 15.1 (4 places). |
+| 1.10 | ✅ | `MARKETING_VERSION` → `6.5`, matching Android `versionName`. Build number stays 1. |
+| 1.11 | ✅ | App icons generated — 9 sizes, opaque. See the "India" note below. |
+| 1.12 | ✅ | Launch screen rebranded — was a white screen reading `AstroIndia_Astrologers` / "Powered by React Native", i.e. the **old internal project name**. Now navy + gold "Astrowani / for Astrologers". |
+| 1.13 | ✅ | `GoogleService-Info.plist` pre-wired (fileRef + Copy Bundle Resources + group). |
+
+#### Vendor-specific findings
+
+- **The test target shared the app's bundle identifier.** Xcode rejects that. Fixed.
+- **This app collects bank/payout details and records audio**, and collects **no location** —
+  verified, no `Geolocation`/`getCurrentPosition` anywhere in `src/`. So its privacy manifest
+  declares `PaymentInfo`, `OtherFinancialInfo` and `AudioData` but **no** location, and its
+  `Info.plist` deliberately has no `NSLocationWhenInUseUsageDescription`. An unused permission
+  string invites App Review questions.
+- **No `react-native-permissions`** in this app (it is customer-only), so its Podfile must NOT
+  have a `setup_permissions!` block — the `require_relative` would abort `pod install` with a
+  file-not-found. Documented in the Podfile so nobody "helpfully" adds it.
+- **All vendor `patches/` are Android-only** (verified: zero `ios/` references, including the
+  `react-native-image-crop-picker` one, which touches only `android/`). The `postinstall`
+  patch script is byte-identical to the customer app's and skips cleanly on failure, so it
+  cannot break an iOS build.
+- **`otpless-react-native` is dead code** — `startOtpVerification.js` is imported by nothing.
+  No iOS setup needed; candidate for removal.
+
+#### ⚠️ Icon notes — decisions taken, easily reversed
+
+1. **The "India" wordmark was cropped out.** The source art has an orange "India" under the
+   star — a legacy artifact of the old `AstroIndia_Astrologers` name. The crop stops at the
+   star's lowest gold pixel (y=361, measured) to exclude it, because the product is now
+   "Astrowani Astrologer" and shipping a stale brand name in the icon is worse than shipping
+   none. **Say the word and it goes back in.**
+2. **The two apps' icons are now nearly identical** (navy + gold star), since both derive from
+   the same template art. An astrologer with both installed would struggle to tell them apart.
+   Worth commissioning a distinct vendor icon.
+3. Same softness caveat as the customer app — 512px source, so the 1024 is upscaled.
+
+### Phase 1 — a defect affecting BOTH apps, found while wiring the vendor
+
+**`PrivacyInfo.xcprivacy` was never in Copy Bundle Resources, in either app.** The React Native
+template creates the file and puts a `PBXFileReference` in the project navigator group, but
+never adds a `PBXBuildFile` or a Resources entry — so the manifest **is not in the built `.app`
+and Apple never reads it.** Every declaration in it, including everything written in step 1.4
+for both apps, was inert.
+
+Now wired in both. This is the kind of thing that produces a confusing ITMS-91053 rejection
+email *despite* the file existing in the repo, so it is worth remembering.
 
 ---
 

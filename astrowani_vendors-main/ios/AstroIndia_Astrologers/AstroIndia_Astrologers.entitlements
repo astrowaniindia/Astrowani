@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Enables the Push Notifications capability, without which APNs (and
+	     therefore FCM) never delivers to this app. For the astrologer app this
+	     is the difference between seeing an incoming consultation request and
+	     missing it — note CLAUDE.md already records missed:48 vs rejected:7 as
+	     the dominant accept-rate problem on Android.
+	     Value is "development" here; Xcode/EAS substitutes "production" when
+	     exporting a TestFlight/App Store build based on the provisioning
+	     profile, so this file does not need switching by hand.
+	     PushKit's voip entitlement is NOT added yet — see Phase 4 (CallKit) in
+	     MD files/ios-port-plan-2026-08-24.md. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
