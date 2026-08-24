@@ -81,6 +81,31 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
+# ---------------------------------------------------------------------------
+# Build ONLY the Firebase/Google pods as static FRAMEWORKS, leaving every other
+# pod a static library. Settled empirically on the customer app - see that
+# Podfile for the full reasoning. Short version:
+#   * use_frameworks! globally breaks vendored DYNAMIC xcframeworks.
+#   * use_modular_headers! globally duplicates React Native's own module maps.
+#   * :modular_headers => true one pod at a time just walks the error down the
+#     Firebase dependency chain, one 8-minute build per pod.
+# A static framework defines a module by construction, so flipping the whole
+# Firebase/Google subtree at once satisfies all of them without touching React
+# Native or any other pod.
+# ---------------------------------------------------------------------------
+$FirebaseStaticFrameworkPrefixes = ['Firebase', 'Google', 'Abseil', 'BoringSSL', 'gRPC', 'leveldb']
+$FirebaseStaticFrameworkExact = ['nanopb', 'PromisesObjC', 'PromisesSwift', 'GTMSessionFetcher']
+
+pre_install do |installer|
+  installer.pod_targets.each do |pod|
+    next unless $FirebaseStaticFrameworkPrefixes.any? { |p| pod.name.start_with?(p) } ||
+                $FirebaseStaticFrameworkExact.include?(pod.name)
+    Pod::UI.puts "Building #{pod.name} as a static framework (Firebase module requirement)".green
+    def pod.build_type
+      Pod::BuildType.static_framework
+    end
+  end
+end
 target 'AstroIndia_Astrologers' do
   config = use_native_modules!
 

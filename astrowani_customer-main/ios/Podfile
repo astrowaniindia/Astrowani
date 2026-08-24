@@ -93,16 +93,44 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
+# ---------------------------------------------------------------------------
+# Build ONLY the Firebase/Google pods as static FRAMEWORKS, leaving every other
+# pod as a static library.
+#
+# Why this and not `pod 'X', :modular_headers => true` one at a time: enabling
+# modules for GoogleUtilities alone just moved the error along the chain to
+#   Module 'FirebaseCore' not found (in target 'FirebaseInstallations')
+# because each Swift Firebase pod needs a module for the next one down. Chasing
+# that pod-by-pod means one 8-minute build per pod. A static framework defines a
+# module by construction, so flipping the whole Firebase/Google subtree at once
+# satisfies all of them in one go.
+#
+# Why it is safe where the two global settings were not:
+#   * React Native's pods are untouched, so its own module maps are not
+#     duplicated (that is what broke use_modular_headers!).
+#   * react-native-razorpay is untouched, so its DYNAMIC vendored xcframeworks
+#     still link normally (that is what broke use_frameworks!).
+#
+# nanopb and PromisesObjC are included because Firebase depends on them and they
+# are imported from Swift Firebase code. $RNFirebaseAsStaticFramework above
+# covers the RNFB* wrapper pods themselves.
+# ---------------------------------------------------------------------------
+$FirebaseStaticFrameworkPrefixes = ['Firebase', 'Google', 'Abseil', 'BoringSSL', 'gRPC', 'leveldb']
+$FirebaseStaticFrameworkExact = ['nanopb', 'PromisesObjC', 'PromisesSwift', 'GTMSessionFetcher']
+
+pre_install do |installer|
+  installer.pod_targets.each do |pod|
+    next unless $FirebaseStaticFrameworkPrefixes.any? { |p| pod.name.start_with?(p) } ||
+                $FirebaseStaticFrameworkExact.include?(pod.name)
+    Pod::UI.puts "Building #{pod.name} as a static framework (Firebase module requirement)".green
+    def pod.build_type
+      Pod::BuildType.static_framework
+    end
+  end
+end
+
 target 'AstrologyApp' do
   config = use_native_modules!
-
-  # Fixes: "The Swift pod `FirebaseCoreInternal` depends upon `GoogleUtilities`,
-  # which does not define modules." GoogleUtilities is a transitive Firebase
-  # dependency that no other Podfile line declares, so declaring it here to turn
-  # on module-map generation is safe and does not duplicate anything.
-  # Targeted deliberately - see the LINKAGE note above for why the global
-  # use_modular_headers! cannot be used.
-  pod 'GoogleUtilities', :modular_headers => true
 
   use_react_native!(
     :path => config[:reactNativePath],
