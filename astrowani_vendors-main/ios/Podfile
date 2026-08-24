@@ -71,7 +71,6 @@ prepare_react_native_project!
 # DO NOT set USE_FRAMEWORKS. The env hook below is only an escape hatch, and
 # :dynamic in particular does not work with react-native-webrtc.
 # ---------------------------------------------------------------------------
-use_modular_headers!
 # Required when Firebase is built as a static framework (path 2 above).
 # Harmless otherwise.
 $RNFirebaseAsStaticFramework = true

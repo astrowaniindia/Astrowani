@@ -38,29 +38,43 @@ setup_permissions([
 #       FirebaseCoreInternal depends upon GoogleUtilities, which does not define modules
 #       RNSentry            depends upon React-hermes,    which does not define modules
 #
-# CocoaPods offers two fixes for that. We use the SECOND one, and the choice
-# matters:
+# BOTH of CocoaPods' suggested blanket fixes were tried, and BOTH broke the
+# build in a different place. Do not reach for either of them again:
 #
-#   (a) use_frameworks! :linkage => :static  -- TRIED, AND IT BROKE THE LINK.
-#       It got pod install passing, then failed at link time with
+#   (a) use_frameworks! :linkage => :static  -- got pod install passing, then
+#       failed at LINK time:
 #         Undefined symbol: _OBJC_PROTOCOL_$_ExternalWalletSelectionProtocol
 #         referenced from RNRazorpayCheckout
-#       react-native-razorpay pulls in THREE vendored xcframeworks (Razorpay,
-#       RazorpayCore, RazorpayStandard) and under static frameworks they do not
-#       all reach the app's link line. Note only that one symbol was missing --
-#       other protocols from the same header resolved -- so this is a vendored
-#       framework propagation problem, not a missing architecture.
+#       react-native-razorpay pulls in three vendored xcframeworks (Razorpay,
+#       RazorpayCore, RazorpayStandard) which are DYNAMIC, and a static
+#       framework cannot contain a dynamic one, so they never reach the app's
+#       link line. Only that ONE symbol was undefined -- other protocols from
+#       the same header resolved -- which is what identifies it as vendored
+#       framework propagation rather than a missing architecture.
 #
-#   (b) use_modular_headers! -- what we do. It makes the ObjC pods emit module
-#       maps so the Swift pods can import them, while leaving linkage as static
-#       LIBRARIES, which is what react-native-razorpay's vendored frameworks
-#       expect.
+#   (b) use_modular_headers!  (global) -- failed to COMPILE React Native itself:
+#         Redefinition of module 'ReactCommon' (in target React-RCTAppDelegate)
+#         Could not build module 'Foundation' / 'UIKit' / 'DarwinFoundation'
+#       React Native ships its own module maps for some pods; generating them
+#       globally produces duplicates.
 #
-# Sentry's own podspec corroborates (b): its RNSentrySwiftLinkStub.swift, the
-# file that makes RNSentry a Swift pod at all, is documented as
-# "only needed when linking Sentry.xcframework's Swift symbols into a dynamic
-# framework anyway". We are not doing that, so forcing frameworks to satisfy it
-# was solving the wrong problem.
+# So: DEFAULT static-library linkage, with the two offending dependencies fixed
+# individually.
+#
+#   FirebaseCoreInternal -> GoogleUtilities
+#       fixed by the `pod 'GoogleUtilities', :modular_headers => true` line in
+#       the target block below. GoogleUtilities is a transitive Firebase
+#       dependency that nothing else declares, so declaring it here is safe and
+#       is the documented fix.
+#
+#   RNSentry -> React-hermes
+#       React-hermes is declared by use_react_native!, so it cannot be
+#       re-declared here with modular headers. Fixed instead by removing the one
+#       file that makes RNSentry a Swift pod at all --
+#       ios/RNSentrySwiftLinkStub.swift -- in scripts/apply-native-patches.js.
+#       That file's own comment says it is only needed "when linking a dynamic
+#       RNSentry framework", which we do not do; it is a single unused constant
+#       that exists purely to force Swift runtime compatibility libs to link.
 #
 # DO NOT set USE_FRAMEWORKS for this app. The env hook below is kept only as an
 # escape hatch, and `:linkage => :dynamic` in particular is known not to work
@@ -68,7 +82,6 @@ setup_permissions([
 #
 # Never commit a Podfile.lock produced by an experiment that did not build.
 # ---------------------------------------------------------------------------
-use_modular_headers!
 
 # Only meaningful if Firebase is ever built as a static framework (the
 # use_frameworks path above, which we do not use). Harmless otherwise.
@@ -82,6 +95,14 @@ end
 
 target 'AstrologyApp' do
   config = use_native_modules!
+
+  # Fixes: "The Swift pod `FirebaseCoreInternal` depends upon `GoogleUtilities`,
+  # which does not define modules." GoogleUtilities is a transitive Firebase
+  # dependency that no other Podfile line declares, so declaring it here to turn
+  # on module-map generation is safe and does not duplicate anything.
+  # Targeted deliberately - see the LINKAGE note above for why the global
+  # use_modular_headers! cannot be used.
+  pod 'GoogleUtilities', :modular_headers => true
 
   use_react_native!(
     :path => config[:reactNativePath],
