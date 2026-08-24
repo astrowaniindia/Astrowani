@@ -1,3 +1,9 @@
 <resources>
-    <string name="app_name">Astrowani Vendor</string>
+    <!-- Was "Astrowani Vendor". Renamed so Android matches the iOS
+         CFBundleDisplayName rather than the two platforms showing different names
+         for the same app. "Astrologer" over "Vendor" because an astrologer is not
+         a vendor to themselves.
+         NOTE: this is a native string, so it only changes on the next Android
+         release - it cannot ship over the OTA (hot-updater) channel. -->
+    <string name="app_name">Astrowani Astrologer</string>
 </resources>
