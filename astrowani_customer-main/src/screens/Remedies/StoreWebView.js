@@ -13,6 +13,8 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -50,6 +52,8 @@ function isInternal(url) {
 
 export default function StoreWebView() {
   const { t } = useContext(LanguageContext);
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const webRef = useRef(null);
   const canGoBackRef = useRef(false);      // read by the hardware-back handler
   const [loading, setLoading] = useState(true);
@@ -83,6 +87,35 @@ export default function StoreWebView() {
     return () => sub.remove();
   }, []);
 
+  // One back control for the whole screen: walk the page's own history first (product
+  // view -> grid), and only leave the store once the page has nowhere left to go. Same
+  // rule the hardware button follows above, so the two never disagree.
+  const goBack = useCallback(() => {
+    if (canGoBackRef.current && webRef.current) {
+      webRef.current.goBack();
+      return;
+    }
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('BottomTabs', { screen: 'Home' });
+  }, [navigation]);
+
+  // The store is a full-screen route with neither the app header nor the tab bar, so this
+  // strip is the only way out. It is the same brown as the page's own header, and sits
+  // directly above it, so the two read as one block rather than a bar bolted on top.
+  const backBar = (
+    <View style={[styles.backBar, { paddingTop: insets.top }]}>
+      <TouchableOpacity
+        onPress={goBack}
+        style={styles.backBtn}
+        // The arrow glyph is small; this widens the tap target to the 44dp floor without
+        // making the visible chrome any taller.
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 16 }}
+      >
+        <Icon name="arrow-back" size={moderateScale(23)} color="#f4d8bc" />
+      </TouchableOpacity>
+    </View>
+  );
+
   const retry = useCallback(() => {
     setFailed(false);
     setLoading(true);
@@ -93,6 +126,8 @@ export default function StoreWebView() {
   // gets an explanation and a way out instead of a blank screen.
   if (!WebView || failed) {
     return (
+      <View style={styles.flex}>
+      {backBar}
       <ScrollView
         contentContainerStyle={styles.fallbackWrap}
         refreshControl={<RefreshControl refreshing={false} onRefresh={retry} />}
@@ -115,13 +150,17 @@ export default function StoreWebView() {
           </TouchableOpacity>
         )}
       </ScrollView>
+      </View>
     );
   }
 
   if (token === undefined) {
     return (
-      <View style={[styles.flex, styles.loaderOverlay]}>
-        <ActivityIndicator size="large" color={COLORS.maroon} />
+      <View style={styles.flex}>
+        {backBar}
+        <View style={[styles.flex, styles.loaderOverlay]}>
+          <ActivityIndicator size="large" color={COLORS.maroon} />
+        </View>
       </View>
     );
   }
@@ -144,6 +183,7 @@ export default function StoreWebView() {
 
   return (
     <View style={styles.flex}>
+      {backBar}
       <WebView
         key={reloadKey + ':' + (token ? 'auth' : 'anon')}
         ref={webRef}
@@ -193,6 +233,18 @@ export default function StoreWebView() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  // #592a19 is the storefront's own header brown, hardcoded rather than taken from COLORS
+  // so the seam stays invisible if the app theme is ever retuned independently of the site.
+  backBar: {
+    backgroundColor: '#592a19',
+    justifyContent: 'flex-end',
+  },
+  backBtn: {
+    height: verticalScale(40),
+    justifyContent: 'center',
+    paddingLeft: scale(14),
+    alignSelf: 'flex-start',
+  },
   webContainer: { backgroundColor: '#f4d8bc' },
   loaderOverlay: {
     ...StyleSheet.absoluteFillObject,

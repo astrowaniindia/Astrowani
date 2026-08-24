@@ -475,6 +475,17 @@ export default function Navigation({ initialRoute }) {
             hardcoded LIVE Razorpay key and a ₹0.20 client-side "payment" with no
             server-side verification, which is not a pattern to leave lying around to be
             copy-pasted. */}
+        {/* The hosted storefront opens as its OWN full-screen route rather than inside the
+            tab navigator, so it carries neither the app header nor the bottom tab bar —
+            the page already has its own header and its own navigation, and stacking ours
+            on top of it left two competing chrome bars on a phone screen. Its single back
+            control lives inside StoreWebView. */}
+        <Stack.Screen
+          name="Store"
+          component={StoreWebView}
+          options={{ headerShown: false }}
+        />
+
         <Stack.Screen
           name="RemedyShop"
           component={RemedyShop}
@@ -842,7 +853,21 @@ function BottomTabNavigator() {
       <Tab.Screen name="Call" component={CallStack} />
       <Tab.Screen name="Video" component={VideoStack} />
       <Tab.Screen name="Live" component={LiveStack} />
-      <Tab.Screen name="Remedies" component={RemediesStack} />
+      {/* The tab stays in the bar so the store keeps its familiar place, but pressing it
+          pushes the root-level Store route instead of switching tabs — that is what makes
+          it a screen you come back OUT of, rather than a tab with two nav bars on it.
+          RemediesStack is still the registered component so the tab has something to
+          render if the listener is ever removed. */}
+      <Tab.Screen
+        name="Remedies"
+        component={RemediesStack}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Store');
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 }

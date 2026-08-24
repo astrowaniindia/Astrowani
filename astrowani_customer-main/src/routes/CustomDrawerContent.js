@@ -108,7 +108,7 @@ function CustomDrawerContent(props, navigation) {
     { iconName: 'shopping-bag', label: t('drawer.myOrders'), onPress: () => props.navigation.navigate('MyOrders') },
   ];
   const exploreRows = [
-    { iconName: 'spa', label: t('drawer.remedies'), onPress: () => props.navigation.navigate('DrawerRemedies') },
+    { iconName: 'spa', label: t('drawer.remedies'), onPress: () => props.navigation.navigate('Store') },
     { iconName: 'question-answer', label: t('drawer.chatWithAstrologer'), onPress: () => props.navigation.navigate('DrawerChat') },
     { iconName: 'menu-book', label: t('drawer.blogs'), onPress: () => props.navigation.navigate('BlogList') },
     { iconName: 'mic', label: t('drawer.voiceNotes'), onPress: () => props.navigation.navigate('VoiceNotes') },

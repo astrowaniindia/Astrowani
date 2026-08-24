@@ -314,7 +314,7 @@ const MyOrdersScreen = ({ navigation }) => {
             <Text style={styles.emptyText}>{t('orders.noOrders')}</Text>
             <TouchableOpacity
               style={styles.shopBtn}
-              onPress={() => navigation.navigate('DrawerRemedies')}>
+              onPress={() => navigation.navigate('Store')}>
               <Text style={styles.shopBtnText}>{t('cart.startShopping')}</Text>
             </TouchableOpacity>
           </View>
