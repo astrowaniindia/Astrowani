@@ -47,8 +47,10 @@ export default function StoreProducts() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await client.get('/api/admin/store-products');
-    setItems(data.data || []);
+    const { data } = await client.get('/api/admin/remedies');
+    // remedy_items speaks type/title; the rest of this page was written against
+    // category/name, so normalise once here rather than at every read site.
+    setItems((data.data || []).map((r) => ({ ...r, category: r.type, name: r.title })));
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -62,21 +64,35 @@ export default function StoreProducts() {
     return { ...p, tags: has ? p.tags.filter((t) => t !== tagKey) : [...p.tags, tagKey] };
   });
 
+
+  // remedy_items has no tags/benefits columns, and the backend's `allowed` list silently
+  // drops keys it doesn't know — so sending them would be lossy without any error. The
+  // benefit lines are folded into the description instead, which is the field both the
+  // storefront and the app already render, so nothing the admin typed disappears.
+  const toRemedyItem = (o) => {
+    const benefits = Array.isArray(o.benefits)
+      ? o.benefits
+      : String(o.benefits || '').split(String.fromCharCode(10)).map((b) => b.trim()).filter(Boolean);
+    const description = [String(o.description || '').trim(), ...benefits].filter(Boolean).join(' ').trim();
+    return {
+      type: o.category,
+      title: o.name,
+      description,
+      price: Number(o.price) || 0,
+      mrp: numOrNull(o.mrp),
+      unit_label: o.unit_label && String(o.unit_label).trim() ? String(o.unit_label).trim() : null,
+      image: o.image,
+      is_active: o.is_active !== false,
+      sort_order: Number(o.sort_order) || 0,
+    };
+  };
+
   const save = async () => {
     setBusy(true);
     try {
-      const payload = {
-        ...editing,
-        price: Number(editing.price) || 0,
-        sort_order: Number(editing.sort_order) || 0,
-        mrp: numOrNull(editing.mrp),
-        unit_label: editing.unit_label?.trim() ? editing.unit_label.trim() : null,
-        benefits: (typeof editing.benefits === 'string'
-          ? editing.benefits.split('\n').map((s) => s.trim()).filter(Boolean)
-          : editing.benefits),
-      };
-      if (editing.id) await client.put(`/api/admin/store-products/${editing.id}`, payload);
-      else await client.post('/api/admin/store-products', payload);
+      const payload = toRemedyItem(editing);
+      if (editing.id) await client.put(`/api/admin/remedies/${editing.id}`, payload);
+      else await client.post('/api/admin/remedies', payload);
       setEditing(null);
       await load();
     } catch (e) { alert(e.response?.data?.message || e.message); }
@@ -85,12 +101,12 @@ export default function StoreProducts() {
 
   const remove = async (r) => {
     if (!confirm(`Delete "${r.name}"?`)) return;
-    await client.delete(`/api/admin/store-products/${r.id}`);
+    await client.delete(`/api/admin/remedies/${r.id}`);
     await load();
   };
 
   const toggleActive = async (r) => {
-    await client.put(`/api/admin/store-products/${r.id}`, { is_active: !r.is_active });
+    await client.put(`/api/admin/remedies/${r.id}`, { is_active: !r.is_active });
     await load();
   };
 
@@ -100,14 +116,14 @@ export default function StoreProducts() {
   const importStarterGemstones = async () => {
     const existing = items.filter((i) => i.category === 'gemstone').length;
     const warn = existing > 0 ? `You already have ${existing} gemstone item(s). ` : '';
-    if (!confirm(`${warn}Import ${STARTER_STORE_PRODUCTS.length} starter gemstones now? Each photo will be uploaded to storage and a real row created in this store's own catalog.`)) return;
+    if (!confirm(`${warn}Import ${STARTER_STORE_PRODUCTS.length} starter gemstones now? Each photo is uploaded to storage and a real, ORDERABLE product is created. These show in the web store AND the app's Remedies shop, and customers can buy them.`)) return;
 
     setImportState({ done: 0, total: STARTER_STORE_PRODUCTS.length });
     for (let i = 0; i < STARTER_STORE_PRODUCTS.length; i++) {
       const g = STARTER_STORE_PRODUCTS[i];
       try {
         const uploadRes = await client.post('/api/upload-image', { base64: g.image, folder: 'store-products' });
-        await client.post('/api/admin/store-products', { ...g, sort_order: existing + i, image: uploadRes.data.url });
+        await client.post('/api/admin/remedies', toRemedyItem({ ...g, sort_order: existing + i, image: uploadRes.data.url }));
       } catch (e) {
         console.error('Import failed for', g.name, e.response?.data?.message || e.message);
       }
