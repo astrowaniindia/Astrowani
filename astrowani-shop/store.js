@@ -1,3 +1,44 @@
+/* ================= ON-DEVICE DIAGNOSTIC =================
+   Inert unless the URL carries ?debug=1. A rendering fault reported from a phone could
+   not be reproduced in any desktop or emulated-mobile run, and indirect evidence from
+   screenshots pointed two different ways, so rather than keep guessing the page can
+   report its own state from the device that actually fails.
+
+   Everything here is installed BEFORE the main script body and reports from a timer, so
+   it still shows up if that body throws on the way past - which is the single most
+   useful case to be able to see. Remove once the fault is understood. */
+(function(){
+  if (String(location.search).indexOf('debug=1') === -1) return;
+  var errs = [];
+  window.addEventListener('error', function(e){
+    errs.push((e.message || '?') + ' @' + (e.filename || '?').split('/').pop() + ':' + (e.lineno || '?'));
+  });
+  window.addEventListener('unhandledrejection', function(e){ errs.push('promise: ' + e.reason); });
+  function line(k, v){ return '<div><b>' + k + ':</b> ' + v + '</div>'; }
+  setTimeout(function(){
+    var n = function(sel){ return document.querySelectorAll(sel).length; };
+    var box = document.createElement('div');
+    box.setAttribute('style',
+      'position:fixed;left:0;right:0;bottom:0;z-index:99999;max-height:52vh;overflow:auto;' +
+      'background:#111;color:#0f0;font:11px/1.5 monospace;padding:10px 12px;white-space:pre-wrap;');
+    box.innerHTML =
+      line('script', 'RAN TO END: ' + (window.__astrowaniDebug === true)) +
+      line('errors', errs.length ? errs.join(' | ') : 'none') +
+      line('viewport', window.innerWidth + 'x' + window.innerHeight + ' dpr' + (window.devicePixelRatio || 1)) +
+      line('purpose tiles', n('.purpose-tile') + ' (hidden ' + n('.purpose-tile:not(.is-in)') + ')') +
+      line('puja cards', n('.pj-card') + ' (hidden ' + n('.pj-card:not(.is-in)') + ')') +
+      line('gem cards', n('.card:not(.pj-card)')) +
+      line('chips', n('.pj-chip')) +
+      line('marked/hidden', n('[data-reveal]') + ' / ' + n('[data-reveal]:not(.is-in)')) +
+      line('color-mix', (window.CSS && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red 50%, blue)')) ? 'supported' : 'NOT SUPPORTED') +
+      line('IntersectionObserver', ('IntersectionObserver' in window) ? 'yes' : 'no') +
+      line('css href', (document.querySelector('link[rel=stylesheet][href*=store]') || {}).getAttribute ? document.querySelector('link[rel=stylesheet][href*=store]').getAttribute('href') : '?') +
+      line('js src', (document.querySelector('script[src*=store]') || {}).getAttribute ? document.querySelector('script[src*=store]').getAttribute('src') : '?') +
+      line('ua', navigator.userAgent);
+    document.body.appendChild(box);
+  }, 2000);
+})();
+
 /* ================= SHARED STORE SCRIPT =================
    One script serves all three pages (/, /gemstones/, /pujas/). Every page carries the
    same chrome - header, ticker, cart drawer, modals, footer - but only the sections it
@@ -2147,5 +2188,6 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   renderPujaPurposeTiles();
   renderPujaChips();
   renderPujas();
+  window.__astrowaniDebug = true;   // read by the ?debug=1 panel above
 
 })();
