@@ -133,6 +133,10 @@
     border-bottom:1px solid color-mix(in srgb, var(--cream) 18%, var(--brown) 82%);
   }
   .header-row{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:24px; padding:13px 0;}
+  /* The header is the first thing on the page now — the ticker moved below it — so when
+     this runs inside the app it is what sits against the status bar. The inset keeps the
+     wordmark clear of the clock; on the web the value is 0 and nothing changes. */
+  header.site{padding-top:env(safe-area-inset-top, 0px);}
 
   /* One line, one type size: the real brand star, then "Astrowani Store" set as a single
      wordmark. The earlier stacked version rendered "STORE" as a tiny caption under the
@@ -805,8 +809,6 @@
 
 </head>
 <body>
-<div class="topstrip"><div class="marquee" id="marquee"></div></div>
-
 <header class="site">
   <div class="wrap header-row">
     <a href="#" class="logo" aria-label="Astrowani Store, home">
@@ -820,6 +822,14 @@
       <a href="#about">About</a>
     </nav>
     <div class="header-actions">
+      <!-- Only rendered inside the app (see wireAppExit): on the open web there is nothing
+           to exit to, and a dead button is worse than no button. -->
+      <button class="icon-btn hidden" id="exitBtn" title="Back to Astrowani" aria-label="Back to Astrowani">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7"/>
+          <path d="M18 12H10"/><path d="M13 8l-3 4 3 4"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="adminToggle" title="Admin mode: edit this catalog" aria-label="Toggle admin mode">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/>
@@ -836,6 +846,9 @@
     </div>
   </div>
 </header>
+
+<div class="topstrip"><div class="marquee" id="marquee"></div></div>
+
 
 <section class="hero">
   <div class="wrap hero-inner">
@@ -2114,6 +2127,22 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
     {key:'yantra', label:'Yantra plate'}, {key:'havan', label:'Havan kit'},
     {key:'dhoop', label:'Dhoop / incense stick'}, {key:'kalash', label:'Kalash'}
   ];
+
+  /* The exit control only exists in the app shell. The store screen there has no chrome of
+     its own — this header IS the nav bar — so this is the way back out. It asks the app to
+     leave rather than doing anything itself, because only the app knows what "home" is.
+     No fallback to history.back(): the store is the first page in that WebView, so there is
+     nothing behind it. */
+  (function wireAppExit(){
+    var btn = document.getElementById('exitBtn');
+    if (!btn) return;
+    var inApp = !!(APP && APP.platform === 'app' && window.ReactNativeWebView);
+    if (!inApp) return;
+    btn.classList.remove('hidden');
+    btn.addEventListener('click', function(){
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'exit' })); } catch (e) {}
+    });
+  })();
 
   var adminBar = document.getElementById('adminBar');
   var adminCatToggles = document.getElementById('adminCatToggles');

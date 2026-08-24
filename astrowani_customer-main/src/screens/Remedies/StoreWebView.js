@@ -87,34 +87,26 @@ export default function StoreWebView() {
     return () => sub.remove();
   }, []);
 
-  // One back control for the whole screen: walk the page's own history first (product
-  // view -> grid), and only leave the store once the page has nowhere left to go. Same
-  // rule the hardware button follows above, so the two never disagree.
-  const goBack = useCallback(() => {
-    if (canGoBackRef.current && webRef.current) {
-      webRef.current.goBack();
-      return;
-    }
+  // Leaving the store is the page's own job now: its header is the only nav bar on this
+  // screen and carries an exit button, which posts here. Only the app knows where "home"
+  // is, so the page asks rather than trying to navigate itself.
+  const leaveStore = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate('BottomTabs', { screen: 'Home' });
   }, [navigation]);
 
-  // The store is a full-screen route with neither the app header nor the tab bar, so this
-  // strip is the only way out. It is the same brown as the page's own header, and sits
-  // directly above it, so the two read as one block rather than a bar bolted on top.
-  const backBar = (
-    <View style={[styles.backBar, { paddingTop: insets.top }]}>
-      <TouchableOpacity
-        onPress={goBack}
-        style={styles.backBtn}
-        // The arrow glyph is small; this widens the tap target to the 44dp floor without
-        // making the visible chrome any taller.
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 16 }}
-      >
-        <Icon name="arrow-back" size={moderateScale(23)} color="#f4d8bc" />
-      </TouchableOpacity>
-    </View>
-  );
+  const onMessage = useCallback((e) => {
+    let msg = null;
+    // Anything the page posts arrives here as a string, including things we did not send.
+    // A malformed payload must not take the screen down with it.
+    try { msg = JSON.parse(e?.nativeEvent?.data || ''); } catch (_) { return; }
+    if (msg && msg.type === 'exit') leaveStore();
+  }, [leaveStore]);
+
+  // Not a header — just the status-bar strip, painted the same brown as the page header
+  // directly below it so the two read as one bar. The app draws under the status bar, so
+  // without this the wordmark would sit behind the clock.
+  const statusBarFill = <View style={{ height: insets.top, backgroundColor: '#592a19' }} />;
 
   const retry = useCallback(() => {
     setFailed(false);
@@ -127,7 +119,7 @@ export default function StoreWebView() {
   if (!WebView || failed) {
     return (
       <View style={styles.flex}>
-      {backBar}
+      {statusBarFill}
       <ScrollView
         contentContainerStyle={styles.fallbackWrap}
         refreshControl={<RefreshControl refreshing={false} onRefresh={retry} />}
@@ -157,7 +149,7 @@ export default function StoreWebView() {
   if (token === undefined) {
     return (
       <View style={styles.flex}>
-        {backBar}
+        {statusBarFill}
         <View style={[styles.flex, styles.loaderOverlay]}>
           <ActivityIndicator size="large" color={COLORS.maroon} />
         </View>
@@ -183,7 +175,7 @@ export default function StoreWebView() {
 
   return (
     <View style={styles.flex}>
-      {backBar}
+      {statusBarFill}
       <WebView
         key={reloadKey + ':' + (token ? 'auth' : 'anon')}
         ref={webRef}
@@ -193,6 +185,7 @@ export default function StoreWebView() {
         // Cream, matching the site's own background, so the gap before first paint isn't
         // a white flash against the app's theme.
         containerStyle={styles.webContainer}
+        onMessage={onMessage}
         onNavigationStateChange={(nav) => { canGoBackRef.current = !!nav.canGoBack; }}
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => setLoading(false)}
@@ -233,18 +226,6 @@ export default function StoreWebView() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  // #592a19 is the storefront's own header brown, hardcoded rather than taken from COLORS
-  // so the seam stays invisible if the app theme is ever retuned independently of the site.
-  backBar: {
-    backgroundColor: '#592a19',
-    justifyContent: 'flex-end',
-  },
-  backBtn: {
-    height: verticalScale(40),
-    justifyContent: 'center',
-    paddingLeft: scale(14),
-    alignSelf: 'flex-start',
-  },
   webContainer: { backgroundColor: '#f4d8bc' },
   loaderOverlay: {
     ...StyleSheet.absoluteFillObject,
