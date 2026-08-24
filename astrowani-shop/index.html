@@ -1464,13 +1464,60 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
   var adminMode = adminLoad('mode', false);
 
 
+
+  /* ================= IN-APP AUTH =================
+     The app hands us a customer JWT via injectedJavaScriptBeforeContentLoaded, so this is
+     already set before any of this script runs. On the open web it is simply absent, and
+     the store falls back to the enquiry flow — one page, two honest behaviours, rather
+     than a checkout that only half works outside the app. */
+  var APP = (typeof window !== 'undefined' && window.__ASTROWANI__) || null;
+  var AUTH_TOKEN = APP && APP.token ? APP.token : null;
+  // Declared here, not in the LIVE CATALOG block below: `var` hoists but the assignment
+  // does not, so a second `var API_BASE = ...` further down would silently overwrite an
+  // apiBase supplied by the app.
+  var API_BASE = (APP && APP.apiBase) || 'https://backend.astrowani.com';
+  function canBuy(){ return !!AUTH_TOKEN; }
+
+  function apiFetch(path, opts){
+    opts = opts || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    if (AUTH_TOKEN) headers.Authorization = 'Bearer ' + AUTH_TOKEN;
+    return fetch(API_BASE + path, Object.assign({}, opts, { headers: headers }))
+      .then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(body){
+          if (!r.ok) {
+            var err = new Error(body.message || ('Request failed (' + r.status + ')'));
+            err.status = r.status; err.body = body;
+            throw err;
+          }
+          return body;
+        });
+      });
+  }
+
+  // Razorpay's script is only needed when a real payment is about to happen, so it is
+  // loaded on demand rather than on every page view.
+  var rzpLoading = null;
+  function loadRazorpay(){
+    if (window.Razorpay) return Promise.resolve(true);
+    if (rzpLoading) return rzpLoading;
+    rzpLoading = new Promise(function(resolve, reject){
+      var el = document.createElement('script');
+      el.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      el.onload = function(){ resolve(true); };
+      el.onerror = function(){ reject(new Error('Could not load the payment window')); };
+      document.head.appendChild(el);
+    });
+    return rzpLoading;
+  }
+
   /* ================= LIVE CATALOG =================
      The hardcoded PRODUCTS array below is a fallback, not the shop. Real checkout can only
      sell rows that exist in remedy_items (POST /api/orders/quote looks each itemId up
      there by uuid), so the catalogue is fetched from the backend and the local array is
      used only when that fetch fails — a shopper on a flaky connection still sees a shop
-     rather than an empty page, they just can't buy until it loads. */
-  var API_BASE = 'https://backend.astrowani.com';
+     rather than an empty page, they just can't buy until it loads.
+     API_BASE is declared above, alongside the auth block. */
 
   // remedy_items has no tags column, so the "Shop by Purpose" tiles infer a purpose from
   // the stone. Keyed on the planet each stone answers to, which is what the purpose tiles
@@ -2282,8 +2329,171 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
 
   function openCheckout(){
     if (!cartCount()) { showToast('Your cart is empty'); return; }
-    renderEnquiryForm();
+    if (canBuy()) startRealCheckout(); else renderEnquiryForm();
     openModal('coModal');
+  }
+
+  /* ================= REAL CHECKOUT (in-app only) =================
+     Runs only when the app injected a customer JWT. Every figure shown comes from
+     POST /api/orders/quote: the server reprices from remedy_items and app_settings, and
+     /checkout re-derives the same numbers and ignores anything money-shaped in the request
+     body. Nothing here computes a price, it only displays what the server said. */
+  var checkoutState = { quote: null, addresses: [], addressId: null, busy: false };
+
+  // One token per checkout attempt, held for the life of the modal. Retrying the same
+  // attempt reuses it and dedupes server-side; a deliberate second purchase reopens the
+  // modal, mints a new one, and is correctly treated as a new order.
+  var clientRequestId = null;
+
+  function cartLines(){
+    return Object.keys(cart).map(function(id){ return { itemId: id, quantity: cart[id] }; });
+  }
+
+  function startRealCheckout(){
+    clientRequestId = 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    coContent.innerHTML = '<div class="confirm"><p class="lede">Checking prices and stock...</p></div>';
+    Promise.all([
+      apiFetch('/api/orders/quote', { method: 'POST', body: JSON.stringify({ items: cartLines() }) }),
+      apiFetch('/api/addresses').catch(function(){ return { data: [] }; })
+    ]).then(function(res){
+      checkoutState.quote = res[0];
+      checkoutState.addresses = res[1].data || [];
+      var def = null;
+      checkoutState.addresses.forEach(function(a){ if (!def || a.is_default) def = a; });
+      checkoutState.addressId = def ? def.id : null;
+      renderRealCheckout();
+    }).catch(function(e){
+      coContent.innerHTML =
+        '<div class="confirm"><h3 style="font-size:20px;">Could not start checkout</h3>' +
+        '<p class="lede" style="margin:10px auto 18px; max-width:38ch;">' + escapeHtml(e.message) + '</p>' +
+        '<button class="btn btn-gold" id="coClose">Close</button></div>';
+      coContent.querySelector('#coClose').addEventListener('click', function(){ closeModal('coModal'); });
+    });
+  }
+
+  function renderRealCheckout(){
+    var q = checkoutState.quote;
+    var addrOpts = checkoutState.addresses.map(function(a){
+      var label = [a.name, a.line1, a.city, a.pincode].filter(Boolean).join(', ');
+      return '<option value="' + a.id + '"' + (a.id === checkoutState.addressId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+    }).join('');
+
+    var blocked = (q.blockedTypes || []).length > 0;
+    var oos = (q.outOfStock || []).length > 0;
+
+    coContent.innerHTML =
+      '<h3 style="font-size:20px; margin-bottom:16px;">Checkout</h3>' +
+      (checkoutState.addresses.length
+        ? '<div class="field"><label for="coAddrSel">Deliver to</label><select id="coAddrSel">' + addrOpts + '</select></div>'
+        : '<div class="field"><label>Delivery address</label>' +
+          '<input id="naName" placeholder="Full name"><div style="height:8px"></div>' +
+          '<input id="naPhone" inputmode="numeric" placeholder="10-digit phone"><div style="height:8px"></div>' +
+          '<input id="naLine1" placeholder="House no., street, locality"><div style="height:8px"></div>' +
+          '<div class="field-row"><input id="naCity" placeholder="City"><input id="naPin" inputmode="numeric" placeholder="Pincode"></div>' +
+          '<div style="height:8px"></div><input id="naState" placeholder="State"></div>') +
+      (q.items || []).map(function(l){
+        var line = Number(l.lineTotal != null ? l.lineTotal : (l.unitPrice * l.quantity)) || 0;
+        return '<div class="sum-row"><span>' + escapeHtml(l.title) + ' x' + l.quantity + '</span><span class="price">Rs ' + line.toLocaleString('en-IN') + '</span></div>';
+      }).join('') +
+      '<div class="sum-row"><span>Delivery</span><span class="price">' + (q.deliveryFee ? 'Rs ' + q.deliveryFee : 'Free') + '</span></div>' +
+      (q.handlingFee ? '<div class="sum-row"><span>Handling</span><span class="price">Rs ' + q.handlingFee + '</span></div>' : '') +
+      '<div class="sum-row total"><span>To pay</span><span class="price">Rs ' + Number(q.grandTotal).toLocaleString('en-IN') + '</span></div>' +
+      (blocked ? '<div class="checkout-note">We are not delivering some of these yet. Remove them to continue.</div>' : '') +
+      (oos ? '<div class="checkout-note">Something in your cart just went out of stock.</div>' : '') +
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="payBtn"' + ((blocked || oos) ? ' disabled' : '') + '>Pay Rs ' + Number(q.grandTotal).toLocaleString('en-IN') + '</button>';
+
+    var sel = coContent.querySelector('#coAddrSel');
+    if (sel) sel.addEventListener('change', function(){ checkoutState.addressId = sel.value; });
+    coContent.querySelector('#payBtn').addEventListener('click', payNow);
+  }
+
+  function collectNewAddress(){
+    var g = function(id){ var el = coContent.querySelector('#' + id); return el ? el.value.trim() : ''; };
+    return { name: g('naName'), phone: g('naPhone'), line1: g('naLine1'), city: g('naCity'), pincode: g('naPin'), state: g('naState') };
+  }
+
+  function payNow(){
+    if (checkoutState.busy) return;
+    checkoutState.busy = true;
+    var btn = coContent.querySelector('#payBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting payment...'; }
+
+    var ensureAddress = checkoutState.addressId
+      ? Promise.resolve(checkoutState.addressId)
+      : apiFetch('/api/addresses', { method: 'POST', body: JSON.stringify(collectNewAddress()) })
+          .then(function(r){ return (r.data && r.data.id) || null; });
+
+    ensureAddress.then(function(addressId){
+      if (!addressId) throw new Error('Please fill in a delivery address');
+      checkoutState.addressId = addressId;
+      return loadRazorpay().then(function(){
+        return apiFetch('/api/orders/checkout', { method: 'POST', body: JSON.stringify({
+          items: cartLines(),
+          addressId: addressId,
+          paymentMethod: 'razorpay',
+          clientRequestId: clientRequestId
+        })});
+      });
+    }).then(function(res){
+      if (res.alreadyProcessed) { renderOrderPlaced(res.orderId); return; }
+      openRazorpay(res);
+    }).catch(function(e){
+      checkoutState.busy = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+      showToast(e.message || 'Could not start payment');
+    });
+  }
+
+  function openRazorpay(res){
+    var rzp = new window.Razorpay({
+      key: res.keyId,
+      order_id: res.razorpayOrderId,
+      amount: res.amount,
+      currency: 'INR',
+      name: 'Astrowani Store',
+      description: 'Gemstone order',
+      handler: function(resp){
+        // This callback does NOT mean the order is confirmed. Only the server's signature
+        // check decides that, so the customer is told nothing until verify-payment returns.
+        apiFetch('/api/orders/verify-payment', { method: 'POST', body: JSON.stringify({
+          razorpay_order_id: resp.razorpay_order_id,
+          razorpay_payment_id: resp.razorpay_payment_id,
+          razorpay_signature: resp.razorpay_signature
+        })}).then(function(v){
+          cart = {}; saveCart(); renderCart();
+          renderOrderPlaced(v.orderId || res.orderId);
+        }).catch(function(e){
+          renderPaymentUnconfirmed(e.message);
+        });
+      },
+      modal: { ondismiss: function(){
+        checkoutState.busy = false;
+        var b = coContent.querySelector('#payBtn');
+        if (b) { b.disabled = false; b.textContent = 'Pay Rs ' + Number(checkoutState.quote.grandTotal).toLocaleString('en-IN'); }
+      }}
+    });
+    rzp.open();
+  }
+
+  function renderOrderPlaced(orderId){
+    coContent.innerHTML =
+      '<div class="confirm"><div class="tick">&#10003;</div>' +
+      '<h3 style="font-size:22px;">Order placed</h3>' +
+      (orderId ? '<div class="ordno price">' + escapeHtml(String(orderId).slice(0, 8).toUpperCase()) + '</div>' : '') +
+      '<p class="lede" style="margin:0 auto 18px; max-width:38ch;">Payment confirmed. You can follow it under My Orders in the app.</p>' +
+      '<button class="btn btn-gold" id="continueShopping">Keep browsing</button></div>';
+    coContent.querySelector('#continueShopping').addEventListener('click', function(){ closeModal('coModal'); });
+  }
+
+  // Money may well have left the customer's account by this point, so this must never say
+  // the order failed. It states only what is known, and tells them not to pay twice.
+  function renderPaymentUnconfirmed(msg){
+    coContent.innerHTML =
+      '<div class="confirm"><h3 style="font-size:20px;">We could not confirm your payment</h3>' +
+      '<p class="lede" style="margin:10px auto 14px; max-width:40ch;">If money left your account it is safe and the order will be completed. Please do not pay again.</p>' +
+      '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13px;">' + escapeHtml(msg || '') + '</p>' +
+      '<button class="btn btn-gold" id="continueShopping">Close</button></div>';
+    coContent.querySelector('#continueShopping').addEventListener('click', function(){ closeModal('coModal'); });
   }
 
   // Plain-text summary of the cart, shared by both the WhatsApp and e-mail handoffs.
