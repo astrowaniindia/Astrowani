@@ -58,6 +58,20 @@ prepare_react_native_project!
 # Never commit a Podfile.lock produced by an experiment that did not build.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# LINKAGE - settled empirically on the customer app; kept identical here so the
+# two apps do not diverge. See that Podfile for the full reasoning.
+#
+# Short version: pod install fails without this because RNSentry (Swift) needs
+# React-hermes to define modules, and FirebaseCoreInternal (Swift) needs the
+# same of GoogleUtilities. use_frameworks! :linkage => :static also fixes that,
+# but it broke linking of vendored xcframeworks on the customer app, so we use
+# module maps and keep static LIBRARY linkage instead.
+#
+# DO NOT set USE_FRAMEWORKS. The env hook below is only an escape hatch, and
+# :dynamic in particular does not work with react-native-webrtc.
+# ---------------------------------------------------------------------------
+use_modular_headers!
 # Required when Firebase is built as a static framework (path 2 above).
 # Harmless otherwise.
 $RNFirebaseAsStaticFramework = true

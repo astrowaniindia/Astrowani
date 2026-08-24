@@ -13,7 +13,6 @@
         "credentialsSource": "remote"
       },
       "env": {
-        "USE_FRAMEWORKS": "static",
         "RCT_NEW_ARCH_ENABLED": "0"
       }
     },
@@ -27,7 +26,6 @@
         "credentialsSource": "remote"
       },
       "env": {
-        "USE_FRAMEWORKS": "static",
         "RCT_NEW_ARCH_ENABLED": "0"
       }
     },
@@ -37,7 +35,6 @@
         "simulator": true
       },
       "env": {
-        "USE_FRAMEWORKS": "static",
         "RCT_NEW_ARCH_ENABLED": "0"
       }
     }

@@ -30,31 +30,48 @@ setup_permissions([
 ])
 
 # ---------------------------------------------------------------------------
-# FIRST-BUILD TROUBLESHOOTING - read this before changing anything here.
+# LINKAGE - this was settled empirically over several EAS builds. Read before
+# changing it.
 #
-# This app links react-native-webrtc + @react-native-firebase/* +
-# react-native-razorpay + react-native-fast-image, which is the combination most
-# likely to fail on a first `pod install` by disagreeing about framework
-# linkage. Try in this order, and change ONE thing at a time:
+# `pod install` initially failed with:
+#   [!] The following Swift pods cannot yet be integrated as static libraries:
+#       FirebaseCoreInternal depends upon GoogleUtilities, which does not define modules
+#       RNSentry            depends upon React-hermes,    which does not define modules
 #
-#   1. Plain `pod install` (this file as-is). Firebase's iOS SDK supports static
-#      libraries, so this usually just works. Try it first.
+# CocoaPods offers two fixes for that. We use the SECOND one, and the choice
+# matters:
 #
-#   2. If Swift/modular-header errors appear (typically from FirebaseCoreInternal
-#      or GoogleUtilities), rebuild with static frameworks:
-#         USE_FRAMEWORKS=static pod install
-#      The `linkage` block below already reads that env var, and
-#      $RNFirebaseAsStaticFramework is set for exactly this case.
+#   (a) use_frameworks! :linkage => :static  -- TRIED, AND IT BROKE THE LINK.
+#       It got pod install passing, then failed at link time with
+#         Undefined symbol: _OBJC_PROTOCOL_$_ExternalWalletSelectionProtocol
+#         referenced from RNRazorpayCheckout
+#       react-native-razorpay pulls in THREE vendored xcframeworks (Razorpay,
+#       RazorpayCore, RazorpayStandard) and under static frameworks they do not
+#       all reach the app's link line. Note only that one symbol was missing --
+#       other protocols from the same header resolved -- so this is a vendored
+#       framework propagation problem, not a missing architecture.
 #
-#   3. Only if 2 fails, look at individual `:modular_headers => true` on the
-#      offending pod. Do NOT reach for `use_frameworks! :linkage => :dynamic` -
-#      react-native-webrtc does not cooperate with it.
+#   (b) use_modular_headers! -- what we do. It makes the ObjC pods emit module
+#       maps so the Swift pods can import them, while leaving linkage as static
+#       LIBRARIES, which is what react-native-razorpay's vendored frameworks
+#       expect.
+#
+# Sentry's own podspec corroborates (b): its RNSentrySwiftLinkStub.swift, the
+# file that makes RNSentry a Swift pod at all, is documented as
+# "only needed when linking Sentry.xcframework's Swift symbols into a dynamic
+# framework anyway". We are not doing that, so forcing frameworks to satisfy it
+# was solving the wrong problem.
+#
+# DO NOT set USE_FRAMEWORKS for this app. The env hook below is kept only as an
+# escape hatch, and `:linkage => :dynamic` in particular is known not to work
+# with react-native-webrtc.
 #
 # Never commit a Podfile.lock produced by an experiment that did not build.
 # ---------------------------------------------------------------------------
+use_modular_headers!
 
-# Required when Firebase is built as a static framework (path 2 above).
-# Harmless otherwise.
+# Only meaningful if Firebase is ever built as a static framework (the
+# use_frameworks path above, which we do not use). Harmless otherwise.
 $RNFirebaseAsStaticFramework = true
 
 linkage = ENV['USE_FRAMEWORKS']
