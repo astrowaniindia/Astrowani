@@ -449,6 +449,89 @@ declaration, line 10 of its manifest.)
 
 ---
 
+### Phase 5 status — PRE-FLIGHT DONE 2026-08-24, build BLOCKED on one file
+
+The build itself could not be run. **EAS is authenticated** (`anshsharma825` /
+`anshmanu2006@gmail.com`) and both apps have EAS project ids, so that is not the blocker.
+The blocker is that **neither `GoogleService-Info.plist` exists yet**, which by deliberate
+design fails the build at `Build input file cannot be found`. Running a build now would burn
+~30 minutes of build time on a guaranteed failure, so instead everything that could be
+validated locally was.
+
+#### Validated locally — all green
+
+- **Autolinking resolved for both apps** via `npx react-native config`, which is the same
+  resolution `use_native_modules!` performs during `pod install`. **Customer: 29 iOS pods.
+  Vendor: 28. Zero missing podspecs in either.**
+- `@react-native-community/push-notification-ios` (added in Phase 3) and
+  `react-native-permissions` both link on iOS — so the Phase 3 dependency fix works.
+- **CallKeep's Android exclusion confirmed at the autolinking layer**: `ios` → linked
+  (`RNCallKeep.podspec`), `android` → `null`. Belt and braces with the merged-manifest
+  check already done in Phase 4.
+- **`eas.json` validated by `eas-cli config` for both apps** — the `ios-simulator` profile
+  resolves to `{credentialsSource: remote, distribution: internal, simulator: true}`.
+- Both apps have EAS project ids, so `eas build` will not stop to prompt for one.
+
+#### Defect found and fixed during pre-flight: OTA updates would never apply on iOS
+
+**Both apps' `AppDelegate.bundleURL` returned the bundle baked into the `.app`**, so
+`@hot-updater/react-native` would have downloaded every OTA update and then launched the old
+JS anyway — silently, looking like it worked. Since CLAUDE.md records OTA as how non-native
+fixes ship, the entire JS-only release path was broken on iOS.
+
+Verified rather than assumed before changing it:
+- The library's own public header documents `+ (NSURL *)bundleURL` as *"Callable from
+  Objective-C (e.g. AppDelegate)"*.
+- It installs **no** swizzle or `+load` hook — grepped its whole `ios/` tree for
+  `method_exchangeImplementations`, zero hits. So nothing hooks this automatically.
+- The fallback is safe: `selectLaunch()` → `getFallbackBundleURL(bundle:)` returns the
+  packaged bundle when no OTA metadata exists, so a fresh install behaves exactly as the
+  old line did.
+
+Both release branches now return `[HotUpdater bundleURL]`. Debug is unchanged.
+
+#### Risk to watch on the first build (pre-existing, not introduced here)
+
+`postinstall` runs `scripts/apply-native-patches.js`, which drives **`git apply`**. EAS
+uploads the project as a tarball with no `.git`, so `git apply --check` will fail and every
+patch will be **skipped** — the script logs `[apply-native-patches] Skipping <file>` when it
+does.
+
+For iOS that is mostly harmless: four of the five vendor patches (and all four customer
+patches) are Android Gradle/CMake workarounds, and the CMake ones exist specifically for a
+*Windows* NDK linking bug that Linux EAS builders do not hit.
+
+**The exception is `@react-navigation+native-stack+6.11.0.patch`**, which edits
+`src/views/NativeStackView.native.tsx` — cross-platform JS, and it does take effect, because
+that package's `package.json` sets `"react-native": "src/index.tsx"` so Metro resolves `src/`
+rather than `lib/`. It removes a `sheetLargestUndimmedDetent` prop pass-through. If it is
+skipped on EAS, that prop returns on **both** platforms.
+
+**Action: read the first build's log for `apply-native-patches` lines.** If they say
+"Skipping", move the patches to `patch-package` (which does not need git) rather than leaving
+it to chance. This affects existing Android EAS builds too, so it is worth knowing either way.
+
+#### Cross-platform naming inconsistency to decide
+
+| App | Android `app_name` | iOS `CFBundleDisplayName` |
+|---|---|---|
+| Customer | `Astrowani` | `Astrowani` ✅ |
+| Vendor | **`Astrowani Vendor`** | **`Astrowani Astrologer`** ❌ |
+
+I picked "Astrologer" as better user-facing copy — astrologers are not "vendors" to
+themselves — but it does not match what Android ships today, which matters for support
+("which app are you on?"). One-line change either way; flagging rather than deciding twice.
+(The vendor `app.json` `displayName` is a third name, `OhmAstro`, but that field is vestigial
+in bare RN — Android reads `strings.xml`, iOS reads `CFBundleDisplayName`.)
+
+#### What remains, in order
+
+1. **You:** add both `GoogleService-Info.plist` files (free, ~3 min each, no Apple account).
+2. **Then:** `npx eas-cli build --platform ios --profile ios-simulator` on the customer app.
+   This is the real Phase 5 — the pod/linkage fight, and the first compile of the Phase 4
+   native CallKit code.
+3. Fix whatever it surfaces, repeat for vendor.
+
 ## 5. Phase 5 — Build, compile-fix, iterate (needs EAS or a Mac)
 
 This is where the unknown-unknowns live, and it is inherently iterative.

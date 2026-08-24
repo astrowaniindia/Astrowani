@@ -9,6 +9,14 @@
 // the RNFBApp pod, so it only compiles once `pod install` has run.
 #import <Firebase.h>
 
+// @hot-updater/react-native. Its own header says bundleURL is "Callable from
+// Objective-C (e.g. AppDelegate)" — and it must be, because the library installs no
+// swizzle or +load hook (verified: no method_exchangeImplementations anywhere in its
+// ios/ sources). Without the call in bundleURL below, iOS would download OTA updates
+// and then keep launching the bundle baked into the .app — updates silently never
+// applying, which is worse than them failing loudly.
+#import <HotUpdater/HotUpdater.h>
+
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
@@ -75,7 +83,11 @@ continueUserActivity:(nonnull NSUserActivity *)userActivity
 #if DEBUG
   return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
 #else
-  return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
+  // Release: ask HotUpdater which bundle to launch, so an OTA update actually takes
+  // effect. It falls back to the packaged main.jsbundle when no OTA bundle is present
+  // (BundleFileStorageService.selectLaunch -> getFallbackBundleURL), so a fresh install
+  // behaves exactly as the previous line did.
+  return [HotUpdater bundleURL];
 #endif
 }
 
