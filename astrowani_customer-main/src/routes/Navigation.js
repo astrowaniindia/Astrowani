@@ -30,6 +30,7 @@ import LiveViewerScreen from '../screens/Live/LiveViewerScreen';
 import { StatusPopupHost } from '../components/StatusPopup';
 import { CartProvider } from '../context/CartContext';
 import CartButton from '../components/shop/CartButton';
+import StoreWebView from '../screens/Remedies/StoreWebView';
 import ProductDetail from '../screens/Remedies/ProductDetail';
 import CartScreen from '../screens/Remedies/CartScreen';
 import AddressList from '../screens/Remedies/AddressList';
@@ -973,11 +974,16 @@ function RemediesHeader() {
 }
 
 function RemediesStack() {
+  // The tab now opens the hosted storefront (shop.astrowani.com) in an in-app WebView
+  // rather than the native RemedyShop screen. The native shop and its cart/checkout
+  // screens are still registered in the root stack and reachable from My Orders, so this
+  // is a routing change only — nothing was deleted and it can be pointed back by swapping
+  // `component` here.
   return (
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
       <Stack.Screen
         name="RemediesScreen"
-        component={Remedies}
+        component={StoreWebView}
         options={{
           header: () => <RemediesHeader />,
         }}
