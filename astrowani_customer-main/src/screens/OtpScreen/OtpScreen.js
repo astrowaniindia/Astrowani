@@ -181,6 +181,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: verticalScale(20),
     elevation: scale(2),
+    // iOS ignores `elevation` — keeps the verify button visually raised there too.
+    shadowColor: '#4a2412',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
   },
   VerifybuttonText: {
     fontSize: moderateScale(16),

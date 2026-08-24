@@ -9,6 +9,7 @@
 // rather than adding a new notification library. `ongoing: true` + `autoCancel: false` means
 // it can't be swiped away — only cancelLocalNotification() (called when the session actually
 // ends) removes it, so it can't be dismissed by accident and leave the customer unaware.
+import { Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import { startCallForegroundService, stopCallForegroundService } from './callForegroundService';
 
@@ -34,11 +35,26 @@ const NOTIFICATION_ID = 'active-session';
 //                  always-on-mic privilege.
 //
 // See utils/callForegroundService.js and android/.../CallForegroundService.kt.
+//
+// iOS TAKES THE NOTIFICATION PATH FOR CALLS TOO, and the Platform check below is
+// what makes that happen. There is no foreground service on iOS —
+// startCallForegroundService() is a no-op there — so the original
+// `if (kind === 'call') { start(); return; }` meant an iOS call showed NOTHING
+// at all, losing exactly the billing reminder this module exists to provide.
+// The microphone half of the problem is already solved differently on iOS, by
+// `UIBackgroundModes: audio` in Info.plist, so iOS only needs the notification.
 export function showActiveSessionNotification({ title, message, screen, params, kind = 'chat' }) {
-  if (kind === 'call') {
+  if (kind === 'call' && Platform.OS === 'android') {
+    // Android: the service posts its OWN ongoing notification, so returning here
+    // keeps it to exactly one notification while the mic stays alive.
     startCallForegroundService(title, message);
     return;
   }
+  // `channelId`, `smallIcon`, `largeIcon` and `ongoing` are Android-only and are
+  // ignored on iOS. Note the behavioural difference that follows: iOS has no
+  // equivalent of `ongoing: true`, so on iOS the customer CAN swipe this away
+  // mid-session. It is a reminder there, not an undismissable one — worth knowing
+  // before relying on it as the sole billing indicator on that platform.
   PushNotification.localNotification({
     id: NOTIFICATION_ID,
     channelId: CHANNEL_ID,

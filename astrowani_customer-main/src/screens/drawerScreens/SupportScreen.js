@@ -256,5 +256,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: moderateScale(10),
     elevation: 4,
+    // iOS ignores `elevation` — without these the support form sits flat on
+    // the page with no card edge.
+    shadowColor: '#4a2412',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
   },
 });

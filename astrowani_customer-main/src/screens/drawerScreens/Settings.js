@@ -378,6 +378,12 @@ const styles = StyleSheet.create({
   scrollContainer: {
     backgroundColor: COLORS.white,
     elevation: 3,
+    // iOS ignores `elevation` — without these the settings card has no edge
+    // against the page background.
+    shadowColor: '#4a2412',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
     padding: scale(10),
     borderRadius: moderateScale(10),
   },

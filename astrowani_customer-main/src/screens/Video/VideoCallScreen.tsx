@@ -389,7 +389,22 @@ const VideoCallScreen = ({route, navigation}: any) => {
       });
     };
 
-    setupWebRTC();
+    // setupWebRTC() had no rejection handler. getUserMedia rejects when the
+    // customer denies the microphone/camera prompt — which on iOS is the ONLY
+    // place a denial surfaces, since the PermissionsAndroid pre-check above is
+    // Android-only. The result was an unhandled promise rejection and a screen
+    // stuck on "connecting" forever with no message and no way out but back.
+    setupWebRTC().catch((err: any) => {
+      console.warn('[VideoCallScreen] WebRTC setup failed:', err);
+      if (cancelled) return;
+      const detail = `${err?.name || ''} ${err?.message || ''}`;
+      const isPermission = /NotAllowed|Permission|denied/i.test(detail);
+      Alert.alert(
+        isPermission ? t('call.permissionRequired') : t('call.setupFailed'),
+        isPermission ? t('call.micCameraPermissionMsg') : t('call.setupFailedMsg'),
+        [{text: t('common.ok'), onPress: () => navigation.goBack()}],
+      );
+    });
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {

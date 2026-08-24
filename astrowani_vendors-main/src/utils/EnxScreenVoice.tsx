@@ -191,7 +191,20 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const toggleSpeaker = useCallback(() => {
     const next = !speakerOn;
     setSpeakerOn(next);
-    try { InCallManager.setSpeakerphoneOn(next); } catch (_) {}
+    // Both methods exist on iOS, but setSpeakerphoneOn() reconfigures
+    // AVAudioSession without updating InCallManager's own _forceSpeakerOn state,
+    // so the library's updateAudioRoute() (which runs on route changes and audio
+    // interruptions) later recomputes from stale state and silently reverts the
+    // astrologer's choice mid-call. setForceSpeakerphoneOn() records the intent
+    // and routes THROUGH updateAudioRoute(), so it sticks. Verified against
+    // react-native-incall-manager 4.2.1 ios/RNInCallManager/RNInCallManager.m.
+    try {
+      if (Platform.OS === 'ios') {
+        InCallManager.setForceSpeakerphoneOn(next);
+      } else {
+        InCallManager.setSpeakerphoneOn(next);
+      }
+    } catch (_) {}
   }, [speakerOn]);
 
   // ─── Mount ──────────────────────────────────────────────────────────────────
@@ -317,7 +330,23 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       });
     };
 
-    setupWebRTC();
+    // setupWebRTC() had no rejection handler. getUserMedia rejects when the
+    // astrologer denies the microphone prompt - on iOS the ONLY place a denial
+    // surfaces, since the PermissionsAndroid pre-check above is Android-only.
+    // The result was an unhandled rejection and a screen stuck on "connecting",
+    // which for the astrologer means a silently dead consultation they are
+    // being rated on.
+    setupWebRTC().catch((err: any) => {
+      console.warn('[Vendor/Voice] WebRTC setup failed:', err);
+      if (cancelled) return;
+      const detail = `${err?.name || ''} ${err?.message || ''}`;
+      const isPermission = /NotAllowed|Permission|denied/i.test(detail);
+      Alert.alert(
+        isPermission ? t('call.permissionRequired') : t('call.setupFailed'),
+        isPermission ? t('call.micPermissionMsg') : t('call.setupFailedMsg'),
+        [{text: t('common.ok'), onPress: () => navigation.goBack()}],
+      );
+    });
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {

@@ -142,7 +142,16 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       });
     };
 
-    setup();
+    // Same missing-rejection-handler defect as the call screens: setup() awaits
+    // AsyncStorage/JSON.parse and constructs an RTCPeerConnection, any of which
+    // can throw, leaving the viewer on a permanent "connecting" spinner with an
+    // unhandled rejection in the log. Fail visibly and exit instead.
+    setup().catch((err: any) => {
+      console.warn('[LiveViewerScreen] setup failed:', err);
+      if (cancelled) return;
+      cleanup(false);
+      navigation.goBack();
+    });
     return () => { cancelled = true; cleanup(true); };
   }, [sessionId, astrologerId, astrologer, cleanup, navigation]);
 

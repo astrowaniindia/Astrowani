@@ -164,7 +164,18 @@ const GoLiveScreen = ({route, navigation}: any) => {
         }
       }
 
-      try { InCallManager.start({media: 'video'}); InCallManager.setSpeakerphoneOn(true); } catch (_) {}
+      // Live broadcast defaults to loudspeaker. Use the force- variant on iOS so
+      // the route survives InCallManager's own updateAudioRoute() recomputations,
+      // which otherwise revert it from stale _forceSpeakerOn state on any audio
+      // interruption mid-broadcast.
+      try {
+        InCallManager.start({media: 'video'});
+        if (Platform.OS === 'ios') {
+          InCallManager.setForceSpeakerphoneOn(true);
+        } else {
+          InCallManager.setSpeakerphoneOn(true);
+        }
+      } catch (_) {}
 
       const stream = await (mediaDevices as any).getUserMedia({
         audio: true,
@@ -217,7 +228,24 @@ const GoLiveScreen = ({route, navigation}: any) => {
       socket.on('live_gift', (d: any) => pushFeed({type: 'gift', name: d.name, giftName: d.giftName, amount: d.amount}));
     };
 
-    setup();
+    // setup() had no rejection handler: it awaits getUserMedia (the astrologer
+    // publishes both camera and mic when going live), which rejects on an iOS
+    // permission denial - the only place a denial surfaces there, since the
+    // PermissionsAndroid pre-check is Android-only. Left unhandled it was an
+    // unhandled rejection plus a broadcast that never starts and never says why.
+    setup().catch((err: any) => {
+      console.warn('[GoLive] setup failed:', err);
+      if (cancelled) return;
+      const detail = `${err?.name || ''} ${err?.message || ''}`;
+      const isPermission = /NotAllowed|Permission|denied/i.test(detail);
+      Alert.alert(
+        // Reuses this screen's own permission strings rather than the call.*
+        // ones, so the wording matches the Android pre-check alert above.
+        isPermission ? t('goLive.permissionsRequired') : t('call.setupFailed'),
+        isPermission ? t('goLive.cameraMicRequired') : t('call.setupFailedMsg'),
+        [{text: t('common.ok'), onPress: () => navigation.goBack()}],
+      );
+    });
     return () => {
       cancelled = true;
       if (!endingRef.current) {

@@ -212,6 +212,13 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(5),
     zIndex: 1000,
     elevation: 4,
+    // iOS ignores `elevation`. Without these the suggestions dropdown renders
+    // flat against the form behind it, which reads as part of the page rather
+    // than as an overlay.
+    shadowColor: '#4a2412',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
     borderWidth: 1,
     borderColor: '#eee',
   },

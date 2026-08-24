@@ -152,13 +152,116 @@ None of this is code, and Phase 1 doesn't depend on it — but Phase 5 cannot st
 
 Things that compile fine and then misbehave at runtime on iOS.
 
-| Step | Detail |
-|---|---|
-| 3.1 | **iOS permission path.** Today mic/camera are requested only via `PermissionsAndroid`, so on iOS the app relies on the implicit `getUserMedia` prompt. It mostly works, but a *denial* is unhandled — the call just fails silently. Wire the already-installed `react-native-permissions` for a deterministic pre-flight check + a "grant in Settings" path. Add the dep to the vendor app (it only has it in customer). |
-| 3.2 | **Local notifications.** Customer uses `react-native-push-notification`, which is Android-oriented and effectively unmaintained; its iOS side needs `PushNotificationIOS`. Vendor already has `notifee`, which is the better path. Recommend standardising the customer app on notifee too. |
-| 3.3 | **Audio session.** Verify `InCallManager` sets the right `AVAudioSession` category (`playAndRecord`) so the speaker toggle, earpiece routing and ringtone behave. iOS routing is stricter than Android's. |
-| 3.4 | **UI polish pass.** Android `elevation` shadows don't render on iOS (need `shadowColor/Offset/Opacity/Radius`); safe-area/notch handling; `KeyboardAvoidingView` behaviour differs (`padding` vs `height`); status-bar styling. Note the ENX/WebRTC "plain PiP container" rule from CLAUDE.md is an **Android** hardware-layer workaround — harmless on iOS. |
-| 3.5 | Confirm `callForegroundService.js` no-ops cleanly and that `activeSessionNotification.js`'s `kind: 'call'` path degrades sensibly on iOS (where the background-audio mode replaces it). |
+### Phase 3 status — DONE for both apps (2026-08-24)
+
+Phase 3 turned out to be mostly **bug-finding**, not polish. Four real defects, three of
+them iOS-only, plus one that also affected Android.
+
+#### 3.1 Unhandled `getUserMedia` rejection — the worst of them
+
+`setupWebRTC()` was called with **no `.catch()`** in four screens. `getUserMedia` rejects when
+the user denies the microphone/camera prompt, and **on iOS that is the ONLY place a denial
+surfaces** — the `PermissionsAndroid` pre-check that catches it first is Android-only and
+correctly skipped. So on iOS, denying the prompt produced an unhandled promise rejection and
+a screen stuck on "connecting" forever: no message, no explanation, only the back button.
+For the vendor app that is a silently dead consultation the astrologer gets rated on.
+
+It also bit **both** platforms whenever the mic was held by another app.
+
+Fixed in: customer `VoiceCallScreen.tsx`, `VideoCallScreen.tsx`, `LiveViewerScreen.tsx`;
+vendor `EnxScreenVoice.tsx`, `EnxScreenVideo.tsx`, `GoLiveScreen.tsx`. Each now distinguishes
+a permission denial (reuses the existing `call.permissionRequired` /
+`call.micPermissionMsg` / `call.micCameraPermissionMsg` strings, and `goLive.*` on the live
+screen so wording matches that screen's own pre-check) from any other failure (new
+`call.setupFailed` / `call.setupFailedMsg`), then exits the screen instead of hanging.
+
+#### 3.2 `activeSessionNotification.js` — `kind: 'call'` was a total no-op on iOS
+
+The function did `if (kind === 'call') { startCallForegroundService(); return; }`. There is no
+foreground service on iOS, so that call is a no-op there and the `return` meant **an iOS call
+showed no notification at all** — losing exactly the "you are still being billed" reminder the
+module exists to provide. Now gated on `Platform.OS === 'android'`, so iOS falls through to
+the local-notification path. The microphone half is already solved differently on iOS, by
+`UIBackgroundModes: audio`.
+
+Documented behavioural difference: iOS has no equivalent of `ongoing: true`, so on iOS the
+customer **can** swipe the reminder away mid-session.
+
+#### 3.3 Speaker route did not survive audio interruptions on iOS
+
+All four speaker call sites used `InCallManager.setSpeakerphoneOn()`.
+
+> **Correction to an earlier assumption:** that method is **not** Android-only — it has a real
+> iOS implementation that manipulates `AVAudioSession` directly. Verified by reading
+> `react-native-incall-manager` 4.2.1's `ios/RNInCallManager/RNInCallManager.m`, not assumed.
+
+The actual defect is durability, not absence: `setSpeakerphoneOn()` reconfigures the session
+without updating InCallManager's own `_forceSpeakerOn` state, so the library's
+`updateAudioRoute()` — which runs on route changes and audio interruptions (headphones, a
+native call, Siri) — later recomputes from stale state and silently reverts the user's choice
+mid-call. `setForceSpeakerphoneOn()` records the intent and routes *through*
+`updateAudioRoute()`, so it sticks. Now branched by platform in customer `VoiceCallScreen`
+and vendor `EnxScreenVoice` / `EnxScreenVideo` / `GoLiveScreen`.
+
+#### 3.4 Android-only shadows
+
+46 files use `elevation`; **40 already paired it with iOS `shadow*` properties**, so this was
+far smaller than expected. Five needed fixing (`PlaceAutocomplete`, `Settings`,
+`SupportScreen`, `OtpScreen`, `EmailOtpScreen`), following the codebase's existing
+`shadowColor: '#4a2412'` convention. `PaymentScreen`'s `elevation: 0, shadowOpacity: 0` is a
+*disable* case and was already correct.
+
+#### 3.5 Missing iOS dependency — was only present transitively
+
+`react-native-push-notification` needs `@react-native-community/push-notification-ios` as a
+peer for iOS. It was in `node_modules` but **not declared in `package.json`**. Autolinking
+would probably still find it, but if a fresh install ever omitted it, the pod would be absent
+and every `PushNotification.localNotification()` call would break on iOS. Now declared
+explicitly (`^1.12.0`).
+
+#### Checked and found already correct — no change made
+
+- **Safe area / notch.** Both call screens already carry explicit
+  `Platform.OS === 'ios' ? 58 : 44` top and `48–52` bottom padding. Left alone.
+- **`useSafeAreaInsets`** works despite there being no explicit `SafeAreaProvider`, because
+  `NavigationContainer` supplies `SafeAreaProviderCompat`. Not a bug.
+- **`StatusBar translucent backgroundColor`** — Android-only props, harmlessly ignored on iOS;
+  `barStyle` does work.
+- **`requestUserPermission()`** already branches correctly to
+  `messaging().requestPermission()` on iOS.
+- **`callForegroundService.js`** is a clean documented no-op on iOS by design.
+- **`registerDeviceForRemoteMessages()`** being commented out is fine — RNFirebase
+  auto-registers by default.
+
+#### Known limitation, deliberately NOT worked around
+
+iOS local notifications will **display** (`RNCPushNotificationIOS` uses
+`addNotificationRequest`, which needs no AppDelegate wiring), but **taps will not route into
+JS**. Routing them requires forwarding `didReceiveNotificationResponse:` from the AppDelegate,
+which would compete with Firebase's app-delegate proxy for the same callback — the iOS twin of
+the Android `RNPushNotificationListenerService` conflict already documented in
+`AndroidManifest.xml`.
+
+Hand-writing that delegate code blind was rejected as too risky to do untested. **Verify on
+the first device test:** tapping the "session still active" notification should return to the
+live call. If it does not, the fix is to forward that one method and confirm Firebase pushes
+still arrive. Standardising the customer app on `notifee` (which the vendor app already has)
+is the cleaner long-term answer.
+
+### Phase 3 verification
+
+- `eslint --quiet` on all 15 changed files: **no new errors.** Both remaining errors in
+  vendor `GoLiveScreen.tsx` were proven pre-existing by extracting the HEAD version of the
+  file and linting it separately — identical two errors (`removeViewer` and `t`
+  exhaustive-deps), only the line numbers shifted.
+- **i18n parity: 926/926 customer, 234/234 vendor**, zero keys in only one language, with the
+  two new keys present in both.
+  > A first parity script reported one bogus EN-only gap per app. The bug was mine: it split
+  > the two language blocks at the first Devanagari character in the file, which sits *inside
+  > the value* of the first Hindi key, so that key was attributed to English. Fixed to split
+  > on the structural `English: {` / `Hindi: {` boundaries. Worth knowing before writing
+  > another one of these.
+- Not run on a device or simulator. Nothing here was compiled.
 
 ---
 

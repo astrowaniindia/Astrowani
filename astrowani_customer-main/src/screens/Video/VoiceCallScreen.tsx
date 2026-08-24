@@ -225,7 +225,23 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const toggleSpeaker = useCallback(() => {
     const next = !speakerOn;
     setSpeakerOn(next);
-    try { InCallManager.setSpeakerphoneOn(next); } catch (_) {}
+    // Both methods exist on iOS, so this is not a "missing api" fix — it is a
+    // durability one. setSpeakerphoneOn() reconfigures AVAudioSession directly
+    // but does NOT update InCallManager's own _forceSpeakerOn state, so the
+    // library's updateAudioRoute() — which runs on route changes and audio
+    // interruptions (headphones, a native call, Siri) — later recomputes the
+    // route from that stale state and silently reverts the customer's choice
+    // mid-call. setForceSpeakerphoneOn() records the intent and routes THROUGH
+    // updateAudioRoute(), so it survives those events.
+    // (Verified against react-native-incall-manager 4.2.1's
+    // ios/RNInCallManager/RNInCallManager.m, not assumed.)
+    try {
+      if (Platform.OS === 'ios') {
+        InCallManager.setForceSpeakerphoneOn(next);
+      } else {
+        InCallManager.setSpeakerphoneOn(next);
+      }
+    } catch (_) {}
   }, [speakerOn]);
 
   // ─── Mount ──────────────────────────────────────────────────────────────────
@@ -372,7 +388,23 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       });
     };
 
-    setupWebRTC();
+    // setupWebRTC() had no rejection handler. getUserMedia rejects when the
+    // customer denies the microphone prompt — which on iOS is the ONLY place a
+    // denial surfaces, since the PermissionsAndroid pre-check above is
+    // Android-only. The result was an unhandled promise rejection and a screen
+    // stuck on "connecting" forever with no message and no way out but back.
+    // Also covers the cross-platform case of the mic being held by another app.
+    setupWebRTC().catch((err: any) => {
+      console.warn('[VoiceCallScreen] WebRTC setup failed:', err);
+      if (cancelled) return;
+      const detail = `${err?.name || ''} ${err?.message || ''}`;
+      const isPermission = /NotAllowed|Permission|denied/i.test(detail);
+      Alert.alert(
+        isPermission ? t('call.permissionRequired') : t('call.setupFailed'),
+        isPermission ? t('call.micPermissionMsg') : t('call.setupFailedMsg'),
+        [{text: t('common.ok'), onPress: () => navigation.goBack()}],
+      );
+    });
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
