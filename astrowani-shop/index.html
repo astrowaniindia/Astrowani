@@ -1,3 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Without this the page is laid out at ~980px and scaled down, which is why it looked
+     like a desktop site shrunk into a phone. viewport-fit=cover lets the brown header sit
+     under the status bar notch instead of leaving a pale strip. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#592a19">
+<meta name="format-detection" content="telephone=no">
 <title>Astrowani Store</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -704,8 +714,97 @@
     .card:hover, .purpose-tile:hover, .testi-card:hover,
     .btn-gold:hover, .btn-line:hover{transform:none;}
   }
+
+  /* ==================== PHONE ====================
+     One block, last in the sheet, so it overrides cleanly and desktop is untouched.
+     Written against a 360-430px viewport, which is where nearly all real traffic sits. */
+  @media (max-width: 640px){
+
+    /* Gutters: 28px each side eats 15% of a 360px screen. */
+    .wrap{padding:0 16px;}
+    .section{padding:40px 0;}
+    .section-head{margin-bottom:22px; gap:10px;}
+    .section-head h2{font-size:26px; line-height:1.18; margin-top:8px;}
+    .eyebrow{font-size:11px; letter-spacing:.13em;}
+
+    /* Header: the wordmark alone is enough at this width. */
+    .header-row{padding:10px 0; gap:12px;}
+    .logo-mark{width:28px; height:28px;}
+    .logo-name{font-size:17px;}
+    .icon-btn{width:36px; height:36px;}
+    .icon-btn svg{width:16px; height:16px;}
+
+    /* Ticker: smaller and tighter, it is a strip not a headline. */
+    .topstrip{font-size:11px; padding:7px 0;}
+    .marquee-item .sep{margin:0 18px;}
+
+    /* Hero: 100vh minus a desktop header left almost nothing visible above the fold on a
+       phone. Sized to the content instead, with type that fits 360px without wrapping
+       into six lines. */
+    .hero{min-height:auto;}
+    .hero-inner{padding:56px 4px 60px; max-width:none;}
+    .hero h1{font-size:34px; line-height:1.14;}
+    .hero p.lede{font-size:15px; margin:12px auto 26px; max-width:30ch;}
+    .hero .btn-gold{font-size:15px; padding:14px 28px;}
+
+    /* Products: two across. One is too sparse to browse, three is what made the text
+       unreadable in the screenshots. */
+    .product-grid{grid-template-columns:repeat(2, 1fr); gap:12px;}
+    .card{border-radius:12px;}
+    .card-body{padding:11px 11px 13px; gap:5px;}
+    .card-name{font-size:13.5px; line-height:1.3;}
+    .wishlist-btn{width:28px; height:28px; font-size:13px; top:6px; right:6px;}
+    .card-tag{font-size:9px; padding:2px 6px; top:7px; left:7px;}
+    .toolbar{gap:10px; margin-bottom:14px;}
+    .toolbar .count{font-size:12.5px;}
+    .toolbar select{font-size:12.5px; padding:8px 10px;}
+
+    /* Purpose tiles: two across, and shorter, so all six are reachable without a long
+       scroll past them. */
+    .purpose-grid{grid-template-columns:repeat(2, 1fr); gap:11px;}
+    .purpose-tile{aspect-ratio:4/3; border-radius:12px;}
+    .purpose-tile .pt-label{padding:12px 13px; font-size:14px;}
+    .purpose-tile .pt-label::after{display:none;}   /* hover arrow is meaningless on touch */
+
+    /* Editorial blocks stack; the image should not be a letterbox sliver. */
+    .about-band{gap:22px;}
+    .about-band h2{font-size:24px;}
+    .editorial-media{aspect-ratio:3/2;}
+    .calc-card{padding:20px;}
+    .calc-card h3{font-size:17px;}
+    .testi-card{padding:18px;}
+    .testi-card p{font-size:14px;}
+
+    /* Cart and modals: full-height sheets rather than floating desktop panels. */
+    .drawer{width:100%;}
+    .modal{padding:0; align-items:flex-end;}
+    .modal-box{
+      max-width:none; width:100%; border-radius:18px 18px 0 0;
+      max-height:92vh; padding:22px 18px calc(22px + env(safe-area-inset-bottom));
+    }
+    .modal-close{top:12px; right:12px;}
+
+    /* Touch targets: 44px is the accessibility floor, several of these were under 34. */
+    .btn{padding:13px 20px; min-height:44px;}
+    .btn-sm{padding:11px 12px; font-size:12.5px; min-height:40px;}
+    .card-actions{gap:6px;}
+    .qty-stepper button{width:34px; height:34px;}
+
+    .foot-grid{gap:26px 20px;}
+    .foot-assure{gap:12px 20px; margin-top:34px;}
+  }
+
+  /* Very small phones (<=360px): one column reads better than two cramped ones. */
+  @media (max-width: 360px){
+    .product-grid{grid-template-columns:1fr;}
+    .purpose-grid{grid-template-columns:1fr;}
+    .hero h1{font-size:30px;}
+  }
+
 </style>
 
+</head>
+<body>
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
 <header class="site">
@@ -1475,7 +1574,12 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
   // Declared here, not in the LIVE CATALOG block below: `var` hoists but the assignment
   // does not, so a second `var API_BASE = ...` further down would silently overwrite an
   // apiBase supplied by the app.
-  var API_BASE = (APP && APP.apiBase) || 'https://backend.astrowani.com';
+  // Empty string = same origin, which nginx proxies to the backend (see the /api/ block
+  // in vps-deployment/nginx/astrowani-shop.conf). Calling backend.astrowani.com directly
+  // was refused by CORS: shop.astrowani.com is not on that host's allowlist. Same-origin
+  // sidesteps CORS entirely rather than adding a second source of the header.
+  // The app can still override it, which is what lets a dev build point elsewhere.
+  var API_BASE = (APP && APP.apiBase) || '';
   function canBuy(){ return !!AUTH_TOKEN; }
 
   function apiFetch(path, opts){
@@ -2747,3 +2851,5 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
 
 })();
 </script>
+</body>
+</html>

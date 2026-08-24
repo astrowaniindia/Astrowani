@@ -32,7 +32,6 @@ try {
 }
 
 export const STORE_URL = 'https://shop.astrowani.com/';
-const API_BASE = 'https://backend.astrowani.com';
 
 // Anything not on this host is somebody else's site — a payment page, a social link, a
 // mailto. Those belong in the real browser, not trapped inside our chrome with no address
@@ -127,6 +126,9 @@ export default function StoreWebView() {
     );
   }
 
+  // apiBase is deliberately NOT sent: the page defaults to its own origin, which nginx
+  // proxies to the backend. Passing backend.astrowani.com here would make the calls
+  // cross-origin again and CORS refuses them - that was the original bug.
   // Handed to the page before its own scripts run, so the store knows on first paint
   // whether it can offer a real checkout. Signed-out visitors (and anyone opening
   // shop.astrowani.com in a normal browser) simply never see this and fall back to the
@@ -135,7 +137,6 @@ export default function StoreWebView() {
   const injectAuth = `
     window.__ASTROWANI__ = {
       token: ${JSON.stringify(token)},
-      apiBase: ${JSON.stringify(API_BASE)},
       platform: 'app'
     };
     true;
