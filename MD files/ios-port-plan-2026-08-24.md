@@ -346,6 +346,107 @@ the store without it** — an astrologer app that misses calls when backgrounded
 one-star reviews, and CLAUDE.md already records that `missed: 48` vs `rejected: 7` is the
 dominant accept-rate problem on Android. iOS without CallKit makes that strictly worse.
 
+### Phase 4 status — BUILT 2026-08-24 (unverified, see caveats)
+
+Built ahead of the recommended sequencing at the user's request. Consequence, stated plainly:
+**none of it has been compiled or exercised against Apple**, and the VoIP leg cannot be until
+the Apple Developer membership exists (it needs a `.p8`) and a physical device is available.
+
+#### Scope narrowed to ONE app, deliberately
+
+**CallKit is only in the vendor app.** The customer app initiates calls and never receives
+them, so it needs no PushKit token, no CallKit, and no VoIP background mode. Verified rather
+than assumed: the only `/api/call/initiate` reference in the vendor app is in
+`EnxJoinScreen.tsx`, which is imported by nothing. That halved the work and keeps the customer
+app's `Info.plist` free of a `voip` background mode it would not deserve.
+
+#### Backend
+
+| File | Role |
+|---|---|
+| `sql/astrologer_voip_token.sql` | `astrologers.voip_token` + `voip_platform`. The PushKit token is **not** the FCM token, hence its own column. **Not yet applied.** |
+| `src/voipPush.js` | APNs HTTP/2 VoIP sender. **Zero new dependencies** — built on Node's built-in `http2` plus the `jsonwebtoken` the backend already had, rather than adding `node-apn`. |
+| `index.js` | `POST /api/vendor/voip-token`; VoIP push added alongside the existing FCM push in `/api/call/initiate`, from the same single row lookup. |
+
+`voipPush.js` follows the codebase's established "graceful until configured" convention
+(`src/push.js`, the EnableX SMS integration): with no APNs credentials it logs once and every
+send is a no-op. **Deploy order does not matter** — an unconfigured or unmigrated deployment
+behaves exactly as it does today.
+
+Dead-token handling: a `410 Unregistered` / `BadDeviceToken` response clears the stored token,
+because the overwhelmingly likely cause during rollout is a *sandbox token being sent to the
+production host* — the single most common "VoIP push silently does nothing" failure.
+
+#### Vendor app
+
+| File | Role |
+|---|---|
+| `react-native.config.js` | **New, and its only purpose is to keep CallKeep OFF Android.** |
+| `src/utils/callKeep.js` | CallKit/PushKit setup, answer/decline → the existing `acceptRequest`/`rejectRequest`, token registration, and CallKit teardown. |
+| `ios/.../AppDelegate.{h,mm}` | `PKPushRegistryDelegate`; reports every VoIP push to CallKit **in native code**. |
+| `Info.plist` | `voip` added to `UIBackgroundModes` — now legitimate. |
+| `index.js` | `initCallKeep()` outside the component tree. |
+| `EnxScreenVoice/Video.tsx` | `endCallKitCall()` in `doEndCall`, beside the existing `stopCallForegroundService()`. |
+| `HomeScreen.js` | `endCallKitCallForRequest()` in `dismissPopupIfMatches`. |
+| `VerifyOtp.js` | `syncVoipTokenWithBackend()` on both login paths. |
+
+**The Android app is protected, and this was verified rather than trusted.** CallKeep ships an
+Android ConnectionService whose manifest declares `CALL_PHONE`, `READ_PHONE_STATE`,
+`READ_PHONE_NUMBERS` and `MANAGE_OWN_CALLS` — manifest merging would have added all four to a
+live Play Store listing, where `CALL_PHONE` and the phone-number permissions need their own
+Play Console declarations and can trigger a policy review. `react-native.config.js` excludes
+it from Android autolinking, and `:app:processDebugMainManifest` was run and the **merged
+manifest inspected**: `CALL_PHONE` 0, `READ_PHONE_NUMBERS` 0, `MANAGE_OWN_CALLS` 0, no
+ConnectionService. (The single `READ_PHONE_STATE` hit is the app's own pre-existing
+declaration, line 10 of its manifest.)
+
+#### The three rules this is built on
+
+1. **Every VoIP push MUST report a call to CallKit, immediately.** iOS terminates the app
+   otherwise and revokes its VoIP privilege on repeat offences. So the report happens in
+   `AppDelegate.mm`, **not** in JS — on a killed app the RN bridge does not exist yet. By the
+   time `callKeep.js` runs, the phone is already ringing. There is exactly one fallback path
+   and it still reports a call: a payload missing its `uuid` gets a synthesised one rather than
+   an early return, because reporting a bogus call that vanishes is recoverable and failing to
+   report one is not.
+2. **No VoIP push for anything that is not a real incoming call** — in particular **not for
+   cancellations**, which is the tempting mistake. A cancel push has no call to report, so it
+   is exactly the shape iOS punishes. It is also unnecessary: a VoIP push has by definition
+   already woken the app, so the existing socket `call_cancelled` reaches it and
+   `endCallKitCallForRequest()` dismisses the CallKit screen. A comment on `cancel_call` in the
+   backend guards against someone adding one later.
+3. **The CallKit call stays alive for the whole consultation.** On iOS CallKit owns the audio
+   session; ending it at answer-time would tear that session down underneath the WebRTC screen
+   about to open. It is ended in `doEndCall`, at the same choke point that already stops the
+   Android foreground service.
+
+#### Verified
+
+- APNs JWT proven correct by signing one with a locally generated ES256 P-256 key: header
+  `{alg: ES256, kid}`, payload `{iss, iat}` — exactly APNs's required shape.
+- `voipPush.js` loads and degrades correctly both **with** credentials (enables, correct
+  sandbox host and `.voip` topic) and **without** (logs once, `{ok:false, skipped:true}`).
+- Every CallKeep and VoIP-push API and event name used was **checked against the installed
+  library source**, not memory — including `reportNewIncomingCall`'s full 12-argument
+  signature and the two `didLoadWithEvents` event-name constants.
+- `node --check` clean on both changed backend files; `eslint --quiet` clean on all changed app
+  files, with the one remaining `HomeScreen.js` error proven pre-existing by linting the HEAD
+  version of that file separately.
+- Android manifest merge verified as above.
+
+#### Known gaps, accepted
+
+- **A cancel that arrives while `HomeScreen` is not mounted does not dismiss the CallKit
+  screen** — there is no socket outside HomeScreen to receive it. iOS times the ring out at
+  ~30–60s and reports it unanswered, and `sessionManager`'s 75s sweep marks the request
+  `missed` regardless, so it is a cosmetic late ring, not a stuck call. Fixing it properly
+  needs a socket owned above HomeScreen — a bigger refactor than this phase warrants.
+- **CallKit's system mute/hold controls are not bridged to the WebRTC tracks.** Muting from the
+  iOS call UI currently logs and does nothing; in-app controls remain the source of truth.
+  Logged rather than silently swallowed so it is obvious during device testing.
+- `ToastAndroid` is used in the vendor cancel path. RN ships a safe iOS fallback (warns, no
+  crash), so this is a missing-feedback nit, not a bug — but iOS astrologers will see no toast.
+
 ---
 
 ## 5. Phase 5 — Build, compile-fix, iterate (needs EAS or a Mac)

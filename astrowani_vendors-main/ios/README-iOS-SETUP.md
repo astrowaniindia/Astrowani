@@ -47,6 +47,71 @@ The same `.p8` key works for both apps — it is per Apple team, not per app.
 
 ---
 
+## CallKit / PushKit — incoming calls that ring on a killed app
+
+This app implements PushKit + CallKit (iOS port Phase 4). It is the only way an incoming
+consultation can ring an iOS app that is not running — a data-only FCM push cannot do it.
+The customer app has none of this and needs none: it initiates calls, it never receives them.
+
+### Backend env vars (VPS process env, next to the other secrets)
+
+| Var | Notes |
+|---|---|
+| `APNS_KEY_ID` | Key ID of the APNs auth key (10 chars). |
+| `APNS_TEAM_ID` | Apple Developer Team ID (10 chars). |
+| `APNS_PRIVATE_KEY` | Contents of the `.p8`. Escaped `\n` newlines are accepted. |
+| `APNS_PRIVATE_KEY_PATH` | Alternative to the above — a path to the `.p8`. |
+| `APNS_VOIP_TOPIC` | Defaults to `com.astrowaniVendor.voip`. **Note the `.voip` suffix** — the plain bundle id yields a `TopicDisallowed` error that reads like a credential problem. |
+| `APNS_PRODUCTION` | `true` for TestFlight/App Store builds. **Defaults to `false` (sandbox).** |
+
+> **The `APNS_PRODUCTION` flag is the single most common cause of "VoIP push silently does
+> nothing".** A development-signed build gets its PushKit token from the APNs *sandbox*; a
+> TestFlight/App Store build gets it from *production*. Sending a token to the wrong host
+> fails with `BadDeviceToken`. The backend logs that and clears the stored token, so if
+> rings stop working right after moving to TestFlight, this flag is why.
+
+The **same `.p8` key** works for APNs push and VoIP push, and is per Apple *team*, not per
+app — so one key covers both apps. It does require the Apple Developer membership.
+
+### Database
+
+Run `astrowani-backend/sql/astrologer_voip_token.sql`. It adds `astrologers.voip_token`
+(the PushKit token, which is **not** the FCM token and needs its own column).
+
+Nothing breaks if it is not applied: `src/voipPush.js` degrades to a logged no-op, the
+token-registration endpoint answers 503 with a message naming this file, and the existing
+FCM + socket paths keep working exactly as today. Applying it only *adds* the killed-app ring.
+
+### How it fits together
+
+```
+customer taps Call
+  -> POST /api/call/initiate
+       -> socket emit  (reaches a vendor with HomeScreen mounted)
+       -> FCM push     (Android, and iOS while alive)
+       -> VoIP push    (iOS, the ONLY thing that wakes a killed app)
+            -> AppDelegate.mm pushRegistry:didReceiveIncomingPushWithPayload:
+                 reports the call to CallKit IMMEDIATELY, in native code
+            -> CallKit rings full-screen
+            -> answer  -> src/utils/callKeep.js -> acceptRequest() -> AudioCall/VideoCall
+            -> decline -> rejectRequest()
+```
+
+### Rules that must not be broken
+
+1. **Every VoIP push must report a call to CallKit, immediately.** iOS terminates the app
+   otherwise, and repeat offences revoke its VoIP privilege. That is why the report happens
+   in `AppDelegate.mm` and not in JS — on a killed app the RN bridge does not exist yet.
+2. **Never send a VoIP push for anything that is not a real incoming call** — notably not
+   for cancellations. There is a comment on `cancel_call` in the backend's `index.js`
+   explaining this; a cancel arrives over the socket instead, because a VoIP push has by
+   definition already woken the app.
+3. **`voip` in `UIBackgroundModes` stays only while PushKit is genuinely implemented.** An
+   unused `voip` background mode is its own App Review rejection reason.
+4. **CallKeep must stay off Android.** See `react-native.config.js` — its Android
+   ConnectionService would merge `CALL_PHONE` / `MANAGE_OWN_CALLS` into a live Play Store
+   listing. Verified excluded by inspecting the merged manifest.
+
 ## Building
 
 ```bash
@@ -122,5 +187,11 @@ navigates, and fonts, icons, images and API calls work.
 - **Icon sharpness.** Source art is only 512×512, so the 1024 marketing icon is upscaled and
   visibly soft. Fine at real icon sizes; the App Store product page shows it large. Export a
   true 1024×1024 before public launch.
-- **CallKit / PushKit is not implemented.** Incoming consultation requests will not ring when
-  the app is backgrounded or killed. Phase 4 in the plan; must land before store submission.
+- **CallKit / PushKit IS implemented** (see the section above) but has **never been exercised
+  against Apple** — it needs the Apple Developer membership for the `.p8`, and a physical
+  device. Nothing in it has been compiled. Treat the whole path as unverified until a real
+  two-device test: kill the vendor app, have a customer call, and confirm the phone rings
+  full-screen and answering lands in the consultation.
+- **CallKit's system mute/hold controls are not bridged to WebRTC.** Muting from the iOS call
+  UI logs a line and does nothing to the audio track; the in-app controls remain the source of
+  truth. Worth closing once the basic path is proven on a device.

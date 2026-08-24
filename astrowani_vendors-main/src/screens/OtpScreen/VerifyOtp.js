@@ -19,6 +19,7 @@ import {OtpInput} from 'react-native-otp-entry';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {identifyVendor} from '../../utils/Analytics';
+import {syncVoipTokenWithBackend} from '../../utils/callKeep';
 import {LanguageContext} from '../../context/LanguageContext';
 import LanguageToggle from '../../components/LanguageToggle';
 
@@ -93,6 +94,10 @@ const VerifyOtp = ({navigation, route}) => {
     await AsyncStorage.setItem('token', res.data.token);
     await AsyncStorage.setItem('astroId', String(res.data.user.id));
     identifyVendor(res.data.user.id);
+    // iOS: a PushKit token issued before login has no astrologer to attach to, so
+    // upload it now that one exists. Best-effort and awaited only briefly - failing to
+    // register must never block a successful login. No-op on Android.
+    syncVoipTokenWithBackend();
     navigation.reset({index: 0, routes: [{name: 'Thankyou'}]});
   };
 
@@ -114,6 +119,10 @@ const VerifyOtp = ({navigation, route}) => {
           await AsyncStorage.setItem('token', res.data.token);
           await AsyncStorage.setItem('astroId', String(res.data.user.id));
           identifyVendor(res.data.user.id);
+    // iOS: a PushKit token issued before login has no astrologer to attach to, so
+    // upload it now that one exists. Best-effort and awaited only briefly - failing to
+    // register must never block a successful login. No-op on Android.
+    syncVoipTokenWithBackend();
           navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
         } else {
           // New number — phone is now verified, create the actual account.

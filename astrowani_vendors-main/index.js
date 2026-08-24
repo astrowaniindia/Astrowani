@@ -22,8 +22,17 @@ import {initCrashReporting} from './src/utils/CrashReporting';
 // src/utils/Analytics.js) — no separate init call needed here, just ensures it's
 // constructed before the app tree mounts.
 import './src/utils/Analytics';
+import {initCallKeep} from './src/utils/callKeep';
 
 initCrashReporting();
+
+// iOS CallKit + PushKit. Registered here, outside the component tree, for exactly the
+// same reason notifee.onBackgroundEvent below is: when a VoIP push wakes a KILLED app,
+// the native events are replayed as soon as listeners attach, so those listeners must
+// exist before the app tree mounts. Registering inside a component would miss the one
+// case this feature exists for — answering a call on an app that was not running.
+// No-op on Android, which keeps using the FCM + notifee + foreground-service path.
+initCallKeep();
 
 // Must be registered outside the component tree (Notifee requirement) so Accept/Reject
 // presses are handled even when the app process was killed and briefly woken to run this.

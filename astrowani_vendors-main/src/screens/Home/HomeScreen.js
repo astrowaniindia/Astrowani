@@ -32,6 +32,7 @@ import HomeBanner from '../../components/HomeBanner';
 import { isVendorProfileComplete, ensureVendorProfileComplete, fetchAstrologerRow } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
+import { endCallKitCallForRequest } from '../../utils/callKeep';
 import { startRinging, stopRinging } from '../../utils/incomingRingtone';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -184,6 +185,20 @@ const HomeScreen = () => {
   // Dismiss the incoming-call popup if the cancellation/update refers to the request
   // currently being shown. Uses a functional updater so it never reads stale popup state.
   const dismissPopupIfMatches = (data) => {
+    // iOS: dismiss the native CallKit incoming-call screen too, not just our in-app
+    // popup. Called unconditionally and BEFORE the queue filter below, because on iOS the
+    // ringing call may not be in this queue at all — a VoIP push can wake a killed app
+    // straight into a CallKit ring with HomeScreen not yet mounted. No-op on Android and
+    // when the request did not arrive via CallKit.
+    //
+    // Known gap, accepted: if HomeScreen is not mounted at all there is no socket here to
+    // receive the cancel, so the CallKit screen keeps ringing until iOS times it out
+    // (~30-60s) and reports it unanswered. That self-resolves and the request row is
+    // swept to 'missed' by sessionManager's 75s pass either way, so it is a cosmetic
+    // late-ring rather than a stuck call. Fixing it properly means a socket owned outside
+    // HomeScreen, which is a bigger refactor than this phase warrants.
+    endCallKitCallForRequest(data);
+
     // Accept both camelCase (Realtime-derived) and snake_case (socket payload) keys.
     // A cancellation can refer to any entry in the queue, not just the one on screen.
     const reqId = data.requestId || data.request_id;

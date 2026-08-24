@@ -50,19 +50,29 @@
 
 	<!-- ================================================================
 	     Background modes.
+
 	     "audio" is the iOS counterpart of the Android microphone
 	     foreground service (CallForegroundService.kt, CLAUDE.md subsystem
 	     AE) — this is the astrologer-facing app where the backgrounded-mic
 	     bug was actually reported, so this key is the fix, not a nicety.
 	     It also keeps voice-note recording alive across a backgrounding.
-	     "voip" is deliberately NOT declared — it requires a PushKit +
-	     CallKit implementation and declaring it unused is a rejection
-	     reason. See docs/IOS_PORT.md.
+
+	     "voip" is what makes iOS deliver PushKit pushes to this app, which
+	     is the only way to ring an incoming consultation on a KILLED app —
+	     a data-only FCM push cannot do it. It is declared here ONLY because
+	     PushKit + CallKit are genuinely implemented (AppDelegate.mm's
+	     pushRegistry:didReceiveIncomingPushWithPayload: reports every push
+	     to CallKit immediately, in native code, as iOS requires).
+	     DO NOT declare this key without that implementation: an unused voip
+	     background mode is itself an App Review rejection reason, and a
+	     PushKit push that reports no call gets the app terminated and its
+	     VoIP privilege revoked.
 	     ================================================================ -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 		<string>remote-notification</string>
+		<string>voip</string>
 	</array>
 
 	<key>ITSAppUsesNonExemptEncryption</key>

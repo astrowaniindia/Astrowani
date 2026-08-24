@@ -29,6 +29,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
 import {startCallForegroundService, stopCallForegroundService} from './callForegroundService';
+import {endCallKitCall} from './callKeep';
 import {LanguageContext} from '../context/LanguageContext';
 
 interface Props {
@@ -152,6 +153,11 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     // Drop the mic privilege and its notification promptly — a foreground service
     // left running would hold the microphone open after the call ended.
     stopCallForegroundService();
+    // End the CallKit call too, or iOS keeps showing this consultation as an active
+    // call in its own UI and system call log after our screens have torn down - the
+    // astrologer would look permanently stuck on a call. No-op on Android and when the
+    // call did not arrive via CallKit. See utils/callKeep.js.
+    endCallKitCall();
     cleanupWebRTC();
     captureEvent('call_ended', {
       call_type: 'voice',

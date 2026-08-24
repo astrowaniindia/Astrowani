@@ -6,6 +6,9 @@ const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
+// iOS PushKit/CallKit ring for the vendor app. Degrades to a logged no-op when APNs
+// credentials are absent, so this require is safe on an unconfigured deployment.
+const { sendVoipPush, isVoipReady } = require('./src/voipPush');
 const { computeAstrologerMetrics } = require('./src/astrologerMetrics');
 const { logError, installStreamErrorGuards } = require('./src/errorLogger');
 const { checkAstrologerBusy, buildBusyMap, checkCustomerBusy } = require('./src/busyStatus');
@@ -377,6 +380,15 @@ io.on('connection', (socket) => {
     // Push fallback — the socket above only reaches a vendor whose HomeScreen is currently
     // mounted; without this, a backgrounded/killed vendor keeps showing a live "Incoming
     // Call" notification with working Accept/Reject long after the customer has given up.
+    //
+    // DO NOT add a VoIP push here. iOS requires that EVERY PushKit push results in the app
+    // reporting a call to CallKit — a push that does not gets the app terminated, and
+    // repeat offences get its VoIP privilege revoked outright. A "cancel" push has no call
+    // to report, so it is exactly the shape iOS punishes.
+    // It is also unnecessary: a VoIP push has, by definition, already woken the app, so by
+    // the time a cancel happens the vendor app is running with a live socket and receives
+    // the `call_cancelled` emit above. Its handler calls RNCallKeep.endCall() to dismiss the
+    // CallKit screen (see src/utils/callKeep.js in the vendor app).
     supabase.from('astrologers').select('fcm_token').eq('id', data.astrologer_id).single()
       .then(({ data: astro }) => {
         if (astro?.fcm_token) {
@@ -2285,6 +2297,47 @@ app.post('/api/users/fcm-token', async (req, res) => {
   }
 });
 
+// Store/refresh the astrologer's iOS PushKit (VoIP) token, so an incoming consultation
+// can ring a KILLED app via CallKit. This is a DIFFERENT token from fcm_token — it is
+// issued by PKPushRegistry, not FCM — hence its own column (sql/astrologer_voip_token.sql).
+//
+// iOS only. The vendor app posts here right after PushKit hands it a token, and again on
+// every token refresh. Android keeps using the existing FCM data push +
+// CallForegroundService path, which already works and is untouched.
+//
+// Deliberately keyed off the JWT's astrologer id rather than anything in the body: a token
+// is a routing target for incoming calls, so letting a caller name the astrologer it
+// belongs to would let one astrologer hijack another's ring.
+app.post('/api/vendor/voip-token', async (req, res) => {
+  try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { voipToken, platform } = req.body || {};
+    if (!voipToken) return res.status(400).json({ success: false, message: 'voipToken is required' });
+    if (platform && platform !== 'ios') {
+      return res.status(400).json({ success: false, message: 'VoIP tokens are iOS-only' });
+    }
+    const { error } = await supabaseService
+      .from('astrologers')
+      .update({ voip_token: voipToken, voip_platform: 'ios' })
+      .eq('id', astroId);
+    if (error) {
+      // Most likely cause: sql/astrologer_voip_token.sql has not been applied yet. Answer
+      // 503 rather than 500 so the app can tell "not deployed" from "broken", and keep the
+      // message specific enough to be actionable in a log.
+      console.error('[voip] token save error:', error.message);
+      return res.status(503).json({
+        success: false,
+        message: 'VoIP token storage unavailable — has sql/astrologer_voip_token.sql been applied?',
+      });
+    }
+    return res.status(200).json({ success: true, voipConfigured: isVoipReady() });
+  } catch (e) {
+    console.error('[voip] token save error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not save VoIP token' });
+  }
+});
+
 // The customer app's SupportScreen.js has always posted here for "Refund Request" /
 // technical/account/feedback tickets — this route never existed, so every submission
 // silently failed (generic Error alert, nothing reached anyone). Found during the
@@ -2773,7 +2826,10 @@ app.post('/api/call/initiate', async (req, res) => {
     // mounted; a backgrounded/killed app gets nothing without this. Data-only payload (no
     // `notification` key) so the vendor app's own code renders the accept/reject notification
     // instead of Android auto-displaying a plain one.
-    supabase.from('astrologers').select('fcm_token').eq('id', receiverId).single()
+    // One lookup now serves both channels: the FCM data push (Android, and iOS while the
+    // app is alive) and the iOS PushKit VoIP push (the only thing that can ring a KILLED
+    // iOS app — see src/voipPush.js for why FCM cannot).
+    supabase.from('astrologers').select('fcm_token, voip_token').eq('id', receiverId).single()
       .then(({ data }) => {
         if (data?.fcm_token) {
           sendPush(data.fcm_token, {
@@ -2785,6 +2841,39 @@ app.post('/api/call/initiate', async (req, res) => {
               roomId,
             },
           }).catch((e) => console.error('[Call] push send error:', e.message));
+        }
+
+        // iOS VoIP ring. The payload's keys are consumed in AppDelegate.mm's PushKit
+        // handler, which must report the call to CallKit immediately (iOS kills the app
+        // and eventually revokes the VoIP privilege otherwise), so keep it flat, small,
+        // and stable. `uuid` is the CallKit call identifier and MUST be a real UUID —
+        // sessionId already is one (crypto.randomUUID from this endpoint), so reusing it
+        // means the app can end the right CallKit call later without extra bookkeeping.
+        if (data?.voip_token) {
+          sendVoipPush(data.voip_token, {
+            type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
+            uuid: sessionId,
+            callerName: callerInfo.name || 'Astrowani',
+            callerId: callerInfo.id || '',
+            callType: callType || 'audio',
+            sessionId,
+            roomId,
+          })
+            .then((r) => {
+              if (r && r.unregistered) {
+                // Dead token: app uninstalled, or (very common during the iOS rollout) a
+                // sandbox token being sent to the production APNs host. Clear it so we stop
+                // paying the latency of a doomed send on every call.
+                console.warn(`[Call] clearing dead VoIP token for astrologer ${receiverId} (${r.reason})`);
+                supabaseService
+                  .from('astrologers')
+                  .update({ voip_token: null, voip_platform: null })
+                  .eq('id', receiverId)
+                  .then(() => {})
+                  .catch((e) => console.error('[Call] voip token clear error:', e.message));
+              }
+            })
+            .catch((e) => console.error('[Call] voip send error:', e.message));
         }
       })
       .catch((e) => console.error('[Call] push lookup error:', e.message));
