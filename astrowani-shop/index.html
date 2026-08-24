@@ -296,7 +296,7 @@
 
   .toolbar{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;}
   .toolbar .count{font-size:13.5px; color:var(--ink-soft);}
-  .toolbar select{
+  .toolbar select, .pj-controls select{
     padding:9px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink);
     font-family:var(--font-body); font-size:13.5px; font-weight:600;
   }
@@ -773,7 +773,7 @@
     .card-tag{font-size:9px; padding:2px 6px; top:7px; left:7px;}
     .toolbar{gap:10px; margin-bottom:14px;}
     .toolbar .count{font-size:12.5px;}
-    .toolbar select{font-size:12.5px; padding:8px 10px;}
+    .toolbar select, .pj-controls select{font-size:12.5px; padding:8px 10px;}
 
     /* Purpose tiles: two across, and shorter, so all six are reachable without a long
        scroll past them. */
@@ -816,7 +816,51 @@
     .purpose-grid{grid-template-columns:1fr;}
     .hero h1{font-size:30px;}
   }
-
+
+  /* ================= PUJA SECTION =================
+     A puja is a scheduled ritual, not a boxed product, so it deliberately does NOT go
+     through the gemstone cart: no "Add to cart", no delivery-ETA pincode box, no stock
+     count. Two further reasons it stays its own section rather than a category of the
+     product grid:
+       1. recomputeCatalog() replaces the whole catalogue with the live rows whenever
+          /api/remedies returns anything, so anything hardcoded into PRODUCTS is invisible
+          in production. PUJAS is read directly by renderPujas() and is never subject to
+          that override.
+       2. app_settings.remedy_orders_enabled_puja is deliberately false and
+          POST /api/orders/checkout 403s a blocked category server-side. An "Add to cart"
+          here would be a control that always fails - the same fake-control bug this
+          codebase has already had twice. Booking is an enquiry until that flag is on. */
+  .puja-section{background:var(--bg-elev); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft);}
+  .pj-lede{margin-top:12px; max-width:60ch;}
+  .pj-controls{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px;}
+  .pj-search{flex:1; min-width:210px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--surface); color:var(--ink); font-family:var(--font-body); font-size:14.5px;}
+  .pj-search:focus{outline:2px solid var(--focus); outline-offset:1px;}
+  .pj-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;}
+  .pj-chip{padding:7px 14px; border-radius:999px; border:1px solid var(--border); background:transparent;
+    color:var(--ink-soft); font-family:var(--font-body); font-size:13px; cursor:pointer; transition:all .18s ease;}
+  .pj-chip:hover{border-color:var(--brown);}
+  .pj-chip.on{background:var(--brown); border-color:var(--brown); color:var(--cream);}
+  .pj-card .card-body{gap:4px;}
+  .pj-hi{font-size:13px; color:var(--ink-faint); line-height:1.35; min-height:18px;}
+  .pj-meta{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .pj-dur{display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--ink-soft);
+    background:color-mix(in srgb, var(--brown) 8%, transparent); border-radius:999px; padding:4px 10px;}
+  .pj-price{font-size:16px; font-weight:600; color:var(--ink);}
+  .pj-book{margin-top:10px; width:100%;}
+  .pj-empty{grid-column:1/-1; text-align:center; padding:40px 10px; color:var(--ink-faint);}
+  .pj-modal-media{border-radius:var(--radius); overflow:hidden; aspect-ratio:5/3; background:var(--bg-elev); margin-bottom:16px;}
+  .pj-modal-media img{width:100%; height:100%; object-fit:cover; display:block;}
+  .pj-facts{display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 16px;}
+  .pj-fact{flex:1; min-width:130px; border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:10px 12px;}
+  .pj-fact-k{font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-faint);}
+  .pj-fact-v{font-size:17px; margin-top:3px; color:var(--ink);}
+  .pj-steps{margin:0 0 18px; padding-left:18px; color:var(--ink-soft); font-size:14px; line-height:1.75;}
+  @media (max-width:520px){
+    .pj-hi{font-size:12px;}
+    .pj-price{font-size:15px;}
+    .pj-book{font-size:13px; padding:9px 12px;}
+  }
 </style>
 
 </head>
@@ -829,6 +873,7 @@
     </a>
     <nav class="main">
       <a href="#shop">Shop</a>
+      <a href="#puja">Pujas</a>
       <a href="#purpose">By Purpose</a>
       <a href="#calculators">Calculators</a>
       <a href="#about">About</a>
@@ -918,6 +963,31 @@
         <div class="product-grid" id="productGrid"></div>
       </div>
     </div>
+  </div>
+</section>
+
+<section class="section puja-section" id="puja">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Wani Puja</p>
+        <h2>Book a puja with our pandits</h2>
+        <p class="lede pj-lede">Sixty-four pujas, paths and sanskars, each performed by Astrowani&rsquo;s own pandits with the full vidhi. Pick one and we will confirm the muhurat, the samagri and the final cost with you before anything is paid.</p>
+      </div>
+    </div>
+    <div class="pj-controls">
+      <input class="pj-search" id="pjSearch" type="search" placeholder="Search a puja, path or sanskar&hellip;" aria-label="Search pujas">
+      <select id="pjSort" aria-label="Sort pujas">
+        <option value="featured">Sort: Featured</option>
+        <option value="price-asc">Sort: Price, low to high</option>
+        <option value="price-desc">Sort: Price, high to low</option>
+        <option value="dur-asc">Sort: Shortest first</option>
+        <option value="name">Sort: A to Z</option>
+      </select>
+    </div>
+    <div class="pj-chips" id="pjChips"></div>
+    <div class="toolbar"><span class="count" id="pjCount"></span></div>
+    <div class="product-grid" id="pujaGrid"></div>
   </div>
 </section>
 
@@ -1053,6 +1123,7 @@
     <div>
       <h4>Shop</h4>
       <a href="#shop" data-cat="gemstone">All Gemstones</a>
+      <a href="#puja">Book a Puja</a>
       <a href="#purpose">Shop by Purpose</a>
       <a href="#calculators">Gemstone Finder</a>
       <a href="#calculators">Moolank Calculator</a>
@@ -1132,6 +1203,15 @@
   <div class="modal-box wide">
     <button class="modal-close" data-close="coModal">✕</button>
     <div id="coContent"></div>
+  </div>
+</div>
+
+<!-- puja detail / booking modal -->
+<div class="modal" id="pjModal">
+  <div class="modal-scrim" data-close="pjModal"></div>
+  <div class="modal-box">
+    <button class="modal-close" data-close="pjModal">&#10005;</button>
+    <div id="pjContent"></div>
   </div>
 </div>
 
@@ -2906,6 +2986,262 @@ var BRAND_LOGO = "assets/83b48ab72f6c.png";
       }, {passive:true});
     }
   })();
+
+
+  /* ================= WANI PUJA =================
+     Catalogue of the 64 pujas, paths and sanskars offered on astrowani.com/book-puja.
+     Read directly by renderPujas() rather than being folded into PRODUCTS/byId, because
+     recomputeCatalog() replaces the entire catalogue with the live /api/remedies rows the
+     moment they arrive - anything sitting in PRODUCTS is invisible in production. See the
+     longer note in the PUJA SECTION css block for why booking is an enquiry rather than a
+     cart add. */
+  var PUJA_IMG_BASE = 'assets/Wani%20Puja/';
+  // Published on astrowani.com/book-puja. Deliberately a separate constant from
+  // ENQUIRY_WHATSAPP (still empty) so turning puja booking on does not silently reroute
+  // gemstone enquiries, which go to e-mail today.
+  var PUJA_WHATSAPP = '917297900990';
+
+  // Same acceptance as the gemstone enquiry form: 8-15 characters, digits plus the
+  // separators people actually type. Written as a scan rather than a regexp so the
+  // character class survives every layer this file is generated through.
+  function pujaPhoneOk(v){
+    if (v.length < 8 || v.length > 15) return false;
+    for (var i = 0; i < v.length; i++){
+      var c = v.charAt(i);
+      if (!(c >= '0' && c <= '9') && c !== '+' && c !== '-' && c !== ' ') return false;
+    }
+    return true;
+  }
+
+  var PUJAS = [
+    {"id":"pj1","n":"Gauri Ganesh Puja","h":"गौरी गणेश पूजा","d":"2 hrs","m":120,"p":2100,"img":"Gauri-Ganesh-pooja.jpg"},
+    {"id":"pj2","n":"Puja for Early Marriage","h":"शादी फेरे","d":"4 hrs","m":240,"p":5100,"img":"pandit-ji-marriage.webp"},
+    {"id":"pj3","n":"Havan / Yagya","h":"हवन/यज्ञ","d":"2 hrs","m":120,"p":2100,"img":"Hawan-2.jpeg"},
+    {"id":"pj4","n":"Navgrah Shanti Puja","h":"नवग्रह शांति पूजा","d":"3 hrs","m":180,"p":2100,"img":"1776066332.webp"},
+    {"id":"pj5","n":"Lakshmi Narayan Puja","h":"लक्ष्मी नारायण पूजा","d":"3 hrs","m":180,"p":2100,"img":"1776066330.webp"},
+    {"id":"pj6","n":"Kalash sthapna puja","h":"कलश स्थापना/घट स्थापना पूजा","d":"2 hrs","m":120,"p":2100,"img":"kalash-sthapna-puja.webp"},
+    {"id":"pj7","n":"Shree Khatu shyam ji puja","h":"श्री खाटू श्याम पूजा","d":"2 hrs","m":120,"p":2100,"img":"1774709279.webp"},
+    {"id":"pj8","n":"Sunderkand Path","h":"","d":"4 hrs","m":240,"p":2100,"img":"sunderkand-path.webp"},
+    {"id":"pj9","n":"Vijay Mantra Jaap","h":"विजय मन्त्र जाप","d":"1 day","m":1440,"p":7100,"img":"1776420712.png"},
+    {"id":"pj10","n":"Hanuman Puja","h":"हनुमान पूजा","d":"2 hrs","m":120,"p":2100,"img":"1776066329.webp"},
+    {"id":"pj11","n":"Namkaran Sanskar","h":"नामकरण संस्कार","d":"2 hrs","m":120,"p":2100,"img":"1776066331.webp"},
+    {"id":"pj12","n":"Gajender moksh stoter","h":"गजेन्द्रमोक्ष स्तोत्र","d":"3 hrs","m":180,"p":3100,"img":"gajender-moksh-stoter.webp"},
+    {"id":"pj13","n":"Mangal Dosh Puja","h":"मंगल दोष निवारण पूजा","d":"3 days","m":4320,"p":11000,"img":"1776420709.png"},
+    {"id":"pj14","n":"Gopal Sahastranaam Path","h":"गोपाल सहस्त्रनाम","d":"3 hrs","m":180,"p":3100,"img":"1776420704.webp"},
+    {"id":"pj15","n":"Durga Saptashati Path","h":"दुर्गा सप्तशती पाठ","d":"9 days","m":12960,"p":11000,"img":"1776066327.webp"},
+    {"id":"pj16","n":"Griha Pravesh Puja","h":"गृह प्रवेश पूजा","d":"3 hrs","m":180,"p":3100,"img":"1776066328.webp"},
+    {"id":"pj17","n":"Lalita Sahasranama Stotram","h":"ललिता सहस्त्रनाम स्तोत्र","d":"4 hrs","m":240,"p":4100,"img":"lalita-sahasranama-stotram.png"},
+    {"id":"pj18","n":"Pitra Dosh nivaran Puja Hawan","h":"पितृ दोष निवारण पूजा हवन","d":"5 days","m":7200,"p":41000,"img":"1776420710.png"},
+    {"id":"pj19","n":"Kaal Sarp Dosh Puja","h":"काल सर्प दोष निवारण पूजा जप","d":"3 days","m":4320,"p":11000,"img":"1776420706.png"},
+    {"id":"pj20","n":"Vishnu Sahasrananam Path","h":"विष्णु सहस्त्रनाम पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776147243.webp"},
+    {"id":"pj21","n":"Kamya Puja","h":"काम्य पूजा मनोकामना पूर्ण","d":"4 hrs","m":240,"p":4100,"img":"1776420706.png"},
+    {"id":"pj22","n":"Mairt Sanjivani Anushthan","h":"मृत संजीवनी अनुष्ठान","d":"7 days","m":10080,"p":125000,"img":"Mrit-Sanjivini.jpeg"},
+    {"id":"pj23","n":"Vastu Shanti Puja","h":"वास्तु शांति पूजा","d":"4 hrs","m":240,"p":3100,"img":"1776066335.webp"},
+    {"id":"pj24","n":"Lagan sagai puja","h":"लगन सगाई पूजा","d":"2 hrs","m":120,"p":3100,"img":"Puja-for-Marriage.jpeg"},
+    {"id":"pj25","n":"Kubera Puja","h":"कुबेर पूजा","d":"2 hrs","m":120,"p":3100,"img":"1776066330.webp"},
+    {"id":"pj26","n":"Kul Devi Puja","h":"कुल देवी पूजा","d":"2 hrs","m":120,"p":3100,"img":"1776420707.png"},
+    {"id":"pj27","n":"Shri Sukt Strotam path","h":"श्री सूक्त पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776420711.png"},
+    {"id":"pj28","n":"Kanak Dhara Stotram","h":"कनक धारा स्तोत्र","d":"3 hrs","m":180,"p":4100,"img":"1776420707.png"},
+    {"id":"pj29","n":"Satyanarayan Katha","h":"सत्यनारायण कथा","d":"3 hrs","m":180,"p":3100,"img":"1776066333.webp"},
+    {"id":"pj30","n":"Mool Shanti Puja","h":"मूल शांति","d":"3 hrs","m":180,"p":3100,"img":"1776420709.png"},
+    {"id":"pj31","n":"Rahu Ketu Mantra Jaap","h":"राहु केतु पूजा अनुष्ठान","d":"2 days","m":2880,"p":7100,"img":"1776420710.png"},
+    {"id":"pj32","n":"Shani Vrat Udyapan","h":"शनि व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147232.webp"},
+    {"id":"pj33","n":"Mangala Gauri Vrat Udyapan","h":"मंगला गौरी व्रत उद्यापन","d":"3 hrs","m":180,"p":4100,"img":"1776147533.webp"},
+    {"id":"pj34","n":"Vaibhav Lakshmi Vrat Udyapan","h":"वैभव लक्ष्मी व्रत उद्यापन","d":"2 hrs","m":120,"p":3100,"img":"1776147234.webp"},
+    {"id":"pj35","n":"Gayatri Mantra Jaap","h":"गायत्री मंत्र जाप","d":"5 days","m":7200,"p":51000,"img":"1776147818.webp"},
+    {"id":"pj36","n":"Janeu Sanskar Puja","h":"जनेऊ संस्कार पूजा","d":"3 hrs","m":180,"p":3100,"img":"1776420705.webp"},
+    {"id":"pj37","n":"Ram Raksha Stotram Path","h":"राम रक्षा स्तोत्र पाठ","d":"3 hrs","m":180,"p":4100,"img":"1776148577.png"},
+    {"id":"pj38","n":"Rudrabhishek","h":"रुद्राभिषेक","d":"3 hrs","m":180,"p":4100,"img":"1776066332.webp"},
+    {"id":"pj39","n":"Shiv mahapuran katha","h":"शिव महापुराण कथा","d":"7 days","m":10080,"p":71000,"img":"shiv-mahapuran-katha.png"},
+    {"id":"pj40","n":"Surya Jaap","h":"सूर्य जाप","d":"4 hrs","m":240,"p":5100,"img":"1776420712.png"},
+    {"id":"pj41","n":"Garud puran","h":"गरुड़ पुराण","d":"7 days","m":10080,"p":7100,"img":"Garud.png"},
+    {"id":"pj42","n":"Harivansh Puran path","h":"हरिवंश पुराण","d":"7 days","m":10080,"p":71000,"img":"1776420705.webp"},
+    {"id":"pj43","n":"Mundan Sanskar","h":"मुंडन संस्कार","d":"2 hrs","m":120,"p":2100,"img":"1776066331.webp"},
+    {"id":"pj44","n":"Murti Pran Pratishtha","h":"मूर्ति प्राण प्रतिष्ठा","d":"5 days","m":7200,"p":51000,"img":"murti-pran-pratishtha.png"},
+    {"id":"pj45","n":"Somvar Vrat Udyapan","h":"सोलह सोमवार उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147233.webp"},
+    {"id":"pj46","n":"Chandra Jaap","h":"चन्द्र जाप","d":"5 hrs","m":300,"p":5100,"img":"1776420702.png"},
+    {"id":"pj47","n":"Chatrapal Puja","h":"क्षेत्रपाल पूजा","d":"4 hrs","m":240,"p":11000,"img":"1776420703.png"},
+    {"id":"pj48","n":"Durga Mantra Jaap","h":"दुर्गा मंत्र जाप","d":"3 days","m":4320,"p":21000,"img":"1776148405.webp"},
+    {"id":"pj49","n":"Ekadashi Vrat Udyapan","h":"एकादशी व्रत उद्यापन","d":"2 days","m":2880,"p":3100,"img":"1776147676.webp"},
+    {"id":"pj50","n":"Gita path","h":"गीता पाठ","d":"5 days","m":7200,"p":21000,"img":"1776420704.webp"},
+    {"id":"pj51","n":"Katyani jap","h":"कात्यानी जाप","d":"2 days","m":2880,"p":11000,"img":"1776420708.png"},
+    {"id":"pj52","n":"Mangalwar Vrat Udyapan","h":"मंगलवार व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776420977.png"},
+    {"id":"pj53","n":"Shani Grah Jaap","h":"शनि ग्रह जाप","d":"3 days","m":4320,"p":7100,"img":"1776420711.png"},
+    {"id":"pj54","n":"Vishakrma puja","h":"विश्कर्मा पूजा","d":"2 hrs","m":120,"p":2100,"img":"vishakrma-puja.png"},
+    {"id":"pj55","n":"Akhand Ramayan Path","h":"अखंड रामायण पाठ","d":"2 days","m":2880,"p":11000,"img":"1776066325.webp"},
+    {"id":"pj56","n":"Baglamukhi Jaap","h":"बगलामुखी जाप","d":"9 days","m":12960,"p":100000,"img":"1776066326.webp"},
+    {"id":"pj57","n":"Batuk Bharab Stotram","h":"बटुक भैरव स्तोत्र","d":"3 hrs","m":180,"p":5100,"img":"1776420700.png"},
+    {"id":"pj58","n":"Maha Mrityunjaya Jaap","h":"महा मृत्युंजय जाप","d":"7 days","m":10080,"p":71000,"img":"1776066330.webp"},
+    {"id":"pj59","n":"Purnima Virat Udyapan","h":"पूर्णिमा व्रत उद्यापन","d":"2 hrs","m":120,"p":3100,"img":"1776421300.png"},
+    {"id":"pj60","n":"Santoshi Mata Vrat Udyapan","h":"संतोषी माता व्रत उद्यापन","d":"3 hrs","m":180,"p":3100,"img":"1776147146.webp"},
+    {"id":"pj61","n":"Saraswati Puja","h":"सरस्वती पूजा","d":"2 days","m":2880,"p":4100,"img":"1776066333.webp"},
+    {"id":"pj62","n":"Shradh aur Tarpan","h":"श्राद्ध एवं तर्पण","d":"3 hrs","m":180,"p":3100,"img":"Tarpan.png"},
+    {"id":"pj63","n":"Shrimad Bhagwat Mool Path","h":"श्रीमद् भागवत मूल पाठ","d":"7 days","m":10080,"p":51000,"img":"1776420702.png"},
+    {"id":"pj64","n":"Tulsi Vivah","h":"तुलसी विवाह","d":"4 hrs","m":240,"p":5100,"img":"1776066334.webp"}
+  ];
+
+  var PUJA_BANDS = [
+    {id:'all',   label:'All pujas',        test:function(){ return true; }},
+    {id:'day',   label:'Within a day',     test:function(p){ return p.m <= 1440; }},
+    {id:'short', label:'2 to 3 days',      test:function(p){ return p.m > 1440 && p.m <= 4320; }},
+    {id:'long',  label:'5 days and above', test:function(p){ return p.m > 4320; }}
+  ];
+  var pujaState = { q:'', band:'all', sort:'featured' };
+
+  function pujaImg(p){ return PUJA_IMG_BASE + encodeURIComponent(p.img); }
+  function pujaRupees(n){ return '₹' + n.toLocaleString('en-IN'); }
+
+  var pujaGrid  = document.getElementById('pujaGrid');
+  var pujaChips = document.getElementById('pjChips');
+  var pujaCount = document.getElementById('pjCount');
+
+  function renderPujaChips(){
+    pujaChips.innerHTML = '';
+    PUJA_BANDS.forEach(function(b){
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'pj-chip' + (pujaState.band === b.id ? ' on' : '');
+      el.textContent = b.label;
+      el.addEventListener('click', function(){ pujaState.band = b.id; renderPujaChips(); renderPujas(); });
+      pujaChips.appendChild(el);
+    });
+  }
+
+  function filteredPujas(){
+    var q = pujaState.q.trim().toLowerCase();
+    var band = PUJA_BANDS.find(function(b){ return b.id === pujaState.band; }) || PUJA_BANDS[0];
+    var list = PUJAS.filter(function(p){
+      // Hindi is matched too, so someone typing a Devanagari word finds the puja.
+      var okQ = !q || p.n.toLowerCase().indexOf(q) !== -1 || (p.h && p.h.indexOf(pujaState.q.trim()) !== -1);
+      return okQ && band.test(p);
+    });
+    var s = pujaState.sort;
+    if (s === 'price-asc')  list.sort(function(a,b){ return a.p - b.p; });
+    else if (s === 'price-desc') list.sort(function(a,b){ return b.p - a.p; });
+    else if (s === 'dur-asc')    list.sort(function(a,b){ return a.m - b.m; });
+    else if (s === 'name')       list.sort(function(a,b){ return a.n.localeCompare(b.n); });
+    return list;
+  }
+
+  function renderPujas(){
+    var list = filteredPujas();
+    pujaCount.textContent = list.length + (list.length === 1 ? ' puja' : ' pujas');
+    pujaGrid.innerHTML = '';
+    if (!list.length){
+      pujaGrid.innerHTML = '<div class="pj-empty">No puja matches that search. Try a shorter word, or clear the filter.</div>';
+      return;
+    }
+    list.forEach(function(p){
+      var card = document.createElement('div');
+      card.className = 'card pj-card';
+      card.innerHTML =
+        '<div class="card-media" data-puja="'+p.id+'">'+
+          '<img loading="lazy" src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'">'+
+        '</div>'+
+        '<div class="card-body">'+
+          '<div class="card-name" data-puja="'+p.id+'">'+escapeHtml(p.n)+'</div>'+
+          '<div class="pj-hi">'+escapeHtml(p.h||'')+'</div>'+
+          '<div class="pj-meta">'+
+            '<span class="pj-dur">&#9201; '+escapeHtml(p.d)+'</span>'+
+            '<span class="price pj-price">'+pujaRupees(p.p)+'</span>'+
+          '</div>'+
+          '<button class="btn btn-gold btn-sm pj-book" data-puja="'+p.id+'">Book this puja</button>'+
+        '</div>';
+      pujaGrid.appendChild(card);
+    });
+    stagger(pujaGrid.children, 40, 12);
+  }
+
+  pujaGrid.addEventListener('click', function(e){
+    var t = e.target.closest('[data-puja]');
+    if (t) openPujaView(t.getAttribute('data-puja'));
+  });
+  document.getElementById('pjSearch').addEventListener('input', function(e){
+    pujaState.q = e.target.value; renderPujas();
+  });
+  document.getElementById('pjSort').addEventListener('change', function(e){
+    pujaState.sort = e.target.value; renderPujas();
+  });
+
+  var pjContent = document.getElementById('pjContent');
+
+  function openPujaView(id){
+    var p = PUJAS.find(function(x){ return x.id === id; });
+    if (!p) return;
+    pjContent.innerHTML =
+      '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
+      '<div class="pv-cat">Wani Puja</div>'+
+      '<h3 class="pv-name">'+escapeHtml(p.n)+'</h3>'+
+      (p.h ? '<div class="pj-hi" style="font-size:15px; margin-top:4px;">'+escapeHtml(p.h)+'</div>' : '')+
+      '<div class="pj-facts">'+
+        '<div class="pj-fact"><div class="pj-fact-k">Puja / anushthan time</div><div class="pj-fact-v">'+escapeHtml(p.d)+'</div></div>'+
+        '<div class="pj-fact"><div class="pj-fact-k">Dakshina</div><div class="pj-fact-v price">'+pujaRupees(p.p)+'</div></div>'+
+      '</div>'+
+      '<ol class="pj-steps">'+
+        '<li>Tell us your name, phone number and what the puja is for.</li>'+
+        '<li>Our pandit calls you to fix the muhurat and confirm the samagri.</li>'+
+        '<li>The puja is performed with the full vidhi, and you receive the sankalp and prasad details.</li>'+
+      '</ol>'+
+      '<div class="checkout-note">Nothing is charged on this page. The dakshina above is indicative and is confirmed with you on the call before anything is paid.</div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjBookBtn">Request this puja</button>';
+    pjContent.querySelector('#pjBookBtn').addEventListener('click', function(){ renderPujaBooking(p); });
+    openModal('pjModal');
+  }
+
+  function renderPujaBooking(p){
+    pjContent.innerHTML =
+      '<h3 style="font-size:20px; margin-bottom:6px;">Request '+escapeHtml(p.n)+'</h3>'+
+      '<p class="lede" style="font-size:14px; margin:0 0 18px;">Leave your details and our pandit will call you back to fix the muhurat and confirm the samagri and the final dakshina.</p>'+
+      '<div class="field"><label for="pjName">Your name</label><input id="pjName" placeholder="Full name"></div>'+
+      '<div class="field-row">'+
+        '<div class="field"><label for="pjPhone">Phone number</label><input id="pjPhone" inputmode="numeric" placeholder="10-digit mobile"></div>'+
+        '<div class="field"><label for="pjCity">City (optional)</label><input id="pjCity" placeholder="City"></div>'+
+      '</div>'+
+      '<div class="field"><label for="pjNote">Anything we should know? (optional)</label><textarea id="pjNote" rows="2" placeholder="Preferred date, birth details, what the puja is for"></textarea></div>'+
+      '<div class="sum-row total"><span>'+escapeHtml(p.d)+'</span><span class="price">'+pujaRupees(p.p)+'</span></div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjSendBtn">Send request on WhatsApp</button>';
+
+    pjContent.querySelector('#pjSendBtn').addEventListener('click', function(){
+      var name  = pjContent.querySelector('#pjName').value.trim();
+      var phone = pjContent.querySelector('#pjPhone').value.trim();
+      var city  = pjContent.querySelector('#pjCity').value.trim();
+      var note  = pjContent.querySelector('#pjNote').value.trim();
+      if (!name || !phone){ showToast('Please add your name and phone number'); return; }
+      if (!pujaPhoneOk(phone)){ showToast('That phone number does not look right'); return; }
+
+      var lines = [
+        'Puja request from shop.astrowani.com', '',
+        'Puja: ' + p.n + (p.h ? ' (' + p.h + ')' : ''),
+        'Duration: ' + p.d,
+        'Indicative dakshina: Rs ' + p.p.toLocaleString('en-IN'), '',
+        'Name: ' + name,
+        'Phone: ' + phone
+      ];
+      if (city) lines.push('City: ' + city);
+      if (note) lines.push('Note: ' + note);
+      var url = 'https://wa.me/' + PUJA_WHATSAPP + '?text=' + encodeURIComponent(lines.join(String.fromCharCode(10)));
+
+      // window.open is blocked in some in-app webviews and returns null; falling through
+      // to a same-tab navigation means the handoff still happens instead of the button
+      // appearing to do nothing.
+      var w = null;
+      try { w = window.open(url, '_blank'); } catch (e) {}
+      if (!w) window.location.href = url;
+
+      pjContent.innerHTML =
+        '<div class="confirm">'+
+          '<div class="tick">&#10003;</div>'+
+          '<h3 style="font-size:22px;">Request ready to send</h3>'+
+          '<p class="lede" style="margin:10px auto 18px; max-width:40ch;">WhatsApp should have opened with your puja request filled in. Press send there and our pandit will call you back on <strong>'+escapeHtml(phone)+'</strong>.</p>'+
+          '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13.5px;">Nothing has been charged.</p>'+
+          '<button class="btn btn-gold" id="pjDone">Keep browsing</button>'+
+        '</div>';
+      pjContent.querySelector('#pjDone').addEventListener('click', function(){ closeModal('pjModal'); });
+    });
+  }
+
+  renderPujaChips();
+  renderPujas();
 
 })();
 </script>
