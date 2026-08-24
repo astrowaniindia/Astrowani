@@ -210,6 +210,18 @@
   .hero .btn-gold{font-size:16px; padding:16px 34px;}
 
 
+  /* ================= LIGHT-PHOTOGRAPH HERO =================
+     The stock hero carries legibility with type shadow alone and no wash, which works
+     because the gemstone photograph is dark. The puja photograph is bright cream, so it
+     takes a light brown veil - just enough to hold the cream type without reading as a
+     tint over the photo. One flat value, so it is easy to dial: raise or lower the .10.
+     ::after sits above .hero::before (same z-index, later in paint order) and below
+     .hero-inner (z-index 1), so it veils the photo without touching the type. */
+  .hero-wash::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:rgba(89,42,25,.10);
+  }
+
   .btn{
     font-family:var(--font-body); font-weight:600; font-size:14.5px; padding:13px 26px; border-radius:999px;
     border:1px solid transparent; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:8px;
