@@ -990,13 +990,13 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
          siblings, because a shared grid row would stretch the category line to the height
          of the photograph beside it. */
       '<div class="pv-cols">' +
-      '<div class="pv-col-media">' +
+      '<div class="pv-col-media"><div class="pv-sticky">' +
         '<div class="pv-media" id="pvMainMedia">'+productPhotoImg(p,'front')+'</div>'+
         (hasRealPhoto ? '' :
         '<div class="pv-thumbs">'+variants.map(function(v,i){
           return '<div class="pv-thumb'+(i===0?' sel':'')+'" data-variant="'+v+'">'+productPhotoImg(p,v)+'</div>';
         }).join('')+'</div>')+
-      '</div>' +
+      '</div></div>' +
       '<div class="pv-col-info">' +
       '<div class="pv-cat">'+escapeHtml(cat ? cat.label : p.cat)+'</div>'+
       '<h3 class="pv-name">'+p.name+'</h3>'+
@@ -1855,14 +1855,26 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     // The ticker sticks under the header, so it needs the header's live height rather
     // than a constant - it changes at the mobile breakpoint and whenever the app draws
     // its status-bar strip above. ResizeObserver where available, resize as the fallback.
+    var strip = document.querySelector('.topstrip');
     if (header){
       var setHeaderH = function(){
         document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+        // --chrome-h is everything pinned to the top of the viewport: the header plus the
+        // ticker stuck underneath it. Anything else that wants to be sticky - the product
+        // photograph on a detail page - must clear BOTH, and neither height is a constant.
+        document.documentElement.style.setProperty(
+          '--chrome-h', (header.offsetHeight + (strip ? strip.offsetHeight : 0)) + 'px');
       };
       setHeaderH();
       window.addEventListener('resize', setHeaderH);
       window.addEventListener('orientationchange', setHeaderH);
-      if (window.ResizeObserver) { try { new ResizeObserver(setHeaderH).observe(header); } catch(e){} }
+      if (window.ResizeObserver) {
+        try {
+          var ro = new ResizeObserver(setHeaderH);
+          ro.observe(header);
+          if (strip) ro.observe(strip);
+        } catch(e){}
+      }
       // Web fonts land after first paint and change the wordmark's line box, so measure
       // again once they are ready.
       if (document.fonts && document.fonts.ready) document.fonts.ready.then(setHeaderH).catch(function(){});
@@ -2125,9 +2137,9 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   function pujaDetailHtml(p){
     return '' +
       '<div class="pv-cols">' +
-      '<div class="pv-col-media">' +
+      '<div class="pv-col-media"><div class="pv-sticky">' +
         '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
-      '</div>' +
+      '</div></div>' +
       '<div class="pv-col-info">' +
       '<div class="pv-cat">Wani Puja</div>'+
       '<h3 class="pv-name">'+escapeHtml(p.n)+'</h3>'+

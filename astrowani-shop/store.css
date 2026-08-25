@@ -979,14 +979,22 @@
      stacked column on a phone, where two columns would leave both too narrow to read. */
   .pv-cols{
     display:grid; grid-template-columns:minmax(0,0.95fr) minmax(0,1.05fr);
-    gap:36px; align-items:start;
+    gap:36px;
   }
-  .pv-col-media{position:sticky; top:104px;}
+  /* The sticky element is the INNER wrapper, not the grid item. A grid item shrink-wraps
+     its content, so making it sticky gives it no room to travel and it simply scrolls away -
+     which is exactly what happened the first time. The item stretches to the row height
+     (the taller info column) and the wrapper inside it does the sticking.
+     The offset clears the header AND the ticker pinned under it, both measured in store.js:
+     each changes at the mobile breakpoint and in the app, where a status-bar strip is drawn
+     above the header, so a hardcoded offset gapped on one layout and overlapped on another. */
+  .pv-col-media{align-self:stretch;}
+  .pv-sticky{position:sticky; top:calc(var(--chrome-h, 92px) + 14px);}
   .pv-col-info{min-width:0;}
   .pv-cols .pv-media{margin:0;}
   .pv-cols .pv-cat{margin-top:0;}
 
   @media (max-width:860px){
     .pv-cols{grid-template-columns:1fr; gap:22px;}
-    .pv-col-media{position:static;}
+    .pv-sticky{position:static;}
   }
