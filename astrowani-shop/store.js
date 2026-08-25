@@ -2451,9 +2451,11 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {id:'west',       label:'West',       test:/west/i}
   ];
 
-  // Filled in when the artwork arrives; until then the tiles render as text, exactly as the
-  // puja category tiles do when PUJA_CAT_PHOTOS has no entry.
-  var VASTU_CAT_PHOTOS = {};
+  // Cut-out product artwork, one per group. A tile with no entry here still renders - it
+  // just shows its label - so the six can arrive one at a time.
+  var VASTU_CAT_PHOTOS = {
+    crystals: '/assets/vastu-cat-crystals.png'
+  };
 
   var vastuState = { q:'', cat:'all', dir:'all', sort:'featured' };
 

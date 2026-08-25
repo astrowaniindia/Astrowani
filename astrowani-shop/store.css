@@ -1192,3 +1192,36 @@
       rgba(89,42,25,.58) 70%,
       rgba(89,42,25,.72) 100%);
   }
+
+  /* ---------- VASTU CATEGORY TILES ----------
+     These are cut-out product PNGs on transparency, not photographs, so the photo tile is
+     wrong for them in three ways: object-fit:cover would crop a square subject to 3/2 and
+     take the top off the crystal, the bottom scrim exists to make a label legible over a
+     picture and here would just smear brown across the product, and cream-on-nothing has
+     no background to be legible against.
+
+     So: contain rather than cover, no scrim, and the label sits BELOW the artwork on the
+     card instead of on top of it - which is also how the category row reads on the site
+     this catalogue came from. Tiles with no artwork yet keep working and simply show
+     their label. */
+  #vastuCatGrid .purpose-tile{
+    aspect-ratio:auto; background:var(--surface);
+    border:1px solid var(--border-soft); display:flex; flex-direction:column;
+    align-items:stretch; text-align:center; min-height:132px;
+  }
+  #vastuCatGrid .purpose-tile img{
+    width:100%; height:auto; aspect-ratio:4/3; object-fit:contain;
+    padding:16px 16px 6px; background:transparent;
+  }
+  #vastuCatGrid .purpose-tile::after{display:none;}
+  #vastuCatGrid .purpose-tile .pt-label{
+    position:static; color:var(--ink); padding:10px 12px 16px; margin-top:auto;
+    font-size:clamp(15px,1.2vw,17px);
+  }
+  #vastuCatGrid .purpose-tile.on{
+    border-color:var(--brown); box-shadow:0 0 0 1px var(--brown);
+  }
+  /* The photo tile grows its image on hover; on a contained cut-out that clips against the
+     padding, so the whole card lifts instead. */
+  #vastuCatGrid .purpose-tile:hover img{transform:none;}
+  #vastuCatGrid .purpose-tile:hover{border-color:var(--brown);}
