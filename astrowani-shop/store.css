@@ -145,6 +145,10 @@
      would move the strip with it. A transform paints the shift without touching layout.
      Scoped to the header; the footer mark sits on a different background and is left. */
   header.site .logo-mark{transform:translateY(-2px);}
+  /* And the wordmark 1px the other way, closing the last of the optical gap between
+     the star and the type. Transform again, not padding, for the same reason as the
+     mark above: the ticker is pinned to the header's measured height. */
+  header.site .logo-name{transform:translateY(1px);}
 
   .logo-name{
     font-family:var(--font-display); font-weight:700; font-size:21px; letter-spacing:.01em;
