@@ -1085,3 +1085,37 @@
   /* Same measured contrast fix as the detail pages: the shared --ink-soft is 3.90:1 on cream,
      under the 4.5:1 AA minimum, and these two pages are almost entirely body copy. */
   .about-col p, .steps-grid p{color:rgb(101,56,38);}
+
+  /* ---------- PAGE HERO (About, Free Astro Tools) ----------
+     NOT .hero. That one is built for a full-bleed photograph: it is 100vh, it drifts, and it
+     carries a heavy triple text-shadow because the type has to stay legible crossing a bright
+     patch of the image. Reusing it on a page with no photograph gave a brown block with a
+     glow around brown text - and .hero-ink-dark, which is for LIGHT photographs, made the
+     heading dark brown on dark brown. Unreadable, correctly reported as such.
+     This is the flat version: brand brown, cream type, no shadow, no photo, and the mark. */
+  .page-hero{
+    background:var(--brown); color:var(--cream); text-align:center;
+    padding:46px 0 54px;
+  }
+  .page-hero-inner{max-width:720px; margin:0 auto;}
+  .page-hero-mark{width:62px; height:62px; margin:0 auto 20px; display:block;}
+  .page-hero .eyebrow{color:var(--gold); font-size:12.5px; letter-spacing:.2em;}
+  .page-hero h1{
+    font-family:var(--font-display); color:var(--cream);
+    font-size:clamp(30px,4.6vw,50px); line-height:1.12; margin:12px 0 0;
+  }
+  .page-hero .lede{
+    color:var(--cream); font-size:clamp(15px,1.7vw,18px); line-height:1.65;
+    margin:18px auto 0; max-width:48ch;
+  }
+  .page-hero-cta{display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin-top:26px;}
+
+  /* .btn-line is brown-on-transparent, so on the brown hero it was an empty outline with an
+     invisible label. This is the same button for a dark ground. */
+  .btn-onbrown{background:transparent; border-color:var(--cream); color:var(--cream);}
+  .btn-onbrown:hover{background:color-mix(in srgb, var(--cream) 14%, transparent);}
+
+  @media (max-width:520px){
+    .page-hero{padding:34px 0 40px;}
+    .page-hero-mark{width:52px; height:52px; margin-bottom:14px;}
+  }

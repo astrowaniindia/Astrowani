@@ -381,7 +381,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
      the element just stays empty instead of rendering a broken-image icon. */
   (function(){
     // The real Astrowani brand star (same asset as the app's Play Store icon).
-    ['brandLogo','brandLogoFoot'].forEach(function(id){
+    ['brandLogo','brandLogoFoot','brandLogoHero'].forEach(function(id){
       var el = document.getElementById(id);
       if (el && typeof BRAND_LOGO === 'string') el.src = BRAND_LOGO;
     });
