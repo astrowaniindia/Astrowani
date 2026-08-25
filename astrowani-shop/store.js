@@ -2427,6 +2427,13 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
      gemstone purpose tiles, and it is good enough because these words are what the products
      are actually called. First match wins, so the list is ordered most-specific first. An
      item matching nothing still appears under "All" - it is never hidden, only unfiled. */
+  /* NOTE THE TWO ORDERS. This array is MATCH precedence, not display order, and the two are
+     not the same thing: the fallback matcher takes the first regex that hits, so the narrow
+     patterns have to be tested before the broad ones. 'enhancer' matches /vastu/, which
+     appears in a great many of these titles, so moving it above 'fengshui' here would make
+     it swallow the feng shui pieces whenever a row has no stored subcategory.
+     The order the tiles are SHOWN in is VASTU_CAT_ORDER below, and can be rearranged freely
+     without touching any of that. */
   var VASTU_CATS = [
     {id:'crystals',  label:'Crystals',       test:/crystal|quartz|amethyst|citrine|pyrite|jasper|geode|cluster|tumbl|agate|selenite|obsidian/i},
     {id:'fengshui',  label:'Feng Shui',      test:/feng ?shui|laughing buddha|lucky cat|maneki|wind ?chime|bamboo|dragon|tortoise|turtle|coin|kuan|chi lin|money frog|toad/i},
@@ -2435,6 +2442,18 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {id:'handicraft',label:'Handicraft',     test:/handicraft|handmade|wooden|brass|marble|carv|idol|statue|showpiece|painting|craft/i},
     {id:'gifts',     label:'Gifts',          test:/gift|hamper|combo|set of|box|corporate/i}
   ];
+
+  // Display order for the tiles. Rearrange this freely - it has no bearing on matching.
+  var VASTU_CAT_ORDER = ['crystals', 'enhancer', 'pyramids', 'fengshui', 'handicraft', 'gifts'];
+
+  function vastuCatsInDisplayOrder(){
+    return VASTU_CAT_ORDER
+      .map(function(id){ return VASTU_CATS.find(function(c){ return c.id === id; }); })
+      .filter(Boolean)
+      // Anything added to VASTU_CATS but not listed above still appears, at the end, rather
+      // than silently vanishing from the page.
+      .concat(VASTU_CATS.filter(function(c){ return VASTU_CAT_ORDER.indexOf(c.id) === -1; }));
+  }
 
   /* Direction is the filter that makes a vastu shop a vastu shop: a remedy is bought for a
      specific corner of a building. The words are in the product titles verbatim, so this is
@@ -2524,7 +2543,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   function renderVastuCatTiles(){
     if (!vastuCatGrid) return;
     vastuCatGrid.innerHTML = '';
-    VASTU_CATS.forEach(function(cat){
+    vastuCatsInDisplayOrder().forEach(function(cat){
       var el = document.createElement('button');
       el.type = 'button';
       el.className = 'purpose-tile' + (vastuState.cat === cat.id ? ' on' : '');
