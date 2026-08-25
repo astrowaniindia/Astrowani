@@ -2136,7 +2136,9 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   function pujaDetailHtml(p){
     return '' +
-      '<div class="pv-cols">' +
+      /* pv-cols-puja, because a puja photograph is a wide 400x224 original and can never
+         fill a tall column the way a square gemstone shot does - see the CSS. */
+      '<div class="pv-cols pv-cols-puja">' +
       '<div class="pv-col-media"><div class="pv-sticky">' +
         '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
       '</div></div>' +
