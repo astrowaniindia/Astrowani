@@ -61,16 +61,12 @@
 
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
-<section class="page-hero">
-  <div class="wrap page-hero-inner">
-    <img class="page-hero-mark" id="brandLogoHero" alt="Astrowani">
+<section class="hero" style="--hero-img:url(&quot;/assets/vastu-banner.jpg&quot;);">
+  <div class="wrap hero-inner">
     <p class="eyebrow">Vastu Remedies</p>
     <h1>Fix the corner, not the whole house.</h1>
-    <p class="lede">Crystals, pyramids, yantras and feng shui pieces for a specific direction and a specific problem. Each one is chosen for where it goes, so tell us the corner and we will tell you the remedy.</p>
-    <div class="page-hero-cta">
-      <a class="btn btn-gold" href="#vastu">Browse remedies</a>
-      <a class="btn btn-onbrown" href="/about/#contact">Ask which one you need</a>
-    </div>
+    <p class="lede">Crystals, pyramids, yantras and feng shui pieces, each chosen for a direction and a dosh.</p>
+    <a href="#vastu" class="btn btn-gold">Browse remedies</a>
   </div>
 </section>
 
@@ -86,11 +82,11 @@
   </div>
 </section>
 
-<!-- The campaign band appears on its own the moment the artwork is dropped into
-     /assets/vastu-campaign.jpg. Until then the onerror removes the whole band rather than
-     leaving a broken-image icon across the page. -->
+<!-- The onerror stays: it is what kept a broken-image icon off the page while this
+     artwork did not exist yet, and it costs nothing now that it does. -->
 <div class="campaign">
-  <img src="/assets/vastu-campaign.jpg" loading="lazy" alt="Vastu remedies arranged on a table."
+  <img src="/assets/vastu-campaign.jpg" loading="lazy"
+       alt="Vastu remedies - crystals, pyramids and yantras - arranged together."
        onerror="var b=this.closest('.campaign'); if(b) b.remove();">
 </div>
 
