@@ -2463,7 +2463,9 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     gifts:      '/assets/vastu-cat-gifts.jpg'
   };
 
-  var vastuState = { q:'', cat:'all', dir:'all', sort:'featured' };
+  // `shown` is how many of the filtered list are currently in the DOM. renderVastu()
+  // resets it to the first batch; the Show-more button raises it.
+  var vastuState = { q:'', cat:'all', dir:'all', sort:'featured', shown:0 };
 
   /* The STORED group wins. Reading it off the title was right about three times in four
      when measured against 414 real products, which means one product in four sat under the
@@ -2555,10 +2557,74 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     });
   }
 
+  /* ================= BATCHED RENDERING =================
+     450 products is too many to put in the DOM at once: it is 450 card elements, 450 lazy
+     images and a document tens of thousands of pixels tall, which costs the most on the
+     cheap phone most likely to be looking at it. So the grid renders in batches of 40 and
+     a button adds the next 40.
+
+     Adding a batch APPENDS to the grid; it does not re-render what is already there. A
+     full re-render would rebuild every card above the fold, restart their entrance
+     animation and throw away the scroll position - the reader would be bounced back up the
+     page for pressing a button at the bottom of it. Only a filter, sort or search change
+     rebuilds from scratch, and that resets the batch to the first 40 because the result set
+     itself is different. */
+  var VASTU_PAGE = 40;
+
+  function vastuCardHtml(p){
+    var off = p.mrp && p.mrp > p.price ? Math.round((1 - p.price/p.mrp)*100) : 0;
+    var isWished = wishlist.indexOf(p.id) !== -1;
+    return '<div class="card">'+
+      '<div class="card-media" data-open="'+escapeAttr(p.id)+'">'+
+        (off ? '<span class="card-tag">'+off+'% OFF</span>' : '') +
+        '<button class="wishlist-btn'+(isWished?' on':'')+'" data-wish="'+escapeAttr(p.id)+'" aria-label="Save to wishlist">'+(isWished?'&#9829;':'&#9825;')+'</button>'+
+        productPhotoImg(p, 'front') +
+      '</div>'+
+      '<div class="card-body">'+
+        '<div class="card-name" data-open="'+escapeAttr(p.id)+'">'+escapeHtml(p.name)+'</div>'+
+        (p.unitLabel ? '<div class="card-unit">'+escapeHtml(p.unitLabel)+'</div>' : '')+
+        '<div class="pj-meta">'+
+          '<span class="pj-dur">'+escapeHtml(vastuDirLabel(p) || vastuCatLabel(p) || 'Vastu')+'</span>'+
+          '<span class="price pj-price">&#8377;'+Number(p.price).toLocaleString('en-IN')+'</span>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }
+
+  function renderVastuMore(total){
+    var more = document.getElementById('vastuMore');
+    if (!more) return;
+    var left = total - vastuState.shown;
+    if (left <= 0) { more.innerHTML = ''; return; }
+    more.innerHTML = '<button class="btn btn-line" id="vastuMoreBtn">Show ' +
+      Math.min(VASTU_PAGE, left) + ' more <span class="more-left">' + left + ' left</span></button>';
+    more.querySelector('#vastuMoreBtn').addEventListener('click', appendVastuBatch);
+  }
+
+  function appendVastuBatch(){
+    var list = filteredVastu();
+    var from = vastuState.shown;
+    vastuState.shown = Math.min(from + VASTU_PAGE, list.length);
+    var holder = document.createElement('div');
+    holder.innerHTML = list.slice(from, vastuState.shown).map(vastuCardHtml).join('');
+    var added = Array.prototype.slice.call(holder.children);
+    added.forEach(function(n){ vastuGrid.appendChild(n); });
+    stagger(added, 40, 12);
+    if (vastuCount) vastuCount.textContent = vastuCountText(list.length);
+    renderVastuMore(list.length);
+  }
+
+  function vastuCountText(total){
+    var shown = Math.min(vastuState.shown, total);
+    if (shown >= total) return total + (total === 1 ? ' item' : ' items');
+    return 'Showing ' + shown + ' of ' + total + ' items';
+  }
+
   function renderVastu(){
     if (!vastuGrid) return;
     var list = filteredVastu();
-    if (vastuCount) vastuCount.textContent = list.length + (list.length === 1 ? ' item' : ' items');
+    vastuState.shown = Math.min(VASTU_PAGE, list.length);
+    if (vastuCount) vastuCount.textContent = vastuCountText(list.length);
     vastuGrid.innerHTML = '';
 
     if (!list.length){
@@ -2569,31 +2635,13 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       else if (!vastuProducts().length) msg = 'Vastu remedies are being added to the shop. Please check back shortly.';
       else msg = 'Nothing matches that filter. Try clearing the direction or the category.';
       vastuGrid.innerHTML = '<div class="pj-empty">' + msg + '</div>';
+      renderVastuMore(0);
       return;
     }
 
-    list.forEach(function(p){
-      var off = p.mrp && p.mrp > p.price ? Math.round((1 - p.price/p.mrp)*100) : 0;
-      var isWished = wishlist.indexOf(p.id) !== -1;
-      var card = document.createElement('div');
-      card.className = 'card';
-      card.innerHTML =
-        '<div class="card-media" data-open="'+escapeAttr(p.id)+'">'+
-          (off ? '<span class="card-tag">'+off+'% OFF</span>' : '') +
-          '<button class="wishlist-btn'+(isWished?' on':'')+'" data-wish="'+escapeAttr(p.id)+'" aria-label="Save to wishlist">'+(isWished?'&#9829;':'&#9825;')+'</button>'+
-          productPhotoImg(p, 'front') +
-        '</div>'+
-        '<div class="card-body">'+
-          '<div class="card-name" data-open="'+escapeAttr(p.id)+'">'+escapeHtml(p.name)+'</div>'+
-          (p.unitLabel ? '<div class="card-unit">'+escapeHtml(p.unitLabel)+'</div>' : '')+
-          '<div class="pj-meta">'+
-            '<span class="pj-dur">'+escapeHtml(vastuDirLabel(p) || vastuCatLabel(p) || 'Vastu')+'</span>'+
-            '<span class="price pj-price">&#8377;'+Number(p.price).toLocaleString('en-IN')+'</span>'+
-          '</div>'+
-        '</div>';
-      vastuGrid.appendChild(card);
-    });
+    vastuGrid.innerHTML = list.slice(0, vastuState.shown).map(vastuCardHtml).join('');
     stagger(vastuGrid.children, 40, 12);
+    renderVastuMore(list.length);
   }
 
   function vastuCatLabel(p){
