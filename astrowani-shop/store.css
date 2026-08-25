@@ -1241,3 +1241,23 @@
       text-shadow:0 1px 3px rgba(89,42,25,.95), 0 2px 18px rgba(89,42,25,.92), 0 0 46px rgba(89,42,25,.8);
     }
   }
+
+  /* The app's guide figure, standing at the left of the About hero.
+     SIZE IS CAPPED ON PURPOSE. The source is 145x281 with a subject only 120x264, so it is
+     already near its limit: 200px wide is a 1.7x upscale, and anything approaching the
+     300px the empty space invites would be a 2.5x blur. Better a small sharp figure than a
+     big soft one. A higher-resolution export is the only thing that changes this.
+     Hidden below 1000px - under that the copy needs the full width and the figure would be
+     crowding it rather than balancing it. */
+  .page-hero{position:relative; overflow:hidden;}
+  .hero-guide{
+    position:absolute; left:clamp(12px, 3vw, 56px); bottom:0;
+    width:180px; height:auto; z-index:0; pointer-events:none;
+    filter:drop-shadow(0 10px 26px rgba(0,0,0,.28));
+  }
+  .page-hero-inner{position:relative; z-index:1;}
+  /* The copy is a 720px column centred in the viewport, so the figure only has room beside
+     it once the viewport exceeds 720 + two lots of (figure + offset + a real gap). That
+     lands around 1200px. At 1024 it was overlapping the paragraph by 107px - it has to be
+     gone well before it gets there, not merely gone on a phone. */
+  @media (max-width:1200px){ .hero-guide{display:none;} }
