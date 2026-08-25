@@ -632,6 +632,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
         renderFilterPanel();
         renderGrid();
         renderCart();      // prices may have moved since the cart was saved
+        refreshDetailPage();
       })
       .catch(function(e){
         // Deliberately silent for the shopper: the fallback catalogue is already on screen.
@@ -666,6 +667,16 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   // cartSubtotal() reads byId[id].price directly and would throw on the first stale entry.
   function reconcileCart(){
     if (typeof cart !== 'object' || !cart) return;
+    /* ONLY once the live catalogue has actually landed. Until then byId holds the offline
+       p1..p48 fallback, so every live remedy_items uuid in a saved cart looks unknown and
+       would be deleted - which emptied the cart on every single page load. That went
+       unnoticed while a product opened in a modal (you could fill a cart without ever
+       leaving /gemstones/); now that a product is its own page, every add was followed by
+       a navigation that wiped it.
+       Leaving the ids in place is safe: renderCart, cartCount and cartSubtotal all skip
+       ids with no product, which is the guard added when one stale entry crashed the
+       storefront. */
+    if (LIVE_PRODUCTS === null) return;
     var dropped = 0;
     Object.keys(cart).forEach(function(id){
       if (!byId[id]) { delete cart[id]; dropped++; }
@@ -872,7 +883,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     }
     if (editId){ openAdminEditor(byId[editId.getAttribute('data-edit')]); return; }
     if (deleteId){ adminDeleteProduct(deleteId.getAttribute('data-delete')); return; }
-    if (openId) openQuickView(openId.getAttribute('data-open'));
+    if (openId) goToProduct(openId.getAttribute('data-open'));
     else if (addId){ addToCart(addId.getAttribute('data-add'), 1); showToast('Added to cart'); }
   });
 
@@ -961,22 +972,25 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     return out;
   }
 
-  function openQuickView(id){
-    var p = byId[id];
-    pvQty = 1;
+  /* The product detail block. Identical markup to the quick-view popup this replaced -
+     same gallery, price, stock line, quantity stepper and tabs - only now it is rendered
+     into a page of its own at /gemstones/<product-name>/ instead of into a modal.
+     Split into a builder and a binder so the page renderer can use both. */
+  function productDetailHtml(p){
     var off = p.mrp ? Math.round((1 - p.price/p.mrp)*100) : 0;
     var meta = productMeta(p);
     var reviews = productReviews(p);
     var hasRealPhoto = !!REAL_PHOTOS[p.id];
     var variants = ['front','angle','zoom'];
+    var cat = CATS.find(function(c){return c.id===p.cat;});
 
-    pvContent.innerHTML =
+    return '' +
       '<div class="pv-media" id="pvMainMedia">'+productPhotoImg(p,'front')+'</div>'+
       (hasRealPhoto ? '' :
       '<div class="pv-thumbs">'+variants.map(function(v,i){
         return '<div class="pv-thumb'+(i===0?' sel':'')+'" data-variant="'+v+'">'+productPhotoImg(p,v)+'</div>';
       }).join('')+'</div>')+
-      '<div class="pv-cat">'+CATS.find(function(c){return c.id===p.cat;}).label+'</div>'+
+      '<div class="pv-cat">'+escapeHtml(cat ? cat.label : p.cat)+'</div>'+
       '<h3 class="pv-name">'+p.name+'</h3>'+
       '<div class="pv-rating-row"><span class="stars-sm">'+starString(meta.rating)+'</span><span>'+meta.rating.toFixed(1)+' · '+meta.reviews+' ratings</span></div>'+
       '<div class="pv-price-row">'+
@@ -1012,25 +1026,29 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
           '</div>';
         }).join('')+
       '</div>';
+  }
 
-    pvContent.querySelectorAll('.pv-thumb').forEach(function(t){
+  function bindProductDetail(scope, p){
+    var id = p.id;
+    pvQty = 1;
+    scope.querySelectorAll('.pv-thumb').forEach(function(t){
       t.addEventListener('click', function(){
-        pvContent.querySelectorAll('.pv-thumb').forEach(function(o){ o.classList.remove('sel'); });
+        scope.querySelectorAll('.pv-thumb').forEach(function(o){ o.classList.remove('sel'); });
         t.classList.add('sel');
-        document.getElementById('pvMainMedia').innerHTML = productPhotoImg(p, t.getAttribute('data-variant'));
+        scope.querySelector('#pvMainMedia').innerHTML = productPhotoImg(p, t.getAttribute('data-variant'));
       });
     });
-    pvContent.querySelectorAll('.pv-tab').forEach(function(tab){
+    scope.querySelectorAll('.pv-tab').forEach(function(tab){
       tab.addEventListener('click', function(){
-        pvContent.querySelectorAll('.pv-tab').forEach(function(o){ o.classList.remove('sel'); });
-        pvContent.querySelectorAll('.pv-panel').forEach(function(o){ o.classList.remove('sel'); });
+        scope.querySelectorAll('.pv-tab').forEach(function(o){ o.classList.remove('sel'); });
+        scope.querySelectorAll('.pv-panel').forEach(function(o){ o.classList.remove('sel'); });
         tab.classList.add('sel');
-        pvContent.querySelector('[data-panel="'+tab.getAttribute('data-tab')+'"]').classList.add('sel');
+        scope.querySelector('[data-panel="'+tab.getAttribute('data-tab')+'"]').classList.add('sel');
       });
     });
-    pvContent.querySelector('#pvPinCheck').addEventListener('click', function(){
-      var pin = pvContent.querySelector('#pvPincode').value.trim();
-      var resultEl = pvContent.querySelector('#pvPinResult');
+    scope.querySelector('#pvPinCheck').addEventListener('click', function(){
+      var pin = scope.querySelector('#pvPincode').value.trim();
+      var resultEl = scope.querySelector('#pvPinResult');
       if (!/^\d{6}$/.test(pin)){ resultEl.textContent = 'Enter a valid 6-digit pincode.'; return; }
       var digitSum = pin.split('').reduce(function(s,d){ return s+parseInt(d,10); },0);
       var days = 3 + (digitSum % 5);
@@ -1038,11 +1056,10 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       resultEl.textContent = 'Delivering by '+eta.toLocaleDateString('en-IN',{day:'numeric', month:'short'})+' (usually '+days+' days to this pincode).';
     });
 
-    pvContent.querySelector('[data-pv-dec]').addEventListener('click', function(){ pvQty = Math.max(1, pvQty-1); pvContent.querySelector('#pvQtyNum').textContent = pvQty; });
-    pvContent.querySelector('[data-pv-inc]').addEventListener('click', function(){ pvQty = Math.min(20, pvQty+1); pvContent.querySelector('#pvQtyNum').textContent = pvQty; });
-    pvContent.querySelector('#pvAdd').addEventListener('click', function(){ addToCart(id, pvQty); showToast('Added to cart'); closeModal('pvModal'); });
-    pvContent.querySelector('#pvBuy').addEventListener('click', function(){ addToCart(id, pvQty); closeModal('pvModal'); openCart(); });
-    openModal('pvModal');
+    scope.querySelector('[data-pv-dec]').addEventListener('click', function(){ pvQty = Math.max(1, pvQty-1); scope.querySelector('#pvQtyNum').textContent = pvQty; });
+    scope.querySelector('[data-pv-inc]').addEventListener('click', function(){ pvQty = Math.min(20, pvQty+1); scope.querySelector('#pvQtyNum').textContent = pvQty; });
+    scope.querySelector('#pvAdd').addEventListener('click', function(){ addToCart(id, pvQty); showToast('Added to cart'); });
+    scope.querySelector('#pvBuy').addEventListener('click', function(){ addToCart(id, pvQty); openCart(); });
   }
 
   /* ================= MODAL HELPERS ================= */
@@ -1745,7 +1762,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       '<p style="margin-top:10px;"><strong>Bhagyank: '+bhagyank+'</strong>, your destiny number, drawn from your complete date of birth.</p>'+
       '<div class="rec" data-open="'+gm.productId+'" style="cursor:pointer;">✦ Traditionally paired with '+gm.name+' →</div>';
     resultBox.classList.add('show');
-    resultBox.querySelector('[data-open]').addEventListener('click', function(e){ openQuickView(e.currentTarget.getAttribute('data-open')); });
+    resultBox.querySelector('[data-open]').addEventListener('click', function(e){ goToProduct(e.currentTarget.getAttribute('data-open')); });
   });
 
   document.getElementById('calcGemBtn').addEventListener('click', function(){
@@ -1764,7 +1781,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       '<p>Ruled by '+mt.planet+'. '+mt.trait+'</p>'+
       '<button class="btn btn-gold btn-sm" id="gemViewBtn" style="margin-top:10px;">View this piece</button>';
     resultBox.classList.add('show');
-    resultBox.querySelector('#gemViewBtn').addEventListener('click', function(){ openQuickView(gm.productId); });
+    resultBox.querySelector('#gemViewBtn').addEventListener('click', function(){ goToProduct(gm.productId); });
   });
 
   /* ================= NEWSLETTER ================= */
@@ -2068,7 +2085,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   pujaGrid.addEventListener('click', function(e){
     var t = e.target.closest('[data-puja]');
-    if (t) openPujaView(t.getAttribute('data-puja'));
+    if (t) goToPuja(t.getAttribute('data-puja'));
   });
   document.getElementById('pjSearch').addEventListener('input', function(e){
     pujaState.q = e.target.value; renderPujas();
@@ -2079,10 +2096,8 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   var pjContent = document.getElementById('pjContent');
 
-  function openPujaView(id){
-    var p = PUJAS.find(function(x){ return x.id === id; });
-    if (!p) return;
-    pjContent.innerHTML =
+  function pujaDetailHtml(p){
+    return '' +
       '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
       '<div class="pv-cat">Wani Puja</div>'+
       '<h3 class="pv-name">'+escapeHtml(p.n)+'</h3>'+
@@ -2098,12 +2113,15 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       '</ol>'+
       '<div class="checkout-note">Nothing is charged on this page. The dakshina above is indicative and is confirmed with you on the call before anything is paid.</div>'+
       '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjBookBtn">Request this puja</button>';
-    pjContent.querySelector('#pjBookBtn').addEventListener('click', function(){ renderPujaBooking(p); });
-    openModal('pjModal');
   }
 
-  function renderPujaBooking(p){
-    pjContent.innerHTML =
+  function bindPujaDetail(scope, p){
+    scope.querySelector('#pjBookBtn').addEventListener('click', function(){ renderPujaBooking(p, scope); });
+  }
+
+  function renderPujaBooking(p, scope){
+    scope = scope || pjContent;
+    scope.innerHTML =
       '<h3 style="font-size:20px; margin-bottom:6px;">Request '+escapeHtml(p.n)+'</h3>'+
       '<p class="lede" style="font-size:14px; margin:0 0 18px;">Leave your details and our pandit will call you back to fix the muhurat and confirm the samagri and the final dakshina.</p>'+
       '<div class="field"><label for="pjName">Your name</label><input id="pjName" placeholder="Full name"></div>'+
@@ -2115,11 +2133,11 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       '<div class="sum-row total"><span>'+escapeHtml(p.d)+'</span><span class="price">'+pujaRupees(p.p)+'</span></div>'+
       '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjSendBtn">Send request on WhatsApp</button>';
 
-    pjContent.querySelector('#pjSendBtn').addEventListener('click', function(){
-      var name  = pjContent.querySelector('#pjName').value.trim();
-      var phone = pjContent.querySelector('#pjPhone').value.trim();
-      var city  = pjContent.querySelector('#pjCity').value.trim();
-      var note  = pjContent.querySelector('#pjNote').value.trim();
+    scope.querySelector('#pjSendBtn').addEventListener('click', function(){
+      var name  = scope.querySelector('#pjName').value.trim();
+      var phone = scope.querySelector('#pjPhone').value.trim();
+      var city  = scope.querySelector('#pjCity').value.trim();
+      var note  = scope.querySelector('#pjNote').value.trim();
       if (!name || !phone){ showToast('Please add your name and phone number'); return; }
       if (!pujaPhoneOk(phone)){ showToast('That phone number does not look right'); return; }
 
@@ -2142,7 +2160,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       try { w = window.open(url, '_blank'); } catch (e) {}
       if (!w) window.location.href = url;
 
-      pjContent.innerHTML =
+      scope.innerHTML =
         '<div class="confirm">'+
           '<div class="tick">&#10003;</div>'+
           '<h3 style="font-size:22px;">Request ready to send</h3>'+
@@ -2150,12 +2168,150 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
           '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13.5px;">Nothing has been charged.</p>'+
           '<button class="btn btn-gold" id="pjDone">Keep browsing</button>'+
         '</div>';
-      pjContent.querySelector('#pjDone').addEventListener('click', function(){ closeModal('pjModal'); });
+      scope.querySelector('#pjDone').addEventListener('click', function(){
+        if (scope === pjContent) closeModal('pjModal'); else location.href = '/pujas/';
+      });
     });
   }
 
   renderPujaPurposeTiles();
   renderPujaChips();
   renderPujas();
+
+
+  /* ================= PRODUCT & PUJA PAGES =================
+     A gemstone or a puja opens at its own URL, named after it:
+
+         /gemstones/ceylon-blue-sapphire-neelam/
+         /pujas/gauri-ganesh-puja/
+
+     There is no HTML file behind either. Nginx ends its `location /` block with
+     `try_files $uri $uri/ /index.html`, so any path that is not a real file is served the
+     ROOT index.html - which is why the detail block renders into the empty <main id="view">
+     in that document, with the gate tiles (#entry) hidden while it does.
+
+     Navigation is a plain full page load, not pushState. That is deliberate: the listing
+     pages are real separate documents (/gemstones/, /pujas/), so a shared history stack
+     would buy nothing, and a browser navigation gets Back, scroll restoration and the
+     app WebView's hardware Back correct for free with no code. */
+
+  function slugify(s){
+    return String(s || '')
+      .toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9ऀ-ॿ]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 70) || 'item';
+  }
+
+  function productHref(p){ return '/gemstones/' + slugify(p.name) + '/'; }
+  function pujaHref(pj){ return '/pujas/' + slugify(pj.n) + '/'; }
+
+  // A raw id still resolves, so an old link or a calculator recommendation keyed by id
+  // keeps working even though the URLs people see are names.
+  function findProductBySlug(slug){
+    if (!slug) return null;
+    if (byId[slug]) return byId[slug];
+    var ids = Object.keys(byId);
+    for (var i = 0; i < ids.length; i++){
+      if (slugify(byId[ids[i]].name) === slug) return byId[ids[i]];
+    }
+    return null;
+  }
+
+  function findPujaBySlug(slug){
+    if (!slug) return null;
+    for (var i = 0; i < PUJAS.length; i++){
+      if (PUJAS[i].id === slug || slugify(PUJAS[i].n) === slug) return PUJAS[i];
+    }
+    return null;
+  }
+
+  function goToProduct(id){
+    var p = byId[id];
+    if (p) location.href = productHref(p);
+  }
+  function goToPuja(id){
+    var pj = PUJAS.find(function(x){ return x.id === id; });
+    if (pj) location.href = pujaHref(pj);
+  }
+
+  /* ---- the page itself ---- */
+  var detailRoot = document.getElementById('view');
+
+  function detailPageShell(crumbHref, crumbLabel, title, inner){
+    return '<section class="section detail-page"><div class="wrap detail-wrap">' +
+      '<nav class="detail-crumbs"><a href="/">Store</a><span aria-hidden="true">/</span>' +
+        '<a href="' + crumbHref + '">' + escapeHtml(crumbLabel) + '</a>' +
+        '<span aria-hidden="true">/</span><span>' + escapeHtml(title) + '</span></nav>' +
+      '<div class="detail-card">' + inner + '</div>' +
+      '<a class="detail-back" href="' + crumbHref + '">&larr; Back to ' + escapeHtml(crumbLabel.toLowerCase()) + '</a>' +
+    '</div></section>';
+  }
+
+  function detailNotFound(crumbHref, crumbLabel, message){
+    return '<section class="section detail-page"><div class="wrap detail-wrap">' +
+      '<div class="detail-card detail-missing">' +
+        '<h2>Not found</h2><p class="lede">' + escapeHtml(message) + '</p>' +
+        '<a class="btn btn-gold" href="' + crumbHref + '">Browse ' + escapeHtml(crumbLabel.toLowerCase()) + '</a>' +
+      '</div>' +
+    '</div></section>';
+  }
+
+  function renderProductPage(slug){
+    var p = findProductBySlug(slug);
+    if (!p) {
+      // The live catalogue may simply not have landed yet - loadLiveCatalog calls back in.
+      if (LIVE_PRODUCTS === null) {
+        detailRoot.innerHTML = '<section class="section detail-page"><div class="wrap detail-wrap">' +
+          '<div class="detail-card detail-loading"><p class="lede">Loading&hellip;</p></div></div></section>';
+        return;
+      }
+      detailRoot.innerHTML = detailNotFound('/gemstones/', 'Gemstones',
+        'We could not find that stone. It may have been renamed or is no longer stocked.');
+      return;
+    }
+    document.title = p.name + ' — Wani Shop';
+    detailRoot.innerHTML = detailPageShell('/gemstones/', 'Gemstones', p.name, productDetailHtml(p));
+    bindProductDetail(detailRoot, p);
+  }
+
+  function renderPujaPage(slug){
+    var pj = findPujaBySlug(slug);
+    if (!pj) {
+      detailRoot.innerHTML = detailNotFound('/pujas/', 'Pujas', 'We could not find that puja.');
+      return;
+    }
+    document.title = pj.n + ' — Wani Shop';
+    detailRoot.innerHTML = detailPageShell('/pujas/', 'Pujas', pj.n, pujaDetailHtml(pj));
+    bindPujaDetail(detailRoot, pj);
+  }
+
+  /* ---- dispatch ----
+     Only ever fires on the root document, and only for a path below /gemstones/ or
+     /pujas/. On "/" nothing here runs and the gate tiles are the page, exactly as before. */
+  var detailRoute = null;
+  (function(){
+    if (!detailRoot) return;
+    var segs = window.location.pathname.split('/').filter(Boolean).map(function(x){
+      try { return decodeURIComponent(x); } catch (e) { return x; }
+    });
+    if (segs.length < 2) return;
+    if (segs[0] === 'gemstones') detailRoute = { kind: 'product', slug: segs[1] };
+    else if (segs[0] === 'pujas') detailRoute = { kind: 'puja', slug: segs[1] };
+    if (!detailRoute) return;
+
+    var entry = document.getElementById('entry');
+    if (entry) entry.hidden = true;
+    detailRoot.hidden = false;
+    if (detailRoute.kind === 'product') renderProductPage(detailRoute.slug);
+    else renderPujaPage(detailRoute.slug);
+  })();
+
+  // The offline catalogue is on screen first and the live one replaces it, so a product
+  // page opened by a live-only uuid resolves on the second pass rather than 404ing.
+  function refreshDetailPage(){
+    if (detailRoute && detailRoute.kind === 'product') renderProductPage(detailRoute.slug);
+  }
 
 })();

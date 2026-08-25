@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/store.css?v=f1c6a92c">
+<link rel="stylesheet" href="/store.css?v=401c7eb4">
 </head>
 <body>
 <header class="site">
@@ -87,6 +87,13 @@
     </div>
   </div>
 </section>
+
+<!-- Product and puja detail pages render in here.
+     They have no HTML file of their own: nginx ends `location /` with
+     `try_files $uri $uri/ /index.html`, so /gemstones/ruby-manik/ is served THIS document.
+     store.js sees the path, hides #entry above, and fills this in. Empty on "/", where the
+     gate tiles above are the page. -->
+<main id="view" hidden></main>
 
 <footer>
   <div class="wrap foot-grid">
@@ -200,6 +207,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="/store.js?v=1945255d"></script>
+<script src="/store.js?v=aa7017a3"></script>
 </body>
 </html>
