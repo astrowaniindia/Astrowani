@@ -1,29 +1,25 @@
-/* ================= ASTROWANI STORE =================
-   One script, one shell document, every page rendered from here.
-
-   WHY A ROUTER AND NOT MORE HTML FILES
-   The catalogue is live: products come from remedy_items via GET /api/remedies, and an
-   admin can add, rename or retire one at any time from the dashboard. A hand-written
-   HTML file per product would be stale the moment that happened, and there is no build
-   step here to regenerate them. So every product, puja, policy and account page is a
-   ROUTE rendered into #view, and the URL is a real path - /gemstones/ruby-manik/ - not a
-   modal and not a #hash. That matters for three things the old modal-based store could
-   not do: the browser back button, a shareable link, and the Android hardware back button
-   inside the app's WebView, which walks WebView history.
-
-   HOW THE PRETTY URLS RESOLVE WITH NO SERVER
-   nginx already ends its location / block with `try_files $uri $uri/ /index.html`, so any
-   path that is not a real file falls back to this shell and the router takes it from
-   there. No nginx change was needed for any of this, which matters because certbot
-   rewrote that file in place on the VPS and the deploy workflow deliberately never
-   overwrites it (see .github/workflows/deploy-shop.yml).
-
-   MONEY
-   Nothing in this file computes a price the customer is asked to pay. Cart totals shown
-   while browsing are labelled "subtotal" and are an estimate; the only figure ever shown
-   next to a Pay button comes from POST /api/orders/quote, and POST /api/orders/checkout
-   re-derives it server-side and ignores anything money-shaped we send. See the MONEY
-   RULES header in astrowani-backend/src/orderRoutes.js. */
+/* ================= SHARED STORE SCRIPT =================
+   One script serves all three pages (/, /gemstones/, /pujas/). Every page carries the
+   same chrome - header, ticker, cart drawer, modals, footer - but only the sections it
+   is about, so a given page is always missing some of the elements this file wires up.
+   Rather than guarding thirty separate top-level lookups (and having to re-verify the
+   gemstone page against every one of them), a missing id resolves to an inert detached
+   node. Appending to it, setting innerHTML on it or binding a listener to it all succeed
+   and affect nothing, which is exactly the desired behaviour for a section that is not
+   on this page. The same stub is returned every time for a given id, so code that looks
+   an element up twice still gets one object.
+   On the gemstone page every element exists, so the stub is never constructed and the
+   behaviour is byte-identical to the single-page version this was split from. */
+(function(){
+  var native = document.getElementById.bind(document);
+  var stubs = {};
+  document.getElementById = function(id){
+    var el = native(id);
+    if (el) return el;
+    if (!stubs[id]) { var d = document.createElement('div'); d.id = id; stubs[id] = d; }
+    return stubs[id];
+  };
+})();
 (function(){
   "use strict";
 
@@ -116,6 +112,7 @@
     });
     observeNew(nodes);
   }
+
 var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   var CUSTOMER_PHOTOS = {
@@ -377,6 +374,30 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   function renderIcon(p){ return productPhotoImg(p, 'front'); }
 
+
+  /* ================= LIFESTYLE PHOTOGRAPHY PLACEMENT =================
+     The photographs live as data URIs in LIFESTYLE (top of this script), so they're
+     attached here rather than in markup. Each is missing-safe: if a key were ever removed
+     the element just stays empty instead of rendering a broken-image icon. */
+  (function(){
+    // The real Astrowani brand star (same asset as the app's Play Store icon).
+    ['brandLogo','brandLogoFoot'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el && typeof BRAND_LOGO === 'string') el.src = BRAND_LOGO;
+    });
+    var heroEl = document.querySelector('.hero');
+    // A page may declare its own hero photograph inline (the puja page does); the
+    // gemstone lifestyle shot is only the fallback when none was set.
+    if (heroEl && LIFESTYLE.hero && !heroEl.style.getPropertyValue('--hero-img'))
+      heroEl.style.setProperty('--hero-img', 'url("'+LIFESTYLE.hero+'")');
+    [['imgBanner','banner'], ['imgDiscover','discover'], ['imgBoxes','boxes'], ['imgTray','tray']]
+      .forEach(function(pair){
+        var el = document.getElementById(pair[0]);
+        if (el && LIFESTYLE[pair[1]]) el.src = LIFESTYLE[pair[1]];
+        else if (el) el.remove();
+      });
+  })();
+
   /* ================= PRODUCT META (rating, reviews, stock — deterministic per id) ================= */
   function hashStr(s){ var h=0; for (var i=0;i<s.length;i++){ h = ((h<<5)-h + s.charCodeAt(i))|0; } return Math.abs(h); }
   function productMeta(p){
@@ -393,20 +414,14 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     for (var i=0;i<5;i++) s += (i<full ? '★' : '☆');
     return s;
   }
+
   /* ================= DATA ================= */
-  /* The first five are the offline catalogue's own groupings. The last three are the
-     `type` values remedy_items actually uses, and they are what a LIVE product's cat will
-     be - so they must be here or catLabel() would render a raw enum on a product page and
-     the per-category ordering gate would have nothing to name. */
   var CATS = [
     {id:'rudraksha', label:'Rudraksha'},
     {id:'gemstone', label:'Gemstones'},
     {id:'bracelet-mala', label:'Bracelets & Malas'},
     {id:'yantra', label:'Yantras'},
-    {id:'pooja', label:'Pooja & Incense'},
-    {id:'puja', label:'Pujas'},
-    {id:'specific_puja', label:'Specific Pujas'},
-    {id:'life_report', label:'Life Reports'}
+    {id:'pooja', label:'Pooja & Incense'}
   ];
 
   var PURPOSES = [
@@ -468,6 +483,35 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {"id":"p47","name":"Diamond","cat":"gemstone","tags":["love","wealth"],"price":22000,"icon":"gem","tint":"#eef3f6","desc":"Venus's stone in Vedic tradition, worn for love, luxury, and long-term prosperity.","benefits":["Certified natural diamond","Gold or platinum setting","Independent gem lab certificate included"]},
     {"id":"p48","name":"Green Onyx","cat":"gemstone","tags":["protection","health"],"price":799,"icon":"gem","tint":"#3c6a4a","desc":"A grounding, affordable stone worn for steadiness and protection through daily stresses.","benefits":["Natural green onyx","Available as bracelet or loose stone","A gentle everyday remedy"]}
   ];
+
+  /* ================= ADMIN DATA LAYER (local-only catalog editing) =================
+     Nothing here touches a server — it's the same trick the cart already uses
+     (localStorage), applied to the catalog itself: overrides patch a built-in product,
+     custom products are appended, deletions are tracked by id (built-in products live in
+     the PRODUCTS array above and can't literally be spliced out), and which categories are
+     browsable is its own toggle. recomputeCatalog() folds all of that into the same
+     byId / VISIBLE_PRODUCTS / PRESENT_CATS names the rest of the app already reads from. */
+  var ADMIN_KEYS = {
+    overrides: 'astrowani_store_admin_overrides',
+    custom: 'astrowani_store_admin_custom',
+    deleted: 'astrowani_store_admin_deleted',
+    visibleCats: 'astrowani_store_admin_visible_cats',
+    mode: 'astrowani_store_admin_mode',
+  };
+  function adminLoad(key, fallback){
+    try { var v = localStorage.getItem(ADMIN_KEYS[key]); return v ? JSON.parse(v) : fallback; }
+    catch(e){ return fallback; }
+  }
+  function adminSave(key, value){ try { localStorage.setItem(ADMIN_KEYS[key], JSON.stringify(value)); } catch(e){} }
+
+  var adminOverrides = adminLoad('overrides', {});
+  var adminCustom = adminLoad('custom', []);
+  var adminDeleted = adminLoad('deleted', []);
+  var adminVisibleCats = adminLoad('visibleCats', ['gemstone']);
+  var adminMode = adminLoad('mode', false);
+
+
+
   /* ================= IN-APP AUTH =================
      The app hands us a customer JWT via injectedJavaScriptBeforeContentLoaded, so this is
      already set before any of this script runs. On the open web it is simply absent, and
@@ -484,48 +528,18 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   // sidesteps CORS entirely rather than adding a second source of the header.
   // The app can still override it, which is what lets a dev build point elsewhere.
   var API_BASE = (APP && APP.apiBase) || '';
-
-  /* Every error message this produces is shown to a shopper, so none of them may be a
-     status code. The backend writes real sentences for the cases it knows about (an OTP
-     throttle, a blocked category, a short balance) and those are passed through verbatim;
-     anything else - a proxy hiccup, an HTML error page, a dropped connection - is turned
-     into a sentence here. `status` and `body` are still attached, so a caller that wants
-     to branch on 401 or read a `shortfall` can.
-
-     This is the same lesson as astroApi.js in the customer app: "Request failed with
-     status code 502" is a developer's message being read out loud to a customer. */
-  var HTTP_SENTENCE = {
-    400: 'Something in that request was not right. Please check and try again.',
-    401: 'Please sign in again to continue.',
-    403: 'That is not available right now.',
-    404: 'We could not reach the store service. Please try again in a moment.',
-    409: 'Something changed while you were on this page. Please try again.',
-    429: 'Too many attempts just now. Please wait a minute and try again.',
-    503: 'The store service is briefly unavailable. Please try again in a moment.'
-  };
+  function canBuy(){ return !!AUTH_TOKEN; }
 
   function apiFetch(path, opts){
     opts = opts || {};
     var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
     if (AUTH_TOKEN) headers.Authorization = 'Bearer ' + AUTH_TOKEN;
     return fetch(API_BASE + path, Object.assign({}, opts, { headers: headers }))
-      .catch(function(){
-        // fetch only rejects on a network-level failure, never on a 4xx/5xx.
-        var err = new Error('You appear to be offline. Check your connection and try again.');
-        err.status = 0;
-        err.body = {};
-        throw err;
-      })
       .then(function(r){
         return r.json().catch(function(){ return {}; }).then(function(body){
           if (!r.ok) {
-            var msg = body && body.message
-              ? body.message
-              : (HTTP_SENTENCE[r.status] || (r.status >= 500
-                  ? 'Something went wrong at our end. Please try again.'
-                  : 'That did not work. Please try again.'));
-            var err = new Error(msg);
-            err.status = r.status; err.body = body || {};
+            var err = new Error(body.message || ('Request failed (' + r.status + ')'));
+            err.status = r.status; err.body = body;
             throw err;
           }
           return body;
@@ -548,6 +562,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     });
     return rzpLoading;
   }
+
   /* ================= LIVE CATALOG =================
      The hardcoded PRODUCTS array below is a fallback, not the shop. Real checkout can only
      sell rows that exist in remedy_items (POST /api/orders/quote looks each itemId up
@@ -604,98 +619,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     };
   }
 
-
-  /* ================= CATALOGUE =================
-     Two sources, and which one is in play changes what the shopper is allowed to do.
-
-       LIVE   - rows from GET /api/remedies. Their id is the remedy_items uuid, which is
-                the ONLY id POST /api/orders/quote will price. These are orderable.
-       OFFLINE- the PRODUCTS array above. Shown only when the live fetch has not landed
-                (or failed), so a shopper on a slow connection sees a shop rather than a
-                spinner. Marked live:false, and every buy control is disabled for them,
-                because an "Add" that the server would reject with UNKNOWN_ITEM is worse
-                than a greyed-out one.
-
-     The two are never mixed. Mixing them would put an unbuyable card next to a buyable
-     one with nothing on screen to tell them apart. */
-
-  var LIVE_PRODUCTS = null;   // null = not loaded yet, [] = loaded and genuinely empty
-  var catalogState = 'loading';   // 'loading' | 'live' | 'offline'
-
-  var byId = {};
-  var BY_SLUG = {};
-  var ALL_PRODUCTS = [];
-
-  // Latin, Devanagari and digits survive; everything else collapses to a single dash.
-  // Devanagari is kept because several pujas have no English name worth slugging, and a
-  // percent-encoded Hindi slug still round-trips through the router correctly.
-  function slugify(s){
-    return String(s || '')
-      .toLowerCase()
-      .replace(/['’]/g, '')
-      .replace(/[^a-z0-9ऀ-ॿ]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 70) || 'item';
-  }
-
-  function recomputeCatalog(){
-    var base;
-    if (LIVE_PRODUCTS && LIVE_PRODUCTS.length) { base = LIVE_PRODUCTS; catalogState = 'live'; }
-    else if (LIVE_PRODUCTS) { base = []; catalogState = 'live'; }   // loaded, genuinely empty
-    else { base = PRODUCTS.map(function(p){ return Object.assign({}, p, {live:false}); }); catalogState = 'offline'; }
-
-    ALL_PRODUCTS = base;
-    byId = {};
-    BY_SLUG = {};
-    ALL_PRODUCTS.forEach(function(p){
-      byId[p.id] = p;
-      // First writer wins on a collision, and the loser keeps a suffixed slug of its own,
-      // so two products called the same thing still each have a reachable URL.
-      var s = slugify(p.name);
-      if (BY_SLUG[s] && BY_SLUG[s].id !== p.id) s = s + '-' + String(p.id).replace(/-/g, '').slice(0, 6);
-      p.slug = s;
-      BY_SLUG[s] = p;
-    });
-    reconcileCart();
-    // Kept inside recomputeCatalog so the puja list can never be one catalogue behind the
-    // product list - both are rebuilt by the same call, whichever triggered it.
-    buildPujaList();
-  }
-
-  function productBySlug(slug){
-    if (!slug) return null;
-    return BY_SLUG[slug] || byId[slug] || null;   // a raw id in the URL still resolves
-  }
-
-  function productsOfType(type){
-    return ALL_PRODUCTS.filter(function(p){ return p.cat === type; });
-  }
-
-  /* A cart saved against the offline catalogue holds ids (p1..p48) that do not exist once
-     the live uuids arrive. Those keys must be DROPPED, not merely skipped at render time:
-     cartSubtotal() reads byId[id].price directly and threw on the first stale entry, which
-     is how one leftover cart line once blanked every section of the storefront.
-     Deliberately does nothing while the catalogue is still the offline fallback - the live
-     ids simply are not known yet, and emptying a real cart because a fetch is in flight
-     would be the worse bug. */
-  function reconcileCart(){
-    if (catalogState !== 'live') return;
-    if (typeof cart !== 'object' || !cart) return;
-    var dropped = 0;
-    Object.keys(cart).forEach(function(id){ if (!byId[id]) { delete cart[id]; dropped++; } });
-    if (dropped) saveCart();
-  }
-
-  /* Resolves once the live fetch has SETTLED - succeeded or failed, either way the
-     catalogue is as good as it is going to get.
-
-     This exists because the cart holds remedy_items uuids, and until those uuids are
-     known, byId contains only the offline p1..p48 rows and cartIds() answers "empty" for
-     a cart that is not. Anything that makes a decision from the cart - the checkout guard
-     most of all - has to wait for this, or a shopper who refreshes on /checkout/ is
-     bounced to an apparently-empty cart holding two stones. */
-  var catalogReady = null;
-  function whenCatalogReady(){ return catalogReady || Promise.resolve(); }
+  var LIVE_PRODUCTS = null;   // null until the fetch resolves; [] means "loaded, empty"
 
   function loadLiveCatalog(){
     return fetch(API_BASE + '/api/remedies')
@@ -704,220 +628,315 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
         var rows = Array.isArray(d) ? d : (d.data || d.items || []);
         LIVE_PRODUCTS = rows.filter(function(r){ return r && r._id; }).map(fromApi);
         recomputeCatalog();
-        rerender();
+        renderCatNav();
+        renderFilterPanel();
+        renderGrid();
+        renderCart();      // prices may have moved since the cart was saved
       })
       .catch(function(e){
-        // Deliberately silent for the shopper: the offline catalogue is already on screen
-        // and every buy control on it is already disabled, which is the honest state.
+        // Deliberately silent for the shopper: the fallback catalogue is already on screen.
         console.warn('live catalogue unavailable, showing offline catalogue:', e.message);
       });
   }
 
-  /* ================= STORE CONFIG =================
-     GET /api/store/config is public and unauthenticated: which categories are accepting
-     orders, and the delivery/handling fees. Both are admin-controlled in app_settings.
+  var byId = {};
+  var VISIBLE_PRODUCTS = [];
+  var PRESENT_CATS = [];
+  function recomputeCatalog(){
+    // Live rows win outright when present. Mixing them with the offline array would put
+    // unbuyable products next to buyable ones with no way for the shopper to tell.
+    var base = (LIVE_PRODUCTS && LIVE_PRODUCTS.length) ? LIVE_PRODUCTS : PRODUCTS;
+    var merged = base.map(function(p){
+      var o = adminOverrides[p.id];
+      return o ? Object.assign({}, p, o) : p;
+    }).filter(function(p){ return adminDeleted.indexOf(p.id) === -1; });
+    merged = merged.concat(adminCustom.filter(function(p){ return adminDeleted.indexOf(p.id) === -1; }));
 
-     Read for two reasons. It lets a category that is not yet delivering say so on the
-     card instead of failing at checkout, and it lets the cart show a delivery line that
-     matches what the server will actually charge. Neither is trusted - the server
-     re-derives every figure in /quote and 403s a blocked category in /checkout - this
-     only stops the shopper being surprised at the last step.
-     FAILS CLOSED on ordering: an unreadable config means "not accepting orders", because
-     letting someone through to a checkout that will refuse them is the worse outcome. */
-  var storeConfig = {
-    loaded: false,
-    ordering: {},                 // {gemstone:true, puja:false, ...}
-    deliveryFee: 0,
-    freeDeliveryAbove: null,
-    handlingFee: 0
-  };
-
-  function loadStoreConfig(){
-    return fetch(API_BASE + '/api/store/config')
-      .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function(d){
-        storeConfig.ordering = d.ordering || {};
-        storeConfig.deliveryFee = Number(d.deliveryFee) || 0;
-        storeConfig.freeDeliveryAbove = d.freeDeliveryAbove == null ? null : Number(d.freeDeliveryAbove);
-        storeConfig.handlingFee = Number(d.handlingFee) || 0;
-        storeConfig.loaded = true;
-        rerender();
-      })
-      .catch(function(e){ console.warn('store config unavailable:', e.message); });
+    byId = {};
+    merged.forEach(function(p){ byId[p.id] = p; });
+    VISIBLE_PRODUCTS = merged.filter(function(p){ return adminVisibleCats.indexOf(p.cat) !== -1; });
+    PRESENT_CATS = CATS.filter(function(c){
+      return adminVisibleCats.indexOf(c.id) !== -1 && merged.some(function(p){ return p.cat === c.id; });
+    });
+    reconcileCart();
   }
 
-  // A product is buyable when it came from the server AND its category is accepting
-  // orders AND it is in stock. All three, every time - this is the single predicate every
-  // Add button, product page and cart line asks.
-  function canOrder(p){
-    if (!p || !p.live) return false;
-    if (p.inStock === false) return false;
-    return storeConfig.ordering[p.cat] === true;
+  // A cart saved against the offline catalogue holds ids (p1..p48) that do not exist once
+  // the live uuids arrive. Those keys must be dropped, not merely skipped at render time:
+  // cartSubtotal() reads byId[id].price directly and would throw on the first stale entry.
+  function reconcileCart(){
+    if (typeof cart !== 'object' || !cart) return;
+    var dropped = 0;
+    Object.keys(cart).forEach(function(id){
+      if (!byId[id]) { delete cart[id]; dropped++; }
+    });
+    if (dropped) { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch(e){} }
   }
-
-  function orderingBlockedReason(p){
-    if (!p) return '';
-    if (!p.live) return catalogState === 'loading' ? 'Loading the live catalogue…' : 'This piece is not available to order right now.';
-    if (p.inStock === false) return 'Out of stock.';
-    if (storeConfig.ordering[p.cat] !== true) {
-      return 'We are not delivering ' + (catLabel(p.cat) || 'these').toLowerCase() + ' to your area just yet.';
-    }
-    return '';
-  }
-
-  function catLabel(id){
-    var c = CATS.find(function(x){ return x.id === id; });
-    return c ? c.label : id;
-  }
-
-
-  /* ================= SESSION =================
-     Two ways to be signed in, and they are not equivalent.
-
-       IN-APP  window.__ASTROWANI__.token, injected by the WebView before this script
-               runs (see astrowani_customer-main/src/screens/Remedies/StoreWebView.js).
-               Always wins, is never written to localStorage, and cannot be signed out
-               from here - the app owns that session.
-       WEB     a JWT this page obtained itself via phone OTP, held in localStorage.
-
-     Both are the same customer JWT the apps use, minted by
-     POST /api/users/mobile-otp-verify, so an order placed on the web appears under My
-     Orders in the app and in the admin dashboard against the same customer row. That is
-     the whole reason the web login reuses OTP rather than inventing a guest identity. */
-  var WEB_TOKEN_KEY = 'astrowani_store_token';
-  var WEB_PROFILE_KEY = 'astrowani_store_profile';
-
-  var session = {
-    token: null,
-    fromApp: false,
-    profile: null      // {phone, name} - display only, never trusted for anything
-  };
-
-  function loadSession(){
-    // Re-read APP each time: on Android the WebView injects a second time after load
-    // (see injectAuthAfterLoad), and that is the injection that reliably wins the race.
-    var app = (typeof window !== 'undefined' && window.__ASTROWANI__) || null;
-    if (app && app.token) {
-      session.token = app.token;
-      session.fromApp = true;
-    } else {
-      session.fromApp = false;
-      try { session.token = localStorage.getItem(WEB_TOKEN_KEY) || null; } catch(e){ session.token = null; }
-    }
-    try { session.profile = JSON.parse(localStorage.getItem(WEB_PROFILE_KEY) || 'null'); } catch(e){ session.profile = null; }
-    AUTH_TOKEN = session.token;
-    return session;
-  }
-
-  function setWebSession(token, profile){
-    try {
-      localStorage.setItem(WEB_TOKEN_KEY, token);
-      if (profile) localStorage.setItem(WEB_PROFILE_KEY, JSON.stringify(profile));
-    } catch(e){}
-    session.token = token;
-    session.profile = profile || session.profile;
-    AUTH_TOKEN = token;
-  }
-
-  function signOut(){
-    try { localStorage.removeItem(WEB_TOKEN_KEY); localStorage.removeItem(WEB_PROFILE_KEY); } catch(e){}
-    session.token = null; session.profile = null;
-    AUTH_TOKEN = null;
-  }
-
-  function isSignedIn(){ return !!session.token; }
-
-  /* A 401 means the JWT expired or was revoked. Clearing it here, at the one place every
-     API response passes through, is what stops the shopper looping through a checkout
-     that can never succeed - they are signed out and sent to /login/ with a reason. */
-  function handleAuthFailure(){
-    if (session.fromApp) return false;   // the app owns that token; do not touch it
-    signOut();
-    return true;
-  }
-
-  /* ================= CART =================
-     Client-side, in localStorage, exactly as the app's CartContext is - and safe for the
-     same reason: a stale price here is corrected by the server quote before any money
-     moves. There is deliberately no carts table.
-
-     Keyed by remedy_items uuid once the live catalogue has loaded. */
-  var CART_KEY = 'astrowani_store_cart';
-  var cart = {};
-  try { cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}'); } catch(e){ cart = {}; }
-  if (!cart || typeof cart !== 'object') cart = {};
-
-  var MAX_QTY_PER_LINE = 10;   // matches orderRoutes.js's own clamp
-  var MAX_LINES = 20;
-
-  function saveCart(){ try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch(e){} }
-
-  function cartIds(){ return Object.keys(cart).filter(function(id){ return !!byId[id]; }); }
-  function cartCount(){ return cartIds().reduce(function(s,id){ return s + cart[id]; }, 0); }
-  function cartQty(id){ return cart[id] || 0; }
-  function cartSubtotal(){
-    return cartIds().reduce(function(s,id){ return s + (byId[id].price * cart[id]); }, 0);
-  }
-
-  // The delivery figure the cart shows while browsing. An ESTIMATE from the same
-  // app_settings the server prices from - never presented as "to pay".
-  function estimatedDelivery(subtotal){
-    if (!storeConfig.loaded || !subtotal) return 0;
-    if (storeConfig.freeDeliveryAbove != null && subtotal >= storeConfig.freeDeliveryAbove) return 0;
-    return storeConfig.deliveryFee;
-  }
-
-  function setQty(id, qty){
-    var p = byId[id];
-    if (!p) return;
-    qty = Math.max(0, Math.min(MAX_QTY_PER_LINE, qty));
-    if (!qty) { delete cart[id]; }
-    else {
-      if (!cart[id] && cartIds().length >= MAX_LINES) { showToast('That is as many different pieces as one order can hold'); return; }
-      cart[id] = qty;
-    }
-    saveCart();
-    onCartChanged();
-  }
-
-  function addToCart(id, qty){
-    var p = byId[id];
-    if (!p) return;
-    if (!canOrder(p)) { showToast(orderingBlockedReason(p)); return; }
-    setQty(id, cartQty(id) + (qty || 1));
-  }
-
-  function clearCart(){ cart = {}; saveCart(); onCartChanged(); }
+  recomputeCatalog();
 
   /* ================= WISHLIST ================= */
   var WISH_KEY = 'astrowani_store_wishlist';
   var wishlist = [];
   try { wishlist = JSON.parse(localStorage.getItem(WISH_KEY) || '[]'); } catch(e){ wishlist = []; }
-  if (!Array.isArray(wishlist)) wishlist = [];
-  function isWished(id){ return wishlist.indexOf(id) !== -1; }
   function toggleWishlist(id){
     var i = wishlist.indexOf(id);
-    if (i === -1) wishlist.push(id); else wishlist.splice(i, 1);
+    if (i===-1) wishlist.push(id); else wishlist.splice(i,1);
     try { localStorage.setItem(WISH_KEY, JSON.stringify(wishlist)); } catch(e){}
-    return isWished(id);
+    return wishlist.indexOf(id) !== -1;
   }
 
-  /* ================= SMALL HELPERS ================= */
-  function escapeHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
-  function rupees(n){ return '₹' + Number(n || 0).toLocaleString('en-IN'); }
-  function pct(price, mrp){ return mrp && mrp > price ? Math.round((1 - price / mrp) * 100) : 0; }
-
-  var toastTimer = null;
-  function showToast(msg){
-    if (!msg) return;
-    var t = document.getElementById('toast');
-    if (!t) return;
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2600);
+  /* ================= CATEGORY QUICK-NAV =================
+     The avatar strip was removed from the page (one live category made it pointless).
+     Kept as a no-op so the admin category toggles, which call it after changing what's
+     visible, don't each need a null check. */
+  var catNav = document.getElementById('catNav');
+  function renderCatNav(){
+    if (!catNav) return;
+    catNav.innerHTML = '';
+    PRESENT_CATS.forEach(function(c){
+      var first = VISIBLE_PRODUCTS.find(function(p){ return p.cat===c.id; });
+      if (!first) return;
+      var el = document.createElement('div');
+      el.className = 'catnav-item';
+      el.innerHTML = productPhotoImg(first, 'front') + '<span>'+c.label+'</span>';
+      el.addEventListener('click', function(){
+        filterState.cat = c.id;
+        renderFilterPanel();
+        renderGrid();
+        document.getElementById('shop').scrollIntoView({behavior:'smooth', block:'start'});
+      });
+      catNav.appendChild(el);
+    });
   }
+  renderCatNav();
+
+  /* ================= RENDER: purpose tiles ================= */
+  var purposeGrid = document.getElementById('purposeGrid');
+  PURPOSES.forEach(function(pu){
+    // <button>, not <div>: these are controls that filter the grid, so they should be
+    // reachable by keyboard and announced as buttons rather than being a silent div.
+    var el = document.createElement('button');
+    el.className = 'purpose-tile';
+    el.type = 'button';
+    var photo = PURPOSE_PHOTOS[pu.id];
+    el.innerHTML =
+      (photo ? '<img src="'+photo+'" alt="" loading="lazy">' : '') +
+      '<span class="pt-label">'+pu.label+'</span>';
+    el.addEventListener('click', function(){
+      filterState.purposes = new Set([pu.id]);
+      filterState.cat = 'all';
+      renderFilterPanel();
+      renderGrid();
+      document.getElementById('shop').scrollIntoView({behavior:'smooth', block:'start'});
+    });
+    purposeGrid.appendChild(el);
+  });
+  stagger(purposeGrid.children, 70);
+
+  /* ================= RENDER: filter sidebar + toolbar + grid ================= */
+  var filterState = { cat:'all', purposes:new Set(), price:'all', sort:'popularity' };
+  var PRICE_BANDS = [
+    {id:'all', label:'Any price'},
+    {id:'under1000', label:'Under ₹1,000'},
+    {id:'1000-5000', label:'₹1,000 – ₹5,000'},
+    {id:'above5000', label:'Above ₹5,000'}
+  ];
+  function priceInBand(price, band){
+    if (band==='under1000') return price < 1000;
+    if (band==='1000-5000') return price >= 1000 && price <= 5000;
+    if (band==='above5000') return price > 5000;
+    return true;
+  }
+
+  // The filter panel UI was removed for a simpler shop page — filtering by purpose still
+  // works (the "Shop by Purpose" tiles above the grid set filterState.purposes directly),
+  // there just isn't a sidebar/bar of checkboxes for it any more. renderFilterPanel is kept
+  // as a safe no-op so every existing call site (purpose tiles, admin category toggles,
+  // "clear filters" logic) doesn't need to be touched individually.
+  var filterPanel = document.getElementById('filterPanel');
+  function renderFilterPanel(){
+    if (!filterPanel) return;
+    // Only worth showing once there's more than one category to actually choose between —
+    // with a single category live, a "Category" filter that can't do anything is just clutter.
+    var showCatGroup = PRESENT_CATS.length > 1;
+    var catRows = [{id:'all', label:'All pieces'}].concat(PRESENT_CATS).map(function(c){
+      return '<label class="filter-opt'+(filterState.cat===c.id?' active-cat':'')+'"><input type="radio" name="fp-cat" value="'+c.id+'" '+(filterState.cat===c.id?'checked':'')+'> '+c.label+'</label>';
+    }).join('');
+    var purposeRows = PURPOSES.map(function(pu){
+      return '<label class="filter-opt"><input type="checkbox" value="'+pu.id+'" '+(filterState.purposes.has(pu.id)?'checked':'')+'> '+pu.label+'</label>';
+    }).join('');
+    var priceRows = PRICE_BANDS.map(function(b){
+      return '<label class="filter-opt"><input type="radio" name="fp-price" value="'+b.id+'" '+(filterState.price===b.id?'checked':'')+'> '+b.label+'</label>';
+    }).join('');
+
+    filterPanel.innerHTML =
+      (showCatGroup ? '<div class="filter-group"><div class="filter-title">Category</div>'+catRows+'</div>' : '')+
+      '<div class="filter-group" id="fgPurpose"><div class="filter-title">Purpose</div>'+purposeRows+'</div>'+
+      '<div class="filter-group"><div class="filter-title">Price</div>'+priceRows+'</div>'+
+      '<button class="clear-filters" id="clearFiltersBtn">Clear all filters</button>';
+
+    filterPanel.querySelectorAll('input[name="fp-cat"]').forEach(function(r){
+      r.addEventListener('change', function(){ filterState.cat = r.value; renderGrid(); });
+    });
+    filterPanel.querySelectorAll('input[name="fp-price"]').forEach(function(r){
+      r.addEventListener('change', function(){ filterState.price = r.value; renderGrid(); });
+    });
+    filterPanel.querySelectorAll('#fgPurpose input[type="checkbox"]').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        if (cb.checked) filterState.purposes.add(cb.value); else filterState.purposes.delete(cb.value);
+        renderGrid();
+      });
+    });
+    document.getElementById('clearFiltersBtn').addEventListener('click', function(){
+      filterState = { cat:'all', purposes:new Set(), price:'all', sort:filterState.sort };
+      renderFilterPanel();
+      renderGrid();
+    });
+  }
+
+  document.getElementById('sortSelect').addEventListener('change', function(e){
+    filterState.sort = e.target.value;
+    renderGrid();
+  });
+
+  var productGrid = document.getElementById('productGrid');
+  function renderGrid(){
+    var list = VISIBLE_PRODUCTS.filter(function(p){
+      var okCat = filterState.cat==='all' || p.cat===filterState.cat;
+      var okPurpose = filterState.purposes.size===0 || p.tags.some(function(t){ return filterState.purposes.has(t); });
+      var okPrice = priceInBand(p.price, filterState.price);
+      return okCat && okPurpose && okPrice;
+    });
+
+    var sort = filterState.sort;
+    list = list.slice();
+    if (sort==='price-asc') list.sort(function(a,b){ return a.price-b.price; });
+    else if (sort==='price-desc') list.sort(function(a,b){ return b.price-a.price; });
+    else if (sort==='newest') list.reverse();
+    else list.sort(function(a,b){ return productMeta(b).score - productMeta(a).score; });
+
+    document.getElementById('resultCount').textContent = list.length + (list.length===1?' piece':' pieces');
+
+    productGrid.innerHTML = '';
+    if (!list.length){
+      productGrid.innerHTML = '<div class="empty-note" style="grid-column:1/-1;">No pieces match that filter yet.</div>';
+      return;
+    }
+    list.forEach(function(p){
+      var off = p.mrp ? Math.round((1 - p.price/p.mrp)*100) : 0;
+      var meta = productMeta(p);
+      var isWished = wishlist.indexOf(p.id) !== -1;
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML =
+        '<div class="card-media" data-open="'+p.id+'">'+
+          (off ? '<span class="card-tag">'+off+'% OFF</span>' : '') +
+          '<button class="wishlist-btn'+(isWished?' on':'')+'" data-wish="'+p.id+'" aria-label="Save to wishlist">'+(isWished?'♥':'♡')+'</button>'+
+          productPhotoImg(p, 'front') +
+        '</div>'+
+        '<div class="card-body">'+
+          '<div class="card-name" data-open="'+p.id+'">'+p.name+'</div>'+
+          '<div class="card-admin-actions">'+
+            '<button class="btn btn-line btn-sm" style="flex:1;" data-edit="'+p.id+'">Edit</button>'+
+            '<button class="btn btn-sm" style="flex:1; background:var(--brown); color:var(--cream);" data-delete="'+p.id+'">Delete</button>'+
+          '</div>'+
+        '</div>';
+      productGrid.appendChild(card);
+    });
+
+    if (adminMode){
+      var addTile = document.createElement('button');
+      addTile.className = 'product-card-add';
+      addTile.style.gridColumn = 'span 1';
+      addTile.innerHTML = '<span class="product-card-add-plus">+</span><span>Add a product</span>';
+      addTile.addEventListener('click', function(){ openAdminEditor(null); });
+      productGrid.appendChild(addTile);
+    }
+    // Re-run on every filter/sort change, so a new result set cascades in rather than
+    // popping. Cards already on screen simply reveal at once.
+    stagger(productGrid.children, 45, 11);
+  }
+
+  productGrid.addEventListener('click', function(e){
+    var openId = e.target.closest('[data-open]');
+    var addId = e.target.closest('[data-add]');
+    var wishId = e.target.closest('[data-wish]');
+    var editId = e.target.closest('[data-edit]');
+    var deleteId = e.target.closest('[data-delete]');
+    if (wishId){
+      var on = toggleWishlist(wishId.getAttribute('data-wish'));
+      wishId.classList.toggle('on', on);
+      wishId.textContent = on ? '♥' : '♡';
+      showToast(on ? 'Saved to wishlist' : 'Removed from wishlist');
+      return;
+    }
+    if (editId){ openAdminEditor(byId[editId.getAttribute('data-edit')]); return; }
+    if (deleteId){ adminDeleteProduct(deleteId.getAttribute('data-delete')); return; }
+    if (openId) openQuickView(openId.getAttribute('data-open'));
+    else if (addId){ addToCart(addId.getAttribute('data-add'), 1); showToast('Added to cart'); }
+  });
+
+  document.querySelectorAll('a[data-cat]').forEach(function(a){
+    a.addEventListener('click', function(){
+      filterState.cat = a.getAttribute('data-cat');
+      filterState.purposes = new Set();
+      renderFilterPanel();
+      renderGrid();
+    });
+  });
+
+  renderFilterPanel();
+  renderGrid();
+
+  /* ================= PROMO TICKER + COUNTDOWN ================= */
+  (function(){
+    var root = document.getElementById('marquee');
+    if (!root) return;
+
+    var MESSAGES = [
+      'Festive sale ends in <span class="clock">--:--:--</span>',
+      'Use code <strong>ASTRO10</strong> for 10% off your first order',
+      'Free shipping above <strong>₹999</strong>',
+      'Every stone ships with its lab certificate'
+    ];
+    var setHtml = MESSAGES.map(function(m){
+      return '<span class="marquee-item">'+m+'<span class="sep">|</span></span>';
+    }).join('');
+
+    // Build one track, then repeat the message set until it is wider than the viewport —
+    // otherwise a track narrower than the screen leaves a visible blank gap mid-loop on a
+    // large monitor. Then clone it so the second track covers the first's exit.
+    var track = document.createElement('div');
+    track.className = 'marquee-track';
+    track.innerHTML = setHtml;
+    root.appendChild(track);
+    var guard = 0;
+    while (track.offsetWidth < window.innerWidth && guard < 12) {
+      track.innerHTML += setHtml;
+      guard++;
+    }
+    var clone = track.cloneNode(true);
+    clone.setAttribute('aria-hidden', 'true');
+    root.appendChild(clone);
+
+    // Every repeat carries its own clock span, so update them all.
+    function pad(n){ return n<10 ? '0'+n : ''+n; }
+    function tick(){
+      var now = new Date();
+      var end = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0,0,0);
+      var diff = Math.max(0, end - now);
+      var text = pad(Math.floor(diff/3600000))+':'+pad(Math.floor((diff%3600000)/60000))+':'+pad(Math.floor((diff%60000)/1000));
+      var clocks = root.querySelectorAll('.clock');
+      for (var i=0;i<clocks.length;i++) clocks[i].textContent = text;
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+
+  /* ================= QUICK VIEW MODAL ================= */
+  var pvModal = document.getElementById('pvModal');
+  var pvContent = document.getElementById('pvContent');
+  var pvQty = 1;
 
   var REVIEW_NAMES = ['Priya Sharma','Rohit Malhotra','Ananya Iyer','Kabir Mehta','Sneha Reddy','Arjun Nair','Divya Kapoor','Vikram Singh'];
   var REVIEW_TEMPLATES = [
@@ -941,6 +960,710 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     }
     return out;
   }
+
+  function openQuickView(id){
+    var p = byId[id];
+    pvQty = 1;
+    var off = p.mrp ? Math.round((1 - p.price/p.mrp)*100) : 0;
+    var meta = productMeta(p);
+    var reviews = productReviews(p);
+    var hasRealPhoto = !!REAL_PHOTOS[p.id];
+    var variants = ['front','angle','zoom'];
+
+    pvContent.innerHTML =
+      '<div class="pv-media" id="pvMainMedia">'+productPhotoImg(p,'front')+'</div>'+
+      (hasRealPhoto ? '' :
+      '<div class="pv-thumbs">'+variants.map(function(v,i){
+        return '<div class="pv-thumb'+(i===0?' sel':'')+'" data-variant="'+v+'">'+productPhotoImg(p,v)+'</div>';
+      }).join('')+'</div>')+
+      '<div class="pv-cat">'+CATS.find(function(c){return c.id===p.cat;}).label+'</div>'+
+      '<h3 class="pv-name">'+p.name+'</h3>'+
+      '<div class="pv-rating-row"><span class="stars-sm">'+starString(meta.rating)+'</span><span>'+meta.rating.toFixed(1)+' · '+meta.reviews+' ratings</span></div>'+
+      '<div class="pv-price-row">'+
+        '<span class="pv-price price">₹'+p.price.toLocaleString('en-IN')+'</span>'+
+        (p.mrp ? '<span class="pv-mrp price">₹'+p.mrp.toLocaleString('en-IN')+'</span><span class="pv-off">'+off+'% off</span>' : '')+
+      '</div>'+
+      '<div class="pv-stock'+(meta.lowStock?' low':'')+'">'+(meta.lowStock? 'Only '+meta.stockLeft+' left in stock' : 'In stock · ships within 24 hours')+'</div>'+
+      '<div class="pv-actions">'+
+        '<div class="qty-stepper"><button data-pv-dec>−</button><span id="pvQtyNum">1</span><button data-pv-inc>+</button></div>'+
+        '<button class="btn btn-line" id="pvAdd" style="flex:1;">Add to cart</button>'+
+        '<button class="btn btn-gold" id="pvBuy" style="flex:1;">Enquire</button>'+
+      '</div>'+
+      '<div class="pv-tabs">'+
+        '<button class="pv-tab sel" data-tab="desc">Description</button>'+
+        '<button class="pv-tab" data-tab="delivery">Delivery</button>'+
+        '<button class="pv-tab" data-tab="reviews">Reviews ('+reviews.length+')</button>'+
+      '</div>'+
+      '<div class="pv-panel sel" data-panel="desc">'+
+        '<p class="pv-desc">'+p.desc+'</p>'+
+        '<ul class="pv-benefits">'+p.benefits.map(function(b){return '<li>'+b+'</li>';}).join('')+'</ul>'+
+      '</div>'+
+      '<div class="pv-panel" data-panel="delivery">'+
+        '<p class="pv-desc">Check estimated delivery for your pincode.</p>'+
+        '<div class="pincode-row"><input id="pvPincode" maxlength="6" placeholder="Enter 6-digit pincode"><button class="btn btn-line btn-sm" id="pvPinCheck">Check</button></div>'+
+        '<div class="pincode-result" id="pvPinResult"></div>'+
+      '</div>'+
+      '<div class="pv-panel" data-panel="reviews">'+
+        reviews.map(function(r){
+          return '<div class="review-item">'+
+            '<span class="stars-sm">'+starString(r.stars)+'</span>'+
+            '<div class="rev-name">'+r.name+'<span class="rev-date">'+r.daysAgo+' days ago</span></div>'+
+            '<p>'+r.text+'</p>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+
+    pvContent.querySelectorAll('.pv-thumb').forEach(function(t){
+      t.addEventListener('click', function(){
+        pvContent.querySelectorAll('.pv-thumb').forEach(function(o){ o.classList.remove('sel'); });
+        t.classList.add('sel');
+        document.getElementById('pvMainMedia').innerHTML = productPhotoImg(p, t.getAttribute('data-variant'));
+      });
+    });
+    pvContent.querySelectorAll('.pv-tab').forEach(function(tab){
+      tab.addEventListener('click', function(){
+        pvContent.querySelectorAll('.pv-tab').forEach(function(o){ o.classList.remove('sel'); });
+        pvContent.querySelectorAll('.pv-panel').forEach(function(o){ o.classList.remove('sel'); });
+        tab.classList.add('sel');
+        pvContent.querySelector('[data-panel="'+tab.getAttribute('data-tab')+'"]').classList.add('sel');
+      });
+    });
+    pvContent.querySelector('#pvPinCheck').addEventListener('click', function(){
+      var pin = pvContent.querySelector('#pvPincode').value.trim();
+      var resultEl = pvContent.querySelector('#pvPinResult');
+      if (!/^\d{6}$/.test(pin)){ resultEl.textContent = 'Enter a valid 6-digit pincode.'; return; }
+      var digitSum = pin.split('').reduce(function(s,d){ return s+parseInt(d,10); },0);
+      var days = 3 + (digitSum % 5);
+      var eta = new Date(); eta.setDate(eta.getDate()+days);
+      resultEl.textContent = 'Delivering by '+eta.toLocaleDateString('en-IN',{day:'numeric', month:'short'})+' (usually '+days+' days to this pincode).';
+    });
+
+    pvContent.querySelector('[data-pv-dec]').addEventListener('click', function(){ pvQty = Math.max(1, pvQty-1); pvContent.querySelector('#pvQtyNum').textContent = pvQty; });
+    pvContent.querySelector('[data-pv-inc]').addEventListener('click', function(){ pvQty = Math.min(20, pvQty+1); pvContent.querySelector('#pvQtyNum').textContent = pvQty; });
+    pvContent.querySelector('#pvAdd').addEventListener('click', function(){ addToCart(id, pvQty); showToast('Added to cart'); closeModal('pvModal'); });
+    pvContent.querySelector('#pvBuy').addEventListener('click', function(){ addToCart(id, pvQty); closeModal('pvModal'); openCart(); });
+    openModal('pvModal');
+  }
+
+  /* ================= MODAL HELPERS ================= */
+  function openModal(id){ document.getElementById(id).classList.add('show'); document.body.style.overflow='hidden'; }
+  function closeModal(id){ document.getElementById(id).classList.remove('show'); document.body.style.overflow=''; }
+  document.querySelectorAll('[data-close]').forEach(function(el){
+    el.addEventListener('click', function(){ closeModal(el.getAttribute('data-close')); });
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){ closeModal('pvModal'); closeModal('coModal'); closeModal('adminModal'); closeCartDrawer(); }
+  });
+
+  /* ================= ADMIN EDITOR (local-only) ================= */
+  var ICON_TYPES = [
+    {key:'gem', label:'Faceted gem'}, {key:'bead', label:'Rudraksha bead'},
+    {key:'bracelet', label:'Bracelet (ring of beads)'}, {key:'mala', label:'Mala (loop + pendant)'},
+    {key:'yantra', label:'Yantra plate'}, {key:'havan', label:'Havan kit'},
+    {key:'dhoop', label:'Dhoop / incense stick'}, {key:'kalash', label:'Kalash'}
+  ];
+
+  /* The exit control only exists in the app shell. The store screen there has no chrome of
+     its own — this header IS the nav bar — so this is the way back out. It asks the app to
+     leave rather than doing anything itself, because only the app knows what "home" is.
+     No fallback to history.back(): the store is the first page in that WebView, so there is
+     nothing behind it. */
+  /* Exposed rather than run once, because the app hands us window.__ASTROWANI__ through
+     injectedJavaScriptBeforeContentLoaded, and on Android that is not reliably ahead of
+     this script: one run in five the button simply never appeared. The app now calls this
+     again after load, so the outcome no longer depends on winning that race. Idempotent -
+     re-running it re-reads the handshake and rebinds nothing twice. */
+  var exitWired = false;
+  window.__astrowaniApplyAppMode = function(){
+    if (!APP && typeof window !== 'undefined' && window.__ASTROWANI__) {
+      APP = window.__ASTROWANI__;
+      if (!AUTH_TOKEN && APP.token) AUTH_TOKEN = APP.token;
+      if (!API_BASE && APP.apiBase) API_BASE = APP.apiBase;
+    }
+    var btn = document.getElementById('exitBtn');
+    if (!btn) return;
+    var inApp = !!(APP && APP.platform === 'app' && window.ReactNativeWebView);
+    if (!inApp) return;
+    btn.classList.remove('hidden');
+    if (exitWired) return;
+    exitWired = true;
+    btn.addEventListener('click', function(){
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'exit' })); } catch (e) {}
+    });
+  };
+  window.__astrowaniApplyAppMode();
+  document.addEventListener('DOMContentLoaded', window.__astrowaniApplyAppMode);
+
+  var adminBar = document.getElementById('adminBar');
+  var adminCatToggles = document.getElementById('adminCatToggles');
+  var adminToggleBtn = document.getElementById('adminToggle');
+
+  // On the public site the catalog editor stays out of sight: a shopper who taps it gets a
+  // confusing "delete product" UI on what is meant to be a storefront. Reach it with
+  //   https://shop.astrowani.com/?admin=1
+  // which sticks for the rest of the browser session. Everything it changes is local to
+  // that browser anyway, so this is about not showing it, not about security.
+  var ADMIN_UNLOCK_KEY = 'astrowani_store_admin_unlocked';
+  var adminUnlocked = false;
+  try {
+    if (/[?&]admin=1\b/.test(location.search)) sessionStorage.setItem(ADMIN_UNLOCK_KEY, '1');
+    adminUnlocked = sessionStorage.getItem(ADMIN_UNLOCK_KEY) === '1';
+  } catch (e) { adminUnlocked = /[?&]admin=1\b/.test(location.search); }
+  if (!adminUnlocked && adminToggleBtn) {
+    adminToggleBtn.remove();
+    adminToggleBtn = null;
+    adminMode = false;           // a mode saved from a previous unlocked visit must not persist
+  }
+
+  function renderAdminBar(){
+    adminCatToggles.innerHTML = CATS.map(function(c){
+      var count = PRODUCTS.concat(adminCustom).filter(function(p){ return p.cat===c.id && adminDeleted.indexOf(p.id)===-1; }).length;
+      return '<label class="admin-cat-opt"><input type="checkbox" data-vis-cat="'+c.id+'" '+(adminVisibleCats.indexOf(c.id)!==-1?'checked':'')+'> '
+        + c.label + ' (' + count + ')</label>';
+    }).join('');
+    adminCatToggles.querySelectorAll('[data-vis-cat]').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        var cat = cb.getAttribute('data-vis-cat');
+        if (cb.checked){ if (adminVisibleCats.indexOf(cat)===-1) adminVisibleCats.push(cat); }
+        else { adminVisibleCats = adminVisibleCats.filter(function(x){ return x!==cat; }); }
+        adminSave('visibleCats', adminVisibleCats);
+        recomputeCatalog();
+        renderCatNav();
+        renderFilterPanel();
+        renderGrid();
+      });
+    });
+  }
+
+  function setAdminMode(on){
+    adminMode = on;
+    adminSave('mode', adminMode);
+    document.body.classList.toggle('admin-on', adminMode);
+    if (adminToggleBtn) adminToggleBtn.classList.toggle('on', adminMode);
+    adminBar.classList.toggle('hidden', !adminMode);
+    if (adminMode) renderAdminBar();
+    renderGrid();
+  }
+  if (adminToggleBtn) adminToggleBtn.addEventListener('click', function(){ setAdminMode(!adminMode); });
+  // Apply whatever was saved from a previous visit, before the first paint of the grid.
+  document.body.classList.toggle('admin-on', adminMode);
+  if (adminToggleBtn) adminToggleBtn.classList.toggle('on', adminMode);
+  if (adminMode){ adminBar.classList.remove('hidden'); renderAdminBar(); }
+
+  var adminContent = document.getElementById('adminContent');
+  var adminPhotoDataUrl = null; // set only if the admin picks a new file this session
+
+  function openAdminEditor(product){
+    var isNew = !product;
+    var p = product || { id:null, name:'', cat: adminVisibleCats[0] || 'gemstone', tags:[], price:0, mrp:'', icon:'gem', tint:'#c8973c', desc:'', benefits:[], photo:null };
+    adminPhotoDataUrl = null;
+
+    adminContent.innerHTML =
+      '<h3 style="margin-bottom:16px;">'+(isNew ? 'Add a product' : 'Edit product')+'</h3>'+
+      '<div class="field"><label>Name</label><input id="afName" type="text" value="'+escapeAttr(p.name)+'"></div>'+
+      '<div class="admin-field-row">'+
+        '<div class="field"><label>Category</label><select id="afCat">'+CATS.map(function(c){
+          return '<option value="'+c.id+'"'+(p.cat===c.id?' selected':'')+'>'+c.label+'</option>';
+        }).join('')+'</select></div>'+
+        '<div class="field"><label>Price (₹)</label><input id="afPrice" type="number" value="'+(p.price||0)+'"></div>'+
+      '</div>'+
+      '<div class="field"><label>MRP (₹), optional. Blank means no discount badge</label><input id="afMrp" type="number" value="'+(p.mrp||'')+'"></div>'+
+      '<div class="field"><label>Purpose tags</label>'+
+        '<div class="admin-tag-grid">'+PURPOSES.map(function(pu){
+          return '<label class="admin-tag-opt"><input type="checkbox" data-tag="'+pu.id+'" '+(p.tags.indexOf(pu.id)!==-1?'checked':'')+'> '+pu.label+'</label>';
+        }).join('')+'</div>'+
+      '</div>'+
+      '<div class="field"><label>Description</label><textarea id="afDesc" rows="3">'+escapeHtml(p.desc||'')+'</textarea></div>'+
+      '<div class="field"><label>Benefits, one per line</label><textarea id="afBenefits" rows="3">'+escapeHtml((p.benefits||[]).join('\n'))+'</textarea></div>'+
+      '<div class="field"><label>Photo</label>'+
+        '<div class="admin-photo-row">'+
+          '<div class="admin-photo-preview" id="afPhotoPreview">'+productPhotoImg(p, 'front')+'</div>'+
+          '<div>'+
+            '<button type="button" class="btn btn-line btn-sm" id="afUploadBtn">Upload a photo</button>'+
+            '<input type="file" id="afFileInput" accept="image/*" hidden>'+
+            (p.photo ? ' <button type="button" class="btn btn-line btn-sm" id="afRemovePhoto">Use illustration instead</button>' : '')+
+          '</div>'+
+        '</div>'+
+        '<p class="muted" style="font-size:12.5px; margin:0 0 10px;">No photo? Pick a style and colour below and we\'ll render one.</p>'+
+        '<div class="admin-field-row">'+
+          '<div class="field"><label>Illustration style</label><select id="afIcon">'+ICON_TYPES.map(function(it){
+            return '<option value="'+it.key+'"'+(p.icon===it.key?' selected':'')+'>'+it.label+'</option>';
+          }).join('')+'</select></div>'+
+          '<div class="field"><label>Colour</label><div class="admin-tint-row"><input type="color" id="afTint" value="'+(p.tint||'#c8973c')+'"></div></div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="actions" style="justify-content:space-between;">'+
+        (!isNew ? '<button class="btn btn-sm" style="background:var(--brown); color:var(--cream);" id="afDelete">Delete product</button>' : '<span></span>')+
+        '<div style="display:flex; gap:10px;">'+
+          '<button class="btn btn-line" id="afCancel">Cancel</button>'+
+          '<button class="btn btn-gold" id="afSave">Save</button>'+
+        '</div>'+
+      '</div>';
+
+    var previewEl = adminContent.querySelector('#afPhotoPreview');
+    function refreshPreview(){
+      var draft = collectDraft();
+      previewEl.innerHTML = productPhotoImg(draft, 'front');
+    }
+    function collectDraft(){
+      var tags = Array.prototype.slice.call(adminContent.querySelectorAll('[data-tag]:checked')).map(function(cb){ return cb.getAttribute('data-tag'); });
+      var benefits = adminContent.querySelector('#afBenefits').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      return {
+        id: p.id,
+        name: adminContent.querySelector('#afName').value.trim() || 'Untitled product',
+        cat: adminContent.querySelector('#afCat').value,
+        price: Number(adminContent.querySelector('#afPrice').value) || 0,
+        mrp: adminContent.querySelector('#afMrp').value ? Number(adminContent.querySelector('#afMrp').value) : null,
+        tags: tags,
+        desc: adminContent.querySelector('#afDesc').value.trim(),
+        benefits: benefits,
+        icon: adminContent.querySelector('#afIcon').value,
+        tint: adminContent.querySelector('#afTint').value,
+        photo: adminPhotoDataUrl !== null ? adminPhotoDataUrl : (p.photo || null),
+      };
+    }
+
+    adminContent.querySelector('#afIcon').addEventListener('change', refreshPreview);
+    adminContent.querySelector('#afTint').addEventListener('input', refreshPreview);
+    adminContent.querySelector('#afUploadBtn').addEventListener('click', function(){ adminContent.querySelector('#afFileInput').click(); });
+    adminContent.querySelector('#afFileInput').addEventListener('change', function(e){
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(){
+        adminPhotoDataUrl = String(reader.result);
+        refreshPreview();
+      };
+      reader.readAsDataURL(file);
+    });
+    var removeBtn = adminContent.querySelector('#afRemovePhoto');
+    if (removeBtn){
+      removeBtn.addEventListener('click', function(){
+        adminPhotoDataUrl = ''; // explicit empty string = "cleared", distinct from null = "unchanged"
+        refreshPreview();
+      });
+    }
+
+    adminContent.querySelector('#afCancel').addEventListener('click', function(){ closeModal('adminModal'); });
+    if (!isNew){
+      adminContent.querySelector('#afDelete').addEventListener('click', function(){
+        closeModal('adminModal');
+        adminDeleteProduct(p.id);
+      });
+    }
+    adminContent.querySelector('#afSave').addEventListener('click', function(){
+      var draft = collectDraft();
+      if (draft.photo === '') draft.photo = null; // cleared → fall back to illustration
+      saveAdminProduct(isNew, p.id, draft);
+      closeModal('adminModal');
+    });
+
+    openModal('adminModal');
+  }
+
+  function byIdIsCustom(id){ return id && String(id).indexOf('custom-') === 0; }
+
+  function saveAdminProduct(isNew, existingId, draft){
+    if (isNew){
+      draft.id = 'custom-' + Date.now();
+      adminCustom.push(draft);
+      adminSave('custom', adminCustom);
+    } else if (byIdIsCustom(existingId)){
+      adminCustom = adminCustom.map(function(cp){ return cp.id === existingId ? Object.assign({}, cp, draft, {id: existingId}) : cp; });
+      adminSave('custom', adminCustom);
+    } else {
+      adminOverrides[existingId] = Object.assign({}, adminOverrides[existingId], draft, {id: existingId});
+      adminSave('overrides', adminOverrides);
+    }
+    // A newly-used category should become visible immediately, or the item the admin
+    // just saved would silently vanish from the grid they were just looking at.
+    if (adminVisibleCats.indexOf(draft.cat) === -1){
+      adminVisibleCats.push(draft.cat);
+      adminSave('visibleCats', adminVisibleCats);
+    }
+    recomputeCatalog();
+    if (adminMode) renderAdminBar();
+    renderCatNav();
+    renderFilterPanel();
+    renderGrid();
+    showToast(isNew ? 'Product added' : 'Product saved');
+  }
+
+  function adminDeleteProduct(id){
+    var p = byId[id];
+    if (!p) return;
+    if (!confirm('Delete "'+p.name+'"? This only affects this browser.')) return;
+    if (byIdIsCustom(id)){
+      adminCustom = adminCustom.filter(function(cp){ return cp.id !== id; });
+      adminSave('custom', adminCustom);
+    } else {
+      if (adminDeleted.indexOf(id) === -1) adminDeleted.push(id);
+      adminSave('deleted', adminDeleted);
+    }
+    recomputeCatalog();
+    if (adminMode) renderAdminBar();
+    renderCatNav();
+    renderFilterPanel();
+    renderGrid();
+    showToast('Deleted');
+  }
+
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
+
+  /* ================= CART ================= */
+  var CART_KEY = 'astrowani_store_cart';
+  var cart = {};
+  try { cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}'); } catch(e){ cart = {}; }
+
+  // reconcileCart() is also called from recomputeCatalog(), but that runs far above this
+  // line, where `cart` is only hoisted - so its own `typeof cart !== 'object'` guard makes
+  // it return immediately and it has never actually dropped anything. Running it here,
+  // where the cart exists, is what the guard was written to do.
+  reconcileCart();
+
+  function saveCart(){ try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch(e){} }
+
+  function addToCart(id, qty){
+    cart[id] = (cart[id]||0) + qty;
+    saveCart();
+    renderCart();
+  }
+  function setQty(id, qty){
+    if (qty <= 0) delete cart[id]; else cart[id] = qty;
+    saveCart();
+    renderCart();
+  }
+
+  function cartCount(){ return Object.keys(cart).reduce(function(s,id){ return byId[id] ? s+cart[id] : s; }, 0); }
+  function cartSubtotal(){
+    return Object.keys(cart).reduce(function(s,id){
+      var p = byId[id];
+      return p ? s + p.price * cart[id] : s;
+    }, 0);
+  }
+
+  function renderCart(){
+    var count = cartCount();
+    var badge = document.getElementById('cartCount');
+    if (count){ badge.textContent = count; badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); }
+
+    var body = document.getElementById('cartBody');
+    var foot = document.getElementById('cartFoot');
+    // Filtered, not raw: cartCount() and cartSubtotal() both already skip ids with no
+    // product, but this loop did not - it passed byId[id] straight to renderIcon(), so one
+    // stale id threw on p.photo and took the whole script down with it, before initReveal()
+    // had run. That is why a single leftover cart entry blanked every section of the page.
+    var ids = Object.keys(cart).filter(function(id){ return !!byId[id]; });
+
+    if (!ids.length){
+      body.innerHTML = '<div class="empty-cart">'
+        + '<svg viewBox="0 0 24 24" width="40" height="40" style="margin:0 auto 16px; display:block; fill:none; stroke:currentColor; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round;">'
+        + '<path d="M5 8h14l-1.2 11.2a1.6 1.6 0 0 1-1.6 1.4H7.8a1.6 1.6 0 0 1-1.6-1.4Z"/>'
+        + '<path d="M9 8V6.2a3 3 0 0 1 6 0V8"/></svg>'
+        + 'Your cart is empty.<br>Browse the collection to add a stone.</div>';
+      foot.innerHTML = '';
+      return;
+    }
+
+    body.innerHTML = ids.map(function(id){
+      var p = byId[id];
+      return '<div class="cart-line">'+
+        '<div class="cl-media">'+renderIcon(p)+'</div>'+
+        '<div class="cl-info">'+
+          '<div class="cl-name">'+p.name+'</div>'+
+          '<div class="cl-price price">₹'+p.price.toLocaleString('en-IN')+' each</div>'+
+          '<div class="qty-stepper"><button data-dec="'+id+'">−</button><span>'+cart[id]+'</span><button data-inc="'+id+'">+</button></div>'+
+          '<button class="cl-remove" data-rm="'+id+'">Remove</button>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    var subtotal = cartSubtotal();
+    var shipping = subtotal >= 999 || subtotal === 0 ? 0 : 79;
+    var total = subtotal + shipping;
+
+    foot.innerHTML =
+      '<div class="sum-row"><span>Subtotal</span><span class="price">₹'+subtotal.toLocaleString('en-IN')+'</span></div>'+
+      '<div class="sum-row"><span>Shipping</span><span class="price">'+(shipping? '₹'+shipping : 'Free')+'</span></div>'+
+      '<div class="sum-row total"><span>Total</span><span class="price">₹'+total.toLocaleString('en-IN')+'</span></div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:14px;" id="checkoutBtn">Enquire about these</button>';
+
+    foot.querySelector('#checkoutBtn').addEventListener('click', function(){ closeCartDrawer(); openCheckout(); });
+
+    body.querySelectorAll('[data-inc]').forEach(function(b){ b.addEventListener('click', function(){ var id=b.getAttribute('data-inc'); setQty(id, cart[id]+1); }); });
+    body.querySelectorAll('[data-dec]').forEach(function(b){ b.addEventListener('click', function(){ var id=b.getAttribute('data-dec'); setQty(id, cart[id]-1); }); });
+    body.querySelectorAll('[data-rm]').forEach(function(b){ b.addEventListener('click', function(){ setQty(b.getAttribute('data-rm'), 0); }); });
+  }
+  renderCart();
+
+  var scrim = document.getElementById('scrim');
+  var cartDrawer = document.getElementById('cartDrawer');
+  function openCart(){ cartDrawer.classList.add('show'); scrim.classList.add('show'); document.body.style.overflow='hidden'; }
+  function closeCartDrawer(){ cartDrawer.classList.remove('show'); scrim.classList.remove('show'); document.body.style.overflow=''; }
+  document.getElementById('cartBtn').addEventListener('click', openCart);
+  document.getElementById('closeCart').addEventListener('click', closeCartDrawer);
+  scrim.addEventListener('click', closeCartDrawer);
+
+  /* ================= ENQUIRY =================
+     This deliberately does NOT take payment. The page is a static site with no server
+     behind it, so a "Place order" button here could only ever show a made-up order number
+     while taking no money, recording nothing and shipping nothing — worse than having no
+     checkout at all. Instead the cart becomes an enquiry: the customer's details and their
+     chosen stones are handed to a channel a human actually reads.
+
+     WhatsApp is used when a number is configured below, e-mail otherwise. Fill in
+     ENQUIRY_WHATSAPP (digits only, with country code, e.g. '919812345678') to switch the
+     primary button over — nothing else needs changing. */
+  var ENQUIRY_WHATSAPP = '';                        // '' = e-mail only
+  var ENQUIRY_EMAIL    = 'support@astrowani.com';
+
+  var coContent = document.getElementById('coContent');
+
+  function openCheckout(){
+    if (!cartCount()) { showToast('Your cart is empty'); return; }
+    if (canBuy()) startRealCheckout(); else renderEnquiryForm();
+    openModal('coModal');
+  }
+
+  /* ================= REAL CHECKOUT (in-app only) =================
+     Runs only when the app injected a customer JWT. Every figure shown comes from
+     POST /api/orders/quote: the server reprices from remedy_items and app_settings, and
+     /checkout re-derives the same numbers and ignores anything money-shaped in the request
+     body. Nothing here computes a price, it only displays what the server said. */
+  var checkoutState = { quote: null, addresses: [], addressId: null, busy: false };
+
+  // One token per checkout attempt, held for the life of the modal. Retrying the same
+  // attempt reuses it and dedupes server-side; a deliberate second purchase reopens the
+  // modal, mints a new one, and is correctly treated as a new order.
+  var clientRequestId = null;
+
+  function cartLines(){
+    return Object.keys(cart).map(function(id){ return { itemId: id, quantity: cart[id] }; });
+  }
+
+  function startRealCheckout(){
+    clientRequestId = 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    coContent.innerHTML = '<div class="confirm"><p class="lede">Checking prices and stock...</p></div>';
+    Promise.all([
+      apiFetch('/api/orders/quote', { method: 'POST', body: JSON.stringify({ items: cartLines() }) }),
+      apiFetch('/api/addresses').catch(function(){ return { data: [] }; })
+    ]).then(function(res){
+      checkoutState.quote = res[0];
+      checkoutState.addresses = res[1].data || [];
+      var def = null;
+      checkoutState.addresses.forEach(function(a){ if (!def || a.is_default) def = a; });
+      checkoutState.addressId = def ? def.id : null;
+      renderRealCheckout();
+    }).catch(function(e){
+      coContent.innerHTML =
+        '<div class="confirm"><h3 style="font-size:20px;">Could not start checkout</h3>' +
+        '<p class="lede" style="margin:10px auto 18px; max-width:38ch;">' + escapeHtml(e.message) + '</p>' +
+        '<button class="btn btn-gold" id="coClose">Close</button></div>';
+      coContent.querySelector('#coClose').addEventListener('click', function(){ closeModal('coModal'); });
+    });
+  }
+
+  function renderRealCheckout(){
+    var q = checkoutState.quote;
+    var addrOpts = checkoutState.addresses.map(function(a){
+      var label = [a.name, a.line1, a.city, a.pincode].filter(Boolean).join(', ');
+      return '<option value="' + a.id + '"' + (a.id === checkoutState.addressId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+    }).join('');
+
+    var blocked = (q.blockedTypes || []).length > 0;
+    var oos = (q.outOfStock || []).length > 0;
+
+    coContent.innerHTML =
+      '<h3 style="font-size:20px; margin-bottom:16px;">Checkout</h3>' +
+      (checkoutState.addresses.length
+        ? '<div class="field"><label for="coAddrSel">Deliver to</label><select id="coAddrSel">' + addrOpts + '</select></div>'
+        : '<div class="field"><label>Delivery address</label>' +
+          '<input id="naName" placeholder="Full name"><div style="height:8px"></div>' +
+          '<input id="naPhone" inputmode="numeric" placeholder="10-digit phone"><div style="height:8px"></div>' +
+          '<input id="naLine1" placeholder="House no., street, locality"><div style="height:8px"></div>' +
+          '<div class="field-row"><input id="naCity" placeholder="City"><input id="naPin" inputmode="numeric" placeholder="Pincode"></div>' +
+          '<div style="height:8px"></div><input id="naState" placeholder="State"></div>') +
+      (q.items || []).map(function(l){
+        var line = Number(l.lineTotal != null ? l.lineTotal : (l.unitPrice * l.quantity)) || 0;
+        return '<div class="sum-row"><span>' + escapeHtml(l.title) + ' x' + l.quantity + '</span><span class="price">Rs ' + line.toLocaleString('en-IN') + '</span></div>';
+      }).join('') +
+      '<div class="sum-row"><span>Delivery</span><span class="price">' + (q.deliveryFee ? 'Rs ' + q.deliveryFee : 'Free') + '</span></div>' +
+      (q.handlingFee ? '<div class="sum-row"><span>Handling</span><span class="price">Rs ' + q.handlingFee + '</span></div>' : '') +
+      '<div class="sum-row total"><span>To pay</span><span class="price">Rs ' + Number(q.grandTotal).toLocaleString('en-IN') + '</span></div>' +
+      (blocked ? '<div class="checkout-note">We are not delivering some of these yet. Remove them to continue.</div>' : '') +
+      (oos ? '<div class="checkout-note">Something in your cart just went out of stock.</div>' : '') +
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="payBtn"' + ((blocked || oos) ? ' disabled' : '') + '>Pay Rs ' + Number(q.grandTotal).toLocaleString('en-IN') + '</button>';
+
+    var sel = coContent.querySelector('#coAddrSel');
+    if (sel) sel.addEventListener('change', function(){ checkoutState.addressId = sel.value; });
+    coContent.querySelector('#payBtn').addEventListener('click', payNow);
+  }
+
+  function collectNewAddress(){
+    var g = function(id){ var el = coContent.querySelector('#' + id); return el ? el.value.trim() : ''; };
+    return { name: g('naName'), phone: g('naPhone'), line1: g('naLine1'), city: g('naCity'), pincode: g('naPin'), state: g('naState') };
+  }
+
+  function payNow(){
+    if (checkoutState.busy) return;
+    checkoutState.busy = true;
+    var btn = coContent.querySelector('#payBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting payment...'; }
+
+    var ensureAddress = checkoutState.addressId
+      ? Promise.resolve(checkoutState.addressId)
+      : apiFetch('/api/addresses', { method: 'POST', body: JSON.stringify(collectNewAddress()) })
+          .then(function(r){ return (r.data && r.data.id) || null; });
+
+    ensureAddress.then(function(addressId){
+      if (!addressId) throw new Error('Please fill in a delivery address');
+      checkoutState.addressId = addressId;
+      return loadRazorpay().then(function(){
+        return apiFetch('/api/orders/checkout', { method: 'POST', body: JSON.stringify({
+          items: cartLines(),
+          addressId: addressId,
+          paymentMethod: 'razorpay',
+          clientRequestId: clientRequestId
+        })});
+      });
+    }).then(function(res){
+      if (res.alreadyProcessed) { renderOrderPlaced(res.orderId); return; }
+      openRazorpay(res);
+    }).catch(function(e){
+      checkoutState.busy = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+      showToast(e.message || 'Could not start payment');
+    });
+  }
+
+  function openRazorpay(res){
+    var rzp = new window.Razorpay({
+      key: res.keyId,
+      order_id: res.razorpayOrderId,
+      amount: res.amount,
+      currency: 'INR',
+      name: 'Wani Shop',
+      description: 'Gemstone order',
+      handler: function(resp){
+        // This callback does NOT mean the order is confirmed. Only the server's signature
+        // check decides that, so the customer is told nothing until verify-payment returns.
+        apiFetch('/api/orders/verify-payment', { method: 'POST', body: JSON.stringify({
+          razorpay_order_id: resp.razorpay_order_id,
+          razorpay_payment_id: resp.razorpay_payment_id,
+          razorpay_signature: resp.razorpay_signature
+        })}).then(function(v){
+          cart = {}; saveCart(); renderCart();
+          renderOrderPlaced(v.orderId || res.orderId);
+        }).catch(function(e){
+          renderPaymentUnconfirmed(e.message);
+        });
+      },
+      modal: { ondismiss: function(){
+        checkoutState.busy = false;
+        var b = coContent.querySelector('#payBtn');
+        if (b) { b.disabled = false; b.textContent = 'Pay Rs ' + Number(checkoutState.quote.grandTotal).toLocaleString('en-IN'); }
+      }}
+    });
+    rzp.open();
+  }
+
+  function renderOrderPlaced(orderId){
+    coContent.innerHTML =
+      '<div class="confirm"><div class="tick">&#10003;</div>' +
+      '<h3 style="font-size:22px;">Order placed</h3>' +
+      (orderId ? '<div class="ordno price">' + escapeHtml(String(orderId).slice(0, 8).toUpperCase()) + '</div>' : '') +
+      '<p class="lede" style="margin:0 auto 18px; max-width:38ch;">Payment confirmed. You can follow it under My Orders in the app.</p>' +
+      '<button class="btn btn-gold" id="continueShopping">Keep browsing</button></div>';
+    coContent.querySelector('#continueShopping').addEventListener('click', function(){ closeModal('coModal'); });
+  }
+
+  // Money may well have left the customer's account by this point, so this must never say
+  // the order failed. It states only what is known, and tells them not to pay twice.
+  function renderPaymentUnconfirmed(msg){
+    coContent.innerHTML =
+      '<div class="confirm"><h3 style="font-size:20px;">We could not confirm your payment</h3>' +
+      '<p class="lede" style="margin:10px auto 14px; max-width:40ch;">If money left your account it is safe and the order will be completed. Please do not pay again.</p>' +
+      '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13px;">' + escapeHtml(msg || '') + '</p>' +
+      '<button class="btn btn-gold" id="continueShopping">Close</button></div>';
+    coContent.querySelector('#continueShopping').addEventListener('click', function(){ closeModal('coModal'); });
+  }
+
+  // Plain-text summary of the cart, shared by both the WhatsApp and e-mail handoffs.
+  function enquirySummary(details){
+    var lines = ['Gemstone enquiry from shop.astrowani.com', ''];
+    Object.keys(cart).forEach(function(id){
+      var p = byId[id];
+      if (!p) return;
+      lines.push('- ' + p.name + '  x' + cart[id] + '  (Rs ' + (p.price * cart[id]).toLocaleString('en-IN') + ')');
+    });
+    lines.push('', 'Approx total: Rs ' + cartSubtotal().toLocaleString('en-IN'));
+    lines.push('', 'Name: ' + details.name, 'Phone: ' + details.phone);
+    if (details.city) lines.push('City: ' + details.city);
+    if (details.note) lines.push('Note: ' + details.note);
+    return lines.join('\n');
+  }
+
+  function renderEnquiryForm(){
+    var subtotal = cartSubtotal();
+    coContent.innerHTML =
+      '<h3 style="font-size:20px; margin-bottom:6px;">Enquire about these stones</h3>'+
+      '<p class="lede" style="font-size:14px; margin:0 0 18px;">Leave your details and we will call you back to confirm the stone, its certificate and the final price before anything is paid.</p>'+
+      '<div class="field"><label for="coName">Your name</label><input id="coName" placeholder="Full name"></div>'+
+      '<div class="field-row">'+
+        '<div class="field"><label for="coPhone">Phone number</label><input id="coPhone" inputmode="numeric" placeholder="10-digit mobile"></div>'+
+        '<div class="field"><label for="coCity">City (optional)</label><input id="coCity" placeholder="City"></div>'+
+      '</div>'+
+      '<div class="field"><label for="coNote">Anything we should know? (optional)</label><textarea id="coNote" rows="2" placeholder="Birth details, a stone you were advised, a question"></textarea></div>'+
+      '<div class="checkout-note">No payment is taken here and no card details are asked for. We confirm availability and price with you first.</div>'+
+      '<div class="sum-row total"><span>'+cartCount()+' item'+(cartCount()===1?'':'s')+'</span><span class="price">Rs '+subtotal.toLocaleString('en-IN')+'</span></div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="sendEnquiryBtn">'+
+        (ENQUIRY_WHATSAPP ? 'Send enquiry on WhatsApp' : 'Send enquiry by e-mail')+
+      '</button>';
+
+    coContent.querySelector('#sendEnquiryBtn').addEventListener('click', function(){
+      var details = {
+        name:  coContent.querySelector('#coName').value.trim(),
+        phone: coContent.querySelector('#coPhone').value.trim(),
+        city:  coContent.querySelector('#coCity').value.trim(),
+        note:  coContent.querySelector('#coNote').value.trim()
+      };
+      if (!details.name || !details.phone){ showToast('Please add your name and phone number'); return; }
+      if (!/^[0-9+\-\s]{8,15}$/.test(details.phone)){ showToast('That phone number does not look right'); return; }
+
+      var body = enquirySummary(details);
+      var url = ENQUIRY_WHATSAPP
+        ? 'https://wa.me/' + ENQUIRY_WHATSAPP + '?text=' + encodeURIComponent(body)
+        : 'mailto:' + ENQUIRY_EMAIL + '?subject=' + encodeURIComponent('Gemstone enquiry') + '&body=' + encodeURIComponent(body);
+
+      // The cart is intentionally NOT cleared: the handoff can fail (no WhatsApp
+      // installed, no mail client), and wiping their basket on the way out would lose
+      // the selection with nothing to show for it.
+      window.open(url, '_blank');
+      renderEnquirySent(details);
+    });
+  }
+
+  function renderEnquirySent(details){
+    coContent.innerHTML =
+      '<div class="confirm">'+
+        '<div class="tick">✓</div>'+
+        '<h3 style="font-size:22px;">Enquiry ready to send</h3>'+
+        '<p class="lede" style="margin:10px auto 18px; max-width:40ch;">'+
+          (ENQUIRY_WHATSAPP ? 'WhatsApp should have opened with your enquiry filled in. Press send there and we will call you back on ' : 'Your e-mail app should have opened with the enquiry filled in. Send it and we will call you back on ')+
+          '<strong>'+details.phone+'</strong>.'+
+        '</p>'+
+        '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13.5px;">Nothing has been charged, and your basket is still here if you want to change it.</p>'+
+        '<button class="btn btn-gold" id="continueShopping">Keep browsing</button>'+
+      '</div>';
+    coContent.querySelector('#continueShopping').addEventListener('click', function(){ closeModal('coModal'); });
+  }
+
+  /* ================= TESTIMONIALS ================= */
+  // Names, cities and quotes are written to fit the person actually in each photograph —
+  // a Delhi street shot captioned "Chennai" is the kind of mismatch a reader notices even
+  // if they can't say why. The Sri Yantra quote also had to go: the catalogue is gemstones
+  // only now, so it referenced something not for sale.
   var TESTIMONIALS = [
     {photo:'c1', name:'Ritika Sharma', loc:'New Delhi',
       quote:'Ran the Moolank calculator first, then ordered the emerald. It arrived with the lab report and a note on which day to start wearing it.'},
@@ -949,6 +1672,25 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {photo:'c3', name:'Lata Deshpande', loc:'Pune, Maharashtra',
       quote:'The pearl came properly packed, and the guidance sheet made the whole thing feel considered rather than superstitious.'}
   ];
+  var testiGrid = document.getElementById('testiGrid');
+  TESTIMONIALS.forEach(function(t){
+    var el = document.createElement('div');
+    el.className = 'testi-card';
+    var photo = CUSTOMER_PHOTOS[t.photo];
+    el.innerHTML =
+      '<div class="stars">★★★★★</div>'+
+      '<p>“'+t.quote+'”</p>'+
+      '<div class="testi-who">'+
+        (photo ? '<div class="testi-avatar"><img src="'+photo+'" alt="'+t.name+'" loading="lazy"></div>' : '') +
+        '<div>'+
+          '<div class="testi-name">'+t.name+'</div>'+
+          '<div class="testi-loc">'+t.loc+'</div>'+
+        '</div>'+
+      '</div>';
+    testiGrid.appendChild(el);
+  });
+  stagger(testiGrid.children, 90);
+
   /* ================= CALCULATORS ================= */
   function reduceDigits(n){
     n = Math.abs(n);
@@ -985,6 +1727,118 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     8:{name:'Blue Sapphire (Neelam)', productId:'p5'},    // Saturn
     9:{name:'Red Coral (Moonga)', productId:'p10'}        // Mars
   };
+
+  document.getElementById('calcMoolankBtn').addEventListener('click', function(){
+    var val = document.getElementById('dobInput').value;
+    var resultBox = document.getElementById('moolankResult');
+    if (!val){ showToast('Please choose a date of birth'); return; }
+    var parts = val.split('-'); // yyyy-mm-dd
+    var year = parts[0], month = parts[1], day = parts[2];
+    var moolank = reduceDigits(parseInt(day,10));
+    var allDigits = (day+month+year);
+    var bhagyank = reduceDigits(parseInt(allDigits,10));
+    var mt = MOOLANK_TRAITS[moolank];
+    var gm = GEM_MAP[moolank];
+    resultBox.innerHTML =
+      '<div class="num-big">'+moolank+'</div><div class="num-sub">Moolank · ruled by '+mt.planet+'</div>'+
+      '<p>'+mt.trait+'</p>'+
+      '<p style="margin-top:10px;"><strong>Bhagyank: '+bhagyank+'</strong>, your destiny number, drawn from your complete date of birth.</p>'+
+      '<div class="rec" data-open="'+gm.productId+'" style="cursor:pointer;">✦ Traditionally paired with '+gm.name+' →</div>';
+    resultBox.classList.add('show');
+    resultBox.querySelector('[data-open]').addEventListener('click', function(e){ openQuickView(e.currentTarget.getAttribute('data-open')); });
+  });
+
+  document.getElementById('calcGemBtn').addEventListener('click', function(){
+    var val = document.getElementById('moolankSelect').value;
+    var resultBox = document.getElementById('gemResult');
+    if (!val){ showToast('Please select a Moolank number'); return; }
+    var n = parseInt(val,10);
+    var mt = MOOLANK_TRAITS[n];
+    var gm = GEM_MAP[n];
+    var p = byId[gm.productId];
+    resultBox.innerHTML =
+      '<div style="display:flex; gap:14px; align-items:center;">'+
+        '<div class="gem-result-thumb">'+renderIcon(p)+'</div>'+
+        '<div><div style="font-weight:700;">'+p.name+'</div><div class="price" style="font-size:14px; color:var(--ink);">₹'+p.price.toLocaleString('en-IN')+'</div></div>'+
+      '</div>'+
+      '<p>Ruled by '+mt.planet+'. '+mt.trait+'</p>'+
+      '<button class="btn btn-gold btn-sm" id="gemViewBtn" style="margin-top:10px;">View this piece</button>';
+    resultBox.classList.add('show');
+    resultBox.querySelector('#gemViewBtn').addEventListener('click', function(){ openQuickView(gm.productId); });
+  });
+
+  /* ================= NEWSLETTER ================= */
+  document.getElementById('newsletterBtn').addEventListener('click', function(){
+    var v = document.getElementById('newsletterInput').value.trim();
+    if (!v){ showToast('Enter an email to join'); return; }
+    document.getElementById('newsletterInput').value = '';
+    showToast('Thanks, you\'re on the list');
+  });
+
+  /* ================= TOAST ================= */
+  var toastTimer = null;
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  /* ================= MOTION BOOT =================
+     Runs last so every section, including the JS-rendered grids above, exists by now. */
+  (function(){
+    // Static blocks that aren't part of a rendered group: headings, the campaign bands,
+    // the calculator cards and the editorial image/text pairs.
+    var groups = [
+      ['.section-head', 0],
+      ['.campaign', 0],
+      ['.calc-portrait, .calc-card', 80],
+      ['.about-band > *', 110],
+      ['.foot-grid > *', 70],
+      ['.foot-assure > *', 70]
+    ];
+    // Mark first, observe second: initReveal() below does a single sweep of everything
+    // carrying data-reveal, including the grids marked earlier during render.
+    groups.forEach(function(g){
+      var nodes = document.querySelectorAll(g[0]);
+      Array.prototype.forEach.call(nodes, function(el, i){
+        el.setAttribute('data-reveal', '');
+        if (g[1]) el.setAttribute('data-reveal-delay', String(Math.min(i, 8) * g[1]));
+      });
+    });
+
+    initReveal();
+
+    // Kick the live catalogue fetch after first paint: the offline catalogue is already
+    // on screen, so this upgrades the page rather than blocking it.
+    loadLiveCatalog();
+
+    // Hero copy: fires on the next frame so the starting (hidden) state is painted first,
+    // otherwise the browser can skip straight to the end and there is no animation at all.
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        document.body.classList.add('hero-in');
+      });
+    });
+
+    // Header picks up a shadow once the page has moved. rAF-throttled so the scroll
+    // handler never does layout work more than once a frame.
+    var header = document.querySelector('header.site');
+    if (header){
+      var ticking = false;
+      window.addEventListener('scroll', function(){
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(function(){
+          header.classList.toggle('scrolled', window.scrollY > 8);
+          ticking = false;
+        });
+      }, {passive:true});
+    }
+  })();
+
+
   /* ================= WANI PUJA =================
      Catalogue of the 64 pujas, paths and sanskars offered on astrowani.com/book-puja.
      Read directly by renderPujas() rather than being folded into PRODUCTS/byId, because
@@ -1077,15 +1931,11 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {"id":"pj64","n":"Tulsi Vivah","h":"तुलसी विवाह","d":"4 hrs","m":240,"p":5100,"img":"1776066334.webp","c":["marriage","path"]}
   ];
 
-  /* Duration bands. `mins` is null for a puja that came from the admin rather than the
-     editorial list below, and an unknown duration must never be filtered OUT - hiding a
-     real, orderable puja because nobody typed its length is worse than showing it under a
-     band it may not belong to. */
   var PUJA_BANDS = [
     {id:'all',   label:'All pujas',        test:function(){ return true; }},
-    {id:'day',   label:'Within a day',     test:function(p){ return p.mins == null || p.mins <= 1440; }},
-    {id:'short', label:'2 to 3 days',      test:function(p){ return p.mins == null || (p.mins > 1440 && p.mins <= 4320); }},
-    {id:'long',  label:'5 days and above', test:function(p){ return p.mins == null || p.mins > 4320; }}
+    {id:'day',   label:'Within a day',     test:function(p){ return p.m <= 1440; }},
+    {id:'short', label:'2 to 3 days',      test:function(p){ return p.m > 1440 && p.m <= 4320; }},
+    {id:'long',  label:'5 days and above', test:function(p){ return p.m > 4320; }}
   ];
   /* A puja is chosen by what it is FOR, which is a different question from how long it
      takes - so the purpose tiles filter alongside the duration chips rather than
@@ -1104,2144 +1954,208 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   ];
   var PUJA_CAT_PHOTOS = {};
 
-  // The artwork filenames carry spaces and mixed case, so they are encoded here rather
-  // than in each caller - PUJA_IMG_BASE already ends in a slash.
-  function pujaArtwork(file){ return PUJA_IMG_BASE + encodeURIComponent(file); }
+  var pujaState = { q:'', band:'all', sort:'featured', cat:'all' };
 
-  /* ================= THE PUJA LIST =================
-     Two sources, and BOTH have to be on screen.
+  function pujaImg(p){ return PUJA_IMG_BASE + encodeURIComponent(p.img); }
+  function pujaRupees(n){ return '₹' + n.toLocaleString('en-IN'); }
 
-       EDITORIAL  the 64 pujas above - names, Hindi names, durations and artwork, curated
-                  before the shop had a backend. Complete, and not orderable by itself.
-       LIVE       rows in remedy_items of type 'puja' or 'specific_puja', created in the
-                  admin dashboard. Orderable, but there is no guarantee an admin used the
-                  same wording as the editorial list.
-
-     buildPujaList() merges them into ONE normalised shape. An editorial puja whose title
-     matches a live row is upgraded to payable and keeps its artwork and duration. A live
-     row that matches nothing is appended in its own right, because the alternative -
-     silently dropping it - means an admin adds a puja, it never appears anywhere, and
-     nothing on any screen says why.
-
-     Matching is on a squashed lowercase title, in either language, since an admin may
-     well have typed the Hindi name. */
-  var PUJA_LIST = [];
-  function pujaKey(name){ return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
-
-  function buildPujaList(){
-    var liveRows = productsOfType('puja').concat(productsOfType('specific_puja'));
-    var liveByKey = {};
-    liveRows.forEach(function(p){ liveByKey[pujaKey(p.name)] = p; });
-
-    var used = {};
-    var list = PUJAS.map(function(pj){
-      var live = liveByKey[pujaKey(pj.n)] || (pj.h ? liveByKey[pujaKey(pj.h)] : null) || null;
-      if (live) used[live.id] = true;
-      return {
-        id: live ? live.id : pj.id,
-        slug: slugify(pj.n),
-        name: pj.n,
-        hindi: pj.h || '',
-        dur: pj.d || '',
-        mins: pj.m == null ? null : pj.m,
-        // The live price is what would actually be charged, so it is the one to show.
-        price: live ? live.price : pj.p,
-        img: pujaArtwork(pj.img),
-        cats: pj.c || [],
-        live: live
-      };
-    });
-
-    liveRows.forEach(function(p){
-      if (used[p.id]) return;
-      list.push({
-        id: p.id,
-        slug: slugify(p.name),
-        name: p.name,
-        hindi: '',
-        dur: '',
-        mins: null,                 // unknown, never filtered out - see PUJA_BANDS
-        price: p.price,
-        img: p.photo || null,       // the admin's own image; the card falls back if absent
-        cats: [],
-        live: p
-      });
-    });
-
-    // Slugs must be unique or two pujas share a URL and one is unreachable.
-    var seen = {};
-    list.forEach(function(x){
-      if (seen[x.slug]) x.slug = x.slug + '-' + String(x.id).replace(/-/g, '').slice(0, 6);
-      seen[x.slug] = true;
-    });
-
-    PUJA_LIST = list;
-  }
-
-  function pujaBySlug(slug){
-    if (!slug) return null;
-    for (var i = 0; i < PUJA_LIST.length; i++){
-      if (PUJA_LIST[i].slug === slug || PUJA_LIST[i].id === slug) return PUJA_LIST[i];
-    }
-    return null;
-  }
-
-  /* ================= ORDERS API ================= */
-  function apiQuote(){
-    return apiFetch('/api/orders/quote', {
-      method: 'POST',
-      body: JSON.stringify({ items: cartIds().map(function(id){ return { itemId: id, quantity: cart[id] }; }) })
-    });
-  }
-  function apiAddresses(){ return apiFetch('/api/addresses').then(function(r){ return r.data || []; }); }
-  function apiSaveAddress(body){ return apiFetch('/api/addresses', { method: 'POST', body: JSON.stringify(body) }); }
-  function apiUpdateAddress(id, body){ return apiFetch('/api/addresses/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(body) }); }
-  function apiDeleteAddress(id){ return apiFetch('/api/addresses/' + encodeURIComponent(id), { method: 'DELETE' }); }
-  function apiMyOrders(){ return apiFetch('/api/orders/mine').then(function(r){ return r.data || []; }); }
-  function apiCancelOrder(id){ return apiFetch('/api/orders/' + encodeURIComponent(id) + '/cancel', { method: 'POST' }); }
-
-  function apiRequestOtp(phone){
-    return apiFetch('/api/users/mobile-otp-request', { method: 'POST', body: JSON.stringify({ phoneNumber: phone }) });
-  }
-  function apiVerifyOtp(phone, otp){
-    return apiFetch('/api/users/mobile-otp-verify', { method: 'POST', body: JSON.stringify({ phoneNumber: phone, otp: otp }) });
-  }
-
-
-  /* ================= COMPONENTS =================
-     Every one of these returns an HTML STRING and is bound afterwards by delegation from
-     the single #view listener. There is no per-node addEventListener anywhere in a list,
-     which is what keeps a 64-card grid cheap to re-render on every filter keystroke. */
-
-  function breadcrumb(trail){
-    return '<nav class="crumbs" aria-label="Breadcrumb">' + trail.map(function(c, i){
-      var last = i === trail.length - 1;
-      return last
-        ? '<span aria-current="page">' + escapeHtml(c.label) + '</span>'
-        : '<a href="' + escapeAttr(c.href) + '" data-link>' + escapeHtml(c.label) + '</a><span class="crumb-sep" aria-hidden="true">/</span>';
-    }).join('') + '</nav>';
-  }
-
-  function sectionHead(eyebrow, title, sub){
-    return '<div class="section-head"><div>' +
-      (eyebrow ? '<p class="eyebrow">' + escapeHtml(eyebrow) + '</p>' : '') +
-      '<h2>' + escapeHtml(title) + '</h2>' +
-      (sub ? '<p class="lede">' + escapeHtml(sub) + '</p>' : '') +
-      '</div></div>';
-  }
-
-  /* The Add control, in its three states. This is the Blinkit pattern: a product that is
-     not in the cart shows ADD; the moment it is, the same footprint becomes a stepper, so
-     the card never reflows and a second tap is always in the same place as the first. */
-  function addControl(p){
-    if (!canOrder(p)) {
-      var why = orderingBlockedReason(p);
-      return '<button class="add-btn is-off" type="button" data-why="' + escapeAttr(why) + '">' +
-        (p.inStock === false ? 'Sold out' : (p.live ? 'Not delivering' : 'Unavailable')) + '</button>';
-    }
-    var q = cartQty(p.id);
-    if (!q) return '<button class="add-btn" type="button" data-add="' + escapeAttr(p.id) + '">ADD</button>';
-    return '<div class="add-step" role="group" aria-label="Quantity">' +
-      '<button type="button" data-dec="' + escapeAttr(p.id) + '" aria-label="Reduce quantity">&minus;</button>' +
-      '<span data-qty-for="' + escapeAttr(p.id) + '">' + q + '</span>' +
-      '<button type="button" data-inc="' + escapeAttr(p.id) + '"' + (q >= MAX_QTY_PER_LINE ? ' disabled' : '') + ' aria-label="Increase quantity">+</button>' +
-      '</div>';
-  }
-
-  function productCard(p){
-    var off = pct(p.price, p.mrp);
-    var meta = productMeta(p);
-    var href = '/gemstones/' + p.slug + '/';
-    return '<article class="card prod-card">' +
-      '<a class="card-media" href="' + escapeAttr(href) + '" data-link>' +
-        (off ? '<span class="card-tag">' + off + '% OFF</span>' : '') +
-        productPhotoImg(p, 'front') +
-      '</a>' +
-      '<button class="wishlist-btn' + (isWished(p.id) ? ' on' : '') + '" type="button" data-wish="' + escapeAttr(p.id) + '" aria-label="Save to wishlist">' + (isWished(p.id) ? '&#9829;' : '&#9825;') + '</button>' +
-      '<div class="card-body">' +
-        '<a class="card-name" href="' + escapeAttr(href) + '" data-link>' + escapeHtml(p.name) + '</a>' +
-        (p.unitLabel ? '<div class="card-unit">' + escapeHtml(p.unitLabel) + '</div>' : '') +
-        '<div class="rating-row"><span class="stars-sm">' + starString(meta.rating) + '</span><span class="rcount">' + meta.rating.toFixed(1) + '</span></div>' +
-        '<div class="card-foot">' +
-          '<div class="card-price-row">' +
-            '<span class="card-price price">' + rupees(p.price) + '</span>' +
-            (p.mrp && p.mrp > p.price ? '<span class="card-mrp price">' + rupees(p.mrp) + '</span>' : '') +
-          '</div>' +
-          addControl(p) +
-        '</div>' +
-      '</div>' +
-    '</article>';
-  }
-
-  function pujaCard(pj){
-    var live = pj.live;
-    var href = '/pujas/' + pj.slug + '/';
-    return '<article class="card pj-card">' +
-      '<a class="card-media" href="' + escapeAttr(href) + '" data-link>' +
-        (pj.img
-          ? '<img loading="lazy" src="' + escapeAttr(pj.img) + '" alt="' + escapeAttr(pj.name) + '">'
-          : '<span class="pj-noart" aria-hidden="true">&#128367;</span>') +
-      '</a>' +
-      '<div class="card-body">' +
-        '<a class="card-name" href="' + escapeAttr(href) + '" data-link>' + escapeHtml(pj.name) + '</a>' +
-        (pj.hindi ? '<div class="pj-hi">' + escapeHtml(pj.hindi) + '</div>' : '') +
-        '<div class="pj-meta">' +
-          (pj.dur ? '<span class="pj-dur">&#9201; ' + escapeHtml(pj.dur) + '</span>' : '<span class="pj-dur"></span>') +
-          '<span class="price pj-price">' + rupees(pj.price) + '</span>' +
-        '</div>' +
-        '<div class="card-foot">' +
-          (live && canOrder(live)
-            ? addControl(live)
-            : '<a class="btn btn-gold btn-sm pj-book" href="' + escapeAttr(href) + '" data-link>Book this puja</a>') +
-        '</div>' +
-      '</div>' +
-    '</article>';
-  }
-
-  /* ================= PAGINATION =================
-     Real links to real URLs (/gemstones/page/3/), not a "load more" button, for three
-     reasons: a page deep in the catalogue can be linked to and returned to, the browser
-     restores scroll on Back, and the in-app WebView hardware Back walks it correctly.
-     A window of pages around the current one, with first and last always reachable, so 9
-     pages of pujas never becomes a wall of numbers on a phone. */
-  function pagination(page, pages, hrefFor){
-    if (pages <= 1) return '';
-    var nums = [];
-    var from = Math.max(1, page - 1), to = Math.min(pages, page + 1);
-    if (from > 1) nums.push(1);
-    if (from > 2) nums.push('gap');
-    for (var i = from; i <= to; i++) nums.push(i);
-    if (to < pages - 1) nums.push('gap');
-    if (to < pages) nums.push(pages);
-
-    return '<nav class="pager" aria-label="Pagination">' +
-      (page > 1
-        ? '<a class="pager-arrow" href="' + escapeAttr(hrefFor(page - 1)) + '" data-link rel="prev">&larr; Previous</a>'
-        : '<span class="pager-arrow is-off">&larr; Previous</span>') +
-      '<span class="pager-nums">' + nums.map(function(n){
-        if (n === 'gap') return '<span class="pager-gap">&hellip;</span>';
-        return n === page
-          ? '<span class="pager-num on" aria-current="page">' + n + '</span>'
-          : '<a class="pager-num" href="' + escapeAttr(hrefFor(n)) + '" data-link>' + n + '</a>';
-      }).join('') + '</span>' +
-      (page < pages
-        ? '<a class="pager-arrow" href="' + escapeAttr(hrefFor(page + 1)) + '" data-link rel="next">Next &rarr;</a>'
-        : '<span class="pager-arrow is-off">Next &rarr;</span>') +
-    '</nav>';
-  }
-
-  function pageOf(list, page, perPage){
-    var pages = Math.max(1, Math.ceil(list.length / perPage));
-    var p = Math.min(Math.max(1, page || 1), pages);
-    return { items: list.slice((p - 1) * perPage, p * perPage), page: p, pages: pages, total: list.length };
-  }
-
-  function emptyNote(msg){ return '<div class="empty-note">' + escapeHtml(msg) + '</div>'; }
-
-  function skeletonGrid(n){
-    var cells = '';
-    for (var i = 0; i < (n || 8); i++) cells += '<div class="skel-card"><div class="skel-media"></div><div class="skel-line"></div><div class="skel-line short"></div></div>';
-    return '<div class="product-grid">' + cells + '</div>';
-  }
-
-  /* ================= STICKY CART BAR =================
-     Lives outside #view so it survives every route change without being re-created, and
-     is deliberately hidden on the cart and checkout routes themselves - a "view cart" bar
-     covering the cart is just an obstruction over the total. */
-  function renderCartBar(){
-    var bar = document.getElementById('cartBar');
-    if (!bar) return;
-    var count = cartCount();
-    var route = currentRoute && currentRoute.name;
-    var hide = !count || route === 'cart' || route === 'checkout';
-    bar.classList.toggle('show', !hide);
-    if (hide) { document.body.classList.remove('has-cart-bar'); return; }
-    document.body.classList.add('has-cart-bar');
-    bar.innerHTML =
-      '<div class="wrap cartbar-row">' +
-        '<div class="cartbar-info">' +
-          '<strong>' + count + (count === 1 ? ' item' : ' items') + '</strong>' +
-          '<span class="cartbar-sub">' + rupees(cartSubtotal()) + ' subtotal</span>' +
-        '</div>' +
-        '<a class="btn btn-gold cartbar-go" href="/cart/" data-link>View cart &rarr;</a>' +
-      '</div>';
-  }
-
-  function renderCartBadge(){
-    var badge = document.getElementById('cartCount');
-    if (!badge) return;
-    var n = cartCount();
-    if (n) { badge.textContent = n > 99 ? '99+' : n; badge.classList.remove('hidden'); }
-    else badge.classList.add('hidden');
-  }
-
-
-  /* ================= PAGES: HOME + CATALOGUE =================
-     Each page function returns the HTML for #view. Anything that needs wiring beyond a
-     link is handled by the delegated listener in the ROUTER section below, so no page
-     function ever holds a reference to a node it rendered. */
-
-  var PER_PAGE = 12;
-
-  // Listing state that is NOT in the URL. Page number is (it is a link people share);
-  // a half-typed search box is not.
-  var shopState = { purpose: 'all', price: 'all', sort: 'popularity', q: '' };
-  var pujaState = { q: '', band: 'all', sort: 'featured', cat: 'all' };
-
-  var PRICE_BANDS = [
-    { id: 'all', label: 'Any price', test: function(){ return true; } },
-    { id: 'under2000', label: 'Under ' + rupees(2000), test: function(p){ return p.price < 2000; } },
-    { id: '2000-6000', label: rupees(2000) + ' - ' + rupees(6000), test: function(p){ return p.price >= 2000 && p.price <= 6000; } },
-    { id: 'above6000', label: 'Above ' + rupees(6000), test: function(p){ return p.price > 6000; } }
-  ];
-
-  function pageHome(){
-    var featured = productsOfType('gemstone').slice(0, 8);
-    return '' +
-      '<section class="hero home-hero">' +
-        '<div class="wrap hero-inner">' +
-          '<p class="eyebrow">Wani Shop</p>' +
-          '<h1>Remedies chosen against your chart, not a catalogue.</h1>' +
-          '<p class="lede">Certified gemstones verified against their lab report, and sixty-four pujas performed with the full vidhi by our pandits.</p>' +
-          '<a class="btn btn-gold" href="/gemstones/" data-link>Shop gemstones</a>' +
-        '</div>' +
-      '</section>' +
-
-      '<section class="section" id="entry">' +
-        '<div class="wrap">' +
-          sectionHead('Wani Shop', 'What are you here for?') +
-          '<div class="gate-grid">' +
-            '<a class="gate-tile" href="/gemstones/" data-link>' +
-              '<img src="/assets/9063ec9a65d8.jpg" alt="Certified astrological gemstones in a jeweller box." loading="lazy">' +
-              '<div class="gate-label"><h3>Gemstones</h3>' +
-              '<p>Certified stones, chosen against your chart and verified before they reach you.</p>' +
-              '<span class="gate-go">Shop gemstones &rarr;</span></div>' +
-            '</a>' +
-            '<a class="gate-tile" href="/pujas/" data-link>' +
-              '<img src="/assets/pujas-banner.jpg" alt="A puja thali, kalash and lit diya set out on a low table." loading="lazy">' +
-              '<div class="gate-label"><h3>Pujas</h3>' +
-              '<p>Sixty-four pujas, paths and sanskars, performed with the full vidhi by our pandits.</p>' +
-              '<span class="gate-go">Book a puja &rarr;</span></div>' +
-            '</a>' +
-          '</div>' +
-        '</div>' +
-      '</section>' +
-
-      '<section class="section">' +
-        '<div class="wrap">' +
-          sectionHead('Shop by purpose', 'What is asking for a remedy right now?') +
-          '<div class="purpose-grid">' + PURPOSES.map(function(pu){
-            return '<a class="purpose-tile" href="/purpose/' + pu.id + '/" data-link>' +
-              (PURPOSE_PHOTOS[pu.id] ? '<img src="' + escapeAttr(PURPOSE_PHOTOS[pu.id]) + '" alt="" loading="lazy">' : '') +
-              '<span class="pt-label">' + escapeHtml(pu.label) + '</span></a>';
-          }).join('') + '</div>' +
-        '</div>' +
-      '</section>' +
-
-      '<section class="section">' +
-        '<div class="wrap">' +
-          sectionHead('Best sellers', 'Stones people come back for') +
-          (catalogState === 'loading' ? skeletonGrid(8)
-            : featured.length ? '<div class="product-grid">' + featured.map(productCard).join('') + '</div>'
-            : emptyNote('The catalogue is being restocked. Please check back shortly.')) +
-          '<div class="row-center"><a class="btn btn-line" href="/gemstones/" data-link>See all gemstones</a></div>' +
-        '</div>' +
-      '</section>' +
-
-      '<section class="section">' +
-        '<div class="wrap">' +
-          sectionHead('In their words', 'Read by chart, chosen by hand') +
-          '<div class="testi-grid">' + TESTIMONIALS.map(function(t){
-            var photo = CUSTOMER_PHOTOS[t.photo];
-            return '<div class="testi-card"><div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>' +
-              '<p>&ldquo;' + escapeHtml(t.quote) + '&rdquo;</p>' +
-              '<div class="testi-who">' +
-                (photo ? '<div class="testi-avatar"><img src="' + escapeAttr(photo) + '" alt="" loading="lazy"></div>' : '') +
-                '<div><div class="testi-name">' + escapeHtml(t.name) + '</div>' +
-                '<div class="testi-loc">' + escapeHtml(t.loc) + '</div></div>' +
-              '</div></div>';
-          }).join('') + '</div>' +
-        '</div>' +
-      '</section>' +
-      trustBand();
-  }
-
-  function trustBand(){
-    return '<section class="section trust-band"><div class="wrap badge-row">' +
-      '<div><strong>Independently lab certified</strong><span>Every stone ships with its own report.</span></div>' +
-      '<div><strong>Insured delivery</strong><span>Tracked, insured and signed for.</span></div>' +
-      '<div><strong>7 day returns</strong><span>Unworn, in its sealed packet.</span></div>' +
-      '<div><strong>Real people</strong><span>An astrologer on call before you buy.</span></div>' +
-      '</div></section>';
-  }
-
-  /* ---------------- gemstone listing ---------------- */
-  function filteredProducts(){
-    var q = shopState.q.trim().toLowerCase();
-    var band = PRICE_BANDS.find(function(b){ return b.id === shopState.price; }) || PRICE_BANDS[0];
-    var list = productsOfType('gemstone').filter(function(p){
-      var okQ = !q || p.name.toLowerCase().indexOf(q) !== -1;
-      var okPurpose = shopState.purpose === 'all' || (p.tags || []).indexOf(shopState.purpose) !== -1;
-      return okQ && okPurpose && band.test(p);
-    });
-    var s = shopState.sort;
-    if (s === 'price-asc') list.sort(function(a, b){ return a.price - b.price; });
-    else if (s === 'price-desc') list.sort(function(a, b){ return b.price - a.price; });
-    else if (s === 'name') list.sort(function(a, b){ return a.name.localeCompare(b.name); });
-    else list.sort(function(a, b){ return productMeta(b).score - productMeta(a).score; });
-    return list;
-  }
-
-  function pageGemstones(page){
-    if (catalogState === 'loading') {
-      return '<section class="section"><div class="wrap">' + sectionHead('Gemstones', 'Certified gemstones, by planet') + skeletonGrid(12) + '</div></section>';
-    }
-    var list = filteredProducts();
-    var slice = pageOf(list, page, PER_PAGE);
-
-    return '<section class="section listing">' +
-      '<div class="wrap">' +
-        breadcrumb([{ label: 'Store', href: '/' }, { label: 'Gemstones' }]) +
-        sectionHead('Gemstones', 'Certified gemstones, by planet',
-          'Every stone is independently lab certified, and the certificate ships in the box with it.') +
-
-        '<div class="listing-controls">' +
-          '<input class="listing-search" id="shopSearch" type="search" placeholder="Search a stone" value="' + escapeAttr(shopState.q) + '" aria-label="Search gemstones">' +
-          '<select id="shopSort" aria-label="Sort products">' +
-            [['popularity', 'Most popular'], ['price-asc', 'Price: low to high'], ['price-desc', 'Price: high to low'], ['name', 'Name A-Z']]
-              .map(function(o){ return '<option value="' + o[0] + '"' + (shopState.sort === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-          '</select>' +
-        '</div>' +
-
-        '<div class="chip-row" role="group" aria-label="Filter by purpose">' +
-          '<button type="button" class="chip' + (shopState.purpose === 'all' ? ' on' : '') + '" data-purpose="all">All purposes</button>' +
-          PURPOSES.map(function(pu){
-            return '<button type="button" class="chip' + (shopState.purpose === pu.id ? ' on' : '') + '" data-purpose="' + pu.id + '">' + escapeHtml(pu.label) + '</button>';
-          }).join('') +
-        '</div>' +
-        '<div class="chip-row" role="group" aria-label="Filter by price">' +
-          PRICE_BANDS.map(function(b){
-            return '<button type="button" class="chip' + (shopState.price === b.id ? ' on' : '') + '" data-price="' + b.id + '">' + escapeHtml(b.label) + '</button>';
-          }).join('') +
-        '</div>' +
-
-        '<div class="listing-count">' + slice.total + (slice.total === 1 ? ' piece' : ' pieces') +
-          (slice.pages > 1 ? ' &middot; page ' + slice.page + ' of ' + slice.pages : '') + '</div>' +
-
-        (slice.items.length
-          ? '<div class="product-grid">' + slice.items.map(productCard).join('') + '</div>'
-          : emptyNote('No stone matches that filter yet. Try clearing the price band.')) +
-
-        pagination(slice.page, slice.pages, function(n){ return n === 1 ? '/gemstones/' : '/gemstones/page/' + n + '/'; }) +
-      '</div>' +
-    '</section>';
-  }
-
-  function pagePurpose(id){
-    var pu = PURPOSES.find(function(x){ return x.id === id; });
-    if (!pu) return page404();
-    var list = productsOfType('gemstone').filter(function(p){ return (p.tags || []).indexOf(id) !== -1; });
-    return '<section class="section listing"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Gemstones', href: '/gemstones/' }, { label: pu.label }]) +
-      sectionHead('Shop by purpose', pu.label, 'Stones traditionally prescribed for this, in the order people most often choose them.') +
-      (catalogState === 'loading' ? skeletonGrid(6)
-        : list.length ? '<div class="product-grid">' + list.map(productCard).join('') + '</div>'
-        : emptyNote('Nothing is listed under this purpose right now.')) +
-      '<div class="row-center"><a class="btn btn-line" href="/gemstones/" data-link>Browse everything</a></div>' +
-      '</div></section>';
-  }
-
-  /* ---------------- product page ---------------- */
-  function pageProduct(slug){
-    if (catalogState === 'loading') {
-      return '<section class="section"><div class="wrap"><div class="pdp"><div class="skel-media tall"></div><div><div class="skel-line"></div><div class="skel-line short"></div></div></div></div></section>';
-    }
-    var p = productBySlug(slug);
-    if (!p) return page404('We could not find that piece. It may have been renamed or retired.');
-
-    var meta = productMeta(p);
-    var reviews = productReviews(p);
-    var off = pct(p.price, p.mrp);
-    var hasRealPhoto = !!(p.photo || REAL_PHOTOS[p.id]);
-    var related = productsOfType(p.cat).filter(function(x){ return x.id !== p.id; })
-      .sort(function(a, b){ return Math.abs(a.price - p.price) - Math.abs(b.price - p.price); }).slice(0, 4);
-    var blocked = orderingBlockedReason(p);
-
-    return '<section class="section pdp-section"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: catLabel(p.cat), href: '/gemstones/' }, { label: p.name }]) +
-
-      '<div class="pdp">' +
-        '<div class="pdp-media">' +
-          '<div class="pdp-main" id="pdpMain">' + productPhotoImg(p, 'front', 'pdp-img') + '</div>' +
-          (hasRealPhoto ? '' :
-            '<div class="pdp-thumbs">' + ['front', 'angle', 'zoom'].map(function(v, i){
-              return '<button type="button" class="pdp-thumb' + (i === 0 ? ' sel' : '') + '" data-variant="' + v + '" data-for="' + escapeAttr(p.id) + '">' + productPhotoImg(p, v) + '</button>';
-            }).join('') + '</div>') +
-        '</div>' +
-
-        '<div class="pdp-info">' +
-          '<div class="pv-cat">' + escapeHtml(catLabel(p.cat)) + '</div>' +
-          '<h1 class="pdp-name">' + escapeHtml(p.name) + '</h1>' +
-          (p.unitLabel ? '<div class="pdp-unit">' + escapeHtml(p.unitLabel) + '</div>' : '') +
-          '<div class="pv-rating-row"><span class="stars-sm">' + starString(meta.rating) + '</span>' +
-            '<span>' + meta.rating.toFixed(1) + ' &middot; ' + meta.reviews + ' ratings</span></div>' +
-
-          '<div class="pv-price-row">' +
-            '<span class="pv-price price">' + rupees(p.price) + '</span>' +
-            (off ? '<span class="pv-mrp price">' + rupees(p.mrp) + '</span><span class="pv-off">' + off + '% off</span>' : '') +
-          '</div>' +
-          '<div class="pdp-tax">Inclusive of all taxes</div>' +
-
-          (blocked
-            ? '<div class="checkout-note">' + escapeHtml(blocked) + '</div>'
-            : '<div class="pv-stock' + (meta.lowStock ? ' low' : '') + '">' +
-                (meta.lowStock ? 'Only ' + meta.stockLeft + ' left in stock' : 'In stock &middot; dispatched within 24 hours') + '</div>') +
-
-          '<div class="pdp-actions">' +
-            addControl(p) +
-            (canOrder(p) ? '<button class="btn btn-gold pdp-buy" type="button" data-buy="' + escapeAttr(p.id) + '">Buy now</button>' : '') +
-            '<button class="btn btn-line pdp-wish' + (isWished(p.id) ? ' on' : '') + '" type="button" data-wish="' + escapeAttr(p.id) + '">' +
-              (isWished(p.id) ? 'Saved' : 'Save') + '</button>' +
-          '</div>' +
-
-          '<div class="pdp-assure">' +
-            '<div><strong>Lab certified</strong><span>Report in the box</span></div>' +
-            '<div><strong>Insured delivery</strong><span>Tracked and signed for</span></div>' +
-            '<div><strong>7 day returns</strong><span>Unworn and sealed</span></div>' +
-          '</div>' +
-
-          '<div class="pdp-block">' +
-            '<h3>About this stone</h3>' +
-            '<p class="pv-desc">' + escapeHtml(p.desc || '') + '</p>' +
-            ((p.benefits && p.benefits.length)
-              ? '<ul class="pv-benefits">' + p.benefits.map(function(b){ return '<li>' + escapeHtml(b) + '</li>'; }).join('') + '</ul>' : '') +
-          '</div>' +
-
-          '<div class="pdp-block">' +
-            '<h3>Delivery</h3>' +
-            '<div class="pincode-row">' +
-              '<input id="pdpPin" maxlength="6" inputmode="numeric" placeholder="Enter 6-digit pincode" aria-label="Pincode">' +
-              '<button class="btn btn-line btn-sm" type="button" id="pdpPinCheck">Check</button>' +
-            '</div>' +
-            '<div class="pincode-result" id="pdpPinResult"></div>' +
-          '</div>' +
-
-          '<div class="pdp-block">' +
-            '<h3>Ratings &amp; reviews</h3>' +
-            reviews.map(function(r){
-              return '<div class="review-item"><span class="stars-sm">' + starString(r.stars) + '</span>' +
-                '<div class="rev-name">' + escapeHtml(r.name) + '<span class="rev-date">' + r.daysAgo + ' days ago</span></div>' +
-                '<p>' + escapeHtml(r.text) + '</p></div>';
-            }).join('') +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-
-      (related.length
-        ? '<div class="pdp-related">' + sectionHead('', 'People also considered') +
-          '<div class="product-grid">' + related.map(productCard).join('') + '</div></div>'
-        : '') +
-    '</div></section>';
-  }
-
-  /* ---------------- pujas ---------------- */
-  function filteredPujas(){
-    var raw = pujaState.q.trim();
-    var q = raw.toLowerCase();
-    var band = PUJA_BANDS.find(function(b){ return b.id === pujaState.band; }) || PUJA_BANDS[0];
-    var list = PUJA_LIST.filter(function(p){
-      // Hindi is matched against the raw query, not the lowercased one - Devanagari has no
-      // case, and lowercasing it is a no-op that only risks surprises.
-      var okQ = !q || p.name.toLowerCase().indexOf(q) !== -1 || (p.hindi && p.hindi.indexOf(raw) !== -1);
-      var okCat = pujaState.cat === 'all' || p.cats.indexOf(pujaState.cat) !== -1;
-      return okQ && okCat && band.test(p);
-    });
-    var s = pujaState.sort;
-    if (s === 'price-asc') list.sort(function(a, b){ return a.price - b.price; });
-    else if (s === 'price-desc') list.sort(function(a, b){ return b.price - a.price; });
-    else if (s === 'dur-asc') list.sort(function(a, b){ return (a.mins == null ? 1e9 : a.mins) - (b.mins == null ? 1e9 : b.mins); });
-    else if (s === 'name') list.sort(function(a, b){ return a.name.localeCompare(b.name); });
-    return list;
-  }
+  var pujaGrid  = document.getElementById('pujaGrid');
+  var pujaChips = document.getElementById('pjChips');
+  var pujaCount = document.getElementById('pjCount');
 
   function pujaCatPhoto(cat){
     if (PUJA_CAT_PHOTOS[cat.id]) return PUJA_CAT_PHOTOS[cat.id];
     var rep = PUJAS.find(function(p){ return p.id === cat.rep; });
-    return rep ? pujaArtwork(rep.img) : '';
+    return rep ? pujaImg(rep) : '';
   }
 
-  function pagePujas(page){
+  var pujaPurposeGrid = document.getElementById('pujaPurposeGrid');
+  function renderPujaPurposeTiles(){
+    pujaPurposeGrid.innerHTML = '';
+    PUJA_CATS.forEach(function(cat){
+      // <button>, not <div>: these filter the list, so they should be reachable by
+      // keyboard and announced as buttons. Same reasoning as the gemstone tiles.
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'purpose-tile' + (pujaState.cat === cat.id ? ' on' : '');
+      var photo = pujaCatPhoto(cat);
+      el.innerHTML = (photo ? '<img src="'+photo+'" alt="" loading="lazy">' : '') +
+        '<span class="pt-label">'+cat.label+'</span>';
+      el.addEventListener('click', function(){
+        // Tapping the tile that is already on clears it, so the tiles can be switched
+        // off without hunting for the pill.
+        pujaState.cat = (pujaState.cat === cat.id) ? 'all' : cat.id;
+        renderPujaPurposeTiles();
+        renderPujas();
+        document.getElementById('puja').scrollIntoView({behavior:'smooth', block:'start'});
+      });
+      pujaPurposeGrid.appendChild(el);
+    });
+    stagger(pujaPurposeGrid.children, 70);
+  }
+
+  var pujaActiveCat = document.getElementById('pjActiveCat');
+  function renderPujaActiveCat(){
+    var cat = PUJA_CATS.find(function(c){ return c.id === pujaState.cat; });
+    if (!cat) { pujaActiveCat.innerHTML = ''; return; }
+    pujaActiveCat.innerHTML = '<button type="button" class="pj-active-cat">' +
+      cat.label + '<span aria-hidden="true">&#10005;</span></button>';
+    pujaActiveCat.querySelector('button').addEventListener('click', function(){
+      pujaState.cat = 'all';
+      renderPujaPurposeTiles();
+      renderPujas();
+    });
+  }
+
+  function renderPujaChips(){
+    pujaChips.innerHTML = '';
+    PUJA_BANDS.forEach(function(b){
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'pj-chip' + (pujaState.band === b.id ? ' on' : '');
+      el.textContent = b.label;
+      el.addEventListener('click', function(){ pujaState.band = b.id; renderPujaChips(); renderPujas(); });
+      pujaChips.appendChild(el);
+    });
+  }
+
+  function filteredPujas(){
+    var q = pujaState.q.trim().toLowerCase();
+    var band = PUJA_BANDS.find(function(b){ return b.id === pujaState.band; }) || PUJA_BANDS[0];
+    var list = PUJAS.filter(function(p){
+      // Hindi is matched too, so someone typing a Devanagari word finds the puja.
+      var okQ = !q || p.n.toLowerCase().indexOf(q) !== -1 || (p.h && p.h.indexOf(pujaState.q.trim()) !== -1);
+      var okCat = pujaState.cat === 'all' || (p.c && p.c.indexOf(pujaState.cat) !== -1);
+      return okQ && okCat && band.test(p);
+    });
+    var s = pujaState.sort;
+    if (s === 'price-asc')  list.sort(function(a,b){ return a.p - b.p; });
+    else if (s === 'price-desc') list.sort(function(a,b){ return b.p - a.p; });
+    else if (s === 'dur-asc')    list.sort(function(a,b){ return a.m - b.m; });
+    else if (s === 'name')       list.sort(function(a,b){ return a.n.localeCompare(b.n); });
+    return list;
+  }
+
+  function renderPujas(){
     var list = filteredPujas();
-    var slice = pageOf(list, page, PER_PAGE);
-
-    return '<section class="section listing"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Pujas' }]) +
-      sectionHead('Wani Puja', 'Sixty-four pujas, paths and sanskars',
-        'Performed with the full vidhi by our pandits. The dakshina shown is confirmed with you before anything is paid.') +
-
-      '<div class="purpose-grid puja-purpose">' + PUJA_CATS.map(function(cat){
-        var photo = pujaCatPhoto(cat);
-        return '<button type="button" class="purpose-tile' + (pujaState.cat === cat.id ? ' on' : '') + '" data-pjcat="' + cat.id + '">' +
-          (photo ? '<img src="' + escapeAttr(photo) + '" alt="" loading="lazy">' : '') +
-          '<span class="pt-label">' + escapeHtml(cat.label) + '</span></button>';
-      }).join('') + '</div>' +
-
-      '<div class="listing-controls">' +
-        '<input class="listing-search" id="pjSearch" type="search" placeholder="Search a puja, in English or Hindi" value="' + escapeAttr(pujaState.q) + '" aria-label="Search pujas">' +
-        '<select id="pjSort" aria-label="Sort pujas">' +
-          [['featured', 'Featured'], ['price-asc', 'Dakshina: low to high'], ['price-desc', 'Dakshina: high to low'], ['dur-asc', 'Shortest first'], ['name', 'Name A-Z']]
-            .map(function(o){ return '<option value="' + o[0] + '"' + (pujaState.sort === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-        '</select>' +
-      '</div>' +
-
-      '<div class="chip-row" role="group" aria-label="Filter by duration">' +
-        PUJA_BANDS.map(function(b){
-          return '<button type="button" class="chip' + (pujaState.band === b.id ? ' on' : '') + '" data-pjband="' + b.id + '">' + escapeHtml(b.label) + '</button>';
-        }).join('') +
-      '</div>' +
-
-      '<div class="listing-count">' + slice.total + (slice.total === 1 ? ' puja' : ' pujas') +
-        (slice.pages > 1 ? ' &middot; page ' + slice.page + ' of ' + slice.pages : '') + '</div>' +
-
-      (slice.items.length
-        ? '<div class="product-grid">' + slice.items.map(pujaCard).join('') + '</div>'
-        : emptyNote('No puja matches that search. Try a shorter word, or clear the filter.')) +
-
-      pagination(slice.page, slice.pages, function(n){ return n === 1 ? '/pujas/' : '/pujas/page/' + n + '/'; }) +
-    '</div></section>';
-  }
-
-  function pagePuja(slug){
-    var pj = pujaBySlug(slug);
-    if (!pj) return page404('We could not find that puja.');
-    var live = pj.live;
-    var payable = live && canOrder(live);
-    var cat = PUJA_CATS.find(function(c){ return pj.cats.indexOf(c.id) !== -1; });
-    var similar = PUJA_LIST.filter(function(x){
-      return x.id !== pj.id && x.cats.some(function(c){ return pj.cats.indexOf(c) !== -1; });
-    }).slice(0, 4);
-
-    return '<section class="section pdp-section"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Pujas', href: '/pujas/' }, { label: pj.name }]) +
-
-      '<div class="pdp">' +
-        '<div class="pdp-media"><div class="pdp-main">' +
-          (pj.img
-            ? '<img class="pdp-img" src="' + escapeAttr(pj.img) + '" alt="' + escapeAttr(pj.name) + '">'
-            : '<span class="pj-noart big" aria-hidden="true">&#128367;</span>') +
-        '</div></div>' +
-
-        '<div class="pdp-info">' +
-          '<div class="pv-cat">' + escapeHtml(cat ? cat.label : 'Wani Puja') + '</div>' +
-          '<h1 class="pdp-name">' + escapeHtml(pj.name) + '</h1>' +
-          (pj.hindi ? '<div class="pj-hi pdp-hi">' + escapeHtml(pj.hindi) + '</div>' : '') +
-
-          '<div class="pj-facts">' +
-            (pj.dur ? '<div class="pj-fact"><div class="pj-fact-k">Puja / anushthan time</div><div class="pj-fact-v">' + escapeHtml(pj.dur) + '</div></div>' : '') +
-            '<div class="pj-fact"><div class="pj-fact-k">Dakshina</div><div class="pj-fact-v price">' + rupees(pj.price) + '</div></div>' +
-          '</div>' +
-
-          '<ol class="pj-steps">' +
-            '<li>Tell us your name, phone number and what the puja is for.</li>' +
-            '<li>Our pandit calls you to fix the muhurat and confirm the samagri.</li>' +
-            '<li>The puja is performed with the full vidhi, and you receive the sankalp and prasad details.</li>' +
-          '</ol>' +
-
-          (payable
-            ? '<div class="pdp-actions">' + addControl(live) +
-                '<button class="btn btn-gold pdp-buy" type="button" data-buy="' + escapeAttr(live.id) + '">Book &amp; pay online</button></div>' +
-              '<div class="checkout-note">Paying online books the puja and the pandit calls you to fix the muhurat. The address you give at checkout is where the puja will be performed.</div>'
-            : '<div class="pdp-actions"><button class="btn btn-gold btn-full" type="button" data-pjbook="' + escapeAttr(pj.id) + '">Request this puja on WhatsApp</button></div>' +
-              '<div class="checkout-note">Nothing is charged on this page. The dakshina above is indicative and is confirmed with you on the call before anything is paid.</div>') +
-
-          '<div class="pdp-block">' +
-            '<h3>What is included</h3>' +
-            '<ul class="pv-benefits">' +
-              '<li>A qualified pandit who performs the full vidhi for this puja</li>' +
-              '<li>Sankalp taken in your name and gotra</li>' +
-              '<li>Photographs or a video of the puja, and prasad details</li>' +
-              '<li>Samagri arranged for you unless you would rather provide it</li>' +
-            '</ul>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-
-      (similar.length
-        ? '<div class="pdp-related">' + sectionHead('', 'Often booked alongside') +
-          '<div class="product-grid">' + similar.map(pujaCard).join('') + '</div></div>'
-        : '') +
-    '</div></section>';
-  }
-
-
-  /* ================= PAGES: CART, LOGIN, CHECKOUT, ORDERS =================
-     Pages that need server data follow one shape: a module-level state object with a
-     status, an enter hook that fetches into it, and a render that reads it. The router
-     calls the enter hook once per navigation, so a re-render (a cart change, a quote
-     coming back) never re-fires the fetch. */
-
-  /* ---------------- cart ---------------- */
-  function pageCart(){
-    var ids = cartIds();
-    // Same trap as the checkout guard: a cart holding live uuids reads as empty until the
-    // catalogue arrives. Telling someone their cart is empty when it is not is the one
-    // wrong answer here, so while there are saved lines we cannot resolve yet, say so.
-    if (!ids.length && catalogState === 'loading' && Object.keys(cart).length) {
-      return '<section class="section"><div class="wrap">' +
-        breadcrumb([{ label: 'Store', href: '/' }, { label: 'Cart' }]) +
-        '<div class="empty-state"><h2>Loading your cart</h2>' +
-        '<p class="lede">One moment - we are checking current prices and stock.</p></div>' +
-        '</div></section>';
+    pujaCount.textContent = list.length + (list.length === 1 ? ' puja' : ' pujas');
+    renderPujaActiveCat();
+    pujaGrid.innerHTML = '';
+    if (!list.length){
+      pujaGrid.innerHTML = '<div class="pj-empty">No puja matches that search. Try a shorter word, or clear the filter.</div>';
+      return;
     }
-    if (!ids.length) {
-      return '<section class="section"><div class="wrap">' +
-        breadcrumb([{ label: 'Store', href: '/' }, { label: 'Cart' }]) +
-        '<div class="empty-state">' +
-          '<h2>Your cart is empty</h2>' +
-          '<p class="lede">Nothing here yet. The certified stones are the place most people start.</p>' +
-          '<a class="btn btn-gold" href="/gemstones/" data-link>Browse gemstones</a>' +
-        '</div></div></section>';
-    }
-
-    var subtotal = cartSubtotal();
-    var delivery = estimatedDelivery(subtotal);
-    var blocked = ids.filter(function(id){ return !canOrder(byId[id]); });
-
-    return '<section class="section"><div class="wrap cart-page">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Cart' }]) +
-      sectionHead('', 'Your cart') +
-
-      '<div class="cart-layout">' +
-        '<div class="cart-lines">' + ids.map(function(id){
-          var p = byId[id];
-          return '<div class="cart-line">' +
-            '<a class="cl-media" href="/gemstones/' + escapeAttr(p.slug) + '/" data-link>' + productPhotoImg(p, 'front') + '</a>' +
-            '<div class="cl-info">' +
-              '<a class="cl-name" href="/gemstones/' + escapeAttr(p.slug) + '/" data-link>' + escapeHtml(p.name) + '</a>' +
-              (p.unitLabel ? '<div class="cl-unit">' + escapeHtml(p.unitLabel) + '</div>' : '') +
-              '<div class="cl-price price">' + rupees(p.price) + ' each</div>' +
-              (canOrder(p) ? '' : '<div class="cl-warn">' + escapeHtml(orderingBlockedReason(p)) + '</div>') +
-              '<div class="cl-controls">' +
-                '<div class="add-step">' +
-                  '<button type="button" data-dec="' + escapeAttr(id) + '" aria-label="Reduce quantity">&minus;</button>' +
-                  '<span>' + cart[id] + '</span>' +
-                  '<button type="button" data-inc="' + escapeAttr(id) + '"' + (cart[id] >= MAX_QTY_PER_LINE ? ' disabled' : '') + ' aria-label="Increase quantity">+</button>' +
-                '</div>' +
-                '<button class="cl-remove" type="button" data-rm="' + escapeAttr(id) + '">Remove</button>' +
-              '</div>' +
-            '</div>' +
-            '<div class="cl-total price">' + rupees(p.price * cart[id]) + '</div>' +
-          '</div>';
-        }).join('') + '</div>' +
-
-        '<aside class="cart-summary">' +
-          '<h3>Bill summary</h3>' +
-          '<div class="sum-row"><span>Subtotal</span><span class="price">' + rupees(subtotal) + '</span></div>' +
-          '<div class="sum-row"><span>Delivery</span><span class="price">' + (delivery ? rupees(delivery) : 'Free') + '</span></div>' +
-          (storeConfig.handlingFee ? '<div class="sum-row"><span>Handling</span><span class="price">' + rupees(storeConfig.handlingFee) + '</span></div>' : '') +
-          '<div class="sum-row total"><span>Estimated total</span><span class="price">' + rupees(subtotal + delivery + storeConfig.handlingFee) + '</span></div>' +
-          /* Deliberate wording. This figure is computed here from a cached price and is
-             NOT what the customer will be asked to pay - the server reprices at checkout
-             and that number is the only one shown next to a Pay button. */
-          '<p class="sum-note">Estimated. Your final total is confirmed at checkout.</p>' +
-          (blocked.length
-            ? '<div class="checkout-note">Some pieces in your cart cannot be ordered right now. Remove them to continue.</div>'
-            : '') +
-          '<button class="btn btn-gold btn-full" type="button" id="goCheckout"' + (blocked.length ? ' disabled' : '') + '>' +
-            (isSignedIn() ? 'Proceed to checkout' : 'Log in to check out') + '</button>' +
-          '<a class="cart-keep" href="/gemstones/" data-link>Keep browsing</a>' +
-        '</aside>' +
-      '</div>' +
-    '</div></section>';
-  }
-
-  /* ---------------- login (phone OTP) ----------------
-     Same OTP endpoints the two apps use, so the JWT this mints is the same customer
-     identity - a web order lands on the same customers row and appears under My Orders in
-     the app. That is the entire reason this is not a guest checkout. */
-  var loginState = { step: 'phone', phone: '', busy: false, error: '', next: '/cart/', resendAt: 0 };
-
-  function enterLogin(params){
-    loginState = { step: 'phone', phone: '', busy: false, error: '', next: params.next || '/cart/', resendAt: 0 };
-  }
-
-  function pageLogin(){
-    if (session.fromApp) {
-      return '<section class="section"><div class="wrap"><div class="empty-state">' +
-        '<h2>You are already signed in</h2>' +
-        '<p class="lede">The app signed you in automatically.</p>' +
-        '<a class="btn btn-gold" href="/cart/" data-link>Back to cart</a></div></div></section>';
-    }
-    if (isSignedIn()) {
-      return '<section class="section"><div class="wrap"><div class="empty-state">' +
-        '<h2>You are signed in</h2>' +
-        '<a class="btn btn-gold" href="' + escapeAttr(loginState.next) + '" data-link>Continue</a></div></div></section>';
-    }
-
-    var body = loginState.step === 'phone'
-      ? '<div class="field"><label for="loginPhone">Mobile number</label>' +
-          '<div class="phone-field"><span class="phone-cc">+91</span>' +
-          '<input id="loginPhone" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="10-digit mobile" value="' + escapeAttr(loginState.phone) + '"></div></div>' +
-        '<button class="btn btn-gold btn-full" type="button" id="loginSend"' + (loginState.busy ? ' disabled' : '') + '>' +
-          (loginState.busy ? 'Sending...' : 'Send OTP') + '</button>'
-      : '<p class="lede login-sent">We sent a 6-digit code to <strong>+91 ' + escapeHtml(loginState.phone) + '</strong>. ' +
-          '<button type="button" class="linkish" id="loginChange">Change</button></p>' +
-        '<div class="field"><label for="loginOtp">Enter OTP</label>' +
-          '<input id="loginOtp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6-digit code"></div>' +
-        '<button class="btn btn-gold btn-full" type="button" id="loginVerify"' + (loginState.busy ? ' disabled' : '') + '>' +
-          (loginState.busy ? 'Checking...' : 'Verify and continue') + '</button>' +
-        '<button type="button" class="linkish login-resend" id="loginResend">Resend the code</button>';
-
-    return '<section class="section"><div class="wrap narrow">' +
-      '<div class="auth-card">' +
-        '<h2>Sign in to check out</h2>' +
-        '<p class="lede">Your Astrowani account, the same one the app uses - so this order shows up under My Orders there too.</p>' +
-        (loginState.error ? '<div class="form-error">' + escapeHtml(loginState.error) + '</div>' : '') +
-        body +
-        '<p class="auth-fine">By continuing you agree to our <a href="/terms/" data-link>Terms</a> and <a href="/privacy/" data-link>Privacy Policy</a>.</p>' +
-      '</div>' +
-    '</div></section>';
-  }
-
-  /* ---------------- checkout ----------------
-     ORDER OF OPERATIONS MIRRORS THE SERVER (see orderRoutes.js): address, then a server
-     quote, then payment. Nothing on this page adds up a number of its own; every figure
-     rendered comes out of the quote response. */
-  var checkoutState = {
-    status: 'idle',          // idle | loading | ready | error
-    view: 'form',            // form | placed | unconfirmed
-    quote: null,
-    addresses: [],
-    addressId: null,
-    addingAddress: false,
-    error: '',
-    busy: false,
-    orderId: null,
-    message: ''
-  };
-
-  // One token for the life of this checkout attempt. Retrying the same attempt reuses it
-  // and the server dedupes; leaving and re-entering checkout mints a new one, which is
-  // correctly treated as a genuinely new order. See orders.client_request_id.
-  var clientRequestId = null;
-
-  function enterCheckout(){
-    checkoutState = { status: 'loading', view: 'form', quote: null, addresses: [], addressId: null,
-      addingAddress: false, error: '', busy: false, orderId: null, message: '' };
-    clientRequestId = 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
-
-    if (!isSignedIn()) { navigate('/login/?next=/checkout/', true); return; }
-
-    // The cart cannot be judged empty until the live uuids are known - see whenCatalogReady.
-    whenCatalogReady().then(function(){
-      // The shopper may have navigated away while that was in flight; finishing this
-      // checkout would then overwrite whatever page they are now looking at.
-      if (!currentRoute || currentRoute.name !== 'checkout') return null;
-      if (!cartIds().length) { navigate('/cart/', true); return null; }
-      return Promise.all([
-        apiQuote(),
-        apiAddresses().catch(function(){ return []; })
-      ]);
-    }).then(function(res){
-      if (!res) return;
-      checkoutState.quote = res[0];
-      checkoutState.addresses = res[1] || [];
-      var def = null;
-      checkoutState.addresses.forEach(function(a){ if (!def || a.is_default) def = a; });
-      checkoutState.addressId = def ? def.id : null;
-      checkoutState.addingAddress = !checkoutState.addresses.length;
-      checkoutState.status = 'ready';
-      rerender();
-    }).catch(function(e){
-      if (e.status === 401 && handleAuthFailure()) { navigate('/login/?next=/checkout/', true); return; }
-      checkoutState.status = 'error';
-      checkoutState.error = e.message || 'Could not start checkout';
-      rerender();
+    list.forEach(function(p){
+      var card = document.createElement('div');
+      card.className = 'card pj-card';
+      card.innerHTML =
+        '<div class="card-media" data-puja="'+p.id+'">'+
+          '<img loading="lazy" src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'">'+
+        '</div>'+
+        '<div class="card-body">'+
+          '<div class="card-name" data-puja="'+p.id+'">'+escapeHtml(p.n)+'</div>'+
+          '<div class="pj-hi">'+escapeHtml(p.h||'')+'</div>'+
+          '<div class="pj-meta">'+
+            '<span class="pj-dur">&#9201; '+escapeHtml(p.d)+'</span>'+
+            '<span class="price pj-price">'+pujaRupees(p.p)+'</span>'+
+          '</div>'+
+          '<button class="btn btn-gold btn-sm pj-book" data-puja="'+p.id+'">Book this puja</button>'+
+        '</div>';
+      pujaGrid.appendChild(card);
     });
+    stagger(pujaGrid.children, 40, 12);
   }
 
-  /* Field names here are customer_addresses' own, not a shape of this page's invention -
-     see pickAddressFields in orderRoutes.js. Getting them wrong does not error, it quietly
-     posts nulls and renders a half-blank address, which is how a parcel goes missing. */
-  function addressLine(a){
-    return [a.house_flat, a.street_area, a.landmark, a.city, a.state, a.pincode].filter(Boolean).join(', ');
-  }
-
-  function addressForm(){
-    return '<div class="addr-form">' +
-      '<div class="field"><label for="naName">Full name</label><input id="naName" autocomplete="name" placeholder="Who is receiving this"></div>' +
-      '<div class="field"><label for="naPhone">Phone</label><input id="naPhone" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="10-digit mobile"></div>' +
-      '<div class="field"><label for="naHouse">House / flat number</label><input id="naHouse" autocomplete="address-line1" placeholder="House or flat no."></div>' +
-      '<div class="field"><label for="naStreet">Street / area</label><input id="naStreet" autocomplete="address-line2" placeholder="Street, locality"></div>' +
-      '<div class="field"><label for="naLandmark">Landmark (optional)</label><input id="naLandmark" placeholder="Nearby landmark"></div>' +
-      '<div class="field-row">' +
-        '<div class="field"><label for="naCity">City</label><input id="naCity" autocomplete="address-level2" placeholder="City"></div>' +
-        '<div class="field"><label for="naPin">Pincode</label><input id="naPin" inputmode="numeric" maxlength="6" autocomplete="postal-code" placeholder="6 digits"></div>' +
-      '</div>' +
-      '<div class="field"><label for="naState">State</label><input id="naState" autocomplete="address-level1" placeholder="State"></div>' +
-      '<div class="field"><label for="naLabel">Save as</label><select id="naLabel">' +
-        '<option value="home">Home</option><option value="work">Work</option><option value="other">Other</option>' +
-      '</select></div>' +
-      '<button class="btn btn-line btn-full" type="button" id="saveAddr">Save this address</button>' +
-    '</div>';
-  }
-
-  // Turn a list of item ids from the quote back into titles the shopper recognises.
-  function blockedLineTitles(q, ids){
-    if (!ids || !ids.length) return '';
-    var byItem = {};
-    (q.items || []).forEach(function(l){ byItem[l.itemId] = l.title; });
-    return ids.map(function(id){ return byItem[id] || 'An item'; }).join(', ');
-  }
-
-  function pageCheckout(){
-    if (checkoutState.view === 'placed') return pageOrderPlaced();
-    if (checkoutState.view === 'unconfirmed') return pagePaymentUnconfirmed();
-
-    if (checkoutState.status === 'loading' || checkoutState.status === 'idle') {
-      return '<section class="section"><div class="wrap narrow">' +
-        '<div class="auth-card"><h2>Checking prices and stock</h2>' +
-        '<p class="lede">One moment - we are repricing your cart against the live catalogue.</p></div>' +
-        '</div></section>';
-    }
-    if (checkoutState.status === 'error') {
-      return '<section class="section"><div class="wrap narrow"><div class="auth-card">' +
-        '<h2>Could not start checkout</h2>' +
-        '<p class="lede">' + escapeHtml(checkoutState.error) + '</p>' +
-        '<a class="btn btn-gold" href="/cart/" data-link>Back to cart</a></div></div></section>';
-    }
-
-    var q = checkoutState.quote || {};
-    var blocked = (q.blockedTypes || []).length > 0;
-    var oos = (q.outOfStock || []).length > 0;
-    var canPay = q.canCheckout !== false && !blocked && !oos;
-
-    var addrBlock = checkoutState.addresses.length
-      ? '<div class="addr-list">' + checkoutState.addresses.map(function(a){
-          return '<label class="addr-opt' + (a.id === checkoutState.addressId ? ' sel' : '') + '">' +
-            '<input type="radio" name="ck-addr" value="' + escapeAttr(a.id) + '"' + (a.id === checkoutState.addressId ? ' checked' : '') + '>' +
-            '<span><strong>' + escapeHtml(a.full_name || 'Address') + '</strong>' +
-            (a.label ? '<span class="addr-tag">' + escapeHtml(a.label) + '</span>' : '') +
-            '<span class="addr-text">' + escapeHtml(addressLine(a)) + '</span>' +
-            (a.phone ? '<span class="addr-text">' + escapeHtml(a.phone) + '</span>' : '') + '</span></label>';
-        }).join('') + '</div>' +
-        (checkoutState.addingAddress
-          ? addressForm()
-          : '<button class="btn btn-line btn-sm" type="button" id="addAddrBtn">+ Add a new address</button>')
-      : addressForm();
-
-    return '<section class="section"><div class="wrap checkout-page">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Cart', href: '/cart/' }, { label: 'Checkout' }]) +
-      sectionHead('', 'Checkout') +
-
-      '<div class="checkout-layout">' +
-        '<div class="checkout-main">' +
-          '<div class="checkout-block">' +
-            '<h3><span class="step-n">1</span> Delivery address</h3>' + addrBlock +
-          '</div>' +
-          '<div class="checkout-block">' +
-            '<h3><span class="step-n">2</span> Payment</h3>' +
-            '<div class="pay-opt sel"><strong>Pay online</strong>' +
-              '<span>UPI, cards, netbanking and wallets, through Razorpay.</span></div>' +
-            '<p class="sum-note">Cash on delivery is not available yet.</p>' +
-          '</div>' +
-        '</div>' +
-
-        '<aside class="cart-summary">' +
-          '<h3>Order summary</h3>' +
-          (q.items || []).map(function(l){
-            var line = Number(l.lineTotal != null ? l.lineTotal : (l.unitPrice * l.quantity)) || 0;
-            return '<div class="sum-row"><span>' + escapeHtml(l.title) + ' &times;' + l.quantity + '</span>' +
-              '<span class="price">' + rupees(line) + '</span></div>';
-          }).join('') +
-          '<div class="sum-row"><span>Delivery</span><span class="price">' + (q.deliveryFee ? rupees(q.deliveryFee) : 'Free') + '</span></div>' +
-          (q.handlingFee ? '<div class="sum-row"><span>Handling</span><span class="price">' + rupees(q.handlingFee) + '</span></div>' : '') +
-          '<div class="sum-row total"><span>To pay</span><span class="price">' + rupees(q.grandTotal) + '</span></div>' +
-          /* Named, not just flagged. "Something in your cart" makes the shopper hunt
-             through their own cart to work out what; the quote already tells us exactly
-             which lines the server refused, so say so - and give them the way back, since
-             the only place a line can be removed is the cart. */
-          (blocked
-            ? '<div class="checkout-note">We are not delivering ' +
-                escapeHtml((q.blockedTypes || []).map(catLabel).join(' or ').toLowerCase() || 'some of these') +
-                ' to your area yet. <a href="/cart/" data-link>Remove them in your cart</a> to continue.</div>'
-            : '') +
-          (oos
-            ? '<div class="checkout-note">' +
-                escapeHtml(blockedLineTitles(q, q.outOfStock) || 'Something in your cart') +
-                ' just went out of stock. <a href="/cart/" data-link>Update your cart</a> to continue.</div>'
-            : '') +
-          (checkoutState.message ? '<div class="form-error">' + escapeHtml(checkoutState.message) + '</div>' : '') +
-          '<button class="btn btn-gold btn-full" type="button" id="payBtn"' + (canPay && !checkoutState.busy ? '' : ' disabled') + '>' +
-            (checkoutState.busy ? 'Starting payment...' : 'Pay ' + rupees(q.grandTotal)) + '</button>' +
-          '<p class="sum-note">You are charged by Razorpay. Astrowani never sees your card details.</p>' +
-        '</aside>' +
-      '</div>' +
-    '</div></section>';
-  }
-
-  function pageOrderPlaced(){
-    var id = checkoutState.orderId;
-    return '<section class="section"><div class="wrap narrow"><div class="confirm auth-card">' +
-      '<div class="tick">&#10003;</div>' +
-      '<h2>Order placed</h2>' +
-      (id ? '<div class="ordno price">#' + escapeHtml(String(id).slice(0, 8).toUpperCase()) + '</div>' : '') +
-      '<p class="lede">Payment confirmed. We will pack it and send you the tracking details.</p>' +
-      '<a class="btn btn-gold" href="/orders/" data-link>Track this order</a>' +
-      '<a class="btn btn-line" href="/gemstones/" data-link>Keep browsing</a>' +
-    '</div></div></section>';
-  }
-
-  // Money may well have left the customer's account by this point, so this must never say
-  // the order failed. It states only what is known, and tells them not to pay twice.
-  function pagePaymentUnconfirmed(){
-    return '<section class="section"><div class="wrap narrow"><div class="auth-card">' +
-      '<h2>We could not confirm your payment</h2>' +
-      '<p class="lede">If money left your account it is safe and the order will be completed. <strong>Please do not pay again.</strong></p>' +
-      (checkoutState.message ? '<p class="sum-note">' + escapeHtml(checkoutState.message) + '</p>' : '') +
-      '<a class="btn btn-gold" href="/orders/" data-link>Check my orders</a>' +
-    '</div></div></section>';
-  }
-
-  /* ---------------- orders ---------------- */
-  var ordersState = { status: 'idle', data: [], error: '', busyId: null };
-
-  function enterOrders(){
-    if (!isSignedIn()) { navigate('/login/?next=/orders/', true); return; }
-    ordersState = { status: 'loading', data: [], error: '', busyId: null };
-    apiMyOrders().then(function(rows){
-      ordersState.status = 'ready';
-      ordersState.data = rows;
-      rerender();
-    }).catch(function(e){
-      if (e.status === 401 && handleAuthFailure()) { navigate('/login/?next=/orders/', true); return; }
-      ordersState.status = 'error';
-      ordersState.error = e.message || 'Could not load your orders';
-      rerender();
-    });
-  }
-
-  var ORDER_STEPS = [
-    { key: 'placed', label: 'Placed' },
-    { key: 'confirmed', label: 'Confirmed' },
-    { key: 'packed', label: 'Packed' },
-    { key: 'shipped', label: 'Shipped' },
-    { key: 'out_for_delivery', label: 'Out for delivery' },
-    { key: 'delivered', label: 'Delivered' }
-  ];
-
-  function orderTimeline(order){
-    if (order.status === 'cancelled') {
-      return '<div class="track cancelled"><span class="track-dot done"></span>' +
-        '<span>Cancelled' + (order.payment_status === 'refunded' ? ' &middot; refunded' : '') + '</span></div>';
-    }
-    var reached = ORDER_STEPS.findIndex(function(s){ return s.key === (order.status === 'completed' ? 'delivered' : order.status); });
-    if (reached < 0) reached = 0;
-    return '<ol class="track">' + ORDER_STEPS.map(function(s, i){
-      return '<li class="track-step' + (i <= reached ? ' done' : '') + '">' +
-        '<span class="track-dot' + (i <= reached ? ' done' : '') + '"></span>' +
-        '<span class="track-label">' + s.label + '</span></li>';
-    }).join('') + '</ol>';
-  }
-
-  function orderCard(o){
-    var items = o.items || [];
-    var when = o.created_at ? new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-    var cancellable = ['placed', 'confirmed'].indexOf(o.status) !== -1;
-    return '<article class="order-card">' +
-      '<header class="order-head">' +
-        '<div><span class="order-no price">#' + escapeHtml(String(o.id).slice(0, 8).toUpperCase()) + '</span>' +
-        '<span class="order-when">' + escapeHtml(when) + '</span></div>' +
-        '<span class="order-status s-' + escapeAttr(o.status) + '">' + escapeHtml(String(o.status).replace(/_/g, ' ')) + '</span>' +
-      '</header>' +
-      '<div class="order-items">' + items.map(function(l){
-        return '<div class="order-item"><span>' + escapeHtml(l.title || l.item_title || 'Item') + ' &times;' + (l.quantity || 1) + '</span>' +
-          '<span class="price">' + rupees(l.line_total != null ? l.line_total : (l.unit_price || 0) * (l.quantity || 1)) + '</span></div>';
-      }).join('') + '</div>' +
-      '<div class="order-bill">' +
-        (o.delivery_fee ? '<div class="sum-row"><span>Delivery</span><span class="price">' + rupees(o.delivery_fee) + '</span></div>' : '') +
-        (o.handling_fee ? '<div class="sum-row"><span>Handling</span><span class="price">' + rupees(o.handling_fee) + '</span></div>' : '') +
-        '<div class="sum-row total"><span>Total paid</span><span class="price">' + rupees(o.grand_total != null ? o.grand_total : o.total) + '</span></div>' +
-      '</div>' +
-      orderTimeline(o) +
-      (cancellable
-        ? '<button class="btn btn-line btn-sm" type="button" data-cancel="' + escapeAttr(o.id) + '"' + (ordersState.busyId === o.id ? ' disabled' : '') + '>' +
-          (ordersState.busyId === o.id ? 'Cancelling...' : 'Cancel order') + '</button>'
-        : '') +
-    '</article>';
-  }
-
-  function pageOrders(){
-    if (ordersState.status === 'loading' || ordersState.status === 'idle') {
-      return '<section class="section"><div class="wrap"><h2>Your orders</h2><p class="lede">Loading...</p></div></section>';
-    }
-    if (ordersState.status === 'error') {
-      return '<section class="section"><div class="wrap"><div class="empty-state">' +
-        '<h2>Could not load your orders</h2><p class="lede">' + escapeHtml(ordersState.error) + '</p>' +
-        '<button class="btn btn-gold" type="button" id="ordersRetry">Try again</button></div></div></section>';
-    }
-    if (!ordersState.data.length) {
-      return '<section class="section"><div class="wrap"><div class="empty-state">' +
-        '<h2>No orders yet</h2><p class="lede">When you order something it will show up here, with tracking.</p>' +
-        '<a class="btn btn-gold" href="/gemstones/" data-link>Browse gemstones</a></div></div></section>';
-    }
-    return '<section class="section"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'My orders' }]) +
-      sectionHead('', 'Your orders') +
-      '<div class="order-list">' + ordersState.data.map(orderCard).join('') + '</div>' +
-    '</div></section>';
-  }
-
-  /* ---------------- account ---------------- */
-  var accountState = { status: 'idle', addresses: [], error: '' };
-
-  function enterAccount(){
-    if (!isSignedIn()) { navigate('/login/?next=/account/', true); return; }
-    accountState = { status: 'loading', addresses: [], error: '' };
-    apiAddresses().then(function(rows){
-      accountState.status = 'ready'; accountState.addresses = rows; rerender();
-    }).catch(function(e){
-      if (e.status === 401 && handleAuthFailure()) { navigate('/login/?next=/account/', true); return; }
-      accountState.status = 'error'; accountState.error = e.message || 'Could not load your account'; rerender();
-    });
-  }
-
-  function pageAccount(){
-    var who = (session.profile && session.profile.phone) ? '+91 ' + session.profile.phone : 'Signed in';
-    return '<section class="section"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Account' }]) +
-      sectionHead('', 'Your account') +
-      '<div class="acct-grid">' +
-        '<div class="acct-card">' +
-          '<h3>Signed in as</h3><p class="acct-who">' + escapeHtml(who) + '</p>' +
-          '<a class="btn btn-line btn-sm" href="/orders/" data-link>My orders</a>' +
-          (session.fromApp
-            ? '<p class="sum-note">Signed in through the Astrowani app.</p>'
-            : '<button class="btn btn-line btn-sm" type="button" id="signOutBtn">Sign out</button>') +
-        '</div>' +
-        '<div class="acct-card">' +
-          '<h3>Saved addresses</h3>' +
-          (accountState.status !== 'ready'
-            ? '<p class="lede">' + (accountState.status === 'error' ? escapeHtml(accountState.error) : 'Loading...') + '</p>'
-            : (accountState.addresses.length
-                ? '<div class="addr-list">' + accountState.addresses.map(function(a){
-                    return '<div class="addr-opt"><span><strong>' + escapeHtml(a.full_name || 'Address') + '</strong>' +
-                      '<span class="addr-text">' + escapeHtml(addressLine(a)) + '</span></span>' +
-                      '<button class="cl-remove" type="button" data-addrdel="' + escapeAttr(a.id) + '">Remove</button></div>';
-                  }).join('') + '</div>'
-                : '<p class="lede">No saved addresses yet. You can add one at checkout.</p>')) +
-        '</div>' +
-        '<div class="acct-card">' +
-          '<h3>Saved items</h3>' +
-          (wishlist.length
-            ? '<div class="wish-list">' + wishlist.map(function(id){
-                var p = byId[id];
-                if (!p) return '';
-                return '<a class="wish-row" href="/gemstones/' + escapeAttr(p.slug) + '/" data-link>' +
-                  productPhotoImg(p, 'front') + '<span>' + escapeHtml(p.name) + '</span>' +
-                  '<span class="price">' + rupees(p.price) + '</span></a>';
-              }).join('') + '</div>'
-            : '<p class="lede">Nothing saved yet. Tap the heart on any stone.</p>') +
-        '</div>' +
-      '</div>' +
-    '</div></section>';
-  }
-
-
-  /* ================= PAGES: CALCULATORS + EDITORIAL =================
-     The footer used to link four policies to href="#" with onclick="return false" - a
-     link that visibly does nothing. These are those pages, written out properly, because
-     a store taking money online is expected to state its shipping, returns and privacy
-     terms somewhere a customer can actually reach. */
-
-  function pageCalculators(){
-    return '<section class="section calc-section"><div class="wrap">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: 'Calculators' }]) +
-      sectionHead('Numerology', 'Know your number before you buy',
-        'Two quick calculations from your date of birth, and the stone each number traditionally pairs with.') +
-      '<div class="calc-grid">' +
-        '<div class="calc-card">' +
-          '<h3>Moolank &amp; Bhagyank</h3>' +
-          '<p class="lede">Your root number and your destiny number, from your full date of birth.</p>' +
-          '<div class="field"><label for="dobInput">Date of birth</label><input type="date" id="dobInput"></div>' +
-          '<button class="btn btn-line btn-full" type="button" id="calcMoolankBtn">Calculate</button>' +
-          '<div class="calc-result" id="moolankResult"></div>' +
-        '</div>' +
-        '<div class="calc-card">' +
-          '<h3>Gemstone finder</h3>' +
-          '<p class="lede">Already know your Moolank? Find the stone it answers to.</p>' +
-          '<div class="field"><label for="moolankSelect">Your Moolank</label>' +
-            '<select id="moolankSelect"><option value="">Choose a number</option>' +
-            [1,2,3,4,5,6,7,8,9].map(function(n){ return '<option value="' + n + '">' + n + '</option>'; }).join('') +
-            '</select></div>' +
-          '<button class="btn btn-line btn-full" type="button" id="calcGemBtn">Find my stone</button>' +
-          '<div class="calc-result" id="gemResult"></div>' +
-        '</div>' +
-      '</div>' +
-    '</div></section>';
-  }
-
-  function editorial(title, crumbLabel, blocks){
-    return '<section class="section"><div class="wrap narrow-read">' +
-      breadcrumb([{ label: 'Store', href: '/' }, { label: crumbLabel || title }]) +
-      '<h1 class="doc-title">' + escapeHtml(title) + '</h1>' +
-      blocks +
-    '</div></section>';
-  }
-
-  function pageAbout(){
-    return editorial('About Wani Shop', 'About',
-      '<p class="lede">Wani Shop is the retail side of Astrowani - the same astrologers, the same reasoning, applied to the objects people are told to wear or perform.</p>' +
-      '<div class="about-band">' +
-        '<div class="editorial-media"><img src="' + escapeAttr(LIFESTYLE.boxes) + '" alt="A blue sapphire and an emerald resting in open wooden presentation boxes." loading="lazy"></div>' +
-        '<div><h2>Every stone is certified before it is listed</h2>' +
-        '<p>A gemstone sold as a remedy is worn every day for years, so it has to be what it says it is. Each stone we list is checked against an independent laboratory report, and that report ships in the box with it. If the certificate and the stone ever disagree, the stone does not go out.</p></div>' +
-      '</div>' +
-      '<div class="about-band reverse">' +
-        '<div class="editorial-media"><img src="' + escapeAttr(LIFESTYLE.tray) + '" alt="A tray of loose emeralds, sapphires, citrine and rubies beside a loupe and a certificate booklet." loading="lazy"></div>' +
-        '<div><h2>Chosen against a chart, not upsold</h2>' +
-        '<p>Our astrologers recommend against a birth chart, and the honest recommendation is often the cheaper stone, or none at all. If you are not sure what you need, talk to an astrologer in the Astrowani app before buying anything here.</p></div>' +
-      '</div>' +
-      '<h2>Pujas</h2>' +
-      '<p>Our pandits perform the full vidhi for each of the sixty-four pujas, paths and sanskars listed here. Sankalp is taken in your name and gotra, and you receive photographs or video of the puja along with prasad details.</p>' +
-      '<h2>Where we are</h2>' +
-      '<p>Stones are graded, set and dispatched from our Delhi workshop.</p>');
-  }
-
-  function pageContact(){
-    return editorial('Contact us', 'Contact',
-      '<p class="lede">A real person answers all three of these.</p>' +
-      '<div class="contact-grid">' +
-        '<div class="acct-card"><h3>WhatsApp</h3><p>Fastest for anything about an order or a puja.</p>' +
-          '<a class="btn btn-gold btn-sm" href="https://wa.me/' + PUJA_WHATSAPP + '" target="_blank" rel="noopener">Message us</a></div>' +
-        '<div class="acct-card"><h3>Email</h3><p>For certificates, returns and invoices.</p>' +
-          '<a class="btn btn-line btn-sm" href="mailto:' + ENQUIRY_EMAIL + '">' + ENQUIRY_EMAIL + '</a></div>' +
-        '<div class="acct-card"><h3>In the app</h3><p>Talk to an astrologer before you buy.</p>' +
-          '<a class="btn btn-line btn-sm" href="' + PLAY_STORE_URL + '" target="_blank" rel="noopener">Get the app</a></div>' +
-      '</div>' +
-      '<h2>Order support</h2>' +
-      '<p>Have your order number ready - it is on the order in <a href="/orders/" data-link>My orders</a>. We reply to order questions the same working day.</p>');
-  }
-
-  function pageShipping(){
-    return editorial('Shipping & delivery', 'Shipping',
-      '<p class="lede">Everything is sent tracked, insured and signed for.</p>' +
-      '<h2>Dispatch</h2>' +
-      '<p>Orders placed before 4pm on a working day are dispatched the same day. Anything after that, or at a weekend, goes out on the next working day.</p>' +
-      '<h2>Delivery time</h2>' +
-      '<p>Metro cities: 2 to 4 working days. Everywhere else in India: 4 to 7 working days. Remote pincodes can take a little longer, and we will tell you if yours is one of them.</p>' +
-      '<h2>Delivery charges</h2>' +
-      '<p>Delivery is charged at checkout and shown before you pay, never added afterwards. ' +
-        (storeConfig.freeDeliveryAbove
-          ? 'Delivery is free on orders above ' + rupees(storeConfig.freeDeliveryAbove) + '.'
-          : 'Free delivery thresholds are shown in your cart.') + '</p>' +
-      '<h2>Tracking</h2>' +
-      '<p>You can follow an order at any time under <a href="/orders/" data-link>My orders</a>. Tracking details are also sent to you as the order moves.</p>' +
-      '<h2>Pujas</h2>' +
-      '<p>A puja is a service, not a shipment. The address you give at checkout is where the puja will be performed, and our pandit calls you to fix the muhurat.</p>');
-  }
-
-  function pageReturns(){
-    return editorial('Returns & refunds', 'Returns',
-      '<p class="lede">Seven days, on an unworn stone in its sealed packet.</p>' +
-      '<h2>What can be returned</h2>' +
-      '<p>Any gemstone, unworn and still in its sealed packet with its certificate, within 7 days of delivery. A stone that has been set, resized, drilled or worn cannot be returned, because it can no longer be sold as new.</p>' +
-      '<h2>If the stone does not match its certificate</h2>' +
-      '<p>Send it back at our cost and we refund in full, whatever the date. This is the one case where nothing else applies.</p>' +
-      '<h2>How to start a return</h2>' +
-      '<p>Message us on WhatsApp or email <a href="mailto:' + ENQUIRY_EMAIL + '">' + ENQUIRY_EMAIL + '</a> with your order number.</p>' +
-      '<h2>Refunds</h2>' +
-      '<p>Refunds go back to the method you paid with. Card and UPI refunds usually take 5 to 7 working days to appear, which is the bank\'s timeline rather than ours.</p>' +
-      '<h2>Cancelling</h2>' +
-      '<p>An order can be cancelled from <a href="/orders/" data-link>My orders</a> right up until it is packed, and is refunded automatically.</p>' +
-      '<h2>Pujas</h2>' +
-      '<p>A puja can be cancelled or rescheduled up to 24 hours before the fixed muhurat. Once the pandit has begun, the dakshina is not refundable.</p>');
-  }
-
-  function pageCertification(){
-    return editorial('Certification & sourcing', 'Certification',
-      '<p class="lede">What the certificate in your box actually means.</p>' +
-      '<h2>Independent laboratories</h2>' +
-      '<p>Stones are graded by an independent gemmological laboratory, not by us. The report names the species, the variety, the weight, the measurements, the cut, and - critically - whether the stone has been treated.</p>' +
-      '<h2>Treatment is stated, never hidden</h2>' +
-      '<p>Most coloured stones on the market are treated in some way. That is not automatically a problem; hiding it is. Where a stone is treated, the report says so and so does the listing.</p>' +
-      '<h2>Weight and ratti</h2>' +
-      '<p>Indian astrology usually prescribes weight in ratti; laboratories report in carats. Where a listing gives a ratti figure it is a conversion of the certified carat weight, and the certificate is the authority.</p>' +
-      '<h2>Sourcing</h2>' +
-      '<p>Ceylon sapphires come through Sri Lankan dealers we have bought from for years; emeralds through Jaipur. We do not buy parcels we cannot trace.</p>');
-  }
-
-  function pagePrivacy(){
-    return editorial('Privacy policy', 'Privacy',
-      '<p class="lede">What we collect when you buy something here, and what we do with it.</p>' +
-      '<h2>What we collect</h2>' +
-      '<p>Your mobile number, which is how you sign in; your name and delivery address, which is how the order reaches you; and your order history. If you use the calculators, the date of birth you enter is used in your browser to compute the result and is not sent to us.</p>' +
-      '<h2>Payments</h2>' +
-      '<p>Payments are processed by Razorpay. Your card, UPI or netbanking details are entered on Razorpay and are never seen by, sent to, or stored by Astrowani. We keep only the payment reference Razorpay returns.</p>' +
-      '<h2>What we do not do</h2>' +
-      '<p>We do not sell your data, and we do not share it with anyone beyond what an order requires - the courier needs your address, and the payment provider needs to confirm a payment.</p>' +
-      '<h2>Your account</h2>' +
-      '<p>This is the same Astrowani account the app uses. To have it deleted, email <a href="mailto:' + ENQUIRY_EMAIL + '">' + ENQUIRY_EMAIL + '</a> from the number on the account and we will remove it along with its order history, except records we are required to keep for tax.</p>' +
-      '<h2>On this device</h2>' +
-      '<p>Your cart, your saved items and your sign-in are stored in your own browser. Clearing your browser data clears them.</p>');
-  }
-
-  function pageTerms(){
-    return editorial('Terms of sale', 'Terms',
-      '<p class="lede">The short version: we sell certified stones and pandit-performed pujas, and we say what they are.</p>' +
-      '<h2>Prices</h2>' +
-      '<p>Prices are in Indian rupees and include applicable taxes. The total you are shown on the checkout page, immediately before you pay, is the total you are charged - it is calculated on our server at that moment, not in your browser.</p>' +
-      '<h2>Orders</h2>' +
-      '<p>An order exists once payment is confirmed by Razorpay. If a payment succeeds but we cannot confirm it, the order is still honoured - do not pay a second time; contact us.</p>' +
-      '<h2>Availability</h2>' +
-      '<p>Stones are individual pieces. If something sells out between your adding it and paying, we will tell you at checkout rather than after taking your money.</p>' +
-      '<h2>What a remedy is</h2>' +
-      '<p>Gemstones and pujas are offered within the Vedic astrological tradition. They are not medicine, and nothing here is a substitute for medical, legal or financial advice.</p>' +
-      '<h2>Pujas</h2>' +
-      '<p>The dakshina shown is for the puja as described. If your requirements change what is needed, our pandit tells you before anything further is charged.</p>' +
-      '<h2>Governing law</h2>' +
-      '<p>These terms are governed by the laws of India, and disputes fall to the courts of Delhi.</p>');
-  }
-
-  function pageFaq(){
-    var QA = [
-      ['How do I know the stone is real?', 'Every stone ships with an independent laboratory report that names its species, weight and any treatment. If the stone and the report disagree, send it back at our cost for a full refund.'],
-      ['Which stone should I wear?', 'That depends on your chart, and the honest answer is sometimes none. Talk to an astrologer in the Astrowani app before buying - it costs less than the wrong stone.'],
-      ['What does ratti mean?', 'A traditional Indian unit of weight. Laboratories certify in carats, so any ratti figure on a listing is a conversion of the certified carat weight.'],
-      ['How long does delivery take?', 'Two to four working days to metro cities, four to seven elsewhere in India. Everything is tracked and insured.'],
-      ['Can I pay cash on delivery?', 'Not yet. Payment is online through Razorpay - UPI, cards, netbanking or wallets.'],
-      ['Can I cancel?', 'Yes, from My orders, right up until the order is packed. The refund is automatic.'],
-      ['How does a puja booking work?', 'You book and pay, then our pandit calls you to fix the muhurat and confirm the samagri. The address you give is where the puja will be performed.'],
-      ['I paid but I do not see my order.', 'Do not pay again. Check My orders first, and if it is still missing, message us with the time of payment and we will find it.']
-    ];
-    return editorial('Frequently asked questions', 'FAQ',
-      '<div class="faq-list">' + QA.map(function(qa){
-        return '<details class="faq-item"><summary>' + escapeHtml(qa[0]) + '</summary><p>' + escapeHtml(qa[1]) + '</p></details>';
-      }).join('') + '</div>');
-  }
-
-  function page404(msg){
-    return '<section class="section"><div class="wrap"><div class="empty-state">' +
-      '<h2>Page not found</h2>' +
-      '<p class="lede">' + escapeHtml(msg || 'That page does not exist, or it has moved.') + '</p>' +
-      '<a class="btn btn-gold" href="/" data-link>Back to the store</a>' +
-      '<a class="btn btn-line" href="/gemstones/" data-link>Browse gemstones</a>' +
-    '</div></div></section>';
-  }
-
-
-  /* ================= ROUTER =================
-     Real paths, real history entries. pushState for a navigation the shopper made,
-     replaceState for a redirect they did not (a guard sending them to /login/), so Back
-     never bounces them between a guarded page and the guard.
-
-     Every path that is not a real file on disk arrives here because nginx ends its
-     location / block with `try_files $uri $uri/ /index.html`. That is also why the shell
-     must be able to render EVERY route: the document the browser got for
-     /gemstones/ruby-manik/ is byte-identical to the one it gets for /. */
-
-  var view = null;               // #view, resolved at boot
-  var currentRoute = null;
-  var scrollPositions = {};
-
-  function parseRoute(pathname, search){
-    var params = {};
-    try {
-      new URLSearchParams(search || '').forEach(function(v, k){ params[k] = v; });
-    } catch (e) { /* older webview: query params simply stay empty */ }
-
-    var segs = String(pathname || '/').split('/').filter(Boolean).map(function(s){
-      try { return decodeURIComponent(s); } catch (e){ return s; }
-    });
-    var p = params.page ? parseInt(params.page, 10) : 1;
-
-    if (!segs.length) return { name: 'home', params: params };
-
-    if (segs[0] === 'gemstones') {
-      if (segs.length === 1) return { name: 'gemstones', page: p || 1, params: params };
-      if (segs[1] === 'page') return { name: 'gemstones', page: parseInt(segs[2], 10) || 1, params: params };
-      return { name: 'product', slug: segs[1], params: params };
-    }
-    if (segs[0] === 'pujas') {
-      if (segs.length === 1) return { name: 'pujas', page: p || 1, params: params };
-      if (segs[1] === 'page') return { name: 'pujas', page: parseInt(segs[2], 10) || 1, params: params };
-      return { name: 'puja', slug: segs[1], params: params };
-    }
-    if (segs[0] === 'purpose' && segs[1]) return { name: 'purpose', id: segs[1], params: params };
-
-    var simple = ['cart', 'checkout', 'orders', 'account', 'login', 'calculators',
-                  'about', 'contact', 'shipping', 'returns', 'certification', 'privacy', 'terms', 'faq'];
-    if (segs.length === 1 && simple.indexOf(segs[0]) !== -1) return { name: segs[0], params: params };
-
-    return { name: '404', params: params };
-  }
-
-  var TITLES = {
-    home: 'Wani Shop',
-    gemstones: 'Certified gemstones',
-    pujas: 'Book a puja',
-    cart: 'Your cart',
-    checkout: 'Checkout',
-    orders: 'My orders',
-    account: 'Your account',
-    login: 'Sign in',
-    calculators: 'Moolank & gemstone calculators',
-    about: 'About us',
-    contact: 'Contact us',
-    shipping: 'Shipping & delivery',
-    returns: 'Returns & refunds',
-    certification: 'Certification & sourcing',
-    privacy: 'Privacy policy',
-    terms: 'Terms of sale',
-    faq: 'FAQ',
-    '404': 'Page not found'
-  };
-
-  function routeTitle(r){
-    if (r.name === 'product') { var p = productBySlug(r.slug); return (p ? p.name : 'Gemstone') + ' — Wani Shop'; }
-    if (r.name === 'puja') { var pj = pujaBySlug(r.slug); return (pj ? pj.name : 'Puja') + ' — Wani Shop'; }
-    if (r.name === 'purpose') { var pu = PURPOSES.find(function(x){ return x.id === r.id; }); return (pu ? pu.label : 'Purpose') + ' — Wani Shop'; }
-    if (r.name === 'home') return TITLES.home;
-    return (TITLES[r.name] || 'Wani Shop') + ' — Wani Shop';
-  }
-
-  function renderRoute(r){
-    switch (r.name) {
-      case 'home': return pageHome();
-      case 'gemstones': return pageGemstones(r.page);
-      case 'product': return pageProduct(r.slug);
-      case 'pujas': return pagePujas(r.page);
-      case 'puja': return pagePuja(r.slug);
-      case 'purpose': return pagePurpose(r.id);
-      case 'cart': return pageCart();
-      case 'checkout': return pageCheckout();
-      case 'orders': return pageOrders();
-      case 'account': return pageAccount();
-      case 'login': return pageLogin();
-      case 'calculators': return pageCalculators();
-      case 'about': return pageAbout();
-      case 'contact': return pageContact();
-      case 'shipping': return pageShipping();
-      case 'returns': return pageReturns();
-      case 'certification': return pageCertification();
-      case 'privacy': return pagePrivacy();
-      case 'terms': return pageTerms();
-      case 'faq': return pageFaq();
-      default: return page404();
-    }
-  }
-
-  // Enter hooks fire ONCE per navigation. rerender() deliberately does not call them, so
-  // a cart tick or an arriving quote re-paints without re-firing the fetch that produced it.
-  function enterRoute(r){
-    if (r.name === 'checkout') enterCheckout();
-    else if (r.name === 'orders') enterOrders();
-    else if (r.name === 'account') enterAccount();
-    else if (r.name === 'login') enterLogin(r.params);
-  }
-
-  /* Re-paint the current route in place. Used by everything that changes state the page
-     is reading: a cart change, the live catalogue landing, a quote resolving. */
-  function rerender(){
-    if (!currentRoute || !view) return;
-    var y = window.scrollY;
-    paint();
-    // A re-render is not a navigation, so the reader must not be moved. Restoring the
-    // exact offset is what makes tapping + on the twelfth card feel like a tick rather
-    // than a page reload.
-    window.scrollTo(0, y);
-  }
-
-  function paint(){
-    view.innerHTML = renderRoute(currentRoute);
-    document.title = routeTitle(currentRoute);
-    markReveals(view);
-    renderCartBadge();
-    renderCartBar();
-    syncNav();
-  }
-
-  function syncNav(){
-    var name = currentRoute && currentRoute.name;
-    Array.prototype.forEach.call(document.querySelectorAll('nav.main a[href]'), function(a){
-      var href = a.getAttribute('href');
-      var on = (href === '/gemstones/' && (name === 'gemstones' || name === 'product' || name === 'purpose')) ||
-               (href === '/pujas/' && (name === 'pujas' || name === 'puja')) ||
-               (href === '/' && name === 'home') ||
-               (href !== '/' && href === '/' + name + '/');
-      a.classList.toggle('on', !!on);
-    });
-    var acct = document.getElementById('acctBtn');
-    if (acct) acct.setAttribute('title', isSignedIn() ? 'Your account' : 'Sign in');
-  }
-
-  function markReveals(root){
-    var groups = ['.section-head', '.card', '.gate-tile', '.purpose-tile', '.testi-card',
-                  '.about-band > *', '.acct-card', '.order-card', '.calc-card', '.pdp-info > *', '.pdp-media'];
-    groups.forEach(function(sel){
-      var nodes = root.querySelectorAll(sel);
-      Array.prototype.forEach.call(nodes, function(el, i){
-        if (el.hasAttribute('data-reveal')) return;
-        el.setAttribute('data-reveal', '');
-        el.setAttribute('data-reveal-delay', String(Math.min(i, 8) * 45));
-      });
-    });
-    observeNew(root.querySelectorAll('[data-reveal]'));
-    // Belt and braces: the IntersectionObserver has been seen not delivering inside the
-    // in-app webview, and a stranded opacity:0 section reads as a blank page. Content
-    // being visible is not negotiable; the entrance animation is.
-    queueSweep();
-    setTimeout(function(){ sweepVisible(true); }, 2500);
-  }
-
-  function navigate(href, replace){
-    var url;
-    try { url = new URL(href, window.location.origin); } catch (e) { window.location.href = href; return; }
-    if (url.origin !== window.location.origin) { window.location.href = href; return; }
-
-    var samePath = url.pathname === window.location.pathname && url.search === window.location.search;
-    if (!replace && !samePath) scrollPositions[window.location.pathname + window.location.search] = window.scrollY;
-
-    if (replace) history.replaceState({}, '', url.pathname + url.search);
-    else history.pushState({}, '', url.pathname + url.search);
-
-    go(url.pathname, url.search, !samePath);
-  }
-
-  function go(pathname, search, resetScroll){
-    var r = parseRoute(pathname, search);
-    currentRoute = r;
-    enterRoute(r);
-    // An enter hook is allowed to redirect - /checkout/ sends a signed-out shopper to
-    // /login/. When it does it calls navigate(), which re-enters go() and replaces
-    // currentRoute; painting here would then render the page we just decided to leave.
-    if (currentRoute !== r) return;
-    paint();
-    if (resetScroll !== false) {
-      var saved = scrollPositions[pathname + (search || '')];
-      window.scrollTo(0, saved || 0);
-    }
-  }
-
-  window.addEventListener('popstate', function(){
-    go(window.location.pathname, window.location.search, true);
+  pujaGrid.addEventListener('click', function(e){
+    var t = e.target.closest('[data-puja]');
+    if (t) openPujaView(t.getAttribute('data-puja'));
+  });
+  document.getElementById('pjSearch').addEventListener('input', function(e){
+    pujaState.q = e.target.value; renderPujas();
+  });
+  document.getElementById('pjSort').addEventListener('change', function(e){
+    pujaState.sort = e.target.value; renderPujas();
   });
 
-  /* ================= DELEGATION =================
-     One click listener on the document, for every page. Nothing rendered above ever binds
-     its own handler, which is why re-rendering a 64-card grid on each keystroke costs a
-     single innerHTML assignment and no listener churn. */
-  document.addEventListener('click', function(e){
-    var t = e.target;
-    if (!t || !t.closest) return;
+  var pjContent = document.getElementById('pjContent');
 
-    var link = t.closest('a[data-link]');
-    if (link && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
-      e.preventDefault();
-      navigate(link.getAttribute('href'));
-      return;
-    }
-
-    var add = t.closest('[data-add]');
-    if (add) { addToCart(add.getAttribute('data-add'), 1); return; }
-
-    var inc = t.closest('[data-inc]');
-    if (inc) { var iid = inc.getAttribute('data-inc'); setQty(iid, cartQty(iid) + 1); return; }
-
-    var dec = t.closest('[data-dec]');
-    if (dec) { var did = dec.getAttribute('data-dec'); setQty(did, cartQty(did) - 1); return; }
-
-    var rm = t.closest('[data-rm]');
-    if (rm) { setQty(rm.getAttribute('data-rm'), 0); return; }
-
-    var why = t.closest('[data-why]');
-    if (why) { showToast(why.getAttribute('data-why')); return; }
-
-    var wish = t.closest('[data-wish]');
-    if (wish) {
-      var on = toggleWishlist(wish.getAttribute('data-wish'));
-      showToast(on ? 'Saved to your list' : 'Removed from your list');
-      rerender();
-      return;
-    }
-
-    var buy = t.closest('[data-buy]');
-    if (buy) {
-      var bid = buy.getAttribute('data-buy');
-      if (!cartQty(bid)) addToCart(bid, 1);
-      if (cartQty(bid)) navigate('/cart/');
-      return;
-    }
-
-    var variant = t.closest('[data-variant]');
-    if (variant) {
-      var vp = byId[variant.getAttribute('data-for')];
-      if (vp) {
-        var main = document.getElementById('pdpMain');
-        if (main) main.innerHTML = productPhotoImg(vp, variant.getAttribute('data-variant'), 'pdp-img');
-        Array.prototype.forEach.call(view.querySelectorAll('.pdp-thumb'), function(x){ x.classList.remove('sel'); });
-        variant.classList.add('sel');
-      }
-      return;
-    }
-
-    var purpose = t.closest('[data-purpose]');
-    if (purpose) { shopState.purpose = purpose.getAttribute('data-purpose'); navigate('/gemstones/'); return; }
-
-    var price = t.closest('[data-price]');
-    if (price) { shopState.price = price.getAttribute('data-price'); navigate('/gemstones/'); return; }
-
-    var pjcat = t.closest('[data-pjcat]');
-    if (pjcat) {
-      var cid = pjcat.getAttribute('data-pjcat');
-      pujaState.cat = (pujaState.cat === cid) ? 'all' : cid;
-      navigate('/pujas/');
-      return;
-    }
-
-    var pjband = t.closest('[data-pjband]');
-    if (pjband) { pujaState.band = pjband.getAttribute('data-pjband'); navigate('/pujas/'); return; }
-
-    var pjbook = t.closest('[data-pjbook]');
-    if (pjbook) { openPujaWhatsApp(pjbook.getAttribute('data-pjbook')); return; }
-
-    var cancel = t.closest('[data-cancel]');
-    if (cancel) { cancelOrder(cancel.getAttribute('data-cancel')); return; }
-
-    var addrDel = t.closest('[data-addrdel]');
-    if (addrDel) { removeAddress(addrDel.getAttribute('data-addrdel')); return; }
-
-    if (t.closest('#goCheckout')) {
-      if (!isSignedIn()) navigate('/login/?next=/checkout/');
-      else navigate('/checkout/');
-      return;
-    }
-    if (t.closest('#addAddrBtn')) { checkoutState.addingAddress = true; rerender(); return; }
-    if (t.closest('#saveAddr')) { saveNewAddress(); return; }
-    if (t.closest('#payBtn')) { payNow(); return; }
-    if (t.closest('#loginSend')) { sendOtp(); return; }
-    if (t.closest('#loginVerify')) { verifyOtp(); return; }
-    if (t.closest('#loginResend')) { sendOtp(true); return; }
-    if (t.closest('#loginChange')) { loginState.step = 'phone'; loginState.error = ''; rerender(); return; }
-    if (t.closest('#ordersRetry')) { enterOrders(); return; }
-    if (t.closest('#signOutBtn')) { signOut(); showToast('Signed out'); navigate('/'); return; }
-    if (t.closest('#pdpPinCheck')) { checkPincode(); return; }
-    if (t.closest('#calcMoolankBtn')) { calcMoolank(); return; }
-    if (t.closest('#calcGemBtn')) { calcGem(); return; }
-    if (t.closest('#newsletterBtn')) { joinNewsletter(); return; }
-    if (t.closest('#cartBtn')) { navigate('/cart/'); return; }
-    if (t.closest('#acctBtn')) { navigate(isSignedIn() ? '/account/' : '/login/?next=/account/'); return; }
-  });
-
-  // Search boxes re-filter as you type. The re-render is a single innerHTML write, so the
-  // caret has to be put back by hand - without this the box loses focus on every letter.
-  document.addEventListener('input', function(e){
-    var el = e.target;
-    if (!el || !el.id) return;
-    if (el.id === 'shopSearch') { shopState.q = el.value; rerenderKeepingFocus('shopSearch'); }
-    else if (el.id === 'pjSearch') { pujaState.q = el.value; rerenderKeepingFocus('pjSearch'); }
-  });
-
-  document.addEventListener('change', function(e){
-    var el = e.target;
-    if (!el || !el.id) return;
-    if (el.id === 'shopSort') { shopState.sort = el.value; rerender(); }
-    else if (el.id === 'pjSort') { pujaState.sort = el.value; rerender(); }
-    else if (el.name === 'ck-addr') { checkoutState.addressId = el.value; rerender(); }
-  });
-
-  document.addEventListener('keydown', function(e){
-    if (e.key !== 'Enter') return;
-    var el = e.target;
-    if (!el || !el.id) return;
-    if (el.id === 'loginPhone') { e.preventDefault(); sendOtp(); }
-    else if (el.id === 'loginOtp') { e.preventDefault(); verifyOtp(); }
-    else if (el.id === 'pdpPin') { e.preventDefault(); checkPincode(); }
-  });
-
-  function rerenderKeepingFocus(id){
-    var before = document.getElementById(id);
-    var pos = before ? before.selectionStart : null;
-    rerender();
-    var after = document.getElementById(id);
-    if (!after) return;
-    after.focus();
-    try { if (pos != null) after.setSelectionRange(pos, pos); } catch (e) { /* type=search on some engines */ }
-  }
-
-  // Called by every cart mutation. Re-paints the page, the header badge and the sticky bar
-  // together, so the three can never disagree about what is in the cart.
-  function onCartChanged(){
-    renderCartBadge();
-    renderCartBar();
-    rerender();
-  }
-
-
-  /* ================= ACTIONS ================= */
-
-  var ENQUIRY_EMAIL = 'support@astrowani.com';
-  var PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.astrowanicustomer';
-
-  /* ---- login ---- */
-  function sendOtp(isResend){
-    var el = document.getElementById('loginPhone');
-    var phone = (el ? el.value : loginState.phone).replace(/\D/g, '').slice(-10);
-    if (!/^[6-9]\d{9}$/.test(phone)) {
-      loginState.error = 'Enter a valid 10-digit Indian mobile number.';
-      loginState.phone = phone;
-      rerender();
-      return;
-    }
-    loginState.phone = phone;
-    loginState.busy = true;
-    loginState.error = '';
-    rerender();
-
-    apiRequestOtp(phone).then(function(){
-      loginState.busy = false;
-      loginState.step = 'otp';
-      rerender();
-      showToast(isResend ? 'New code sent' : 'OTP sent');
-    }).catch(function(e){
-      loginState.busy = false;
-      // The backend throttles OTPs per number and returns a plain message; showing it
-      // verbatim is more useful than "something went wrong" when the answer is "wait 60s".
-      loginState.error = e.message || 'Could not send the OTP. Please try again.';
-      rerender();
-    });
-  }
-
-  function verifyOtp(){
-    var el = document.getElementById('loginOtp');
-    var otp = (el ? el.value : '').replace(/\D/g, '');
-    if (otp.length < 4) { loginState.error = 'Enter the code we sent you.'; rerender(); return; }
-    loginState.busy = true;
-    loginState.error = '';
-    rerender();
-
-    apiVerifyOtp(loginState.phone, otp).then(function(res){
-      if (!res || !res.token) throw new Error('Could not sign you in. Please try again.');
-      setWebSession(res.token, { phone: loginState.phone, id: res.user && res.user.id });
-      loginState.busy = false;
-      showToast('Signed in');
-      navigate(loginState.next || '/cart/', true);
-    }).catch(function(e){
-      loginState.busy = false;
-      loginState.error = e.message || 'That code did not work.';
-      rerender();
-    });
-  }
-
-  /* ---- addresses ---- */
-  function collectAddress(){
-    var g = function(id){ var el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
-    return {
-      full_name: g('naName'),
-      phone: g('naPhone').replace(/\D/g, '').slice(-10),
-      house_flat: g('naHouse'),
-      street_area: g('naStreet'),
-      landmark: g('naLandmark'),
-      city: g('naCity'),
-      state: g('naState'),
-      pincode: g('naPin').replace(/\D/g, ''),
-      label: g('naLabel') || 'home'
-    };
-  }
-
-  /* Checked here as well as on the server, and deliberately to the SAME rules
-     (validateAddressBody in orderRoutes.js) - so the shopper is told which field is wrong
-     while they are still looking at it, rather than after a round trip. The server remains
-     the authority; this only saves them the trip. */
-  function validateAddress(a){
-    if (!a.full_name) return 'Please add a name for the delivery.';
-    if (!/^\d{10}$/.test(a.phone)) return 'Please add a valid 10-digit phone number.';
-    if (!a.house_flat) return 'Please add a house or flat number.';
-    if (!a.city) return 'Please add a city.';
-    if (!/^[1-9]\d{5}$/.test(a.pincode)) return 'Please add a valid 6-digit pincode.';
-    return '';
-  }
-
-  function saveNewAddress(){
-    var a = collectAddress();
-    var bad = validateAddress(a);
-    if (bad) { showToast(bad); return; }
-    apiSaveAddress(a).then(function(r){
-      var saved = r.data || r;
-      checkoutState.addresses = checkoutState.addresses.concat([saved]);
-      checkoutState.addressId = saved.id;
-      checkoutState.addingAddress = false;
-      rerender();
-      showToast('Address saved');
-    }).catch(function(e){
-      if (e.status === 401 && handleAuthFailure()) { navigate('/login/?next=/checkout/', true); return; }
-      showToast(e.message || 'Could not save that address');
-    });
-  }
-
-  function removeAddress(id){
-    apiDeleteAddress(id).then(function(){
-      accountState.addresses = accountState.addresses.filter(function(a){ return a.id !== id; });
-      rerender();
-      showToast('Address removed');
-    }).catch(function(e){ showToast(e.message || 'Could not remove that address'); });
-  }
-
-  /* ---- payment ----
-     Deliberately mirrors astrowani_customer-main's PaymentScreen: create the order, open
-     Razorpay, and treat ONLY the server's signature check as proof of payment. The
-     Razorpay handler firing does not mean the order is paid. */
-  function payNow(){
-    if (checkoutState.busy) return;
-
-    var addrPromise;
-    if (checkoutState.addressId) {
-      addrPromise = Promise.resolve(checkoutState.addressId);
-    } else {
-      var a = collectAddress();
-      var bad = validateAddress(a);
-      if (bad) { showToast(bad); return; }
-      addrPromise = apiSaveAddress(a).then(function(r){ return (r.data && r.data.id) || (r && r.id); });
-    }
-
-    checkoutState.busy = true;
-    checkoutState.message = '';
-    rerender();
-
-    addrPromise.then(function(addressId){
-      if (!addressId) throw new Error('Please add a delivery address');
-      checkoutState.addressId = addressId;
-      // The web widget is only needed when the app's native sheet is not going to handle
-      // this - see openRazorpay. Skipping the script on the bridge path saves a
-      // third-party fetch on a mobile connection at the worst possible moment.
-      var ready = appBridgeAvailable() ? Promise.resolve() : loadRazorpay();
-      return ready.then(function(){
-        return apiFetch('/api/orders/checkout', {
-          method: 'POST',
-          body: JSON.stringify({
-            items: cartIds().map(function(id){ return { itemId: id, quantity: cart[id] }; }),
-            addressId: addressId,
-            paymentMethod: 'razorpay',
-            clientRequestId: clientRequestId,
-            source: 'web'
-          })
-        });
-      });
-    }).then(function(res){
-      // The server already handled this exact attempt - the retry is the success, not an
-      // error. Same posture as verify-payment's alreadyProcessed.
-      if (res.alreadyProcessed) { onOrderConfirmed(res.orderId); return; }
-      openRazorpay(res);
-    }).catch(function(e){
-      checkoutState.busy = false;
-      if (e.status === 401 && handleAuthFailure()) { navigate('/login/?next=/checkout/', true); return; }
-      if (e.status === 402 && e.body && e.body.shortfall != null) {
-        checkoutState.message = 'That payment could not be completed. Short by ' + rupees(e.body.shortfall) + '.';
-      } else {
-        checkoutState.message = e.message || 'Could not start the payment.';
-      }
-      rerender();
-    });
-  }
-
-  /* Whatever confirmed the payment - the web widget or the app's native sheet - lands
-     here, and NOTHING is said to the customer until the server has checked the signature.
-     Razorpay reporting success is not proof; the server's HMAC check is. */
-  function verifyPayment(resp, fallbackOrderId){
-    return apiFetch('/api/orders/verify-payment', {
-      method: 'POST',
-      body: JSON.stringify({
-        razorpay_order_id: resp.razorpay_order_id,
-        razorpay_payment_id: resp.razorpay_payment_id,
-        razorpay_signature: resp.razorpay_signature
-      })
-    }).then(function(v){
-      onOrderConfirmed(v.orderId || fallbackOrderId);
-    }).catch(function(e){
-      checkoutState.busy = false;
-      checkoutState.view = 'unconfirmed';
-      checkoutState.message = e.message || '';
-      rerender();
-    });
-  }
-
-  function paymentDismissed(){
-    checkoutState.busy = false;
-    checkoutState.message = 'Payment window closed. Nothing has been charged.';
-    rerender();
-  }
-
-  function razorpayOptions(res){
-    return {
-      key: res.keyId,
-      order_id: res.razorpayOrderId,
-      amount: res.amount,
-      currency: res.currency || 'INR',
-      name: 'Wani Shop',
-      description: 'Order ' + String(res.orderId || '').slice(0, 8).toUpperCase(),
-      prefill: session.profile && session.profile.phone ? { contact: session.profile.phone } : {},
-      theme: { color: '#592a19' }
-    };
-  }
-
-  /* ---- the app bridge ----
-     Inside the WebView, Razorpay's WEB widget is the wrong tool. Paying by UPI hands off to
-     an intent:// URL that opens GPay or PhonePe; the WebView cannot follow it, and
-     StoreWebView's onShouldStartLoadWithRequest sends anything off-host to the system
-     browser - which would take the customer out of the app mid-payment and strand the
-     session. The app already links react-native-razorpay (Wallet.js and PaymentScreen.js
-     both use it), so the page asks the app to run its NATIVE sheet and posts the result
-     back here.
-
-     Detection is on the handler the app installs, not on a platform string, so a build
-     that predates the bridge simply falls through to the web widget rather than posting a
-     message nothing is listening for and hanging on a spinner forever. */
-  var appPaymentSeq = 0;
-  var appPaymentPending = null;
-
-  function appBridgeAvailable(){
-    return !!(window.ReactNativeWebView && window.__ASTROWANI__ && window.__ASTROWANI__.nativePay);
-  }
-
-  // Called by the app (see StoreWebView.js). Kept on window because injectJavaScript is
-  // the only channel back into the page.
-  window.__astrowaniPaymentResult = function(payload){
-    var pending = appPaymentPending;
-    if (!pending || !payload || payload.id !== pending.id) return;   // stale or foreign
-    appPaymentPending = null;
-    if (payload.status === 'success' && payload.payment) verifyPayment(payload.payment, pending.orderId);
-    else if (payload.status === 'cancelled') paymentDismissed();
-    else {
-      checkoutState.busy = false;
-      checkoutState.message = payload.message || 'The payment could not be completed.';
-      rerender();
-    }
-  };
-
-  function openRazorpay(res){
-    var opts = razorpayOptions(res);
-
-    if (appBridgeAvailable()) {
-      appPaymentSeq += 1;
-      appPaymentPending = { id: appPaymentSeq, orderId: res.orderId };
-      try {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'razorpay', id: appPaymentSeq, options: opts
-        }));
-        return;
-      } catch (e) {
-        // The bridge is there but the post failed. Fall through to the web widget rather
-        // than leaving a customer who has an order row waiting on nothing.
-        appPaymentPending = null;
-      }
-    }
-
-    var rzp = new window.Razorpay(Object.assign({}, opts, {
-      handler: function(resp){ verifyPayment(resp, res.orderId); },
-      modal: { ondismiss: paymentDismissed }
-    }));
-    rzp.open();
-  }
-
-  function onOrderConfirmed(orderId){
-    clearCart();
-    checkoutState.busy = false;
-    checkoutState.orderId = orderId;
-    checkoutState.view = 'placed';
-    rerender();
-  }
-
-  function cancelOrder(id){
-    if (ordersState.busyId) return;
-    ordersState.busyId = id;
-    rerender();
-    apiCancelOrder(id).then(function(){
-      showToast('Order cancelled. Any payment is being refunded.');
-      enterOrders();
-    }).catch(function(e){
-      ordersState.busyId = null;
-      showToast(e.message || 'Could not cancel that order');
-      rerender();
-    });
-  }
-
-  /* ---- puja booking handoff (unpaid pujas) ---- */
-  function openPujaWhatsApp(id){
-    var p = pujaBySlug(id) || PUJA_LIST.find(function(x){ return x.id === id; });
+  function openPujaView(id){
+    var p = PUJAS.find(function(x){ return x.id === id; });
     if (!p) return;
-    var nl = String.fromCharCode(10);
-    var lines = [
-      'Puja request from shop.astrowani.com', '',
-      'Puja: ' + p.name + (p.hindi ? ' (' + p.hindi + ')' : '')
-    ];
-    if (p.dur) lines.push('Duration: ' + p.dur);
-    lines.push('Indicative dakshina: Rs ' + Number(p.price).toLocaleString('en-IN'), '',
-      'Please call me to fix the muhurat.');
-    var url = 'https://wa.me/' + PUJA_WHATSAPP + '?text=' + encodeURIComponent(lines.join(nl));
-    // window.open returns null inside some in-app webviews; falling through to a same-tab
-    // navigation means the handoff still happens rather than the button doing nothing.
-    var w = null;
-    try { w = window.open(url, '_blank'); } catch (e) {}
-    if (!w) window.location.href = url;
+    pjContent.innerHTML =
+      '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
+      '<div class="pv-cat">Wani Puja</div>'+
+      '<h3 class="pv-name">'+escapeHtml(p.n)+'</h3>'+
+      (p.h ? '<div class="pj-hi" style="font-size:15px; margin-top:4px;">'+escapeHtml(p.h)+'</div>' : '')+
+      '<div class="pj-facts">'+
+        '<div class="pj-fact"><div class="pj-fact-k">Puja / anushthan time</div><div class="pj-fact-v">'+escapeHtml(p.d)+'</div></div>'+
+        '<div class="pj-fact"><div class="pj-fact-k">Dakshina</div><div class="pj-fact-v price">'+pujaRupees(p.p)+'</div></div>'+
+      '</div>'+
+      '<ol class="pj-steps">'+
+        '<li>Tell us your name, phone number and what the puja is for.</li>'+
+        '<li>Our pandit calls you to fix the muhurat and confirm the samagri.</li>'+
+        '<li>The puja is performed with the full vidhi, and you receive the sankalp and prasad details.</li>'+
+      '</ol>'+
+      '<div class="checkout-note">Nothing is charged on this page. The dakshina above is indicative and is confirmed with you on the call before anything is paid.</div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjBookBtn">Request this puja</button>';
+    pjContent.querySelector('#pjBookBtn').addEventListener('click', function(){ renderPujaBooking(p); });
+    openModal('pjModal');
   }
 
-  /* ---- pincode ETA ----
-     Honest about what it is: an estimate derived from the pincode, not a courier lookup.
-     There is no serviceability API wired up, so it never claims a stone cannot be
-     delivered - only how long it usually takes. */
-  function checkPincode(){
-    var el = document.getElementById('pdpPin');
-    var out = document.getElementById('pdpPinResult');
-    if (!el || !out) return;
-    var pin = el.value.trim();
-    if (!/^\d{6}$/.test(pin)) { out.textContent = 'Enter a valid 6-digit pincode.'; return; }
-    var digitSum = pin.split('').reduce(function(s, d){ return s + parseInt(d, 10); }, 0);
-    var days = 3 + (digitSum % 5);
-    var eta = new Date();
-    eta.setDate(eta.getDate() + days);
-    out.textContent = 'Usually delivered by ' + eta.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) +
-      ', about ' + days + ' days to this pincode.';
+  function renderPujaBooking(p){
+    pjContent.innerHTML =
+      '<h3 style="font-size:20px; margin-bottom:6px;">Request '+escapeHtml(p.n)+'</h3>'+
+      '<p class="lede" style="font-size:14px; margin:0 0 18px;">Leave your details and our pandit will call you back to fix the muhurat and confirm the samagri and the final dakshina.</p>'+
+      '<div class="field"><label for="pjName">Your name</label><input id="pjName" placeholder="Full name"></div>'+
+      '<div class="field-row">'+
+        '<div class="field"><label for="pjPhone">Phone number</label><input id="pjPhone" inputmode="numeric" placeholder="10-digit mobile"></div>'+
+        '<div class="field"><label for="pjCity">City (optional)</label><input id="pjCity" placeholder="City"></div>'+
+      '</div>'+
+      '<div class="field"><label for="pjNote">Anything we should know? (optional)</label><textarea id="pjNote" rows="2" placeholder="Preferred date, birth details, what the puja is for"></textarea></div>'+
+      '<div class="sum-row total"><span>'+escapeHtml(p.d)+'</span><span class="price">'+pujaRupees(p.p)+'</span></div>'+
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjSendBtn">Send request on WhatsApp</button>';
+
+    pjContent.querySelector('#pjSendBtn').addEventListener('click', function(){
+      var name  = pjContent.querySelector('#pjName').value.trim();
+      var phone = pjContent.querySelector('#pjPhone').value.trim();
+      var city  = pjContent.querySelector('#pjCity').value.trim();
+      var note  = pjContent.querySelector('#pjNote').value.trim();
+      if (!name || !phone){ showToast('Please add your name and phone number'); return; }
+      if (!pujaPhoneOk(phone)){ showToast('That phone number does not look right'); return; }
+
+      var lines = [
+        'Puja request from shop.astrowani.com', '',
+        'Puja: ' + p.n + (p.h ? ' (' + p.h + ')' : ''),
+        'Duration: ' + p.d,
+        'Indicative dakshina: Rs ' + p.p.toLocaleString('en-IN'), '',
+        'Name: ' + name,
+        'Phone: ' + phone
+      ];
+      if (city) lines.push('City: ' + city);
+      if (note) lines.push('Note: ' + note);
+      var url = 'https://wa.me/' + PUJA_WHATSAPP + '?text=' + encodeURIComponent(lines.join(String.fromCharCode(10)));
+
+      // window.open is blocked in some in-app webviews and returns null; falling through
+      // to a same-tab navigation means the handoff still happens instead of the button
+      // appearing to do nothing.
+      var w = null;
+      try { w = window.open(url, '_blank'); } catch (e) {}
+      if (!w) window.location.href = url;
+
+      pjContent.innerHTML =
+        '<div class="confirm">'+
+          '<div class="tick">&#10003;</div>'+
+          '<h3 style="font-size:22px;">Request ready to send</h3>'+
+          '<p class="lede" style="margin:10px auto 18px; max-width:40ch;">WhatsApp should have opened with your puja request filled in. Press send there and our pandit will call you back on <strong>'+escapeHtml(phone)+'</strong>.</p>'+
+          '<p class="lede" style="margin:0 auto 18px; max-width:40ch; font-size:13.5px;">Nothing has been charged.</p>'+
+          '<button class="btn btn-gold" id="pjDone">Keep browsing</button>'+
+        '</div>';
+      pjContent.querySelector('#pjDone').addEventListener('click', function(){ closeModal('pjModal'); });
+    });
   }
 
-  /* ---- calculators ---- */
-  function calcMoolank(){
-    var val = (document.getElementById('dobInput') || {}).value;
-    var box = document.getElementById('moolankResult');
-    if (!box) return;
-    if (!val) { showToast('Please choose a date of birth'); return; }
-    var parts = val.split('-');
-    var year = parts[0], month = parts[1], day = parts[2];
-    var moolank = reduceDigits(parseInt(day, 10));
-    var bhagyank = reduceDigits(parseInt(day + month + year, 10));
-    var mt = MOOLANK_TRAITS[moolank], gm = GEM_MAP[moolank];
-    var p = byId[gm.productId];
-    box.innerHTML =
-      '<div class="num-big">' + moolank + '</div><div class="num-sub">Moolank &middot; ruled by ' + mt.planet + '</div>' +
-      '<p>' + escapeHtml(mt.trait) + '</p>' +
-      '<p style="margin-top:10px;"><strong>Bhagyank: ' + bhagyank + '</strong>, your destiny number, drawn from your complete date of birth.</p>' +
-      (p ? '<a class="rec" href="/gemstones/' + escapeAttr(p.slug) + '/" data-link>&#10022; Traditionally paired with ' + escapeHtml(gm.name) + ' &rarr;</a>'
-         : '<div class="rec">&#10022; Traditionally paired with ' + escapeHtml(gm.name) + '</div>');
-    box.classList.add('show');
-  }
-
-  function calcGem(){
-    var val = (document.getElementById('moolankSelect') || {}).value;
-    var box = document.getElementById('gemResult');
-    if (!box) return;
-    if (!val) { showToast('Please select a Moolank number'); return; }
-    var n = parseInt(val, 10);
-    var mt = MOOLANK_TRAITS[n], gm = GEM_MAP[n];
-    var p = byId[gm.productId];
-    box.innerHTML =
-      (p
-        ? '<div class="gem-result-row"><div class="gem-result-thumb">' + productPhotoImg(p, 'front') + '</div>' +
-          '<div><div class="gem-result-name">' + escapeHtml(p.name) + '</div>' +
-          '<div class="price">' + rupees(p.price) + '</div></div></div>'
-        : '<div class="gem-result-name">' + escapeHtml(gm.name) + '</div>') +
-      '<p>Ruled by ' + mt.planet + '. ' + escapeHtml(mt.trait) + '</p>' +
-      (p ? '<a class="btn btn-gold btn-sm" href="/gemstones/' + escapeAttr(p.slug) + '/" data-link>View this piece</a>' : '');
-    box.classList.add('show');
-  }
-
-  function joinNewsletter(){
-    var el = document.getElementById('newsletterInput');
-    if (!el) return;
-    var v = el.value.trim();
-    if (!v || v.indexOf('@') === -1) { showToast('Enter an email to join'); return; }
-    el.value = '';
-    showToast('Thanks, you are on the list');
-  }
-
-  /* ================= PROMO TICKER ================= */
-  function initTicker(){
-    var root = document.getElementById('marquee');
-    if (!root) return;
-    var MESSAGES = [
-      'Every stone ships with its lab certificate',
-      'Insured, tracked delivery across India',
-      '7 day returns on any unworn stone',
-      'Sixty-four pujas performed with the full vidhi'
-    ];
-    var track = document.createElement('div');
-    track.className = 'marquee-track';
-    var run = MESSAGES.concat(MESSAGES).map(function(m){
-      return '<span class="marquee-item">' + m + '<span class="sep">&#10022;</span></span>';
-    }).join('');
-    track.innerHTML = run;
-    root.innerHTML = '';
-    root.appendChild(track);
-  }
-
-  /* ================= IN-APP CHROME =================
-     The exit button only exists inside the app: on the open web there is nothing to exit
-     to, and a dead button is worse than no button. Exposed as a global because the
-     WebView re-injects after load on Android and calls it then - see injectAuthAfterLoad
-     in StoreWebView.js. Idempotent by design. */
-  function applyAppMode(){
-    loadSession();
-    var inApp = !!(window.__ASTROWANI__ && window.__ASTROWANI__.platform === 'app');
-    document.body.classList.toggle('in-app', inApp);
-    var exitBtn = document.getElementById('exitBtn');
-    if (exitBtn) exitBtn.classList.toggle('hidden', !inApp);
-    syncNav();
-    if (currentRoute) rerender();
-  }
-  window.__astrowaniApplyAppMode = applyAppMode;
-
-  function initAppChrome(){
-    var exitBtn = document.getElementById('exitBtn');
-    if (exitBtn) {
-      exitBtn.addEventListener('click', function(){
-        // Only the app knows where "home" is, so the page asks rather than navigating.
-        try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'exit' })); }
-        catch (e) { navigate('/'); }
-      });
-    }
-    var logo = document.getElementById('brandLogo');
-    if (logo) logo.src = BRAND_LOGO;
-    var logoFoot = document.getElementById('brandLogoFoot');
-    if (logoFoot) logoFoot.src = BRAND_LOGO;
-  }
-
-  /* ================= BOOT ================= */
-  function boot(){
-    view = document.getElementById('view');
-    if (!view) return;
-
-    loadSession();
-    recomputeCatalog();     // paints the offline catalogue immediately, buy controls off
-    initTicker();
-    initAppChrome();
-    initReveal();
-
-    /* Both fetches are STARTED before the first route is rendered and awaited by nobody:
-       the offline catalogue is already painted, so these upgrade the page rather than
-       blocking it. Starting them first is load-bearing, though - an enter hook that calls
-       whenCatalogReady() runs during go() below, and if the fetch had not been kicked off
-       by then it would see a resolved no-op promise and judge the cart on a catalogue that
-       does not yet contain it. That is exactly how a refresh on /checkout/ bounced the
-       shopper to an "empty" cart holding two stones. */
-    loadStoreConfig();
-    catalogReady = loadLiveCatalog();
-
-    go(window.location.pathname, window.location.search, false);
-    applyAppMode();
-
-    var header = document.querySelector('header.site');
-    if (header) {
-      var ticking = false;
-      window.addEventListener('scroll', function(){
-        if (ticking) return;
-        ticking = true;
-        requestAnimationFrame(function(){
-          header.classList.toggle('scrolled', window.scrollY > 8);
-          ticking = false;
-        });
-      }, { passive: true });
-    }
-  }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  renderPujaPurposeTiles();
+  renderPujaChips();
+  renderPujas();
 
 })();

@@ -8,44 +8,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#592a19">
 <meta name="format-detection" content="telephone=no">
-<title>Wani Shop</title>
-<meta name="description" content="Certified astrological gemstones and sixty-four pujas, chosen against your chart and delivered across India.">
+<title>Gemstones — Wani Shop</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/store.css?v=24d7c83c">
+<link rel="stylesheet" href="/store.css?v=f1c6a92c">
 </head>
-<!--
-  THE SHELL.
-
-  This document is the whole site. Header, footer and the fixed furniture are here;
-  everything between them is rendered into <main id="view"> by the router in store.js.
-
-  It is served for EVERY path, not just "/". nginx ends its location / block with
-  `try_files $uri $uri/ /index.html`, so /gemstones/ruby-manik/, /cart/ and /privacy/ all
-  arrive as this exact document and the router decides what they mean. gemstones/index.html
-  and pujas/index.html are byte-identical copies of this file, kept in sync by stamp.py,
-  so those two real directories keep working for anyone holding an old bookmark.
-
-  Do not put page content in here. A section added below is a section that appears on every
-  route, including the checkout.
--->
 <body>
 <header class="site">
   <div class="wrap header-row">
-    <a href="/" class="logo" data-link aria-label="Wani Shop, home">
+    <a href="/" class="logo" aria-label="Wani Shop, home">
       <img class="logo-mark" id="brandLogo" alt="" aria-hidden="true">
       <span class="logo-name">Wani Shop</span>
     </a>
     <nav class="main">
-      <a href="/gemstones/" data-link>Gemstones</a>
-      <a href="/pujas/" data-link>Pujas</a>
-      <a href="/calculators/" data-link>Calculators</a>
-      <a href="/about/" data-link>About</a>
+      <a href="/gemstones/">Gemstones</a>
+      <a href="/pujas/">Pujas</a>
+      <a href="/gemstones/#purpose">By Purpose</a>
+      <a href="/gemstones/#calculators">Calculators</a>
+      <a href="/gemstones/#about">About</a>
     </nav>
     <div class="header-actions">
-      <!-- Only rendered inside the app (see applyAppMode): on the open web there is nothing
+      <!-- Only rendered inside the app (see wireAppExit): on the open web there is nothing
            to exit to, and a dead button is worse than no button. -->
       <button class="icon-btn hidden" id="exitBtn" title="Back to Astrowani" aria-label="Back to Astrowani">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -53,10 +38,10 @@
           <path d="M11.6 6.4 6 12l5.6 5.6"/>
         </svg>
       </button>
-      <button class="icon-btn" id="acctBtn" title="Your account" aria-label="Your account">
+      <button class="icon-btn" id="adminToggle" title="Admin mode: edit this catalog" aria-label="Toggle admin mode">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="8.4" r="3.6"/>
-          <path d="M4.8 20.2a7.2 7.2 0 0 1 14.4 0"/>
+          <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/>
+          <circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>
         </svg>
       </button>
       <button class="icon-btn" id="cartBtn" title="Cart" aria-label="Open cart">
@@ -74,19 +59,174 @@
 
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
-<main id="view">
-  <!-- Rendered by the router. The noscript below is the only thing a visitor with
-       JavaScript off will ever see here, so it has to be a real answer rather than a
-       "please enable JavaScript" scold. -->
-  <noscript>
-    <section class="section"><div class="wrap narrow-read">
-      <h1 class="doc-title">Wani Shop</h1>
-      <p class="lede">This storefront needs JavaScript to show live prices and stock.</p>
-      <p>You can still reach us: WhatsApp <a href="https://wa.me/917297900990">+91 72979 00990</a>,
-         or email <a href="mailto:support@astrowani.com">support@astrowani.com</a>.</p>
-    </div></section>
-  </noscript>
-</main>
+<section class="hero">
+  <div class="wrap hero-inner">
+    <p class="eyebrow">Certified Vedic Gemstones</p>
+    <h1>Gemstones, chosen by chart</h1>
+    <p class="lede">Certified stones, verified before they reach you.</p>
+    <a href="#shop" class="btn btn-gold">Shop the collection</a>
+  </div>
+</section>
+
+<section class="section" id="purpose">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Shop by Purpose</p>
+        <h2>What's asking for a remedy right now?</h2>
+      </div>
+    </div>
+    <div class="purpose-grid" id="purposeGrid"></div>
+  </div>
+</section>
+
+<div class="campaign">
+  <img id="imgBanner" alt="A woman wearing a yellow sapphire pendant and an emerald ring.">
+</div>
+
+<section class="section" id="shop" style="padding-top:32px;">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">The Collection</p>
+        <h2>Certified gemstones, by planet</h2>
+      </div>
+    </div>
+    <div class="admin-bar hidden" id="adminBar">
+      <div class="admin-bar-head">
+        <span class="admin-pill">🛠 Admin mode</span>
+        <span class="muted" style="font-size:12.5px;">Changes save to this browser only. Nothing here touches a real server.</span>
+      </div>
+      <div class="admin-bar-cats" id="adminCatToggles"></div>
+    </div>
+    <div class="shop-layout">
+      <div>
+        <div class="toolbar">
+          <span class="count" id="resultCount"></span>
+          <select id="sortSelect">
+            <option value="popularity">Sort: Popularity</option>
+            <option value="price-asc">Sort: Price, low to high</option>
+            <option value="price-desc">Sort: Price, high to low</option>
+            <option value="newest">Sort: Newest</option>
+          </select>
+        </div>
+        <div class="product-grid" id="productGrid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section calc-section" id="calculators">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Free Astro Tools</p>
+        <h2>Know your number before you buy</h2>
+      </div>
+    </div>
+    <div class="calc-grid">
+      <div class="calc-portrait">
+        <img id="imgDiscover" alt="A woman seated holding a yellow sapphire and a blue sapphire, wearing a sapphire ring.">
+      </div>
+      <div class="calc-card">
+        <h3>Moolank &amp; Bhagyank Calculator</h3>
+        <p class="lede">Enter your date of birth. Moolank comes from your birth date alone; Bhagyank from your full date of birth.</p>
+        <div class="field">
+          <label for="dobInput">Date of birth</label>
+          <input type="date" id="dobInput">
+        </div>
+        <div class="calc-aside">
+          <div class="calc-aside-title">Worked example</div>
+          <p>
+            Born <b>27 March 1994</b><br>
+            Moolank, the day alone: 2 + 7 = <b>9</b><br>
+            Bhagyank, the whole date: 2+7+3+1+9+9+4 = 35 → 3 + 5 = <b>8</b>
+          </p>
+        </div>
+        <button class="btn btn-line btn-full" id="calcMoolankBtn">Calculate</button>
+        <div class="calc-result" id="moolankResult"></div>
+      </div>
+      <div class="calc-card">
+        <h3>Gemstone Finder</h3>
+        <p class="lede">A quick match based on your Moolank's ruling planet. Not a substitute for a full chart reading, but a fair starting point.</p>
+        <div class="field">
+          <label for="moolankSelect">Your Moolank (1–9)</label>
+          <select id="moolankSelect">
+            <option value="">Select a number…</option>
+            <option value="1">1 · Sun</option>
+            <option value="2">2 · Moon</option>
+            <option value="3">3 · Jupiter</option>
+            <option value="4">4 · Rahu</option>
+            <option value="5">5 · Mercury</option>
+            <option value="6">6 · Venus</option>
+            <option value="7">7 · Ketu</option>
+            <option value="8">8 · Saturn</option>
+            <option value="9">9 · Mars</option>
+          </select>
+        </div>
+        <div class="calc-aside">
+          <div class="calc-aside-title">Number · planet · stone</div>
+          <ul class="planet-key">
+            <li><b>1</b> Sun · Ruby</li>
+            <li><b>6</b> Venus · Diamond</li>
+            <li><b>2</b> Moon · Pearl</li>
+            <li><b>7</b> Ketu · Cat's Eye</li>
+            <li><b>3</b> Jupiter · Pukhraj</li>
+            <li><b>8</b> Saturn · Neelam</li>
+            <li><b>4</b> Rahu · Gomed</li>
+            <li><b>9</b> Mars · Moonga</li>
+            <li><b>5</b> Mercury · Panna</li>
+          </ul>
+        </div>
+        <button class="btn btn-line btn-full" id="calcGemBtn">Find my stone</button>
+        <div class="calc-result" id="gemResult"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">From our clients</p>
+        <h2>Read by chart, chosen by hand</h2>
+      </div>
+    </div>
+    <div class="testi-grid" id="testiGrid"></div>
+  </div>
+</section>
+
+<section class="section" id="about" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap about-band">
+    <div class="editorial-media">
+      <img id="imgBoxes" alt="A blue sapphire and an emerald resting in open wooden presentation boxes on stone.">
+    </div>
+    <div>
+      <p class="eyebrow">About the House</p>
+      <h2 style="margin-bottom:14px;">Guided by Astrowani</h2>
+      <p class="lede">Twenty years of chart readings, temple sourcing trips to Nepal and Sri Lanka, and a simple rule: a stone only enters the catalogue after Astrowani has verified its origin.</p>
+      <div class="badge-row">
+        <div>🔬 Independently lab-certified</div>
+        <div>🛕 Ritually energised before dispatch</div>
+        <div>↩ 7-day return window</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap about-band reverse">
+    <div>
+      <p class="eyebrow">Before it ships</p>
+      <h2 style="margin-bottom:14px;">Every stone is checked by hand.</h2>
+      <p class="lede">Each piece is examined under a loupe, matched against its lab report, and packed with that certificate in the box. If the paperwork and the stone disagree, it never leaves the workshop.</p>
+    </div>
+    <div class="editorial-media">
+      <img id="imgTray" alt="A tray of loose emeralds, sapphires, citrine and rubies beside a jeweller's loupe and a certificate booklet.">
+    </div>
+  </div>
+</section>
 
 <footer>
   <div class="wrap foot-grid">
@@ -107,33 +247,25 @@
     </div>
     <div>
       <h4>Shop</h4>
-      <a href="/gemstones/" data-link>All gemstones</a>
-      <a href="/pujas/" data-link>Book a puja</a>
-      <a href="/calculators/" data-link>Gemstone finder</a>
-      <a href="/calculators/" data-link>Moolank calculator</a>
+      <a href="/gemstones/#shop" data-cat="gemstone">All Gemstones</a>
+      <a href="/pujas/">Book a Puja</a>
+      <a href="/gemstones/#purpose">Shop by Purpose</a>
+      <a href="/gemstones/#calculators">Gemstone Finder</a>
+      <a href="/gemstones/#calculators">Moolank Calculator</a>
     </div>
     <div>
       <h4>Purpose</h4>
-      <a href="/purpose/wealth/" data-link>Wealth &amp; Money</a>
-      <a href="/purpose/love/" data-link>Love &amp; Relationship</a>
-      <a href="/purpose/career/" data-link>Career &amp; Business</a>
-      <a href="/purpose/health/" data-link>Health &amp; Healing</a>
-      <a href="/purpose/protection/" data-link>Protection</a>
-    </div>
-    <div>
-      <h4>Your orders</h4>
-      <a href="/cart/" data-link>Cart</a>
-      <a href="/orders/" data-link>My orders</a>
-      <a href="/account/" data-link>Account</a>
-      <a href="/shipping/" data-link>Shipping &amp; delivery</a>
-      <a href="/returns/" data-link>Returns &amp; refunds</a>
+      <a href="/gemstones/#purpose">Wealth &amp; Money</a>
+      <a href="/gemstones/#purpose">Love &amp; Marriage</a>
+      <a href="/gemstones/#purpose">Career &amp; Business</a>
+      <a href="/gemstones/#purpose">Health &amp; Protection</a>
     </div>
     <div>
       <h4>Astrowani</h4>
-      <a href="/about/" data-link>About us</a>
-      <a href="/certification/" data-link>Certification &amp; sourcing</a>
-      <a href="/faq/" data-link>FAQ</a>
-      <a href="/contact/" data-link>Contact</a>
+      <a href="/gemstones/#about">About Astrowani</a>
+      <a href="#" onclick="return false;">Certification &amp; Sourcing</a>
+      <a href="#" onclick="return false;">Shipping &amp; Returns</a>
+      <a href="#" onclick="return false;">Contact</a>
     </div>
   </div>
 
@@ -144,7 +276,7 @@
     </div>
     <div>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11v9H3z"/><path d="M14 11h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg>
-      Insured, tracked delivery
+      Free insured shipping above ₹999
     </div>
     <div>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-4"/></svg>
@@ -155,19 +287,59 @@
   <div class="wrap foot-bottom">
     <span>© 2026 Wani Shop. All stones dispatched from our Delhi workshop.</span>
     <span>
-      <a href="/privacy/" data-link>Privacy</a>
-      <a href="/terms/" data-link>Terms</a>
+      <a href="#" onclick="return false;">Privacy</a>
+      <a href="#" onclick="return false;">Terms</a>
     </span>
   </div>
 </footer>
 
-<!-- Sticky cart bar. Outside #view on purpose: it must survive every route change without
-     being torn down and rebuilt, and it is hidden by the router on /cart/ and /checkout/
-     where it would sit on top of the total it is summarising. -->
-<div class="cart-bar" id="cartBar" aria-live="polite"></div>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="cartDrawer">
+  <div class="drawer-head">
+    <h3>Your cart</h3>
+    <button class="close-x" id="closeCart" aria-label="Close cart">✕</button>
+  </div>
+  <div class="drawer-body" id="cartBody"></div>
+  <div class="drawer-foot" id="cartFoot"></div>
+</aside>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="modal" id="adminModal">
+  <div class="modal-scrim" data-close="adminModal"></div>
+  <div class="modal-box wide">
+    <button class="modal-close" data-close="adminModal">✕</button>
+    <div id="adminContent"></div>
+  </div>
+</div>
 
-<script src="/store.js?v=5e7284c5"></script>
+<!-- product quick view modal -->
+<div class="modal" id="pvModal">
+  <div class="modal-scrim" data-close="pvModal"></div>
+  <div class="modal-box">
+    <button class="modal-close" data-close="pvModal">✕</button>
+    <div id="pvContent"></div>
+  </div>
+</div>
+
+<!-- checkout modal -->
+<div class="modal" id="coModal">
+  <div class="modal-scrim" data-close="coModal"></div>
+  <div class="modal-box wide">
+    <button class="modal-close" data-close="coModal">✕</button>
+    <div id="coContent"></div>
+  </div>
+</div>
+
+<!-- puja detail / booking modal -->
+<div class="modal" id="pjModal">
+  <div class="modal-scrim" data-close="pjModal"></div>
+  <div class="modal-box">
+    <button class="modal-close" data-close="pjModal">&#10005;</button>
+    <div id="pjContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/store.js?v=1945255d"></script>
 </body>
 </html>
