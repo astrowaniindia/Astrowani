@@ -8,6 +8,7 @@ const TABS = [
   { key: 'gemstone', label: 'Gemstones' },
   { key: 'specific_puja', label: 'Specific Puja' },
   { key: 'life_report', label: 'Life Reports' },
+  { key: 'vastu', label: 'Vastu Remedies' },
 ];
 
 // mrp/stock/unit_label added with the cart checkout (2026-08-21). mrp blank = no

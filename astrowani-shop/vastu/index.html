@@ -8,8 +8,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#592a19">
 <meta name="format-detection" content="telephone=no">
-<title>Free Astro Tools — Wani Shop</title>
-<meta name="description" content="Free Moolank and Bhagyank calculator and a gemstone finder. No sign-up, and your date of birth never leaves your browser.">
+<title>Vastu Remedies — Wani Shop</title>
+<meta name="description" content="Vastu remedies by direction and by kind: crystals, pyramids, yantras, feng shui pieces, handicraft and gifts, for a specific corner and a specific dosh.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -64,95 +64,57 @@
 <section class="page-hero">
   <div class="wrap page-hero-inner">
     <img class="page-hero-mark" id="brandLogoHero" alt="Astrowani">
-    <p class="eyebrow">Free Astro Tools</p>
-    <h1>Work out your number, free.</h1>
-    <p class="lede">Two calculators, no sign-up and nothing to pay. Your date of birth is used in your browser to work the answer out, and is never sent to us.</p>
+    <p class="eyebrow">Vastu Remedies</p>
+    <h1>Fix the corner, not the whole house.</h1>
+    <p class="lede">Crystals, pyramids, yantras and feng shui pieces for a specific direction and a specific problem. Each one is chosen for where it goes, so tell us the corner and we will tell you the remedy.</p>
+    <div class="page-hero-cta">
+      <a class="btn btn-gold" href="#vastu">Browse remedies</a>
+      <a class="btn btn-onbrown" href="/about/#contact">Ask which one you need</a>
+    </div>
   </div>
 </section>
 
-<section class="section calc-section" id="calculators">
+<section class="section" id="vastu-cats">
   <div class="wrap">
     <div class="section-head">
       <div>
-        <p class="eyebrow">Free Astro Tools</p>
-        <h2>Know your number before you buy</h2>
+        <p class="eyebrow">Shop by kind</p>
+        <h2>What are you looking for?</h2>
       </div>
     </div>
-    <div class="calc-grid">
-      <div class="calc-portrait">
-        <img id="imgDiscover" alt="A woman seated holding a yellow sapphire and a blue sapphire, wearing a sapphire ring.">
-      </div>
-      <div class="calc-card">
-        <h3>Moolank &amp; Bhagyank Calculator</h3>
-        <p class="lede">Enter your date of birth. Moolank comes from your birth date alone; Bhagyank from your full date of birth.</p>
-        <div class="field">
-          <label for="dobInput">Date of birth</label>
-          <input type="date" id="dobInput">
-        </div>
-        <div class="calc-aside">
-          <div class="calc-aside-title">Worked example</div>
-          <p>
-            Born <b>27 March 1994</b><br>
-            Moolank, the day alone: 2 + 7 = <b>9</b><br>
-            Bhagyank, the whole date: 2+7+3+1+9+9+4 = 35 → 3 + 5 = <b>8</b>
-          </p>
-        </div>
-        <button class="btn btn-line btn-full" id="calcMoolankBtn">Calculate</button>
-        <div class="calc-result" id="moolankResult"></div>
-      </div>
-      <div class="calc-card">
-        <h3>Gemstone Finder</h3>
-        <p class="lede">A quick match based on your Moolank's ruling planet. Not a substitute for a full chart reading, but a fair starting point.</p>
-        <div class="field">
-          <label for="moolankSelect">Your Moolank (1–9)</label>
-          <select id="moolankSelect">
-            <option value="">Select a number…</option>
-            <option value="1">1 · Sun</option>
-            <option value="2">2 · Moon</option>
-            <option value="3">3 · Jupiter</option>
-            <option value="4">4 · Rahu</option>
-            <option value="5">5 · Mercury</option>
-            <option value="6">6 · Venus</option>
-            <option value="7">7 · Ketu</option>
-            <option value="8">8 · Saturn</option>
-            <option value="9">9 · Mars</option>
-          </select>
-        </div>
-        <div class="calc-aside">
-          <div class="calc-aside-title">Number · planet · stone</div>
-          <ul class="planet-key">
-            <li><b>1</b> Sun · Ruby</li>
-            <li><b>6</b> Venus · Diamond</li>
-            <li><b>2</b> Moon · Pearl</li>
-            <li><b>7</b> Ketu · Cat's Eye</li>
-            <li><b>3</b> Jupiter · Pukhraj</li>
-            <li><b>8</b> Saturn · Neelam</li>
-            <li><b>4</b> Rahu · Gomed</li>
-            <li><b>9</b> Mars · Moonga</li>
-            <li><b>5</b> Mercury · Panna</li>
-          </ul>
-        </div>
-        <button class="btn btn-line btn-full" id="calcGemBtn">Find my stone</button>
-        <div class="calc-result" id="gemResult"></div>
-      </div>
-    </div>
+    <div class="purpose-grid" id="vastuCatGrid"></div>
   </div>
 </section>
 
-<section class="section" style="border-top:1px solid var(--border-soft);">
-  <div class="wrap about-band">
-    <div>
-      <p class="eyebrow">A starting point, not a reading</p>
-      <h2 style="margin-bottom:14px;">A number is not a chart.</h2>
-      <p class="lede">Moolank and Bhagyank come from your date of birth alone. A real recommendation weighs the whole chart - the placement of every planet at the hour you were born - and it often points somewhere these two calculators would not. Treat what you find here as a first look, then talk to an astrologer before you buy a stone.</p>
-      <div style="margin-top:18px;">
-        <a class="btn btn-gold" href="https://play.google.com/store/apps/details?id=com.astrowanicustomer" target="_blank" rel="noopener">Talk to an astrologer</a>
-        <a class="btn btn-line" href="/gemstones/" style="margin-left:10px;">Browse gemstones</a>
+<!-- The campaign band appears on its own the moment the artwork is dropped into
+     /assets/vastu-campaign.jpg. Until then the onerror removes the whole band rather than
+     leaving a broken-image icon across the page. -->
+<div class="campaign">
+  <img src="/assets/vastu-campaign.jpg" loading="lazy" alt="Vastu remedies arranged on a table."
+       onerror="var b=this.closest('.campaign'); if(b) b.remove();">
+</div>
+
+<section class="section puja-section" id="vastu">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Vastu Remedies</p>
+        <h2>Remedies for a direction and a dosh</h2>
+        <p class="lede pj-lede">A vastu remedy is bought for a corner of a building, not for a room in general &mdash; so filter by the direction that is giving trouble. If you are not sure which one that is, an astrologer in the app can read your plan before you buy anything.</p>
       </div>
     </div>
-    <div class="editorial-media">
-      <img id="imgTray" alt="A tray of loose emeralds, sapphires, citrine and rubies beside a jeweller's loupe and a certificate booklet.">
+    <div class="pj-controls">
+      <input class="pj-search" id="vastuSearch" type="search" placeholder="Search a remedy, crystal or yantra&hellip;" aria-label="Search vastu remedies">
+      <select id="vastuSort" aria-label="Sort vastu remedies">
+        <option value="featured">Sort: Featured</option>
+        <option value="price-asc">Sort: Price, low to high</option>
+        <option value="price-desc">Sort: Price, high to low</option>
+        <option value="name">Sort: A to Z</option>
+      </select>
     </div>
+    <div class="pj-chips" id="vastuChips"></div>
+    <div class="toolbar"><span class="count" id="vastuCount"></span></div>
+    <div class="product-grid" id="vastuGrid"></div>
   </div>
 </section>
 

@@ -366,7 +366,7 @@ module.exports = (app) => {
   // mean a signed-out visitor could not be told what is on sale.
   // ───────────────────────────────────────────────────────────────────────────
 
-  const STORE_TYPES = ['gemstone', 'puja', 'specific_puja', 'life_report'];
+  const STORE_TYPES = ['gemstone', 'puja', 'specific_puja', 'life_report', 'vastu'];
   let storeConfigCache = { at: 0, body: null };
 
   app.get('/api/store/config', h(async (req, res) => {

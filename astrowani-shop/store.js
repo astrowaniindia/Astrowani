@@ -632,6 +632,8 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
         renderFilterPanel();
         renderGrid();
         renderCart();      // prices may have moved since the cart was saved
+        renderVastuCatTiles();
+        renderVastu();
         refreshDetailPage();
       })
       .catch(function(e){
@@ -2289,7 +2291,10 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       .slice(0, 70) || 'item';
   }
 
-  function productHref(p){ return '/gemstones/' + slugify(p.name) + '/'; }
+  function productHref(p){
+    // Two catalogues of DB products now, and each belongs under its own listing.
+    return (p && p.cat === 'vastu' ? '/vastu/' : '/gemstones/') + slugify(p.name) + '/';
+  }
   function pujaHref(pj){ return '/pujas/' + slugify(pj.n) + '/'; }
 
   // A raw id still resolves, so an old link or a calculator recommendation keyed by id
@@ -2352,12 +2357,20 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
           '<div class="detail-card detail-loading"><p class="lede">Loading&hellip;</p></div></div></section>';
         return;
       }
-      detailRoot.innerHTML = detailNotFound('/gemstones/', 'Gemstones',
-        'We could not find that stone. It may have been renamed or is no longer stocked.');
+      var fromVastu = window.location.pathname.indexOf('/vastu/') === 0;
+      detailRoot.innerHTML = fromVastu
+        ? detailNotFound('/vastu/', 'Vastu Remedies',
+            'We could not find that item. It may have been renamed or is no longer stocked.')
+        : detailNotFound('/gemstones/', 'Gemstones',
+            'We could not find that stone. It may have been renamed or is no longer stocked.');
       return;
     }
     document.title = p.name + ' — Wani Shop';
-    detailRoot.innerHTML = detailPageShell('/gemstones/', 'Gemstones', p.name, productDetailHtml(p));
+    var isVastu = p.cat === 'vastu';
+    detailRoot.innerHTML = detailPageShell(
+      isVastu ? '/vastu/' : '/gemstones/',
+      isVastu ? 'Vastu Remedies' : 'Gemstones',
+      p.name, productDetailHtml(p));
     bindProductDetail(detailRoot, p);
   }
 
@@ -2382,7 +2395,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       try { return decodeURIComponent(x); } catch (e) { return x; }
     });
     if (segs.length < 2) return;
-    if (segs[0] === 'gemstones') detailRoute = { kind: 'product', slug: segs[1] };
+    if (segs[0] === 'gemstones' || segs[0] === 'vastu') detailRoute = { kind: 'product', slug: segs[1] };
     else if (segs[0] === 'pujas') detailRoute = { kind: 'puja', slug: segs[1] };
     if (!detailRoute) return;
 
@@ -2397,6 +2410,203 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   // page opened by a live-only uuid resolves on the second pass rather than 404ing.
   function refreshDetailPage(){
     if (detailRoute && detailRoute.kind === 'product') renderProductPage(detailRoute.slug);
+  }
+
+
+  /* ================= VASTU REMEDIES =================
+     The third category, alongside gemstones and pujas. Unlike the pujas - which are a
+     curated editorial list in this file - vastu items are PHYSICAL GOODS and are therefore
+     admin-authored in remedy_items, exactly as the gemstones are, under type 'vastu'.
+     Nothing is hardcoded here except how they are grouped and filtered.
+
+     remedy_items has no sub-category column, so the six merchandising groups are inferred
+     from the product title. That is the same trick PURPOSE_BY_STONE already uses for the
+     gemstone purpose tiles, and it is good enough because these words are what the products
+     are actually called. First match wins, so the list is ordered most-specific first. An
+     item matching nothing still appears under "All" - it is never hidden, only unfiled. */
+  var VASTU_CATS = [
+    {id:'crystals',  label:'Crystals',       test:/crystal|quartz|amethyst|citrine|pyrite|jasper|geode|cluster|tumbl|agate|selenite|obsidian/i},
+    {id:'fengshui',  label:'Feng Shui',      test:/feng ?shui|laughing buddha|lucky cat|maneki|wind ?chime|bamboo|dragon|tortoise|turtle|coin|kuan|chi lin|money frog|toad/i},
+    {id:'pyramids',  label:'Pyramids',       test:/pyramid|helix|meru|multi ?pyramid/i},
+    {id:'enhancer',  label:'Vastu Enhancer', test:/vastu|vaastu|yantra|swastik|dosh|dosha|strip|plate|wall hanging|bell|kalash|compass|direction/i},
+    {id:'handicraft',label:'Handicraft',     test:/handicraft|handmade|wooden|brass|marble|carv|idol|statue|showpiece|painting|craft/i},
+    {id:'gifts',     label:'Gifts',          test:/gift|hamper|combo|set of|box|corporate/i}
+  ];
+
+  /* Direction is the filter that makes a vastu shop a vastu shop: a remedy is bought for a
+     specific corner of a building. The words are in the product titles verbatim, so this is
+     read rather than guessed. Ordered so the compound directions are tested BEFORE the
+     simple ones - otherwise "North-East" matches "North" and files itself wrongly. */
+  var VASTU_DIRECTIONS = [
+    {id:'north-east', label:'North-East', test:/north[\s-]*east|ishanya|ishan/i},
+    {id:'north-west', label:'North-West', test:/north[\s-]*west|vayavya|vayu/i},
+    {id:'south-east', label:'South-East', test:/south[\s-]*east|agneya|agni/i},
+    {id:'south-west', label:'South-West', test:/south[\s-]*west|nairutya|nairitya/i},
+    {id:'north',      label:'North',      test:/north/i},
+    {id:'south',      label:'South',      test:/south/i},
+    {id:'east',       label:'East',       test:/east/i},
+    {id:'west',       label:'West',       test:/west/i}
+  ];
+
+  // Filled in when the artwork arrives; until then the tiles render as text, exactly as the
+  // puja category tiles do when PUJA_CAT_PHOTOS has no entry.
+  var VASTU_CAT_PHOTOS = {};
+
+  var vastuState = { q:'', cat:'all', dir:'all', sort:'featured' };
+
+  function vastuCatOf(p){
+    var name = String(p.name || '');
+    for (var i = 0; i < VASTU_CATS.length; i++){
+      if (VASTU_CATS[i].test.test(name)) return VASTU_CATS[i].id;
+    }
+    return null;
+  }
+  function vastuDirOf(p){
+    var name = String(p.name || '');
+    for (var i = 0; i < VASTU_DIRECTIONS.length; i++){
+      if (VASTU_DIRECTIONS[i].test.test(name)) return VASTU_DIRECTIONS[i].id;
+    }
+    return null;
+  }
+
+  /* byId, not VISIBLE_PRODUCTS. VISIBLE_PRODUCTS is filtered by adminVisibleCats, which
+     defaults to ['gemstone'] - so reading vastu items from it would return nothing forever.
+     byId holds the whole merged catalogue, which is what a per-type listing wants. */
+  function productsOfType(type){
+    return Object.keys(byId).map(function(k){ return byId[k]; })
+      .filter(function(p){ return p && p.cat === type; });
+  }
+
+  function vastuProducts(){ return productsOfType('vastu'); }
+
+  function filteredVastu(){
+    var q = vastuState.q.trim().toLowerCase();
+    var list = vastuProducts().filter(function(p){
+      var okQ = !q || String(p.name || '').toLowerCase().indexOf(q) !== -1;
+      var okCat = vastuState.cat === 'all' || vastuCatOf(p) === vastuState.cat;
+      var okDir = vastuState.dir === 'all' || vastuDirOf(p) === vastuState.dir;
+      return okQ && okCat && okDir;
+    });
+    var s = vastuState.sort;
+    if (s === 'price-asc') list.sort(function(a,b){ return a.price - b.price; });
+    else if (s === 'price-desc') list.sort(function(a,b){ return b.price - a.price; });
+    else if (s === 'name') list.sort(function(a,b){ return String(a.name).localeCompare(String(b.name)); });
+    return list;
+  }
+
+  var vastuGrid = document.getElementById('vastuGrid');
+  var vastuCatGrid = document.getElementById('vastuCatGrid');
+  var vastuChips = document.getElementById('vastuChips');
+  var vastuCount = document.getElementById('vastuCount');
+
+  function renderVastuCatTiles(){
+    if (!vastuCatGrid) return;
+    vastuCatGrid.innerHTML = '';
+    VASTU_CATS.forEach(function(cat){
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'purpose-tile' + (vastuState.cat === cat.id ? ' on' : '');
+      var photo = VASTU_CAT_PHOTOS[cat.id];
+      el.innerHTML = (photo ? '<img src="'+escapeAttr(photo)+'" alt="" loading="lazy">' : '') +
+        '<span class="pt-label">'+escapeHtml(cat.label)+'</span>';
+      el.addEventListener('click', function(){
+        // Tapping the tile that is already on clears it, matching the puja tiles.
+        vastuState.cat = (vastuState.cat === cat.id) ? 'all' : cat.id;
+        renderVastuCatTiles();
+        renderVastu();
+        var anchor = document.getElementById('vastu');
+        if (anchor) anchor.scrollIntoView({behavior:'smooth', block:'start'});
+      });
+      vastuCatGrid.appendChild(el);
+    });
+    stagger(vastuCatGrid.children, 70);
+  }
+
+  function renderVastuChips(){
+    if (!vastuChips) return;
+    vastuChips.innerHTML = '';
+    [{id:'all', label:'Any direction'}].concat(VASTU_DIRECTIONS).forEach(function(d){
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'pj-chip' + (vastuState.dir === d.id ? ' on' : '');
+      el.textContent = d.label;
+      el.addEventListener('click', function(){ vastuState.dir = d.id; renderVastuChips(); renderVastu(); });
+      vastuChips.appendChild(el);
+    });
+  }
+
+  function renderVastu(){
+    if (!vastuGrid) return;
+    var list = filteredVastu();
+    if (vastuCount) vastuCount.textContent = list.length + (list.length === 1 ? ' item' : ' items');
+    vastuGrid.innerHTML = '';
+
+    if (!list.length){
+      // Three different empty states, because they mean three different things and the
+      // shopper can act on two of them.
+      var msg;
+      if (LIVE_PRODUCTS === null) msg = 'Loading the catalogue&hellip;';
+      else if (!vastuProducts().length) msg = 'Vastu remedies are being added to the shop. Please check back shortly.';
+      else msg = 'Nothing matches that filter. Try clearing the direction or the category.';
+      vastuGrid.innerHTML = '<div class="pj-empty">' + msg + '</div>';
+      return;
+    }
+
+    list.forEach(function(p){
+      var off = p.mrp && p.mrp > p.price ? Math.round((1 - p.price/p.mrp)*100) : 0;
+      var isWished = wishlist.indexOf(p.id) !== -1;
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML =
+        '<div class="card-media" data-open="'+escapeAttr(p.id)+'">'+
+          (off ? '<span class="card-tag">'+off+'% OFF</span>' : '') +
+          '<button class="wishlist-btn'+(isWished?' on':'')+'" data-wish="'+escapeAttr(p.id)+'" aria-label="Save to wishlist">'+(isWished?'&#9829;':'&#9825;')+'</button>'+
+          productPhotoImg(p, 'front') +
+        '</div>'+
+        '<div class="card-body">'+
+          '<div class="card-name" data-open="'+escapeAttr(p.id)+'">'+escapeHtml(p.name)+'</div>'+
+          (p.unitLabel ? '<div class="card-unit">'+escapeHtml(p.unitLabel)+'</div>' : '')+
+          '<div class="pj-meta">'+
+            '<span class="pj-dur">'+escapeHtml(vastuDirLabel(p) || vastuCatLabel(p) || 'Vastu')+'</span>'+
+            '<span class="price pj-price">&#8377;'+Number(p.price).toLocaleString('en-IN')+'</span>'+
+          '</div>'+
+        '</div>';
+      vastuGrid.appendChild(card);
+    });
+    stagger(vastuGrid.children, 40, 12);
+  }
+
+  function vastuCatLabel(p){
+    var id = vastuCatOf(p);
+    var c = VASTU_CATS.find(function(x){ return x.id === id; });
+    return c ? c.label : null;
+  }
+  function vastuDirLabel(p){
+    var id = vastuDirOf(p);
+    var d = VASTU_DIRECTIONS.find(function(x){ return x.id === id; });
+    return d ? d.label : null;
+  }
+
+  if (vastuGrid){
+    vastuGrid.addEventListener('click', function(e){
+      var wishId = e.target.closest('[data-wish]');
+      if (wishId){
+        var on = toggleWishlist(wishId.getAttribute('data-wish'));
+        wishId.classList.toggle('on', on);
+        wishId.innerHTML = on ? '&#9829;' : '&#9825;';
+        showToast(on ? 'Saved to wishlist' : 'Removed from wishlist');
+        return;
+      }
+      var openId = e.target.closest('[data-open]');
+      if (openId) goToProduct(openId.getAttribute('data-open'));
+    });
+    var vs = document.getElementById('vastuSearch');
+    if (vs) vs.addEventListener('input', function(e){ vastuState.q = e.target.value; renderVastu(); });
+    var vsort = document.getElementById('vastuSort');
+    if (vsort) vsort.addEventListener('change', function(e){ vastuState.sort = e.target.value; renderVastu(); });
+    renderVastuCatTiles();
+    renderVastuChips();
+    renderVastu();
   }
 
 })();
