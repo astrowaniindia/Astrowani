@@ -155,7 +155,12 @@
       </div>
     </div>
     <div class="editorial-media">
-      <img id="imgTray" alt="A tray of loose emeralds, sapphires, citrine and rubies beside a jeweller's loupe and a certificate booklet.">
+      <!-- This one carries its own src rather than taking an id from the shared LIFESTYLE
+           map in store.js. The tray photograph that map supplies is also used on the
+           gemstones and about pages, so repointing the shared entry would have changed the
+           picture on all three. No id here means store.js leaves this element alone. -->
+      <img src="/assets/calculators-astrologer.jpg" loading="lazy" decoding="async"
+           alt="An astrologer reading a hand-drawn kundli chart at a low table, a tray of loose gemstones beside him and a plaque reading 'just ask the astrologer'.">
     </div>
   </div>
 </section>
