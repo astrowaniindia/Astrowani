@@ -1166,3 +1166,29 @@
   .page-hero .play-badge{background:var(--cream); color:var(--brown); border-color:var(--cream);}
   .page-hero .play-badge:hover{background:#fff; border-color:var(--gold);}
   .page-hero .play-badge-text small{opacity:.72;}
+
+  /* ---------- HERO SCRIM ----------
+     For a photograph that is mid-tone everywhere the copy crosses. The default hero shows
+     the picture at full strength and relies on a shadow halo, which works when the image
+     has dark areas for the type to sit on. Measured across the vastu banner's headline
+     rows - rgb(156,120,85) - EVERY option failed: cream 2.95:1, brown 2.95:1, gold 2.87:1,
+     against a 4.5:1 minimum. There is no text colour that reads on it, so changing the
+     colour was never going to fix it; the photograph itself has to come down.
+
+     A 58% brown wash puts the background at about rgb(117,75,50), which takes cream to
+     5.4:1 and the gold eyebrow to 5.3:1. Slightly stronger top and bottom, where the
+     eyebrow and the lede sit, and lighter through the middle so the picture still reads
+     as a photograph rather than a brown rectangle.
+
+     ::after, not ::before: ::before already carries the image and its slow push-in, and
+     putting a background on it would replace the photograph. .hero-inner is z-index 1, so
+     the copy stays above this. */
+  .hero-scrim::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:linear-gradient(
+      180deg,
+      rgba(89,42,25,.66) 0%,
+      rgba(89,42,25,.52) 42%,
+      rgba(89,42,25,.58) 70%,
+      rgba(89,42,25,.72) 100%);
+  }
