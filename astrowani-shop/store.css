@@ -1119,3 +1119,50 @@
     .page-hero{padding:34px 0 40px;}
     .page-hero-mark{width:52px; height:52px; margin-bottom:14px;}
   }
+
+  /* ---------- GOOGLE PLAY BADGE ----------
+     The Play mark is four flat polygons inline in the markup, not an image: sharp at any
+     size, no extra request, and it survives the content hash on /assets. Dark plate because
+     that is the shape people recognise as an app-store badge, and it reads as a button on
+     the brown hero and on cream alike. */
+  .play-badge{
+    display:inline-flex; align-items:center; gap:11px;
+    padding:10px 20px 10px 16px; border-radius:12px;
+    background:#1c0d07; color:var(--cream); text-decoration:none;
+    border:1px solid color-mix(in srgb, var(--cream) 34%, transparent);
+    transition:transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .play-badge:hover{
+    background:#2a1409; border-color:var(--gold); transform:translateY(-1px);
+  }
+  .play-badge:active{transform:translateY(0) scale(.98);}
+  .play-badge-mark{width:26px; height:26px; flex:0 0 auto;}
+  .play-badge-text{display:flex; flex-direction:column; line-height:1.1; text-align:left;}
+  .play-badge-text small{
+    font-family:var(--font-mono); font-size:9.5px; letter-spacing:.14em;
+    text-transform:uppercase; opacity:.8;
+  }
+  .play-badge-text strong{font-family:var(--font-body); font-size:17px; font-weight:600; margin-top:2px;}
+  .play-badge-sm{padding:8px 16px 8px 13px; gap:9px;}
+  .play-badge-sm .play-badge-mark{width:21px; height:21px;}
+  .play-badge-sm .play-badge-text strong{font-size:14.5px;}
+  .about-col .play-badge{margin-top:14px;}
+
+  /* The About hero holds the whole first screen, so nothing cream shows until the reader
+     scrolls. --chrome-h is the measured header + ticker (see store.js); the fallback only
+     matters for the frame before the first measurement. min-height, not height, so the
+     content is never clipped on a short viewport. */
+  .page-hero-full{
+    min-height:calc(100vh - var(--chrome-h, 102px));
+    display:flex; align-items:center;
+  }
+  .page-hero-full .page-hero-inner{width:100%;}
+
+  /* On the brown hero a near-black plate is only 1.59:1 against the background - it reads as
+     a hole rather than a button, which defeats the point of a badge. The hero gets the light
+     plate (the same inversion the official badge offers) so it separates at 8.70:1 and is the
+     brightest thing on the screen after the gold mark. Cream sections keep the dark plate,
+     where the same logic runs the other way. */
+  .page-hero .play-badge{background:var(--cream); color:var(--brown); border-color:var(--cream);}
+  .page-hero .play-badge:hover{background:#fff; border-color:var(--gold);}
+  .page-hero .play-badge-text small{opacity:.72;}
