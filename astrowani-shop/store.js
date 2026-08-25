@@ -1842,6 +1842,23 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     // Header picks up a shadow once the page has moved. rAF-throttled so the scroll
     // handler never does layout work more than once a frame.
     var header = document.querySelector('header.site');
+
+    // The ticker sticks under the header, so it needs the header's live height rather
+    // than a constant - it changes at the mobile breakpoint and whenever the app draws
+    // its status-bar strip above. ResizeObserver where available, resize as the fallback.
+    if (header){
+      var setHeaderH = function(){
+        document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+      };
+      setHeaderH();
+      window.addEventListener('resize', setHeaderH);
+      window.addEventListener('orientationchange', setHeaderH);
+      if (window.ResizeObserver) { try { new ResizeObserver(setHeaderH).observe(header); } catch(e){} }
+      // Web fonts land after first paint and change the wordmark's line box, so measure
+      // again once they are ready.
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(setHeaderH).catch(function(){});
+    }
+
     if (header){
       var ticking = false;
       window.addEventListener('scroll', function(){

@@ -71,7 +71,14 @@
      As the first clears the viewport the second is already in its place, so the loop is
      seamless with no jump — and because the message set is repeated until a track is wider
      than the screen, there is never a blank stretch on a wide monitor. */
+  /* Sticks directly beneath the header instead of scrolling away with the page.
+     The offset is the header's MEASURED height (--header-h, set in store.js): that height
+     differs between breakpoints, and in the app a native strip is drawn above it, so any
+     hardcoded value would leave a gap on one layout and overlap on another.
+     The fallback in var() only matters for the instant before the first measurement.
+     z-index sits one below the header so the header wins wherever the two meet. */
   .topstrip{
+    position:sticky; top:var(--header-h, 56px); z-index:39;
     background:var(--accent); color:var(--cream);
     font-family:var(--font-mono); font-size:12.5px; letter-spacing:.03em;
     padding:9px 0; overflow:hidden;
