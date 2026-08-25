@@ -1251,9 +1251,21 @@
      crowding it rather than balancing it. */
   .page-hero{position:relative; overflow:hidden;}
   .hero-guide{
-    position:absolute; left:clamp(12px, 3vw, 56px); bottom:0;
+    position:absolute;
+    /* Sat on the hero's bottom edge before, which read as slumped into the corner rather
+       than placed. Centre it on the strip of brown to the left of the copy, then lift it
+       ~7% of its own height so it reads as centred against the heading block (which sits
+       slightly above the true middle) rather than against the empty band under it. */
+    top:50%; transform:translateY(-57%);
+    /* Centred on that strip by construction rather than by a tuned vw multiplier: the copy
+       is a 720px column centred in the viewport, so the strip beside it is (100vw-720)/2
+       and its midpoint is half of that. Minus half the figure's own width to centre it.
+       A plain vw factor cannot hold: one tuned to look right at 1280 left the figure 126px
+       off centre at 1920, hugging the window edge. max() keeps it off the edge if the
+       arithmetic ever goes small. */
+    left:max(24px, calc((100vw - 720px) / 4 - 90px));
     width:180px; height:auto; z-index:0; pointer-events:none;
-    filter:drop-shadow(0 10px 26px rgba(0,0,0,.28));
+    filter:drop-shadow(0 14px 30px rgba(0,0,0,.26));
   }
   .page-hero-inner{position:relative; z-index:1;}
   /* The copy is a 720px column centred in the viewport, so the figure only has room beside
