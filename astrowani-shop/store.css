@@ -1168,7 +1168,6 @@
   .page-hero .play-badge-text small{opacity:.72;}
 
 
-
   /* The Show-more row under the vastu grid. Empty (and so invisible) once everything
      matching the current filter is on screen. */
   .vastu-more{display:flex; justify-content:center; margin-top:28px;}
@@ -1179,32 +1178,66 @@
     font-family:var(--font-mono); font-size:11.5px;
   }
 
-  /* ---------- HERO PANEL ----------
-     The alternative to washing the whole photograph down. A scrim over the full bleed did
-     make the copy readable, but it dulled the picture everywhere, including the parts with
-     no text on them at all - which is the half of the frame you actually bought the shot
-     for. So the picture is left at full strength and the COPY carries its own ground: a
-     brown card, sized to the words, sitting on top of it.
 
-     86% rather than solid, so the photograph still reads faintly through and the card
-     belongs to the image instead of looking pasted over it. Measured on the brightest area
-     it can sit over, rgb(177,144,112): cream lands at 7.15:1 and the gold eyebrow at
-     6.95:1, both comfortably past 4.5.
+  /* ---------- HERO OUTLINE ----------
+     No card and no wash: the photograph is untouched and the LETTERS carry their own
+     separation, cream fill inside a brown edge.
 
-     The type's own shadow is switched off inside the panel. It exists to separate letters
-     from a photograph, and on a flat card it only makes them look smudged. */
-  .hero-panel .hero-inner{
-    max-width:620px;
-    background:rgba(89,42,25,.86);
-    border:1px solid rgba(244,216,188,.16);
-    border-radius:var(--radius);
-    padding:38px 40px 42px;
-    box-shadow:0 14px 46px rgba(89,42,25,.42);
+     paint-order:stroke fill is the whole trick. By default a text stroke is centred on the
+     glyph outline, so half of it grows inwards and eats the letterform - a 5px stroke on a
+     display serif closes up the thin strokes and the counters until it reads as a blob.
+     Painting the stroke FIRST puts all of it behind the fill, so the letter keeps its
+     designed weight and simply gains a brown edge.
+
+     The stroke is sized per element rather than inherited: the same width that reads as an
+     edge on a 78px heading is a smear on 13px letter-spaced caps.
+
+     Two independent guarantees, deliberately: the stroke separates the type from whatever
+     the photograph does behind it, and the soft drop shadow underneath separates the
+     stroke itself from a dark patch. Neither depends on the photograph being any
+     particular brightness, which is what went wrong every previous time. */
+  .hero-outline .hero-inner{max-width:860px;}
+  .hero-outline h1,
+  .hero-outline p.lede,
+  .hero-outline .eyebrow{
+    paint-order:stroke fill;
+    text-shadow:0 3px 14px rgba(89,42,25,.5);
   }
-  .hero-panel .hero-inner h1,
-  .hero-panel .hero-inner p.lede,
-  .hero-panel .hero-inner .eyebrow{text-shadow:none;}
-  .hero-panel .hero-inner p.lede{margin-bottom:28px;}
+  .hero-outline h1{
+    color:#fff;
+    -webkit-text-stroke:5px var(--brown);
+    letter-spacing:-0.005em;
+  }
+  .hero-outline p.lede{
+    color:#fff; font-weight:600;
+    -webkit-text-stroke:2.5px var(--brown);
+  }
+  /* The eyebrow does NOT take a stroke. At 13px letter-spaced caps a 2px edge is nearly as
+     thick as the letter strokes themselves and closes them up - the same failure the
+     hero-ink-dark block already documents, where a halo "eats into the letterforms and
+     thins them". So it stops competing with the photograph and sits on its own chip:
+     header brown, cream letters, 8.70:1 whatever the picture does behind it. This is the
+     small label, not the block that was rejected - the headline and lede stay on the bare
+     photograph. */
+  .hero-outline .eyebrow{
+    display:inline-block;
+    background:var(--brown);
+    color:var(--cream);
+    -webkit-text-stroke:0;
+    padding:7px 16px;
+    border-radius:999px;
+    text-shadow:none;
+  }
   @media (max-width:640px){
-    .hero-panel .hero-inner{padding:26px 22px 30px; max-width:none;}
+    .hero-outline h1{-webkit-text-stroke-width:3.5px;}
+    .hero-outline p.lede{-webkit-text-stroke-width:2px;}
+  }
+  /* No text-stroke support: the stroke is simply absent, so the shadow has to do the work
+     on its own. Tightened and darkened so it still separates rather than merely decorates. */
+  @supports not (-webkit-text-stroke: 1px red){
+    .hero-outline h1,
+    .hero-outline p.lede,
+    .hero-outline .eyebrow{
+      text-shadow:0 1px 3px rgba(89,42,25,.95), 0 2px 18px rgba(89,42,25,.92), 0 0 46px rgba(89,42,25,.8);
+    }
   }
