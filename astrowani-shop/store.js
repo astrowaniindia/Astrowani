@@ -609,6 +609,7 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       price: Number(row.price) || 0,
       mrp: row.mrp ? Number(row.mrp) : null,
       unitLabel: row.unitLabel || null,
+      subcategory: row.subcategory || null,
       inStock: row.inStock !== false,
       desc: row.description || '',
       benefits: [],
@@ -2454,7 +2455,16 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   var vastuState = { q:'', cat:'all', dir:'all', sort:'featured' };
 
+  /* The STORED group wins. Reading it off the title was right about three times in four
+     when measured against 414 real products, which means one product in four sat under the
+     wrong tile - so the regexes below are now only the fallback for a row nobody has
+     grouped yet, never the primary answer. */
+  var VASTU_CAT_BY_LABEL = {};
+  VASTU_CATS.forEach(function(c){ VASTU_CAT_BY_LABEL[c.label.toLowerCase()] = c.id; });
+
   function vastuCatOf(p){
+    var stored = p.subcategory && VASTU_CAT_BY_LABEL[String(p.subcategory).toLowerCase()];
+    if (stored) return stored;
     var name = String(p.name || '');
     for (var i = 0; i < VASTU_CATS.length; i++){
       if (VASTU_CATS[i].test.test(name)) return VASTU_CATS[i].id;

@@ -69,3 +69,7 @@ temp/
 # them: astrowani-shop/assets/ holds the optimised, content-hashed derivatives that
 # actually ship. Keep the originals backed up outside git.
 astrowani-store-images/*.png
+
+# Raw supplier/reference image dumps. Working material, not site assets: the shop serves
+# per-product images from astrowani-shop/assets/vastu/ instead.
+astrowani-shop/assets/vastu products/

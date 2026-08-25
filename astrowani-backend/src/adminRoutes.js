@@ -191,6 +191,10 @@ module.exports = function registerAdminRoutes(app) {
       // "was" price, unit_label the "5.25 ratti" line, stock NULL = unlimited (which is
       // what every pre-existing row means — is_active used to be the only switch).
       'mrp', 'stock', 'unit_label',
+      // The merchandising group the storefront's category tiles filter on
+      // (sql/vastu_subcategory.sql). Without it here the admin could show the field
+      // but never save it.
+      'subcategory',
     ],
     // Auto-translate to Hindi on save, same as blogs. These are admin-authored
     // product names with no bundled translation anywhere in the app, so machine

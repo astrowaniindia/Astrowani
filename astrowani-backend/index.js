@@ -2081,6 +2081,10 @@ app.get('/api/remedies', async (req, res) => {
           // and the product card simply omits whatever is missing.
           mrp: r.mrp,
           unitLabel: r.unit_label,
+          // The merchandising group (Crystals, Feng Shui, Pyramids...). Null on every row
+          // that predates sql/vastu_subcategory.sql, and on types that do not use groups at
+          // all, so the storefront treats it as optional and falls back to inference.
+          subcategory: r.subcategory || null,
           // Exposed only as a boolean: the app needs to grey out a sold-out card, but has
           // no business knowing inventory counts. NULL stock means unlimited.
           inStock: r.stock === null || r.stock === undefined ? true : r.stock > 0,

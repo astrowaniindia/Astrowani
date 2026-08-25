@@ -16,8 +16,13 @@ const TABS = [
 // item means, since is_active used to be the only availability switch).
 const EMPTY = {
   title: '', title_hi: '', description: '', description_hi: '', price: 0, mrp: '',
-  unit_label: '', stock: '', image: '', is_active: true, sort_order: 0,
+  unit_label: '', stock: '', image: '', is_active: true, sort_order: 0, subcategory: '',
 };
+
+// The storefront's Vastu page filters by these. Only offered on that type, because no other
+// catalogue is grouped this way. Blank means "let the storefront work it out from the title",
+// which is what every row created before this field existed does.
+const VASTU_SUBCATEGORIES = ['Crystals', 'Feng Shui', 'Pyramids', 'Vastu Enhancer', 'Handicraft', 'Gifts'];
 
 // Ordering is switched on one category at a time as fulfilment becomes real for it. The
 // customer app reads these keys straight from app_settings, and POST /api/orders/checkout
@@ -276,6 +281,10 @@ export default function Remedies() {
         mrp: numOrNull(editing.mrp),
         stock: numOrNull(editing.stock),
         unit_label: editing.unit_label?.trim() ? editing.unit_label.trim() : null,
+        // Blank means "work it out from the title", which is what the storefront does
+        // for every row created before this field existed - so blank must reach the
+        // server as null rather than an empty string it would then try to match on.
+        subcategory: editing.subcategory?.trim() ? editing.subcategory.trim() : null,
       };
       if (editing.id) await client.put(`/api/admin/remedies/${editing.id}`, payload);
       else await client.post('/api/admin/remedies', payload);
@@ -498,6 +507,13 @@ export default function Remedies() {
               <input type="number" value={editing.stock ?? ''} onChange={(e) => set('stock', e.target.value)}
                 placeholder="Blank for unlimited" /></div>
           </div>
+          {tab === 'vastu' && (
+            <div className="field"><label>Category — which tile it appears under on the shop</label>
+              <select value={editing.subcategory ?? ''} onChange={(e) => set('subcategory', e.target.value)}>
+                <option value="">Work it out from the title</option>
+                {VASTU_SUBCATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select></div>
+          )}
           <div className="field"><label>Sort order</label>
             <input type="number" value={editing.sort_order} onChange={(e) => set('sort_order', e.target.value)} /></div>
           <div className="field checkbox-row">
