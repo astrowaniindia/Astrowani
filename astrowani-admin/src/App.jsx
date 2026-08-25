@@ -10,6 +10,7 @@ import Astrologers from './pages/Astrologers';
 import Customers from './pages/Customers';
 import Sessions from './pages/Sessions';
 import Remedies from './pages/Remedies';
+import WaniShop from './pages/WaniShop';
 import Store from './pages/Store';
 import StoreProducts from './pages/StoreProducts';
 import Orders from './pages/Orders';
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="thoughts" element={<Thoughts />} />
         <Route path="categories" element={<Categories />} />
         <Route path="remedies" element={<Remedies />} />
+        <Route path="wani-shop" element={<WaniShop />} />
         <Route path="store" element={<Store />} />
         <Route path="store-products" element={<StoreProducts />} />
         <Route path="orders" element={<Orders />} />

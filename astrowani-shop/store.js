@@ -623,7 +623,9 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   var LIVE_PRODUCTS = null;   // null until the fetch resolves; [] means "loaded, empty"
 
   function loadLiveCatalog(){
-    return fetch(API_BASE + '/api/remedies')
+    // ?channel=shop: Wani Shop and the app's Home remedies are two different shops
+    // reading one table. Without this the storefront shows whatever the app sells.
+    return fetch(API_BASE + '/api/remedies?channel=shop')
       .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(d){
         var rows = Array.isArray(d) ? d : (d.data || d.items || []);

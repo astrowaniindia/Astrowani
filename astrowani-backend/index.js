@@ -2057,7 +2057,14 @@ app.get('/api/blogs', async (req, res) => {
 // Remedies shop — list active items by type (puja | gemstone | specific_puja).
 app.get('/api/remedies', async (req, res) => {
   try {
-    const cacheKey = `remedies:${req.query.type || 'all'}`;
+    // Two storefronts read this endpoint and they are not the same shop: the app's Home
+    // remedies row (?channel=app) and Wani Shop on the web (?channel=shop). A row marked
+    // 'both' belongs to either. Omitting the param returns everything, which is what any
+    // caller written before the split gets — the behaviour it already had.
+    const channel = ['app', 'shop'].includes(req.query.channel) ? req.query.channel : null;
+    // The channel is part of the cache key, or the first caller to warm the cache would
+    // serve its own storefront's catalogue to the other one.
+    const cacheKey = `remedies:${req.query.type || 'all'}:${channel || 'any'}`;
     const payload = await contentCache.get(cacheKey, async () => {
       let query = supabase
         .from('remedy_items')
@@ -2065,7 +2072,21 @@ app.get('/api/remedies', async (req, res) => {
         .eq('is_active', true)
         .order('sort_order', { ascending: true });
       if (req.query.type) query = query.eq('type', req.query.type);
-      const { data, error } = await query;
+      if (channel) query = query.in('channel', [channel, 'both']);
+      let { data, error } = await query;
+
+      // remedy_items.channel only exists once sql/remedy_channel.sql has been applied.
+      // Until then, filtering on it is a 42703 and BOTH storefronts would show an empty
+      // catalogue — so fall back to the unfiltered query, which is exactly the pre-split
+      // behaviour. Same posture as orders.source and orders.client_request_id.
+      if (error && (error.code === '42703' || error.code === 'PGRST204' || /channel/.test(error.message || ''))) {
+        console.warn('[remedies] remedy_items.channel is missing — run sql/remedy_channel.sql. Serving both storefronts the same catalogue.');
+        let retry = supabase
+          .from('remedy_items').select('*').eq('is_active', true)
+          .order('sort_order', { ascending: true });
+        if (req.query.type) retry = retry.eq('type', req.query.type);
+        ({ data, error } = await retry);
+      }
       if (error) throw error;
       return {
         data: (data || []).map((r) => ({
@@ -2085,6 +2106,7 @@ app.get('/api/remedies', async (req, res) => {
           // that predates sql/vastu_subcategory.sql, and on types that do not use groups at
           // all, so the storefront treats it as optional and falls back to inference.
           subcategory: r.subcategory || null,
+          channel: r.channel || 'both',
           // Exposed only as a boolean: the app needs to grey out a sold-out card, but has
           // no business knowing inventory counts. NULL stock means unlimited.
           inStock: r.stock === null || r.stock === undefined ? true : r.stock > 0,

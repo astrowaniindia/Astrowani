@@ -10,7 +10,12 @@ const links = [
   { to: '/banners', label: 'Banners' },
   { to: '/thoughts', label: 'Thought of the Day' },
   { to: '/categories', label: 'Categories' },
-  { to: '/remedies', label: 'Remedies Shop' },
+  // Two separate shops, deliberately two separate sections. /remedies is the Remedies
+  // row on the app's Home screen; /wani-shop is the web storefront at
+  // shop.astrowani.com. They share the remedy_items table but not their catalogues -
+  // see remedy_items.channel.
+  { to: '/remedies', label: 'Remedies (App)' },
+  { to: '/wani-shop', label: 'Wani Shop (Web)' },
   { to: '/orders', label: 'Orders' },
   { to: '/gifts', label: 'Gifts' },
   { to: '/astro-services', label: 'Astro Services' },

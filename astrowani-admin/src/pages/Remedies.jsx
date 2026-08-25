@@ -3,11 +3,17 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 
-const TABS = [
+// The two shops and what each one sells. They are separate catalogues over one table -
+// see remedy_items.channel and sql/remedy_channel.sql.
+export const APP_TABS = [
   { key: 'puja', label: 'Puja' },
   { key: 'gemstone', label: 'Gemstones' },
   { key: 'specific_puja', label: 'Specific Puja' },
   { key: 'life_report', label: 'Life Reports' },
+];
+export const SHOP_TABS = [
+  { key: 'gemstone', label: 'Gemstones' },
+  { key: 'puja', label: 'Pujas' },
   { key: 'vastu', label: 'Vastu Remedies' },
 ];
 
@@ -120,8 +126,20 @@ function numOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-export default function Remedies() {
-  const [tab, setTab] = useState('puja');
+/**
+ * One component, two shops.
+ *
+ * channel 'app'  - the Remedies row on the customer app's Home screen.
+ * channel 'shop' - Wani Shop, the web storefront.
+ *
+ * An item is listed here when its own channel matches, or when it is 'both' - which is
+ * what every row created before the split is, so neither shop lost anything on the day
+ * they were separated. Creating an item from a section stamps it with that section's
+ * channel, so anything new belongs to one shop unless somebody says otherwise.
+ */
+export default function Remedies({ channel = 'app', tabs = APP_TABS, heading = 'Remedies (App)' }) {
+  const TABS = tabs;
+  const [tab, setTab] = useState(tabs[0].key);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -264,7 +282,9 @@ export default function Remedies() {
     finally { setPopupBusy(false); }
   };
 
-  const rows = items.filter((i) => i.type === tab);
+  // 'both' belongs to either shop; anything explicitly the other shop's is not shown here.
+  const inChannel = (i) => (i.channel || 'both') === 'both' || i.channel === channel;
+  const rows = items.filter((i) => i.type === tab && inChannel(i));
 
   const save = async () => {
     setBusy(true);
@@ -285,6 +305,9 @@ export default function Remedies() {
         // for every row created before this field existed - so blank must reach the
         // server as null rather than an empty string it would then try to match on.
         subcategory: editing.subcategory?.trim() ? editing.subcategory.trim() : null,
+        // Which shop it belongs to. Set on create only: editing an item that is
+        // deliberately 'both' from one section must not quietly take it away from the other.
+        ...(editing.id ? {} : { channel }),
       };
       if (editing.id) await client.put(`/api/admin/remedies/${editing.id}`, payload);
       else await client.post('/api/admin/remedies', payload);
@@ -306,7 +329,7 @@ export default function Remedies() {
   return (
     <div>
       <div className="row-between" style={{ marginBottom: 18 }}>
-        <h1 className="page-title" style={{ margin: 0 }}>Remedies Shop</h1>
+        <h1 className="page-title" style={{ margin: 0 }}>{heading}</h1>
         <button className="btn" onClick={() => setEditing({ ...EMPTY })}>+ New {tabLabel} item</button>
       </div>
 
@@ -419,7 +442,7 @@ export default function Remedies() {
               className={`btn ${tab === t.key ? '' : 'secondary'}`}
               onClick={() => setTab(t.key)}
             >
-              {t.label} ({items.filter((i) => i.type === t.key).length})
+              {t.label} ({items.filter((i) => i.type === t.key && inChannel(i)).length})
             </button>
           ))}
         </div>

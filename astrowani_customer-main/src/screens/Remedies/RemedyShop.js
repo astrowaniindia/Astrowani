@@ -43,7 +43,9 @@ const RemedyShop = ({ route, navigation }) => {
   const fetchItems = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await Instance.get(`/api/remedies?type=${type}`, {
+      // channel=app: this is the Home screen's Remedies shop, which is a different
+      // catalogue from Wani Shop on the web even though both live in remedy_items.
+      const response = await Instance.get(`/api/remedies?type=${type}&channel=app`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setItems(response?.data?.data || []);

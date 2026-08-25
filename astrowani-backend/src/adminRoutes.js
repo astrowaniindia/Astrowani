@@ -195,6 +195,10 @@ module.exports = function registerAdminRoutes(app) {
       // (sql/vastu_subcategory.sql). Without it here the admin could show the field
       // but never save it.
       'subcategory',
+      // Which storefront the item belongs to: 'app', 'shop' or 'both'
+      // (sql/remedy_channel.sql). Set when an item is created from one of the two
+      // admin sections; without it here that stamp would be silently dropped.
+      'channel',
     ],
     // Auto-translate to Hindi on save, same as blogs. These are admin-authored
     // product names with no bundled translation anywhere in the app, so machine
