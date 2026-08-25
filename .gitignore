@@ -73,3 +73,12 @@ astrowani-store-images/*.png
 # Raw supplier/reference image dumps. Working material, not site assets: the shop serves
 # per-product images from astrowani-shop/assets/vastu/ instead.
 astrowani-shop/assets/vastu products/
+# Full-resolution tile sources for the Vastu categories (6-8 MB PNGs each). The shop serves
+# the 3:2 JPEGs generated from them (assets/vastu-cat-*.jpg); these stay local so a stray
+# `git add -A` cannot drop 43 MB of masters into the repo.
+astrowani-shop/assets/crystals.png
+astrowani-shop/assets/feng shui.png
+astrowani-shop/assets/gifts.png
+astrowani-shop/assets/handicrafts.png
+astrowani-shop/assets/pyramids.png
+astrowani-shop/assets/vastu enhancer.png

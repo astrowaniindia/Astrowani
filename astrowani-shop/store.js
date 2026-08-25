@@ -2451,10 +2451,16 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     {id:'west',       label:'West',       test:/west/i}
   ];
 
-  // Cut-out product artwork, one per group. A tile with no entry here still renders - it
-  // just shows its label - so the six can arrive one at a time.
+  /* One photograph per group, cropped to the tile's own 3:2 before shipping rather than
+     sending a 2000px original for the browser to throw most of away. Keyed by the ids in
+     VASTU_CATS; a group with no entry still renders, it just shows its label. */
   var VASTU_CAT_PHOTOS = {
-    crystals: '/assets/vastu-cat-crystals.png'
+    crystals:   '/assets/vastu-cat-crystals.jpg',
+    fengshui:   '/assets/vastu-cat-fengshui.jpg',
+    pyramids:   '/assets/vastu-cat-pyramids.jpg',
+    enhancer:   '/assets/vastu-cat-enhancer.jpg',
+    handicraft: '/assets/vastu-cat-handicraft.jpg',
+    gifts:      '/assets/vastu-cat-gifts.jpg'
   };
 
   var vastuState = { q:'', cat:'all', dir:'all', sort:'featured' };
