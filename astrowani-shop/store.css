@@ -972,3 +972,21 @@
   .detail-missing h2{font-family:var(--font-display); font-size:26px; margin:0 0 10px;}
   .detail-missing .btn{margin-top:16px;}
   .detail-loading{text-align:center; padding:56px 30px;}
+
+  /* ---------- detail page: image left, everything else right ----------
+     Sticky media so a long description scrolls beside the stone rather than past it. The
+     offset clears the sticky header plus the promo strip above it. Collapses to a single
+     stacked column on a phone, where two columns would leave both too narrow to read. */
+  .pv-cols{
+    display:grid; grid-template-columns:minmax(0,0.95fr) minmax(0,1.05fr);
+    gap:36px; align-items:start;
+  }
+  .pv-col-media{position:sticky; top:104px;}
+  .pv-col-info{min-width:0;}
+  .pv-cols .pv-media{margin:0;}
+  .pv-cols .pv-cat{margin-top:0;}
+
+  @media (max-width:860px){
+    .pv-cols{grid-template-columns:1fr; gap:22px;}
+    .pv-col-media{position:static;}
+  }

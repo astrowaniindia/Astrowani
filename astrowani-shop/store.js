@@ -985,11 +985,19 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     var cat = CATS.find(function(c){return c.id===p.cat;});
 
     return '' +
-      '<div class="pv-media" id="pvMainMedia">'+productPhotoImg(p,'front')+'</div>'+
-      (hasRealPhoto ? '' :
-      '<div class="pv-thumbs">'+variants.map(function(v,i){
-        return '<div class="pv-thumb'+(i===0?' sel':'')+'" data-variant="'+v+'">'+productPhotoImg(p,v)+'</div>';
-      }).join('')+'</div>')+
+      /* Two columns: the stone on the left, everything about it on the right. Wrapped in
+         explicit columns rather than laid out by grid placement on the existing flat
+         siblings, because a shared grid row would stretch the category line to the height
+         of the photograph beside it. */
+      '<div class="pv-cols">' +
+      '<div class="pv-col-media">' +
+        '<div class="pv-media" id="pvMainMedia">'+productPhotoImg(p,'front')+'</div>'+
+        (hasRealPhoto ? '' :
+        '<div class="pv-thumbs">'+variants.map(function(v,i){
+          return '<div class="pv-thumb'+(i===0?' sel':'')+'" data-variant="'+v+'">'+productPhotoImg(p,v)+'</div>';
+        }).join('')+'</div>')+
+      '</div>' +
+      '<div class="pv-col-info">' +
       '<div class="pv-cat">'+escapeHtml(cat ? cat.label : p.cat)+'</div>'+
       '<h3 class="pv-name">'+p.name+'</h3>'+
       '<div class="pv-rating-row"><span class="stars-sm">'+starString(meta.rating)+'</span><span>'+meta.rating.toFixed(1)+' · '+meta.reviews+' ratings</span></div>'+
@@ -1025,7 +1033,8 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
             '<p>'+r.text+'</p>'+
           '</div>';
         }).join('')+
-      '</div>';
+      '</div>'+
+      '</div></div>';
   }
 
   function bindProductDetail(scope, p){
@@ -2115,7 +2124,11 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
 
   function pujaDetailHtml(p){
     return '' +
-      '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
+      '<div class="pv-cols">' +
+      '<div class="pv-col-media">' +
+        '<div class="pj-modal-media"><img src="'+pujaImg(p)+'" alt="'+escapeHtml(p.n)+'"></div>'+
+      '</div>' +
+      '<div class="pv-col-info">' +
       '<div class="pv-cat">Wani Puja</div>'+
       '<h3 class="pv-name">'+escapeHtml(p.n)+'</h3>'+
       (p.h ? '<div class="pj-hi" style="font-size:15px; margin-top:4px;">'+escapeHtml(p.h)+'</div>' : '')+
@@ -2129,7 +2142,8 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
         '<li>The puja is performed with the full vidhi, and you receive the sankalp and prasad details.</li>'+
       '</ol>'+
       '<div class="checkout-note">Nothing is charged on this page. The dakshina above is indicative and is confirmed with you on the call before anything is paid.</div>'+
-      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjBookBtn">Request this puja</button>';
+      '<button class="btn btn-gold btn-full" style="margin-top:16px;" id="pjBookBtn">Request this puja</button>'+
+      '</div></div>';
   }
 
   function bindPujaDetail(scope, p){
