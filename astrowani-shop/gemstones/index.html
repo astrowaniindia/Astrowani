@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/store.css?v=49907a49">
+<link rel="stylesheet" href="/store.css?v=ad52f3a0">
 </head>
 <body>
 <header class="site">
@@ -26,8 +26,8 @@
       <a href="/gemstones/">Gemstones</a>
       <a href="/pujas/">Pujas</a>
       <a href="/gemstones/#purpose">By Purpose</a>
-      <a href="/gemstones/#calculators">Calculators</a>
-      <a href="/gemstones/#about">About</a>
+      <a href="/tools/">Calculators</a>
+      <a href="/about/">About</a>
     </nav>
     <div class="header-actions">
       <!-- Only rendered inside the app (see wireAppExit): on the open web there is nothing
@@ -116,75 +116,6 @@
   </div>
 </section>
 
-<section class="section calc-section" id="calculators">
-  <div class="wrap">
-    <div class="section-head">
-      <div>
-        <p class="eyebrow">Free Astro Tools</p>
-        <h2>Know your number before you buy</h2>
-      </div>
-    </div>
-    <div class="calc-grid">
-      <div class="calc-portrait">
-        <img id="imgDiscover" alt="A woman seated holding a yellow sapphire and a blue sapphire, wearing a sapphire ring.">
-      </div>
-      <div class="calc-card">
-        <h3>Moolank &amp; Bhagyank Calculator</h3>
-        <p class="lede">Enter your date of birth. Moolank comes from your birth date alone; Bhagyank from your full date of birth.</p>
-        <div class="field">
-          <label for="dobInput">Date of birth</label>
-          <input type="date" id="dobInput">
-        </div>
-        <div class="calc-aside">
-          <div class="calc-aside-title">Worked example</div>
-          <p>
-            Born <b>27 March 1994</b><br>
-            Moolank, the day alone: 2 + 7 = <b>9</b><br>
-            Bhagyank, the whole date: 2+7+3+1+9+9+4 = 35 → 3 + 5 = <b>8</b>
-          </p>
-        </div>
-        <button class="btn btn-line btn-full" id="calcMoolankBtn">Calculate</button>
-        <div class="calc-result" id="moolankResult"></div>
-      </div>
-      <div class="calc-card">
-        <h3>Gemstone Finder</h3>
-        <p class="lede">A quick match based on your Moolank's ruling planet. Not a substitute for a full chart reading, but a fair starting point.</p>
-        <div class="field">
-          <label for="moolankSelect">Your Moolank (1–9)</label>
-          <select id="moolankSelect">
-            <option value="">Select a number…</option>
-            <option value="1">1 · Sun</option>
-            <option value="2">2 · Moon</option>
-            <option value="3">3 · Jupiter</option>
-            <option value="4">4 · Rahu</option>
-            <option value="5">5 · Mercury</option>
-            <option value="6">6 · Venus</option>
-            <option value="7">7 · Ketu</option>
-            <option value="8">8 · Saturn</option>
-            <option value="9">9 · Mars</option>
-          </select>
-        </div>
-        <div class="calc-aside">
-          <div class="calc-aside-title">Number · planet · stone</div>
-          <ul class="planet-key">
-            <li><b>1</b> Sun · Ruby</li>
-            <li><b>6</b> Venus · Diamond</li>
-            <li><b>2</b> Moon · Pearl</li>
-            <li><b>7</b> Ketu · Cat's Eye</li>
-            <li><b>3</b> Jupiter · Pukhraj</li>
-            <li><b>8</b> Saturn · Neelam</li>
-            <li><b>4</b> Rahu · Gomed</li>
-            <li><b>9</b> Mars · Moonga</li>
-            <li><b>5</b> Mercury · Panna</li>
-          </ul>
-        </div>
-        <button class="btn btn-line btn-full" id="calcGemBtn">Find my stone</button>
-        <div class="calc-result" id="gemResult"></div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <section class="section">
   <div class="wrap">
     <div class="section-head">
@@ -250,8 +181,8 @@
       <a href="/gemstones/#shop" data-cat="gemstone">All Gemstones</a>
       <a href="/pujas/">Book a Puja</a>
       <a href="/gemstones/#purpose">Shop by Purpose</a>
-      <a href="/gemstones/#calculators">Gemstone Finder</a>
-      <a href="/gemstones/#calculators">Moolank Calculator</a>
+      <a href="/tools/">Gemstone Finder</a>
+      <a href="/tools/">Moolank Calculator</a>
     </div>
     <div>
       <h4>Purpose</h4>
@@ -262,10 +193,10 @@
     </div>
     <div>
       <h4>Astrowani</h4>
-      <a href="/gemstones/#about">About Astrowani</a>
-      <a href="#" onclick="return false;">Certification &amp; Sourcing</a>
+      <a href="/about/">About Astrowani</a>
+      <a href="/about/#certification">Certification &amp; Sourcing</a>
       <a href="#" onclick="return false;">Shipping &amp; Returns</a>
-      <a href="#" onclick="return false;">Contact</a>
+      <a href="/about/#contact">Contact</a>
     </div>
   </div>
 
@@ -340,6 +271,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="/store.js?v=2116e9ec"></script>
+<script src="/store.js?v=83d397b6"></script>
 </body>
 </html>

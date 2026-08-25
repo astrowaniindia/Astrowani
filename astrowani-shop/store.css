@@ -138,6 +138,14 @@
      star from resizing as the image loads — that reflow was what made the bar look like
      the mark and the name had been set separately. */
   .logo-mark{width:42px; height:42px; margin:-6px 0; flex-shrink:0; display:block; object-fit:contain;}
+  /* Nudged up 2px so the star sits on the wordmark's optical centre rather than its box
+     centre - the glyphs have no descenders here, so a true centre reads slightly low.
+     Done with transform, NOT margin, on purpose: the ticker below is stuck to the header's
+     MEASURED height (--header-h), so anything that changes the header's layout height
+     would move the strip with it. A transform paints the shift without touching layout.
+     Scoped to the header; the footer mark sits on a different background and is left. */
+  header.site .logo-mark{transform:translateY(-2px);}
+
   .logo-name{
     font-family:var(--font-display); font-weight:700; font-size:21px; letter-spacing:.01em;
     color:var(--cream);
@@ -1038,3 +1046,38 @@
     --ink-faint:rgb(118,74,55);
   }
   .detail-page .checkout-note{color:var(--ink-soft);}
+
+  /* ---------- ABOUT + FREE TOOLS PAGES ----------
+     Both pages reuse the existing chrome, hero, .about-band, .badge-row and .editorial-media.
+     These are the few blocks they needed that did not exist yet. */
+  .row-center{display:flex; justify-content:center;}
+
+  .about-cols{display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:22px;}
+  .about-cols.three{grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));}
+  .about-col{
+    border:1px solid var(--border-soft); border-radius:var(--radius);
+    padding:22px; background:var(--surface);
+  }
+  .about-col h3{font-family:var(--font-display); font-size:19px; margin:0 0 10px;}
+  .about-col p{font-size:14.5px; line-height:1.7; color:var(--ink-soft); margin:0;}
+  .about-col .btn{margin-top:14px;}
+
+  /* Numbered, because "four steps" should look like four steps. <ol> keeps that true for a
+     screen reader too, so the marker is hidden rather than the list being a stack of divs. */
+  .steps-grid{
+    list-style:none; margin:0; padding:0;
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:20px;
+  }
+  .steps-grid li{position:relative; padding-top:6px;}
+  .steps-grid h3{font-family:var(--font-display); font-size:17.5px; margin:12px 0 8px;}
+  .steps-grid p{font-size:14px; line-height:1.65; color:var(--ink-soft); margin:0;}
+  .steps-grid .step-n{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:34px; height:34px; border-radius:50%;
+    background:var(--brown); color:var(--cream);
+    font-family:var(--font-mono); font-size:14px; font-weight:700;
+  }
+
+  /* Same measured contrast fix as the detail pages: the shared --ink-soft is 3.90:1 on cream,
+     under the 4.5:1 AA minimum, and these two pages are almost entirely body copy. */
+  .about-col p, .steps-grid p{color:rgb(101,56,38);}

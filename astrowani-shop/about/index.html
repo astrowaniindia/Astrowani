@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Without this the page is laid out at ~980px and scaled down, which is why it looked
+     like a desktop site shrunk into a phone. viewport-fit=cover lets the brown header sit
+     under the status bar notch instead of leaving a pale strip. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#592a19">
+<meta name="format-detection" content="telephone=no">
+<title>About Astrowani — Wani Shop</title>
+<meta name="description" content="Astrowani: verified astrologers by chat, call and video, and independently lab-certified gemstones and pujas. What we do, how we check it, and how to reach us.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/store.css?v=ad52f3a0">
+</head>
+<body>
+<header class="site">
+  <div class="wrap header-row">
+    <a href="/" class="logo" aria-label="Wani Shop, home">
+      <img class="logo-mark" id="brandLogo" alt="" aria-hidden="true">
+      <span class="logo-name">Wani Shop</span>
+    </a>
+    <nav class="main">
+      <a href="/gemstones/">Gemstones</a>
+      <a href="/pujas/">Pujas</a>
+      <a href="/gemstones/#purpose">By Purpose</a>
+      <a href="/tools/">Calculators</a>
+      <a href="/about/">About</a>
+    </nav>
+    <div class="header-actions">
+      <!-- Only rendered inside the app (see wireAppExit): on the open web there is nothing
+           to exit to, and a dead button is worse than no button. -->
+      <button class="icon-btn hidden" id="exitBtn" title="Back to Astrowani" aria-label="Back to Astrowani">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 12H6.2"/>
+          <path d="M11.6 6.4 6 12l5.6 5.6"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="adminToggle" title="Admin mode: edit this catalog" aria-label="Toggle admin mode">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/>
+          <circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="cartBtn" title="Cart" aria-label="Open cart">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M2.8 3.6h1.9a1 1 0 0 1 .98.79L6.1 7"/>
+          <path d="M6.1 7h14.1l-1.62 6.65a2 2 0 0 1-1.94 1.53H9.3a2 2 0 0 1-1.95-1.56L6.1 7Z"/>
+          <circle cx="10" cy="19.4" r="1.7"/>
+          <circle cx="16.9" cy="19.4" r="1.7"/>
+        </svg>
+        <span class="cart-badge hidden" id="cartCount">0</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="topstrip"><div class="marquee" id="marquee"></div></div>
+
+<section class="hero hero-ink-dark" style="--hero-img:none; min-height:auto; padding:52px 0 0;">
+  <div class="wrap hero-inner">
+    <p class="eyebrow">About Astrowani</p>
+    <h1>Astrology you can check.</h1>
+    <p class="lede">Astrowani is an astrologer on call and a remedy shop behind it. Every astrologer is verified before they take a consultation, and every stone is independently lab certified before it is listed. Both of those are things you can check rather than take on trust.</p>
+    <div style="margin-top:22px;">
+      <a class="btn btn-gold" href="https://play.google.com/store/apps/details?id=com.astrowanicustomer" target="_blank" rel="noopener">Get the app on Google Play</a>
+      <a class="btn btn-line" href="/gemstones/" style="margin-left:10px;">Shop gemstones</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="what-we-do">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">What Astrowani is</p>
+        <h2>Two halves of the same thing</h2>
+      </div>
+    </div>
+    <div class="about-cols">
+      <div class="about-col">
+        <h3>The app</h3>
+        <p>Talk to a verified astrologer by chat, voice or video, whenever you need to. Read your kundli, pull a detailed report, watch a live session, and keep every past consultation in one place. Charges are per minute, shown before you connect, and paid from a wallet you top up yourself - so a reading never runs up a bill you did not agree to.</p>
+        <a class="btn btn-line btn-sm" href="https://play.google.com/store/apps/details?id=com.astrowanicustomer" target="_blank" rel="noopener">Download for Android</a>
+      </div>
+      <div class="about-col">
+        <h3>The shop</h3>
+        <p>When a reading ends in a remedy, this is where it comes from. Certified gemstones graded by an independent laboratory, and sixty-four pujas, paths and sanskars performed with the full vidhi by our pandits. Nothing here is sold as a cure, and the honest recommendation is often the cheaper stone - or none at all.</p>
+        <a class="btn btn-line btn-sm" href="/gemstones/">Browse the catalogue</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="certification" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap about-band">
+    <div class="editorial-media">
+      <img id="imgBoxes" alt="A blue sapphire and an emerald resting in open wooden presentation boxes on stone.">
+    </div>
+    <div>
+      <p class="eyebrow">Certified, and you get the paperwork</p>
+      <h2 style="margin-bottom:14px;">A certificate in every box</h2>
+      <p class="lede">Stones are graded by an independent gemmological laboratory, not by us. The report names the species, the weight, the measurements and - critically - whether the stone has been treated. That report ships in the box with the stone.</p>
+      <p class="lede" style="margin-top:12px;">Most coloured stones on the market are treated in some way. That is not automatically a problem; hiding it is. Where a stone is treated, the report says so and so do we. If the paperwork and the stone ever disagree, send it back at our cost, whatever the date.</p>
+      <div class="badge-row">
+        <div>🔬 Independently lab-certified</div>
+        <div>🛕 Ritually energised before dispatch</div>
+        <div>↩ 7-day return window</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap about-band reverse">
+    <div>
+      <p class="eyebrow">Sourcing</p>
+      <h2 style="margin-bottom:14px;">Twenty years, and a rule we do not bend</h2>
+      <p class="lede">Twenty years of chart readings, temple sourcing trips to Nepal and Sri Lanka, and a simple rule: a stone only enters the catalogue after Astrowani has verified its origin. Ceylon sapphires come through Sri Lankan dealers we have bought from for years; emeralds through Jaipur. We do not buy parcels we cannot trace.</p>
+      <p class="lede" style="margin-top:12px;">Each piece is then examined under a loupe, matched against its lab report, and packed with that certificate. If the two disagree, it never leaves the workshop.</p>
+    </div>
+    <div class="editorial-media">
+      <img id="imgTray" alt="A tray of loose emeralds, sapphires, citrine and rubies beside a jeweller's loupe and a certificate booklet.">
+    </div>
+  </div>
+</section>
+
+<section class="section" id="astrologers" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">The people you speak to</p>
+        <h2>Every astrologer is verified before they take a consultation</h2>
+      </div>
+    </div>
+    <div class="about-cols three">
+      <div class="about-col">
+        <h3>Checked, then listed</h3>
+        <p>An astrologer does not appear in the app by signing up. Their profile, experience and specialities are reviewed and approved before a single customer can reach them, and an incomplete profile stays offline.</p>
+      </div>
+      <div class="about-col">
+        <h3>Rated by real sessions</h3>
+        <p>The rating on a profile comes only from customers who actually completed a consultation with that astrologer. There is no way to leave a review without having had the reading.</p>
+      </div>
+      <div class="about-col">
+        <h3>Their own specialities</h3>
+        <p>Vedic, numerology, vastu, tarot, matchmaking - astrologers list what they genuinely practise, and you pick by the question you actually have.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="how-it-works" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">How a consultation works</p>
+        <h2>Four steps, no surprises</h2>
+      </div>
+    </div>
+    <ol class="steps-grid">
+      <li><span class="step-n">1</span><h3>Install and sign in</h3><p>Sign in with your mobile number. No password to forget.</p></li>
+      <li><span class="step-n">2</span><h3>Add what you want to spend</h3><p>Top up your wallet. Consultations are charged per minute at the rate shown on the astrologer's profile, before you connect.</p></li>
+      <li><span class="step-n">3</span><h3>Chat, call or video</h3><p>Pick an astrologer who is online and start. You can see the timer and your balance the whole way through, and end it whenever you like.</p></li>
+      <li><span class="step-n">4</span><h3>Act on it, if you want to</h3><p>If a remedy is suggested, order it here - or don't. Nobody is charged for a recommendation.</p></li>
+    </ol>
+    <div class="row-center" style="margin-top:26px;">
+      <a class="btn btn-gold" href="https://play.google.com/store/apps/details?id=com.astrowanicustomer" target="_blank" rel="noopener">Start on Google Play</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="trust" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Your money and your details</p>
+        <h2>What we will and will not do</h2>
+      </div>
+    </div>
+    <div class="about-cols">
+      <div class="about-col">
+        <h3>Payments</h3>
+        <p>Payments are processed by Razorpay. Your card, UPI or netbanking details are entered on Razorpay's own page - they are never seen by, sent to, or stored by Astrowani. We keep only the reference Razorpay returns.</p>
+      </div>
+      <div class="about-col">
+        <h3>What we ask for</h3>
+        <p>Your mobile number, because it is how you sign in, and your birth details, because astrology cannot be done without them. Your delivery address only if you order something. We do not sell your data.</p>
+      </div>
+      <div class="about-col">
+        <h3>What this is not</h3>
+        <p>Astrology, gemstones and pujas are offered within the Vedic tradition. They are not medicine, and nothing here is a substitute for medical, legal or financial advice.</p>
+      </div>
+      <div class="about-col">
+        <h3>If something is wrong</h3>
+        <p>Unworn stone in its sealed packet, within 7 days - send it back. Stone does not match its certificate - back at our cost, whatever the date. A puja can be moved or cancelled up to 24 hours before the muhurat.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="contact" style="border-top:1px solid var(--border-soft);">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Talk to us</p>
+        <h2>A person answers all three of these</h2>
+      </div>
+    </div>
+    <div class="about-cols three">
+      <div class="about-col">
+        <h3>WhatsApp</h3>
+        <p>Fastest for anything about an order or a puja booking.</p>
+        <a class="btn btn-line btn-sm" href="https://wa.me/917297900990" target="_blank" rel="noopener">Message us</a>
+      </div>
+      <div class="about-col">
+        <h3>Email</h3>
+        <p>For certificates, returns and invoices.</p>
+        <a class="btn btn-line btn-sm" href="mailto:support@astrowani.com">support@astrowani.com</a>
+      </div>
+      <div class="about-col">
+        <h3>In the app</h3>
+        <p>To ask an astrologer rather than us.</p>
+        <a class="btn btn-line btn-sm" href="https://play.google.com/store/apps/details?id=com.astrowanicustomer" target="_blank" rel="noopener">Open Google Play</a>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:22px; text-align:center;">Stones are graded, set and dispatched from our Delhi workshop.</p>
+  </div>
+</section>
+
+
+<footer>
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <div class="logo">
+        <!-- Same gold mark; it has a transparent background so it reads on the brown band too. -->
+        <img class="logo-mark" id="brandLogoFoot" alt="" aria-hidden="true">
+        <span class="logo-name" style="color:var(--cream);">Wani Shop</span>
+      </div>
+      <p class="foot-tag">Certified gemstones chosen against your chart, verified against their lab report, and dispatched from our Delhi workshop.</p>
+      <div class="foot-news-block">
+        <div class="foot-news-label">New stones &amp; offers</div>
+        <div class="foot-news">
+          <input type="email" placeholder="Your email address" id="newsletterInput" aria-label="Your email address">
+          <button class="btn btn-gold" id="newsletterBtn">Join</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h4>Shop</h4>
+      <a href="/gemstones/#shop" data-cat="gemstone">All Gemstones</a>
+      <a href="/pujas/">Book a Puja</a>
+      <a href="/gemstones/#purpose">Shop by Purpose</a>
+      <a href="/tools/">Gemstone Finder</a>
+      <a href="/tools/">Moolank Calculator</a>
+    </div>
+    <div>
+      <h4>Purpose</h4>
+      <a href="/gemstones/#purpose">Wealth &amp; Money</a>
+      <a href="/gemstones/#purpose">Love &amp; Marriage</a>
+      <a href="/gemstones/#purpose">Career &amp; Business</a>
+      <a href="/gemstones/#purpose">Health &amp; Protection</a>
+    </div>
+    <div>
+      <h4>Astrowani</h4>
+      <a href="/about/">About Astrowani</a>
+      <a href="/about/#certification">Certification &amp; Sourcing</a>
+      <a href="#" onclick="return false;">Shipping &amp; Returns</a>
+      <a href="/about/#contact">Contact</a>
+    </div>
+  </div>
+
+  <div class="wrap foot-assure">
+    <div>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></svg>
+      Independently lab certified
+    </div>
+    <div>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11v9H3z"/><path d="M14 11h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg>
+      Free insured shipping above ₹999
+    </div>
+    <div>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-4"/></svg>
+      7 day returns
+    </div>
+  </div>
+
+  <div class="wrap foot-bottom">
+    <span>© 2026 Wani Shop. All stones dispatched from our Delhi workshop.</span>
+    <span>
+      <a href="#" onclick="return false;">Privacy</a>
+      <a href="#" onclick="return false;">Terms</a>
+    </span>
+  </div>
+</footer>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="cartDrawer">
+  <div class="drawer-head">
+    <h3>Your cart</h3>
+    <button class="close-x" id="closeCart" aria-label="Close cart">✕</button>
+  </div>
+  <div class="drawer-body" id="cartBody"></div>
+  <div class="drawer-foot" id="cartFoot"></div>
+</aside>
+
+<div class="modal" id="adminModal">
+  <div class="modal-scrim" data-close="adminModal"></div>
+  <div class="modal-box wide">
+    <button class="modal-close" data-close="adminModal">✕</button>
+    <div id="adminContent"></div>
+  </div>
+</div>
+
+<!-- product quick view modal -->
+<div class="modal" id="pvModal">
+  <div class="modal-scrim" data-close="pvModal"></div>
+  <div class="modal-box">
+    <button class="modal-close" data-close="pvModal">✕</button>
+    <div id="pvContent"></div>
+  </div>
+</div>
+
+<!-- checkout modal -->
+<div class="modal" id="coModal">
+  <div class="modal-scrim" data-close="coModal"></div>
+  <div class="modal-box wide">
+    <button class="modal-close" data-close="coModal">✕</button>
+    <div id="coContent"></div>
+  </div>
+</div>
+
+<!-- puja detail / booking modal -->
+<div class="modal" id="pjModal">
+  <div class="modal-scrim" data-close="pjModal"></div>
+  <div class="modal-box">
+    <button class="modal-close" data-close="pjModal">&#10005;</button>
+    <div id="pjContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/store.js?v=83d397b6"></script>
+</body>
+</html>

@@ -1754,6 +1754,28 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     9:{name:'Red Coral (Moonga)', productId:'p10'}        // Mars
   };
 
+  /* GEM_MAP points at OFFLINE ids (p5, p6...). Those only exist until the live catalogue
+     lands, after which byId is keyed by remedy_items uuids and byId['p5'] is undefined - so
+     "Find my stone" threw on p.photo and the recommendation link went nowhere. Both were
+     broken in production; the bug simply had nowhere obvious to show itself.
+
+     Resolve by name instead, falling back to the offline id. The parenthetical is the
+     reliable half: an admin may list "Ceylon Blue Sapphire (Neelam)" where GEM_MAP says
+     "Blue Sapphire (Neelam)", but the Hindi name inside the brackets survives that. */
+  function gemProduct(gm){
+    if (!gm) return null;
+    if (byId[gm.productId]) return byId[gm.productId];
+    var m = /\(([^)]+)\)/.exec(gm.name);
+    var needle = (m ? m[1] : gm.name).toLowerCase().replace(/[^a-z]/g, '');
+    if (!needle) return null;
+    var ids = Object.keys(byId);
+    for (var i = 0; i < ids.length; i++){
+      var t = String(byId[ids[i]].name || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (t.indexOf(needle) !== -1) return byId[ids[i]];
+    }
+    return null;
+  }
+
   document.getElementById('calcMoolankBtn').addEventListener('click', function(){
     var val = document.getElementById('dobInput').value;
     var resultBox = document.getElementById('moolankResult');
@@ -1769,9 +1791,15 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
       '<div class="num-big">'+moolank+'</div><div class="num-sub">Moolank · ruled by '+mt.planet+'</div>'+
       '<p>'+mt.trait+'</p>'+
       '<p style="margin-top:10px;"><strong>Bhagyank: '+bhagyank+'</strong>, your destiny number, drawn from your complete date of birth.</p>'+
-      '<div class="rec" data-open="'+gm.productId+'" style="cursor:pointer;">✦ Traditionally paired with '+gm.name+' →</div>';
+      (function(){
+        var rp = gemProduct(gm);
+        return rp
+          ? '<div class="rec" data-open="'+escapeAttr(rp.id)+'" style="cursor:pointer;">✦ Traditionally paired with '+escapeHtml(gm.name)+' →</div>'
+          : '<div class="rec">✦ Traditionally paired with '+escapeHtml(gm.name)+'</div>';
+      })();
     resultBox.classList.add('show');
-    resultBox.querySelector('[data-open]').addEventListener('click', function(e){ goToProduct(e.currentTarget.getAttribute('data-open')); });
+    var recEl = resultBox.querySelector('[data-open]');
+    if (recEl) recEl.addEventListener('click', function(e){ goToProduct(e.currentTarget.getAttribute('data-open')); });
   });
 
   document.getElementById('calcGemBtn').addEventListener('click', function(){
@@ -1781,16 +1809,20 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     var n = parseInt(val,10);
     var mt = MOOLANK_TRAITS[n];
     var gm = GEM_MAP[n];
-    var p = byId[gm.productId];
+    var p = gemProduct(gm);
     resultBox.innerHTML =
-      '<div style="display:flex; gap:14px; align-items:center;">'+
-        '<div class="gem-result-thumb">'+renderIcon(p)+'</div>'+
-        '<div><div style="font-weight:700;">'+p.name+'</div><div class="price" style="font-size:14px; color:var(--ink);">₹'+p.price.toLocaleString('en-IN')+'</div></div>'+
-      '</div>'+
+      (p
+        ? '<div style="display:flex; gap:14px; align-items:center;">'+
+            '<div class="gem-result-thumb">'+renderIcon(p)+'</div>'+
+            '<div><div style="font-weight:700;">'+escapeHtml(p.name)+'</div><div class="price" style="font-size:14px; color:var(--ink);">₹'+Number(p.price).toLocaleString('en-IN')+'</div></div>'+
+          '</div>'
+        : '<div style="font-weight:700;">'+escapeHtml(gm.name)+'</div>')+
       '<p>Ruled by '+mt.planet+'. '+mt.trait+'</p>'+
-      '<button class="btn btn-gold btn-sm" id="gemViewBtn" style="margin-top:10px;">View this piece</button>';
+      (p ? '<button class="btn btn-gold btn-sm" id="gemViewBtn" style="margin-top:10px;">View this piece</button>'
+         : '<a class="btn btn-line btn-sm" href="/gemstones/" style="margin-top:10px;">Browse gemstones</a>');
     resultBox.classList.add('show');
-    resultBox.querySelector('#gemViewBtn').addEventListener('click', function(){ goToProduct(gm.productId); });
+    var viewBtn = resultBox.querySelector('#gemViewBtn');
+    if (viewBtn) viewBtn.addEventListener('click', function(){ goToProduct(p.id); });
   });
 
   /* ================= NEWSLETTER ================= */

@@ -11,7 +11,8 @@ RUN THIS AFTER EVERY EDIT TO store.css OR store.js:   python stamp.py
 import hashlib, io, re, sys, pathlib
 
 root = pathlib.Path(__file__).parent
-pages = ['index.html', 'gemstones/index.html', 'pujas/index.html']
+pages = ['index.html', 'gemstones/index.html', 'pujas/index.html',
+         'tools/index.html', 'about/index.html']
 digests = {f: hashlib.md5((root / f).read_bytes()).hexdigest()[:8]
            for f in ('store.css', 'store.js')}
 
