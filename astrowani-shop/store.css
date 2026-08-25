@@ -1167,31 +1167,6 @@
   .page-hero .play-badge:hover{background:#fff; border-color:var(--gold);}
   .page-hero .play-badge-text small{opacity:.72;}
 
-  /* ---------- HERO SCRIM ----------
-     For a photograph that is mid-tone everywhere the copy crosses. The default hero shows
-     the picture at full strength and relies on a shadow halo, which works when the image
-     has dark areas for the type to sit on. Measured across the vastu banner's headline
-     rows - rgb(156,120,85) - EVERY option failed: cream 2.95:1, brown 2.95:1, gold 2.87:1,
-     against a 4.5:1 minimum. There is no text colour that reads on it, so changing the
-     colour was never going to fix it; the photograph itself has to come down.
-
-     A 58% brown wash puts the background at about rgb(117,75,50), which takes cream to
-     5.4:1 and the gold eyebrow to 5.3:1. Slightly stronger top and bottom, where the
-     eyebrow and the lede sit, and lighter through the middle so the picture still reads
-     as a photograph rather than a brown rectangle.
-
-     ::after, not ::before: ::before already carries the image and its slow push-in, and
-     putting a background on it would replace the photograph. .hero-inner is z-index 1, so
-     the copy stays above this. */
-  .hero-scrim::after{
-    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
-    background:linear-gradient(
-      180deg,
-      rgba(89,42,25,.66) 0%,
-      rgba(89,42,25,.52) 42%,
-      rgba(89,42,25,.58) 70%,
-      rgba(89,42,25,.72) 100%);
-  }
 
 
   /* The Show-more row under the vastu grid. Empty (and so invisible) once everything
@@ -1202,4 +1177,34 @@
     margin-left:10px; padding:2px 9px; border-radius:999px;
     background:var(--bg-elev); color:var(--ink-soft);
     font-family:var(--font-mono); font-size:11.5px;
+  }
+
+  /* ---------- HERO PANEL ----------
+     The alternative to washing the whole photograph down. A scrim over the full bleed did
+     make the copy readable, but it dulled the picture everywhere, including the parts with
+     no text on them at all - which is the half of the frame you actually bought the shot
+     for. So the picture is left at full strength and the COPY carries its own ground: a
+     brown card, sized to the words, sitting on top of it.
+
+     86% rather than solid, so the photograph still reads faintly through and the card
+     belongs to the image instead of looking pasted over it. Measured on the brightest area
+     it can sit over, rgb(177,144,112): cream lands at 7.15:1 and the gold eyebrow at
+     6.95:1, both comfortably past 4.5.
+
+     The type's own shadow is switched off inside the panel. It exists to separate letters
+     from a photograph, and on a flat card it only makes them look smudged. */
+  .hero-panel .hero-inner{
+    max-width:620px;
+    background:rgba(89,42,25,.86);
+    border:1px solid rgba(244,216,188,.16);
+    border-radius:var(--radius);
+    padding:38px 40px 42px;
+    box-shadow:0 14px 46px rgba(89,42,25,.42);
+  }
+  .hero-panel .hero-inner h1,
+  .hero-panel .hero-inner p.lede,
+  .hero-panel .hero-inner .eyebrow{text-shadow:none;}
+  .hero-panel .hero-inner p.lede{margin-bottom:28px;}
+  @media (max-width:640px){
+    .hero-panel .hero-inner{padding:26px 22px 30px; max-width:none;}
   }
