@@ -1016,3 +1016,25 @@
   .pv-cols-puja .pv-col-media{align-self:start;}
   .pv-cols-puja .pv-sticky{position:static;}
   .pv-cols-puja .pj-modal-media{aspect-ratio:5/3; margin-bottom:18px;}
+
+  /* ---------- detail page: readable body text ----------
+     MEASURED, not eyeballed. Against the cream page the shared tokens came out at
+     2.16:1 for --ink-faint (the crumbs, the Hindi name, the PUJA TIME / DAKSHINA labels)
+     and 3.90:1 for --ink-soft (the steps, the back link, descriptions and reviews). WCAG
+     AA asks 4.5:1 for body text, so both were well under and the page read as washed out.
+
+     Redefining the two tokens on .detail-page re-colours everything that inherits them in
+     one place, rather than chasing individual rules. Only these pages change - the
+     listings, hero and footer keep the palette they already had.
+
+       --ink-soft   101,56,38  ->  7.17:1 on cream, 5.86:1 on the note box
+       --ink-faint  118,74,55  ->  5.42:1 on cream, 4.43:1 on the note box
+
+     The note box gets --ink-soft outright: "Nothing is charged on this page" is the one
+     line on a puja page a customer must not miss, and it was the worst offender at 1.77:1
+     - effectively invisible. */
+  .detail-page{
+    --ink-soft:rgb(101,56,38);
+    --ink-faint:rgb(118,74,55);
+  }
+  .detail-page .checkout-note{color:var(--ink-soft);}
