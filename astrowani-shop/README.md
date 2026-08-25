@@ -1,7 +1,7 @@
-# astrowani-shop — the storefront at shop.astrowani.com
+# astrowani-shop — Wani Shop, the storefront at shop.astrowani.com
 
-A static site. No build step, no framework, no server: `index.html` plus content-hashed
-images in `assets/`. Nginx serves the folder directly.
+A static site with no build step: one HTML shell, one stylesheet, one script, and
+content-hashed images in `assets/`. Nginx serves the folder directly.
 
 | | |
 |---|---|
@@ -9,42 +9,147 @@ images in `assets/`. Nginx serves the folder directly.
 | Served from | `/var/www/astrowani/shop` on the VPS (`76.13.243.165`) |
 | Nginx config | `vps-deployment/nginx/astrowani-shop.conf` |
 | Deploy | `.github/workflows/deploy-shop.yml`, on any push to `main` touching `astrowani-shop/**` |
+| Also runs inside | the customer app's Store tab, as a WebView — `astrowani_customer-main/src/screens/Remedies/StoreWebView.js` |
 
 ## What it is
 
-The gemstone storefront: 33 certified stones, shop-by-purpose tiles, a Moolank/Bhagyank
-calculator, a Gemstone Finder, cart and checkout.
+A real shop. Certified gemstones and sixty-four pujas, each with its own page, a cart, phone
+OTP sign-in, Razorpay payment, and order tracking. Orders land in the same `orders` table
+the app writes to, against the same customer, and show up in `astrowani-admin`.
 
-**Everything is client-side.** The cart lives in `localStorage` and checkout is a UI flow
-that takes no payment and sends nothing anywhere. It does not talk to `astrowani-backend`,
-Supabase, or the `store_products` table in the admin dashboard. Wiring it to real data is a
-separate job; nothing here is load-bearing for the apps.
+**The catalogue is live.** Products come from `GET /api/remedies` (the `remedy_items` table an
+admin edits in the dashboard). The `PRODUCTS` array inside `store.js` is a fallback shown only
+while that fetch is in flight or after it fails — every buy control on a fallback product is
+disabled, because the checkout can only price a real `remedy_items` uuid.
+
+## The three files
+
+| File | What it is |
+|---|---|
+| `index.html` | The shell: header, footer, cart bar, toast, and an empty `<main id="view">`. **Served for every path.** |
+| `store.js` | Everything else — router, catalogue, cart, session, checkout, and every page. |
+| `store.css` | One stylesheet. Three colour tokens (brown, cream, gold) and nothing else. |
+
+`gemstones/index.html` and `pujas/index.html` are byte-identical copies of `index.html`, so
+those two real directories keep resolving for old bookmarks. **`stamp.py` writes them — never
+edit them by hand.**
+
+## Routing
+
+There is no server-side routing and none is needed. Nginx ends its `location /` block with
+`try_files $uri $uri/ /index.html`, so any path that is not a file on disk is served the shell,
+and the router in `store.js` decides what it means.
+
+```
+/                       home
+/gemstones/             listing, 12 per page
+/gemstones/page/3/      page 3
+/gemstones/ruby-manik/  a product
+/pujas/  /pujas/page/2/  /pujas/gauri-ganesh-puja/
+/purpose/wealth/        shop by purpose
+/calculators/           moolank + gemstone finder
+/cart/  /checkout/  /orders/  /account/  /login/
+/about/ /contact/ /shipping/ /returns/ /certification/ /privacy/ /terms/ /faq/
+```
+
+Product slugs come from the product's own title. Rename a product in the admin and its URL
+changes with it; the old URL renders a "not found" page with a route back to the listing, which
+is the honest answer — there is nothing to redirect to.
+
+**This needed no nginx change**, which matters: certbot rewrote that file in place on the VPS
+and the deploy workflow deliberately never overwrites it.
+
+## Money
+
+Three rules, the same three `astrowani-backend/src/orderRoutes.js` is built on. Do not weaken
+them.
+
+1. **The client never computes a price the customer is asked to pay.** The cart shows a
+   subtotal estimate, labelled as an estimate. The only figure ever shown next to a Pay button
+   comes from `POST /api/orders/quote`, and `POST /api/orders/checkout` re-derives it and
+   ignores anything money-shaped in the request body.
+2. **Razorpay saying "paid" proves nothing.** Only `POST /api/orders/verify-payment`'s
+   signature check confirms an order. Until it returns, the customer is told nothing. If it
+   fails, the page says the payment could not be *confirmed* and tells them not to pay
+   again — never that it failed.
+3. **Ordering is gated per category, server-side.** `GET /api/store/config` tells the page
+   which categories are accepting orders so a card can say so up front, but `/checkout` 403s a
+   blocked category regardless. The page-side gate fails closed.
+
+## Sign-in
+
+Phone OTP, using the same `/api/users/mobile-otp-request` and `/mobile-otp-verify` the two apps
+use. The JWT is the same customer identity, which is the whole point: a web order appears under
+My Orders in the app and against the right customer in the admin.
+
+Inside the app there is no sign-in at all — `StoreWebView.js` injects the customer's existing
+token before the page's own scripts run. That token is never written to `localStorage` and
+cannot be signed out from here; the app owns that session.
+
+## Payment inside the app
+
+The app runs Razorpay's **native** sheet on the page's behalf. The page posts
+`{type: 'razorpay', options}` over the WebView bridge, `StoreWebView.js` calls
+`RazorpayCheckout.open`, and the signed response is injected back into the page, which verifies
+it server-side exactly as it would on the web.
+
+This is not a nicety. Paying by UPI in a WebView hands off to an `intent://` URL that the
+WebView cannot follow, and `onShouldStartLoadWithRequest` would push it to the system browser —
+taking the customer out of the app mid-payment. The page detects the bridge by the
+`window.__ASTROWANI__.nativePay` flag the app sets, so a build without it falls back to the web
+widget rather than hanging.
 
 ## Editing it
 
-Edit `index.html` directly, commit, push to `main`. That's the whole loop.
+Edit `index.html`, `store.js` or `store.css`, then:
 
-The one thing to know: **image references point at content-hashed filenames** in `assets/`
-(e.g. `assets/8f3a91c2b40e.jpg`). The hash is of the file's own bytes, which is what lets
-Nginx serve them with a one-year immutable cache safely — a changed image gets a new name,
-so no visitor is ever stuck on a stale copy. If you replace an image, either keep the
-existing filename (simplest) or rename it and update the reference.
-
-## Catalog editor
-
-There is a browser-local catalog editor built into the page: add, edit, delete products,
-and toggle which categories are browsable. It is **hidden by default**, because a shopper
-who stumbles onto a "delete product" button on a storefront is a bad experience.
-
-Open it with:
-
-```
-https://shop.astrowani.com/?admin=1
+```bash
+python stamp.py
 ```
 
-It stays unlocked for the rest of that browser session. Everything it changes is saved to
-that one browser's `localStorage` only — it does not reach a server and no other visitor
-sees it. It's for arranging the catalog visually, not for running the shop.
+That syncs the two shell copies and re-stamps the `?v=` cache hashes. **Run it after every
+edit** — nginx caches CSS and JS for four hours, so without a new hash your change is invisible
+to anyone holding a cached copy.
+
+Then commit and push to `main`.
+
+Image references point at content-hashed filenames (e.g. `assets/8f3a91c2b40e.jpg`). The hash is
+of the file's own bytes, which is what lets nginx serve them `immutable` for a year safely. To
+replace an image, either keep the existing filename or rename it and update the reference.
+
+## Running it locally
+
+```bash
+node --env-file=astrowani-backend/.env vps-deployment/scripts/shop-dev-server.js
+```
+
+Serves the site on `http://localhost:4599` with the same `try_files` fallback nginx uses, and
+mounts the real order routes so `/api/store/config`, `/quote` and `/checkout` answer for real.
+
+It deliberately does **not** boot `astrowani-backend/index.js` — that starts sessionManager's
+billing worker and `checkEarningsResets()` against the live database.
+
+Two things to know:
+
+- It talks to the **live** Supabase. Reads are free; do not complete a checkout against it
+  without intending to.
+- To test a category that is not yet accepting orders, use the dev-only override rather than
+  editing `app_settings` (which is production data the live shop reads):
+  `SHOP_DEV_FORCE_ORDERING=puja,specific_puja node --env-file=... shop-dev-server.js`
+
+## What is deliberately not here
+
+- **No local catalogue editor.** There used to be one behind `?admin=1` that wrote to
+  `localStorage`. Now that `remedy_items` is the real catalogue, a second editor that changes
+  what one browser sees and nothing else is worse than none — the admin dashboard is where the
+  catalogue is edited.
+- **No cart on the server.** The cart is `localStorage`, keyed by `remedy_items` uuid, exactly
+  as the app's `CartContext` is. A stale price is corrected by the quote before any money
+  moves, so cross-device sync is not worth a table.
+- **No Razorpay webhook.** If a payment succeeds but the browser dies before
+  `verify-payment` lands, the order stays `pending_payment`. The recovery path is manual
+  (admin Orders → "Include abandoned checkouts" → "Mark paid"). This is inherited from the
+  app's checkout and is the first thing to add if the shop sees real volume.
 
 ## First-time VPS setup
 

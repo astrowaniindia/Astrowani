@@ -60,6 +60,8 @@ export default function Orders() {
 
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  // 'Placed from' — which storefront the order came from (orders.source).
+  const [sourceFilter, setSourceFilter] = useState('');
   const [showUnpaid, setShowUnpaid] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -79,13 +81,14 @@ export default function Orders() {
       if (showUnpaid) params.includeUnpaid = 1;
       if (statusFilter) params.status = statusFilter;
       if (typeFilter) params.type = typeFilter;
+      if (sourceFilter) params.source = sourceFilter;
       const { data } = await client.get('/api/admin/orders', { params });
       setRows(data.data || []);
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, [showUnpaid, statusFilter, typeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [showUnpaid, statusFilter, typeFilter, sourceFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Free-text search stays client-side: the endpoint already caps at 300 rows, so
   // filtering here avoids a round trip per keystroke.
@@ -175,6 +178,14 @@ export default function Orders() {
             {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Placed from</label>
+          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+            <option value="">All</option>
+            <option value="app">Astrowani app</option>
+            <option value="web">Web store</option>
+          </select>
+        </div>
         <div className="checkbox-row">
           <input id="unpaid" type="checkbox" checked={showUnpaid} onChange={(e) => setShowUnpaid(e.target.checked)} />
           <label htmlFor="unpaid" style={{ margin: 0 }}>Include abandoned checkouts</label>
@@ -221,12 +232,12 @@ export default function Orders() {
       <div className="table-wrap">
         <table>
           <thead><tr>
-            <th>Order</th><th>Type</th><th>Items</th><th>Total (₹)</th><th>Customer</th>
+            <th>Order</th><th>Type</th><th>From</th><th>Items</th><th>Total (₹)</th><th>Customer</th>
             <th>Deliver to</th><th>Payment</th><th>Status</th><th>Placed</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={10} className="empty">Loading…</td></tr>}
-            {!loading && visible.length === 0 && <tr><td colSpan={10} className="empty">No orders match.</td></tr>}
+            {loading && <tr><td colSpan={11} className="empty">Loading…</td></tr>}
+            {!loading && visible.length === 0 && <tr><td colSpan={11} className="empty">No orders match.</td></tr>}
             {visible.map((r) => {
               const items = r.order_items || [];
               const isOpen = expanded === r.id;
@@ -237,6 +248,14 @@ export default function Orders() {
                     <div className="muted" style={{ fontSize: 11 }}>#{String(r.id).split('-').pop().toUpperCase()}</div>
                   </td>
                   <td className="muted">{TYPE_LABEL[r.item_type] || r.item_type}</td>
+                  {/* Undefined on rows written before sql/order_source.sql was applied —
+                      shown as a dash rather than guessed at, since "App" would be a claim
+                      about where an order came from that we cannot actually make. */}
+                  <td>
+                    {r.source
+                      ? <span className={`badge ${r.source === 'web' ? 'blue' : ''}`}>{r.source === 'web' ? 'Web' : 'App'}</span>
+                      : <span className="muted">—</span>}
+                  </td>
                   <td>{items.length || r.quantity || 1}</td>
                   <td><b>{r.grand_total ?? r.total}</b></td>
                   <td>
@@ -290,7 +309,7 @@ export default function Orders() {
 
                 isOpen ? (
                   <tr key={`${r.id}-details`}>
-                    <td colSpan={10} style={{ background: 'rgba(0,0,0,0.03)' }}>
+                    <td colSpan={11} style={{ background: 'rgba(0,0,0,0.03)' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28 }}>
                         <div style={{ minWidth: 280 }}>
                           <h4 style={{ margin: '0 0 6px' }}>Items</h4>

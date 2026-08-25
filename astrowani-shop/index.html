@@ -9,28 +9,43 @@
 <meta name="theme-color" content="#592a19">
 <meta name="format-detection" content="telephone=no">
 <title>Wani Shop</title>
+<meta name="description" content="Certified astrological gemstones and sixty-four pujas, chosen against your chart and delivered across India.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/store.css?v=f1c6a92c">
+<link rel="stylesheet" href="/store.css?v=24d7c83c">
 </head>
+<!--
+  THE SHELL.
+
+  This document is the whole site. Header, footer and the fixed furniture are here;
+  everything between them is rendered into <main id="view"> by the router in store.js.
+
+  It is served for EVERY path, not just "/". nginx ends its location / block with
+  `try_files $uri $uri/ /index.html`, so /gemstones/ruby-manik/, /cart/ and /privacy/ all
+  arrive as this exact document and the router decides what they mean. gemstones/index.html
+  and pujas/index.html are byte-identical copies of this file, kept in sync by stamp.py,
+  so those two real directories keep working for anyone holding an old bookmark.
+
+  Do not put page content in here. A section added below is a section that appears on every
+  route, including the checkout.
+-->
 <body>
 <header class="site">
   <div class="wrap header-row">
-    <a href="/" class="logo" aria-label="Wani Shop, home">
+    <a href="/" class="logo" data-link aria-label="Wani Shop, home">
       <img class="logo-mark" id="brandLogo" alt="" aria-hidden="true">
       <span class="logo-name">Wani Shop</span>
     </a>
     <nav class="main">
-      <a href="/gemstones/">Gemstones</a>
-      <a href="/pujas/">Pujas</a>
-      <a href="/gemstones/#purpose">By Purpose</a>
-      <a href="/gemstones/#calculators">Calculators</a>
-      <a href="/gemstones/#about">About</a>
+      <a href="/gemstones/" data-link>Gemstones</a>
+      <a href="/pujas/" data-link>Pujas</a>
+      <a href="/calculators/" data-link>Calculators</a>
+      <a href="/about/" data-link>About</a>
     </nav>
     <div class="header-actions">
-      <!-- Only rendered inside the app (see wireAppExit): on the open web there is nothing
+      <!-- Only rendered inside the app (see applyAppMode): on the open web there is nothing
            to exit to, and a dead button is worse than no button. -->
       <button class="icon-btn hidden" id="exitBtn" title="Back to Astrowani" aria-label="Back to Astrowani">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -38,10 +53,10 @@
           <path d="M11.6 6.4 6 12l5.6 5.6"/>
         </svg>
       </button>
-      <button class="icon-btn" id="adminToggle" title="Admin mode: edit this catalog" aria-label="Toggle admin mode">
+      <button class="icon-btn" id="acctBtn" title="Your account" aria-label="Your account">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/>
-          <circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>
+          <circle cx="12" cy="8.4" r="3.6"/>
+          <path d="M4.8 20.2a7.2 7.2 0 0 1 14.4 0"/>
         </svg>
       </button>
       <button class="icon-btn" id="cartBtn" title="Cart" aria-label="Open cart">
@@ -59,34 +74,19 @@
 
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
-<section class="section" id="entry" style="padding-top:52px;">
-  <div class="wrap">
-    <div class="section-head">
-      <div>
-        <p class="eyebrow">Wani Shop</p>
-        <h2>What are you here for?</h2>
-      </div>
-    </div>
-    <div class="gate-grid">
-      <a class="gate-tile" href="/gemstones/">
-        <img src="/assets/9063ec9a65d8.jpg" alt="Certified astrological gemstones in a jeweller's box.">
-        <div class="gate-label">
-          <h3>Gemstones</h3>
-          <p>Certified stones, chosen against your chart and verified before they reach you.</p>
-          <span class="gate-go">Shop gemstones &rarr;</span>
-        </div>
-      </a>
-      <a class="gate-tile" href="/pujas/">
-        <img src="/assets/pujas-banner.jpg" alt="A puja thali, kalash and lit diya set out on a low table.">
-        <div class="gate-label">
-          <h3>Pujas</h3>
-          <p>Sixty-four pujas, paths and sanskars, performed with the full vidhi by our pandits.</p>
-          <span class="gate-go">Book a puja &rarr;</span>
-        </div>
-      </a>
-    </div>
-  </div>
-</section>
+<main id="view">
+  <!-- Rendered by the router. The noscript below is the only thing a visitor with
+       JavaScript off will ever see here, so it has to be a real answer rather than a
+       "please enable JavaScript" scold. -->
+  <noscript>
+    <section class="section"><div class="wrap narrow-read">
+      <h1 class="doc-title">Wani Shop</h1>
+      <p class="lede">This storefront needs JavaScript to show live prices and stock.</p>
+      <p>You can still reach us: WhatsApp <a href="https://wa.me/917297900990">+91 72979 00990</a>,
+         or email <a href="mailto:support@astrowani.com">support@astrowani.com</a>.</p>
+    </div></section>
+  </noscript>
+</main>
 
 <footer>
   <div class="wrap foot-grid">
@@ -107,25 +107,33 @@
     </div>
     <div>
       <h4>Shop</h4>
-      <a href="/gemstones/#shop" data-cat="gemstone">All Gemstones</a>
-      <a href="/pujas/">Book a Puja</a>
-      <a href="/gemstones/#purpose">Shop by Purpose</a>
-      <a href="/gemstones/#calculators">Gemstone Finder</a>
-      <a href="/gemstones/#calculators">Moolank Calculator</a>
+      <a href="/gemstones/" data-link>All gemstones</a>
+      <a href="/pujas/" data-link>Book a puja</a>
+      <a href="/calculators/" data-link>Gemstone finder</a>
+      <a href="/calculators/" data-link>Moolank calculator</a>
     </div>
     <div>
       <h4>Purpose</h4>
-      <a href="/gemstones/#purpose">Wealth &amp; Money</a>
-      <a href="/gemstones/#purpose">Love &amp; Marriage</a>
-      <a href="/gemstones/#purpose">Career &amp; Business</a>
-      <a href="/gemstones/#purpose">Health &amp; Protection</a>
+      <a href="/purpose/wealth/" data-link>Wealth &amp; Money</a>
+      <a href="/purpose/love/" data-link>Love &amp; Relationship</a>
+      <a href="/purpose/career/" data-link>Career &amp; Business</a>
+      <a href="/purpose/health/" data-link>Health &amp; Healing</a>
+      <a href="/purpose/protection/" data-link>Protection</a>
+    </div>
+    <div>
+      <h4>Your orders</h4>
+      <a href="/cart/" data-link>Cart</a>
+      <a href="/orders/" data-link>My orders</a>
+      <a href="/account/" data-link>Account</a>
+      <a href="/shipping/" data-link>Shipping &amp; delivery</a>
+      <a href="/returns/" data-link>Returns &amp; refunds</a>
     </div>
     <div>
       <h4>Astrowani</h4>
-      <a href="/gemstones/#about">About Astrowani</a>
-      <a href="#" onclick="return false;">Certification &amp; Sourcing</a>
-      <a href="#" onclick="return false;">Shipping &amp; Returns</a>
-      <a href="#" onclick="return false;">Contact</a>
+      <a href="/about/" data-link>About us</a>
+      <a href="/certification/" data-link>Certification &amp; sourcing</a>
+      <a href="/faq/" data-link>FAQ</a>
+      <a href="/contact/" data-link>Contact</a>
     </div>
   </div>
 
@@ -136,7 +144,7 @@
     </div>
     <div>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11v9H3z"/><path d="M14 11h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg>
-      Free insured shipping above ₹999
+      Insured, tracked delivery
     </div>
     <div>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-4"/></svg>
@@ -147,59 +155,19 @@
   <div class="wrap foot-bottom">
     <span>© 2026 Wani Shop. All stones dispatched from our Delhi workshop.</span>
     <span>
-      <a href="#" onclick="return false;">Privacy</a>
-      <a href="#" onclick="return false;">Terms</a>
+      <a href="/privacy/" data-link>Privacy</a>
+      <a href="/terms/" data-link>Terms</a>
     </span>
   </div>
 </footer>
 
-<div class="scrim" id="scrim"></div>
-<aside class="drawer" id="cartDrawer">
-  <div class="drawer-head">
-    <h3>Your cart</h3>
-    <button class="close-x" id="closeCart" aria-label="Close cart">✕</button>
-  </div>
-  <div class="drawer-body" id="cartBody"></div>
-  <div class="drawer-foot" id="cartFoot"></div>
-</aside>
+<!-- Sticky cart bar. Outside #view on purpose: it must survive every route change without
+     being torn down and rebuilt, and it is hidden by the router on /cart/ and /checkout/
+     where it would sit on top of the total it is summarising. -->
+<div class="cart-bar" id="cartBar" aria-live="polite"></div>
 
-<div class="modal" id="adminModal">
-  <div class="modal-scrim" data-close="adminModal"></div>
-  <div class="modal-box wide">
-    <button class="modal-close" data-close="adminModal">✕</button>
-    <div id="adminContent"></div>
-  </div>
-</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<!-- product quick view modal -->
-<div class="modal" id="pvModal">
-  <div class="modal-scrim" data-close="pvModal"></div>
-  <div class="modal-box">
-    <button class="modal-close" data-close="pvModal">✕</button>
-    <div id="pvContent"></div>
-  </div>
-</div>
-
-<!-- checkout modal -->
-<div class="modal" id="coModal">
-  <div class="modal-scrim" data-close="coModal"></div>
-  <div class="modal-box wide">
-    <button class="modal-close" data-close="coModal">✕</button>
-    <div id="coContent"></div>
-  </div>
-</div>
-
-<!-- puja detail / booking modal -->
-<div class="modal" id="pjModal">
-  <div class="modal-scrim" data-close="pjModal"></div>
-  <div class="modal-box">
-    <button class="modal-close" data-close="pjModal">&#10005;</button>
-    <div id="pjContent"></div>
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script src="/store.js?v=1945255d"></script>
+<script src="/store.js?v=5e7284c5"></script>
 </body>
 </html>

@@ -2284,3 +2284,172 @@ import and a 3-line insert. Admin `npm run build` succeeds. Not exercised on-dev
 
 **To activate**: run `sql/session_intro_banner.sql`. Until then the hook fails to OFF and no
 banner appears, so it is safe to ship the app change first.
+
+---
+
+## Subsystem rebuilt 2026-08-25: shop.astrowani.com became a real store
+
+### AI. The storefront is now routed, paginated, and actually sells things
+
+**What it was.** Three hand-written HTML pages (`/`, `/gemstones/`, `/pujas/`) sharing one
+132 KB `store.js`. Every product opened a **modal**, so there was no product URL, no back
+button, and nothing shareable. The cart was a drawer, checkout was a **modal that only worked
+inside the app** (it needed an injected JWT) and degraded to an **e-mail enquiry form** on the
+open web — shop.astrowani.com took no money from anybody. Pujas were WhatsApp-only. Four
+footer links pointed at `href="#" onclick="return false"`.
+
+**What it is.** One shell document, a client-side router, a real URL for every product, puja,
+policy and account page, pagination, Blinkit-style add/stepper cards with a sticky cart bar,
+phone-OTP sign-in on the web, Razorpay checkout, and order tracking — all landing in the same
+`orders` table the app writes to, against the same customer, visible in `astrowani-admin`.
+
+### The routing decision, and why it needed no nginx change
+
+`astrowani-shop/index.html` is now a **shell**: chrome plus an empty `<main id="view">`. It is
+served for EVERY path, because the nginx config already ends `location /` with
+`try_files $uri $uri/ /index.html`. So `/gemstones/ruby-manik/` arrives as that same document
+and the router decides what it means.
+
+**This mattered more than it looks.** certbot rewrote `astrowani-shop.conf` in place on the
+VPS and `deploy-shop.yml` deliberately never overwrites it ("only if absent"), so any routing
+scheme requiring a server change would have needed a hand-edit on the box. It does not.
+
+`gemstones/index.html` and `pujas/index.html` are now **byte-identical copies of the shell**,
+written by `stamp.py`. They exist only so those two real directories keep resolving for old
+bookmarks — deleting the directories would not work, because the deploy copies files in and
+only prunes `assets/`, so the old pages would serve from the VPS forever.
+
+`stamp.py` now does two jobs: sync those copies, and re-stamp the `?v=` cache hashes.
+**Run `python stamp.py` after every edit** to index.html / store.js / store.css.
+
+### Routes
+
+```
+/  /gemstones/  /gemstones/page/N/  /gemstones/<slug>/
+   /pujas/      /pujas/page/N/      /pujas/<slug>/
+/purpose/<id>/  /calculators/
+/cart/  /checkout/  /orders/  /account/  /login/
+/about/ /contact/ /shipping/ /returns/ /certification/ /privacy/ /terms/ /faq/
+```
+
+Slugs derive from the product title, so renaming a product in the admin changes its URL. The
+old URL renders a not-found page with a route back to the listing — there is nothing to
+redirect to, and inventing one would be a lie.
+
+### Money — the same three rules as orderRoutes.js
+
+1. **The client never computes a price anyone is asked to pay.** The cart shows a subtotal
+   *labelled* an estimate; the only figure beside a Pay button comes from
+   `POST /api/orders/quote`, and `/checkout` re-derives it and ignores anything money-shaped
+   in the body.
+2. **Razorpay reporting success proves nothing.** Only `/api/orders/verify-payment`'s
+   signature check confirms an order. A failed verify says the payment could not be
+   **confirmed** and tells the customer not to pay again — never that it failed.
+3. **Ordering is gated per category server-side.** New public
+   **`GET /api/store/config`** (`src/orderRoutes.js`) exposes the read-only slice of
+   `app_settings` a storefront needs before anyone signs in — which categories accept orders,
+   and the fees — so a card can say "not delivering yet" instead of failing at payment.
+   It is a **convenience, never an enforcement point**: `/checkout` still 403s a blocked
+   category, and the page-side gate **fails closed**. Verified in the browser: with pujas
+   forced on client-side, the server quote still returned `blockedTypes` and the Pay button
+   stayed disabled.
+
+### Web sign-in reuses the app's identity, deliberately
+
+Phone OTP via the existing `/api/users/mobile-otp-request` + `/mobile-otp-verify`. The JWT is
+the same customer identity the apps use, which is the entire reason it is not a guest
+checkout: a web order appears under My Orders in the app and against the right customer row in
+the admin. In-app, `StoreWebView.js` injects the existing token and the web session is never
+written to `localStorage` — the app owns that session and it cannot be signed out from the page.
+
+### Payment inside the app runs the NATIVE Razorpay sheet
+
+The page posts `{type:'razorpay', options}` over the WebView bridge; `StoreWebView.js` calls
+`RazorpayCheckout.open` (already linked — Wallet.js and PaymentScreen.js use it) and injects
+the signed response back, which the page verifies server-side exactly as on the web.
+
+**Not a nicety.** Paying by UPI in a WebView hands off to an `intent://` URL the WebView cannot
+follow, and `onShouldStartLoadWithRequest` would push it to the system browser, taking the
+customer out of the app mid-payment. The page detects the bridge via
+`window.__ASTROWANI__.nativePay` (set only when the native module actually resolved), so a
+build without it falls back to the web widget rather than posting a message nothing is
+listening for and hanging on a spinner. `isInternal` now also keeps `*.razorpay.com` inside the
+WebView so that fallback works. **All of this is JS — it ships over OTA, no store release.**
+
+### Pujas: the editorial list and the live rows are MERGED
+
+The 64 curated pujas (names, Hindi names, durations, artwork) predate the shop having a
+backend and are not orderable by themselves. `remedy_items` separately holds `puja` and
+`specific_puja` rows an admin created — **13 of them exist in production today** — and only
+those can be paid for. `buildPujaList()` merges the two: a curated puja whose title matches a
+live row is upgraded to payable and keeps its artwork; a live row matching nothing is appended
+in its own right. Previously an admin could add a puja and it would appear nowhere. Matching is
+on a squashed lowercase title in either language.
+
+Puja ordering is **off** in `app_settings` today, so pujas show "Book this puja" → WhatsApp.
+Turning `remedy_orders_enabled_puja` on in the admin's Remedies page makes them buyable with no
+code change; verified locally with a dev-only override.
+
+### Admin
+
+`orders.source` ('app' | 'web') records which storefront placed an order — **descriptive only**,
+nothing branches on it. `GET /api/admin/orders?source=` filters server-side (the query caps at
+300 rows, so client-side filtering would miss most web orders). A "From" column and a
+"Placed from" filter were added to `pages/Orders.jsx`. **Both the checkout insert and the admin
+filter degrade gracefully if `sql/order_source.sql` has not been applied** — same posture as
+`client_request_id`: log a warning, keep working.
+
+### Things deliberately removed
+
+- **The `?admin=1` localStorage catalogue editor.** With `remedy_items` as the real catalogue,
+  a second editor that changes what one browser sees and nothing else is worse than none.
+- **The e-mail enquiry checkout**, the cart drawer, the quick-view modal and the puja booking
+  modal — all superseded by real pages.
+
+### Verified 2026-08-25
+
+Driven in a browser against a local harness that serves the site with nginx's own `try_files`
+fallback and mounts the **real** order routes — `vps-deployment/scripts/shop-dev-server.js`,
+which **never boots `index.js`** (that starts sessionManager's billing worker and
+`checkEarningsResets()` against the live database).
+
+Confirmed against the LIVE catalogue (47 `remedy_items` rows): home, the 33-gemstone listing
+paginating to 3 pages, a product page, the 77-puja listing (64 curated + 13 live) paginating to
+7, a puja page, purpose pages, calculators, all 8 policy pages, 404, and both account pages —
+**20 routes rendered with zero window.onerror**. ADD → stepper → sticky bar → cart → server
+quote (₹5,400 from `/api/orders/quote`) → real saved addresses → Pay. Browser back/forward walks
+listing → page 2 → product correctly. Mobile at 375px: two-column grid, no horizontal page
+overflow, filter chips scroll inside their own row.
+
+Money paths exercised safely: `/checkout` 503s cleanly when Razorpay is unconfigured **before
+writing any order row** (order count unchanged at 34, confirmed after), a mixed
+gemstone+blocked-puja cart correctly disabled Pay on the server's word, and address CRUD works
+against the real `customer_addresses` contract. `node --check` clean on every changed backend
+file; admin `npm run build` succeeds; `StoreWebView.js` lints clean.
+
+**Two bugs this testing found and fixed**, both the same shape — the cart holds `remedy_items`
+uuids, and until the live catalogue lands `byId` holds only the offline `p1..p48` rows, so
+`cartIds()` answers "empty" for a cart that is not. A refresh on `/checkout/` bounced the
+shopper to an apparently-empty cart holding two stones. Fixed with `whenCatalogReady()`, and by
+starting the catalogue fetch **before** the first route renders — an enter hook runs during
+that first `go()`, and if the fetch has not been kicked off by then it sees a resolved no-op
+promise. `/cart/` now says "loading your cart" rather than "empty" in the same window.
+
+**Not verified:** a real Razorpay payment (no test keys in the local env) and a real OTP
+round-trip (the OTP endpoints live in `index.js`, which is not booted locally). Both need a
+pass on the deployed site.
+
+### Known overlap to resolve — TWO SHOPS IN THE APP
+
+The Remedies **tab** opens the web store, but Home's remedy category cards and `Remedies.js`
+still `navigate('RemedyShop')` into the **native** shop, which has its own `CartContext` cart.
+A customer can therefore have two different carts with two different counts. This predates
+this work (it arrived when the tab was switched to the WebView) and is **not a money risk** —
+both check out through the same backend — but it is a real IA decision: either point Home's
+cards at the store tab, or point the tab back at the native shop. Left alone deliberately
+rather than silently re-routing a working, tested purchase flow.
+
+### SQL to run
+
+1. `sql/order_source.sql` — additive, idempotent, backfills existing rows to 'app' (which is
+   the fact, not a guess: the web store took no payments before this).

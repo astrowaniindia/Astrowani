@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "astrowani-admin", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "astrowani-shop-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=astrowani-backend/.env", "vps-deployment/scripts/shop-dev-server.js"],
+      "port": 4599
     }
   ]
 }

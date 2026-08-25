@@ -835,7 +835,27 @@ module.exports = function registerAdminRoutes(app) {
     if (!req.query.includeUnpaid) query = query.neq('status', 'pending_payment');
     if (req.query.status) query = query.eq('status', req.query.status);
     if (req.query.type) query = query.eq('item_type', req.query.type);
-    const { data, error } = await query;
+    // Which storefront placed it. Filtered here rather than in the browser because the
+    // query is capped at 300 rows — web orders are the rare kind, so client-side filtering
+    // would search only the newest 300 and quietly miss most of them.
+    if (req.query.source) query = query.eq('source', req.query.source);
+    let { data, error } = await query;
+
+    // orders.source only exists once sql/order_source.sql has been applied. Until then a
+    // filter on it is a 42703 and the whole page 500s — falling back to the unfiltered
+    // query keeps the Orders queue working, which matters far more than the filter.
+    if (error && (error.code === '42703' || error.code === 'PGRST204' || /source/.test(error.message || ''))) {
+      console.warn('[admin] orders.source is missing — run sql/order_source.sql. Ignoring the source filter.');
+      let retry = db
+        .from('orders')
+        .select('*, order_items(*), order_status_events(id, status, note, created_by, created_at)')
+        .order('created_at', { ascending: false })
+        .limit(300);
+      if (!req.query.includeUnpaid) retry = retry.neq('status', 'pending_payment');
+      if (req.query.status) retry = retry.eq('status', req.query.status);
+      if (req.query.type) retry = retry.eq('item_type', req.query.type);
+      ({ data, error } = await retry);
+    }
     if (error) throw error;
     return res.json({ success: true, data: data || [] });
   }));

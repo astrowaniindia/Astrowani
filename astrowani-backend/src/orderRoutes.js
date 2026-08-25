@@ -272,7 +272,25 @@ function noteDedupeUnavailable() {
 // PostgREST reports an unknown column as PGRST204; Postgres itself as 42703.
 const isMissingColumn = (err) =>
   !!err && (err.code === 'PGRST204' || err.code === '42703'
-    || /client_request_id/.test(err.message || '') && /column|schema cache/i.test(err.message || ''));
+    || /client_request_id|source/.test(err.message || '') && /column|schema cache/i.test(err.message || ''));
+
+// orders.source ('app' | 'web') — which storefront placed the order, so the admin can tell
+// a shop.astrowani.com order from one placed inside the app. Purely descriptive: nothing
+// branches on it, no money depends on it. Same degradation posture as client_request_id
+// above, for the same reason — an unapplied migration must not take checkout down.
+let sourceAvailable = true;
+let warnedSource = false;
+function noteSourceUnavailable() {
+  sourceAvailable = false;
+  if (!warnedSource) {
+    warnedSource = true;
+    console.warn(
+      '[orders] orders.source is missing — orders will not record which storefront placed '
+      + 'them. Run sql/order_source.sql in the Supabase SQL editor.',
+    );
+  }
+}
+const ORDER_SOURCES = ['app', 'web'];
 
 /** The address, frozen. See sql/remedy_commerce_schema.sql on orders.delivery_address. */
 function snapshotAddress(a) {
@@ -330,6 +348,57 @@ module.exports = (app) => {
     if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
     return fn(req, res, customer);
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Public storefront config
+  //
+  // shop.astrowani.com is a static site with no Supabase client of its own, so unlike the
+  // two apps it cannot read app_settings directly. This is the read-only slice of those
+  // settings a storefront legitimately needs before anyone is signed in: which categories
+  // are accepting orders, and what delivery costs.
+  //
+  // It is a CONVENIENCE, never an enforcement point. /quote and /checkout re-derive every
+  // one of these figures server-side and /checkout 403s a blocked category regardless of
+  // what a client believed. All this buys is that a shopper learns a category is not
+  // delivering yet from the product card, instead of at the payment step.
+  //
+  // Deliberately unauthenticated: it holds no customer data, and requiring a token would
+  // mean a signed-out visitor could not be told what is on sale.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const STORE_TYPES = ['gemstone', 'puja', 'specific_puja', 'life_report'];
+  let storeConfigCache = { at: 0, body: null };
+
+  app.get('/api/store/config', h(async (req, res) => {
+    // 60s TTL, same shape as the other in-memory caches in this codebase. Every visitor
+    // hits this on page load and the values change a few times a year.
+    if (storeConfigCache.body && Date.now() - storeConfigCache.at < 60000) {
+      return res.json(storeConfigCache.body);
+    }
+
+    const defaults = { remedy_delivery_fee: '0', remedy_free_delivery_above: '0', remedy_handling_fee: '0' };
+    for (const t of STORE_TYPES) defaults[`remedy_orders_enabled_${t}`] = 'false';
+    const settings = await getSettings(defaults);
+
+    const ordering = {};
+    for (const t of STORE_TYPES) ordering[t] = String(settings[`remedy_orders_enabled_${t}`]) === 'true';
+
+    const freeAbove = Math.max(0, Number(settings.remedy_free_delivery_above) || 0);
+    const body = {
+      success: true,
+      ordering,
+      deliveryFee: Math.max(0, round2(Number(settings.remedy_delivery_fee) || 0)),
+      // 0 in app_settings means "no threshold". Sent as null so the storefront does not
+      // render "free delivery above ₹0", which would read as free delivery on everything.
+      freeDeliveryAbove: freeAbove > 0 ? freeAbove : null,
+      handlingFee: Math.max(0, round2(Number(settings.remedy_handling_fee) || 0)),
+      maxLines: MAX_LINES,
+      maxQtyPerLine: MAX_QTY_PER_LINE,
+    };
+
+    storeConfigCache = { at: Date.now(), body };
+    return res.json(body);
+  }));
 
   // ───────────────────────────────────────────────────────────────────────────
   // Address book
@@ -602,14 +671,25 @@ module.exports = (app) => {
       payment_status: 'pending',
     };
     if (clientRequestId && dedupeAvailable) orderRow.client_request_id = clientRequestId;
+    // Anything the client sends that is not one of the two known storefronts is recorded
+    // as 'app', the pre-existing default — an unrecognised string is not worth a 400 over
+    // a descriptive field, but it must not be written through either.
+    if (sourceAvailable) {
+      orderRow.source = ORDER_SOURCES.includes(req.body?.source) ? req.body.source : 'app';
+    }
 
     let { data: order, error: orderErr } = await db.from('orders').insert([orderRow]).select().single();
 
-    // The column isn't there yet — retry without it so an unapplied migration degrades to
-    // "no dedup" rather than "no orders at all".
+    // A column isn't there yet — retry without the optional ones so an unapplied migration
+    // degrades to "no dedup / no source" rather than "no orders at all". Which one is
+    // missing is read off the message where possible; where it isn't, both are dropped,
+    // since one more insert attempt is cheaper than guessing wrong on a checkout.
     if (orderErr && isMissingColumn(orderErr)) {
-      noteDedupeUnavailable();
-      delete orderRow.client_request_id;
+      const msg = orderErr.message || '';
+      const namesSource = /source/.test(msg);
+      const namesRequestId = /client_request_id/.test(msg);
+      if (namesSource || !namesRequestId) { noteSourceUnavailable(); delete orderRow.source; }
+      if (namesRequestId || !namesSource) { noteDedupeUnavailable(); delete orderRow.client_request_id; }
       ({ data: order, error: orderErr } = await db.from('orders').insert([orderRow]).select().single());
     }
 

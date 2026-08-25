@@ -33,6 +33,16 @@ try {
   WebView = null;
 }
 
+// Same guarded-require reasoning as WebView above. This one is used to run Razorpay's
+// NATIVE sheet on the store's behalf — see the payment bridge below.
+let RazorpayCheckout = null;
+try {
+  // eslint-disable-next-line global-require
+  RazorpayCheckout = require('react-native-razorpay').default || require('react-native-razorpay');
+} catch (_) {
+  RazorpayCheckout = null;
+}
+
 export const STORE_URL = 'https://shop.astrowani.com/';
 
 // Anything not on this host is somebody else's site — a payment page, a social link, a
@@ -40,13 +50,21 @@ export const STORE_URL = 'https://shop.astrowani.com/';
 // bar and no way out.
 const STORE_HOST = 'shop.astrowani.com';
 
+// Razorpay is allowed to stay inside the WebView. On a build that has the native payment
+// bridge below this never comes up, but on one that does not, the page falls back to
+// Razorpay's web widget — and kicking checkout.razorpay.com out to the system browser
+// would abandon the payment mid-flow. This is the payment processor's own domain, loaded
+// only from our own checkout, not a general widening of what the store may navigate to.
+const PAYMENT_HOSTS = /(^|\.)razorpay\.com$/i;
+
 function isInternal(url) {
   if (!url) return false;
   try {
-    return new URL(url).hostname === STORE_HOST;
+    const { hostname } = new URL(url);
+    return hostname === STORE_HOST || PAYMENT_HOSTS.test(hostname);
   } catch (_) {
     // RN's URL polyfill can throw on schemes like tel: / mailto: / intent:
-    return /^https?:\/\/([a-z0-9-]+\.)*astrowani\.com/i.test(url);
+    return /^https?:\/\/([a-z0-9-]+\.)*(astrowani|razorpay)\.com/i.test(url);
   }
 }
 
@@ -95,13 +113,51 @@ export default function StoreWebView() {
     else navigation.navigate('BottomTabs', { screen: 'Home' });
   }, [navigation]);
 
+  /**
+   * Run Razorpay's native sheet for the store, and post the result back into the page.
+   *
+   * WHY THIS EXISTS. The storefront is perfectly capable of opening Razorpay's web widget,
+   * and does on the open web. Inside a WebView it is the wrong tool: paying by UPI hands
+   * off to an intent:// URL for GPay or PhonePe, which the WebView cannot follow, and
+   * onShouldStartLoadWithRequest below would push it to the system browser — taking the
+   * customer out of the app in the middle of a payment. The app already links
+   * react-native-razorpay (Wallet.js, PaymentScreen.js), so it runs the sheet natively and
+   * hands the signed response back.
+   *
+   * This bridge NEVER decides an order is paid. It returns Razorpay's response to the page,
+   * which posts it to /api/orders/verify-payment, and only the server's signature check
+   * confirms anything. A cancelled sheet is reported as cancelled, not as a failure — the
+   * order stays pending_payment and nothing is charged.
+   */
+  const runNativePayment = useCallback(async (msg) => {
+    const reply = (payload) => {
+      const js = `if (window.__astrowaniPaymentResult) window.__astrowaniPaymentResult(${JSON.stringify({ id: msg.id, ...payload })}); true;`;
+      webRef.current?.injectJavaScript(js);
+    };
+    if (!RazorpayCheckout) {
+      reply({ status: 'error', message: 'Payments need an app update. Please update Astrowani.' });
+      return;
+    }
+    try {
+      const payment = await RazorpayCheckout.open(msg.options || {});
+      reply({ status: 'success', payment });
+    } catch (err) {
+      // RazorpayCheckout rejects when the customer closes the sheet. That is not an error
+      // worth alarming wording — nothing has been charged either way.
+      const cancelled = err?.code === 'Razorpay' || /cancel/i.test(err?.message || '') || err?.code === 0;
+      reply(cancelled ? { status: 'cancelled' } : { status: 'error', message: err?.description || err?.message || '' });
+    }
+  }, []);
+
   const onMessage = useCallback((e) => {
     let msg = null;
     // Anything the page posts arrives here as a string, including things we did not send.
     // A malformed payload must not take the screen down with it.
     try { msg = JSON.parse(e?.nativeEvent?.data || ''); } catch (_) { return; }
-    if (msg && msg.type === 'exit') leaveStore();
-  }, [leaveStore]);
+    if (!msg) return;
+    if (msg.type === 'exit') leaveStore();
+    else if (msg.type === 'razorpay') runNativePayment(msg);
+  }, [leaveStore, runNativePayment]);
 
   // Not a header — just the status-bar strip, painted the same brown as the page header
   // directly below it so the two read as one bar. The app draws under the status bar, so
@@ -165,10 +221,16 @@ export default function StoreWebView() {
   // shop.astrowani.com in a normal browser) simply never see this and fall back to the
   // enquiry flow. JSON.stringify does the escaping — interpolating a raw token into a
   // script string would break on any quote it happened to contain.
+  // nativePay tells the page this build can run Razorpay's native sheet for it. The page
+  // checks for THIS flag rather than platform === 'app', so an older build that has the
+  // store tab but not the bridge falls back to the web widget instead of posting a message
+  // nothing is listening for and hanging on a spinner. It is only claimed when the native
+  // module actually resolved.
   const injectAuth = `
     window.__ASTROWANI__ = {
       token: ${JSON.stringify(token)},
-      platform: 'app'
+      platform: 'app',
+      nativePay: ${RazorpayCheckout ? 'true' : 'false'}
     };
     true;
   `;
