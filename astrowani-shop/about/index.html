@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/store.css?v=3bf97aa1">
+<link rel="stylesheet" href="/store.css?v=f87e0841">
 </head>
 <body>
 <header class="site">
@@ -66,9 +66,14 @@
 <div class="topstrip"><div class="marquee" id="marquee"></div></div>
 
 <section class="page-hero page-hero-full">
-  <!-- The app's guide figure, the same asset GuideAvatar.js uses. Decorative, so it is
-       alt="" and aria-hidden - the hero already says everything it says. -->
-  <img class="hero-guide" src="/assets/guide-avatar.png" alt="" aria-hidden="true">
+  <!-- The app's guide figure, the same asset GuideAvatar.js uses. It is a third route to
+       the Play Store alongside the badge below, so it is a real link with a real label
+       rather than decoration. The <img> inside stays alt=""/aria-hidden so a screen reader
+       announces the link once, not twice. -->
+  <a class="hero-guide" href="https://play.google.com/store/apps/details?id=com.astrowanicustomer"
+     target="_blank" rel="noopener" aria-label="Get Astrowani on Google Play">
+    <img src="/assets/guide-avatar.png" alt="" aria-hidden="true">
+  </a>
   <div class="wrap page-hero-inner">
     <img class="page-hero-mark" id="brandLogoHero" alt="Astrowani">
     <p class="eyebrow">About Astrowani</p>

@@ -1265,8 +1265,26 @@
        arithmetic ever goes small. The trailing +24px is a deliberate nudge off dead centre,
        toward the copy - it reads better slightly inboard than mathematically centred. */
     left:max(24px, calc((100vw - 720px) / 4 - 90px + 24px));
-    width:180px; height:auto; z-index:0; pointer-events:none;
+    width:180px; z-index:0;
+    /* It is a link now, so it must take pointer events - it used to be pointer-events:none
+       as pure decoration. z-index stays under .page-hero-inner (z-index:1) so it can never
+       sit over the copy or swallow a click meant for the heading or the badges; the two
+       do not overlap at any width this renders at. */
+    display:block; line-height:0;
     filter:drop-shadow(0 14px 30px rgba(0,0,0,.26));
+    transition:transform .25s ease, filter .25s ease;
+  }
+  .hero-guide img{width:100%; height:auto; display:block;}
+  .hero-guide:hover, .hero-guide:focus-visible{
+    transform:translateY(-57%) scale(1.035);
+    filter:drop-shadow(0 18px 34px rgba(0,0,0,.32));
+  }
+  /* The transform carries the vertical centring, so the focus ring cannot be drawn on the
+     element without moving it. Draw it as an outline offset instead. */
+  .hero-guide:focus-visible{outline:2px solid var(--gold); outline-offset:6px; border-radius:12px;}
+  @media (prefers-reduced-motion:reduce){
+    .hero-guide{transition:none;}
+    .hero-guide:hover, .hero-guide:focus-visible{transform:translateY(-57%);}
   }
   .page-hero-inner{position:relative; z-index:1;}
   /* The copy is a 720px column centred in the viewport, so the figure only has room beside
