@@ -2161,7 +2161,15 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
   }
 
   function bindPujaDetail(scope, p){
-    scope.querySelector('#pjBookBtn').addEventListener('click', function(){ renderPujaBooking(p, scope); });
+    scope.querySelector('#pjBookBtn').addEventListener('click', function(){
+      /* Into the CARD, not into #view. renderPujaBooking replaces its container's contents,
+         and #view holds the section > wrap > card chrome - so handing it #view threw away
+         the card, the page padding and the 920px cap, and the form rendered edge to edge
+         across the viewport with the labels flush against the window. The breadcrumb and
+         the back link live outside the card, so they survive and the customer can still
+         leave the form. */
+      renderPujaBooking(p, scope.querySelector('.detail-card') || scope);
+    });
   }
 
   function renderPujaBooking(p, scope){
