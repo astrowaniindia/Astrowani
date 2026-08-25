@@ -1006,13 +1006,13 @@
      dakshina tiles sit under the image, which is where a spec block belongs on a product
      page anyway, and the two columns then end near each other instead of leaving a third
      of the left one empty. */
-  /* A puja photograph is a 400x224 original: wide, and small. Cropping one square to fill
-     the column throws away nearly half the frame and upscales what is left 1.6x, so it
-     keeps its natural ratio and is CENTRED in the column instead. The leftover height then
-     reads as even margin above and below the picture rather than as a hole beneath it,
-     which is what looked broken. Nothing is cropped and nothing is enlarged past its
-     native size. Sticky is off here for the same reason - there is nothing to travel past
-     on a page this short. */
-  .pv-cols .pj-modal-media{aspect-ratio:16/9; margin-bottom:0;}
-  .pv-cols-puja .pv-col-media{align-self:center;}
+  /* Pujas do NOT use the two-column layout, at any width: photograph on top, everything
+     about the puja underneath.
+     A puja image is a 400x224 original - wide and small - so beside a full column of text
+     it can only ever be a short picture next to a tall block, which is what looked wrong.
+     Given the full width of the card it is a banner, which is the shape it actually is.
+     Gemstones keep image-left/text-right: a square stone photo fills that column properly. */
+  .pv-cols-puja{grid-template-columns:1fr; gap:0;}
+  .pv-cols-puja .pv-col-media{align-self:start;}
   .pv-cols-puja .pv-sticky{position:static;}
+  .pv-cols-puja .pj-modal-media{aspect-ratio:5/3; margin-bottom:18px;}
