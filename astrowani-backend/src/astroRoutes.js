@@ -8,6 +8,7 @@
 // call never charges a customer, and a customer with insufficient balance never triggers an
 // external call (saves API quota on requests that would fail anyway).
 const jwt = require('jsonwebtoken');
+const { findCustomerByPhone } = require('./customerLookup');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
@@ -67,7 +68,8 @@ async function resolveCustomer(req) {
   const userId = decoded.userId || decoded._id || decoded.id;
   let customer = null;
   if (decoded.phone) {
-    const { data } = await db.from('customers').select('id, wallet_balance').eq('mobile', decoded.phone).limit(1);
+    const data = await findCustomerByPhone(db, decoded.phone, 'id, wallet_balance')
+        .then((r) => (r ? [r] : []));
     if (data && data.length) customer = data[0];
   }
   if (!customer && userId && String(userId).includes('-')) {

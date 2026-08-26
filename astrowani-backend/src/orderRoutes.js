@@ -25,6 +25,7 @@
 //     handled this payment, which is a SUCCESS, not an error.
 
 const jwt = require('jsonwebtoken');
+const { findCustomerByPhone } = require('./customerLookup');
 const { createClient } = require('@supabase/supabase-js');
 const razorpay = require('./razorpay');
 const wallet = require('./wallet');
@@ -66,8 +67,8 @@ async function resolveCustomer(req) {
   const userId = decoded.userId || decoded._id || decoded.id;
   let customer = null;
   if (decoded.phone) {
-    const { data } = await db
-      .from('customers').select('id, name, mobile, wallet_balance').eq('mobile', decoded.phone).limit(1);
+    const data = await findCustomerByPhone(db, decoded.phone, 'id, name, mobile, wallet_balance')
+        .then((r) => (r ? [r] : []));
     if (data && data.length) customer = data[0];
   }
   if (!customer && userId && String(userId).includes('-')) {

@@ -14,6 +14,7 @@
 // signs. The five content endpoints below stay unauthenticated and uncharged on purpose;
 // the ₹1 paywall is a separate, single gate in front of the visit as a whole.
 const jwt = require('jsonwebtoken');
+const { findCustomerByPhone } = require('./customerLookup');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
 const wallet = require('./wallet');
@@ -42,7 +43,8 @@ async function resolveCustomer(req) {
   const userId = decoded.userId || decoded._id || decoded.id;
   let customer = null;
   if (decoded.phone) {
-    const { data } = await db.from('customers').select('id, wallet_balance').eq('mobile', decoded.phone).limit(1);
+    const data = await findCustomerByPhone(db, decoded.phone, 'id, wallet_balance')
+        .then((r) => (r ? [r] : []));
     if (data && data.length) customer = data[0];
   }
   if (!customer && userId && String(userId).includes('-')) {

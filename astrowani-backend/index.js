@@ -262,8 +262,9 @@ async function resolveSocketIdentity(token) {
     // older tokens can carry a stale user_<timestamp> id instead of the real UUID.
     let id = decoded.userId || decoded.id || null;
     if (decoded.phone) {
-      const { data } = await supabaseService.from('customers').select('id').eq('mobile', decoded.phone).limit(1);
-      if (data && data.length) id = data[0].id;
+      // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+      const row = await findCustomerByPhone(supabaseService, decoded.phone, 'id');
+      if (row) id = row.id;
     }
     return id;
   } catch (_) {
@@ -2937,11 +2938,9 @@ app.post('/api/call/initiate', async (req, res) => {
         // Always resolve to real Supabase UUID by phone — stale JWTs may carry a
         // user_<timestamp> id that is not a valid UUID for billing.
         if (decoded.phone) {
-          const { data: byPhone } = await supabase
-            .from('customers')
-            .select('id, name')
-            .eq('mobile', decoded.phone)
-            .limit(1);
+          // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+          const byPhone = await findCustomerByPhone(supabase, decoded.phone, 'id, name')
+            .then((r) => (r ? [r] : []));
           if (byPhone && byPhone.length > 0) {
             callerInfo.id = byPhone[0].id;
             callerInfo.name = byPhone[0].name || callerInfo.name;
@@ -3184,8 +3183,9 @@ app.post('/api/chat/message', async (req, res) => {
     let senderId = decoded.userId || decoded.id;
     const isVendor = decoded.role === 'astrologer' || decoded.role === 'vendor' || !!decoded.astroId || !!decoded.vendorId;
     if (!isVendor && decoded.phone) {
-      const { data } = await supabase.from('customers').select('id').eq('mobile', decoded.phone).limit(1);
-      if (data && data.length) senderId = data[0].id;
+      // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+      const row = await findCustomerByPhone(supabase, decoded.phone, 'id');
+      if (row) senderId = row.id;
     }
 
     // SECURITY (2026-08-08): previously nothing checked that senderId is actually a
@@ -3494,11 +3494,9 @@ app.get('/api/wallet', async (req, res) => {
     let actualUserId = userId;
 
     if (decoded.phone) {
-      const { data: cData } = await supabase
-        .from('customers')
-        .select('id, wallet_balance')
-        .eq('mobile', decoded.phone)
-        .limit(1);
+      // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+      const cData = await findCustomerByPhone(supabase, decoded.phone, 'id, wallet_balance')
+        .then((r) => (r ? [r] : []));
       if (cData && cData.length > 0) {
         userRow = cData[0];
         actualUserId = cData[0].id;
@@ -3554,9 +3552,8 @@ app.get('/api/customer/referral-info', async (req, res) => {
 
     let customerRow = null;
     if (decoded.phone) {
-      const { data } = await supabaseService
-        .from('customers').select('id, referral_code').eq('mobile', decoded.phone).limit(1).maybeSingle();
-      customerRow = data;
+      // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+      customerRow = await findCustomerByPhone(supabaseService, decoded.phone, 'id, referral_code');
     }
     if (!customerRow && String(userId).includes('-')) {
       const { data } = await supabaseService
@@ -4355,8 +4352,9 @@ app.post('/api/vendor/register', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Phone verification required' });
     }
 
-    const { data: existing } = await supabaseService
-      .from('astrologers').select('id').eq('phone_number', decoded.phone).limit(1);
+    // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+    const existing = await findAstrologerByPhone(supabaseService, decoded.phone, 'id')
+      .then((r) => (r ? [r] : []));
     if (existing && existing.length > 0) {
       return res.status(409).json({ success: false, message: 'This number is already registered' });
     }
@@ -4649,8 +4647,8 @@ app.post('/api/gift/send', async (req, res) => {
     // client-supplied one it can't be spoofed into someone else's credit.
     let customer = null;
     if (decoded.phone) {
-      const { data } = await supabase.from('customers').select('id, name, wallet_balance').eq('mobile', decoded.phone).limit(1);
-      if (data && data.length) customer = data[0];
+      // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
+      customer = await findCustomerByPhone(supabase, decoded.phone, 'id, name, wallet_balance');
     }
     if (!customer && String(userId).includes('-')) {
       const { data } = await supabase.from('customers').select('id, name, wallet_balance').eq('id', userId).single();

@@ -17,6 +17,7 @@
 // somebody else's customer.
 
 const jwt = require('jsonwebtoken');
+const { findCustomerByPhone } = require('./customerLookup');
 const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('./adminRoutes');
 const { loadCommissionConfig } = require('./remedyCommission');
@@ -152,7 +153,8 @@ module.exports = function registerRemedyReferralRoutes(app) {
     // be a legacy `user_<timestamp>` string rather than a uuid.
     let customerId = null;
     if (decoded.phone) {
-      const { data } = await db.from('customers').select('id').eq('mobile', decoded.phone).limit(1);
+      const data = await findCustomerByPhone(db, decoded.phone, 'id')
+        .then((r) => (r ? [r] : []));
       if (data && data.length) customerId = data[0].id;
     }
     const rawId = decoded.userId || decoded._id || decoded.id;
