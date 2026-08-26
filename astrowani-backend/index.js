@@ -6,6 +6,9 @@ const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
+// Records failures that endpoints deliberately swallow, so a silent mass
+// outage still reaches Sentry and /health. See src/degradation.js.
+const { noteReadFailure, getDegradation } = require('./src/degradation');
 // Tolerant phone->account resolution. A JWT minted before the Aug-2026 phone
 // normalization carries a raw claim that no longer exact-matches the migrated
 // customers.mobile column; see src/customerLookup.js for the full failure mode.
@@ -1756,14 +1759,34 @@ app.get('/health', async (req, res) => {
     const r = await probeDatabase();
     healthCache = { at: now, ok: r.ok, detail: r.detail };
   }
+  // Second signal, independent of the probe above: many endpoints swallow their
+  // own read failures on purpose (see src/degradation.js). If a lot of DIFFERENT
+  // ones are failing at once, the API is answering 200s full of nothing -- which
+  // is exactly what the 2026-08-26 outage looked like from the outside. Treat
+  // that as unhealthy even when the probe query itself happens to succeed.
+  const deg = getDegradation();
+  const healthy = healthCache.ok && !deg.degraded;
+
   const body = {
-    status: healthCache.ok ? 'ok' : 'degraded',
+    status: healthy ? 'ok' : 'degraded',
     uptimeSeconds: Math.floor(process.uptime()),
-    checks: { process: 'ok', database: healthCache.ok ? 'ok' : 'fail' },
+    checks: {
+      process: 'ok',
+      database: healthCache.ok ? 'ok' : 'fail',
+      reads: deg.degraded ? 'fail' : 'ok',
+    },
   };
   if (!healthCache.ok) body.detail = healthCache.detail;
+  if (deg.failures) {
+    body.recentReadFailures = {
+      count: deg.failures,
+      scopes: deg.scopes,
+      windowMinutes: deg.windowMinutes,
+      lastMessage: deg.lastMessage,
+    };
+  }
   // 503 so a monitor that only reads the status code still fires.
-  return res.status(healthCache.ok ? 200 : 503).json(body);
+  return res.status(healthy ? 200 : 503).json(body);
 });
 
 // Liveness only — "is the process up", no dependencies. Kept separate so a
@@ -1863,8 +1886,30 @@ async function getCustomerRowFromReq(req) {
 app.get('/api/users/profile', async (req, res) => {
   try {
     const { decoded, row } = await getCustomerRowFromReq(req);
+
+    // A VALID token whose customer row cannot be resolved is a FAILURE, not an
+    // empty profile, and that difference matters to the person holding the phone.
+    // This used to answer 200 success:true with every field '' -- toProfile(null)
+    // fills blanks -- so the app rendered an empty Edit Profile form. The customer
+    // retyped their details, hit save, and PUT answered 404 'Customer not found'.
+    // Their input was lost twice over: once because we showed them nothing, once
+    // because we refused to keep what they typed. Reported from a real phone on
+    // 2026-08-26 during the Supabase-credential outage.
+    //
+    // A genuinely new customer is NOT this case: signup creates the row, so they
+    // resolve fine and legitimately see blank fields.
+    if (decoded && !row) {
+      noteReadFailure('profile-lookup', new Error('valid token but no customer row resolved'));
+      return res.status(503).json({
+        success: false,
+        code: 'PROFILE_UNAVAILABLE',
+        message: 'We could not load your profile just now. Please try again in a moment.',
+      });
+    }
+
     return res.status(200).json({ success: true, data: toProfile(row, decoded) });
   } catch (err) {
+    noteReadFailure('profile-get', err);
     return res.status(500).json({ success: false, message: 'Failed to fetch profile' });
   }
 });
@@ -1873,7 +1918,17 @@ app.get('/api/users/profile', async (req, res) => {
 app.put('/api/users/profile', async (req, res) => {
   try {
     const { decoded, row } = await getCustomerRowFromReq(req);
-    if (!row || !row.id) return res.status(404).json({ success: false, message: 'Customer not found' });
+    if (!row || !row.id) {
+      // Same root cause as the GET above. 404 'Customer not found' read as
+      // "your account does not exist" -- alarming and wrong. The account was
+      // fine; we just could not resolve it from the token.
+      noteReadFailure('profile-save', new Error('valid token but no customer row resolved'));
+      return res.status(503).json({
+        success: false,
+        code: 'PROFILE_UNAVAILABLE',
+        message: 'We could not save your profile just now. Your details were not changed. Please try again in a moment.',
+      });
+    }
 
     const b = req.body || {};
     const upd = {};
@@ -1964,7 +2019,7 @@ app.get('/api/banners/all', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/banners/all error:', err.message);
+    noteReadFailure('banners', err);
     return res.status(200).json({ data: [], intervalSeconds: 4 });
   }
 });
@@ -1981,7 +2036,7 @@ app.get('/api/live-aarti', async (req, res) => {
     });
     return res.status(200).json({ url });
   } catch (err) {
-    console.error('GET /api/live-aarti error:', err.message);
+    noteReadFailure('live-aarti', err);
     return res.status(200).json({ url: null });
   }
 });
@@ -2050,7 +2105,7 @@ app.get('/api/remedy-unavailable-popup', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/remedy-unavailable-popup error:', err.message);
+    noteReadFailure('remedy-popup', err);
     return res.status(200).json({
       title: "We're not there yet",
       message: "We're not currently delivering {item} to your location. Your wallet has not been charged — nothing has been deducted.",
@@ -2080,7 +2135,7 @@ app.get('/api/thoughts/latest', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/thoughts/latest error:', err.message);
+    noteReadFailure('thoughts', err);
     return res.status(200).json({ thoughtText: 'Welcome to Astrowani!' });
   }
 });
@@ -2105,7 +2160,7 @@ app.get('/api/categories', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/categories error:', err.message);
+    noteReadFailure('categories', err);
     return res.status(200).json({ categories: [] });
   }
 });
@@ -2153,7 +2208,7 @@ app.get('/api/blogs', async (req, res) => {
       totalPages: Math.max(1, Math.ceil((count || 0) / limit)),
     });
   } catch (err) {
-    console.error('GET /api/blogs error:', err.message);
+    noteReadFailure('blogs', err);
     return res.status(200).json({ data: [], totalPages: 1 });
   }
 });
@@ -2220,7 +2275,7 @@ app.get('/api/remedies', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/remedies error:', err.message);
+    noteReadFailure('remedies', err);
     return res.status(200).json({ data: [] });
   }
 });
@@ -2267,7 +2322,7 @@ app.get('/api/remedy-categories', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/remedy-categories error:', err.message);
+    noteReadFailure('remedy-categories', err);
     return res.status(200).json({
       // Null Hindi here too — these hardcoded defaults are English-only, and
       // echoing them as "Hindi" would suppress the app's bundled translation on
@@ -2632,7 +2687,7 @@ app.get('/api/reviews/astrologer/:id', async (req, res) => {
       createdAt: r.created_at,
     })));
   } catch (e) {
-    console.error('[reviews] list error:', e.message);
+    noteReadFailure('reviews-list', e);
     return res.status(200).json([]);
   }
 });
@@ -2663,7 +2718,7 @@ app.get('/api/favoriteAstrologer', async (req, res) => {
       .map((a) => ({ ...a, isFavorite: true }));
     return res.status(200).json({ favoriteAstrologer: formatted });
   } catch (e) {
-    console.error('[favorites] list error:', e.message);
+    noteReadFailure('favorites', e);
     return res.status(200).json({ favoriteAstrologer: [] });
   }
 });
@@ -2848,7 +2903,7 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
     const withoutPhoto = formatted.filter((r) => !r.user.profilePic);
     return res.status(200).json([...withPhoto, ...withoutPhoto].slice(0, 20));
   } catch (e) {
-    console.error('[reviews] all error:', e.message);
+    noteReadFailure('reviews-all', e);
     return res.status(200).json([]);
   }
 });
@@ -3720,7 +3775,7 @@ app.get('/api/free-bot-chat/persona', async (req, res) => {
     const parsed = JSON.parse(raw);
     return res.status(200).json({ ...FREE_BOT_CHAT_PERSONA_DEFAULT, ...parsed });
   } catch (err) {
-    console.error('GET /api/free-bot-chat/persona error:', err.message);
+    noteReadFailure('bot-persona', err);
     return res.status(200).json(FREE_BOT_CHAT_PERSONA_DEFAULT);
   }
 });
@@ -3753,7 +3808,7 @@ app.get('/api/guide-avatar/config', async (req, res) => {
       register: { ...GUIDE_AVATAR_CONFIG_DEFAULT.register, ...parsed.register },
     });
   } catch (err) {
-    console.error('GET /api/guide-avatar/config error:', err.message);
+    noteReadFailure('guide-avatar', err);
     return res.status(200).json(GUIDE_AVATAR_CONFIG_DEFAULT);
   }
 });
@@ -4451,7 +4506,7 @@ app.get('/api/gifts', async (req, res) => {
     });
     return res.status(200).json(payload);
   } catch (err) {
-    console.error('GET /api/gifts error:', err.message);
+    noteReadFailure('gifts', err);
     return res.status(200).json({ data: [] });
   }
 });
@@ -4484,7 +4539,7 @@ app.get('/api/live/active', async (req, res) => {
       }));
     return res.status(200).json({ data });
   } catch (err) {
-    console.error('GET /api/live/active error:', err.message);
+    noteReadFailure('live-active', err);
     return res.status(200).json({ data: [] });
   }
 });
