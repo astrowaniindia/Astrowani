@@ -18,6 +18,12 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 class SessionManager {
+  // Longest a billed consultation may run before it is treated as abandoned.
+  // 2h, set by the product owner 2026-08-27 — deliberately tighter than the 6h
+  // used for live streams, because every extra minute here is money off a real
+  // customer. See endStaleBilledSessions().
+  static MAX_BILLED_SESSION_MS = 2 * 60 * 60 * 1000;
+
   constructor() {
     this.pollingInterval = 30 * 1000; // Poll every 30 seconds
     this.resetInterval = 60 * 60 * 1000; // Check resets every hour
@@ -47,10 +53,15 @@ class SessionManager {
     this.timer = setInterval(() => {
       this.checkActiveSessions();
       this.markStaleRequestsMissed();
+      this.endStaleBilledSessions();
     }, this.pollingInterval);
     // Run earnings reset check hourly, and immediately on startup
     this.checkEarningsResets();
     this.endStaleLiveSessions();
+    // Run at boot too: a crash or VPS reboot leaves sessions is_active with
+    // nobody left to end them, and that is precisely how a phone-died session
+    // survives to keep billing.
+    this.endStaleBilledSessions();
     this.checkWalletHealth();
     this.resetTimer = setInterval(() => {
       this.checkEarningsResets();
@@ -103,6 +114,109 @@ class SessionManager {
       console.error('[SessionManager] checkWalletHealth error:', err.message);
     }
   }
+
+  /**
+   * Auto-end billed consultations that have run past any plausible length.
+   *
+   * WHY THIS EXISTS — the leak it closes:
+   * checkActiveSessions() bills every is_active session whose next_billing_at has
+   * passed, every 30 seconds, with NO upper bound on how long a session may run.
+   * A session only ends when someone's client calls POST /api/call/end. If a phone
+   * dies mid-call — battery, crash, force-kill, tunnel — doEndCall() never runs,
+   * that request never arrives, and the row stays is_active forever. Billing then
+   * keeps deducting a minute at a time until the customer's WALLET RUNS DRY. That
+   * was the only backstop.
+   *
+   * Live streaming already had this guard (endStaleLiveSessions, 6h) with a comment
+   * reasoning about force-killed apps and the absence of a heartbeat. It was built
+   * for the path that costs nothing, and never for the one that costs money.
+   *
+   * WHY 2 HOURS: a real consultation does not run this long; anything past it is
+   * almost certainly a dead phone rather than a customer happily paying. Chosen by
+   * the product owner (2026-08-27) deliberately tighter than live's 6h, because
+   * every extra minute here is money off a real person's balance.
+   *
+   * WHY IT ONLY STOPS THE BLEEDING AND DOES NOT REFUND:
+   * There is no heartbeat, so the backend cannot know WHEN the phone died — five
+   * minutes in or a hundred and fifteen. Any automatic refund would be a guess, and
+   * guessing wrong with someone's money is worse than not guessing. So this ends
+   * the session and files a flagged record for a human, exactly as
+   * checkWalletHealth() does for its anomalies ("a human always makes the actual
+   * correction by hand"). Customer support does the refund.
+   *
+   * The record distinguishes two cases, and the difference decides whether anyone
+   * is owed anything:
+   *   billed=true   next_billing_at was set, so checkActiveSessions WAS charging
+   *                 this every minute. The customer was almost certainly
+   *                 overcharged and needs reviewing.
+   *   billed=false  next_billing_at was NULL, which is invisible to the billing
+   *                 poll (it filters next_billing_at <= now). Nothing was charged;
+   *                 the only harm is the astrologer being stuck "busy" and locked
+   *                 out of work. This is the zombie-session shape from the
+   *                 2026-08-07 data-layer audit. No refund needed.
+   */
+  async endStaleBilledSessions() {
+    const cutoffMs = Date.now() - SessionManager.MAX_BILLED_SESSION_MS;
+    const cutoff = new Date(cutoffMs).toISOString();
+    try {
+      const { data: stale, error } = await supabase
+        .from('chat_sessions')
+        .select('id, caller_id, vendor_id, per_minute_charge, started_at, next_billing_at, call_type')
+        .eq('is_active', true)
+        .lt('started_at', cutoff);
+      if (error) throw error;
+      if (!stale || !stale.length) return;
+
+      console.warn(`[SessionManager] ${stale.length} session(s) past the ${SessionManager.MAX_BILLED_SESSION_MS / 3600000}h cap — auto-ending.`);
+
+      // Sequential on purpose: terminateSession does several writes plus socket
+      // emits per session, and this list should essentially always be empty. If it
+      // ever is not, something is badly wrong and hammering the DB will not help.
+      for (const s of stale) {
+        const ranMinutes = Math.max(0, Math.round((Date.now() - new Date(s.started_at).getTime()) / 60000));
+        const wasBilled = s.next_billing_at !== null;
+        // An ESTIMATE only. The authoritative figure is the sum of this session's
+        // rows in wallet_transactions; this is here so the reviewer knows the
+        // rough scale without running a query first.
+        const estimatedCharge = wasBilled ? ranMinutes * (Number(s.per_minute_charge) || 0) : 0;
+
+        try {
+          await this.terminateSession(
+            s.id,
+            `Auto-ended: exceeded ${SessionManager.MAX_BILLED_SESSION_MS / 3600000}h maximum session length`,
+          );
+        } catch (err) {
+          // Keep going — one failure must not strand the rest, and the flagged
+          // record below is what a human acts on either way.
+          console.error(`[SessionManager] failed to terminate stale session ${s.id}:`, err.message);
+        }
+
+        logError('abandoned-session', new Error(
+          `Auto-ended abandoned ${s.call_type || 'session'} ${s.id} after ${ranMinutes} min ` +
+          `(cap ${SessionManager.MAX_BILLED_SESSION_MS / 3600000}h). ` +
+          (wasBilled
+            ? `WAS BEING BILLED at ${s.per_minute_charge}/min — customer ${s.caller_id} was ` +
+              `likely overcharged by roughly ${estimatedCharge}. NEEDS REFUND REVIEW.`
+            : `next_billing_at was NULL so nothing was charged (zombie session); the only ` +
+              `harm is astrologer ${s.vendor_id} being stuck busy. No refund needed.`)
+        ), {
+          sessionId: s.id,
+          callType: s.call_type,
+          customerId: s.caller_id,
+          astrologerId: s.vendor_id,
+          startedAt: s.started_at,
+          ranMinutes,
+          perMinuteCharge: s.per_minute_charge,
+          billed: wasBilled,
+          estimatedCharge,
+          needsRefundReview: wasBilled,
+        });
+      }
+    } catch (err) {
+      console.error('[SessionManager] endStaleBilledSessions error:', err.message);
+    }
+  }
+
 
   /**
    * Safety net for live_sessions left is_active=true forever — the normal end path
