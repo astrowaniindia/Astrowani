@@ -1,0 +1,168 @@
+name: iOS unsigned IPA
+
+# Produces an UNSIGNED .ipa you can download on Windows and install on a real
+# iPhone by re-signing it locally with a FREE Apple ID (Sideloadly / AltStore).
+# This is the iOS answer to "give me an APK I can test before paying".
+#
+# WHY THIS WORKFLOW EXISTS AT ALL:
+# An .ipa cannot be built without macOS + Xcode, and there is no Mac here. EAS
+# Build can produce iOS builds, but a DEVICE build requires an Apple
+# distribution certificate and provisioning profile, which need the paid Apple
+# Developer Program. A GitHub macOS runner has Xcode and lets us build with code
+# signing switched off entirely, which needs no Apple account whatsoever.
+#
+# WHAT YOU GET, AND WHAT YOU DO NOT:
+#   * The .ipa here is UNSIGNED. iOS will refuse to install it as-is -- the
+#     kernel (AMFI) requires a valid signature plus a provisioning profile
+#     listing that exact device. There is no "allow unknown sources" on iOS.
+#   * Sideloadly/AltStore on Windows re-sign it with your free Apple ID's
+#     "Personal Team" and install over USB. That part is legitimate Apple
+#     functionality (free provisioning), not a jailbreak or a hack.
+#   * Free-signed apps EXPIRE AFTER 7 DAYS and must be re-signed. Paid
+#     membership raises that to a year.
+#   * PUSH NOTIFICATIONS WILL NOT WORK in a free-signed build. The
+#     aps-environment entitlement requires a paid membership, so free
+#     provisioning strips it. For this app that means FCM notifications, the
+#     incoming-call ring on a backgrounded/killed app, and CallKit/PushKit are
+#     all untestable this way. Everything else is fair game: launch, OTP login,
+#     navigation, fonts/icons, API calls, wallet, chat, camera/mic, and WebRTC
+#     calls started while the app is open.
+#
+# COST NOTE: macOS runners bill at 10x the Linux rate on private repos, so the
+# 2000 free minutes/month become roughly 200 macOS minutes -- about a dozen runs.
+# Public repos get macOS runners free. Hence workflow_dispatch only: this never
+# runs on a push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which app to build
+        required: true
+        default: customer
+        type: choice
+        options:
+          - customer
+          - vendor
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Resolve the per-app paths once, so the rest of the job is app-agnostic.
+      - name: Resolve app paths
+        id: app
+        run: |
+          if [ "${{ inputs.app }}" = "vendor" ]; then
+            echo "dir=astrowani_vendors-main"           >> "$GITHUB_OUTPUT"
+            echo "scheme=AstroIndia_Astrologers"        >> "$GITHUB_OUTPUT"
+            echo "workspace=AstroIndia_Astrologers.xcworkspace" >> "$GITHUB_OUTPUT"
+            echo "product=AstroIndia_Astrologers.app"   >> "$GITHUB_OUTPUT"
+            echo "ipa=Astrowani-Astrologer-unsigned.ipa" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=astrowani_customer-main"          >> "$GITHUB_OUTPUT"
+            echo "scheme=AstrologyApp"                  >> "$GITHUB_OUTPUT"
+            echo "workspace=AstrologyApp.xcworkspace"   >> "$GITHUB_OUTPUT"
+            echo "product=AstrologyApp.app"             >> "$GITHUB_OUTPUT"
+            echo "ipa=Astrowani-unsigned.ipa"           >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ steps.app.outputs.dir }}/package-lock.json
+
+      # npm ci also runs the postinstall hook, which is required on iOS: it
+      # disables @sentry/react-native's Swift link stub so RNSentry stays a
+      # non-Swift pod. Without that, pod install fails. See
+      # scripts/apply-native-patches.js.
+      - name: Install JS dependencies
+        working-directory: ${{ steps.app.outputs.dir }}
+        run: npm ci
+
+      - name: Fail early if the Firebase config is missing
+        working-directory: ${{ steps.app.outputs.dir }}
+        run: |
+          PLIST=$(find ios -name 'GoogleService-Info.plist' | head -1)
+          if [ -z "$PLIST" ]; then
+            echo "::error::GoogleService-Info.plist is missing. AppDelegate calls [FIRApp configure], which crashes at launch without it."
+            exit 1
+          fi
+          echo "found $PLIST"
+
+      - name: Install pods
+        working-directory: ${{ steps.app.outputs.dir }}/ios
+        env:
+          # MUST match eas.json. Unset means the New Architecture is ON (see
+          # react-native/scripts/cocoapods/new_architecture.rb), and this app is
+          # an old-architecture app -- Android sets newArchEnabled=false. With it
+          # on, react-native-svg compiles its Fabric C++ and fails on Yoga's
+          # StyleSizeLength.
+          RCT_NEW_ARCH_ENABLED: '0'
+        run: pod install --repo-update
+
+      # Build for a real device (-sdk iphoneos, arm64) with signing off. A
+      # simulator build is a completely different binary and will NOT run on a
+      # phone, so this must not be confused with the EAS ios-simulator profile.
+      - name: Build unsigned .app
+        working-directory: ${{ steps.app.outputs.dir }}/ios
+        env:
+          RCT_NEW_ARCH_ENABLED: '0'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace "${{ steps.app.outputs.workspace }}" \
+            -scheme "${{ steps.app.outputs.scheme }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            build 2>&1 | tail -60
+
+      # An .ipa is just a zip containing Payload/<App>.app -- nothing more.
+      - name: Package into .ipa
+        working-directory: ${{ steps.app.outputs.dir }}/ios
+        run: |
+          APP="build/Build/Products/Release-iphoneos/${{ steps.app.outputs.product }}"
+          if [ ! -d "$APP" ]; then
+            echo "::error::built .app not found at $APP"
+            ls -la build/Build/Products/ || true
+            exit 1
+          fi
+          rm -rf Payload && mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry "${{ steps.app.outputs.ipa }}" Payload
+          rm -rf Payload
+          ls -lh "${{ steps.app.outputs.ipa }}"
+
+      # Sanity-check the bundle before handing it over: a green build would not
+      # catch a font or config file that never made it into the app.
+      - name: Verify bundle contents
+        working-directory: ${{ steps.app.outputs.dir }}/ios
+        run: |
+          APP="build/Build/Products/Release-iphoneos/${{ steps.app.outputs.product }}"
+          echo "--- required files ---"
+          for f in GoogleService-Info.plist PrivacyInfo.xcprivacy Info.plist; do
+            [ -e "$APP/$f" ] && echo "  ok      $f" || echo "  MISSING $f"
+          done
+          echo "--- fonts at bundle root (UIAppFonts looks here) ---"
+          ls "$APP" | grep -i '\.ttf$' | sed 's/^/  /' || echo "  NONE FOUND"
+          echo "--- architectures (must include arm64, must NOT be x86_64-only) ---"
+          lipo -info "$APP/${{ steps.app.outputs.scheme }}" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app }}-ios-unsigned-ipa
+          path: ${{ steps.app.outputs.dir }}/ios/${{ steps.app.outputs.ipa }}
+          retention-days: 14
+          if-no-files-found: error
