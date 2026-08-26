@@ -274,6 +274,106 @@ function onVoipNotification(payload) {
 }
 
 // ---------------------------------------------------------------------------
+// DEV-ONLY: ring CallKit without a real VoIP push
+//
+// WHY THIS EXISTS
+// PushKit delivery cannot be faked. It requires the `aps-environment` entitlement,
+// which requires the paid Apple Developer Program, so a free-signed .ipa or a
+// simulator never receives a VoIP push at all. Left at that, the ENTIRE CallKit
+// path -- answer, decline, acceptRequest, navigation, teardown -- stays unverified
+// until enrolment, which is a lot of untested code to carry to launch.
+//
+// CallKit itself is NOT entitlement-gated. So this reproduces everything a real
+// push does EXCEPT its delivery: it stores the payload through the very same
+// onVoipNotification() the push handler uses, then rings CallKit with the same
+// configuration AppDelegate.mm's reportNewIncomingCall passes. Answering or
+// declining then runs the real onAnswerCall / onEndCall handlers, untouched.
+//
+// WHAT IT VERIFIES: payload -> pendingByUuid -> answer -> acceptRequest ->
+// navigate, the decline -> rejectRequest branch, the answered-vs-hangup
+// distinction in onEndCall, endCallKitCall teardown, and that the CallKit UI is
+// configured the way it will be in production.
+//
+// WHAT IT CANNOT VERIFY, and do not let a green run here suggest otherwise: that
+// iOS delivers a VoIP push, that the app wakes from KILLED, or that
+// AppDelegate.mm's native reportNewIncomingCall works. That is the push half, and
+// it still needs the paid membership plus a physical device.
+//
+// USAGE, from the JS debugger console once initCallKeep() has run:
+//   __astrowaniSimulateCall()                         // audio, synthetic ids
+//   __astrowaniSimulateCall({ callType: 'video' })
+//   __astrowaniSimulateCall({ roomId: '<real>', sessionId: '<real>' })
+//
+// Pass ids from a genuinely pending call_requests row to exercise the accept
+// against the backend for real. With the synthetic defaults acceptRequest will
+// correctly fail to resolve a row and you will watch the "customer already
+// cancelled" teardown instead -- which is a path worth seeing too.
+// ---------------------------------------------------------------------------
+
+function devUuid() {
+  // CallKit requires UUID *shape*; cryptographic quality is irrelevant for a
+  // throwaway identifier in a debug build, so this avoids pulling in a dependency.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+export function simulateIncomingCallKitCall(overrides = {}) {
+  // __DEV__ is false in every release bundle, so this is inert there even if a
+  // stray call survives -- belt and braces, because the failure mode is a fake
+  // consultation ringing on a real astrologer's phone.
+  if (!__DEV__) return null;
+  if (!IS_IOS) {
+    log('simulateIncomingCallKitCall is iOS-only; ignored on', Platform.OS);
+    return null;
+  }
+  if (!didSetup) {
+    log('WARNING: initCallKeep() has not run, so nothing is listening for the answer');
+  }
+
+  const uuid = overrides.uuid || overrides.sessionId || devUuid();
+  const callType = overrides.callType || 'audio';
+  const callerName = overrides.callerName || 'Test Customer';
+
+  // Exactly the shape the backend sends -- see the sendVoipPush call in
+  // /api/call/initiate. Diverging here would test a payload that never occurs.
+  const payload = {
+    type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
+    uuid,
+    callerName,
+    callerId: overrides.callerId || '',
+    callType,
+    sessionId: overrides.sessionId || uuid,
+    roomId: overrides.roomId || null,
+  };
+
+  // Deliberately routed through the real handler rather than writing
+  // pendingByUuid directly: that storage step is part of what is under test.
+  onVoipNotification(payload);
+
+  try {
+    // The same arguments AppDelegate.mm gives reportNewIncomingCall: handleType
+    // 'generic' because the caller is an account and not a dialable number, and
+    // every supports* flag off because a consultation is a single 1:1 session.
+    RNCallKeep.displayIncomingCall(uuid, callerName, callerName, 'generic', callType === 'video', {
+      ios: {
+        supportsHolding: false,
+        supportsDTMF: false,
+        supportsGrouping: false,
+        supportsUngrouping: false,
+      },
+    });
+  } catch (e) {
+    console.warn('[callKeep] simulate failed:', e?.message);
+    return null;
+  }
+
+  log(`simulated incoming ${callType} call`, uuid);
+  return uuid;
+}
+
+// ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
@@ -354,6 +454,14 @@ export function initCallKeep() {
     VoipPushNotification.registerVoipToken();
   } catch (e) {
     console.warn('[callKeep] registerVoipToken failed:', e?.message);
+  }
+
+  if (__DEV__) {
+    // Exposed on `global` so it can be fired from the JS debugger console with no
+    // import and no UI surface -- a dev-only button on a real screen would be one
+    // bad conditional away from shipping. See the block comment above.
+    global.__astrowaniSimulateCall = simulateIncomingCallKitCall;
+    log('dev helper ready: __astrowaniSimulateCall({ callType, roomId, sessionId, callerName })');
   }
 
   log('initialised');

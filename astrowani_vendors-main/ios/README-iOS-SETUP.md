@@ -186,6 +186,32 @@ All of this app's `patches/` are Android-only (verified: zero `ios/` references)
 Needs a physical device (so, after enrolment): microphone, camera, real WebRTC media, voice-note
 recording, push delivery, and going live.
 
+### Testing CallKit without a VoIP push
+
+A VoIP push cannot be faked — `aps-environment` needs the paid membership, so a simulator or a
+free-signed `.ipa` never receives one. **CallKit itself is not entitlement-gated**, though, so
+`simulateIncomingCallKitCall()` in `src/utils/callKeep.js` rings it directly, using the same
+payload the backend sends and the same CallKit configuration `AppDelegate.mm` passes to
+`reportNewIncomingCall`. It is `__DEV__`-only and exposed on `global`, so from the JS debugger
+console once the app has launched:
+
+```js
+__astrowaniSimulateCall()                                  // audio, synthetic ids
+__astrowaniSimulateCall({ callType: 'video' })
+__astrowaniSimulateCall({ roomId: '<real>', sessionId: '<real>' })   // real accept
+```
+
+Answering or declining runs the real `onAnswerCall` / `onEndCall` handlers, so this covers the
+accept → `acceptRequest` → navigation chain, the decline → `rejectRequest` branch, the
+answered-vs-hangup distinction, and the CallKit teardown. Pass ids from a genuinely pending
+`call_requests` row to exercise the accept against the backend for real; with the synthetic
+defaults you will instead watch the "customer already cancelled" teardown, which is worth
+seeing too.
+
+**It does not prove the app rings.** Push delivery, waking from KILLED, and the native
+`reportNewIncomingCall` are the other half, and they still need the paid membership and a real
+device. Do not read a green run here as the incoming-call path being verified.
+
 What it **does** verify — most of the risk: pods resolve, the app compiles, launches, logs in,
 navigates, and fonts, icons, images and API calls work.
 
