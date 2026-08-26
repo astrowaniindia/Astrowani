@@ -29,5 +29,34 @@ module.exports = {
         android: null,
       },
     },
+
+    // Keep otpless-react-native OFF iOS. It is DEAD CODE in this app: the only
+    // file that imports it is src/utils/startOtpVerification.js, and nothing
+    // imports that (verified by grep across the whole app). Astrologers sign in
+    // through our own backend OTP, not OTPless.
+    //
+    // Left linked it would, on every iOS build:
+    //   * make otpless-react-native a SWIFT pod in the target -- its whole
+    //     implementation is ios/OtplessReactNative.swift -- which is the exact
+    //     class of pod that already cost this project two builds to sort out
+    //     (see the LINKAGE note in ios/Podfile, and the RNSentry stub removal in
+    //     scripts/apply-native-patches.js),
+    //   * pull the external `OtplessSDK/Core` 2.2.9 pod off the CocoaPods CDN,
+    //     adding a network dependency and an unpinned-to-us third party to the
+    //     first build of an app that has never compiled on iOS at all, and
+    //   * ship a third-party authentication SDK inside the binary that has to be
+    //     accounted for in the App Review privacy answers, for zero functionality.
+    //
+    // ANDROID IS DELIBERATELY UNTOUCHED. Only the ios key is overridden, so the
+    // Android build links exactly what it links today -- this change cannot
+    // affect the shipping Play Store app. If OTPless is ever actually adopted,
+    // delete this entry; if it stays dead, the real fix is removing the
+    // dependency from package.json, which is an Android-affecting change and so
+    // is left as a separate decision.
+    'otpless-react-native': {
+      platforms: {
+        ios: null,
+      },
+    },
   },
 };

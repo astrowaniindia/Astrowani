@@ -4,27 +4,17 @@ Read this before the first build. Full context: `MD files/ios-port-plan-2026-08-
 
 ---
 
-## ⚠️ ONE FILE IS MISSING AND THE BUILD WILL FAIL WITHOUT IT
+## Firebase config — present, do not remove
 
-`ios/AstroIndia_Astrologers/GoogleService-Info.plist` is **not in the repo** and must be added.
+`ios/AstroIndia_Astrologers/GoogleService-Info.plist` **is committed** (bundle id
+`com.astrowaniVendor`, Firebase project `astrowani-b1845`, its own iOS app id — distinct from
+the customer app's, which must never be reused here). It is wired into the Xcode project as
+both a file reference and a Copy Bundle Resources entry.
 
-It is already wired into the Xcode project (file reference + Copy Bundle Resources), so you do
-**not** need Xcode or a Mac to hook it up — just drop the file at that exact path and commit it.
-
-Until it exists the build fails with `Build input file cannot be found`. That is deliberate and
-preferable to the alternative: `AppDelegate.mm` calls `[FIRApp configure]`, which **crashes the
-app at launch** if the config file is absent. A clear build error beats a launch crash.
-
-### How to get it (~3 minutes, free, no Apple Developer account needed)
-
-1. Firebase console → the existing Astrowani project → **Add app** → **iOS**.
-2. iOS bundle ID: **`com.astrowaniVendor`** — must match exactly, including the capital `V`.
-3. Download `GoogleService-Info.plist`.
-4. Save it to `astrowani_vendors-main/ios/AstroIndia_Astrologers/GoogleService-Info.plist`.
-5. Commit it, same as `android/app/google-services.json` already is. It contains no secret.
-
-> This is a **separate Firebase iOS app** from the customer one (`com.astrowanicustomer`).
-> Two bundle IDs, two `GoogleService-Info.plist` files. Do not reuse one for both.
+It has to stay there: `AppDelegate.mm` calls `[FIRApp configure]`, so a missing config file is
+a **launch crash**, not a degraded feature. The build is deliberately arranged to fail first
+with `Build input file cannot be found` instead, and the CI workflow re-checks for it before
+spending a macOS runner minute on the compile.
 
 ---
 
@@ -118,7 +108,29 @@ customer taps Call
 cd astrowani_vendors-main
 ```
 
-Simulator build — **no Apple account, no signing credentials** — the right first build:
+### Unsigned .ipa on a real iPhone — the route with no Apple account at all
+
+This is the same route the customer app uses, and it is the one to reach for first. GitHub
+Actions → **iOS unsigned IPA** → *Run workflow* → **app: `vendor`**. It builds on a macOS
+runner with code signing switched off and uploads
+`Astrowani-Astrologer-unsigned.ipa` as an artifact, which Sideloadly/AltStore on Windows
+re-signs with a free Apple ID and installs over USB.
+
+Read `.github/workflows/ios-unsigned-ipa.yml` before running it — the header states exactly
+what such a build can and cannot prove. The short version for **this** app is unusually
+important: a free-signed build has no `aps-environment` entitlement, so **FCM push, the
+killed-app incoming-call ring, and the whole CallKit/PushKit path below are untestable this
+way**. Since that path is this app's core loop, an unsigned .ipa proves the app *compiles,
+launches and runs*, not that it rings.
+
+If the build fails, the job uploads the full `xcodebuild.log` as a separate artifact — read
+that rather than the 60-line console tail, which names the failing target but rarely the cause.
+
+Cost: macOS runners bill at 10× on private repos, so budget roughly a dozen runs a month.
+
+### EAS builds (need an Expo account; the device profiles need the Apple account)
+
+Simulator build — **no Apple account, no signing credentials**:
 
 ```bash
 npx eas-cli build --platform ios --profile ios-simulator
@@ -154,6 +166,12 @@ All of this app's `patches/` are Android-only (verified: zero `ios/` references)
   permission string invites App Review questions.
 - **This app collects bank/payout details and records audio** (voice notes). Both are declared
   in `PrivacyInfo.xcprivacy` and must be reflected in the App Store Connect privacy answers.
+- **`otpless-react-native` is excluded from iOS autolinking** in `react-native.config.js`.
+  It is dead code here — `src/utils/startOtpVerification.js` is its only importer and nothing
+  imports that — and linking it would make the target carry a Swift pod plus the external
+  `OtplessSDK/Core` pod for no functionality. **Android is untouched**, so the shipping Play
+  Store app links exactly what it links today. Removing it from `package.json` outright is the
+  real fix but is an Android-affecting change, so it is left as a separate decision.
 - **No URL scheme / deep links.** Unlike the customer app there is no Razorpay return, so
   `AppDelegate.mm` has no `RCTLinkingManager` hooks. `otpless-react-native` is in
   `package.json` but `startOtpVerification.js` is imported by nothing — it is dead code and

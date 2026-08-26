@@ -109,6 +109,13 @@ jobs:
       # Build for a real device (-sdk iphoneos, arm64) with signing off. A
       # simulator build is a completely different binary and will NOT run on a
       # phone, so this must not be confused with the EAS ios-simulator profile.
+      #
+      # The full log is kept as a file and only its tail printed. A compile
+      # failure's real error is routinely thousands of lines above the end of an
+      # xcodebuild log -- the tail alone shows "** BUILD FAILED **" and a summary
+      # naming the target, not the cause. Losing it costs another ~10-minute
+      # macOS run to reproduce, which matters most for the vendor app: its
+      # CallKit/PushKit AppDelegate code has never been compiled by anything.
       - name: Build unsigned .app
         working-directory: ${{ steps.app.outputs.dir }}/ios
         env:
@@ -127,7 +134,19 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            build 2>&1 | tail -60
+            build 2>&1 | tee xcodebuild.log | tail -60
+
+      # Runs only when the build failed -- the only time it is useful. `if:
+      # failure()` rather than `always()` so a green run does not upload a large
+      # log nobody reads.
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app }}-ios-build-log
+          path: ${{ steps.app.outputs.dir }}/ios/xcodebuild.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       # An .ipa is just a zip containing Payload/<App>.app -- nothing more.
       - name: Package into .ipa
@@ -152,7 +171,11 @@ jobs:
         run: |
           APP="build/Build/Products/Release-iphoneos/${{ steps.app.outputs.product }}"
           echo "--- required files ---"
-          for f in GoogleService-Info.plist PrivacyInfo.xcprivacy Info.plist; do
+          # main.jsbundle is listed because its absence is invisible until
+          # runtime: the "Bundle React Native code and images" phase can no-op
+          # and still leave a green build, and the app then installs, launches
+          # and shows a blank white screen.
+          for f in main.jsbundle GoogleService-Info.plist PrivacyInfo.xcprivacy Info.plist; do
             [ -e "$APP/$f" ] && echo "  ok      $f" || echo "  MISSING $f"
           done
           echo "--- fonts at bundle root (UIAppFonts looks here) ---"

@@ -4,30 +4,18 @@ Read this before the first build. Full context: `MD files/ios-port-plan-2026-08-
 
 ---
 
-## ⚠️ ONE FILE IS MISSING AND THE BUILD WILL FAIL WITHOUT IT
+## Firebase config — present, do not remove
 
-`ios/AstrologyApp/GoogleService-Info.plist` is **not in the repo** and must be added.
+`ios/AstrologyApp/GoogleService-Info.plist` **is committed** (bundle id
+`com.astrowanicustomer`, Firebase project `astrowani-b1845`, its own iOS app id — distinct
+from the vendor app's, which must never be reused here). It is wired into the Xcode project as
+both a file reference and a Copy Bundle Resources entry, mirroring how
+`android/app/google-services.json` is already committed — the file contains no secret.
 
-It is already wired into the Xcode project (file reference + Copy Bundle Resources), so you
-do **not** need Xcode or a Mac to hook it up — just drop the file at that exact path and
-commit it.
-
-Until it exists, the build fails with `Build input file cannot be found:
-.../AstrologyApp/GoogleService-Info.plist`. That is deliberate and preferable to the
-alternative: `AppDelegate.mm` calls `[FIRApp configure]`, which **crashes the app at launch**
-if the config file is absent. A clear build error beats a launch crash.
-
-### How to get it (~3 minutes, free, no Apple Developer account needed)
-
-1. Firebase console → the existing Astrowani project → **Add app** → **iOS**.
-2. iOS bundle ID: **`com.astrowanicustomer`** — must match exactly.
-3. Download `GoogleService-Info.plist`.
-4. Save it to `astrowani_customer-main/ios/AstrologyApp/GoogleService-Info.plist`.
-5. Commit it. This mirrors how `android/app/google-services.json` is already committed —
-   the file contains no secret.
-
-> Registering the iOS app in Firebase needs **no Apple Developer membership**. Only *delivering*
-> a push does (see the APNs key step below). So this is not blocked on enrolment.
+It has to stay there: `AppDelegate.mm` calls `[FIRApp configure]`, so a missing config file is
+a **launch crash**, not a degraded feature. The build is deliberately arranged to fail first
+with `Build input file cannot be found` instead, and the CI workflow re-checks for it before
+spending a macOS runner minute on the compile.
 
 ---
 
@@ -101,7 +89,16 @@ launches, logs in, navigates, and that fonts, icons, images, layout and API call
   alpha channel is itself an App Store rejection) but the 1024 marketing icon is upscaled
   from a 512 source and is visibly soft. Export a true 1024×1024 from the original design and
   replace `Images.xcassets/AppIcon.appiconset/icon-1024.png` before public launch.
-- **CallKit / PushKit is not implemented.** Incoming calls will not ring when the app is
-  backgrounded or killed. This is Phase 4 in the plan and must land before store submission.
-- **The vendor app has only its `Info.plist` done.** Everything else here still needs
-  repeating for `astrowani_vendors-main`, deliberately sequenced after this app builds.
+- **CallKit / PushKit is deliberately absent, and that is not a gap.** It lives only in the
+  vendor app, because only that app *receives* calls — this one initiates them and never has
+  an incoming consultation to ring. (Phase 4 of the port plan settled this; see
+  `astrowani_vendors-main/ios/README-iOS-SETUP.md` for the implementation.) Do not add
+  PushKit here: `voip` in `UIBackgroundModes` without a real PushKit implementation is its
+  own App Review rejection reason. Ordinary FCM push still works and still needs the APNs
+  key above.
+- **The vendor app is now at parity**, so this is no longer the next thing to do.
+  `astrowani_vendors-main/ios/` has the same configuration — its own
+  `GoogleService-Info.plist` (`com.astrowaniVendor`), the same Podfile linkage fixes, icons,
+  privacy manifest and shared scheme — plus CallKit/PushKit, which only it needs. See
+  `astrowani_vendors-main/ios/README-iOS-SETUP.md`. It has never been compiled on iOS,
+  though, so expect a compile-fix loop there of the kind recorded in this app's `ios/Podfile`.
