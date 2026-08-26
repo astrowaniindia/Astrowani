@@ -6,6 +6,10 @@ const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./src/push');
+// Tolerant phone->account resolution. A JWT minted before the Aug-2026 phone
+// normalization carries a raw claim that no longer exact-matches the migrated
+// customers.mobile column; see src/customerLookup.js for the full failure mode.
+const { findCustomerByPhone, findAstrologerByPhone } = require('./src/customerLookup');
 // iOS PushKit/CallKit ring for the vendor app. Degrades to a logged no-op when APNs
 // credentials are absent, so this require is safe on an unconfigured deployment.
 const { sendVoipPush, isVoipReady } = require('./src/voipPush');
@@ -1667,10 +1671,104 @@ app.get('/', (req, res) => {
   res.send('Astrowani Backend API is running!');
 });
 
-// Cheap, unauthenticated liveness check — polled by .github/workflows/uptime-check.yml.
-// Deliberately does no DB round-trip: this must answer even if Supabase itself is having
-// problems, so a slow/failing DB doesn't look identical to "the whole VPS is down."
-app.get('/health', (req, res) => {
+// Two health endpoints, and the split is the point.
+//
+// This used to be ONE cheap endpoint that did no DB round-trip, with a comment
+// explaining that was deliberate: "a slow/failing DB shouldn't look identical to
+// the whole VPS being down." That reasoning is right, and it is preserved below
+// as /health/live. But taken alone it made the monitor blind — see the note on
+// /health for the 9-hour outage it slept through on 2026-08-26.
+//
+//   /health       deep    — checks the database too, 503 if it cannot reach it.
+//                           This is what uptime-check.yml polls, because "the API
+//                           answers but every query fails" is still an outage.
+//   /health/live  shallow — process liveness only, never touches a dependency.
+//                           Use this to tell a crash/restart loop apart from a
+//                           dependency outage, which was the original concern.
+// ─────────────────────────────────────────────────────────────────────────────
+// Health check — DEEP, on purpose.
+//
+// WHY THIS IS NOT JUST "return 200":
+// It used to be exactly that, and on 2026-08-26 that cost ~9 hours of downtime.
+// The VPS rebooted (unattended-upgrades), the backend restarted, re-read .env,
+// and picked up a SUPABASE_SERVICE_ROLE_KEY that Supabase rejects — PGRST303
+// "JWT issued at future". Every real request failed: astrologer lists empty,
+// banners empty, profiles blank, profile saves 404.
+//
+// And .github/workflows/uptime-check.yml stayed GREEN the entire time, because
+// this endpoint only ever proved "Node is running and Express can route". It
+// never touched the thing that was broken. The alarm existed; it watched the
+// wrong wire.
+//
+// So it now actually queries the database, and answers 503 when it cannot. That
+// makes the existing 15-minute uptime workflow catch this whole class of outage
+// instead of sleeping through it.
+//
+// Kept cheap deliberately: the endpoint is public and polled, so the result is
+// cached briefly, the query reads a single key from the smallest table, and it
+// races a timeout so a hanging Supabase cannot hang the health check itself.
+// ─────────────────────────────────────────────────────────────────────────────
+const HEALTH_CACHE_MS = 20000;
+const HEALTH_DB_TIMEOUT_MS = 5000;
+let healthCache = { at: 0, ok: null, detail: null };
+
+async function probeDatabase() {
+  const timeout = new Promise((resolve) =>
+    setTimeout(
+      () => resolve({ ok: false, detail: 'timeout after ' + HEALTH_DB_TIMEOUT_MS + 'ms' }),
+      HEALTH_DB_TIMEOUT_MS,
+    ),
+  );
+  const query = (async () => {
+    try {
+      // Uses the SAME client every real request uses, which is the entire point:
+      // a credential the rest of the app cannot use must fail here too.
+      const { error } = await supabase.from('app_settings').select('key').limit(1);
+      if (error) return { ok: false, detail: error.message || 'query failed' };
+      return { ok: true, detail: null };
+    } catch (err) {
+      return { ok: false, detail: err.message || 'threw' };
+    }
+  })();
+  return Promise.race([query, timeout]);
+}
+
+// Probe once at boot and say so loudly. The previous startup check only warned
+// when SUPABASE_SERVICE_ROLE_KEY was MISSING — never when it was present but
+// invalid, which is exactly the state that caused the outage. It booted silently.
+(async () => {
+  const r = await probeDatabase();
+  if (r.ok) {
+    console.log('[startup] database reachable — Supabase credential is valid.');
+  } else {
+    console.error('[startup] DATABASE UNREACHABLE: ' + r.detail);
+    console.error(
+      '[startup] The API is up but will fail almost every request. Check ' +
+        'SUPABASE_SERVICE_ROLE_KEY. NOTE: sb_secret_* keys are rejected on this ' +
+        'project (PGRST303 "JWT issued at future") — use the legacy service_role JWT.',
+    );
+  }
+})();
+
+app.get('/health', async (req, res) => {
+  const now = Date.now();
+  if (now - healthCache.at > HEALTH_CACHE_MS) {
+    const r = await probeDatabase();
+    healthCache = { at: now, ok: r.ok, detail: r.detail };
+  }
+  const body = {
+    status: healthCache.ok ? 'ok' : 'degraded',
+    uptimeSeconds: Math.floor(process.uptime()),
+    checks: { process: 'ok', database: healthCache.ok ? 'ok' : 'fail' },
+  };
+  if (!healthCache.ok) body.detail = healthCache.detail;
+  // 503 so a monitor that only reads the status code still fires.
+  return res.status(healthCache.ok ? 200 : 503).json(body);
+});
+
+// Liveness only — "is the process up", no dependencies. Kept separate so a
+// crash/restart loop stays distinguishable from a dependency outage.
+app.get('/health/live', (req, res) => {
   res.status(200).json({ status: 'ok', uptimeSeconds: Math.floor(process.uptime()) });
 });
 
@@ -1745,8 +1843,14 @@ async function getCustomerRowFromReq(req) {
   const userId = decoded.userId || decoded._id || decoded.id;
   let row = null;
   if (decoded.phone) {
-    const { data } = await supabase.from('customers').select('*').eq('mobile', decoded.phone).limit(1);
-    if (data && data.length > 0) row = data[0];
+    // Tolerant of legacy phone formats on either side. A JWT minted before the
+    // Aug-2026 normalization carries a raw claim ("+919119395097") while the
+    // migrated column holds bare digits ("9119395097"), and an exact .eq() then
+    // finds nothing — which surfaced as GET /profile returning a BLANK form
+    // (toProfile fills every field with '' for a null row, under success:true)
+    // and PUT /profile answering 404 "Customer not found". Same person, same
+    // handset, just a stale token. See src/customerLookup.js.
+    row = await findCustomerByPhone(supabase, decoded.phone, '*');
   }
   if (!row && String(userId).includes('-')) {
     const { data } = await supabase.from('customers').select('*').eq('id', userId).single();
@@ -2297,9 +2401,13 @@ async function resolveCustomerFromReq(req) {
     let id = decoded.userId || decoded.id;
     let name = decoded.name || 'User';
     if (decoded.phone) {
-      const { data } = await supabase
-        .from('customers').select('id, name').eq('mobile', decoded.phone).limit(1);
-      if (data && data.length) { id = data[0].id; name = data[0].name || name; }
+      // Tolerant lookup — see src/customerLookup.js. Without it a stale JWT's
+      // raw phone claim misses the migrated canonical column, and this silently
+      // falls through to `decoded.userId`, which on older tokens is a legacy
+      // "user_<timestamp>" string rather than a uuid. Every downstream .eq('id', ...)
+      // then matches nothing.
+      const row = await findCustomerByPhone(supabase, decoded.phone, 'id, name');
+      if (row) { id = row.id; name = row.name || name; }
     }
     return { id, name };
   } catch (_) {
