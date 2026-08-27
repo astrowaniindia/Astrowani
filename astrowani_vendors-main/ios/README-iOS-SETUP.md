@@ -63,14 +63,18 @@ The customer app has none of this and needs none: it initiates calls, it never r
 The **same `.p8` key** works for APNs push and VoIP push, and is per Apple *team*, not per
 app — so one key covers both apps. It does require the Apple Developer membership.
 
-### Database
+### Database — APPLIED 2026-08-27
 
-Run `astrowani-backend/sql/astrologer_voip_token.sql`. It adds `astrologers.voip_token`
-(the PushKit token, which is **not** the FCM token and needs its own column).
+`astrowani-backend/sql/astrologer_voip_token.sql` has been run against production.
+`astrologers.voip_token` and `astrologers.voip_platform` both exist (confirmed via
+`information_schema.columns`). The PushKit token is **not** the FCM token, which is why it
+needs its own column.
 
-Nothing breaks if it is not applied: `src/voipPush.js` degrades to a logged no-op, the
-token-registration endpoint answers 503 with a message naming this file, and the existing
-FCM + socket paths keep working exactly as today. Applying it only *adds* the killed-app ring.
+So this is no longer a prerequisite. Kept here because the degradation behaviour is still
+worth knowing when debugging: if the columns are ever missing, `src/voipPush.js` becomes a
+logged no-op and `POST /api/vendor/voip-token` answers 503 with a message naming that file —
+the ring silently stops working while everything else looks healthy. That 503 in the backend
+log is the tell. The file is idempotent, so re-running it is safe.
 
 ### How it fits together
 
