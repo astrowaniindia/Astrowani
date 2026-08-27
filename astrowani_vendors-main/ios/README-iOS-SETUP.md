@@ -223,23 +223,29 @@ navigates, and fonts, icons, images and API calls work.
 
 ## Known-outstanding items
 
-- **App icon says "India".** The source art
-  (`vendor_play_store_launcher_icon.png`) has an orange "India" wordmark under the star — a
-  legacy artifact of the old `AstroIndia_Astrologers` project name. The generated iOS icons
-  **crop it out** (crop stops at the star's lowest pixel, y=361) because the product is now
-  "Astrowani Astrologer" and shipping a stale brand name in the icon is worse than shipping
-  none. If you want it kept, say so and it goes back.
-- **The two apps' icons are now nearly identical** (navy + gold star), since both derive from
-  the same template art. An astrologer with both installed would struggle to tell them apart.
-  Worth a distinct vendor icon at some point.
-- **Icon sharpness.** Source art is only 512×512, so the 1024 marketing icon is upscaled and
-  visibly soft. Fine at real icon sizes; the App Store product page shows it large. Export a
-  true 1024×1024 before public launch.
+- ~~**App icon.**~~ **FIXED 2026-08-27.** The iOS set was generated from the wrong source:
+  root `vendor_play_store_launcher_icon.png`, which is the legacy navy-and-gold *AstroIndia*
+  art with an "India" wordmark cropped off. That is the CUSTOMER app's palette. This app's
+  Android launcher icon moved to the brown Astrowani branding
+  (`#38261D` background, tan star) and iOS never followed, so the same app shipped two
+  different-looking icons per platform and the two apps looked like each other instead of
+  themselves.
+  Regenerated from `src/assets/images/logo1.png` — the same artwork Android ships, at
+  1254×1254. Framing was checked against the Android icon before committing to it (art
+  occupies 88% of the canvas vs Android's 89%; background `#39271D` vs `#37261C`), so iOS and
+  Android now render as the same icon.
+  This also closed the old sharpness complaint: every size including the 1024 marketing icon
+  is now a DOWNSCALE from 1254, not an upscale from 512. All nine files verified square, RGB
+  and alpha-free — an alpha channel in an iOS app icon is an outright App Store rejection.
+  **The root `vendor_play_store_launcher_icon.png` is stale art. Do not regenerate from it.**
 - **CallKit / PushKit IS implemented** (see the section above) but has **never been exercised
   against Apple** — it needs the Apple Developer membership for the `.p8`, and a physical
   device. Nothing in it has been compiled. Treat the whole path as unverified until a real
   two-device test: kill the vendor app, have a customer call, and confirm the phone rings
-  full-screen and answering lands in the consultation.
+  full-screen and answering lands in the consultation. **Update 2026-08-27: it now COMPILES**
+  — EAS build `ebab0359` (ios-simulator) went green on the first attempt, so the native code
+  links. Delivery is still unverified. `simulateIncomingCallKitCall()` covers everything
+  after the push; see the section above.
 - **CallKit's system mute/hold controls are not bridged to WebRTC.** Muting from the iOS call
   UI logs a line and does nothing to the audio track; the in-app controls remain the source of
   truth. Worth closing once the basic path is proven on a device.
