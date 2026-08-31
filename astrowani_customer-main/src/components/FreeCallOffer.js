@@ -252,10 +252,17 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
                 <Text style={styles.doneTime}>{confirmed.label}</Text>
                 <Text style={styles.doneDate}>{prettyDate(confirmed.dateKey)}</Text>
                 <Text style={styles.doneNote}>
-                  {tr('freeCall.callingYou', {
-                    name: confirmed.astrologerName || offer.astrologerName,
-                    phone: phone || '',
-                  })}
+                  {/* Prefer the number snapshotted on the booking — that is the
+                      one the astrologer will dial. Falls back to the profile's,
+                      and to a phone-less sentence if neither is known, so this
+                      can never read "will call you on ." */}
+                  {(() => {
+                    const num = confirmed.customerPhone || phone || '';
+                    const who = confirmed.astrologerName || offer.astrologerName;
+                    return num
+                      ? tr('freeCall.callingYou', { name: who, phone: num })
+                      : tr('freeCall.callingYouNoPhone', { name: who });
+                  })()}
                 </Text>
                 <TouchableOpacity style={[styles.cta, styles.ctaFooter]} activeOpacity={0.85} onPress={onClose}>
                   <Text style={styles.ctaText}>{tr('freeCall.done')}</Text>

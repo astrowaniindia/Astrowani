@@ -369,6 +369,11 @@ const publicBooking = (b) => b && ({
   durationMinutes: b.duration_minutes,
   status: b.status,
   astrologerName: b.astrologer_name,
+  // The number the astrologer will actually dial, as snapshotted at booking
+  // time. Returned so the confirmation quotes THIS rather than whatever the app
+  // happens to hold — if the customer later edits their profile the two diverge,
+  // and the snapshot is the one that gets called.
+  customerPhone: b.customer_phone || '',
   label: `${formatSlotLabel(new Date(b.slot_start))}`,
   dateKey: businessDateKey(new Date(b.slot_start)),
 });

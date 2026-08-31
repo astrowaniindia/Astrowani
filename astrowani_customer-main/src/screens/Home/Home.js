@@ -1695,7 +1695,7 @@ const Home = ({navigation}) => {
       <FreeCallOffer
         visible={freeCallVisible}
         offer={freeCall?.offer}
-        phone={user?.mobile || user?.phoneNumber || ''}
+        phone={user?.phone || ''}
         t={t}
         onClose={() => {
           setFreeCallVisible(false);
