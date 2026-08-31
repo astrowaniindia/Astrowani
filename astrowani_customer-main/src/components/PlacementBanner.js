@@ -3,17 +3,40 @@
 // a fading, tappable carousel. Tapping navigates per the admin's configured action
 // (a screen name, or an external URL) — no-ops if the banner has no action set.
 import React from 'react';
-import { View, Animated, TouchableOpacity, Linking } from 'react-native';
+import { View, Animated, TouchableOpacity, Linking, StyleSheet, Dimensions } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
 import { readCache, writeCache } from '../utils/cacheFetch';
 
+// The shape of each banner slot, matching the exact pixel size the admin's upload
+// tool crops to (astrowani-admin/src/pages/Banners.jsx PLACEMENTS). KEEP THE TWO IN
+// STEP -- they are one contract, and when they disagree the admin is the side telling
+// the truth, because it is what the person uploading was promised.
+//
+// This exists because the container used to be a hardcoded pixel height at full
+// width, which is a different shape from the uploaded image on every screen size.
+// With resizeMode cover the image then scales up until it fills that box and the
+// overflow is silently cut off the sides -- a 1200x300 banner in the 110px-tall
+// home_secondary slot lost about a quarter of its width, so anything near the left
+// or right edge (a ribbon, a logo, a call-to-action) simply vanished. Deriving the
+// height from the ratio instead means the box is always the shape of the image, so
+// nothing is ever cropped, on any device width.
+const PLACEMENT_ASPECT = {
+  home_primary: 1200 / 500,
+  home_secondary: 1200 / 400,
+  chat_top: 1200 / 300,
+  video_top: 1200 / 300,
+  call_top: 1200 / 300,
+};
+
 const PlacementBanner = ({
   placement,
   navigation,
   app = 'customer',
+  // Only used for a placement with no declared aspect ratio -- a new slot added to
+  // the admin should be added to PLACEMENT_ASPECT above rather than sized by hand.
   height = 150,
   borderRadius = 15,
   style,
@@ -106,12 +129,41 @@ const PlacementBanner = ({
 
   const isTappable = active?.actionType && active.actionType !== 'none' && active.actionValue;
 
+  // aspectRatio wins over height when we know the slot's shape: the box then matches
+  // the uploaded image exactly and cover crops nothing.
+  const aspectRatio = PLACEMENT_ASPECT[placement];
+  // Both dimensions are computed here, explicitly. Everything softer than this was
+  // tried on a device and measured, and each failed in its own way:
+  //
+  //   - a fixed pixel height is a different shape from the uploaded image, so cover
+  //     silently sliced the sides off. That was the original bug.
+  //   - `aspectRatio` with no width is ambiguous: Yoga may take the width from the
+  //     parent, or take the height first and derive the width from the ratio. Home's
+  //     two banners resolved DIFFERENTLY from one another -- 381.7dp and 333.7dp
+  //     wide, both with correct ratios but visibly unequal. `alignSelf: 'stretch'`
+  //     did not settle it.
+  //   - `width: '100%'` resolves against the parent and then ADDS the
+  //     marginHorizontal the call sites pass, overflowing the screen.
+  //   - deriving the height from an onLayout-measured width left the image zoomed on
+  //     the first pass, because the box has no height until that measurement lands.
+  //
+  // So: read the horizontal margin out of the caller's own style and subtract it
+  // from the window width. No layout ambiguity, correct on the first frame, and
+  // correct on any screen size.
+  const flatStyle = StyleSheet.flatten(style) || {};
+  const hMargin =
+    flatStyle.marginHorizontal ?? Math.max(flatStyle.marginLeft || 0, flatStyle.marginRight || 0);
+  const boxWidth = Dimensions.get('window').width - 2 * (hMargin || 0);
+  const sizing = aspectRatio
+    ? { width: boxWidth, height: boxWidth / aspectRatio }
+    : { height };
+
   return (
     <TouchableOpacity
       activeOpacity={isTappable ? 0.85 : 1}
       onPress={handlePress}
       disabled={!isTappable}
-      style={[{ height, borderRadius, overflow: 'hidden' }, style]}>
+      style={[sizing, { borderRadius, overflow: 'hidden' }, style]}>
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <FastImage
           source={active.uri ? { uri: active.uri, priority: FastImage.priority.high } : active.source}

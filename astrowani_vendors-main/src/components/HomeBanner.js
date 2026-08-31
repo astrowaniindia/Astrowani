@@ -45,7 +45,7 @@ export default function HomeBanner() {
 
   return (
     <View style={styles.banner}>
-      <Animated.View style={{opacity: fade}}>
+      <Animated.View style={[styles.fade, {opacity: fade}]}>
         <Image source={slides[safeIndex]} style={styles.image} resizeMode="cover" />
       </Animated.View>
     </View>
@@ -54,6 +54,19 @@ export default function HomeBanner() {
 
 const styles = StyleSheet.create({
   banner: {
+    // Shaped to the exact size the admin's upload tool crops a home_primary banner
+    // to (1200x500) -- this component fetches /api/banners/all with no placement,
+    // and that endpoint defaults to home_primary. A fixed pixel height is a
+    // DIFFERENT shape from the uploaded image on every screen size, and with
+    // resizeMode cover the overflow is silently sliced off the sides, so anything
+    // near the left or right edge disappears. Keep this in step with
+    // astrowani-admin/src/pages/Banners.jsx PLACEMENTS.
+    //
+    // The ratio goes HERE, on the container, not on the <Image>: an image sized
+    // `width: '100%'` + aspectRatio resolves its width against a box wider than the
+    // visible card, so it balloons and the card inherits its height -- measured at
+    // 1673x697 against a 1008px-wide card, i.e. worse cropping than the bug.
+    aspectRatio: 1200 / 500,
     borderRadius: moderateScale(16),
     marginBottom: verticalScale(15),
     overflow: 'hidden',
@@ -63,5 +76,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
-  image: {width: '100%', height: verticalScale(160)},
+  fade: {flex: 1},
+  image: {width: '100%', height: '100%'},
 });

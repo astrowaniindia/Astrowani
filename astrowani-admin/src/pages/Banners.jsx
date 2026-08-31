@@ -16,7 +16,7 @@ const LANGUAGE_LABELS = { english: 'English', hindi: 'Hindi', both: 'Both Langua
 // Widths/heights are in px — export at this ratio (or larger, same ratio) for a crisp image.
 const PLACEMENTS = {
   home_primary: { label: 'Home screen — top banner (rotating)', width: 1200, height: 500, note: 'The big banner right under the header, e.g. "100% Cashback".' },
-  home_secondary: { label: 'Home screen — second banner (below the top one)', width: 1200, height: 300, note: 'A smaller banner shown right after the top one, before the astrologer list.' },
+  home_secondary: { label: 'Home screen — second banner (below the top one)', width: 1200, height: 400, note: 'A smaller banner shown right after the top one, before the astrologer list.' },
   chat_top: { label: 'Chat with Astrologers — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Chat tab.' },
   video_top: { label: 'Video with Experts — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Video tab.' },
   call_top: { label: 'Talk to Experts (Audio) — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Call tab.' },
