@@ -49,7 +49,12 @@ if (only && !PLATFORMS.includes(only)) {
 }
 const targets = only ? [only] : PLATFORMS;
 
-const sh = (cmd) => execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim();
+// stderr is swallowed via stdio, NOT a `2>/dev/null` shell redirect: execSync
+// uses cmd.exe on Windows, where that path does not exist — it printed an error
+// and threw, which silently disabled the native-dependency guard below on the
+// one platform this repo is actually developed on.
+const sh = (cmd) =>
+  execSync(cmd, { cwd: ROOT, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 const say = (s = '') => console.log(s);
 
 // ── pre-flight ───────────────────────────────────────────────────────────────
@@ -105,7 +110,10 @@ if (targets.includes('ios') && !fs.existsSync(path.join(ROOT, 'ios', 'Podfile.lo
 // a native module the installed binary does not have fails at runtime, silently,
 // on every phone — the react-native-razorpay 2.3.0 -> 3.0.0 case in CLAUDE.md.
 try {
-  const changed = sh('git diff --name-only HEAD~1..HEAD 2>/dev/null || true');
+  // --relative + `-- .` because git reports paths from the REPO root even when
+  // run in a subdirectory, so in this monorepo the filter below was matching
+  // against 'astrowani_customer-main/ios/...' and never firing.
+  const changed = sh('git diff --name-only --relative HEAD~1..HEAD -- .');
   const nativeTouched = changed
     .split('\n')
     .filter((f) => /^(package\.json|ios\/|android\/)/.test(f) && !/\.md$/.test(f));
