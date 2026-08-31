@@ -61,6 +61,11 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     sessionId = '',
     callerName = 'Customer',
     perMinuteCharge = 0,
+    // Free 12-minute introductory call (see freeCallRoutes.js). The session is
+    // real, but marked is_free server-side and priced at 0 -- nothing about this
+    // screen bills anyone, it only changes what is shown and adds the hard stop.
+    freeCall = false,
+    freeCallSeconds = 0,
   } = route.params || {};
 
   const [isConnected, setIsConnected] = useState(false);
@@ -178,6 +183,18 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
     }
   }, [sessionId, stopCallTimer, stopRipple, cleanupWebRTC, navigation]);
+
+  // The 12 minutes is the entire promise of the offer, so it ends itself rather
+  // than relying on either person to watch a clock. The backend sweeps overdue free
+  // sessions too (sessionManager.endOverdueFreeCalls) -- this is the clean path, that
+  // is the backstop for a killed app.
+  useEffect(() => {
+    if (!freeCall || !freeCallSeconds || !isConnected) return;
+    if (callDuration < freeCallSeconds) return;
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+    doEndCall();
+  }, [freeCall, freeCallSeconds, isConnected, callDuration, doEndCall]);
 
   const onPressDisconnect = useCallback(() => {
     if (isEndingRef.current) return;
@@ -404,6 +421,9 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     [ring1Anim, ring2Anim],
   );
 
+  const freeRemaining = freeCall && freeCallSeconds
+    ? Math.max(0, freeCallSeconds - callDuration)
+    : 0;
   const statusLabel = isConnected ? formatTime(callDuration) : t('call.connecting');
   const avatarInitial = callerName.charAt(0).toUpperCase();
 
@@ -414,8 +434,10 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
 
       <View style={styles.header}>
-        <Text style={styles.headerLabel}>{t('call.audioCall')}</Text>
-        {perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>}
+        <Text style={styles.headerLabel}>{freeCall ? 'Free intro call' : t('call.audioCall')}</Text>
+        {freeCall
+          ? <Text style={styles.rateLabel}>Free</Text>
+          : perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>}
       </View>
 
       <View style={styles.centerContent}>
@@ -439,7 +461,14 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
           <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
 
-        {isConnected && perMinuteCharge > 0 && (
+        {isConnected && freeCall && (
+          <View style={styles.billingBadge}>
+            <Ionicons name="timer-outline" size={13} color={COLORS.AstroGold} />
+            <Text style={styles.billingText}>{formatTime(freeRemaining)} left of the free call</Text>
+          </View>
+        )}
+
+        {isConnected && !freeCall && perMinuteCharge > 0 && (
           <View style={styles.billingBadge}>
             <Ionicons name="timer-outline" size={13} color={COLORS.AstroGold} />
             <Text style={styles.billingText}>₹{perMinuteCharge}{t('common.perMin')} • {t('call.billingActive')}</Text>

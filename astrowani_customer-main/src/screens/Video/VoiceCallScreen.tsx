@@ -61,6 +61,11 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     recieverName = 'Astrologer',
     recieverImage = '',
     recieverId = '',
+    // Free 12-minute introductory call, answered from FreeCallIncoming. The session
+    // is created is_free with per_minute_charge 0 server-side, so this flag only
+    // changes what is shown and adds the hard stop -- it does not gate any billing.
+    freeCall = false,
+    freeCallSeconds = 0,
   } = route.params || {};
 
   const sessionIdRef = useRef(initialSessionId);
@@ -461,6 +466,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     [ring1Anim, ring2Anim],
   );
 
+  const freeRemaining = freeCall && freeCallSeconds
+    ? Math.max(0, freeCallSeconds - callDuration)
+    : 0;
+
   const statusLabel =
     callState === 'connecting' ? t('call.connecting') :
     callState === 'ringing' ? t('call.ringing', {seconds: ringCountdown}) :
@@ -468,6 +477,17 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
   const isActive = callState === 'in_call';
   const avatarInitial = recieverName.charAt(0).toUpperCase();
+
+  // The free call ends itself at its allotted minutes. Both call screens do this
+  // independently, and sessionManager.endOverdueFreeCalls sweeps anything that
+  // survives both -- a free call must never be able to run on indefinitely.
+  useEffect(() => {
+    if (!freeCall || !freeCallSeconds || !isActive) return;
+    if (callDuration < freeCallSeconds) return;
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+    doEndCall();
+  }, [freeCall, freeCallSeconds, isActive, callDuration, doEndCall]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -480,7 +500,9 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
 
       <View style={styles.header}>
-        <Text style={styles.headerLabel}>{t('call.audioCall')}</Text>
+        <Text style={styles.headerLabel}>
+          {freeCall ? 'Free consultation' : t('call.audioCall')}
+        </Text>
       </View>
 
       <View style={styles.centerContent}>
@@ -511,6 +533,15 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         {/* Only once connected — showing it while still ringing would tell the customer
             to start talking before anyone is there. Presentational only: billing is
             unchanged and runs from the moment the call connects, as before. */}
+        {isActive && freeCall && (
+          <View style={styles.freeBadge}>
+            <VectorIcon name="timer" type="MaterialIcons" size={13} color="#FFD700" />
+            <Text style={styles.freeBadgeText}>
+              {formatTime(freeRemaining)} left · this call is free
+            </Text>
+          </View>
+        )}
+
         <SessionIntroBanner visible={isActive} style={{marginHorizontal: 0, marginTop: 14}} />
 
       </View>
@@ -566,6 +597,19 @@ const styles = StyleSheet.create({
   avatarFallback: {flex: 1, backgroundColor: '#592a19', alignItems: 'center', justifyContent: 'center'},
   avatarInitial: {fontSize: 58, fontWeight: '700', color: color.AstroSoftOrange},
   callerName: {fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 14, letterSpacing: 0.3},
+  freeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,215,0,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.35)',
+  },
+  freeBadgeText: {color: '#FFD700', fontSize: 12, fontWeight: '600'},
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',

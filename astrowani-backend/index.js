@@ -244,6 +244,12 @@ const io = new Server(server, {
 app.locals.io = io;
 
 const sessionManager = require('./src/sessionManager'); // Import the SessionManager
+// The free-call routes end a session when a customer declines an incoming free
+// call, and terminateSession is the only thing that also notifies both parties
+// and clears the astrologer's busy state. Same app.locals convention as io above.
+// Must sit AFTER the require: this is a const, so assigning it earlier is a TDZ
+// ReferenceError that would take the whole server down at boot.
+app.locals.sessionManager = sessionManager;
 
 // SECURITY (2026-08-08 — see MD files/security-audit-2026-08-08.md): join_room(userId) used
 // to trust the client-supplied id with zero verification — anyone who obtained/guessed a

@@ -39,6 +39,7 @@ import PaymentScreen from '../screens/Remedies/PaymentScreen';
 import OrderSuccess from '../screens/Remedies/OrderSuccess';
 import { ReviewPromptHost } from '../components/ReviewPrompt';
 import { ReferralPromptHost } from '../components/ReferralPromptHost';
+import { FreeCallIncomingHost } from '../components/FreeCallIncoming';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
@@ -640,6 +641,10 @@ export default function Navigation({ initialRoute }) {
     <StatusPopupHost />
     <ReviewPromptHost />
     <ReferralPromptHost />
+    {/* The astrologer rings the customer for the free intro call, which is the one
+        call in this app that travels in that direction — so the "someone is calling
+        you" screen has to live at the root, not on any one screen. */}
+    <FreeCallIncomingHost />
     </>
   );
 }

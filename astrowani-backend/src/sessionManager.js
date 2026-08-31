@@ -17,6 +17,15 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// Set false the first time the database answers "no such column" for is_free, so a
+// backend running against a pre-migration database stops paying for the failed query
+// on every 30s tick. NOTE it latches per PROCESS: restart the backend after applying
+// sql/free_call_in_app.sql or the filter stays off.
+let freeColumnAvailable = true;
+const isMissingFreeColumn = (error) =>
+  !!error && (error.code === '42703' || error.code === 'PGRST204'
+    || /is_free/.test(error.message || ''));
+
 class SessionManager {
   // Longest a billed consultation may run before it is treated as abandoned.
   // 2h, set by the product owner 2026-08-27 — deliberately tighter than the 6h
@@ -54,6 +63,7 @@ class SessionManager {
       this.checkActiveSessions();
       this.markStaleRequestsMissed();
       this.endStaleBilledSessions();
+      this.endOverdueFreeCalls();
     }, this.pollingInterval);
     // Run earnings reset check hourly, and immediately on startup
     this.checkEarningsResets();
@@ -484,11 +494,41 @@ class SessionManager {
       // Narrowed to the columns processBilling/this loop actually reads — this
       // runs every 30s for as long as any session is active, so full-row
       // fetch cost scales with active-session count on every tick.
-      const { data: sessions, error } = await supabase
-        .from('chat_sessions')
-        .select('id')
-        .eq('is_active', true)
-        .lte('next_billing_at', now.toISOString());
+      // is_free excludes the free 12-minute introductory calls (see
+      // sql/free_call_in_app.sql). Those run on a real chat_sessions row so the
+      // WebRTC screens' membership checks work, but they must never be billed —
+      // this filter is the single place that guarantees it.
+      let sessions;
+      let error;
+      if (freeColumnAvailable) {
+        ({ data: sessions, error } = await supabase
+          .from('chat_sessions')
+          .select('id')
+          .eq('is_active', true)
+          .eq('is_free', false)
+          .lte('next_billing_at', now.toISOString()));
+        // 42703 / PGRST204: the migration has not been applied on this database yet.
+        // Latch it off and carry on unfiltered rather than letting the whole billing
+        // loop die — a backend that bills nobody is far worse than one that briefly
+        // bills a free session at its per_minute_charge of 0. Deploy order therefore
+        // does not matter, same posture as src/wallet.js.
+        if (error && isMissingFreeColumn(error)) {
+          freeColumnAvailable = false;
+          console.warn(
+            '[SessionManager] chat_sessions.is_free is missing — run sql/free_call_in_app.sql. ' +
+            'Free calls are charged at their per_minute_charge (0) until then.',
+          );
+          error = null;
+          sessions = null;
+        }
+      }
+      if (!freeColumnAvailable) {
+        ({ data: sessions, error } = await supabase
+          .from('chat_sessions')
+          .select('id')
+          .eq('is_active', true)
+          .lte('next_billing_at', now.toISOString()));
+      }
 
       if (error) throw error;
       if (!sessions || sessions.length === 0) return;
@@ -609,7 +649,14 @@ class SessionManager {
       this.io.to(sessionId).emit('session_ended', { sessionId, reason });
     }
 
-    if (session?.caller_id) {
+    // A free introductory call is not proof of paid engagement, so it must not
+    // trigger the referral reward — and it closes out its booking rather than
+    // being just another ended session. Identified by the booking that points at
+    // this session, so it does not depend on chat_sessions.is_free having been
+    // migrated yet.
+    const freeBooking = await this.closeFreeCallBooking(sessionId);
+
+    if (session?.caller_id && !freeBooking) {
       await this.maybeRewardReferral(session.caller_id);
     }
 
@@ -619,6 +666,78 @@ class SessionManager {
       if (!stillBusy.busy) {
         await notifyWaitlistIfFree(supabase, sendPush, session.vendor_id);
       }
+    }
+  }
+
+  /**
+   * If this session was a free introductory call, stamp its booking with what
+   * happened and return it. Returns null for an ordinary paid session.
+   *
+   * Never throws: a booking that fails to update must not stop a call from ending,
+   * and must not leave is_active true. Worst case the admin marks it by hand.
+   */
+  async closeFreeCallBooking(sessionId) {
+    try {
+      const { data: booking, error } = await supabase
+        .from('free_call_bookings')
+        .select('id, status, call_started_at')
+        .eq('call_session_id', sessionId)
+        .maybeSingle();
+      // Includes the not-yet-migrated case (no call_session_id column) — treated
+      // as "not a free call", which is correct for every pre-existing session.
+      if (error || !booking) return null;
+
+      const endedAt = new Date();
+      const startedAt = booking.call_started_at ? new Date(booking.call_started_at) : null;
+      const seconds = startedAt ? Math.max(0, Math.round((endedAt - startedAt) / 1000)) : null;
+
+      const patch = {
+        call_ended_at: endedAt.toISOString(),
+        call_duration_seconds: seconds,
+      };
+      // Only a call that actually carried some conversation counts as done. A ring
+      // nobody answered stays 'booked' so it still shows in the astrologer's list
+      // to try again, rather than silently disappearing as completed.
+      if (booking.status === 'booked' && seconds !== null && seconds >= 30) {
+        patch.status = 'completed';
+        patch.completed_at = endedAt.toISOString();
+      }
+      await supabase.from('free_call_bookings').update(patch).eq('id', booking.id);
+      return booking;
+    } catch (err) {
+      console.error('[SessionManager] closeFreeCallBooking failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Ends free introductory calls that have overrun their allotted minutes.
+   *
+   * The 12 minutes is the whole promise of the offer, so it is enforced here and
+   * not only in the two call screens — a killed app, a lost socket or a phone that
+   * slept must not leave the astrologer marked busy indefinitely (the zombie-session
+   * shape called out in CLAUDE.md's data-layer audit). Two minutes of slack is
+   * allowed so the screens' own countdown normally wins and ends it cleanly.
+   */
+  async endOverdueFreeCalls() {
+    try {
+      const { data: rows, error } = await supabase
+        .from('free_call_bookings')
+        .select('id, call_session_id, call_started_at, duration_minutes')
+        .not('call_session_id', 'is', null)
+        .is('call_ended_at', null);
+      if (error || !rows || !rows.length) return;
+
+      const now = Date.now();
+      for (const row of rows) {
+        if (!row.call_started_at) continue;
+        const allowedMs = ((row.duration_minutes || 12) * 60 + 120) * 1000;
+        if (now - new Date(row.call_started_at).getTime() < allowedMs) continue;
+        console.log(`[SessionManager] Free call ${row.call_session_id} overran — ending it.`);
+        await this.terminateSession(row.call_session_id, 'Free call time is up');
+      }
+    } catch (err) {
+      console.error('[SessionManager] endOverdueFreeCalls failed:', err.message);
     }
   }
 

@@ -1,9 +1,11 @@
 // "My Free Calls" — the free 12-minute introductory calls an admin has assigned
 // to THIS astrologer.
 //
-// The astrologer rings the customer themselves; there is no session to join, no
-// wallet and no billing. So the primary action on every row is literally a phone
-// dialler, and the secondary one is recording what happened.
+// The astrologer rings the customer INSIDE THE APP -- the same WebRTC audio call
+// the paid consultations use, not the phone dialler. It runs on a real
+// chat_sessions row (which is what authorises the socket session room), but that
+// row is created is_free with per_minute_charge 0 and the billing loop skips it,
+// so nobody is charged and nobody is paid. See freeCallRoutes.js's ring endpoint.
 //
 // The list is scoped server-side by the astrologer id inside the vendor JWT
 // (GET /api/vendor/free-call-bookings) — never by anything this screen sends —
@@ -20,11 +22,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
-  Linking,
   Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
@@ -42,6 +43,7 @@ const dayFmt = new Intl.DateTimeFormat('en-IN', {
 const dayKeyFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
 
 const FreeCalls = () => {
+  const navigation = useNavigation();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,17 +66,41 @@ const FreeCalls = () => {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const callNow = (item) => {
-    if (!item.customerPhone) {
-      Alert.alert('No phone number', 'This booking has no phone number on it. Ask the admin.');
-      return;
+  // Start the call. The server mints the session and rings the customer's app; we
+  // then walk onto the normal audio call screen and wait for them to accept, exactly
+  // as an incoming paid call does -- so there is one call screen in this app, not two.
+  const callNow = async (item) => {
+    setBusyId(item.id);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.post(
+        `/api/vendor/free-call-bookings/${item.id}/ring`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.data?.success || !res.data.sessionId) {
+        Alert.alert('Could not start the call', res.data?.message || 'Please try again.');
+        return;
+      }
+      const minutes = res.data.durationMinutes || item.durationMinutes || 12;
+      navigation.navigate('AudioCall', {
+        sessionId: res.data.sessionId,
+        callerName: res.data.customerName || item.customerName || 'Customer',
+        perMinuteCharge: 0,
+        freeCall: true,
+        freeCallSeconds: minutes * 60,
+      });
+    } catch (e) {
+      // The server refuses for reasons the astrologer can act on (the customer is
+      // already on another call, they themselves are mid-session), so show what it
+      // said rather than a generic failure.
+      Alert.alert(
+        'Could not start the call',
+        e.response?.data?.message || e.message || 'Please try again.',
+      );
+    } finally {
+      setBusyId(null);
     }
-    // Strip anything the dialler can't take. Numbers are stored in a few shapes
-    // in this database (with and without +91), so + is preserved when present.
-    const clean = String(item.customerPhone).replace(/[^\d+]/g, '');
-    Linking.openURL(`tel:${clean}`).catch(() => {
-      Alert.alert('Could not open the dialler', clean);
-    });
   };
 
   const mark = (item, status) => {
@@ -150,14 +176,22 @@ const FreeCalls = () => {
         </View>
 
         <Text style={styles.name}>{item.customerName || 'Customer'}</Text>
-        <Text style={styles.phone}>{item.customerPhone || 'No number on file'}</Text>
+        <Text style={styles.phone}>
+          {item.customerPhone ? `${item.customerPhone} · rings in their app` : 'Rings in their app'}
+        </Text>
         {!!item.adminNote && <Text style={styles.note}>Note: {item.adminNote}</Text>}
 
         {item.status === 'booked' && (
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => callNow(item)}>
+            <TouchableOpacity
+              style={[styles.callBtn, busyId === item.id && styles.callBtnBusy]}
+              activeOpacity={0.85}
+              disabled={busyId === item.id}
+              onPress={() => callNow(item)}>
               <Icon name="call" size={moderateScale(17)} color="#fff" />
-              <Text style={styles.callTxt}>Call now</Text>
+              <Text style={styles.callTxt}>
+                {busyId === item.id ? 'Calling…' : 'Call now'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.secBtn}
@@ -304,6 +338,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(9),
   },
+  callBtnBusy: { opacity: 0.6 },
   callTxt: { color: '#fff', fontWeight: '700', fontSize: moderateScale(13) },
   secBtn: {
     borderWidth: 1,

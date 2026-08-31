@@ -13,10 +13,13 @@
 // customer directly on the phone number snapshotted at booking time. There is no
 // session, no wallet, no billing anywhere in this file.
 
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone } = require('./customerLookup');
 const { requireAdmin } = require('./adminRoutes');
+const { sendPush } = require('./push');
+const { checkAstrologerBusy, checkCustomerBusy } = require('./busyStatus');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -744,7 +747,295 @@ module.exports = function registerFreeCallRoutes(app) {
     });
   }));
 
-  /* ── Vendor: mark one of my calls done or missed ──────────────────────────
+  /* -- Vendor: ring the customer, in the app --------------------------------
+   * This is the astrologer STARTING the free call. It is the only place in this
+   * codebase where a call is initiated by the astrologer rather than the customer,
+   * which is why it cannot reuse /api/call/initiate.
+   *
+   * It creates a real chat_sessions row because that row is what authorises
+   * everything downstream: socket join_session, signal_connection and
+   * /api/call/end all verify membership against caller_id / vendor_id (closed in
+   * the 2026-08-08 security audit -- do not loosen those checks to avoid this row).
+   *
+   * The row is marked is_free and priced at 0, so the billing loop skips it and
+   * could not charge anything even if it did not. NOTHING here moves money.
+   */
+  app.post('/api/vendor/free-call-bookings/:id/ring', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    // The astrologer_id filter IS the authorisation check, same as the PATCH above.
+    const { data: booking, error: readErr } = await db
+      .from('free_call_bookings')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('astrologer_id', astrologerId)
+      .maybeSingle();
+    if (readErr) {
+      if (isMissingTable(readErr)) return res.status(503).json({ success: false, message: 'Bookings table not created yet.' });
+      throw new Error(readErr.message);
+    }
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    // select('*') returns whatever columns exist, so a missing key here IS the
+    // "migration not applied" signal -- no extra probe query needed.
+    if (!('call_session_id' in booking)) {
+      console.warn('[FreeCall] free_call_bookings is missing the call_* columns -- run sql/free_call_in_app.sql');
+      return res.status(503).json({
+        success: false,
+        code: 'MIGRATION_REQUIRED',
+        message: 'In-app calling is not set up on the server yet. Ask the admin to run the free-call update.',
+      });
+    }
+
+    if (booking.status === 'cancelled') {
+      return res.status(409).json({ success: false, code: 'CANCELLED', message: 'This booking was cancelled.' });
+    }
+
+    // Rejoining a call already in progress (the astrologer backgrounded the app,
+    // or tapped twice) must NOT mint a second session -- that would leave the first
+    // one active forever with the customer connected to a room nobody is in.
+    if (booking.call_session_id && !booking.call_ended_at) {
+      const { data: live } = await db
+        .from('chat_sessions')
+        .select('id, is_active')
+        .eq('id', booking.call_session_id)
+        .maybeSingle();
+      if (live && live.is_active) {
+        return res.status(200).json({
+          success: true,
+          rejoined: true,
+          sessionId: live.id,
+          customerName: booking.customer_name || 'Customer',
+          durationMinutes: booking.duration_minutes || 12,
+        });
+      }
+    }
+
+    // Don't ring a customer who is already mid-consultation with someone else --
+    // they would get a second call screen over a live paid one.
+    const customerBusy = await checkCustomerBusy(db, booking.customer_id);
+    if (customerBusy.busy) {
+      return res.status(409).json({
+        success: false, code: 'CUSTOMER_BUSY',
+        message: 'This customer is already on a call or chat. Try again in a few minutes.',
+      });
+    }
+    // And don't let the astrologer start a free call on top of a paid one of their own.
+    const selfBusy = await checkAstrologerBusy(db, astrologerId);
+    if (selfBusy.busy) {
+      return res.status(409).json({
+        success: false, code: 'SELF_BUSY',
+        message: 'Finish your current session before starting this free call.',
+      });
+    }
+
+    const sessionId = crypto.randomUUID();
+    const startedAt = new Date();
+    const durationMinutes = booking.duration_minutes || 12;
+
+    // is_active true from the moment it rings, so the astrologer counts as busy for
+    // the whole attempt and a paying customer cannot ring them mid-free-call.
+    // endOverdueFreeCalls() in sessionManager is the backstop that closes it if both
+    // apps die -- this row must never be able to strand somebody as permanently busy.
+    const sessionRow = {
+      id: sessionId,
+      caller_id: booking.customer_id,
+      vendor_id: astrologerId,
+      is_active: true,
+      per_minute_charge: 0,
+      started_at: startedAt.toISOString(),
+      // Far enough out that it is never "due" even on a database where the is_free
+      // filter has not been migrated yet; the charge is 0 regardless.
+      next_billing_at: new Date(startedAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      is_free: true,
+    };
+    let { error: sessErr } = await db.from('chat_sessions').insert([sessionRow]);
+    if (sessErr && /is_free/.test(sessErr.message || '')) {
+      // Pre-migration: retry without the flag rather than refusing to place the
+      // call. per_minute_charge stays 0 and next_billing_at is a day out, so the
+      // degraded path still cannot charge the customer.
+      delete sessionRow.is_free;
+      console.warn('[FreeCall] chat_sessions.is_free missing -- run sql/free_call_in_app.sql');
+      ({ error: sessErr } = await db.from('chat_sessions').insert([sessionRow]));
+    }
+    if (sessErr) throw new Error(sessErr.message);
+
+    const { error: bookErr } = await db
+      .from('free_call_bookings')
+      .update({
+        call_session_id: sessionId,
+        call_started_at: startedAt.toISOString(),
+        call_ended_at: null,
+        call_duration_seconds: null,
+        call_attempts: (booking.call_attempts || 0) + 1,
+      })
+      .eq('id', booking.id);
+    if (bookErr) {
+      // The booking could not be linked to the session, so nothing would ever close
+      // that session out. Roll it back rather than leaving the astrologer busy.
+      await db.from('chat_sessions').delete().eq('id', sessionId);
+      throw new Error(bookErr.message);
+    }
+
+    const { data: astro } = await db
+      .from('astrologers')
+      .select('id, name, first_name, last_name, profile_pic_url, profile_image')
+      .eq('id', astrologerId)
+      .maybeSingle();
+    const astroName = booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer';
+    const astroImage = astro?.profile_image || astro?.profile_pic_url || '';
+
+    const payload = {
+      type: 'free_call_incoming',
+      bookingId: booking.id,
+      sessionId,
+      astrologerId,
+      astrologerName: astroName,
+      astrologerImage: astroImage,
+      durationMinutes,
+      // title/body are REQUIRED for the customer app to render anything: its
+      // showLocalNotification() returns early without a body, so a data-only push
+      // with neither would reach a backgrounded phone and display nothing at all.
+      title: `${astroName} is calling you`,
+      body: `Your free ${durationMinutes}-minute consultation is starting. Tap to answer.`,
+    };
+
+    // Socket reaches a customer with the app open; the data-only push is what reaches
+    // a backgrounded one. Both, always -- this is a scheduled call the customer is
+    // expecting, so a missed ring is the whole feature failing.
+    const io = app.locals.io;
+    if (io) io.to(String(booking.customer_id)).emit('free_call_incoming', payload);
+
+    db.from('customers').select('fcm_token').eq('id', booking.customer_id).maybeSingle()
+      .then(({ data: cust }) => {
+        if (cust?.fcm_token) {
+          sendPush(cust.fcm_token, {
+            data: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])),
+          }).catch((e) => console.error('[FreeCall] push error:', e.message));
+        }
+      })
+      .catch(() => {});
+
+    console.log(`[FreeCall] Astrologer ${astrologerId} ringing customer ${booking.customer_id} (session ${sessionId})`);
+    return res.status(200).json({
+      success: true,
+      sessionId,
+      customerName: booking.customer_name || 'Customer',
+      durationMinutes,
+    });
+  }));
+
+  /* -- Customer: is an astrologer ringing me right now? ---------------------
+   * The socket event is what normally raises the incoming-call screen, but it only
+   * reaches an app that is already running. A customer whose app was killed and is
+   * opened from the push notification has missed it entirely. This lets the app ask
+   * on launch, so the ring survives a cold start.
+   *
+   * "Ringing" = a live free session for this customer whose booking has not been
+   * closed out and which started within the last two minutes -- past that, nobody
+   * is still holding a phone to their ear waiting.
+   */
+  app.get('/api/free-call/incoming', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const since = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: booking, error } = await db
+      .from('free_call_bookings')
+      .select('id, call_session_id, astrologer_id, astrologer_name, duration_minutes, call_started_at')
+      .eq('customer_id', customer.id)
+      .not('call_session_id', 'is', null)
+      .is('call_ended_at', null)
+      .gte('call_started_at', since)
+      .order('call_started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      // Not migrated / no such booking: nobody is ringing. Never an error to the
+      // app -- this runs on every launch and must not make a launch look broken.
+      return res.status(200).json({ success: true, incoming: null });
+    }
+    if (!booking) return res.status(200).json({ success: true, incoming: null });
+
+    // The booking row alone is not proof the call is still up: the astrologer may
+    // have hung up in a way that ended the session before the booking was stamped.
+    const { data: sess } = await db
+      .from('chat_sessions')
+      .select('id, is_active')
+      .eq('id', booking.call_session_id)
+      .maybeSingle();
+    if (!sess || !sess.is_active) return res.status(200).json({ success: true, incoming: null });
+
+    const { data: astro } = await db
+      .from('astrologers')
+      .select('id, name, first_name, last_name, profile_pic_url, profile_image')
+      .eq('id', booking.astrologer_id)
+      .maybeSingle();
+
+    return res.status(200).json({
+      success: true,
+      incoming: {
+        bookingId: booking.id,
+        sessionId: booking.call_session_id,
+        astrologerId: booking.astrologer_id,
+        astrologerName: booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer',
+        astrologerImage: astro?.profile_image || astro?.profile_pic_url || '',
+        durationMinutes: booking.duration_minutes || 12,
+      },
+    });
+  }));
+
+  /* -- Customer: I can't take this call right now ---------------------------
+   * Declining ends the session immediately so the astrologer's screen drops out of
+   * ringing instead of sitting there for the full timeout, and so neither party is
+   * left marked busy. The booking stays 'booked' -- a declined ring is not a
+   * delivered call, and the astrologer can try again.
+   */
+  app.post('/api/free-call/:bookingId/decline', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { data: booking } = await db
+      .from('free_call_bookings')
+      .select('id, call_session_id, astrologer_id')
+      .eq('id', req.params.bookingId)
+      .eq('customer_id', customer.id)
+      .maybeSingle();
+    if (!booking || !booking.call_session_id) {
+      return res.status(404).json({ success: false, message: 'No call to decline' });
+    }
+
+    const sessionManager = app.locals.sessionManager;
+    if (sessionManager) {
+      // The normal path: this also notifies both parties and clears the astrologer's
+      // busy state, and stamps the booking via closeFreeCallBooking().
+      await sessionManager.terminateSession(booking.call_session_id, 'Customer declined the free call');
+    } else {
+      // Fallback for a process where sessionManager was never attached. Close the
+      // booking out here too -- leaving call_ended_at null would make this look like
+      // a call still in progress to endOverdueFreeCalls and to the incoming-call check.
+      const endedAt = new Date().toISOString();
+      await db.from('chat_sessions')
+        .update({ is_active: false, ended_at: endedAt })
+        .eq('id', booking.call_session_id);
+      await db.from('free_call_bookings')
+        .update({ call_ended_at: endedAt })
+        .eq('id', booking.id);
+    }
+
+    const io = app.locals.io;
+    if (io) {
+      io.to(String(booking.astrologer_id)).emit('free_call_declined', {
+        bookingId: booking.id,
+        sessionId: booking.call_session_id,
+      });
+    }
+    return res.status(200).json({ success: true });
+  }));
+
+  /* -- Vendor: mark one of my calls done or missed --------------------------
    * Deliberately narrower than the admin PATCH: an astrologer can record what
    * happened, but cannot reschedule or cancel. Moving a customer's appointment
    * is a conversation the admin has, not a button in the vendor app.
