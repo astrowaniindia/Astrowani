@@ -185,6 +185,101 @@ module.exports = function registerAdminRoutes(app) {
     afterWrite: (row) => queueCategoryTranslation(db, row),
   });
   // Remedy shop items (type = puja | gemstone | specific_puja). Admin UI filters by tab.
+  /* -- Per-weight gemstone pricing -----------------------------------------
+   * A gemstone does not have one price: a 5 ratti Neelam and an 8 ratti Neelam
+   * are the same product at very different prices, and the WhatsApp assistant
+   * cannot quote honestly without them. Items with no variants keep behaving
+   * exactly as before (single price on the parent row), which is what every
+   * puja and vastu item wants.
+   *
+   * Not the generic crud() factory: these are always scoped to one item, and
+   * listing every variant in the shop is never a thing anyone wants to do.
+   */
+  app.get('/api/admin/remedies/:itemId/variants', requireAdmin, async (req, res) => {
+    const { data, error } = await db
+      .from('remedy_item_variants')
+      .select('*')
+      .eq('item_id', req.params.itemId)
+      .order('sort_order', { ascending: true });
+    if (error) {
+      // Migration not applied yet is a "run the SQL", not a server fault - the
+      // admin page shows a banner rather than an error.
+      return res.status(200).json({ success: true, variants: [], tableMissing: true });
+    }
+    return res.status(200).json({ success: true, variants: data || [] });
+  });
+
+  const VARIANT_FIELDS = ['label', 'ratti', 'price', 'mrp', 'stock', 'is_active', 'sort_order'];
+
+  // Blank is not zero for mrp/stock/ratti: blank means "not set" (no struck-through
+  // price, unlimited stock), zero means zero. Same rule as the item form.
+  const numOrNull = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  app.post('/api/admin/remedies/:itemId/variants', requireAdmin, async (req, res) => {
+    const body = req.body || {};
+    if (!String(body.label || '').trim()) {
+      return res.status(400).json({ success: false, message: 'A label is required, e.g. "5 ratti".' });
+    }
+    if (numOrNull(body.price) === null) {
+      return res.status(400).json({ success: false, message: 'A price is required.' });
+    }
+    const row = {
+      item_id: req.params.itemId,
+      label: String(body.label).trim(),
+      ratti: numOrNull(body.ratti),
+      price: numOrNull(body.price),
+      mrp: numOrNull(body.mrp),
+      stock: numOrNull(body.stock),
+      is_active: body.is_active !== false,
+      sort_order: numOrNull(body.sort_order) || 0,
+    };
+    const { data, error } = await db
+      .from('remedy_item_variants').insert([row]).select('*').single();
+    if (error) {
+      // 23505 = the (item_id, lower(label)) unique index. Two rows for "5 ratti"
+      // would let the bot quote two different prices for the same thing.
+      if (error.code === '23505') {
+        return res.status(409).json({ success: false, message: `This item already has a "${row.label}".` });
+      }
+      return res.status(500).json({ success: false, message: error.message });
+    }
+    return res.status(201).json({ success: true, variant: data });
+  });
+
+  app.patch('/api/admin/remedy-variants/:id', requireAdmin, async (req, res) => {
+    const patch = {};
+    VARIANT_FIELDS.forEach((f) => {
+      if (!(f in (req.body || {}))) return;
+      if (f === 'label') patch.label = String(req.body.label).trim();
+      else if (f === 'is_active') patch.is_active = req.body.is_active !== false;
+      else patch[f] = numOrNull(req.body[f]);
+    });
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ success: false, message: 'Nothing to update' });
+    }
+    patch.updated_at = new Date().toISOString();
+    const { data, error } = await db
+      .from('remedy_item_variants').update(patch).eq('id', req.params.id).select('*').maybeSingle();
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(409).json({ success: false, message: 'That weight already exists on this item.' });
+      }
+      return res.status(500).json({ success: false, message: error.message });
+    }
+    if (!data) return res.status(404).json({ success: false, message: 'Not found' });
+    return res.status(200).json({ success: true, variant: data });
+  });
+
+  app.delete('/api/admin/remedy-variants/:id', requireAdmin, async (req, res) => {
+    const { error } = await db.from('remedy_item_variants').delete().eq('id', req.params.id);
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    return res.status(200).json({ success: true });
+  });
+
   crud('remedies', 'remedy_items', {
     orderBy: 'sort_order', ascending: true,
     allowed: [

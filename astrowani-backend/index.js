@@ -2274,6 +2274,32 @@ app.get('/api/remedies', async (req, res) => {
         ({ data, error } = await retry);
       }
       if (error) throw error;
+
+      // Per-weight pricing for gemstones (sql/whatsapp_shop_schema.sql). One query
+      // for the whole page rather than one per item. An item with no variants is
+      // priced by its own `price`, which is every puja and vastu row and every
+      // gemstone until an admin fills the weights in - so a database without the
+      // table behaves exactly as it does today.
+      const variantsByItem = {};
+      try {
+        const ids = (data || []).map((r) => r.id);
+        if (ids.length) {
+          const { data: vs, error: vErr } = await supabase
+            .from('remedy_item_variants')
+            .select('id, item_id, label, ratti, price, mrp, stock, sort_order')
+            .in('item_id', ids)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true });
+          if (!vErr) {
+            (vs || []).forEach((v) => {
+              (variantsByItem[v.item_id] = variantsByItem[v.item_id] || []).push(v);
+            });
+          }
+        }
+      } catch (_) {
+        // Table not created yet. Every item falls back to its single price.
+      }
+
       return {
         data: (data || []).map((r) => ({
           _id: r.id,
@@ -2288,6 +2314,20 @@ app.get('/api/remedies', async (req, res) => {
           // and the product card simply omits whatever is missing.
           mrp: r.mrp,
           unitLabel: r.unit_label,
+          // Available weights, cheapest first as the admin ordered them. Empty for
+          // anything priced as a single item. `priceFrom` is what a "from Rs. X"
+          // label should show - never quote it as THE price when weights exist.
+          variants: (variantsByItem[r.id] || []).map((v) => ({
+            id: v.id,
+            label: v.label,
+            ratti: v.ratti === null ? null : Number(v.ratti),
+            price: Number(v.price),
+            mrp: v.mrp === null ? null : Number(v.mrp),
+            inStock: v.stock === null || v.stock > 0,
+          })),
+          priceFrom: (variantsByItem[r.id] || []).length
+            ? Math.min(...variantsByItem[r.id].map((v) => Number(v.price)))
+            : r.price,
           // The merchandising group (Crystals, Feng Shui, Pyramids...). Null on every row
           // that predates sql/vastu_subcategory.sql, and on types that do not use groups at
           // all, so the storefront treats it as optional and falls back to inference.

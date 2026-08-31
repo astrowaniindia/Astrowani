@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
+import VariantEditor from '../components/VariantEditor';
 
 // The two shops and what each one sells. They are separate catalogues over one table -
 // see remedy_items.channel and sql/remedy_channel.sql.
@@ -526,6 +527,10 @@ export default function Remedies({ channel = 'app', tabs = APP_TABS, heading = '
             <div className="field"><label>Unit label — optional</label>
               <input type="text" value={editing.unit_label ?? ''} onChange={(e) => set('unit_label', e.target.value)}
                 placeholder="e.g. 5.25 ratti, 1 pc, 250 g" /></div>
+
+            {/* Per-weight pricing. Only meaningful once the item exists, so it is
+                keyed off editing.id - a brand new item is saved first. */}
+            <VariantEditor itemId={editing.id} itemTitle={editing.title} />
             <div className="field"><label>Stock — blank = unlimited</label>
               <input type="number" value={editing.stock ?? ''} onChange={(e) => set('stock', e.target.value)}
                 placeholder="Blank for unlimited" /></div>
