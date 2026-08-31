@@ -45,11 +45,14 @@ import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
-import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen } from '../../utils/onboardingFlags';
+import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen, hasSeenFreeCallOffer, markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
 import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
 import PlacementBanner from '../../components/PlacementBanner';
 import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
+import FreeCallOffer from '../../components/FreeCallOffer';
+import FreeCallGiftBubble from '../../components/FreeCallGiftBubble';
+import { getFreeCallOffer } from '../../api/FreeCallApi';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
@@ -213,6 +216,10 @@ const Home = ({navigation}) => {
   const [freeChatOfferVisible, setFreeChatOfferVisible] = useState(false);
   const [freeChatOfferDismissed, setFreeChatOfferDismissed] = useState(false);
   const [freeChatPersona, setFreeChatPersona] = useState(null);
+  // Free 12-minute intro call. `freeCall` is the server's answer in full
+  // ({enabled, eligible, offer, booking}); the client never decides eligibility.
+  const [freeCall, setFreeCall] = useState(null);
+  const [freeCallVisible, setFreeCallVisible] = useState(false);
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -746,16 +753,42 @@ const Home = ({navigation}) => {
             // Card content (name/photo/experience/text) is admin-editable —
             // fetched only once we actually intend to show the popup, so
             // ineligible/already-seen customers never make this extra call.
+            // The admin's on/off switch (app_settings key free_bot_chat_persona,
+            // field `enabled`) is checked here and NOWHERE else, so this fetch
+            // must fail CLOSED: if the persona can't be read we don't know
+            // whether the offer is still switched on, and showing a free-chat
+            // offer the admin has turned off is worse than showing none.
+            let offerEnabled = false;
             try {
               const personaRes = await Instance.get('/api/free-bot-chat/persona');
-              if (personaRes.data?.enabled === false) return;
-              setFreeChatPersona(personaRes.data);
+              offerEnabled = personaRes.data?.enabled !== false;
+              if (offerEnabled) setFreeChatPersona(personaRes.data);
             } catch (_) {
-              // Falls back to FreeChatOfferPopup's own bundled default persona.
+              // Leaves offerEnabled false — see the fail-closed note above.
             }
-            setFreeChatOfferVisible(true);
+            // Must not `return` when disabled: this runs inside
+            // fetchUserProfile, whose setLoading(false) is below, so bailing
+            // out here left Home stuck on the loading spinner.
+            if (offerEnabled) setFreeChatOfferVisible(true);
           }
         }
+      }
+
+      // Free 12-minute intro call — the offer that replaced the bot chat above.
+      // ONE call answers "is it on", "is this customer eligible" and "have they
+      // already booked", all decided server-side. The popup auto-opens once;
+      // after that the floating gift bubble is the way back to it (see the
+      // render), which is why the "seen" flag gates only the popup.
+      try {
+        const fc = await getFreeCallOffer();
+        setFreeCall(fc);
+        if (fc.enabled && fc.eligible) {
+          const seen = await hasSeenFreeCallOffer(userData.id);
+          if (!seen) setFreeCallVisible(true);
+        }
+      } catch (_) {
+        // getFreeCallOffer already resolves to "off" on failure; this is belt
+        // and braces so a surprise here can never skip setLoading(false) below.
       }
       }
       setLoading(false);
@@ -1657,6 +1690,31 @@ const Home = ({navigation}) => {
           if (user?.id) markFreeBotChatOfferSeen(user.id);
           navigation.navigate('FreeBotChatScreen', { persona: freeChatPersona });
         }}
+      />
+
+      <FreeCallOffer
+        visible={freeCallVisible}
+        offer={freeCall?.offer}
+        phone={user?.mobile || user?.phoneNumber || ''}
+        t={t}
+        onClose={() => {
+          setFreeCallVisible(false);
+          // Suppresses only the automatic popup. The gift bubble below keeps
+          // the offer reachable until they actually book.
+          if (user?.id) markFreeCallOfferSeen(user.id);
+        }}
+        onBooked={(booking) => {
+          // Locally mark the offer as taken so the bubble disappears at once,
+          // without waiting for a refetch.
+          setFreeCall((prev) => (prev ? { ...prev, eligible: false, booking } : prev));
+          if (user?.id) markFreeCallOfferSeen(user.id);
+        }}
+      />
+
+      <FreeCallGiftBubble
+        visible={!!freeCall?.enabled && !!freeCall?.eligible && !freeCallVisible}
+        label={t('freeCall.giftHint')}
+        onPress={() => setFreeCallVisible(true)}
       />
     </View>
   );
