@@ -214,7 +214,20 @@ const Home = ({navigation}) => {
   const [user, setUser] = useState(null);
   const [astroServices, setAstroServices] = useState([]);
   const [freeChatOfferVisible, setFreeChatOfferVisible] = useState(false);
+  // True only while the customer can still claim the free chat AND the admin has it
+  // switched on. Drives which banners show and what tapping one does.
+  const [freeChatEligible, setFreeChatEligible] = useState(false);
   const [freeChatOfferDismissed, setFreeChatOfferDismissed] = useState(false);
+
+  // Returns true when it has handled the tap, which stops PlacementBanner
+  // following the banner's own action. Only claims the tap while the customer is
+  // genuinely still eligible AND the persona actually loaded — otherwise the
+  // banner behaves as an ordinary banner and goes where the admin pointed it.
+  const openFreeChatFromBanner = useCallback(() => {
+    if (!freeChatEligible || !freeChatPersona) return false;
+    setFreeChatOfferVisible(true);
+    return true;
+  }, [freeChatEligible, freeChatPersona]);
   const [freeChatPersona, setFreeChatPersona] = useState(null);
   // Free 12-minute intro call. `freeCall` is the server's answer in full
   // ({enabled, eligible, offer, booking}); the client never decides eligibility.
@@ -737,40 +750,40 @@ const Home = ({navigation}) => {
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
       console.log(userData, 'this is user data++++++++++++++');
 
-      // Free 5-min bot-chat welcome offer — only for customers who haven't
-      // used it yet (server-verified via freeBotChatCredited) and who haven't
-      // had any real session yet (same "new customer" signal used elsewhere).
-      // The "seen" check is a persisted, per-account AsyncStorage flag (not
-      // just in-memory state) — someone who starts the chat but backs out
-      // before it naturally finishes never gets freeBotChatCredited set, so
-      // without a persisted flag the popup kept reappearing every time Home
-      // remounted (app restart, navigating back, etc).
-      if (!userData.freeBotChatCredited && !freeChatOfferDismissed) {
-        const alreadySeen = await hasSeenFreeBotChatOffer(userData.id);
-        if (!alreadySeen) {
-          const eligible = await isEligibleForFreeConsultation(userData.id);
-          if (eligible) {
-            // Card content (name/photo/experience/text) is admin-editable —
-            // fetched only once we actually intend to show the popup, so
-            // ineligible/already-seen customers never make this extra call.
-            // The admin's on/off switch (app_settings key free_bot_chat_persona,
-            // field `enabled`) is checked here and NOWHERE else, so this fetch
-            // must fail CLOSED: if the persona can't be read we don't know
-            // whether the offer is still switched on, and showing a free-chat
-            // offer the admin has turned off is worse than showing none.
-            let offerEnabled = false;
-            try {
-              const personaRes = await Instance.get('/api/free-bot-chat/persona');
-              offerEnabled = personaRes.data?.enabled !== false;
-              if (offerEnabled) setFreeChatPersona(personaRes.data);
-            } catch (_) {
-              // Leaves offerEnabled false — see the fail-closed note above.
-            }
-            // Must not `return` when disabled: this runs inside
-            // fetchUserProfile, whose setLoading(false) is below, so bailing
-            // out here left Home stuck on the loading spinner.
-            if (offerEnabled) setFreeChatOfferVisible(true);
+      // Free 5-min bot chat. It no longer opens itself: the customer reaches it by
+      // TAPPING one of the two Home banners (see bannerAudience / openFreeChatFromBanner
+      // below). All this does is work out whether they can still claim it, so the
+      // banners know which behaviour to take.
+      //
+      // Note there is deliberately no "already seen" gate any more. That flag existed
+      // to stop a self-opening popup nagging on every Home mount; a popup the customer
+      // opened on purpose should open every time they ask for it, right up until they
+      // have actually used the offer.
+      if (!userData.freeBotChatCredited) {
+        const eligible = await isEligibleForFreeConsultation(userData.id);
+        if (eligible) {
+          // Card content (name/photo/experience/text) is admin-editable —
+          // fetched only once we actually intend to show the popup, so
+          // ineligible/already-seen customers never make this extra call.
+          // The admin's on/off switch (app_settings key free_bot_chat_persona,
+          // field `enabled`) is checked here and NOWHERE else, so this fetch
+          // must fail CLOSED: if the persona can't be read we don't know
+          // whether the offer is still switched on, and showing a free-chat
+          // offer the admin has turned off is worse than showing none.
+          let offerEnabled = false;
+          try {
+            const personaRes = await Instance.get('/api/free-bot-chat/persona');
+            offerEnabled = personaRes.data?.enabled !== false;
+            if (offerEnabled) setFreeChatPersona(personaRes.data);
+          } catch (_) {
+            // Leaves offerEnabled false — see the fail-closed note above.
           }
+          // Must not `return` when disabled: this runs inside
+          // fetchUserProfile, whose setLoading(false) is below, so bailing
+          // out here left Home stuck on the loading spinner.
+          // Eligible AND switched on: the banners now advertise the offer and
+          // open it when tapped, rather than it appearing unbidden.
+          if (offerEnabled) setFreeChatEligible(true);
         }
       }
 
@@ -1252,12 +1265,20 @@ const Home = ({navigation}) => {
           shadowOpacity: 0.1,
           shadowRadius: 5
         }}>
+          {/* Both Home banners are the way into the free 5-minute chat while the
+              customer can still claim it: tapping one opens the offer instead of
+              following the banner's own action. Once it has been used they become
+              'returning', these banners drop out, and the ones the admin marked
+              "After the free chat" take their place — normally pointing at Chat or
+              Call with a real astrologer. */}
           <PlacementBanner
             placement="home_primary"
             navigation={navigation}
             height={150}
             style={{ marginHorizontal: 15 }}
             fallbackImages={FALLBACK_BANNERS}
+            audience={freeChatEligible ? 'new' : 'returning'}
+            onPressIntercept={openFreeChatFromBanner}
           />
 
           <PlacementBanner
@@ -1265,6 +1286,8 @@ const Home = ({navigation}) => {
             navigation={navigation}
             height={110}
             style={{ marginHorizontal: 15, marginTop: 12 }}
+            audience={freeChatEligible ? 'new' : 'returning'}
+            onPressIntercept={openFreeChatFromBanner}
           />
 
           <View style={styles.topAstrologers}>

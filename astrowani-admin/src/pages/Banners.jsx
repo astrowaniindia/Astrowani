@@ -5,12 +5,21 @@ import ImageField from '../components/ImageField';
 
 const EMPTY = {
   title: '', title_hi: '', description: '', description_hi: '', image: '',
-  sort_order: 0, is_active: true, app: 'both', language: 'both',
+  sort_order: 0, is_active: true, app: 'both', language: 'both', audience: 'all',
   placement: 'home_primary', action_type: 'none', action_value: '',
 };
 
 const APP_LABELS = { customer: 'Customer App', vendor: 'Vendor App', both: 'Both Apps' };
 const LANGUAGE_LABELS = { english: 'English', hindi: 'Hindi', both: 'Both Languages' };
+// Where the customer is in their journey. 'new' = still able to claim the free
+// 5-minute chat; tapping such a banner opens the free-chat offer instead of
+// navigating. Once they have used it they become 'returning' and see those
+// banners instead. See sql/banner_audience.sql.
+const AUDIENCE_LABELS = {
+  all: 'Everyone',
+  new: 'New (free chat unused)',
+  returning: 'After free chat',
+};
 
 // Every spot in the apps a banner can be placed, with the exact image size to upload.
 // Widths/heights are in px — export at this ratio (or larger, same ratio) for a crisp image.
@@ -157,11 +166,11 @@ export default function Banners() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th></th><th>Title</th><th>Placement</th><th>Shows in</th><th>Language</th><th>Order</th><th>Active</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Title</th><th>Placement</th><th>Shows in</th><th>Language</th><th>Audience</th><th>Order</th><th>Active</th><th></th></tr></thead>
           <tbody>
             {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
             {!loading && loadError && <tr><td colSpan={8} className="empty" style={{ color: 'var(--red)' }}>Couldn't load banners: {loadError}</td></tr>}
-            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={8} className="empty">No banners for the {APP_LABELS[tab]}{langTab !== 'all' ? ` (${LANGUAGE_LABELS[langTab]})` : ''} yet — click “+ New Banner” to add one.</td></tr>}
+            {!loading && !loadError && visibleRows.length === 0 && <tr><td colSpan={9} className="empty">No banners for the {APP_LABELS[tab]}{langTab !== 'all' ? ` (${LANGUAGE_LABELS[langTab]})` : ''} yet — click “+ New Banner” to add one.</td></tr>}
             {visibleRows.map((r) => (
               <tr key={r.id}>
                 <td>{r.image ? <img src={r.image} className="thumb" alt="" /> : null}</td>
@@ -169,6 +178,9 @@ export default function Banners() {
                 <td><span className="badge gray">{PLACEMENTS[r.placement]?.label || r.placement || 'home_primary'}</span></td>
                 <td><span className="badge gray">{APP_LABELS[r.app || 'both']}</span></td>
                 <td><span className="badge gray">{LANGUAGE_LABELS[r.language || 'both']}</span></td>
+                <td><span className={`badge ${(r.audience || 'all') === 'all' ? 'gray' : 'blue'}`}>
+                  {AUDIENCE_LABELS[r.audience || 'all']}
+                </span></td>
                 <td>{r.sort_order}</td>
                 <td>{r.is_active ? <span className="badge green">Yes</span> : <span className="badge gray">No</span>}</td>
                 <td><div className="btn-group">
@@ -256,6 +268,22 @@ export default function Banners() {
               fields above are for when the same image works for both.
             </div>
           </div>
+          <div className="field"><label>Who sees it</label>
+            <select value={editing.audience || 'all'} onChange={(e) => set('audience', e.target.value)}>
+              <option value="all">Everyone</option>
+              <option value="new">New customers — free chat not used yet</option>
+              <option value="returning">After the free chat has been used</option>
+            </select>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              On the Home screen, a customer who can still claim the free 5-minute chat opens
+              that offer when they tap a banner, instead of going where “When tapped…” points.
+              Set that banner to <strong>New customers</strong>. Set the banner that should
+              replace it afterwards — one pointing at Chat or Call with an astrologer — to
+              <strong> After the free chat</strong>. Leave it on <strong>Everyone</strong> for
+              anything that should always show.
+            </div>
+          </div>
+
           <div className="two-col">
             <div className="field"><label>Sort order</label>
               <input type="number" value={editing.sort_order} onChange={(e) => set('sort_order', e.target.value)} /></div>

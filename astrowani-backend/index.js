@@ -2024,6 +2024,11 @@ app.get('/api/banners/all', async (req, res) => {
           placement: b.placement,
           actionType: b.action_type,
           actionValue: b.action_value,
+          // all | new | returning. Returned as data, not filtered here: this
+          // response is cached and shared across every customer, so the app does
+          // the per-viewer filtering. Defaults to 'all' so a database without the
+          // column yet behaves exactly as before.
+          audience: b.audience || 'all',
           hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
         })),
       };

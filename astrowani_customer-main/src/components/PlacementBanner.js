@@ -35,6 +35,15 @@ const PlacementBanner = ({
   placement,
   navigation,
   app = 'customer',
+  // Which journey stage this viewer is in: 'new' while they can still claim the
+  // free chat, 'returning' once they cannot. Banners the admin marked for the
+  // other stage are filtered out. Left undefined (the default) means "show
+  // everything", which is what every screen other than Home wants.
+  audience,
+  // Lets a screen take over the tap. Return true to say "handled, don't navigate"
+  // — Home uses it to open the free-chat offer instead of following the banner's
+  // own action while the customer is still eligible.
+  onPressIntercept,
   // Only used for a placement with no declared aspect ratio -- a new slot added to
   // the admin should be added to PLACEMENT_ASPECT above rather than sized by hand.
   height = 150,
@@ -94,6 +103,12 @@ const PlacementBanner = ({
     : banners.length > 0
       ? banners
           .filter((b) => b?.imageUrl)
+          .filter((b) => {
+            // 'all' is the default for every pre-existing banner, so an admin who
+            // never touches this setting sees no change in behaviour.
+            const a = b.audience || 'all';
+            return a === 'all' || !audience || a === audience;
+          })
           .map((b) => ({ uri: b.imageUrl, actionType: b.actionType, actionValue: b.actionValue }))
       : fallbackImages.map((source) => ({ source, actionType: 'none', actionValue: null }));
 
@@ -119,6 +134,10 @@ const PlacementBanner = ({
     // this down to the two home_* placements rather than this component only firing
     // on Home, since the same component is reused across multiple screens.
     captureEvent('banner_click', { placement });
+    // The screen gets first refusal on the tap. Checked BEFORE the action-type
+    // guard below, so a banner with no action configured can still be used purely
+    // as a trigger — which is how the free-chat banner works.
+    if (onPressIntercept && onPressIntercept(placement) === true) return;
     if (!active?.actionType || active.actionType === 'none' || !active.actionValue) return;
     if (active.actionType === 'url') {
       Linking.openURL(active.actionValue).catch(() => {});
@@ -127,7 +146,9 @@ const PlacementBanner = ({
     }
   };
 
-  const isTappable = active?.actionType && active.actionType !== 'none' && active.actionValue;
+  const isTappable =
+    !!onPressIntercept ||
+    (active?.actionType && active.actionType !== 'none' && active.actionValue);
 
   // aspectRatio wins over height when we know the slot's shape: the box then matches
   // the uploaded image exactly and cover crops nothing.
