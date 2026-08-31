@@ -15,6 +15,7 @@
     "test": "npm run test:wallet && npm run test:billing && npm run test:fanout && npm run test:hardening && npm run test:concurrency"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
     "@sentry/node": "^10.69.0",
     "@supabase/supabase-js": "^2.108.2",
     "axios": "^1.6.0",

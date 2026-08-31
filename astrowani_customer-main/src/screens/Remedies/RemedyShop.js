@@ -7,6 +7,7 @@ import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import useRemedyListSync from '../../hooks/useRemedyListSync';
 import useRemedyOrderingGate from '../../hooks/useRemedyOrderingGate';
+import useWhatsAppShop from '../../hooks/useWhatsAppShop';
 import { captureEvent } from '../../utils/Analytics';
 import { useCart } from '../../context/CartContext';
 import { showStatusPopup } from '../../components/StatusPopup';
@@ -39,6 +40,11 @@ const RemedyShop = ({ route, navigation }) => {
 
   const cart = useCart();
   const gate = useRemedyOrderingGate(type);
+  // When the shop is in WhatsApp mode the cart is bypassed entirely: tapping a
+  // product opens a conversation about THAT product instead. Buying a remedy needs
+  // advice (which stone, what weight, does it need a puja first) that a cart cannot
+  // give. Off by default, so nothing changes until an admin sets a number.
+  const wa = useWhatsAppShop();
 
   const fetchItems = useCallback(async () => {
     try {
@@ -98,6 +104,14 @@ const RemedyShop = ({ route, navigation }) => {
   }, [gate, localized]);
 
   const handleAdd = useCallback((item) => {
+    // WhatsApp mode wins over the delivery gate: the point of handing off is that a
+    // human decides what is available and at what price, so "we don't deliver that
+    // yet" is not ours to say any more.
+    if (wa.enabled) {
+      captureEvent('remedy_whatsapp_handoff', { item_id: item._id, remedy_type: type });
+      wa.openChat({ id: item._id, title: localized(item, 'title') || item.title });
+      return;
+    }
     // `enabled === null` means the gate hasn't resolved yet. Treated as blocked for the
     // purposes of adding, but without the popup — a tap during that window is a no-op
     // rather than a wrong answer in either direction.
@@ -111,7 +125,7 @@ const RemedyShop = ({ route, navigation }) => {
     captureEvent('add_to_cart', {
       item_id: item._id, item_title: item.title, remedy_type: type, price: item.price,
     });
-  }, [cart, gate.enabled, showNotDeliveringYet, type]);
+  }, [cart, gate.enabled, showNotDeliveringYet, type, wa, localized]);
 
   const openProduct = useCallback((item) => {
     navigation.navigate('ProductDetail', { item, type });
@@ -121,10 +135,10 @@ const RemedyShop = ({ route, navigation }) => {
     <ProductCard
       item={item}
       title={localized(item, 'title')}
-      qty={cart.qtyOf(item._id)}
+      qty={wa.enabled ? 0 : cart.qtyOf(item._id)}
       soldOut={item.inStock === false}
-      blocked={gate.enabled === false}
-      addLabel={t('cart.add')}
+      blocked={!wa.enabled && gate.enabled === false}
+      addLabel={wa.enabled ? wa.cta : t('cart.add')}
       soldOutLabel={t('cart.soldOut')}
       saveLabel={t('cart.save')}
       recommendedBy={recommendations[item._id] || null}

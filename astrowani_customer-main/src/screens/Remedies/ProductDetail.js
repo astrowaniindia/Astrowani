@@ -6,6 +6,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
 import useRemedyOrderingGate from '../../hooks/useRemedyOrderingGate';
+import useWhatsAppShop from '../../hooks/useWhatsAppShop';
 import { useCart } from '../../context/CartContext';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
@@ -36,6 +37,7 @@ const ProductDetail = ({ route, navigation }) => {
 
   const cart = useCart();
   const gate = useRemedyOrderingGate(type);
+  const wa = useWhatsAppShop();
 
   const localized = useCallback((field) => {
     const en = item[field];
@@ -66,6 +68,13 @@ const ProductDetail = ({ route, navigation }) => {
   const soldOut = item.inStock === false;
 
   const handleAdd = () => {
+    // See RemedyShop: in WhatsApp mode the sale is a conversation, so the product
+    // page's job is to start one about THIS item rather than fill a cart.
+    if (wa.enabled) {
+      captureEvent('remedy_whatsapp_handoff', { item_id: item._id, remedy_type: type, from: 'detail' });
+      wa.openChat({ id: item._id, title: title || item.title });
+      return;
+    }
     if (gate.enabled === null) return;
     if (!gate.enabled) {
       captureEvent('remedy_blocked_category_tapped', { item_id: item._id, remedy_type: type });
@@ -82,7 +91,8 @@ const ProductDetail = ({ route, navigation }) => {
     });
   };
 
-  const inCart = qty > 0 && !!gate.enabled;
+  // No cart to be in when the sale happens in WhatsApp.
+  const inCart = qty > 0 && !!gate.enabled && !wa.enabled;
 
   return (
     <View style={styles.container}>
@@ -187,8 +197,12 @@ const ProductDetail = ({ route, navigation }) => {
           </View>
         ) : (
           <TouchableOpacity style={styles.cta} onPress={handleAdd} activeOpacity={0.85}>
-            <Icon name="add-shopping-cart" size={moderateScale(17)} color={COLORS.white} />
-            <Text style={styles.ctaText}>{t('cart.addToCart')}</Text>
+            <Icon
+              name={wa.enabled ? 'chat' : 'add-shopping-cart'}
+              size={moderateScale(17)}
+              color={COLORS.white}
+            />
+            <Text style={styles.ctaText}>{wa.enabled ? wa.cta : t('cart.addToCart')}</Text>
           </TouchableOpacity>
         )}
       </View>

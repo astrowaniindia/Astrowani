@@ -529,7 +529,17 @@ io.on('connection', (socket) => {
 // helmet + compression + CORS allowlist + a general per-IP rate limit.
 // Must run before any route is registered. See src/httpHardening.js.
 applyHttpHardening(app);
-app.use(express.json({ limit: '10mb' })); // blog/banner images may be base64 data-URIs
+app.use(express.json({
+  limit: '10mb', // blog/banner images may be base64 data-URIs
+  // WhatsApp signs each webhook over the EXACT bytes it sent, so the parsed
+  // body is useless for verifying it. Captured only for that one path —
+  // keeping a copy of every 10mb request would be pure waste.
+  verify: (req, _res, buf) => {
+    if (req.originalUrl && req.originalUrl.startsWith('/api/whatsapp/webhook')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Admin dashboard — built from astrowani-admin/ into admin-dist/
@@ -589,6 +599,7 @@ require('./src/remedyReferralRoutes')(app);
 // Free 12-minute introductory call — customer booking + admin management.
 // Also needs adminRoutes' requireAdmin, so it registers after it.
 require('./src/freeCallRoutes')(app);
+require('./src/whatsappRoutes')(app);
 
 // OTPs are persisted in Supabase (table: otp_codes), not an in-memory Map —
 // a plain Map is wiped on every process restart, and `pm2 restart` runs on
