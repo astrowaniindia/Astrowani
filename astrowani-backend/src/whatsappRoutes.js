@@ -23,6 +23,19 @@ const { createClient } = require('@supabase/supabase-js');
 const { generateReply } = require('./whatsappBot');
 const { findCustomerByPhone } = require('./customerLookup');
 const { makeCreateOrderTool } = require('./whatsappOrders');
+const jwt = require('jsonwebtoken');
+
+/** Astrologer id from the vendor JWT. Same shape as freeCallRoutes. */
+function resolveAstrologerId(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
+  try {
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), process.env.JWT_SECRET);
+    return decoded.astroId || decoded.vendorId || decoded.id || null;
+  } catch (_) {
+    return null;
+  }
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -238,7 +251,131 @@ module.exports = function registerWhatsAppRoutes(app) {
     await sendText(waId, reply.text);
   }
 
-  /* ── Admin: read the conversations ────────────────────────────────────────
+  /* -- Vendor: the WhatsApp customers assigned to ME -----------------------
+   * Scoped by the astrologer id inside the JWT, never a query param: these
+   * threads carry customers' phone numbers and whatever personal detail they
+   * typed into a consultation.
+   */
+  app.get('/api/vendor/whatsapp/conversations', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { data, error } = await db
+      .from('whatsapp_conversations')
+      .select('*')
+      .eq('astrologer_id', astrologerId)
+      .order('last_message_at', { ascending: false })
+      .limit(50);
+    if (error) return res.status(200).json({ success: true, conversations: [], tableMissing: true });
+
+    const rows = data || [];
+    // "Waiting" = handed over and I have not replied since. That count drives the
+    // drawer badge, so it has to mean "needs me now", not "I once handled this".
+    const waiting = [];
+    for (const c of rows.filter((r) => r.handled_by === 'astrologer' && r.escalated_at)) {
+      const { data: mine } = await db
+        .from('whatsapp_messages')
+        .select('id')
+        .eq('conversation_id', c.id)
+        .eq('role', 'astrologer')
+        .gte('created_at', c.escalated_at)
+        .limit(1);
+      if (!mine || !mine.length) waiting.push(c.id);
+    }
+
+    return res.status(200).json({
+      success: true,
+      waitingCount: waiting.length,
+      conversations: rows.map((c) => ({
+        id: c.id,
+        name: c.display_name || c.wa_id,
+        phone: c.wa_id,
+        handledBy: c.handled_by,
+        escalatedAt: c.escalated_at,
+        lastMessageAt: c.last_message_at,
+        waiting: waiting.includes(c.id),
+      })),
+    });
+  }));
+
+  app.get('/api/vendor/whatsapp/conversations/:id/messages', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    // The astrologer_id filter IS the authorisation check: somebody else's
+    // conversation simply returns nothing.
+    const { data: convo } = await db
+      .from('whatsapp_conversations')
+      .select('id, display_name, wa_id, handled_by')
+      .eq('id', req.params.id)
+      .eq('astrologer_id', astrologerId)
+      .maybeSingle();
+    if (!convo) return res.status(404).json({ success: false, message: 'Not found' });
+
+    const { data: messages } = await db
+      .from('whatsapp_messages')
+      .select('id, role, body, created_at')
+      .eq('conversation_id', convo.id)
+      .order('created_at', { ascending: true })
+      .limit(200);
+
+    return res.status(200).json({
+      success: true,
+      conversation: {
+        id: convo.id,
+        name: convo.display_name || convo.wa_id,
+        phone: convo.wa_id,
+        handledBy: convo.handled_by,
+      },
+      messages: messages || [],
+    });
+  }));
+
+  app.post('/api/vendor/whatsapp/conversations/:id/reply', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const body = String(req.body?.text || '').trim();
+    if (!body) return res.status(400).json({ success: false, message: 'Nothing to send' });
+
+    const { data: convo } = await db
+      .from('whatsapp_conversations')
+      .select('id, wa_id')
+      .eq('id', req.params.id)
+      .eq('astrologer_id', astrologerId)
+      .maybeSingle();
+    if (!convo) return res.status(404).json({ success: false, message: 'Not found' });
+
+    const sent = await sendText(convo.wa_id, body);
+    if (!sent) return res.status(503).json({ success: false, message: 'WhatsApp is not connected yet.' });
+
+    await db.from('whatsapp_messages').insert([{
+      conversation_id: convo.id, role: 'astrologer', body,
+    }]);
+    // Recording the reply is what stops the unanswered-escalation sweep moving
+    // this customer on to somebody else.
+    await db.from('whatsapp_conversations')
+      .update({ handled_by: 'astrologer', last_message_at: new Date().toISOString() })
+      .eq('id', convo.id);
+    return res.status(200).json({ success: true });
+  }));
+
+  /* -- Vendor: I'm done, the assistant can take it back ------------------- */
+  app.post('/api/vendor/whatsapp/conversations/:id/release', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const { data } = await db
+      .from('whatsapp_conversations')
+      .update({ handled_by: 'bot', astrologer_id: null, escalated_at: null })
+      .eq('id', req.params.id)
+      .eq('astrologer_id', astrologerId)
+      .select('id')
+      .maybeSingle();
+    if (!data) return res.status(404).json({ success: false, message: 'Not found' });
+    return res.status(200).json({ success: true });
+  }));
+
+  /* -- Admin: read the conversations ----------------------------------------
    * Registered by index.js behind requireAdmin.
    */
   app.get('/api/admin/whatsapp/conversations', require('./adminRoutes').requireAdmin, h(async (req, res) => {

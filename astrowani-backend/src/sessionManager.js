@@ -64,6 +64,7 @@ class SessionManager {
       this.markStaleRequestsMissed();
       this.endStaleBilledSessions();
       this.endOverdueFreeCalls();
+      this.chaseWhatsAppEscalations();
     }, this.pollingInterval);
     // Run earnings reset check hourly, and immediately on startup
     this.checkEarningsResets();
@@ -719,6 +720,20 @@ class SessionManager {
    * shape called out in CLAUDE.md's data-layer audit). Two minutes of slack is
    * allowed so the screens' own countdown normally wins and ends it cleanly.
    */
+  /**
+   * Move an escalated WhatsApp conversation on when the astrologer it was given
+   * to has not replied. Without this, one busy person silently absorbs a
+   * customer who was promised a human. See src/whatsappEscalation.js.
+   */
+  async chaseWhatsAppEscalations() {
+    try {
+      const { chaseUnansweredEscalations } = require('./whatsappEscalation');
+      await chaseUnansweredEscalations();
+    } catch (err) {
+      console.error('[SessionManager] chaseWhatsAppEscalations failed:', err.message);
+    }
+  }
+
   async endOverdueFreeCalls() {
     try {
       const { data: rows, error } = await supabase

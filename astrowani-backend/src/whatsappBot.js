@@ -222,19 +222,17 @@ async function getItem({ item_id }) {
  * the hand, so a misconfigured roster can never swallow the request silently.
  */
 async function escalate(conversationId, { reason }) {
-  await db
-    .from('whatsapp_conversations')
-    .update({
-      handled_by: 'astrologer',
-      escalated_at: new Date().toISOString(),
-    })
-    .eq('id', conversationId);
-  await db.from('whatsapp_messages').insert([{
-    conversation_id: conversationId,
-    role: 'system',
-    body: `Escalated to an astrologer: ${reason || 'customer asked for a person'}`,
-  }]);
-  return { ok: true, note: 'An astrologer has been notified and will reply here.' };
+  // Assigning and notifying happen together — see whatsappEscalation.js. An
+  // escalation that only sets a flag is worse than none at all: the customer has
+  // been told a person is coming and nobody has been told to come.
+  const { assignEscalation } = require('./whatsappEscalation');
+  const result = await assignEscalation(conversationId, reason);
+  return {
+    ok: true,
+    note: result.assigned
+      ? `${result.astrologerName} has been notified and will reply here.`
+      : 'Marked for a person. Tell the customer someone will reply here shortly.',
+  };
 }
 
 /* ───────────────────────────────── the loop ────────────────────────────────── */

@@ -3,6 +3,7 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 import VariantEditor from '../components/VariantEditor';
+import WhatsAppShopSettings from '../components/WhatsAppShopSettings';
 
 // The two shops and what each one sells. They are separate catalogues over one table -
 // see remedy_items.channel and sql/remedy_channel.sql.
@@ -333,6 +334,10 @@ export default function Remedies({ channel = 'app', tabs = APP_TABS, heading = '
         <h1 className="page-title" style={{ margin: 0 }}>{heading}</h1>
         <button className="btn" onClick={() => setEditing({ ...EMPTY })}>+ New {tabLabel} item</button>
       </div>
+
+      {/* The WhatsApp handoff sits above the cart settings because when it is on,
+          it overrides them: shoppers never reach the cart at all. */}
+      <WhatsAppShopSettings />
 
       {/* Which categories actually take orders, and what the bill summary charges. */}
       <div className="card" style={{ marginBottom: 18 }}>
