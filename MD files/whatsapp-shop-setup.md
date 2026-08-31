@@ -14,9 +14,10 @@ For what the feature *is* and why it's shaped this way, see the commits
 3. Put five env vars on the VPS.
 4. Point Meta's webhook at `https://backend.astrowani.com/api/whatsapp/webhook`.
 5. Enter ratti prices for the gemstones in the admin.
-6. Set the number in the admin and flip `whatsapp_shop_enabled` to true.
+6. Pick the astrologers who answer escalations.
+7. Set the number in the admin and flip `whatsapp_shop_enabled` to true.
 
-Until step 6 the app keeps its normal in-app cart, so none of this is visible to
+Until step 7 the app keeps its normal in-app cart, so none of this is visible to
 customers while you work through it. Nothing breaks half-done.
 
 ---
@@ -118,7 +119,26 @@ price, which is right for pujas and vastu items but wrong for a stone.
 There are 33 gemstones. You don't have to do them all before going live — just
 know that the ones without weights will only be discussed at their single price.
 
-## Step 6 — go live
+## Step 6 — who answers when it hands over
+
+Same admin card, **Who answers when the assistant hands over**. Tick the
+astrologers on WhatsApp support duty.
+
+Each escalation goes to whoever has the fewest open conversations, and if nobody
+replies within 10 minutes it moves to the next person automatically. They read
+and reply in the vendor app under **WhatsApp Customers** (drawer), and replying
+takes the thread — the assistant stays quiet until they hand it back.
+
+**Do not skip this.** The assistant tells the customer "I'm connecting you to an
+astrologer". With an empty roster that promise is made to an empty room: the
+thread is still marked for a human and still visible, but nobody is told. The
+card shows a red warning when the roster is empty for exactly this reason.
+
+Needs the vendor app build that contains the WhatsApp Customers screen
+(versionName 6.6 / versionCode 23 or later). Escalation still assigns and pushes
+correctly on older builds — the astrologer just has nowhere to read it.
+
+## Step 7 — go live
 
 Admin → the WhatsApp shop settings:
 
@@ -174,7 +194,8 @@ mid-consultation must not have an assistant talking over them.
 ## What is deliberately not built
 
 - **No admin page for conversations.** The endpoints above exist; there's no UI
-  yet. If the volume is more than a handful a day, that's the first thing to add.
+  in the dashboard yet. Astrologers read and reply in the vendor app, so this
+  only matters for an admin wanting to watch over the whole queue.
 - **The bot has never run against the real model.** Everything up to the model
   call is tested against the live database — catalogue search, per-ratti pricing,
   order creation — but the actual conversation quality is unproven until the API
@@ -182,9 +203,6 @@ mid-consultation must not have an assistant talking over them.
   reading the first real conversations.
 - **Text only.** A photo of a stone gets "I can only read text messages here."
   Answering an image wrongly is worse than declining it.
-- **No astrologer assignment.** Escalation marks the thread for a human and
-  notifies nobody in particular. Who picks it up is a process question you should
-  answer before going live, or escalated conversations will sit unread.
 - **No Razorpay webhook.** If a customer pays the link but nothing tells us, the
   order stays `pending_payment` and shows in the admin's abandoned-checkouts
   view. Same known gap as the in-app cart — see the note in CLAUDE.md.
