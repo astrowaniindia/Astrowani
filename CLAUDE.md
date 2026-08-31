@@ -2638,3 +2638,78 @@ mode auto-assigns -> a customer with a prior session is `NOT_ELIGIBLE`.
 production. Performance only: the vendor app's per-astrologer query and the admin's
 unassigned queue currently scan the table. Correctness is unaffected, which is why every test
 above passes without it.
+
+### AP. iOS parity: what is shared, what is not, and one command to ship both (2026-08-31)
+
+**The ratio, measured, because it settles the recurring "do I have to rebuild features
+for iOS" question:** `astrowani_customer-main/src` holds **186 shared JS/TS files and ZERO
+platform-specific ones** — no `.ios.js`, no `.android.js`. Only 19 files contain a
+`Platform.OS` branch, and those are small conditionals inside shared code. **Features are
+written once.** Everything in subsystems AM/AN (free-call offer, gift box, slot grid,
+booking, the vendor's My Free Calls screen with its `tel:` dialler) uses cross-platform APIs
+only and needs no iOS work at all. Replacing the OS date dialog with `ThemedDateTimePicker`
+actually *removed* platform divergence.
+
+What is genuinely per-platform is a short fixed list, touched when app chrome or a native
+capability changes — not per feature:
+
+| | Android | iOS |
+|---|---|---|
+| Launcher icon | `res/mipmap-*/ic_launcher*.png` | `Images.xcassets/AppIcon.appiconset/` |
+| Splash colour | `res/values/colors.xml` | `LaunchScreen.storyboard` |
+| Permissions | `AndroidManifest.xml` | `Info.plist` |
+| Background mic | Kotlin foreground service (subsystem AE) | background modes + `AVAudioSession` — a different mechanism, not a port |
+
+**iOS icon + splash brought in line.** All 9 `AppIcon.appiconset` PNGs recoloured to
+`#592a19` with the same plate/fringe method as Android. They stay **RGB with no alpha** —
+App Store review rejects app icons carrying an alpha channel, and the originals were RGB
+too. `LaunchScreen.storyboard`'s background moved to the same brown; `IntroSplash.js` is
+shared JS and was already brown, so without this iOS would have flashed dark navy into a
+brown intro.
+
+**`npm run deploy:ota` — one command, both platforms** (`scripts/deployOta.js`, in BOTH
+apps). `hot-updater deploy` takes a single `-p ios|android`, so shipping both was two
+commands and forgetting the second was silent — that is how the 2026-08-25 storefront bundle
+went to `android/production` only. It defaults to both, exits non-zero if either fails, and
+**deliberately does not stop after the first failure**: an android-succeeds-then-ios-fails
+stop would leave exactly the split it exists to prevent, and the report has to name it.
+Three pre-flight checks, each from a mistake this repo actually made: a dirty tree is
+refused (an OTA ships the whole bundle built from the working tree, not just the intended
+change); missing `ios/Podfile.lock` is called out (bundle uploads, nothing installed to
+receive it); and a last commit touching `package.json`/`ios/`/`android/` warns that OTA
+carries JS only — the react-native-razorpay 2.3.0 → 3.0.0 case. `--dry-run` runs the checks
+and deploys nothing.
+
+> **Two Windows/monorepo traps found while testing that script, both of which had silently
+> disabled a check:**
+> - **`2>/dev/null` does not work under `execSync`** — it uses cmd.exe on Windows, printed
+>   "The system cannot find the path specified", and threw into a `catch` that swallowed it.
+>   The whole native-dependency guard was dead on the machine this repo is developed on.
+>   Swallow stderr via `stdio: ['pipe','pipe','pipe']`, never a shell redirect.
+> - **git reports paths from the REPO root even when run in a subdirectory.** A filter for
+>   `/^ios\//` never matched, because the real path was `astrowani_customer-main/ios/...`.
+>   Use `--relative` plus a `-- .` path scope in this monorepo. The same applies to
+>   `git status --porcelain`, which was refusing to deploy the customer app because of an
+>   untracked file in `astrowani-shop`.
+
+**Current iOS state:** neither app has a `Podfile.lock`, so pods have never been installed
+and there is no iOS build in the field. Both platforms are at version **24.0**, so bundles
+will line up once a build exists. Until then an iOS OTA has no destination.
+
+### AQ. Free-call confirmation quoted no phone number (found on-device, 2026-08-31)
+
+Booking a real free call on the emulator produced *"Acharya Vishal Sharma will call you
+on ."* — `/api/users/profile` returns the number as **`phone`**, but `Home.js` passed
+`user?.mobile`. Fixed at three levels rather than as a typo, because that sentence is a
+promise about what happens next: `publicBooking` now returns the **snapshotted**
+`customer_phone` and the confirmation prefers it (that is the number the astrologer dials,
+and it can legitimately differ from a later-edited profile); Home passes the correct field
+as fallback; and a phone-less variant of the copy (`freeCall.callingYouNoPhone`, both
+languages) means it can never render a dangling preposition again.
+
+**On-device verification of subsystem AM** (customer app, Android emulator, live backend):
+offer fetched, **gift box rendered** on Home with its label, a real booking created and
+correct in the database (2:00 PM IST, phone snapshotted), and after booking **both the popup
+and the gift box disappear** on relaunch — the "gone once booked" rule. `ThemedDateTimePicker`
+renders themed and the pre-1970 year selection was confirmed working by the user. No
+free-call errors in logcat.
