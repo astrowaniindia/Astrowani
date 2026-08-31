@@ -223,6 +223,25 @@ const Home = ({navigation}) => {
   // following the banner's own action. Only claims the tap while the customer is
   // genuinely still eligible AND the persona actually loaded — otherwise the
   // banner behaves as an ordinary banner and goes where the admin pointed it.
+  // Only ever REVOKES eligibility, never grants it: Home's full profile load is
+  // what decides a customer is eligible in the first place (it also checks the
+  // admin switch and the persona). This is the cheap correction for the one thing
+  // that can change while Home stays mounted -- the offer being spent.
+  const refreshFreeChatEligibility = useCallback(async () => {
+    if (!freeChatEligible) return;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+      const res = await Instance.get('/api/users/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data?.data?.freeBotChatCredited) setFreeChatEligible(false);
+    } catch (_) {
+      // Leave it as-is: a failed check must not hand out a second free chat, and
+      // must not wrongly withdraw one either.
+    }
+  }, [freeChatEligible]);
+
   const openFreeChatFromBanner = useCallback(() => {
     if (!freeChatEligible || !freeChatPersona) return false;
     setFreeChatOfferVisible(true);
@@ -968,7 +987,8 @@ const Home = ({navigation}) => {
     useCallback(() => {
       fetchAstrologer();
       getLiveAstro();
-    }, []),
+      refreshFreeChatEligibility();
+    }, [refreshFreeChatEligibility]),
   );
 
   // Live sync — re-fetch the carousel when any astrologer row changes.
@@ -1711,6 +1731,14 @@ const Home = ({navigation}) => {
           setFreeChatOfferVisible(false);
           setFreeChatOfferDismissed(true);
           if (user?.id) markFreeBotChatOfferSeen(user.id);
+          // The offer is spent the moment they enter, however they leave -- ending
+          // early, backgrounding, killing the app. The backend takes the same view
+          // (mark-used fires on the chat screen's mount, deliberately not on
+          // completion), so this just keeps Home in step with it. Without it the
+          // stale `true` from page load let someone who backed out after a few
+          // seconds tap the banner straight back into another free chat, over and
+          // over.
+          setFreeChatEligible(false);
           navigation.navigate('FreeBotChatScreen', { persona: freeChatPersona });
         }}
       />
