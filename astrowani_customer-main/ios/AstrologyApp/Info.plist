@@ -84,6 +84,10 @@
 	     options are hidden from the checkout sheet. -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<!-- The Wani Shop hands the sale to WhatsApp (hooks/useWhatsAppShop.js).
+		     iOS refuses canOpenURL for an undeclared scheme, so without this the
+		     handoff silently falls through to the wa.me browser page every time. -->
+		<string>whatsapp</string>
 		<string>tez</string>
 		<string>phonepe</string>
 		<string>paytmmp</string>
