@@ -580,6 +580,10 @@ require('./src/orderRoutes')(app);
 // because it requires adminRoutes' requireAdmin, which is exported there.
 require('./src/remedyReferralRoutes')(app);
 
+// Free 12-minute introductory call — customer booking + admin management.
+// Also needs adminRoutes' requireAdmin, so it registers after it.
+require('./src/freeCallRoutes')(app);
+
 // OTPs are persisted in Supabase (table: otp_codes), not an in-memory Map —
 // a plain Map is wiped on every process restart, and `pm2 restart` runs on
 // every single deploy. A user mid-login when that happens would have their

@@ -29,6 +29,7 @@ import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
 import Support from './pages/Support';
 import FreeBotChat from './pages/FreeBotChat';
+import FreeCallBookings from './pages/FreeCallBookings';
 import GuideAvatar from './pages/GuideAvatar';
 
 export default function App() {
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="customers" element={<Customers />} />
         <Route path="sessions" element={<Sessions />} />
         <Route path="free-bot-chat" element={<FreeBotChat />} />
+        <Route path="free-call-bookings" element={<FreeCallBookings />} />
         <Route path="guide-avatar" element={<GuideAvatar />} />
       </Route>
     </Routes>

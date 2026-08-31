@@ -144,6 +144,13 @@ function CustomDrawer(props) {
           onPress={() => props.navigation.navigate('Profile')}
         />
         <DrawerItem
+          label="My Free Calls"
+          icon={() => (
+            <Icon name="event-available" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => props.navigation.navigate('FreeCalls')}
+        />
+        <DrawerItem
           label="Referrals & Commission"
           icon={() => (
             <Icon name="card-giftcard" size={24} color={COLORS.AstroMaroon} />

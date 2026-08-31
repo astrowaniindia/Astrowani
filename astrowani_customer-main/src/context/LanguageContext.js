@@ -1041,6 +1041,23 @@ const translations = {
     'report.sub': 'Sub',
     'report.subSub': 'Sub-sub',
     'report.significatorsSub': 'Planets signifying each house',
+    // Free 12-minute intro call. The heading/body/CTA/confirmation copy is
+    // admin-authored (app_settings key free_call_offer) and arrives from the
+    // API, so only the structural labels live here.
+    'freeCall.pickDate': 'Pick a date',
+    'freeCall.pickTime': 'Pick a time',
+    'freeCall.noSlots': 'No times left on this day. Try another date.',
+    'freeCall.taken': 'Taken',
+    'freeCall.confirm': 'Confirm booking',
+    'freeCall.booking': 'Booking…',
+    'freeCall.yourCall': 'Your free call',
+    'freeCall.callingYou': '{{name}} will call you on {{phone}}. You do not need to do anything else.',
+    'freeCall.minutes': '{{count}} minutes, free',
+    'freeCall.notNow': 'Maybe later',
+    'freeCall.done': 'Done',
+    'freeCall.giftHint': 'Your free call is waiting',
+    'freeCall.slotTaken': 'Someone just took that time. Please pick another.',
+    'freeCall.experience': '{{years}} experience',
   },
   Hindi: {
     // Home
@@ -2054,6 +2071,21 @@ const translations = {
     'report.sub': 'उप',
     'report.subSub': 'उप-उप',
     'report.significatorsSub': 'प्रत्येक भाव के कारक ग्रह',
+    // Free 12-minute intro call — structural labels only (see the English block).
+    'freeCall.pickDate': 'तारीख चुनें',
+    'freeCall.pickTime': 'समय चुनें',
+    'freeCall.noSlots': 'इस दिन कोई समय उपलब्ध नहीं है। दूसरी तारीख चुनें।',
+    'freeCall.taken': 'बुक हो चुका',
+    'freeCall.confirm': 'बुकिंग पक्की करें',
+    'freeCall.booking': 'बुक हो रहा है…',
+    'freeCall.yourCall': 'आपकी मुफ़्त कॉल',
+    'freeCall.callingYou': '{{name}} आपको {{phone}} पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
+    'freeCall.minutes': '{{count}} मिनट, मुफ़्त',
+    'freeCall.notNow': 'बाद में',
+    'freeCall.done': 'ठीक है',
+    'freeCall.giftHint': 'आपकी मुफ़्त कॉल इंतज़ार कर रही है',
+    'freeCall.slotTaken': 'यह समय अभी किसी ने बुक कर लिया। कृपया दूसरा चुनें।',
+    'freeCall.experience': '{{years}} का अनुभव',
   },
 };
 

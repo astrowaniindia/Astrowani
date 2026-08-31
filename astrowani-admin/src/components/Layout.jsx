@@ -25,6 +25,9 @@ const links = [
   { to: '/notifications', label: 'Notifications' },
   { to: '/referral-popup', label: 'Referral Popup' },
   { to: '/free-bot-chat', label: 'Free Bot Chat' },
+  // The free 12-minute intro CALL, which replaced the free bot chat above.
+  // Both pages are kept: the bot chat is off, not deleted.
+  { to: '/free-call-bookings', label: 'Free Call Bookings' },
   { to: '/guide-avatar', label: 'Guide Avatar' },
   { to: '/withdrawals', label: 'Withdrawals' },
   { to: '/reports', label: 'Reports' },

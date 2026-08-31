@@ -38,3 +38,26 @@ export const markFreeBotChatOfferSeen = async (customerId) => {
     await AsyncStorage.setItem(FREE_BOT_CHAT_PREFIX + customerId, 'true');
   } catch (e) {}
 };
+
+// Same "show the popup once" pattern for the free 12-minute intro CALL that
+// replaced the bot chat. Note this only suppresses the automatic POPUP — the
+// floating gift bubble stays until the customer actually books, which is the
+// whole point of it. Eligibility itself is decided server-side, never here.
+const FREE_CALL_PREFIX = 'freeCallOfferSeen_';
+
+export const hasSeenFreeCallOffer = async (customerId) => {
+  try {
+    const value = await AsyncStorage.getItem(FREE_CALL_PREFIX + customerId);
+    return value === 'true';
+  } catch (e) {
+    // Fail as "already seen": a storage error must not turn this into a popup
+    // that reappears on every single Home mount.
+    return true;
+  }
+};
+
+export const markFreeCallOfferSeen = async (customerId) => {
+  try {
+    await AsyncStorage.setItem(FREE_CALL_PREFIX + customerId, 'true');
+  } catch (e) {}
+};

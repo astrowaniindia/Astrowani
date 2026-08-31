@@ -2386,3 +2386,255 @@ Rollback: `npx hot-updater bundle disable <id>`, effective on next launch.
 
 The cart, checkout, OTP sign-in and order tracking on the web store. `orderRoutes.js` is ready
 for it and `/api/store/config` is live; nothing on the site calls either.
+
+---
+
+## Session 2026-08-31: free-chat off, themed date picker, brown icon, free-call bookings
+
+### AJ. Free 5-minute bot chat switched OFF (the toggle already existed)
+
+`app_settings.free_bot_chat_persona.enabled` is now **false**. The admin toggle was
+already built (admin -> Free Bot Chat -> "Enabled"); nothing new was needed to turn it off.
+Two real bugs in the DISABLED path were fixed first, both of which would have bitten the
+moment the switch was flipped:
+
+- `Home.js` did `if (personaRes.data?.enabled === false) return;` -- that `return` exits
+  `fetchUserProfile`, whose `setLoading(false)` sits below it, so **every eligible new
+  customer would have seen an infinite loading spinner on Home**. Now a flag, not a return.
+- The persona fetch failed **open**: a network error fell into the `catch` and the popup
+  still showed with the bundled fallback persona. Now fails **closed** -- no successful
+  "enabled" answer means no popup. That check is the ONLY place the admin switch is read.
+
+### AK. `ThemedDateTimePicker` -- replaced `@react-native-community/datetimepicker` everywhere
+
+`astrowani_customer-main/src/components/ThemedDateTimePicker.js`, wired into all **8**
+customer screens that had a picker (`Register.jsx`, `UserProfileScreen`, `BirthDetailsForm`,
+`NumerologyInputScreen`, `JanamKundaliScreen`, `KundaliMatchScreen`, `PanchangScreen`,
+`MuhuratCard`). The vendor app has no date pickers; chat has none either (it reads the DOB
+off the profile).
+
+**The pre-1970 bug, root cause**: no call site ever passed `minimumDate`, so the OS dialog
+used its own default minimum -- the Unix epoch on the affected devices -- and silently
+clamped 1965 up to 1970. A customer could not enter their own birth year, which makes every
+chart wrong. The new picker owns its year list (`DEFAULT_MIN_YEAR = 1900`), so there is no
+OS default left to clamp against. The year in the header is a **button** opening a year
+grid: 1965 is two taps, not 730 months of paging.
+
+**Drop-in contract** -- props and `onChange(event, date)` mirror the community picker
+(`event.type` 'set' / 'dismissed'), so call sites only swapped the import. Three things had
+to change with it:
+- Birth-date pickers now pass `maximumDate={new Date()}`; several accepted a **future**
+  birth date. Panchang/Muhurat deliberately do NOT (they pick forward-looking dates; the
+  year list runs to currentYear+5 when unbounded).
+- Old handlers did `setShowPicker(Platform.OS === 'ios')` -- correct for the old inline iOS
+  spinner, but this is a Modal on both platforms, so on iOS it would never close. All
+  changed to `false`. **Watch for this in any future picker call site.**
+- The time wheels select on `onMomentumScrollEnd`, not only on tap; taps alone meant
+  spinning to a time and pressing "Set time" silently kept the old value.
+
+Pure JS, no native dependency -- ships over OTA. (`@react-native-community/datetimepicker`
+is still installed but now has zero importers; removing it would need a native release.)
+
+### AL. Launcher icon + splash: black -> brown (#592a19, `COLORS.AstroMaroon`)
+
+- `values/colors.xml`: `ic_launcher_background` AND `splash_background` both `#000000` ->
+  `#592a19`. `IntroSplash.js`'s container was a **separate** hardcoded `#000000` -- changing
+  only the XML gives a brown flash into a black screen, so both moved together.
+- `ic_launcher.png` + `ic_launcher_round.png` recoloured across all 5 densities. Method:
+  the plate is every pixel with max-channel <= 30 (art starts at ~250, only ~90 pixels sit
+  between, so it is a clean cut); the plate is repainted and the anti-aliased fringe where
+  gold met it is **recomposited** (`P + brown*(1-A)`) rather than colour-swapped, so the
+  star keeps clean edges instead of a dark halo. The star, coin and purple W are carried
+  through pixel-for-pixel. The original's inner navy panel is merged into one flat brown.
+- **Native -- needs a Play Store release, not an OTA.** Verified via
+  `processDebugMainManifest` + `mergeDebugResources`, reading the value back out of the
+  merged resources. Gradle must be driven from **PowerShell**, not the Bash tool.
+
+### AM. Free 12-minute introductory CALL -- booking system (replaces the bot chat)
+
+A brand-new customer books a real slot; **the astrologer rings them directly**. There is no
+session, no wallet, no billing anywhere in this subsystem.
+
+**Files**: `sql/free_call_booking_schema.sql`, `src/freeCallRoutes.js`,
+`scripts/freeCallSlotCheck.js` (DB-free assertions), admin `pages/FreeCallBookings.jsx`,
+customer `api/FreeCallApi.js` + `components/FreeCallOffer.js` +
+`components/FreeCallGiftBubble.js`, plus `Home.js` / `onboardingFlags.js` wiring and 14 new
+i18n keys in **both** languages (parity re-verified: 940 keys each, 0 one-sided).
+
+**The rules it is built on:**
+
+1. **The server owns the slot grid.** The app renders what it is told and re-checks
+   nothing. `/api/free-call/book` rejects any `slotStart` that is not a slot this server
+   would itself offer, so a hand-crafted 3am time is refused.
+2. **Double-booking is prevented by a partial UNIQUE INDEX, not an application check.**
+   `free_call_bookings_slot_live_uniq` (one live booking per slot) and
+   `free_call_bookings_customer_live_uniq` (one per customer, ever). A 23505 is the race
+   being *caught*, not a bug; the two indexes are told apart by name so each gets the right
+   message. **Do not "optimise" these into a read-then-write.**
+3. **Slot maths runs in business time (IST, `FREE_CALL_TZ_OFFSET_MIN`), never the server's
+   local timezone.** A VPS clock on UTC would otherwise shift every offered slot by 5h30m
+   with nothing else noticing. `scripts/freeCallSlotCheck.js` asserts this (18 checks incl.
+   midnight and window-boundary cases) -- run it after touching the arithmetic.
+4. **Eligibility is server-side and fails CLOSED** -- brand-new customers only (no
+   `chat_sessions` row). An unreadable sessions table means "not eligible".
+5. **The offer config is one JSON blob** under `app_settings.free_call_offer`, saved via the
+   existing generic `/api/admin/settings` PATCH -- no new settings endpoint. Every numeric
+   field is clamped on read, because it is admin free-text.
+
+**Customer UX**: popup on Home (once, `freeCallOfferSeen_<id>`), and if dismissed a floating
+**gift bubble** stays on Home until they actually book -- the "seen" flag suppresses only the
+popup, deliberately. `astrologer_name` is snapshotted onto the booking so changing the offer
+astrologer never rewrites who a past customer was promised.
+
+**Admin** (sidebar -> Free Call Bookings): offer settings (astrologer, hours, slot spacing,
+lead time, all copy) + the bookings table with search, status/date filters, "upcoming first"
+sorting, mark done/missed/cancelled, internal notes, and a **reschedule picker that goes
+through the same unique index** -- an admin cannot move a call onto a held slot.
+
+**Deploy order does not matter.** Pre-migration the offer reports `enabled:false`, booking
+returns a clean 403 `OFFER_CLOSED`, and the admin list returns 200 with `tableMissing` so
+the page shows a "run the migration" banner. Verified explicitly.
+
+> **Trap found and fixed here:** PostgREST reports a missing table as **`PGRST205`**, not
+> Postgres's `42P01`. Checking only `42P01` turned a not-yet-migrated database into a 500.
+> `isMissingTable()` matches both -- use it for any future table-missing branch.
+
+### SQL to run (Supabase SQL editor)
+`sql/free_call_booking_schema.sql` -- idempotent. It seeds the offer **DISABLED on purpose**:
+the astrologer name/photo are placeholders, and going live on migration would book real
+customers onto a person who may not exist. Fill in the astrologer on the admin page, then
+tick "Offer is live".
+
+### Verified 2026-08-31
+Backend: `scripts/freeCallSlotCheck.js` 18/18; a bare-Express harness mounting
+`freeCallRoutes` 11/11 (admin routes reject missing/customer tokens, accept admin; the
+pre-migration path proven). **`index.js` was never booted** -- it starts sessionManager's
+billing worker against production. Admin page driven in a real browser against that harness:
+the migration banner, the "off" badge and offer summary, and the full settings form all
+render, and Save persists with numeric fields coerced to numbers. The test `app_settings`
+row was deleted afterwards so the migration seeds cleanly. Customer app: full Android bundle
+succeeds; lint clean on all new files (the 2 remaining `Home.js` errors are pre-existing
+`exhaustive-deps`). Admin `npm run build` succeeds. **Not exercised on a device** -- the app
+side needs a real booking pass once the SQL is applied.
+
+### AN. Free-call assignment: who takes it, and the vendor app (2026-08-31, same day)
+
+An admin decides who handles free-call bookings, and the assigned astrologer sees their
+own list in the vendor app and dials from it.
+
+**Three assignment modes** (`free_call_offer.assignmentMode` in app_settings):
+
+| Mode | At booking time | Slot capacity |
+|---|---|---|
+| `manual` (default) | left unassigned, admin hands each one out | 1 |
+| `single` | always `assignedAstrologerId` | 1 |
+| `pool` | split across `poolAstrologerIds`, least-loaded first | **= number of active pool members** |
+
+An admin can reassign any individual booking from the table at any time, whatever the mode.
+
+**Capacity had to become per-astrologer, and that changed a shipped index.**
+`free_call_booking_schema.sql` enforced one live booking per slot *globally*. Correct for one
+astrologer, but it makes a pool pointless — a second astrologer would add zero bookable
+places, because 3pm could still only hold one customer. `sql/free_call_booking_pool.sql`
+drops that index and replaces it with two:
+- `free_call_bookings_slot_astro_uniq` on `(slot_start, astrologer_id)` — an astrologer can
+  never be double-booked, but N astrologers give a slot N places.
+- `free_call_bookings_slot_unassigned_uniq` on `(slot_start)` WHERE `astrologer_id IS NULL`.
+  **This second index is not optional.** In Postgres NULLs are DISTINCT inside a unique
+  index, so `(slot_start, astrologer_id)` alone would allow unlimited unassigned rows on one
+  slot — silently removing the per-slot limit for exactly the mode where nobody is assigned.
+
+**Least-loaded, not round-robin.** `assigneeCandidates()` counts each pool member's live
+*upcoming* `booked` calls and puts the emptiest first. A round-robin cursor drifts out of
+balance permanently the first time a booking is cancelled; least-loaded self-corrects, and it
+handles someone joining or leaving the pool mid-stream. Completed/missed calls are excluded
+from the count, or finished work would keep pushing customers away from an astrologer forever.
+
+**The booking insert walks the candidate list.** It returns a LIST, not one astrologer,
+because two customers booking the same slot at the same instant can both pick the same
+emptiest member; a 23505 on the slot/astrologer index means "that one is busy at this slot",
+so it tries the next, with `null` as the final attempt. A 23505 naming `customer_live_uniq`
+is terminal (they already have a booking) and breaks out immediately. **The database decides
+availability, not the ordering logic.**
+
+**Fails toward unassigned, never toward a failed booking.** A suspended or un-approved
+astrologer is dropped from the pool; an empty pool falls back to `manual`; any error in
+assignment yields `null`. An unassigned booking sits in the admin's queue one click from
+fixed, whereas a failed booking loses the customer.
+
+**Vendor app** — `screens/Drawer/FreeCalls.js`, drawer item "My Free Calls":
+- `GET /api/vendor/free-call-bookings` scopes by the astrologer id **inside the vendor JWT**,
+  never a query param — these rows carry customers' phone numbers.
+- Upcoming and history are separate sections, not one sorted list, so a call due in 20
+  minutes can't be buried under a week of completed ones.
+- Primary action is a `tel:` dialler. `PATCH /api/vendor/free-call-bookings/:id` accepts only
+  `completed` / `missed`, and its `.eq('astrologer_id', …)` filter IS the authorisation check
+  (someone else's id updates zero rows and 404s). **Rescheduling and cancelling are
+  deliberately admin-only** — moving a customer's appointment is a conversation, not a button
+  in the vendor app.
+
+**Admin**: assignment mode + pool checkboxes in the offer settings; an "Assigned to"
+dropdown on every row; an astrologer filter including "Unassigned"; and a "Need an
+astrologer" count tile (live `booked` rows with nobody on them). The reschedule picker now
+shows `used/capacity` per slot.
+
+### SQL to run for this (Supabase SQL editor, after the base schema)
+1. `sql/free_call_booking_assignment.sql` — indexes for the per-astrologer lookups.
+2. `sql/free_call_booking_pool.sql` — **swaps the per-slot unique index**; required before
+   pool mode can give a slot more than one place.
+
+### Verified 2026-08-31 (assignment + pool)
+Against the live database, calling the assignment logic directly and deleting every
+synthetic row afterwards (24 created, 24 deleted, table confirmed back to 0). **9/9**:
+capacity is 2 for a 2-astrologer pool and 1 for single/manual; **20 bookings split exactly
+10/10**; after cancelling 4 of one astrologer's calls the next 4 all went to them and the
+load returned to 10/10 (the assertion a round-robin implementation would fail); an
+unknown/inactive id is dropped from the pool; an empty pool assigns nobody without throwing.
+`scripts/freeCallSlotCheck.js` still 18/18. Admin `npm run build` and the vendor Android
+bundle both succeed; vendor lint clean (the one `NavigationScreen.js` exhaustive-deps error
+is pre-existing).
+
+> **Test-harness lesson:** the first run swallowed failed inserts and reported a pass on a
+> tally built from 21 rows when it thought it had 24 — the database has only 21 customers and
+> the loop indexed past the end. A harness that does not throw on a failed write can report a
+> distribution that never happened. Rewritten to throw.
+
+### AO. End-to-end verification of the free-call flow (2026-08-31)
+
+All three SQL files applied to production, then the whole flow driven over real HTTP against
+the live database: **53 assertions, 0 failures**. A bare Express app mounting `adminRoutes` +
+`freeCallRoutes`; `index.js` never booted. Teardown deleted every synthetic booking (table
+confirmed back to 0 rows) and restored `free_call_offer` byte-for-byte.
+
+Covered: offer off (403 `OFFER_CLOSED`) -> offer on with a 2-astrologer pool -> 7 dates / 14
+free slots -> **two customers both booking the SAME slot, auto-assigned to two different
+astrologers**, third refused `SLOT_TAKEN` -> once-only per customer (`ALREADY_BOOKED`) ->
+off-grid timestamp rejected `BAD_SLOT` -> vendor list scoped to the JWT's own astrologer (the
+other astrologer gets 404 on someone else's booking; a customer token gets nothing; cancel
+refused 400) -> admin list/filters/search, reassign (409 when the target astrologer is
+already busy at that time), unassign, reschedule (original time kept, `slot_end` moves,
+`reschedule_count` increments), notes, invalid status rejected -> admin cancel frees the
+place and a new customer takes it -> manual mode arrives unassigned at capacity 1 -> single
+mode auto-assigns -> a customer with a prior session is `NOT_ELIGIBLE`.
+
+> **THE MIGRATION TRAP, worth remembering.** The first run failed 6 assertions, all from one
+> cause: `free_call_booking_pool.sql` had been run but its `DROP INDEX` had not taken effect,
+> leaving `free_call_bookings_slot_live_uniq` in place. The file wrapped its statements in
+> explicit `BEGIN; ... COMMIT;`, which is the suspected cause. **A half-applied index
+> migration here throws no error at runtime** — booking still works, it just silently caps
+> every slot at one customer forever, which reads as "the pool feature doesn't work" rather
+> than "the migration didn't run". The file now has no transaction control and ends with a
+> `DO $$` block that RAISES if the old index survives or either new one is missing, plus a
+> `pg_indexes` SELECT so the result pane shows the truth. **Give any future index-swap
+> migration the same self-verifying tail.**
+
+> **Test-harness lesson (second one this session).** The final "failure" was the harness
+> comparing `slot_start` as STRINGS: Postgres returns `...+00:00`, the value sent was `...Z`,
+> so the filter matched nothing and reported 1 booking where there were 2. Compare timestamps
+> by `getTime()`, never by string equality.
+
+**Still not applied:** `sql/free_call_booking_assignment.sql` — its two indexes
+(`free_call_bookings_astrologer_idx`, `free_call_bookings_unassigned_idx`) are absent from
+production. Performance only: the vendor app's per-astrologer query and the admin's
+unassigned queue currently scan the table. Correctness is unaffected, which is why every test
+above passes without it.
