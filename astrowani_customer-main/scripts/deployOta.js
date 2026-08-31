@@ -60,7 +60,11 @@ let dirty = '';
 let commit = '(unknown)';
 let subject = '';
 try {
-  dirty = sh('git status --porcelain');
+  // Scoped to THIS app with `-- .`, not the whole repo. This is a monorepo:
+  // an untracked file in astrowani-shop or the backend cannot end up in this
+  // app's bundle, and blocking on it would train people to pass --allow-dirty
+  // reflexively, which defeats the check.
+  dirty = sh('git status --porcelain -- .');
   commit = sh('git rev-parse --short HEAD');
   subject = sh('git log -1 --pretty=%s');
 } catch (_) {
