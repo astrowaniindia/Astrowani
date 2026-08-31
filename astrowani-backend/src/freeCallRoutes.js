@@ -773,6 +773,101 @@ module.exports = function registerFreeCallRoutes(app) {
     return res.status(200).json({ success: true, booking: data });
   }));
 
+  /* ── Admin: spread every unassigned booking across the astrologers ────────
+   * Switching to pool mode only changes what happens to FUTURE bookings, so
+   * anything already sitting unassigned would stay that way forever. This is the
+   * catch-up: one call hands out the whole backlog on the same least-loaded rule
+   * new bookings use, so an admin never has to work through them one at a time.
+   *
+   * Takes `astrologerIds` from the body, or falls back to the configured pool.
+   * Only ever touches future, still-'booked', unassigned rows — it will not
+   * reassign work someone already has, or disturb the past.
+   */
+  app.post('/api/admin/free-call-bookings/distribute', requireAdmin, h(async (req, res) => {
+    const offer = await loadOffer();
+    const requested = Array.isArray(req.body?.astrologerIds) ? req.body.astrologerIds : null;
+    const poolIds = requested && requested.length
+      ? requested
+      : (offer.assignmentMode === 'pool' ? offer.poolAstrologerIds : []);
+
+    const pool = await activeAstrologers(poolIds);
+    if (!pool.length) {
+      return res.status(400).json({
+        success: false,
+        code: 'NO_POOL',
+        message: 'Choose at least one approved astrologer to share the bookings between.',
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: pending, error: readErr } = await db
+      .from('free_call_bookings')
+      .select('id, slot_start')
+      .is('astrologer_id', null)
+      .eq('status', 'booked')
+      .gte('slot_start', nowIso)
+      .order('slot_start', { ascending: true });
+    if (readErr) {
+      if (isMissingTable(readErr)) return res.status(503).json({ success: false, message: 'Bookings table not created yet.' });
+      throw new Error(readErr.message);
+    }
+    if (!pending || !pending.length) {
+      return res.status(200).json({ success: true, assigned: 0, skipped: 0, perAstrologer: [], message: 'Nothing was waiting to be assigned.' });
+    }
+
+    // Seed each astrologer's running count from the work they ALREADY hold, so a
+    // backlog is spread to even out the real totals rather than being dealt out
+    // evenly on top of an existing imbalance.
+    const counts = new Map(pool.map((a) => [a.id, 0]));
+    const { data: existing } = await db
+      .from('free_call_bookings')
+      .select('astrologer_id')
+      .eq('status', 'booked')
+      .gte('slot_start', nowIso)
+      .in('astrologer_id', pool.map((a) => a.id));
+    (existing || []).forEach((r) => {
+      if (counts.has(r.astrologer_id)) counts.set(r.astrologer_id, counts.get(r.astrologer_id) + 1);
+    });
+
+    let assigned = 0;
+    let skipped = 0;
+    for (const row of pending) {
+      // Emptiest first, and walk down on a clash: a 23505 means that astrologer
+      // already has a call at this exact slot, which is the database enforcing
+      // "nobody is double-booked" — not an error to report.
+      const order = [...pool].sort((a, b) => counts.get(a.id) - counts.get(b.id));
+      let placed = false;
+      for (const astro of order) {
+        const { error } = await db
+          .from('free_call_bookings')
+          .update({ astrologer_id: astro.id })
+          .eq('id', row.id)
+          .is('astrologer_id', null);   // never steal a row someone just claimed
+        if (!error) {
+          counts.set(astro.id, counts.get(astro.id) + 1);
+          assigned += 1;
+          placed = true;
+          break;
+        }
+        if (error.code !== '23505') throw new Error(error.message);
+      }
+      // Every pool member is already busy at that slot. Left unassigned on
+      // purpose and reported, rather than silently double-booking someone.
+      if (!placed) skipped += 1;
+    }
+
+    return res.status(200).json({
+      success: true,
+      assigned,
+      skipped,
+      perAstrologer: pool.map((a) => ({
+        id: a.id,
+        name: astrologerFullName(a),
+        total: counts.get(a.id),
+      })),
+    });
+  }));
+
   /* ── Admin: the slot grid, for the reschedule picker ─────────────────────── */
   app.get('/api/admin/free-call-slots', requireAdmin, h(async (req, res) => {
     const offer = await loadOffer();

@@ -209,6 +209,41 @@ export default function FreeCallBookings() {
     patchBooking(row.id, { astrologerId: astrologerId || null });
   };
 
+  // Switching to pool mode only changes what happens to NEW bookings, so anything
+  // already sitting unassigned would stay that way. This hands out the backlog on
+  // the same least-loaded rule, so nobody has to work through them one at a time.
+  const distribute = async () => {
+    const pool = (offer.poolAstrologerIds || []).filter((id) => astrologers.some((a) => a.id === id));
+    const ids = offer.assignmentMode === 'pool' && pool.length
+      ? pool
+      : offer.assignmentMode === 'single' && offer.assignedAstrologerId
+        ? [offer.assignedAstrologerId]
+        : [];
+    if (!ids.length) {
+      alert('Pick who shares the calls first — open "Edit offer" and choose an assignment mode.');
+      setShowSettings(true);
+      return;
+    }
+    const names = ids.map((id) => astroName(astrologers.find((a) => a.id === id) || {})).join(', ');
+    if (!window.confirm(`Share every unassigned booking between ${names}?`)) return;
+
+    setBusy(true);
+    try {
+      const { data } = await client.post('/api/admin/free-call-bookings/distribute', { astrologerIds: ids });
+      const lines = (data.perAstrologer || []).map((a) => `  ${a.name}: ${a.total}`).join('\n');
+      alert(
+        `Assigned ${data.assigned} booking${data.assigned === 1 ? '' : 's'}.` +
+        (data.skipped ? `\n${data.skipped} left unassigned — everyone was already busy at that time.` : '') +
+        (lines ? `\n\nUpcoming calls each:\n${lines}` : ''),
+      );
+      load();
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const changeStatus = (row, status) => {
     if (status === row.status) return;
     const verb = STATUS_LABEL[status];
@@ -269,6 +304,22 @@ export default function FreeCallBookings() {
             Run <code>astrowani-backend/sql/free_call_booking_schema.sql</code> in the Supabase
             SQL editor. Until then the offer stays off and customers see nothing.
           </p>
+        </div>
+      )}
+
+      {/* Manual mode means every booking needs a human decision. That is a fine
+          choice, but it should never be a surprise — this is what turns "why am I
+          assigning 100 of these" into a one-click fix. */}
+      {offerLoaded && offer.enabled && offer.assignmentMode === 'manual' && (
+        <div className="card" style={{ marginBottom: 18, borderLeft: '4px solid #e67e22' }}>
+          <strong>Every booking has to be assigned by hand right now.</strong>
+          <p className="muted" style={{ margin: '6px 0 10px' }}>
+            The offer is set to “assign by hand”, so nobody is put on a booking automatically.
+            Switch to <strong>split automatically across several astrologers</strong> and each new
+            booking goes to whoever has the fewest upcoming calls — 100 bookings across two
+            astrologers lands at roughly 50 each, with no work from you.
+          </p>
+          <button className="btn sm" onClick={() => setShowSettings(true)}>Change how calls are assigned</button>
         </div>
       )}
 
@@ -530,6 +581,11 @@ export default function FreeCallBookings() {
         <div className="stat">
           <h3 style={{ color: counts.unassigned ? '#c0392b' : undefined }}>{counts.unassigned}</h3>
           <p>Need an astrologer</p>
+          {counts.unassigned > 0 && (
+            <button className="btn sm" style={{ marginTop: 8 }} disabled={busy} onClick={distribute}>
+              {busy ? 'Sharing…' : 'Share them out'}
+            </button>
+          )}
         </div>
       </div>
 
