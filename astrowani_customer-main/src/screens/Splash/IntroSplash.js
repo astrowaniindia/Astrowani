@@ -88,7 +88,11 @@ export default function IntroSplash({ onFinish }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    // Matches values/colors.xml's splash_background and the launcher icon's
+    // plate, so the native splash hands over to this animation with no colour
+    // flash. Hardcoded rather than COLORS.AstroMaroon to keep this screen free
+    // of imports that run before the app has bootstrapped.
+    backgroundColor: '#592a19',
     alignItems: 'center',
     justifyContent: 'center',
   },

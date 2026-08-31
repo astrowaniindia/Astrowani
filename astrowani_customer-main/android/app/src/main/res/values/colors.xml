@@ -1,7 +1,12 @@
 <resources>
-    <!-- Matches IntroSplash.js's container background (#000000) so the launcher
-         icon, native Android 12+ splash, and JS intro animation are all the same
-         solid black instead of the icon looking blue next to other apps. -->
-    <color name="splash_background">#000000</color>
-    <color name="ic_launcher_background">#000000</color>
+    <!-- The native Android 12+ cold-start splash (BootTheme in styles.xml).
+         Kept in step with IntroSplash.js's container background and with the
+         launcher icon's plate below, so boot reads as one continuous brown
+         rather than black -> brown -> app. #592a19 is COLORS.AstroMaroon. -->
+    <color name="splash_background">#592a19</color>
+    <!-- Adaptive-icon background layer (mipmap-anydpi-v26/ic_launcher.xml).
+         Must stay in step with the plate baked into ic_launcher.png /
+         ic_launcher_round.png, or Android 8+ and legacy launchers show two
+         different colours. #592a19 is COLORS.AstroMaroon from the app palette. -->
+    <color name="ic_launcher_background">#592a19</color>
 </resources>
