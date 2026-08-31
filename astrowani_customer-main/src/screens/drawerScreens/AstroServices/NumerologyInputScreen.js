@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator} from 'react-native';
 import {Dropdown} from 'react-native-element-dropdown';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../../components/ThemedDateTimePicker';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import useAstroPurchase from './useAstroPurchase';
@@ -97,6 +97,7 @@ export default function NumerologyInputScreen({navigation}) {
       {showDatePicker && (
         <DateTimePicker
           value={dob || new Date()} mode="date" display="default"
+          maximumDate={new Date()}
           onChange={(event, selectedDate) => {
             setShowDatePicker(false);
             if (selectedDate) setDob(selectedDate);

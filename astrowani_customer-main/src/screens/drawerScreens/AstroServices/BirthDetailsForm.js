@@ -12,7 +12,7 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../../components/ThemedDateTimePicker';
 import PlaceAutocomplete, {geocodePlace} from '../../../components/PlaceAutocomplete';
 import {LanguageContext} from '../../../context/LanguageContext';
 import useSavedProfile from '../../../hooks/useSavedProfile';
@@ -221,6 +221,7 @@ export default function BirthDetailsForm({
           value={dateOfBirth || new Date()}
           mode="date"
           display="default"
+          maximumDate={new Date()}
           onChange={(event, selectedDate) => {
             setShowDatePicker(false);
             if (selectedDate) setDateOfBirth(selectedDate);

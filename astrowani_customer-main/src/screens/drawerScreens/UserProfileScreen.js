@@ -17,7 +17,7 @@ import {COLORS} from '../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {Dropdown} from 'react-native-element-dropdown';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../components/ThemedDateTimePicker';
 import Instance, {LONG_REQUEST_TIMEOUT_MS} from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
@@ -472,13 +472,14 @@ const UserProfileScreen = ({navigation, route}) => {
       {showDatePicker && (
         <DateTimePicker
           value={userProfile.dateOfBirth || new Date()} mode="date" display="default"
-          onChange={(e, date) => { setShowDatePicker(Platform.OS === 'ios'); if(date) handleInputChange('dateOfBirth', date); }}
+          maximumDate={new Date()}
+          onChange={(e, date) => { setShowDatePicker(false); if(date) handleInputChange('dateOfBirth', date); }}
         />
       )}
       {showTimePicker && (
         <DateTimePicker
           value={userProfile.timeOfBirth || new Date()} mode="time" display="default"
-          onChange={(e, time) => { setShowTimePicker(Platform.OS === 'ios'); if(time) handleInputChange('timeOfBirth', time); }}
+          onChange={(e, time) => { setShowTimePicker(false); if(time) handleInputChange('timeOfBirth', time); }}
         />
       )}
 

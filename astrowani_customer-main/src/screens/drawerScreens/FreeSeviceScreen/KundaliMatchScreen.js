@@ -17,7 +17,7 @@ import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {Dropdown} from 'react-native-element-dropdown';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../../components/ThemedDateTimePicker';
 import PlaceAutocomplete, {geocodePlace} from '../../../components/PlaceAutocomplete';
 import axios from 'axios';
 import { FREE_SERVICES_URL } from '../../../config/api';
@@ -498,6 +498,7 @@ const KundaliMatchScreen = ({navigation}) => {
           value={boydateOfBirth || new Date()}
           mode="date"
           display="default"
+          maximumDate={new Date()}
           onChange={onBoyChangeDate}
         />
       )}
@@ -506,6 +507,7 @@ const KundaliMatchScreen = ({navigation}) => {
           value={girldateOfBirth || new Date()}
           mode="date"
           display="default"
+          maximumDate={new Date()}
           onChange={onGirlChangeDate}
         />
       )}

@@ -15,7 +15,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../components/ThemedDateTimePicker';
 import { Picker } from '@react-native-picker/picker';
 import { Dropdown } from 'react-native-element-dropdown';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -84,14 +84,14 @@ export default function Register({ navigation }) {
   };
 
   const onChangeDOB = (event, selectedDate) => {
-    setShowDobPicker(Platform.OS === 'ios');
+    setShowDobPicker(false);
     if (selectedDate) {
       setDob(selectedDate);
     }
   };
 
   const onChangeTime = (event, selectedTime) => {
-    setShowTimePicker(Platform.OS === 'ios');
+    setShowTimePicker(false);
     if (selectedTime) {
       setTimeOfBirth(selectedTime);
     }

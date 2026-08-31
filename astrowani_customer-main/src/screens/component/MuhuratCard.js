@@ -12,7 +12,7 @@
 // import FontAwesome from 'react-native-vector-icons/FontAwesome';
 // import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 // import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
-// import DateTimePicker from '@react-native-community/datetimepicker';
+// import DateTimePicker from '../../components/ThemedDateTimePicker';
 // import { COLORS } from '../../Theme/Colors';
 // import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 // import Geolocation from '@react-native-community/geolocation';
@@ -331,7 +331,7 @@ import {
 } from 'react-native';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../components/ThemedDateTimePicker';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
 import { reverseGeocode } from '../../utils/geocoding';
 import Geolocation from '@react-native-community/geolocation';
@@ -503,7 +503,7 @@ const MuhuratCard = ({ title }) => {
 
   const onDateChange = (event, selectedDate) => {
     const currentDate = selectedDate || date;
-    setShowDatePicker(Platform.OS === 'ios');
+    setShowDatePicker(false);
     setDate(currentDate);
   };
 

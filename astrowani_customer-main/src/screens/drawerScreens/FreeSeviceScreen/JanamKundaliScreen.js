@@ -14,7 +14,7 @@ import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {Dropdown} from 'react-native-element-dropdown';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../../components/ThemedDateTimePicker';
 import PlaceAutocomplete, {geocodePlace} from '../../../components/PlaceAutocomplete';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
@@ -314,6 +314,7 @@ const JanamKundaliScreen = ({navigation}) => {
           value={dateOfBirth || new Date()}
           mode="date"
           display="default"
+          maximumDate={new Date()}
           onChange={onChangeDate}
         />
       )}

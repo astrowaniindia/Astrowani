@@ -12,7 +12,7 @@
 // import FontAwesome from 'react-native-vector-icons/FontAwesome';
 // import {COLORS} from '../../../Theme/Colors';
 // import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
-// import DateTimePicker from '@react-native-community/datetimepicker';
+// import DateTimePicker from '../../../components/ThemedDateTimePicker';
 // import DetailList from '../../component/DetailsList';
 
 // const PanchangScreen = () => {
@@ -260,7 +260,7 @@ import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../../utils/Scaling';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '../../../components/ThemedDateTimePicker';
 import DetailList from '../../component/DetailsList';
 import {
   ASTRO, SectionCard, StatTile, TileRow, Divider, ConsultCta,
