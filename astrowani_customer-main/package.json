@@ -8,7 +8,9 @@
     "start": "node index.js",
     "build": "dist ",
     "lint": "eslint .",
-    "postinstall": "node scripts/apply-native-patches.js"
+    "postinstall": "node scripts/apply-native-patches.js",
+    "deploy:ota": "node scripts/deployOta.js",
+    "deploy:ota:dry": "node scripts/deployOta.js --dry-run"
   },
   "dependencies": {
     "@hot-updater/react-native": "^0.35.10",
