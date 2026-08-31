@@ -22,6 +22,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { generateReply } = require('./whatsappBot');
 const { findCustomerByPhone } = require('./customerLookup');
+const { makeCreateOrderTool } = require('./whatsappOrders');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -224,7 +225,9 @@ module.exports = function registerWhatsAppRoutes(app) {
       conversationId: convo.id,
       history: (history || []).slice(0, -1),
       userMessage: opening,
-      createPaymentLink: null, // wired up with the Razorpay link stage
+      // Bound to THIS conversation, so the model cannot create an order against
+      // somebody else's chat even if it is handed a stray id.
+      createPaymentLink: makeCreateOrderTool(convo),
     });
 
     await db.from('whatsapp_messages').insert([{
