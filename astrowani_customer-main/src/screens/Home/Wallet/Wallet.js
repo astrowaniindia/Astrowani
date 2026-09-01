@@ -9,6 +9,9 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
+  InputAccessoryView,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,6 +25,12 @@ import { captureEvent } from '../../../utils/Analytics';
 import { razorpayPrefill } from '../../../utils/customerIdentity';
 
 const presetAmounts = [50, 100, 200, 500, 1000, 2000];
+
+// iOS's number-pad has NO return key, so a numeric field there has no way to
+// dismiss its own keyboard — the amount field would trap the user with Proceed
+// hidden behind it. Android has the back button, which is why this only ever
+// bit on iOS. Two escapes: a Done bar above the keypad, and tap-anywhere-else.
+const AMOUNT_ACCESSORY_ID = 'walletAmountAccessory';
 
 const Wallet = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -104,10 +113,15 @@ const Wallet = ({navigation}) => {
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      {/* Tap anywhere outside the field to dismiss. accessible={false} keeps this
+          wrapper invisible to screen readers, and it does not swallow taps meant
+          for the buttons inside it. */}
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={styles.dismissArea}>
       <View style={styles.headerCard}>
         <View style={styles.walletIconContainer}>
           <MaterialIcons name="account-balance-wallet" size={40} color={COLORS.AstroGold} />
@@ -128,6 +142,9 @@ const Wallet = ({navigation}) => {
             placeholder="0"
             placeholderTextColor="#ccc"
             maxLength={6}
+            returnKeyType="done"
+            onSubmitEditing={Keyboard.dismiss}
+            inputAccessoryViewID={Platform.OS === 'ios' ? AMOUNT_ACCESSORY_ID : undefined}
           />
         </View>
       </View>
@@ -162,6 +179,20 @@ const Wallet = ({navigation}) => {
           {!processing && <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />}
         </TouchableOpacity>
       </View>
+      </View>
+      </TouchableWithoutFeedback>
+
+      {/* iOS only — renders nothing on Android. Gives the number-pad the Done
+          key it does not otherwise have. */}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={AMOUNT_ACCESSORY_ID}>
+          <View style={styles.accessoryBar}>
+            <TouchableOpacity onPress={Keyboard.dismiss} style={styles.accessoryDone}>
+              <Text style={styles.accessoryDoneTxt}>{t('wallet.done')}</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -172,6 +203,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
+  },
+  // Fills the screen so a tap on empty space still reaches the dismiss handler.
+  dismissArea: {
+    flex: 1,
+  },
+  accessoryBar: {
+    backgroundColor: '#F1F1F4',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#C7C7CC',
+    alignItems: 'flex-end',
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+  },
+  accessoryDone: {
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(4),
+  },
+  accessoryDoneTxt: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(16),
+    fontWeight: '600',
   },
   headerCard: {
     backgroundColor: COLORS.AstroMaroon,
