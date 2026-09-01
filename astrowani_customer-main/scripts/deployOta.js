@@ -141,8 +141,27 @@ for (const platform of targets) {
   if (message) args.push('-m', message);
 
   say(`── ${platform} ${'─'.repeat(40)}`);
-  const run = spawnSync('npx', args, { cwd: ROOT, stdio: 'inherit', shell: true });
-  const okRun = run.status === 0;
+  // Output is CAPTURED, not inherited, because the exit code alone is a liar:
+  // hot-updater exits 0 after printing "Target app version not found in native
+  // files" and skipping the deploy entirely. Trusting `status === 0` reported
+  // "ios deployed" for a platform that had deployed nothing — precisely the
+  // silent split this script exists to prevent. A real deploy always prints
+  // "Deployment Successful", so require that marker too.
+  // If a future hot-updater renames that string this will report FAILED for a
+  // deploy that worked. That is the safe direction: a false alarm you can see
+  // beats a false success you cannot.
+  const run = spawnSync('npx', args, { cwd: ROOT, encoding: 'utf8', shell: true });
+  const output = `${run.stdout || ''}${run.stderr || ''}`;
+  process.stdout.write(output);
+
+  const sawSuccess = /Deployment Successful/i.test(output);
+  const okRun = run.status === 0 && sawSuccess;
+  if (run.status === 0 && !sawSuccess) {
+    say('');
+    say(`  ⚠  ${platform}: hot-updater exited 0 but never reported a successful`);
+    say('     deployment. Treating this as a FAILURE. Look for a target-version');
+    say('     or config error in the output above.');
+  }
   results.push({ platform, ok: okRun });
   say('');
 
