@@ -19,11 +19,15 @@ import {resetWalletBalance} from '../../hooks/useWalletBalance';
 // Moved to config/legal.js — the sign-up screen links the same Terms and Privacy
 // pages for its acceptance checkbox, and a legal URL should exist in one place.
 import {LEGAL_LINKS} from '../../config/legal';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 export default function Settings({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(logoutModalVisible || deleteModalVisible);
 
   const handleDeleteAccount = () => {
     setDeleteModalVisible(false);

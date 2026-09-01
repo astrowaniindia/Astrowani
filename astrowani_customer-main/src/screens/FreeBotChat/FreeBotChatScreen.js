@@ -33,6 +33,7 @@ import { getOpeningMessage, getBotReply } from '../../utils/freeChatBotEngine';
 import { captureEvent } from '../../utils/Analytics';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import { LanguageContext } from '../../context/LanguageContext';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const CHAT_DURATION_SECONDS = 300;
 
@@ -51,6 +52,9 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   const [text, setText] = useState('');
   const [botTyping, setBotTyping] = useState(false);
   const [completedVisible, setCompletedVisible] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(completedVisible);
   const hasEndedRef = useRef(false);
   const flatListRef = useRef(null);
   const msgIdRef = useRef(0);

@@ -18,6 +18,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from './StatusPopup';
 import { captureEvent } from '../utils/Analytics';
+import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
 let listener = null;
 export const showReviewPrompt = (opts) => {
@@ -75,10 +76,15 @@ export function ReviewPromptHost() {
     }
   };
 
+  // Root-level popup: this component sits BELOW any screen modal, so presenting
+  // while one is up is exactly the case iOS refuses — see utils/modalPresentation.
+  const ready = useDeferredPresent(!!target);
+  useModalPresence(ready);
+
   if (!target) return null;
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={close}>
+    <Modal transparent visible={ready} animationType="fade" onRequestClose={close}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           {target.image ? (

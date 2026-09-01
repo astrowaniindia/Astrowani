@@ -22,11 +22,16 @@ import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { captureEvent } from '../../utils/Analytics';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
   const navigation = useNavigation();
   const { t } = React.useContext(LanguageContext);
   const [isWaiting, setIsWaiting] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // (StatusPopup / CustomAlert / ...) wait for it instead of colliding with
+  // it on iOS. See utils/modalPresentation.
+  useModalPresence(isWaiting);
   const [waitingAstroName, setWaitingAstroName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 

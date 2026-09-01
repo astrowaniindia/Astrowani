@@ -8,11 +8,16 @@ import { Modal, View, Text, Image, TouchableOpacity, StyleSheet } from 'react-na
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { FREE_CHAT_PERSONA } from '../data/freeBotChatPersona';
+import {useModalPresence} from '../utils/modalPresentation';
 
 // `persona` comes from GET /api/free-bot-chat/persona (admin-editable via the
 // dashboard's Free Bot Chat page) — this bundled FREE_CHAT_PERSONA is only the
 // fallback used before that fetch resolves or if it ever fails.
 const FreeChatOfferPopup = ({ visible, persona, onStart, onDismiss }) => {
+  // Declares this modal to the presentation registry so root-level popups wait
+  // for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(visible);
+
   if (!visible) return null;
 
   const name = persona?.name || FREE_CHAT_PERSONA.name;

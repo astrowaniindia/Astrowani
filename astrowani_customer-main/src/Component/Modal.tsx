@@ -1,5 +1,5 @@
 // GiftModal — real, wallet-connected gifting (live + profile).
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   Modal,
   View,
@@ -9,24 +9,29 @@ import {
   Image,
   FlatList,
   ActivityIndicator,
-  ToastAndroid,
   Platform,
-  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
 import {COLORS} from '../Theme/Colors';
 import useGiftSender from '../hooks/useGiftSender';
-
-const notify = (msg: string) =>
-  Platform.OS === 'android' ? ToastAndroid.show(msg, ToastAndroid.SHORT) : Alert.alert(msg);
+import {useModalPresence} from '../utils/modalPresentation';
 
 export default function GiftModal({visible, onClose, astrologer, context = 'profile', sessionId}: any) {
   const [gifts, setGifts] = useState<any[]>([]);
   const [balance, setBalance] = useState(0);
   const [selected, setSelected] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  // Validation messages render INSIDE this modal rather than through Alert.
+  // App.js overrides Alert.alert to render CustomAlert, which is itself a
+  // <Modal> mounted at the app root — see the iOS note on send() below.
+  const [notice, setNotice] = useState('');
+  const pendingSendRef = useRef<null | (() => void)>(null);
   const {sendGift, sendingGiftId} = useGiftSender();
+  // Declares this modal to the presentation registry so root-level popups
+  // (StatusPopup / CustomAlert / ...) wait for it instead of colliding with
+  // it on iOS. See utils/modalPresentation.
+  useModalPresence(visible);
   const sending = !!sendingGiftId;
 
   const astrologerId = astrologer?.userId || astrologer?._id;
@@ -50,14 +55,12 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
   };
 
   useEffect(() => {
-    if (visible) { setSelected(null); load(); }
+    if (visible) { setSelected(null); setNotice(''); load(); }
   }, [visible]);
 
   // Confirm-before-charge + insufficient-balance handling lives in useGiftSender
   // (shared with the always-visible gift grid on the astrologer profile screen).
-  const send = () => {
-    if (!selected) { notify('Select a gift first'); return; }
-    if (!astrologerId) { notify('Astrologer info missing'); return; }
+  const runSend = () => {
     sendGift({
       astrologerId,
       gift: selected,
@@ -68,8 +71,41 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
     });
   };
 
+  const send = () => {
+    if (!selected) { setNotice('Select a gift first'); return; }
+    if (!astrologerId) { setNotice('Astrologer info missing'); return; }
+    setNotice('');
+
+    // iOS presents every <Modal> as a real view controller, and you cannot
+    // present onto one that is already presenting. useGiftSender's confirm
+    // popup (showStatusPopup) is a <Modal> mounted at the NAVIGATION root —
+    // i.e. underneath this one — so on iOS that presentation silently fails
+    // and leaves an invisible modal holding all touch input: the app looks
+    // frozen (video keeps playing, no button responds) and the gift never
+    // sends. Android stacks modals as plain views in one window, which is why
+    // this only ever broke on iOS.
+    // So: dismiss this modal FIRST and fire the confirm from onDismiss, once
+    // the presentation is genuinely free.
+    if (Platform.OS === 'ios') {
+      pendingSendRef.current = runSend;
+      onClose && onClose();
+      return;
+    }
+    runSend();
+  };
+
   return (
-    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      // iOS-only; fires after the dismissal animation completes.
+      onDismiss={() => {
+        const pending = pendingSendRef.current;
+        pendingSendRef.current = null;
+        pending && pending();
+      }}>
       <View style={styles.overlay}>
         <View style={styles.modalBox}>
           <View style={styles.handle} />
@@ -108,6 +144,8 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
             />
           )}
 
+          {!!notice && <Text style={styles.notice}>{notice}</Text>}
+
           <TouchableOpacity style={[styles.sendBtn, (!selected || sending) && {opacity: 0.6}]} onPress={send} disabled={!selected || sending}>
             <Text style={styles.sendText}>
               {sending ? 'Sending…' : selected ? `Send ${selected.name} · ₹${selected.price}` : 'Select a gift'}
@@ -137,6 +175,7 @@ const styles = StyleSheet.create({
   giftName: {fontSize: 11, color: '#444', marginTop: 4},
   price: {fontSize: 12, color: COLORS.AstroMaroon, fontWeight: 'bold', marginTop: 2},
   empty: {textAlign: 'center', color: '#888', marginVertical: 24, width: '100%'},
+  notice: {textAlign: 'center', color: '#C0392B', fontSize: 13, marginTop: 8},
   sendBtn: {backgroundColor: COLORS.AstroMaroon, paddingVertical: 14, borderRadius: 26, marginTop: 12},
   sendText: {color: '#fff', textAlign: 'center', fontWeight: '700', fontSize: 16},
 });

@@ -32,6 +32,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
+import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
 let listener = null;
 // Reasons a consult never became a request row at all. These attempts leave NO trace
@@ -106,6 +107,11 @@ export function StatusPopupHost() {
     }
   }, [state]);
 
+  // Root-level popup: this component sits BELOW any screen modal, so presenting
+  // while one is up is exactly the case iOS refuses — see utils/modalPresentation.
+  const ready = useDeferredPresent(!!state);
+  useModalPresence(ready);
+
   if (!state) return null;
   const v = VARIANTS[state.variant] || VARIANTS.info;
   const isConfirm = !!state.onConfirm;
@@ -133,7 +139,7 @@ export function StatusPopupHost() {
   };
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={isConfirm ? handleCancel : close}>
+    <Modal transparent visible={ready} animationType="fade" onRequestClose={isConfirm ? handleCancel : close}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           <View style={[styles.iconCircle, { backgroundColor: v.tint }]}>

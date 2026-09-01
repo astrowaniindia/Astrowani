@@ -34,6 +34,7 @@ import {
 } from 'react-native';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
+import {useModalPresence} from '../utils/modalPresentation';
 
 // 1900 covers any living customer with room to spare. The previous behaviour
 // effectively made this 1970 — see the header note.
@@ -72,6 +73,9 @@ const ThemedDateTimePicker = ({
   );
 
   const [draft, setDraft] = useState(initial);
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(true);
   // 'days' | 'months' | 'years' for date mode.
   const [pane, setPane] = useState('days');
   // The month being displayed, which is not the same as the selected date —

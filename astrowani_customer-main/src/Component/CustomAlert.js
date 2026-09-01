@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Dimensions, DeviceEventEmitter } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../Theme/Colors';
+import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
 const { width } = Dimensions.get('window');
 
@@ -39,13 +40,19 @@ const CustomAlert = () => {
     }
   };
 
+  // App.js routes every Alert.alert through this component, so it can fire from
+  // inside an open screen modal — the exact presentation iOS refuses. Waiting
+  // until the stack is clear turns a frozen app into a slightly later alert.
+  const ready = useDeferredPresent(visible);
+  useModalPresence(ready);
+
   const isSuccess = config.type === 'success';
 
   return (
     <Modal
       transparent
       animationType="fade"
-      visible={visible}
+      visible={ready}
       onRequestClose={handleClose}
     >
       <View style={styles.overlay}>

@@ -39,6 +39,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { SOCKET_URL } from '../config/api';
 import { navigationRef } from '../utils/NavigationService';
+import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
 // How long the ring stays on screen before it gives up on its own. The astrologer's
 // side keeps ringing for as long as they hold the screen; this is only about not
@@ -204,12 +205,17 @@ export const FreeCallIncomingHost = () => {
     }
   }, [call, busy, clearRing]);
 
+  // Root-level popup: this component sits BELOW any screen modal, so presenting
+  // while one is up is exactly the case iOS refuses — see utils/modalPresentation.
+  const ready = useDeferredPresent(!!call);
+  useModalPresence(ready);
+
   if (!call) return null;
 
   const initial = (call.astrologerName || 'A').charAt(0).toUpperCase();
 
   return (
-    <Modal visible transparent={false} animationType="slide" onRequestClose={decline}>
+    <Modal visible={ready} transparent={false} animationType="slide" onRequestClose={decline}>
       <View style={styles.container}>
         <Text style={styles.eyebrow}>Your free consultation</Text>
         <Text style={styles.subtitle}>{call.durationMinutes} minutes · no charge</Text>

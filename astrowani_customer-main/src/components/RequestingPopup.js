@@ -6,9 +6,14 @@ import { Modal, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } fr
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { LanguageContext } from '../context/LanguageContext';
+import {useModalPresence} from '../utils/modalPresentation';
 
 const RequestingPopup = ({ visible, astro, onCancel }) => {
   const { t } = React.useContext(LanguageContext);
+  // Declares this modal to the presentation registry so root-level popups wait
+  // for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(visible);
+
   if (!visible) return null;
   const name = astro?.name || astro?.firstName || 'the astrologer';
   return (

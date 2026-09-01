@@ -14,6 +14,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 import { PLAY_STORE_URL } from '../config/api';
+import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
 let listener = null;
 // Both args optional — an admin-triggered popup (see Home.js's 'show_referral_popup'
@@ -72,10 +73,15 @@ export function ReferralPromptHost() {
     } catch (_) {}
   };
 
+  // Root-level popup: this component sits BELOW any screen modal, so presenting
+  // while one is up is exactly the case iOS refuses — see utils/modalPresentation.
+  const ready = useDeferredPresent(visible);
+  useModalPresence(ready);
+
   if (!visible) return null;
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={close}>
+    <Modal transparent visible={ready} animationType="fade" onRequestClose={close}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.iconCircle}>

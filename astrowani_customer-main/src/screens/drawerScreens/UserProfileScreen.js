@@ -24,6 +24,7 @@ import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
 import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const UserProfileScreen = ({navigation, route}) => {
   const { t } = React.useContext(LanguageContext);
@@ -50,6 +51,9 @@ const UserProfileScreen = ({navigation, route}) => {
     buttons: [],
     isError: false,
   });
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(customAlert.visible);
 
   const showCustomAlert = (title, message, buttons = [], isError = null) => {
     const finalButtons = buttons.length > 0 ? buttons : [{ text: t('common.ok'), onPress: () => {} }];

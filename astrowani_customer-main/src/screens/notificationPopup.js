@@ -1,9 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, Animated } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {useModalPresence} from '../utils/modalPresentation';
 
 const NotificationPopup = ({ visible, data, onAccept, onCancel }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(visible);
 
   useEffect(() => {
     if (visible) {

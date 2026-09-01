@@ -29,6 +29,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { getFreeCallSlots, bookFreeCall } from '../api/FreeCallApi';
+import {useModalPresence} from '../utils/modalPresentation';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -103,6 +104,10 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
       setBooking(false);
     }
   };
+
+  // Declares this modal to the presentation registry so root-level popups wait
+  // for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(visible && !!offer);
 
   if (!visible || !offer) return null;
 

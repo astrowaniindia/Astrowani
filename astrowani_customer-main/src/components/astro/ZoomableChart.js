@@ -32,6 +32,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {ASTRO} from './AstroUI';
 import {LanguageContext} from '../../context/LanguageContext';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 /**
  * Give an SVG a viewBox if it lacks one, so it can scale to any container.
@@ -83,6 +84,9 @@ function ChartLightbox({xml, title, visible, onClose, hint}) {
   const savedTx = useSharedValue(0);
   const savedTy = useSharedValue(0);
   const [zoomed, setZoomed] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(visible);
 
   const reset = () => {
     sc.value = withTiming(1);

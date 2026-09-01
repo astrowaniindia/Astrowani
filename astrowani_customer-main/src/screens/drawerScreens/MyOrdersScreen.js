@@ -11,6 +11,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import { listOrders, cancelOrder } from '../../api/OrdersApi';
 import SHOP, { cardShadow } from '../../components/shop/shopTheme';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const TYPE_LABEL_KEY = {
   puja: 'orders.typePuja',
@@ -39,6 +40,9 @@ const MyOrdersScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewingReport, setViewingReport] = useState(null);
+  // Declares this modal to the presentation registry so root-level popups
+  // wait for it instead of colliding with it on iOS (utils/modalPresentation).
+  useModalPresence(!!viewingReport);
   const [expandedId, setExpandedId] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
 
