@@ -34,9 +34,20 @@ initCrashReporting();
 // No-op on Android, which keeps using the FCM + notifee + foreground-service path.
 initCallKeep();
 
-// Must be registered outside the component tree (Notifee requirement) so Accept/Reject
-// presses are handled even when the app process was killed and briefly woken to run this.
-notifee.onBackgroundEvent(async ({type, detail}) => {
+// Accept/Reject pressed on the incoming-request notification.
+//
+// Notifee splits delivery by app state: presses reach onBackgroundEvent when the app is
+// backgrounded or killed, and onForegroundEvent when it is open. Only the background one
+// was ever registered, so with the app in the foreground — which is the NORMAL state for
+// an astrologer waiting on calls — pressing Accept or Reject did nothing at all. Accept's
+// launchActivity merely pulled the app forward, and the astrologer had to press Accept a
+// second time on the in-app popup. Both handlers now share this one function so they can
+// never drift apart.
+//
+// Accepting from the notification does not leave the in-app popup stranded: HomeScreen's
+// Realtime listener on call_requests/chat_requests dismisses on ANY status change away
+// from 'pending', 'accepted' included.
+const handleNotificationAction = async ({type, detail}) => {
   if (type !== EventType.ACTION_PRESS) return;
   const req = detail.notification?.data || {};
   const pressActionId = detail.pressAction?.id;
@@ -73,7 +84,13 @@ notifee.onBackgroundEvent(async ({type, detail}) => {
   } finally {
     await cancelIncomingRequestNotification(detail.notification?.id);
   }
-});
+};
+
+// Must be registered outside the component tree (Notifee requirement) so presses are
+// handled even when the app process was killed and briefly woken to run this.
+notifee.onBackgroundEvent(handleNotificationAction);
+// The foreground half. Without this, the buttons are dead whenever the app is open.
+notifee.onForegroundEvent(handleNotificationAction);
 
 // OTA updates (JS-only fixes ship without a Play Store release) — see
 // "MD files/deployment-and-releases.md". Edge function deployed via `npx hot-updater init`
