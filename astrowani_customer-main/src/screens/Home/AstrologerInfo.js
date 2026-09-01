@@ -41,6 +41,7 @@ import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {formatBusyLabel} from '../../utils/busyLabel';
 import {requestNotifyMe} from '../../utils/notifyMe';
 import {captureEvent} from '../../utils/Analytics';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const { width } = Dimensions.get('window');
 
@@ -61,6 +62,10 @@ const AstrologerInfo = ({route, navigation}) => {
   const [gifts, setGifts] = useState([]);
   const [isCallWaiting, setIsCallWaiting] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // (StatusPopup / CustomAlert / ...) wait for it instead of colliding with
+  // it on iOS. See utils/modalPresentation.
+  useModalPresence(imageModalVisible || reportModalVisible);
   const [reportReason, setReportReason] = useState('');
   const [reportNote, setReportNote] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -256,6 +261,7 @@ const AstrologerInfo = ({route, navigation}) => {
           recieverName: person.name,
           recieverImage: person.profileImage || '',
           recieverId: person._id || person.userId,
+          perMinuteCharge: Number(person.chargePerMinute ?? person.pricing) || 0,
         });
       };
 
@@ -427,6 +433,7 @@ const AstrologerInfo = ({route, navigation}) => {
           recieverName: person.name,
           recieverImage: person.profileImage || '',
           recieverId: person._id || person.userId,
+          perMinuteCharge: Number(person.videoPrice) || 0,
         });
       };
 

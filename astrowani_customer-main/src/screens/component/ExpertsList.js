@@ -212,6 +212,11 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           recieverName: item.name,
           recieverImage: item.profileImage || '',
           recieverId: item.userId || item._id,
+          // One screen handles both here, so the rate follows the call type.
+          perMinuteCharge:
+            type === 'video'
+              ? Number(item.videoPrice) || 0
+              : Number(item.chargePerMinute ?? item.pricing) || 0,
         });
       };
       const declineCleanup = msg => {

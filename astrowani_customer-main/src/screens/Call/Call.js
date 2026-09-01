@@ -526,6 +526,7 @@ import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { captureEvent } from '../../utils/Analytics';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -535,6 +536,10 @@ const CallsList = ({navigation}) => {
   const [showMissedOnly, setShowMissedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isWaiting, setIsWaiting] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // (StatusPopup / CustomAlert / ...) wait for it instead of colliding with
+  // it on iOS. See utils/modalPresentation.
+  useModalPresence(isWaiting);
   const [waitingAstroName, setWaitingAstroName] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -709,6 +714,9 @@ const CallsList = ({navigation}) => {
           recieverName: item.name,
           recieverImage: item.profileImage || '',
           recieverId: item.userId || item._id,
+          // The paying side had no idea what it was being charged: the rate and
+          // the "billing active" badge existed only on the vendor's screen.
+          perMinuteCharge: Number(item.chargePerMinute ?? item.pricing) || 0,
         });
       };
 

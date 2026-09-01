@@ -25,6 +25,7 @@ import {showInsufficientBalanceAlert} from '../../utils/insufficientBalanceAlert
 import io from 'socket.io-client';
 import {LanguageContext} from '../../context/LanguageContext';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 const Video = ({navigation}) => {
   const {t} = React.useContext(LanguageContext);
@@ -32,6 +33,10 @@ const Video = ({navigation}) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isWaiting, setIsWaiting] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // (StatusPopup / CustomAlert / ...) wait for it instead of colliding with
+  // it on iOS. See utils/modalPresentation.
+  useModalPresence(isWaiting);
   const [waitingAstroName, setWaitingAstroName] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -220,6 +225,7 @@ const Video = ({navigation}) => {
           recieverName: item.name,
           recieverImage: item.profileImage || '',
           recieverId: item.userId || item._id,
+          perMinuteCharge: Number(item.videoPrice) || 0,
         });
       };
 

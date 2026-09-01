@@ -66,6 +66,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     // changes what is shown and adds the hard stop -- it does not gate any billing.
     freeCall = false,
     freeCallSeconds = 0,
+    // The customer is the side actually paying, yet the rate and the
+    // billing-active badge existed only on the vendor's screen. Display only —
+    // billing is server-side and unchanged.
+    perMinuteCharge = 0,
   } = route.params || {};
 
   const sessionIdRef = useRef(initialSessionId);
@@ -503,6 +507,13 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         <Text style={styles.headerLabel}>
           {freeCall ? 'Free consultation' : t('call.audioCall')}
         </Text>
+        {freeCall ? (
+          <Text style={styles.rateLabel}>Free</Text>
+        ) : (
+          perMinuteCharge > 0 && (
+            <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>
+          )
+        )}
       </View>
 
       <View style={styles.centerContent}>
@@ -542,6 +553,15 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           </View>
         )}
 
+        {isActive && !freeCall && perMinuteCharge > 0 && (
+          <View style={styles.freeBadge}>
+            <VectorIcon name="timer" type="MaterialIcons" size={13} color="#FFD700" />
+            <Text style={styles.freeBadgeText}>
+              ₹{perMinuteCharge}{t('common.perMin')} · {t('call.billingActive')}
+            </Text>
+          </View>
+        )}
+
         <SessionIntroBanner visible={isActive} style={{marginHorizontal: 0, marginTop: 14}} />
 
       </View>
@@ -570,6 +590,7 @@ const styles = StyleSheet.create({
   bgOverlay: {backgroundColor: 'rgba(26,11,5,0.78)'},
   header: {paddingTop: Platform.OS === 'ios' ? 58 : 44, alignItems: 'center', paddingBottom: 8},
   headerLabel: {fontSize: 11, fontWeight: '700', color: 'rgba(244,216,188,0.5)', letterSpacing: 3},
+  rateLabel: {fontSize: 12, fontWeight: '600', color: '#FFD700', marginTop: 4},
   centerContent: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   ring: {
     position: 'absolute',
