@@ -136,11 +136,23 @@ messaging().onMessage(async remoteMessage => {
 
 messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
-  // Admin broadcasts/personal notifications arrive as data-only (see backend
-  // notificationRoutes.js) specifically so they land here even when the app is
-  // backgrounded/killed, showing our own notification (with the logo) instead of
-  // nothing — a notification-block message would auto-display via the OS but skip
-  // this handler entirely, and skip the large icon along with it.
+
+  // EVERY message reaching a backgrounded app was being shown TWICE: once by the
+  // OS and once by us. A push carrying a `notification` block is auto-displayed by
+  // Android in the system tray, and — because it also carries `data` — this
+  // handler still runs and posted a second, identical local notification. That is
+  // the duplicate chat notification reported on 2026-09-02, and it applied to
+  // every titled push: chat messages, order updates, delivered reports, free-call
+  // reminders, referral rewards.
+  //
+  // Data-only pushes (admin broadcast/personal — see backend notificationRoutes.js)
+  // are NOT auto-displayed, so for those this handler is the only thing that shows
+  // anything, and it must still run. That is the case this handler exists for, and
+  // why it cannot simply be deleted.
+  //
+  // So: display only what the OS will not.
+  if (remoteMessage?.notification) return;
+
   showLocalNotification(remoteMessage);
 });
 
