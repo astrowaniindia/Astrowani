@@ -66,6 +66,9 @@ const VideoCallScreen = ({route, navigation}: any) => {
     recieverName = 'Astrologer',
     recieverImage = '',
     recieverId = '',
+    // Display only — billing is server-side and unchanged. The paying side had
+    // no rate shown at all; only the vendor's screen carried it.
+    perMinuteCharge = 0,
   } = route.params || {};
 
   const sessionIdRef = useRef(initialSessionId);
@@ -81,6 +84,9 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const [ringCountdown, setRingCountdown] = useState(30);
   const [localStreamURL, setLocalStreamURL] = useState<string | null>(null);
   const [remoteStreamURL, setRemoteStreamURL] = useState<string | null>(null);
+  // Disabling a video track sends no signal of its own, so without this the
+  // remote view just holds its last frame and looks like a frozen call.
+  const [remoteVideoPaused, setRemoteVideoPaused] = useState(false);
 
   const callStateRef = useRef<CallState>('connecting');
   const isConnectedRef = useRef(false);
@@ -223,6 +229,10 @@ const VideoCallScreen = ({route, navigation}: any) => {
     setVideoMuted(next);
     if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach((t: any) => { t.enabled = !next; });
+    }
+    // Tell the other side, so they see "paused" rather than a frozen frame.
+    if (socketRef.current && sessionIdRef.current) {
+      socketRef.current.emit('video_paused', {sessionId: sessionIdRef.current, paused: next});
     }
   }, [videoMuted]);
 
@@ -379,6 +389,11 @@ const VideoCallScreen = ({route, navigation}: any) => {
         }
       });
 
+      socket.on('video_paused', (data: any) => {
+        if (data?.sessionId && sessionIdRef.current && data.sessionId !== sessionIdRef.current) return;
+        setRemoteVideoPaused(!!data?.paused);
+      });
+
       socket.on('session_ended', (data: any) => {
         if (data.sessionId && sessionIdRef.current && data.sessionId !== sessionIdRef.current) return;
         if (!isEndingRef.current) {
@@ -473,8 +488,30 @@ const VideoCallScreen = ({route, navigation}: any) => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* Remote video — full screen when in_call */}
-      {remoteStreamURL && isActive && (
+      {remoteStreamURL && isActive && !remoteVideoPaused && (
         <RTCView streamURL={remoteStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" zOrder={0} />
+      )}
+
+      {/* The peer turned their camera off. Covering the RTCView rather than leaving
+          its last frame on screen — a frozen face reads as a broken call. Audio and
+          every control keep working underneath. */}
+      {isActive && remoteVideoPaused && (
+        <View style={[StyleSheet.absoluteFillObject, styles.videoPausedOverlay]}>
+          <View style={styles.avatarOuter}>
+            {recieverImage ? (
+              <Image source={{uri: recieverImage}} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.callerName}>{recieverName}</Text>
+          <View style={styles.statusPill}>
+            <VectorIcon name="videocam-off" type="MaterialIcons" size={15} color={color.AstroSoftOrange} />
+            <Text style={styles.statusText}>{t('call.remoteVideoPaused')}</Text>
+          </View>
+        </View>
       )}
 
       {/* Background for connecting/ringing states */}
@@ -490,6 +527,9 @@ const VideoCallScreen = ({route, navigation}: any) => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerLabel}>{t('call.videoCall')}</Text>
+        {perMinuteCharge > 0 && (
+          <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>
+        )}
       </View>
 
       {/* Connecting / Ringing UI */}
@@ -525,6 +565,11 @@ const VideoCallScreen = ({route, navigation}: any) => {
           <View style={styles.statusPillSmall}>
             <View style={styles.statusDotGreen} />
             <Text style={styles.inCallTimer}>{formatTime(callDuration)}</Text>
+            {perMinuteCharge > 0 && (
+              <Text style={styles.inCallRate}>
+                · ₹{perMinuteCharge}{t('common.perMin')} · {t('call.billingActive')}
+              </Text>
+            )}
           </View>
         </View>
       )}
@@ -588,6 +633,14 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   headerLabel: {fontSize: 11, fontWeight: '700', color: 'rgba(244,216,188,0.5)', letterSpacing: 3},
+  rateLabel: {fontSize: 12, fontWeight: '600', color: '#FFD700', marginTop: 4},
+  videoPausedOverlay: {
+    backgroundColor: '#2b140c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  inCallRate: {fontSize: 12, color: '#FFD700', fontWeight: '500'},
   centerContent: {
     flex: 1,
     alignItems: 'center',

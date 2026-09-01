@@ -72,6 +72,9 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const callDuration = useElapsedSeconds(callStartMs, timerActive);
   const [localStreamURL, setLocalStreamURL] = useState<string | null>(null);
   const [remoteStreamURL, setRemoteStreamURL] = useState<string | null>(null);
+  // Disabling a video track sends no signal of its own, so without this the
+  // remote view just holds its last frame and looks like a frozen call.
+  const [remoteVideoPaused, setRemoteVideoPaused] = useState(false);
 
   const isEndingRef = useRef(false);
   const isConnectedRef = useRef(false);
@@ -201,7 +204,11 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach((t: any) => { t.enabled = !next; });
     }
-  }, [videoMuted]);
+    // Tell the other side, so they see "paused" rather than a frozen frame.
+    if (socketRef.current && sessionId) {
+      socketRef.current.emit('video_paused', {sessionId, paused: next});
+    }
+  }, [videoMuted, sessionId]);
 
   const flipCamera = useCallback(() => {
     if (localStreamRef.current) {
@@ -369,6 +376,11 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
         }
       });
 
+      socket.on('video_paused', (data: any) => {
+        if (data?.sessionId && sessionId && data.sessionId !== sessionId) return;
+        setRemoteVideoPaused(!!data?.paused);
+      });
+
       socket.on('session_ended', (data: any) => {
         if (data.sessionId && sessionId && data.sessionId !== sessionId) return;
         if (!isEndingRef.current) {
@@ -455,7 +467,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* Remote video full-screen background */}
-      {isConnected && remoteStreamURL ? (
+      {isConnected && remoteStreamURL && !remoteVideoPaused ? (
         <RTCView
           streamURL={remoteStreamURL}
           style={StyleSheet.absoluteFillObject}
@@ -464,6 +476,24 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
         />
       ) : (
         <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
+      )}
+
+      {/* The customer turned their camera off. Showing this instead of their last
+          frame, which reads as a frozen call. Audio and controls keep working. */}
+      {isConnected && remoteVideoPaused && (
+        <View style={[StyleSheet.absoluteFillObject, styles.videoPausedOverlay]}>
+          {/* avatarFallback is flex:1 and only sizes correctly inside avatarOuter. */}
+          <View style={styles.avatarOuter}>
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+            </View>
+          </View>
+          <Text style={styles.callerName}>{callerName}</Text>
+          <View style={styles.statusPill}>
+            <Ionicons name="videocam-off-outline" size={15} color={COLORS.AstroSoftOrange} />
+            <Text style={styles.statusText}>{t('call.remoteVideoPaused')}</Text>
+          </View>
+        </View>
       )}
 
       {/* Connecting overlay shown before connected */}
@@ -589,6 +619,12 @@ const styles = StyleSheet.create({
   },
   avatarFallback: {flex: 1, backgroundColor: '#592a19', alignItems: 'center', justifyContent: 'center'},
   avatarInitial: {fontSize: 58, fontWeight: '700', color: COLORS.AstroSoftOrange},
+  videoPausedOverlay: {
+    backgroundColor: '#2b140c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
   callerName: {fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 14, letterSpacing: 0.3},
   statusPill: {
     flexDirection: 'row',

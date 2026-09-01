@@ -517,6 +517,14 @@ io.on('connection', (socket) => {
     if (data?.sessionId) socket.to(data.sessionId).emit('webrtc_ice_candidate', data);
   });
 
+  // Disabling a local video track stops sending frames but sends no signal, so the
+  // far end just holds the last frame forever and reads as a frozen/broken call.
+  // This relays the intent so the peer can say "X paused their video" instead.
+  // Presentational only — it moves no media and touches no billing.
+  socket.on('video_paused', (data) => {
+    if (data?.sessionId) socket.to(data.sessionId).emit('video_paused', data);
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     const { sessionId, participantId } = socket.data || {};

@@ -448,6 +448,9 @@ const translations = {
 
     'call.pleaseLogin': 'Please login to continue.',
     'call.audioCall': 'AUDIO CALL',
+    'call.remoteVideoPaused': 'Astrologer paused their video',
+    'call.billingActive': 'Billing active',
+    'common.perMin': '/min',
     'call.videoCall': 'VIDEO CALL',
     'call.connecting': 'Connecting...',
     'call.ringing': 'Ringing... {{seconds}}s',
@@ -594,6 +597,7 @@ const translations = {
     'wallet.enterAmount': 'Enter Amount',
     'wallet.recommendedAmounts': 'Recommended amounts',
     'wallet.totalPayable': 'Total Payable',
+    'wallet.done': 'Done',
     'wallet.proceedToPay': 'Proceed to Pay',
     'wallet.processing': 'Processing…',
 
@@ -1481,6 +1485,9 @@ const translations = {
 
     'call.pleaseLogin': 'जारी रखने के लिए कृपया लॉगिन करें।',
     'call.audioCall': 'ऑडियो कॉल',
+    'call.remoteVideoPaused': 'ज्योतिषी ने अपना वीडियो बंद किया है',
+    'call.billingActive': 'बिलिंग चालू है',
+    'common.perMin': '/मिनट',
     'call.videoCall': 'वीडियो कॉल',
     'call.connecting': 'कनेक्ट हो रहा है...',
     'call.ringing': 'रिंग हो रहा है... {{seconds}}s',
@@ -1627,6 +1634,7 @@ const translations = {
     'wallet.enterAmount': 'राशि दर्ज करें',
     'wallet.recommendedAmounts': 'अनुशंसित राशियाँ',
     'wallet.totalPayable': 'कुल देय राशि',
+    'wallet.done': 'हो गया',
     'wallet.proceedToPay': 'भुगतान करने के लिए आगे बढ़ें',
     'wallet.processing': 'प्रोसेस हो रहा है…',
 

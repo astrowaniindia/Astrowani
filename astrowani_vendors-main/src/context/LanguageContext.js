@@ -178,6 +178,7 @@ const translations = {
 
     'call.audioCall': 'AUDIO CALL',
     'call.videoCall': 'VIDEO CALL',
+    'call.remoteVideoPaused': 'Customer paused their video',
     'call.connecting': 'Connecting...',
     'call.mute': 'Mute',
     'call.unmute': 'Unmute',
@@ -432,6 +433,7 @@ const translations = {
 
     'call.audioCall': 'ऑडियो कॉल',
     'call.videoCall': 'वीडियो कॉल',
+    'call.remoteVideoPaused': 'ग्राहक ने अपना वीडियो बंद किया है',
     'call.connecting': 'कनेक्ट हो रहा है...',
     'call.mute': 'म्यूट करें',
     'call.unmute': 'अनम्यूट करें',
