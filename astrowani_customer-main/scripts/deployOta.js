@@ -41,6 +41,10 @@ const channel = argOf('--channel') || argOf('-c') || 'production';
 const rollout = argOf('--rollout') || argOf('-r');
 const message = argOf('--message') || argOf('-m');
 const allowDirty = has('--allow-dirty');
+// Override the version an OTA is aimed at. Needed when the store is still
+// serving an older versionName than the working tree carries -- the bundle
+// would otherwise target a release nobody is running yet.
+const targetOverride = argOf('--target') || argOf('-t');
 const dryRun = has('--dry-run');
 
 if (only && !PLATFORMS.includes(only)) {
@@ -81,6 +85,13 @@ say('  Hot Updater — JS bundle deploy');
 say(`  commit    ${commit}  ${subject}`);
 say(`  channel   ${channel}`);
 say(`  platforms ${targets.join(' + ')}${rollout ? `   rollout ${rollout}%` : ''}`);
+// Print the version each platform will be aimed at BEFORE deploying, so a
+// --dry-run can actually verify it. A bundle aimed at a version the store is
+// not serving reaches nobody, and that is invisible unless it is stated here.
+targets.forEach((p) => {
+  const t = targetOverride || (p === 'ios' ? iosMarketingVersion() : null);
+  say(`  target    ${p.padEnd(8)} ${t || '(read from native config by hot-updater)'}`);
+});
 say('');
 
 // An OTA ships the WHOLE bundle at the current working tree, not just the change
@@ -96,6 +107,29 @@ if (dirty && !allowDirty) {
   say('  listed above would go to every user with no commit recording it.');
   say('  Commit (or stash) first, or pass --allow-dirty if you mean it.');
   process.exit(1);
+}
+
+// hot-updater reads the target version out of the native config, but iOS's
+// Info.plist carries CFBundleShortVersionString = $(MARKETING_VERSION) -- an
+// Xcode build variable it cannot resolve. It then fails with "Target app version
+// not found in native files" AND EXITS 0, which is how an "ios deployed" line
+// once appeared for a platform that deployed nothing. Read the real value out of
+// project.pbxproj and pass it explicitly.
+function iosMarketingVersion() {
+  try {
+    const iosDir = path.join(ROOT, 'ios');
+    const proj = fs
+      .readdirSync(iosDir)
+      .find((d) => d.endsWith('.xcodeproj'));
+    if (!proj) return null;
+    const pbx = fs.readFileSync(path.join(iosDir, proj, 'project.pbxproj'), 'utf8');
+    const found = [...pbx.matchAll(/MARKETING_VERSION\s*=\s*([0-9][^;\s]*)/g)].map((m) => m[1]);
+    const unique = [...new Set(found)];
+    if (unique.length !== 1) return null; // ambiguous: let hot-updater complain
+    return unique[0];
+  } catch (_) {
+    return null;
+  }
 }
 
 // iOS with no Podfile.lock has never had `pod install` run, which in practice
@@ -137,10 +171,13 @@ if (dryRun) {
 const results = [];
 for (const platform of targets) {
   const args = ['hot-updater', 'deploy', '-p', platform, '-c', channel];
+  const target =
+    targetOverride || (platform === 'ios' ? iosMarketingVersion() : null);
+  if (target) args.push('-t', target);
   if (rollout) args.push('-r', rollout);
   if (message) args.push('-m', message);
 
-  say(`── ${platform} ${'─'.repeat(40)}`);
+  say(`── ${platform}${target ? `  (target ${target})` : ''} ${'─'.repeat(34)}`);
   // Output is CAPTURED, not inherited, because the exit code alone is a liar:
   // hot-updater exits 0 after printing "Target app version not found in native
   // files" and skipping the deploy entirely. Trusting `status === 0` reported
