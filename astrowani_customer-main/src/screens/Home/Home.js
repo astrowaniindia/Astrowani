@@ -62,6 +62,7 @@ import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import { buildRemedyCategories } from '../Remedies/remedyCategories';
 import { astroServiceLabel } from '../../utils/astroServiceLabel';
 import RequestingPopup from '../../components/RequestingPopup';
+import {useModalPresence} from '../../utils/modalPresentation';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -121,7 +122,12 @@ const AstrologerItem = ({astrologer, navigation, t}) => {
       {/* Bottom scrim so the name/topic stay readable over any photo — a real
           gradient (react-native-svg is already a linked dependency, so this
           needs no native rebuild / stays OTA-shippable), not a flat tint. */}
-      <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
+      {/* pointerEvents="none" is load-bearing, not tidiness. This scrim covers the
+          whole card, and on iOS a view on top of a touchable swallows the tap --
+          the card simply would not open. Android delivers the touch through, which
+          is why this only showed up on the iPad. Same rule for any decorative
+          overlay inside a Touchable. */}
+      <Svg height="100%" width="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
         <Defs>
           <LinearGradient id="liveCardGradient" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0.45" stopColor="#000000" stopOpacity={0} />
@@ -262,6 +268,10 @@ const Home = ({navigation}) => {
     require('../../assets/images/banner.jpeg'),
   ];
   const [isWaiting, setIsWaiting] = useState(false);
+  // Declares this modal to the presentation registry so root-level popups
+  // (StatusPopup / CustomAlert / ...) wait for it instead of colliding with
+  // it on iOS. See utils/modalPresentation.
+  useModalPresence(modalVisible || isWaiting);
   const [waitingAstroName, setWaitingAstroName] = useState('');
 
   const listRef = React.useRef(null);
@@ -550,6 +560,7 @@ const Home = ({navigation}) => {
           recieverName: item.name,
           recieverImage: item.profileImage || '',
           recieverId: item.userId || item._id,
+          perMinuteCharge: Number(item.chargePerMinute ?? item.pricing) || 0,
         });
       };
 
@@ -684,6 +695,7 @@ const Home = ({navigation}) => {
           recieverName: item.name,
           recieverImage: item.profileImage || '',
           recieverId: item.userId || item._id,
+          perMinuteCharge: Number(item.videoPrice) || 0,
         });
       };
 
@@ -1058,8 +1070,13 @@ const Home = ({navigation}) => {
     return (
       <TouchableOpacity
         onPress={() => openAstrologer(item)}
+        // The avatar is positioned 40 above this card's top edge, i.e. OUTSIDE its
+        // bounds. Android still delivers touches there; iOS does not, so tapping
+        // the photo -- the obvious thing to tap -- did nothing at all. hitSlop
+        // extends the card's own touch area to cover it, without moving anything.
+        hitSlop={{top: verticalScale(40), bottom: 0, left: 0, right: 0}}
         style={styles.AstrologerCard}>
-        <View style={styles.AstroImageWrap}>
+        <View style={styles.AstroImageWrap} pointerEvents="none">
           <Image
             resizeMode="contain"
             source={{
@@ -1242,8 +1259,18 @@ const Home = ({navigation}) => {
 
   return (
     <View style={{flex: 1, backgroundColor: COLORS.AstroMaroon}}>
-      <ScrollView 
+      <ScrollView
         style={{flex: 1}}
+        // flexGrow: 1 is load-bearing, not cosmetic. The cream section below has
+        // flex: 1, and inside a content container of auto height that resolves to
+        // flexBasis: 0 with no free space to grow into — so the section collapses
+        // to ZERO height. iOS does not clip overflow, so every card still renders
+        // and looks normal, but hit-testing is bounded by the parent's bounds, so
+        // NOTHING inside it is tappable. Android measures scroll content
+        // differently and gives it real height, which is why this only broke on
+        // iOS. Giving the content container flexGrow: 1 gives it a definite height
+        // to distribute, so flex: 1 means what it looks like it means.
+        contentContainerStyle={{flexGrow: 1}}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
         }

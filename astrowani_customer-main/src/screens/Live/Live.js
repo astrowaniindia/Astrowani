@@ -64,7 +64,9 @@ const Live = ({ navigation }) => {
         style={styles.imageBackground}
         imageStyle={styles.imageBackgroundImage}
       >
-        <View style={styles.overlay} />
+        {/* Decorative dark tint. Without pointerEvents="none" it sits on top of
+            the card's TouchableOpacity and eats every tap on iOS. */}
+        <View style={styles.overlay} pointerEvents="none" />
 
         <View style={styles.liveIndicator}>
           <View style={styles.liveDot} />
