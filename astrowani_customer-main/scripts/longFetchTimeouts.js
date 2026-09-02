@@ -22,6 +22,22 @@ try {
       connectTimeout: 120000, // 2 min to establish
       headersTimeout: 600000, // 10 min waiting on response headers
       bodyTimeout: 600000, // 10 min to stream the body
+      // THE ACTUAL FIX. hot-updater checks every asset with a HEAD request and
+      // fires them all at once; ~25 simultaneous TLS handshakes to one host is
+      // enough for some to fail at the OS level with ETIMEDOUT, which is why a
+      // DIFFERENT asset failed on every attempt and why retrying never helped.
+      // Capping per-origin connections queues them instead of racing them.
+      // Modest concurrency. Tried 1 (worse — requests time out queued behind each
+      // other) and 4; neither cures an unreliable link, but a smaller number is
+      // gentler than hot-updater firing all ~25 asset requests at once.
+      connections: 6,
+      keepAliveTimeout: 60000,
+      keepAliveMaxTimeout: 600000,
+      // Force IPv4. The deploy failed with OS-level ETIMEDOUT — the TCP connection
+      // never established — while other requests to the SAME host succeeded, which
+      // is the signature of an AAAA route that resolves but blackholes. Node happily
+      // prefers IPv6 and then waits out the OS timeout on every attempt.
+      connect: { family: 4 },
     }),
   );
   if (!process.env.HOT_UPDATER_QUIET) {
@@ -32,3 +48,20 @@ try {
   // and will fail on a slow link. Better to attempt the deploy than to block it.
   console.warn('  [deploy] could not raise HTTP timeouts:', e.message);
 }
+
+// Diagnostic: hot-updater reports a bare "fetch failed" with no cause, which is
+// unactionable. Surface the real error and the URL it was talking to.
+const _fetch = globalThis.fetch;
+globalThis.fetch = async (...args) => {
+  try {
+    return await _fetch(...args);
+  } catch (e) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    const method = args[1]?.method || 'GET';
+    console.error(
+      `  [deploy] FETCH FAILED ${method} ${String(url).slice(0, 120)}` +
+        ` | ${e.message} | cause: ${e.cause?.code || e.cause?.message || 'n/a'}`,
+    );
+    throw e;
+  }
+};
