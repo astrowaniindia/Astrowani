@@ -34,13 +34,39 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 // Slot instants are always shown in IST, the offer's business timezone — the same
 // clock time the customer was shown when they booked, regardless of the phone's
 // own timezone.
-const timeFmt = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true,
-});
-const dayFmt = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata', weekday: 'short', day: '2-digit', month: 'short',
-});
-const dayKeyFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
+// Formatted by hand rather than with Intl.DateTimeFormat's timeZone option, which
+// throws "RangeError: Incorrect timeZone information provided" on iOS. Hermes there
+// ships without full ICU timezone data; Android's Hermes gets ICU from the system,
+// which is why this only broke on iOS — and broke it hard: these ran at module
+// scope in a drawer screen, so the throw happened during startup import, before
+// Sentry initialised and before AppRegistry.registerComponent, leaving a black
+// screen with no error anywhere.
+//
+// IST is a fixed UTC+05:30 with no DST, so shifting the instant and reading its UTC
+// fields is exact, not an approximation.
+const IST_OFFSET_MIN = 330;
+const toIst = (d) => new Date(d.getTime() + IST_OFFSET_MIN * 60000);
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// "3:00 pm"
+const fmtTime = (d) => {
+  const t = toIst(d);
+  const h24 = t.getUTCHours();
+  const h = h24 % 12 || 12;
+  return `${h}:${pad2(t.getUTCMinutes())} ${h24 >= 12 ? 'pm' : 'am'}`;
+};
+// "Wed, 03 Sep"
+const fmtDay = (d) => {
+  const t = toIst(d);
+  return `${DAY_NAMES[t.getUTCDay()]}, ${pad2(t.getUTCDate())} ${MONTH_NAMES[t.getUTCMonth()]}`;
+};
+// "2026-09-03" — a stable key for "is this slot today in IST"
+const fmtDayKey = (d) => {
+  const t = toIst(d);
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+};
 
 const FreeCalls = () => {
   const navigation = useNavigation();
@@ -107,7 +133,7 @@ const FreeCalls = () => {
     const label = status === 'completed' ? 'done' : 'missed';
     Alert.alert(
       `Mark as ${label}?`,
-      `${item.customerName || 'This customer'} — ${timeFmt.format(new Date(item.slotStart))}`,
+      `${item.customerName || 'This customer'} — ${fmtTime(new Date(item.slotStart))}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -147,11 +173,11 @@ const FreeCalls = () => {
     return { upcoming: up, history: hist };
   }, [bookings]);
 
-  const todayKey = dayKeyFmt.format(new Date());
+  const todayKey = fmtDayKey(new Date());
 
   const renderCard = (item) => {
     const start = new Date(item.slotStart);
-    const isToday = dayKeyFmt.format(start) === todayKey;
+    const isToday = fmtDayKey(start) === todayKey;
     const done = item.status === 'completed';
     const missed = item.status === 'missed';
     const overdue = item.status === 'booked' && item.isPast;
@@ -160,9 +186,9 @@ const FreeCalls = () => {
       <View style={[styles.card, overdue && styles.cardOverdue]}>
         <View style={styles.cardTop}>
           <View style={styles.when}>
-            <Text style={styles.time}>{timeFmt.format(start)}</Text>
+            <Text style={styles.time}>{fmtTime(start)}</Text>
             <Text style={styles.day}>
-              {isToday ? 'Today' : dayFmt.format(start)}
+              {isToday ? 'Today' : fmtDay(start)}
             </Text>
           </View>
           <View style={styles.tags}>
