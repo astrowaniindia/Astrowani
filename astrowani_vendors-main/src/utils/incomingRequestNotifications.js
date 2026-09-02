@@ -90,12 +90,27 @@ export async function displayIncomingRequestNotification(payload) {
       category: AndroidCategory.CALL,
       ongoing: true,
       autoCancel: false,
-      // Makes Android treat this as a genuine incoming-call notification — can launch the
-      // app full-screen even over a locked screen, instead of sitting as a passive heads-up
-      // banner. Combined with the continuous ringtone (started right below, independent of
-      // whether the app is open, backgrounded, or killed) this is what actually makes it
-      // "ring" rather than buzz once.
-      fullScreenAction: { id: 'default', launchActivity: 'default' },
+      // NO fullScreenAction, deliberately (removed 2026-09-03).
+      //
+      // It used to be set here so an incoming request could launch the app full-screen over
+      // a locked phone. The manifest declares USE_FULL_SCREEN_INTENT and the app targets
+      // SDK 36, so on Android 14+ this counts as a calling app and the intent IS granted —
+      // meaning Android threw the app to the foreground the instant a request arrived. The
+      // astrologer therefore never got to use the Accept/Reject buttons below: by the time
+      // they looked at the screen they were already inside the app, facing the in-app popup,
+      // and had to action it a second time there. Reported as "I can't accept or reject from
+      // the notification, it takes me into the app".
+      //
+      // Without it the notification presents as a heads-up banner when the screen is on, and
+      // as a lock-screen notification when it is not — both of which show Reject and Accept
+      // and can be actioned in place. It still RINGS in every app state, because that comes
+      // from incomingRingtone.js (started right below), not from the full-screen intent —
+      // and it still reads as a call to Android via AndroidCategory.CALL + HIGH importance.
+      //
+      // The trade-off, stated plainly: a locked phone no longer wakes straight into the app.
+      // It shows a ringing, actionable notification on the lock screen instead. That is the
+      // behaviour that was asked for; restoring the old one means putting this line back.
+      visibility: AndroidVisibility.PUBLIC, // show the buttons on the lock screen, not just the title
       // App logo in the notification's large-icon slot (top-right corner) — mipmap
       // resource already bundled for the launcher icon, no extra asset needed.
       largeIcon: 'ic_launcher',
