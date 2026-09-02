@@ -104,7 +104,16 @@ jobs:
           # on, react-native-svg compiles its Fabric C++ and fails on Yoga's
           # StyleSizeLength.
           RCT_NEW_ARCH_ENABLED: '0'
-        run: pod install --repo-update
+        # NOT --repo-update. Since CocoaPods 1.8 the default source is the CDN,
+        # which is queried live and needs no local spec repo; --repo-update forces
+        # it to clone `trunk` anyway. On 2026-09-03 that failed the vendor build
+        # outright, after a full codegen pass:
+        #   Cloning spec repo `trunk` from `https://cdn.cocoapods.org/`
+        #   [!] Unable to add a source with url `https://cdn.cocoapods.org/` named `trunk`.
+        # The flag is a leftover from git-based spec repos. Dropping it also saves
+        # a couple of minutes per run. The fallback covers the one case it was for:
+        # a pod whose version genuinely is not in the local cache yet.
+        run: pod install || pod install --repo-update
 
       # Build for a real device (-sdk iphoneos, arm64) with signing off. A
       # simulator build is a completely different binary and will NOT run on a
