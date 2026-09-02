@@ -26,7 +26,7 @@ import {name as appName} from './app.json';
 // hoisted, so a failure is catchable and, more importantly, SHOWABLE. Registration
 // happens either way: worst case the app renders the error instead of vanishing.
 let startupError = null;
-let WrappedApp = null;
+let App = null;
 
 try {
   const {initCrashReporting} = require('./src/utils/CrashReporting');
@@ -34,13 +34,7 @@ try {
 
   require('./src/utils/Analytics'); // PostHog singleton, side-effect import
 
-  const {HotUpdater} = require('@hot-updater/react-native');
-  const App = require('./App').default;
-
-  WrappedApp = HotUpdater.wrap({
-    baseURL: 'https://fxpoustnddrgumhwdcma.supabase.co/functions/v1/update-server',
-    updateStrategy: 'appVersion',
-  })(App);
+  App = require('./App').default;
 } catch (e) {
   startupError = e;
   console.error('[startup] app failed to load:', e);
@@ -192,6 +186,25 @@ function StartupErrorScreen() {
   );
 }
 
+// The OTA check wraps whatever we are about to render — the real app, or the error
+// screen. That ordering is deliberate and load-bearing: it used to wrap App on the
+// line straight after require('./App'), so when that require threw, the update check
+// never ran and a startup crash could ONLY be fixed by a new store/sideload build.
+// Wrapping the fallback too means a broken build can still pull a fixed bundle and
+// heal itself on the next launch.
+const RootComponent = App || StartupErrorScreen;
+let WrappedApp = RootComponent;
+try {
+  const {HotUpdater} = require('@hot-updater/react-native');
+  WrappedApp = HotUpdater.wrap({
+    baseURL: 'https://fxpoustnddrgumhwdcma.supabase.co/functions/v1/update-server',
+    updateStrategy: 'appVersion',
+  })(RootComponent);
+} catch (e) {
+  // No OTA this launch, but the app still renders.
+  console.warn('[startup] HotUpdater.wrap failed:', e?.message || e);
+}
+
 // Registration ALWAYS happens. Skipping it is what produced a black screen with a
 // live process and nothing in Sentry.
-AppRegistry.registerComponent(appName, () => (WrappedApp ? WrappedApp : StartupErrorScreen));
+AppRegistry.registerComponent(appName, () => WrappedApp);
