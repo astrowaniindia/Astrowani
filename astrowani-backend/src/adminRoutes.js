@@ -937,13 +937,42 @@ module.exports = function registerAdminRoutes(app) {
   }));
 
   // ── Customers (read + wallet top-up) ──────────────────────────────────────
+
+  // A customer with wallet or session history cannot be hard-deleted (see the DELETE
+  // route below) — the row survives with its phone number replaced by a `deleted:<id>:<ts>`
+  // tag. That is the marker for "this account was deleted", and it is deliberately a
+  // mangled MOBILE rather than a status column, because freeing the number for re-signup
+  // is half the point of the delete.
+  const isSoftDeletedCustomer = (row) => /^deleted:/.test(String(row?.mobile || ''));
+
   app.get('/api/admin/customers', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('customers')
       .select('id, name, mobile, email, wallet_balance, created_at, fcm_token')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return res.json({ success: true, data: data || [] });
+
+    // Deleted accounts are hidden by default. They used to stay in the list forever
+    // with "(deleted)" bolted onto the name and a `deleted:…` string where the phone
+    // number should be, so deleting a customer looked like it had failed — the row
+    // was still right there, still with a Delete button.
+    //
+    // Filtered here in Node rather than as a PostgREST `not.like` because `mobile` is
+    // nullable, and `NOT (mobile LIKE 'deleted:%')` is NULL — therefore false — for a
+    // customer with no phone number at all, which would silently hide real accounts.
+    // That failure would look exactly like this bug's mirror image and be much harder
+    // to spot.
+    const all = data || [];
+    const includeDeleted = req.query.includeDeleted === '1' || req.query.includeDeleted === 'true';
+    const visible = includeDeleted ? all : all.filter((r) => !isSoftDeletedCustomer(r));
+
+    return res.json({
+      success: true,
+      data: visible.map((r) => ({ ...r, isDeleted: isSoftDeletedCustomer(r) })),
+      // Lets the page offer "show deleted" only when there is something to show, and
+      // proves the rows still exist rather than looking like they were destroyed.
+      deletedCount: all.filter(isSoftDeletedCustomer).length,
+    });
   }));
 
   // A customer can never be hard-deleted while financial history references them —

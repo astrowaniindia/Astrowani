@@ -8,14 +8,22 @@ export default function Customers() {
   const [topup, setTopup] = useState(null); // customer being topped up
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  // Deleted accounts are hidden by default. A customer with wallet or session history
+  // cannot be destroyed (the money trail must survive), so the row lives on with its
+  // phone number freed — this toggle is how an admin can still find it.
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedCount, setDeletedCount] = useState(0);
 
-  const load = async () => {
+  const load = async (withDeleted = showDeleted) => {
     setLoading(true);
-    const { data } = await client.get('/api/admin/customers');
+    const { data } = await client.get('/api/admin/customers', {
+      params: withDeleted ? { includeDeleted: '1' } : {},
+    });
     setRows(data.data || []);
+    setDeletedCount(data.deletedCount || 0);
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(showDeleted); }, [showDeleted]);
 
   const submitTopup = async () => {
     const amt = Number(amount);
@@ -39,7 +47,7 @@ export default function Customers() {
       if (data.mode === 'deleted') {
         alert(`${label} was permanently deleted.`);
       } else {
-        alert(`${label} has session or wallet history, so they weren't permanently deleted — their phone number has been freed up and the account hidden.`);
+        alert(`${label} has session or wallet history, so the account could not be permanently deleted — the money trail has to survive.\n\nIt has been removed from this list and its phone number freed up for re-signup. Tick "Show deleted accounts" if you ever need to find it again.`);
       }
       await load();
     } catch (e) { alert(e.response?.data?.message || e.message); }
@@ -49,6 +57,17 @@ export default function Customers() {
   return (
     <div>
       <h1 className="page-title">Customers</h1>
+      <div className="btn-group" style={{ marginBottom: 12, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 13 }}>
+          {rows.filter((r) => !r.isDeleted).length} customer{rows.filter((r) => !r.isDeleted).length === 1 ? '' : 's'}
+        </span>
+        {(deletedCount > 0 || showDeleted) && (
+          <label className="checkbox-row" style={{ marginLeft: 'auto' }}>
+            <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+            {' '}Show deleted accounts ({deletedCount})
+          </label>
+        )}
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr><th>Name</th><th>Mobile</th><th>Email</th><th>Wallet (₹)</th><th>Joined</th><th></th><th></th></tr></thead>
@@ -57,13 +76,30 @@ export default function Customers() {
             {!loading && rows.length === 0 && <tr><td colSpan={7} className="empty">No customers.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
-                <td>{r.name || '—'}</td>
-                <td className="muted">{r.mobile || '—'}</td>
+                <td>
+                  {r.name || '—'}
+                  {r.isDeleted && <span className="badge red" style={{ marginLeft: 6 }}>Deleted</span>}
+                </td>
+                {/* A deleted row's `mobile` holds the internal `deleted:<id>:<ts>` tag, not a
+                    phone number — showing that raw string is what made the row look corrupted
+                    rather than deleted. The real number is gone by design: freeing it for
+                    re-signup is half the point of the delete. */}
+                <td className="muted">{r.isDeleted ? '— (freed)' : (r.mobile || '—')}</td>
                 <td className="muted">{r.email || '—'}</td>
                 <td><b>{r.wallet_balance ?? 0}</b></td>
                 <td className="muted">{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
-                <td><button className="btn secondary sm" onClick={() => { setTopup(r); setAmount(''); }}>Adjust wallet</button></td>
-                <td><button className="btn danger sm" disabled={busy} onClick={() => remove(r)}>Delete</button></td>
+                <td>
+                  {!r.isDeleted && (
+                    <button className="btn secondary sm" onClick={() => { setTopup(r); setAmount(''); }}>Adjust wallet</button>
+                  )}
+                </td>
+                <td>
+                  {/* Already deleted — a second Delete would only re-tag the row and
+                      append "(deleted)" to the name again. */}
+                  {!r.isDeleted && (
+                    <button className="btn danger sm" disabled={busy} onClick={() => remove(r)}>Delete</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
