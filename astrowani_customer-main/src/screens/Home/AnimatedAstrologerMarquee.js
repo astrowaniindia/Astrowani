@@ -6,7 +6,7 @@
 // card slides into center and grows/brightens) — still fully swipeable
 // manually at any time, which pauses the auto-advance until the swipe ends.
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Animated, View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
+import { Animated, View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions, Easing } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
@@ -138,7 +138,7 @@ const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCa
     );
 });
 
-export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) {
+export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, onCardPress }) {
   const { t } = React.useContext(LanguageContext);
   // Stable across refetches: Home re-fetches astrologerToShow on focus/Realtime
   // signal, handing this a NEW array reference every time even when the actual
@@ -164,157 +164,80 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress }) 
     return fresh;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [astrologers]);
-  const loopCount = loopCountFor(shuffled.length);
-  const looped = useMemo(
-    () => (shuffled.length ? Array(loopCount).fill(shuffled).flat() : []),
-    [shuffled, loopCount],
-  );
-  const listRef = useRef(null);
   const scrollX = useRef(new Animated.Value(0)).current;
-  const indexRef = useRef(0);
-  const pausedRef = useRef(false);
 
-
-  // Once within the last full cycle of the buffer, wrap back to the
-  // equivalent low index — content there is identical, so this is invisible.
-  // Returns whether a wrap happened, so the caller doesn't ALSO animate to
-  // the pre-wrap offset on the same tick (that produced a visible double-move:
-  // an instant jump immediately followed by an animated scroll on top of it).
-  const maybeWrap = () => {
-    const n = shuffled.length;
-    if (!n) return false;
-    const safeCeiling = n * (loopCount - 1);
-    if (indexRef.current >= safeCeiling) {
-      indexRef.current = indexRef.current % n;
-      try {
-        listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: false });
-      } catch (_) {}
-      return true;
-    }
-    return false;
-  };
+  // Two copies of the set: translating by exactly one set's width wraps
+  // seamlessly, so the loop can reset to 0 with nothing visibly jumping. The
+  // previous version needed loopCount copies because it advanced through a real
+  // scroll offset and had to keep a safe runway ahead of itself.
+  const marqueeItems = useMemo(() => [...shuffled, ...shuffled], [shuffled]);
+  const setWidth = shuffled.length * ITEM_WIDTH;
 
   useEffect(() => {
-    if (!looped.length) return undefined;
-    const timer = setInterval(() => {
-      if (pausedRef.current) return;
-      indexRef.current += 1;
-      const wrapped = maybeWrap();
-      if (!wrapped) {
-        try {
-          listRef.current?.scrollToOffset({ offset: indexRef.current * ITEM_WIDTH, animated: true });
-        } catch (_) {}
-      }
-    }, ADVANCE_INTERVAL_MS);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looped.length]);
+    scrollX.setValue(0);
+    if (!setWidth) return undefined;
+    const animation = Animated.loop(
+      Animated.timing(scrollX, {
+        toValue: setWidth,
+        // One card every ADVANCE_INTERVAL_MS, matching the old cadence — but
+        // gliding continuously rather than jumping card to card.
+        duration: (setWidth / ITEM_WIDTH) * ADVANCE_INTERVAL_MS,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [setWidth, scrollX]);
 
-  if (!looped.length) return null;
-
-  const renderItem = ({ item, index }) => (
-    <MarqueeCard
-      item={item}
-      index={index}
-      scrollX={scrollX}
-      onCallPress={onCallPress}
-      t={t}
-    />
-  );
+  if (!marqueeItems.length) return null;
 
   return (
-    <Animated.FlatList
-      ref={listRef}
-      data={looped}
-      keyExtractor={(item, index) => `marquee-${item._id}-${index}`}
-      renderItem={renderItem}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      // Stays false: this horizontal list is nested in the outer vertical
-      // ScrollView, a combination that hits a documented Android crash in RN's
-      // clipping/view-recycling path.
-      //
-      // NOTE (2026-08-23): converting this list to a non-virtualized ScrollView was
-      // tried as a fix for
-      //   IllegalViewOperationException: Trying to add unknown view tag: N
-      // on the theory that view recycling was the cause. It is NOT -- the crash
-      // still reproduced (74s) with recycling removed entirely, so that change was
-      // reverted. The cause of that exception is still unidentified; do not spend
-      // time re-testing virtualization. What IS fixed is the separate family of
-      // NativeAnimatedNodesManager crashes, via useNativeDriver:false below.
-      removeClippedSubviews={false}
-      snapToInterval={ITEM_WIDTH}
-      decelerationRate="fast"
-      contentContainerStyle={{ paddingHorizontal: SIDE_INSET, paddingVertical: verticalScale(14) }}
-      scrollEventThrottle={16}
-      // useNativeDriver MUST stay false here. This is not a performance
-      // preference -- it is the only configuration of this list that does not
-      // crash.
-      //
-      // A native-driven scroll event feeding PER-ITEM interpolations inside a
-      // VIRTUALIZED list is unsafe, because virtualization mounts and unmounts
-      // item views continuously while the auto-advance interval above is
-      // programmatically scrolling. Every mount/unmount has to connect or
-      // disconnect that item's native animated nodes, and those operations are
-      // queued and executed asynchronously (NativeAnimatedModule's
-      // ConcurrentOperationQueue) -- so they routinely execute against a node
-      // or view the other side of the race has already dropped. On 2026-08-23
-      // this produced FIVE different fatal exceptions, all from
-      // NativeAnimatedNodesManager, all on this one list:
-      //
-      //   disconnectAnimatedNodeFromView: node with tag [N] does not exist
-      //   disconnectAnimatedNodes:        node with tag (parent) [N] does not exist
-      //   connectAnimatedNodes:           node with tag (child) [N] does not exist
-      //   connectAnimatedNodeToView:      node with tag [N] does not exist
-      //   IllegalViewOperationException:  Trying to add unknown view tag: N
-      //
-      // Two structural fixes were tried first and BOTH failed, from opposite
-      // directions -- recording them so nobody burns the time again:
-      //
-      //   1. Caching the interpolations for the parent's lifetime (keyed by
-      //      index) stopped the per-render node churn and the disconnect
-      //      crashes, but RN destroys a native node when its last attached view
-      //      unmounts, so scrolling a recycled index back into view reconnected
-      //      an already-dead node -> connectAnimatedNodes (child).
-      //   2. Owning them per mounted item (a React.memo'd card with useMemo, so
-      //      node lifetime == view lifetime) is the textbook-correct ownership
-      //      and still crashed at ~13 min -> connectAnimatedNodeToView. The
-      //      race is in the queue, not in the ownership.
-      //
-      // With useNativeDriver false the interpolation is computed in JS and NO
-      // native animated nodes exist for this list at all, which removes the
-      // entire failure class rather than moving it. The documented cost is real
-      // and accepted: under heavy JS-thread load the scale/opacity can lag the
-      // true scroll position for a frame or two. A briefly imprecise transition
-      // is not comparable to a fatal crash on the app's first screen.
-      //
-      // Do not "optimise" this back to true. If the UI-thread smoothness is
-      // ever genuinely needed, the list itself has to stop being virtualized
-      // (or stop being programmatically auto-scrolled) first.
-      onScroll={Animated.event(
-        [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-        { useNativeDriver: false },
-      )}
-      onScrollBeginDrag={() => { pausedRef.current = true; }}
-      onScrollEndDrag={() => {
-        // A drag doesn't always end in momentum (a short flick, or the touch
-        // getting partly absorbed by the Video Call button inside the card) — if
-        // un-pausing only happened in onMomentumScrollEnd below, a drag that
-        // never triggers momentum left auto-advance paused forever. This
-        // guarantees it always resumes; onMomentumScrollEnd (when it does
-        // fire) still owns re-syncing indexRef to the settled position.
-        pausedRef.current = false;
-      }}
-      onMomentumScrollEnd={(e) => {
-        pausedRef.current = false;
-        indexRef.current = Math.round(e.nativeEvent.contentOffset.x / ITEM_WIDTH);
-        maybeWrap();
-      }}
-    />
+    // A transform-driven marquee, no longer a scrolling list.
+    //
+    // The auto-advance used to call scrollToOffset() on a timer, and on iOS a
+    // scroll event cancels any press in flight — which is why the Video Call
+    // button and the card underneath it were both dead there. Moving the row with
+    // translateX emits no scroll events, so the animation and working taps stop
+    // being in tension.
+    //
+    // useNativeDriver is now TRUE, which the long note this replaced explicitly
+    // allowed: "If the UI-thread smoothness is ever genuinely needed, the list
+    // itself has to stop being virtualized (or stop being programmatically
+    // auto-scrolled) first." This does both. The NativeAnimated crashes it warned
+    // about came from per-item nodes being connected and disconnected while
+    // virtualization mounted and unmounted rows underneath a programmatic scroll;
+    // a plain row mounts every card once and never recycles, so that race cannot
+    // happen. Only two copies of the set are rendered, so this is also fewer
+    // mounted cards than the looped list it replaces.
+    <Animated.View
+      style={[
+        styles.marqueeRow,
+        {transform: [{translateX: Animated.multiply(scrollX, -1)}]},
+      ]}>
+      {marqueeItems.map((item, index) => (
+        <MarqueeCard
+          key={`marquee-${item._id}-${index}`}
+          item={item}
+          index={index}
+          scrollX={scrollX}
+          onCallPress={onCallPress}
+          onCardPress={onCardPress}
+          t={t}
+        />
+      ))}
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Plain row moved with translateX — no ScrollView, so nothing here can cancel
+  // a press. Keeps the old list's side inset and vertical padding.
+  marqueeRow: {
+    flexDirection: 'row',
+    paddingHorizontal: SIDE_INSET,
+    paddingVertical: verticalScale(14),
+  },
   card: {
     width: CARD_WIDTH,
     marginHorizontal: CARD_MARGIN,

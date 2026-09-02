@@ -15,7 +15,8 @@ import {
   Dimensions,
   Alert,
   RefreshControl,
-  Animated
+  Animated,
+  Easing
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
@@ -196,6 +197,12 @@ const BlogItem = ({blog, navigation, language}) => {
     </TouchableOpacity>
   );
 };
+
+// Marquee geometry and speed. The card is a fixed width, so one set's width is
+// exact and the wrap point needs no measurement — which is what let the scroll-
+// based marquee be replaced by a transform (see the animation effect below).
+const MARQUEE_ITEM_WIDTH = scale(178) + scale(15); // AstrologerCard width + marginRight
+const MARQUEE_SPEED_PX_PER_SEC = 26; // roughly the old 1px-per-16ms drift
 
 const Home = ({navigation}) => {
   const { t, language } = React.useContext(LanguageContext);
@@ -415,34 +422,40 @@ const Home = ({navigation}) => {
   // off the end of a fixed-size array.
   const contentWidthRef = React.useRef(0);
 
+  // ── Marquee animation ──────────────────────────────────────────────────────
+  // Driven by translateX, deliberately NOT by scrolling. The previous version
+  // called scrollToOffset() every 16ms, and on iOS a scroll event cancels any
+  // press in flight — measured on-device as the card's onPressIn firing while
+  // onPress never did, which left every card and button in this row dead.
+  // Moving pixels emits no scroll events, so the animation and working taps are
+  // no longer in tension.
+  const marqueeX = React.useRef(new Animated.Value(0)).current;
+
+  // The set is rendered twice, so translating by exactly one set's width wraps
+  // seamlessly and can restart from 0 with nothing visibly jumping.
+  const marqueeItems = React.useMemo(
+    () => [...astrologerToShow, ...astrologerToShow],
+    [astrologerToShow],
+  );
+  const marqueeSetWidth = astrologerToShow.length * MARQUEE_ITEM_WIDTH;
+
   React.useEffect(() => {
-    const timer = setInterval(() => {
-      if (isAutoScrolling.current && listRef.current && loopedAstrologers.length > 0) {
-        scrollOffset.current += 1;
-        const totalWidth = contentWidthRef.current;
-        if (totalWidth > 0) {
-          // Direct clamp for the case where the underlying astrologer list
-          // shrinks (e.g. a background refetch) while offset was already deep
-          // into a wraparound cycle sized for the OLD, larger content — without
-          // this, the one-set-per-tick rewind below only closes the gap
-          // gradually, meaning several ticks in a row would call
-          // scrollToOffset() with a value past the new (smaller) scrollable
-          // range. Modulo snaps it back in range in a single tick instead.
-          if (scrollOffset.current >= totalWidth) {
-            scrollOffset.current = scrollOffset.current % totalWidth;
-          }
-          const singleSetWidth = totalWidth / MARQUEE_REPEAT;
-          if (scrollOffset.current >= totalWidth - singleSetWidth) {
-            scrollOffset.current -= singleSetWidth;
-          }
-        }
-        try {
-          listRef.current.scrollToOffset({ offset: scrollOffset.current, animated: false });
-        } catch (e) {}
-      }
-    }, 16);
-    return () => clearInterval(timer);
-  }, [loopedAstrologers.length, MARQUEE_REPEAT]);
+    marqueeX.setValue(0);
+    if (!marqueeSetWidth) return undefined;
+    const animation = Animated.loop(
+      Animated.timing(marqueeX, {
+        toValue: -marqueeSetWidth,
+        // Constant speed however many astrologers are loaded.
+        duration: (marqueeSetWidth / MARQUEE_SPEED_PX_PER_SEC) * 1000,
+        easing: Easing.linear,
+        // UI thread: keeps moving smoothly even when JS is busy, and never
+        // rounds through a scroll offset.
+        useNativeDriver: true,
+      }),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [marqueeSetWidth, marqueeX]);
 
   // Cancel the in-flight call request and tear down listeners/timeout.
   // Also marks the request 'cancelled' in Supabase + tells the vendor so their
@@ -1355,44 +1368,24 @@ const Home = ({navigation}) => {
         ) : errorAstrologer ? (
           <Text style={styles.errorText}>{errorAstrologer}</Text>
         ) : (
-          <FlatList
-            ref={listRef}
-            data={loopedAstrologers}
-            keyExtractor={(item, index) => item._id.toString() + index.toString()}
-            renderItem={renderAstrologerList}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            // Stays false: this horizontal list is nested in the outer vertical
-            // ScrollView and is driven by the programmatic scroll interval above, a
-            // combination that hits a documented Android crash in RN's clipping/
-            // view-recycling path.
-            //
-            // NOTE (2026-08-23): converting this to a non-virtualized ScrollView was
-            // tried as a fix for
-            //   IllegalViewOperationException: Trying to add unknown view tag: N
-            // on the theory that view recycling caused it. It does NOT -- the crash
-            // still reproduced (74s) with recycling removed entirely, so the change
-            // was reverted. That exception's cause remains unidentified; don't spend
-            // time re-testing virtualization. MARQUEE_REPEAT above was made adaptive
-            // in the same pass and is KEPT -- that is an independent memory win
-            // (2x duplication instead of a flat 6x), unrelated to the crash.
-            removeClippedSubviews={false}
-            contentContainerStyle={styles.astrologerList}
-            onContentSizeChange={(w) => { contentWidthRef.current = w; }}
-            onScroll={(e) => {
-              if (!isAutoScrolling.current) {
-                scrollOffset.current = e.nativeEvent.contentOffset.x;
-              }
-            }}
-            scrollEventThrottle={16}
-            onTouchStart={() => { isAutoScrolling.current = false; }}
-            onTouchEnd={() => { isAutoScrolling.current = true; }}
-            onTouchCancel={() => { isAutoScrolling.current = true; }}
-            onScrollBeginDrag={() => { isAutoScrolling.current = false; }}
-            onScrollEndDrag={() => { isAutoScrolling.current = true; }}
-            onMomentumScrollBegin={() => { isAutoScrolling.current = false; }}
-            onMomentumScrollEnd={() => { isAutoScrolling.current = true; }}
-          />
+          // A transform-driven marquee, NOT a scrolling list. This used to be a
+          // FlatList scrolled by scrollToOffset() every 16ms, which is what made
+          // every card and button on it untappable on iOS: a scroll event cancels
+          // any press in flight, so onPressIn fired and onPress never did. A
+          // translateX animation moves pixels rather than scroll offset, emits no
+          // scroll events, and so cannot cancel a touch. The set is rendered twice
+          // so the wrap is seamless.
+          <Animated.View
+            style={[
+              styles.marqueeRow,
+              {transform: [{translateX: marqueeX}]},
+            ]}>
+            {marqueeItems.map((item, index) => (
+              <View key={`${item._id}-${index}`}>
+                {renderAstrologerList({item})}
+              </View>
+            ))}
+          </Animated.View>
         )}
 
         {/* Video Call With Astrologers — moved up here (directly under "India's
