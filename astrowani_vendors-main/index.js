@@ -8,23 +8,75 @@ import { TextEncoder, TextDecoder } from 'text-encoding';
 if (typeof global.TextEncoder === 'undefined') global.TextEncoder = TextEncoder;
 if (typeof global.TextDecoder === 'undefined') global.TextDecoder = TextDecoder;
 
-import {AppRegistry} from 'react-native';
-import {HotUpdater} from '@hot-updater/react-native';
-import App from './App';
+import React from 'react';
+import {AppRegistry, ScrollView, Text} from 'react-native';
 import {name as appName} from './app.json';
-import notifee, {EventType} from '@notifee/react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {acceptRequest, rejectRequest} from './src/utils/incomingRequestActions';
-import {cancelIncomingRequestNotification} from './src/utils/incomingRequestNotifications';
-import {navigationRef} from './src/utils/navigationRef';
-import {initCrashReporting} from './src/utils/CrashReporting';
-// Importing this initializes the PostHog client as a module-level singleton (see
-// src/utils/Analytics.js) — no separate init call needed here, just ensures it's
-// constructed before the app tree mounts.
-import './src/utils/Analytics';
-import {initCallKeep} from './src/utils/callKeep';
 
-initCrashReporting();
+// EVERYTHING ELSE IS REQUIRED INSIDE A TRY, ON PURPOSE.
+//
+// The first iOS build of this app opened to a black screen with the process alive
+// and NOTHING in Sentry. That combination is diagnostic on its own: ES imports are
+// hoisted and evaluated before any statement, so the whole graph below — App, and
+// through it Firebase, navigation, CallKit, PushKit — runs BEFORE
+// initCrashReporting() can install Sentry's handler. A throw in any of it is
+// therefore invisible to Sentry AND skips AppRegistry.registerComponent, leaving
+// iOS with a live window and no root view. A black screen.
+//
+// require() inside a try/catch is evaluated where it is written rather than
+// hoisted, so a failure is catchable and, more importantly, SHOWABLE. Registration
+// happens either way: worst case the app renders the error instead of vanishing.
+let startupError = null;
+let WrappedApp = null;
+
+try {
+  const {initCrashReporting} = require('./src/utils/CrashReporting');
+  initCrashReporting(); // first, so anything after it reaches Sentry
+
+  require('./src/utils/Analytics'); // PostHog singleton, side-effect import
+
+  const {HotUpdater} = require('@hot-updater/react-native');
+  const App = require('./App').default;
+
+  WrappedApp = HotUpdater.wrap({
+    baseURL: 'https://fxpoustnddrgumhwdcma.supabase.co/functions/v1/update-server',
+    updateStrategy: 'appVersion',
+  })(App);
+} catch (e) {
+  startupError = e;
+  console.error('[startup] app failed to load:', e);
+}
+
+// Notification and CallKit wiring is deliberately SEPARATE from the block above: a
+// failure here costs one feature, not the app, so it must not prevent the app tree
+// from loading.
+let notifee = null;
+let EventType = null;
+try {
+  const notifeeModule = require('@notifee/react-native');
+  notifee = notifeeModule.default;
+  EventType = notifeeModule.EventType;
+} catch (e) {
+  console.warn('[startup] notifee unavailable:', e?.message || e);
+}
+
+const AsyncStorage = (() => {
+  try { return require('@react-native-async-storage/async-storage').default; } catch (_) { return null; }
+})();
+const {acceptRequest, rejectRequest} = (() => {
+  try { return require('./src/utils/incomingRequestActions'); } catch (_) { return {}; }
+})();
+const {cancelIncomingRequestNotification} = (() => {
+  try { return require('./src/utils/incomingRequestNotifications'); } catch (_) { return {}; }
+})();
+const {navigationRef} = (() => {
+  try { return require('./src/utils/navigationRef'); } catch (_) { return {}; }
+})();
+const {initCallKeep} = (() => {
+  try { return require('./src/utils/callKeep'); } catch (e) {
+    console.warn('[startup] callKeep unavailable:', e?.message || e);
+    return {};
+  }
+})();
 
 // iOS CallKit + PushKit. Registered here, outside the component tree, for exactly the
 // same reason notifee.onBackgroundEvent below is: when a VoIP push wakes a KILLED app,
@@ -32,7 +84,14 @@ initCrashReporting();
 // exist before the app tree mounts. Registering inside a component would miss the one
 // case this feature exists for — answering a call on an app that was not running.
 // No-op on Android, which keeps using the FCM + notifee + foreground-service path.
-initCallKeep();
+// Guarded for the same reason as the notifee listeners below: CallKit/PushKit setup
+// depends on entitlements a free-provisioned build does not carry, and a throw here
+// would take the whole app down before it could register.
+try {
+  initCallKeep();
+} catch (e) {
+  console.warn('[startup] initCallKeep failed:', e?.message || e);
+}
 
 // Accept/Reject pressed on the incoming-request notification.
 //
@@ -86,18 +145,53 @@ const handleNotificationAction = async ({type, detail}) => {
   }
 };
 
+// NOTHING above AppRegistry.registerComponent may be allowed to throw. If it does,
+// registration never runs and iOS shows a live app window with no root view — a
+// black screen with the app apparently running, which is what the first vendor iOS
+// build did. Losing a notification listener degrades one feature; losing
+// registration loses the entire app, so every side effect here is isolated.
+const safely = (label, fn) => {
+  try {
+    fn();
+  } catch (e) {
+    console.warn(`[startup] ${label} failed:`, e?.message || e);
+  }
+};
+
 // Must be registered outside the component tree (Notifee requirement) so presses are
 // handled even when the app process was killed and briefly woken to run this.
-notifee.onBackgroundEvent(handleNotificationAction);
-// The foreground half. Without this, the buttons are dead whenever the app is open.
-notifee.onForegroundEvent(handleNotificationAction);
+if (notifee) {
+  safely('notifee.onBackgroundEvent', () => notifee.onBackgroundEvent(handleNotificationAction));
+  // The foreground half. Without this, the buttons are dead whenever the app is open.
+  safely('notifee.onForegroundEvent', () => notifee.onForegroundEvent(handleNotificationAction));
+}
 
-// OTA updates (JS-only fixes ship without a Play Store release) — see
-// "MD files/deployment-and-releases.md". Edge function deployed via `npx hot-updater init`
-// on 2026-08-05, backed by the "hot-updater-storage-for-astrowani-vendor" Supabase bucket.
-const WrappedApp = HotUpdater.wrap({
-  baseURL: 'https://fxpoustnddrgumhwdcma.supabase.co/functions/v1/update-server',
-  updateStrategy: 'appVersion',
-})(App);
+// Shown INSTEAD of a black screen when the app tree fails to load. A blank window
+// tells you nothing and costs a ten-minute rebuild per guess; the message and stack
+// name the failing module directly. Plain react-native primitives only — anything
+// fancier could fail for the same reason the app just did.
+function StartupErrorScreen() {
+  return React.createElement(
+    ScrollView,
+    {style: {flex: 1, backgroundColor: '#2b140c'}, contentContainerStyle: {padding: 20, paddingTop: 60}},
+    React.createElement(
+      Text,
+      {style: {color: '#FFD700', fontSize: 18, fontWeight: '700', marginBottom: 12}},
+      'Astrowani failed to start',
+    ),
+    React.createElement(
+      Text,
+      {style: {color: '#fff', fontSize: 13, marginBottom: 16}},
+      String(startupError?.message || startupError || 'Unknown error'),
+    ),
+    React.createElement(
+      Text,
+      {style: {color: 'rgba(255,255,255,0.65)', fontSize: 11}},
+      String(startupError?.stack || '').slice(0, 3000),
+    ),
+  );
+}
 
-AppRegistry.registerComponent(appName, () => WrappedApp);
+// Registration ALWAYS happens. Skipping it is what produced a black screen with a
+// live process and nothing in Sentry.
+AppRegistry.registerComponent(appName, () => (WrappedApp ? WrappedApp : StartupErrorScreen));
