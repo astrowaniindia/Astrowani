@@ -1410,7 +1410,11 @@ const Home = ({navigation}) => {
             <View style={styles.topAstrologers}>
               <Text style={styles.topAstrologerTxt}>{t('home.videoCallWithAstrologers')}</Text>
             </View>
-            <AnimatedAstrologerMarquee astrologers={astrologerToShow} onCallPress={initiateVideoCall} />
+            <AnimatedAstrologerMarquee
+              astrologers={astrologerToShow}
+              onCallPress={initiateVideoCall}
+              onCardPress={openAstrologer}
+            />
           </>
         )}
 

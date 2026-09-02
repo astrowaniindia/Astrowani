@@ -84,7 +84,7 @@ function shuffledCopy(arr) {
 // NOTE: ReanimatedUIManager appears in all of those stack traces purely because
 // react-native-reanimated installs a global UIManager wrapper when present. This
 // is RN's own Animated API - nothing on Home imports reanimated.
-const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCallPress, t }) {
+const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCallPress, onCardPress, t }) {
   const { cardScale, opacity } = React.useMemo(() => {
     const inputRange = [
       (index - 1) * ITEM_WIDTH,
@@ -104,11 +104,16 @@ const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCa
 
     return (
       <Animated.View style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
-        {/* Tap-tracking only — no navigation added here (that would be a UI/UX
-            change beyond what was asked for). Separate from the Video Call button
-            below on purpose: that one already fires call_initiated once the
-            call actually goes through, tracked independently. */}
-        <TouchableWithoutFeedback onPress={() => captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name})}>
+        {/* Opens the astrologer's profile, matching the cards in "India's Best
+            Astrologers". Until 2026-09-03 this fired analytics and nothing else,
+            so the card read as broken — tapping it genuinely did nothing. Still
+            separate from the Video Call button below, which fires call_initiated
+            on its own once a call actually goes through. */}
+        <TouchableWithoutFeedback
+          onPress={() => {
+            captureEvent('home_screen_click', {section: 'call_astrologer_card', label: item.name});
+            onCardPress?.(item);
+          }}>
           <View style={styles.infoBlock}>
             <View style={styles.avatarWrap}>
               <Image
