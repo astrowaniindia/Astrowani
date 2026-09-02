@@ -184,6 +184,12 @@ function handleNotificationTap(remoteMessage) {
     // from the admin Orders page (adminRoutes.js STATUS_PUSH). Same destination as a
     // delivered report — My Orders is where the tracking timeline lives.
     navigate('MyOrders');
+  } else if (type === 'support_reply') {
+    // A support reply is only useful if tapping it lands in the conversation it
+    // belongs to — a push that opens the app's home screen makes the person hunt
+    // for the answer they were just told about.
+    const conversationId = remoteMessage?.data?.conversationId;
+    navigate('SupportChat', conversationId ? { conversationId } : undefined);
   } else if (type === 'active_session') {
     handleActiveSessionTap(remoteMessage.data);
   }

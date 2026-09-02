@@ -80,6 +80,9 @@ import Settings from '../screens/drawerScreens/Settings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
 import FaqScreen from '../screens/drawerScreens/FaqScreen';
 import SupportScreen from '../screens/drawerScreens/SupportScreen';
+// The support conversation itself (agent + handover to a real person). Its own
+// header is inside the screen, so it registers with headerShown: false.
+import SupportChatScreen from '../screens/Support/SupportChatScreen';
 import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails';
 
 import VoiceCallScreen from '../screens/Video/VoiceCallScreen';
@@ -416,6 +419,11 @@ export default function Navigation({ initialRoute }) {
             },
             tabBarStyle: { display: 'none' },
           })}
+        />
+        <Stack.Screen
+          name="SupportChat"
+          component={SupportChatScreen}
+          options={{headerShown: false}}
         />
         <Stack.Screen
           name="SupportScreen"

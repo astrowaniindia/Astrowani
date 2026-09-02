@@ -1,266 +1,185 @@
+// Help & Support — the hub.
+//
+// WHAT THIS REPLACES. A form asking for name, email, issue type and message,
+// inside an app the customer is already logged into, which posted one ticket to
+// a backend with no reply path. Nothing ever came back. The customer could not
+// see whether anyone had read it, and the admin's answer (support_tickets.
+// admin_note) was never shown anywhere in the app.
+//
+// Now: one tap into a conversation that answers immediately and brings in a
+// person when it matters, plus every past conversation with its current state —
+// so "did anyone see my problem" is answered by looking, not by asking again.
+//
+// The old ticket form is gone rather than kept alongside. Two support entry
+// points, one of which silently goes nowhere, is worse than one.
+import React, { useCallback, useContext, useState } from 'react';
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
+  View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import React, { useContext, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
-import { Dropdown } from 'react-native-element-dropdown';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 
-const SupportScreen = () => {
+// Plain-language state, never the internal status string. A customer should not
+// have to learn our vocabulary to know whether someone is coming.
+const STATE = {
+  bot: { key: 'stateBot', color: '#8a7c76', icon: 'sparkles' },
+  awaiting_human: { key: 'stateAwaiting', color: '#E67E22', icon: 'time-outline' },
+  human: { key: 'stateHuman', color: '#1a8f4c', icon: 'person' },
+  resolved: { key: 'stateResolved', color: '#1a8f4c', icon: 'checkmark-circle' },
+  closed: { key: 'stateClosed', color: '#9b8f8a', icon: 'archive-outline' },
+};
+
+export default function SupportScreen({ navigation }) {
   const { t } = useContext(LanguageContext);
-  const Issues = [
-    {
-      label: t('support.issueTechnical'),
-      value: 'Technical Issue',
-    },
-    { label: t('support.issueAccount'), value: 'Account Related Issue' },
-    { label: t('support.issueRefund'), value: 'Refund Request' },
-    { label: t('support.issueOther'), value: 'Other' },
-    { label: t('support.issueFeedback'), value: 'Feedback' },
-  ];
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [issue, setIssue] = useState(null);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [mobile, setMobile] = useState('')
-
-  const handleSubmit = async () => {
-    if (!name || !email || !issue || !message) {
-      Alert.alert(t('support.fillAllFields'));
-      return;
-    }
-    setLoading(true);
+  const load = useCallback(async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-
-      if (!token) {
-        throw new Error('Token not found');
-      }
-
-      const response = await Instance.post(
-        '/api/support/create-support',
-        {
-          name: name,
-          email: email,
-          issueType: issue,
-          message: message,
-          mobile: mobile,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-      console.log('data', response.data);
-      setName('');
-      setEmail('');
-      setIssue(null);
-      setMessage('');
-      setMobile('');
-
-      Alert.alert(t('support.submittedSuccess'));
-    } catch (err) {
-      console.log(err.message);
-      Alert.alert(t('common.errorPrefix'), err.message);
+      const res = await Instance.get('/api/support/conversations');
+      setRows(res?.data?.data || []);
+    } catch (_) {
+      // A failed list must not block starting a new conversation — that is the
+      // one thing on this screen that always has to work.
+      setRows([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const openNew = () => navigation.navigate('SupportChat');
+  const openOne = (id) => navigation.navigate('SupportChat', { conversationId: id });
+
+  const renderItem = ({ item }) => {
+    const s = STATE[item.status] || STATE.bot;
+    return (
+      <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => openOne(item.id)}>
+        <View style={[styles.cardIcon, { backgroundColor: `${s.color}1A` }]}>
+          <Ionicons name={s.icon} size={moderateScale(18)} color={s.color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.subject || t(`support.category.${item.category || 'other'}`)}
+          </Text>
+          <Text style={[styles.cardState, { color: s.color }]}>{t(`support.${s.key}`)}</Text>
+        </View>
+        <Text style={styles.cardWhen}>
+          {item.last_message_at ? new Date(item.last_message_at).toLocaleDateString() : ''}
+        </Text>
+        <Ionicons name="chevron-forward" size={moderateScale(18)} color="#c4b5ad" />
+      </TouchableOpacity>
+    );
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.form}>
-        <Text style={styles.title}>{t('support.title')}</Text>
-        <Text style={styles.subtitle}>
-          {t('support.subtitle')}
-        </Text>
-
-        <TextInput
-          placeholder={t('support.enterName')}
-          placeholderTextColor={COLORS.gray}
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-        />
-        <TextInput
-          placeholder={t('support.email')}
-          placeholderTextColor={COLORS.gray}
-          keyboardType="email-address"
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          placeholder={t('support.mobileNumber')}
-          placeholderTextColor={COLORS.gray}
-          keyboardType="number-pad"
-          style={styles.input}
-          value={mobile}
-          onChangeText={setMobile}
-        />
-        <View style={styles.dropdownContainer}>
-          <Dropdown
-            style={styles.dropdown}
-            data={Issues}
-            labelField="label"
-            valueField="value"
-            placeholder={t('support.selectIssue')}
-            placeholderStyle={styles.dropdownText}
-            selectedTextStyle={styles.selectedItemText} // Style for selected item
-            value={issue}
-            onChange={item => {
-              setIssue(item.value);
-            }}
-            renderRightIcon={() => (
-              <Ionicons
-                name="chevron-down-outline"
-                color={COLORS.orange}
-                size={24}
-              />
-            )}
-            renderItem={item => (
-              <View style={styles.item}>
-                <Text style={styles.itemText}>{item.label}</Text>
+      <FlatList
+        data={rows}
+        keyExtractor={(r) => String(r.id)}
+        renderItem={renderItem}
+        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[COLORS.AstroMaroon]} tintColor={COLORS.AstroMaroon} />
+        }
+        ListHeaderComponent={
+          <>
+            <TouchableOpacity style={styles.hero} activeOpacity={0.9} onPress={openNew}>
+              <View style={styles.heroIcon}>
+                <Ionicons name="chatbubble-ellipses" size={moderateScale(24)} color={COLORS.AstroMaroon} />
               </View>
-            )} // Style for dropdown items
-          />
-        </View>
-        <TextInput
-          placeholder={t('support.writeMessage')}
-          placeholderTextColor={COLORS.gray}
-          keyboardType="default"
-          style={styles.messagebox}
-          multiline={true}
-          value={message}
-          onChangeText={setMessage}
-        />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.heroTitle}>{t('support.heroTitle')}</Text>
+                <Text style={styles.heroSub}>{t('support.heroSub')}</Text>
+              </View>
+              <Ionicons name="arrow-forward-circle" size={moderateScale(28)} color="#fff" />
+            </TouchableOpacity>
 
-        <TouchableOpacity onPress={handleSubmit} style={styles.submitBtn}>
-          {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <View style={styles.assureRow}>
+              <Ionicons name="shield-checkmark-outline" size={moderateScale(15)} color="#1a8f4c" />
+              <Text style={styles.assureText}>{t('support.assurance')}</Text>
+            </View>
+
+            {rows.length > 0 && <Text style={styles.sectionTitle}>{t('support.pastTitle')}</Text>}
+          </>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.center}><ActivityIndicator color={COLORS.AstroMaroon} /></View>
           ) : (
-            <Text style={styles.submitBtnTxt}>{t('support.submit')}</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>{t('support.noneYet')}</Text>
+            </View>
+          )
+        }
+      />
     </View>
   );
-};
-
-export default SupportScreen;
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.AstroSoftOrange,
-    padding: scale(15),
-  },
-  title: {
-    fontSize: moderateScale(17),
-    color: '#000',
-    paddingVertical: scale(5),
-    fontFamily: 'Lato-Bold',
-  },
-  subtitle: {
-    fontSize: moderateScale(14),
-    color: '#000',
-    marginBottom: verticalScale(15),
-    fontFamily: 'Lato-Regular',
-  },
-  input: {
+  container: { flex: 1, backgroundColor: '#f7f3f1' },
+  list: { padding: scale(16), paddingBottom: verticalScale(30) },
+  center: { paddingVertical: verticalScale(40), alignItems: 'center' },
+
+  hero: {
     flexDirection: 'row',
-    height: verticalScale(45),
-    paddingHorizontal: scale(10),
-    marginBottom: verticalScale(10),
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: moderateScale(8),
-    borderWidth: verticalScale(1),
-    backgroundColor: COLORS.white,
-    borderColor: COLORS.AshGray,
-    fontFamily: 'Lato-Regular',
-    color: '#000',
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(18),
+    padding: scale(16),
   },
-  dropdownContainer: {
-    paddingHorizontal: scale(10),
+  heroIcon: {
+    width: scale(46), height: scale(46), borderRadius: scale(23),
+    backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: scale(12),
+  },
+  heroTitle: { color: '#fff', fontSize: moderateScale(16), fontWeight: 'bold' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: moderateScale(12), marginTop: verticalScale(3), lineHeight: moderateScale(17) },
+
+  assureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: verticalScale(12),
+    paddingHorizontal: scale(4),
+  },
+  assureText: { marginLeft: scale(7), fontSize: moderateScale(11.5), color: '#6b574d', flex: 1, lineHeight: moderateScale(16) },
+
+  sectionTitle: {
+    fontSize: moderateScale(13),
+    fontWeight: '700',
+    color: '#5c4a42',
+    marginTop: verticalScale(22),
     marginBottom: verticalScale(10),
-    borderRadius: moderateScale(8),
-    borderWidth: verticalScale(1),
-    backgroundColor: COLORS.white,
-    borderColor: COLORS.AshGray,
   },
-  dropdown: {
-    width: '100%',
-    height: verticalScale(45),
+
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(14),
+    padding: scale(13),
+    marginBottom: verticalScale(9),
+    borderWidth: 1,
+    borderColor: '#ecdfd8',
   },
-  dropdownText: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Regular',
-    color: COLORS.gray,
+  cardIcon: {
+    width: scale(36), height: scale(36), borderRadius: scale(18),
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: scale(11),
   },
-  selectedItemText: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Regular',
-    color: '#000',
-  },
-  item: {
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(10),
-  },
-  itemText: {
-    fontSize: moderateScale(14),
-    fontFamily: 'Lato-Regular',
-    color: '#000', // Black color for dropdown items
-  },
-  messagebox: {
-    height: verticalScale(190),
-    paddingHorizontal: scale(10),
-    marginBottom: verticalScale(10),
-    fontSize: moderateScale(14),
-    color: '#000',
-    fontFamily: 'Lato-Regular',
-    textAlignVertical: 'top',
-    borderRadius: moderateScale(8),
-    borderWidth: verticalScale(1),
-    backgroundColor: COLORS.white,
-    borderColor: COLORS.AshGray,
-  },
-  submitBtn: {
-    backgroundColor: COLORS.AstroGold,
-    paddingVertical: verticalScale(10),
-    alignSelf: 'center',
-    width: '100%',
-    borderRadius: moderateScale(25),
-    marginVertical: verticalScale(17),
-  },
-  submitBtnTxt: {
-    color: '#000',
-    textAlign: 'center',
-    fontFamily: 'Lato-Regular',
-  },
-  form: {
-    padding: scale(15),
-    backgroundColor: COLORS.white,
-    borderRadius: moderateScale(10),
-    elevation: 4,
-    // iOS ignores `elevation` — without these the support form sits flat on
-    // the page with no card edge.
-    shadowColor: '#4a2412',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-  },
+  cardTitle: { fontSize: moderateScale(13.5), color: '#2b1a12', fontWeight: '600' },
+  cardState: { fontSize: moderateScale(11.5), marginTop: verticalScale(2), fontWeight: '600' },
+  cardWhen: { fontSize: moderateScale(10.5), color: '#a8998f', marginRight: scale(6) },
+
+  empty: { paddingVertical: verticalScale(30), alignItems: 'center' },
+  emptyText: { fontSize: moderateScale(12.5), color: '#8a7c76', textAlign: 'center' },
 });
