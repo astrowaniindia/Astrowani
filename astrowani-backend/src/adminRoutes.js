@@ -13,6 +13,10 @@ const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
+// Phone canonicalization + the tolerant "is this number already an astrologer"
+// lookup, shared with the OTP/login path so an admin-created account is stored in
+// exactly the shape mobile-otp-verify searches for. See POST /api/admin/astrologers.
+const { canonicalDigits, findAstrologerByPhone } = require('./customerLookup');
 const { payoutOrderCommissions } = require('./remedyCommission');
 const liveAarti = require('./liveAarti');
 const { queueBlogTranslation, queueRemedyItemTranslation, queueRemedyCategoryTranslation, queueCategoryTranslation } = require('./autoTranslate');
@@ -560,6 +564,193 @@ module.exports = function registerAdminRoutes(app) {
   }));
 
   // ── Astrologers (read + moderate) ─────────────────────────────────────────
+
+  // Create an astrologer directly from the admin dashboard.
+  //
+  // WHY THIS EXISTS. The only other way an astrologers row can be created is the
+  // vendor app's signup: Registration form -> OTP request -> OTP verify ->
+  // POST /api/vendor/register, which lands as approval_status='pending' with all
+  // services off and every charge at 0. That is correct for a stranger signing
+  // themselves up, but it is the wrong flow for an astrologer the business has
+  // already vetted offline — someone had to walk them through the app just to
+  // create a row an admin then had to approve and fill in anyway.
+  //
+  // WHAT IS SKIPPED, AND WHAT IS NOT. This skips the signup form, the signup-time
+  // OTP and the approval queue — the row is created ready to work. It does NOT
+  // skip OTP at LOGIN, and cannot: the vendor app has no password, so the OTP is
+  // the only thing proving the person holding the handset is the astrologer this
+  // row belongs to. Without it, anyone who knew the number could log in as them,
+  // read their customers' details and draw their earnings. The astrologer simply
+  // opens the app, enters this phone number and the code, and is straight in —
+  // mobile-otp-verify finds this row by phone_number and treats it as an existing
+  // astrologer, so no registration screen ever appears for them.
+  //
+  // The phone number is therefore the identity: it must be their real, reachable
+  // handset, and it is stored in the canonical bare-10-digit form the OTP
+  // endpoints normalize to (see normalizePhone in index.js). Stored in any other
+  // shape, the login lookup misses and they get sent to the signup form instead.
+  app.post('/api/admin/astrologers', requireAdmin, h(async (req, res) => {
+    const body = req.body || {};
+    const s = (v) => (v == null ? '' : String(v)).trim();
+
+    // canonicalDigits() only reshapes; normalizePhone() in index.js — which is what
+    // the OTP endpoints run the typed number through — also requires a real Indian
+    // mobile prefix. Apply that same rule here, or an admin typo like 1234567890
+    // creates an account that is accepted at creation and then rejected at every
+    // login attempt forever, since the number can never be canonicalized to match.
+    const phone = canonicalDigits(body.phone_number);
+    if (!phone || !/^[6-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid 10-digit Indian mobile number is required — it is how the astrologer logs in.',
+      });
+    }
+
+    const firstName = s(body.first_name).slice(0, 300);
+    if (!firstName) {
+      return res.status(400).json({ success: false, message: 'First name is required' });
+    }
+
+    const email = s(body.email).slice(0, 300);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, message: 'That email address is not valid' });
+    }
+
+    const badge = body.badge || null;
+    if (badge !== null && !['verified', 'celebrity', 'top_rated'].includes(badge)) {
+      return res.status(400).json({ success: false, message: 'badge must be verified, celebrity, top_rated, or null' });
+    }
+
+    const approvalStatus = ['approved', 'pending', 'rejected'].includes(body.approval_status)
+      ? body.approval_status
+      : 'approved'; // an astrologer an admin typed in by hand is vetted by definition
+
+    // Same rule the vendor registration path applies: only a URL our own upload
+    // endpoint could have produced, never an arbitrary string that ends up as an
+    // <img src> in three apps.
+    const photo = s(body.profile_pic_url);
+    if (photo && !/^https:\/\/\S+$/i.test(photo)) {
+      return res.status(400).json({ success: false, message: 'Profile photo must be an https URL (or uploaded here)' });
+    }
+
+    const strArray = (v) => (Array.isArray(v) ? v : String(v || '').split(','))
+      .map((x) => s(x).slice(0, 120))
+      .filter(Boolean)
+      .slice(0, 40);
+
+    const num = (v, max) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.min(n, max) : 0;
+    };
+
+    const chat = num(body.chat_charge_per_minute, 100000);
+    const call = num(body.call_charge_per_minute, 100000);
+    const video = num(body.video_charge_per_minute, 100000);
+
+    // Refuse a duplicate rather than letting the phone_number UNIQUE constraint
+    // surface as a 500 — and so an admin never creates a second account for a
+    // number that already has one, which would leave the login lookup picking
+    // arbitrarily between two rows.
+    const existing = await findAstrologerByPhone(db, phone, 'id, first_name, last_name');
+    if (existing) {
+      const who = `${existing.first_name || ''} ${existing.last_name || ''}`.trim() || 'an astrologer';
+      return res.status(409).json({
+        success: false,
+        code: 'PHONE_TAKEN',
+        message: `${phone} already belongs to ${who}. Edit that account instead of creating a second one.`,
+      });
+    }
+
+    const row = {
+      phone_number: phone,
+      first_name: firstName,
+      last_name: s(body.last_name).slice(0, 300),
+      email: email || null,
+      gender: s(body.gender).slice(0, 40) || null,
+      bio: s(body.bio).slice(0, 5000) || null,
+      profile_pic_url: photo || null,
+      experience: Math.min(Math.max(Number.parseInt(body.experience, 10) || 0, 0), 80),
+      languages: strArray(body.languages),
+      specialties: strArray(body.specialties),
+
+      approval_status: approvalStatus,
+      is_suspended: false,
+      badge,
+      admin_notes: s(body.admin_notes).slice(0, 5000)
+        || `Created directly from the admin dashboard on ${new Date().toISOString().slice(0, 10)} — did not go through vendor-app signup.`,
+
+      chat_charge_per_minute: chat,
+      call_charge_per_minute: call,
+      video_charge_per_minute: video,
+      chat_price: chat,
+      audio_price: call,
+      video_price: video,
+      // Which services are on is the admin's call here (an astrologer added by
+      // hand is usually meant to be reachable straight away), but a service stays
+      // off unless it has a real charge — a 0/min service is not a price.
+      is_chat_enabled: !!body.is_chat_enabled && chat > 0,
+      is_call_enabled: !!body.is_call_enabled && call > 0,
+      is_video_call_enabled: !!body.is_video_call_enabled && video > 0,
+
+      // The astrologer's own charge self-edit is a one-time grant (see
+      // PUT /api/vendor/profile). If the admin has already set the rates, that
+      // decision stands and the lock is taken here — 'Allow charge self-edit'
+      // in the actions menu hands it back whenever the admin wants to. If no
+      // rate was set, leave it open so they set their first rate themselves,
+      // exactly as a normal signup would.
+      charges_locked_at: (chat || call || video) ? new Date().toISOString() : null,
+
+      // ---- server-owned: never taken from the request body ----
+      wallet_balance: 0,
+      total_earnings: 0,
+      today_earnings: 0,
+      average_rating: 0,
+      total_reviews: 0,
+      is_live: false,
+      is_online: false,
+      // Online / GO LIVE is the astrologer's own switch on their own device — an
+      // admin cannot truthfully assert someone is sitting there ready to answer.
+      is_available: false,
+    };
+
+    // Terms are deliberately NOT stamped. sql/terms_acceptance_schema.sql's own
+    // reasoning applies: this astrologer was never shown a checkbox, so a
+    // timestamp here would be manufactured evidence. NULL is the truthful state.
+    const { data, error } = await db.from('astrologers').insert([row]).select().single();
+    if (error) {
+      // 23505 = the phone_number UNIQUE constraint, i.e. we lost a race with
+      // another admin creating the same number between the check above and here.
+      if (error.code === '23505') {
+        return res.status(409).json({
+          success: false,
+          code: 'PHONE_TAKEN',
+          message: `${phone} was just registered by someone else. Reload the list and edit that account instead.`,
+        });
+      }
+      throw error;
+    }
+
+    // Tell the admin whether this astrologer is actually visible to customers yet,
+    // and if not, exactly what is missing. astrologerVisibleToCustomers() (index.js)
+    // requires approval + not suspended + a COMPLETE profile, so an account created
+    // without, say, a photo is silently invisible — which reads as "the feature is
+    // broken" rather than "one field is empty".
+    const missing = [];
+    if (!row.profile_pic_url) missing.push('profile photo');
+    if (!row.email) missing.push('email address');
+    if (!row.gender) missing.push('gender');
+    if (!row.experience) missing.push('years of experience');
+    if (row.languages.length === 0) missing.push('at least one language');
+    if (!(chat || call || video)) missing.push('at least one per-minute charge');
+
+    return res.json({
+      success: true,
+      data,
+      visibleToCustomers: approvalStatus === 'approved' && missing.length === 0,
+      missingForVisibility: missing,
+    });
+  }));
+
   app.get('/api/admin/astrologers', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('astrologers')

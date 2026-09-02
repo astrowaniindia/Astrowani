@@ -20,6 +20,19 @@ function AstroBadge({ badge }) {
 
 const PAGE_SIZE = 20;
 
+// A brand-new astrologer added here. approval_status is 'approved' from the start —
+// an account an admin typed in by hand has already been vetted, which is the whole
+// point of not sending them through the signup queue. Services default ON so the
+// astrologer is reachable the moment they log in; each one still needs a charge
+// before the backend will actually enable it.
+const BLANK_ASTROLOGER = {
+  first_name: '', last_name: '', phone_number: '', email: '', gender: '',
+  experience: '', languages: '', bio: '', profile_pic_url: '', specialties: [],
+  chat_charge_per_minute: '', call_charge_per_minute: '', video_charge_per_minute: '',
+  is_chat_enabled: true, is_call_enabled: true, is_video_call_enabled: true,
+  badge: '', admin_notes: '',
+};
+
 export default function Astrologers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +45,10 @@ export default function Astrologers() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | pending | approved | rejected | suspended
   const [page, setPage] = useState(1);
+  // Manual creation — an astrologer onboarded offline, who never goes through the
+  // vendor app's signup form or the approval queue.
+  const [creating, setCreating] = useState(null);
+  const [categories, setCategories] = useState([]);
 
   const load = async () => {
     setLoading(true);
@@ -40,6 +57,15 @@ export default function Astrologers() {
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+  // Specialties are stored as category UUIDs (see formatAstrologer in the backend) —
+  // they're what puts an astrologer on the Home category screens, so the create form
+  // offers the real list rather than free text. A failure here is non-fatal: the rest
+  // of the form still works, the astrologer just lands with no categories.
+  useEffect(() => {
+    client.get('/api/admin/categories')
+      .then(({ data }) => setCategories(data.data || []))
+      .catch(() => setCategories([]));
+  }, []);
   useEffect(() => { setPage(1); }, [search, statusFilter]);
 
   const matchesFilter = (r) => {
@@ -86,6 +112,45 @@ export default function Astrologers() {
         badge: editing.badge || null,
       });
       setEditing(null);
+    } catch (e) { alert(e.response?.data?.message || e.message); }
+    finally { setBusy(false); }
+  };
+
+  const setNew = (k, v) => setCreating((p) => ({ ...p, [k]: v }));
+  const toggleSpecialty = (id) => setCreating((p) => ({
+    ...p,
+    specialties: p.specialties.includes(id)
+      ? p.specialties.filter((x) => x !== id)
+      : [...p.specialties, id],
+  }));
+
+  const submitNew = async () => {
+    setBusy(true);
+    try {
+      const { data } = await client.post('/api/admin/astrologers', {
+        ...creating,
+        languages: (creating.languages || '').split(',').map((s) => s.trim()).filter(Boolean),
+        experience: Number(creating.experience) || 0,
+        chat_charge_per_minute: Number(creating.chat_charge_per_minute) || 0,
+        call_charge_per_minute: Number(creating.call_charge_per_minute) || 0,
+        video_charge_per_minute: Number(creating.video_charge_per_minute) || 0,
+        badge: creating.badge || null,
+      });
+      setCreating(null);
+      await load();
+      // Approved-and-complete is the only state customers can actually see, so say
+      // which one this landed in rather than a bare "created" that looks broken when
+      // the astrologer never appears in the app.
+      const name = `${data.data?.first_name || ''} ${data.data?.last_name || ''}`.trim() || 'Astrologer';
+      if (data.visibleToCustomers) {
+        alert(`${name} is created and live. They can log in to the astrologer app with ` +
+          `${data.data?.phone_number} right away — they'll get an OTP as usual and go straight to their home screen, ` +
+          `with no signup form and no approval wait.`);
+      } else {
+        alert(`${name} is created and can log in with ${data.data?.phone_number}, but they are NOT visible to ` +
+          `customers yet. Still missing: ${(data.missingForVisibility || []).join(', ')}.` +
+          `\n\nFill those in via Edit (or let the astrologer complete them in their own app) and they'll appear automatically.`);
+      }
     } catch (e) { alert(e.response?.data?.message || e.message); }
     finally { setBusy(false); }
   };
@@ -162,6 +227,9 @@ export default function Astrologers() {
         <span className="muted" style={{ fontSize: 13 }}>
           {filteredRows.length} of {rows.length} astrologer{rows.length === 1 ? '' : 's'}
         </span>
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setCreating({ ...BLANK_ASTROLOGER })}>
+          + Add astrologer
+        </button>
       </div>
       <div className="table-wrap">
         <table>
@@ -220,6 +288,115 @@ export default function Astrologers() {
           <span className="muted" style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
           <button className="btn secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
         </div>
+      )}
+
+      {creating && (
+        <Modal title="Add an astrologer" onClose={() => setCreating(null)}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            For an astrologer onboarded offline. They skip the signup form and the approval
+            queue — the account is created approved and ready to work. They still log in with
+            an OTP on their own phone (there is no password in the astrologer app), but they go
+            straight to their home screen, never to a registration form.
+          </p>
+          <div className="field">
+            <label>Mobile number *</label>
+            <input
+              type="tel"
+              value={creating.phone_number}
+              onChange={(e) => setNew('phone_number', e.target.value)}
+              placeholder="10-digit number, e.g. 9876543210"
+              autoFocus
+            />
+            <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+              This is their login identity — it must be a real handset they can receive an OTP on,
+              and it cannot be changed from here later.
+            </span>
+          </div>
+          <ImageField label="Profile photo (URL or upload)" value={creating.profile_pic_url} onChange={(v) => setNew('profile_pic_url', v)} />
+          <div className="two-col">
+            <div className="field"><label>First name *</label>
+              <input type="text" value={creating.first_name} onChange={(e) => setNew('first_name', e.target.value)} /></div>
+            <div className="field"><label>Last name</label>
+              <input type="text" value={creating.last_name} onChange={(e) => setNew('last_name', e.target.value)} /></div>
+          </div>
+          <div className="two-col">
+            <div className="field"><label>Email</label>
+              <input type="email" value={creating.email} onChange={(e) => setNew('email', e.target.value)} /></div>
+            <div className="field"><label>Gender</label>
+              <select value={creating.gender} onChange={(e) => setNew('gender', e.target.value)}>
+                <option value="">—</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select></div>
+          </div>
+          <div className="two-col">
+            <div className="field"><label>Experience (years)</label>
+              <input type="number" value={creating.experience} onChange={(e) => setNew('experience', e.target.value)} /></div>
+            <div className="field"><label>Languages (comma separated)</label>
+              <input type="text" value={creating.languages} onChange={(e) => setNew('languages', e.target.value)} placeholder="Hindi, English" /></div>
+          </div>
+          <div className="field"><label>Bio / About</label>
+            <textarea value={creating.bio} onChange={(e) => setNew('bio', e.target.value)} placeholder="Shown on their profile in the customer app" /></div>
+          {categories.length > 0 && (
+            <div className="field">
+              <label>Categories / specialties</label>
+              <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+                {categories.map((c) => (
+                  <label key={c.id} className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={creating.specialties.includes(c.id)}
+                      onChange={() => toggleSpecialty(c.id)}
+                    /> {c.name}
+                  </label>
+                ))}
+              </div>
+              <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                Decides which category screens they show up on in the customer app.
+              </span>
+            </div>
+          )}
+          <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+            Set the rates you agreed with them. Leave all three at 0 to let the astrologer set
+            their own rates once from their app instead — if you set any rate here, that decision
+            locks and only an admin can change it afterwards.
+          </div>
+          <div className="two-col">
+            <div className="field"><label>Chat charge / min</label>
+              <input type="number" value={creating.chat_charge_per_minute} onChange={(e) => setNew('chat_charge_per_minute', e.target.value)} /></div>
+            <div className="field"><label>Call charge / min</label>
+              <input type="number" value={creating.call_charge_per_minute} onChange={(e) => setNew('call_charge_per_minute', e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Video charge / min</label>
+            <input type="number" value={creating.video_charge_per_minute} onChange={(e) => setNew('video_charge_per_minute', e.target.value)} /></div>
+          <div className="btn-group" style={{ marginBottom: 6 }}>
+            <label className="checkbox-row"><input type="checkbox" checked={creating.is_chat_enabled} onChange={(e) => setNew('is_chat_enabled', e.target.checked)} /> Chat</label>
+            <label className="checkbox-row"><input type="checkbox" checked={creating.is_call_enabled} onChange={(e) => setNew('is_call_enabled', e.target.checked)} /> Call</label>
+            <label className="checkbox-row"><input type="checkbox" checked={creating.is_video_call_enabled} onChange={(e) => setNew('is_video_call_enabled', e.target.checked)} /> Video</label>
+          </div>
+          <div className="muted" style={{ marginBottom: 14, fontSize: 12 }}>
+            A service with no charge stays off regardless. The astrologer still has to switch
+            themselves online in their own app before customers can reach them.
+          </div>
+          <div className="field"><label>Badge</label>
+            <select value={creating.badge} onChange={(e) => setNew('badge', e.target.value)}>
+              <option value="">None</option>
+              <option value="verified">Verified</option>
+              <option value="celebrity">Celebrity</option>
+              <option value="top_rated">Top Rated</option>
+            </select></div>
+          <div className="field"><label>Admin notes</label>
+            <textarea value={creating.admin_notes} onChange={(e) => setNew('admin_notes', e.target.value)} placeholder="Why this astrologer was added directly (optional)" /></div>
+          <div className="actions">
+            <button className="btn secondary" onClick={() => setCreating(null)}>Cancel</button>
+            <button
+              className="btn"
+              onClick={submitNew}
+              disabled={busy || !creating.first_name.trim() || !creating.phone_number.trim()}
+            >{busy ? 'Creating…' : 'Create astrologer'}</button>
+          </div>
+        </Modal>
       )}
 
       {editing && (
