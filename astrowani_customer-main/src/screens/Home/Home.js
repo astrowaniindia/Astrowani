@@ -299,7 +299,7 @@ const Home = ({navigation}) => {
   // endpoint that does not exist anywhere in the backend (confirmed via grep) — every tap
   // failed silently. Real Chat entry points (Chat.js, ExpertsList.js, AstrologerInfo.js,
   // SearchScreen.js) all use this hook; Home's card button now matches them.
-  const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
+  const { requesting, requestAstro, sendChatRequest, cancelRequest, submitting: chatSubmitting } = useChatRequest(navigation);
   const { purchase: purchaseFreeService } = useFreeServicePurchase();
 
   React.useEffect(() => {
@@ -1168,7 +1168,15 @@ const Home = ({navigation}) => {
                     ? handleChatPress(item)
                     : Alert.alert(t('alerts.unavailable'), t('alerts.notAvailableChat', {name: item.name || 'This astrologer'}))
                 }
-                style={[styles.dualBtn, item.isChatEnabled ? styles.dualBtnChat : styles.dualBtnOff]}>
+                // Setting up a chat takes a few network round trips before the waiting
+                // popup appears. Without this the button looks dead for 2-3 seconds and
+                // gets tapped again, which used to fire a second request.
+                disabled={chatSubmitting}
+                style={[
+                  styles.dualBtn,
+                  item.isChatEnabled ? styles.dualBtnChat : styles.dualBtnOff,
+                  chatSubmitting && styles.dualBtnBusy,
+                ]}>
                 <View style={styles.dualBtnHead}>
                   <MaterialIcons
                     name={item.isChatEnabled ? 'chat-bubble-outline' : 'block'}
@@ -2056,6 +2064,8 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   // Chat is the outlined one, Call is the filled one (swapped 2026-08-20).
+  // Visible acknowledgement while a chat request is being set up.
+  dualBtnBusy: {opacity: 0.5},
   dualBtnChat: {
     backgroundColor: '#fff',
     borderColor: COLORS.AstroMaroon,

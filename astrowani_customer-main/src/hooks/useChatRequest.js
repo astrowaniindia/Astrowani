@@ -16,6 +16,14 @@ import { captureEvent } from '../utils/Analytics';
 const useChatRequest = (navigation) => {
   const { t } = useContext(LanguageContext);
   const [requesting, setRequesting] = useState(false);
+  // Between the tap and the waiting popup there are several network round trips
+  // (profile gate, availability, wallet balance, request creation) — 2-3 seconds
+  // with NO feedback, so the button reads as dead and gets tapped repeatedly,
+  // firing a whole extra chat request each time. `submitting` drives an instant
+  // pressed state; the ref is what actually blocks re-entry, because a state
+  // update is async and would not land before the second tap.
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [requestAstro, setRequestAstro] = useState(null);
   const [pendingRequestId, setPendingRequestId] = useState(null);
   const channelRef = useRef(null);
@@ -41,6 +49,9 @@ const useChatRequest = (navigation) => {
   };
 
   const sendChatRequest = async (item) => {
+    if (submittingRef.current) return; // already in flight — ignore the extra taps
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       // Profile gate — locked until the customer completes their profile.
       if (!(await ensureProfileComplete(navigation))) return;
@@ -236,6 +247,13 @@ const useChatRequest = (navigation) => {
     } catch (err) {
       console.log('sendChatRequest error:', err?.message || JSON.stringify(err));
       Alert.alert(t('common.error'), t('chat.couldNotSendRequest', { msg: err?.message || 'Please try again.' }));
+    } finally {
+      // Always clears, on every path including the early returns above. By now the
+      // waiting popup is either up (and covers the button) or the attempt failed and
+      // the button must be usable again — a guard that stuck would be worse than the
+      // bug it fixes.
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -257,7 +275,7 @@ const useChatRequest = (navigation) => {
     }
   };
 
-  return { requesting, requestAstro, sendChatRequest, cancelRequest };
+  return { requesting, requestAstro, sendChatRequest, cancelRequest, submitting };
 };
 
 export default useChatRequest;
