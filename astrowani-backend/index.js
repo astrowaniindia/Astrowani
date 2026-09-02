@@ -609,6 +609,12 @@ require('./src/remedyReferralRoutes')(app);
 require('./src/freeCallRoutes')(app);
 require('./src/whatsappRoutes')(app);
 
+// In-app support: the AI agent, escalation to a real person with an SLA, and the
+// admin console that replies into the same thread. Replaces the fire-and-forget
+// POST /api/support/create-support form, which is kept below for older installed
+// builds that still post to it. See src/supportAgent.js.
+require('./src/supportRoutes')(app);
+
 // OTPs are persisted in Supabase (table: otp_codes), not an in-memory Map —
 // a plain Map is wiped on every process restart, and `pm2 restart` runs on
 // every single deploy. A user mid-login when that happens would have their
