@@ -433,11 +433,19 @@ const Home = ({navigation}) => {
 
   // The set is rendered twice, so translating by exactly one set's width wraps
   // seamlessly and can restart from 0 with nothing visibly jumping.
+  // astrologerToShow starts as null and stays null until the fetch resolves, so both
+  // of these MUST tolerate it. Spreading it unguarded threw
+  // "TypeError: Cannot convert null value to object" out of this very useMemo on the
+  // first render of Home — fatal, unhandled, on every cold start, which took the whole
+  // app down before it drew anything. Reported from a real iPad on 2026-09-03 (Sentry
+  // 3b67c270), and the reason iOS Home was dead on bundle 01a0634c.
+  // Every other reader of this value already guards (see the `?.length` and the
+  // `if (!astrologerToShow)` above); these two were the exceptions.
   const marqueeItems = React.useMemo(
-    () => [...astrologerToShow, ...astrologerToShow],
+    () => (astrologerToShow?.length ? [...astrologerToShow, ...astrologerToShow] : []),
     [astrologerToShow],
   );
-  const marqueeSetWidth = astrologerToShow.length * MARQUEE_ITEM_WIDTH;
+  const marqueeSetWidth = (astrologerToShow?.length || 0) * MARQUEE_ITEM_WIDTH;
 
   React.useEffect(() => {
     marqueeX.setValue(0);
@@ -2575,6 +2583,21 @@ const styles = StyleSheet.create({
     color: 'red',
     textAlign: 'center',
     paddingVertical: verticalScale(10),
+  },
+  // The "India's Best Astrologers" marquee track.
+  //
+  // This style was REFERENCED by the marquee (styles.marqueeRow) but never defined,
+  // so it resolved to undefined and the Animated.View fell back to React Native's
+  // default flexDirection: 'column'. The cards therefore stacked vertically, and the
+  // translateX loop — which assumes a horizontal track — dragged that column off the
+  // left edge, leaving every card half cut off. Seen on-device 2026-09-03.
+  //
+  // MARQUEE_ITEM_WIDTH must stay equal to the card's own width + marginRight
+  // (scale(178) + scale(15)), because the wrap distance is computed from it rather
+  // than measured. If the card's width or margin changes, change that constant too.
+  marqueeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   indicator: {
     flex: 1,
