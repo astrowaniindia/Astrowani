@@ -50,6 +50,8 @@ const translations = {
     'home.completeProfile': 'Complete your profile',
     'home.completeProfileSub': 'Add your photo, experience, languages and charges so customers can find you. Tap to finish.',
     'home.pendingApproval': 'We will review your profile and get back to you soon!',
+    'home.suspended': 'Your account is suspended',
+    'home.suspendedSub': 'Customers cannot see or reach you right now. Tap to contact support.',
     'home.sessionHistoryBtn': 'Session History',
 
     'common.ok': 'OK',
@@ -310,6 +312,8 @@ const translations = {
     'home.completeProfile': 'अपनी प्रोफ़ाइल पूरी करें',
     'home.completeProfileSub': 'अपना फोटो, अनुभव, भाषाएं और शुल्क जोड़ें ताकि ग्राहक आपको ढूंढ सकें। पूरा करने के लिए टैप करें।',
     'home.pendingApproval': 'हम आपकी प्रोफ़ाइल की समीक्षा करेंगे और जल्द ही आपसे संपर्क करेंगे!',
+    'home.suspended': 'आपका खाता निलंबित है',
+    'home.suspendedSub': 'ग्राहक अभी आपको न तो देख सकते हैं और न ही आप तक पहुंच सकते हैं। सहायता से संपर्क करने के लिए टैप करें।',
     'home.sessionHistoryBtn': 'सत्र इतिहास',
 
     'common.ok': 'ठीक है',

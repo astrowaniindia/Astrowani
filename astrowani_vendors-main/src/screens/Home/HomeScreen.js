@@ -581,8 +581,30 @@ const HomeScreen = () => {
       {/* Banner — admin-managed, rotates on the admin-set interval */}
       <HomeBanner />
 
-      {/* TEMPORARY: pending-approval notice */}
-      {user && user.approval_status !== 'approved' && (
+      {/* Suspended notice.
+          Suspension is otherwise completely silent from inside this app: the backend
+          drops a suspended astrologer from /api/astrologers and /liveAstrologers, so
+          their dashboard keeps working, their toggles keep flipping, and no request
+          ever arrives — indistinguishable from a quiet day. This is the only place
+          they are told. Tapping opens Support, because unlike an incomplete profile
+          there is nothing they can do about it on their own. */}
+      {user && user.is_suspended === true && (
+        <TouchableOpacity
+          style={styles.suspendedBanner}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('Support')}>
+          <Ionicons name="warning" size={24} color="#fff" />
+          <View style={styles.profileBannerTextWrap}>
+            <Text style={styles.profileBannerTitle}>{t('home.suspended')}</Text>
+            <Text style={styles.profileBannerSub}>{t('home.suspendedSub')}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      {/* TEMPORARY: pending-approval notice. Suppressed while suspended — the banner
+          above is the more urgent and more accurate explanation of the same silence. */}
+      {user && user.approval_status !== 'approved' && !user.is_suspended && (
         <View style={styles.pendingApprovalBanner}>
           <Ionicons name="time-outline" size={22} color="#fff" />
           <Text style={styles.pendingApprovalText}>
@@ -731,6 +753,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: moderateScale(14),
+  },
+  suspendedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // Deliberately a harder red than the maroon profile banner — this is not a
+    // "finish setting up" nudge, it is an account the astrologer cannot work from.
+    backgroundColor: '#9B1C1C',
+    borderRadius: moderateScale(14),
+    padding: scale(14),
+    marginBottom: verticalScale(14),
+    elevation: 3,
   },
   incompleteProfileBanner: {
     flexDirection: 'row',
