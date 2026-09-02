@@ -12,10 +12,11 @@
 // phone. That is worse than having no support screen at all, because it consumed
 // the report and told them it had been received.
 //
-// Now it opens a conversation with the support agent, which can read their own
-// payout balance, earnings and account state, and hands to a person for anything
-// about money or approval. Same backend as the customer app (src/supportRoutes.js);
-// the agent is told it is speaking to an astrologer and answers accordingly.
+// Now it opens a conversation with the support bot (rule-based, see
+// src/supportBot.js), which can read their own payout balance, earnings and
+// account state, and hands to a person for anything about money or approval.
+// Same backend as the customer app; the bot is told it is speaking to an
+// astrologer and answers accordingly.
 import React, {useCallback, useContext, useEffect, useRef, useState} from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform,
@@ -111,9 +112,7 @@ export default function Support({navigation}) {
         setMessages([{
           id: 'boot-error',
           sender: 'system',
-          body: e?.response?.data?.code === 'NOT_MIGRATED'
-            ? t('vsupport.notReady')
-            : t('vsupport.couldNotOpen'),
+          body: `${failureLine(e)} ${t('vsupport.tapToRetry')}`,
         }]);
       } finally {
         if (!cancelled) setBooting(false);
@@ -137,18 +136,44 @@ export default function Support({navigation}) {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({animated: true}));
   }, [messages, thinking]);
 
+  /**
+   * The conversation id, creating one if we do not have it yet.
+   *
+   * Every control used to bail on `if (!conversationId) return`, so a failed
+   * open left the Send button and "Talk to a person" present but permanently
+   * inert - tapping them did nothing at all, with no way back except leaving
+   * the screen. A failed open is now just a retry on the next tap.
+   */
+  const ensureConversation = useCallback(async () => {
+    if (conversationId) return conversationId;
+    const res = await Instance.post('/api/support/conversations', {});
+    const id = res?.data?.data?.id;
+    if (!id) throw new Error('NO_CONVERSATION');
+    setConversationId(id);
+    return id;
+  }, [conversationId]);
+
+  const failureLine = e => {
+    const code = e?.response?.data?.code;
+    if (code === 'NOT_MIGRATED') return t('vsupport.notReady');
+    if (e?.response?.status === 401) return t('vsupport.sessionExpired');
+    if (!e?.response) return t('vsupport.offline');
+    return t('vsupport.sendFailed');
+  };
+
   const send = async bodyText => {
     const body = (bodyText != null ? bodyText : text).trim();
-    if (!body || !conversationId || sendingRef.current) return;
+    if (!body || sendingRef.current) return;
     sendingRef.current = true;
     setText('');
     setMessages(prev => [...prev, {id: `local-${Date.now()}`, sender: 'user', body}]);
     setThinking(true);
     try {
-      await Instance.post(`/api/support/conversations/${conversationId}/messages`, {body});
-      await loadThread(conversationId);
-    } catch (_) {
-      setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: t('vsupport.sendFailed')}]);
+      const id = await ensureConversation();
+      await Instance.post(`/api/support/conversations/${id}/messages`, {body});
+      await loadThread(id);
+    } catch (e) {
+      setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: failureLine(e)}]);
     } finally {
       setThinking(false);
       sendingRef.current = false;
@@ -156,13 +181,13 @@ export default function Support({navigation}) {
   };
 
   const talkToPerson = async () => {
-    if (!conversationId) return;
     setThinking(true);
     try {
-      await Instance.post(`/api/support/conversations/${conversationId}/escalate`);
-      await loadThread(conversationId);
-    } catch (_) {
-      setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: t('vsupport.sendFailed')}]);
+      const id = await ensureConversation();
+      await Instance.post(`/api/support/conversations/${id}/escalate`);
+      await loadThread(id);
+    } catch (e) {
+      setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: failureLine(e)}]);
     } finally {
       setThinking(false);
     }

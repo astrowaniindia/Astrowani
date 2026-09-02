@@ -130,12 +130,13 @@ export default function SupportChatScreen({ navigation, route }) {
         if (cancelled) return;
         // Rule 1: an error is a message in the thread, not an alert that leaves
         // an empty screen behind it.
+        // Not fatal any more: the controls below now create the conversation on
+        // demand, so this is an explanation plus an invitation to try, not a
+        // dead end.
         setMessages([{
           id: 'boot-error',
           sender: 'system',
-          body: e?.response?.data?.code === 'NOT_MIGRATED'
-            ? t('support.notReady')
-            : t('support.couldNotOpen'),
+          body: `${failureLine(e)} ${t('support.tapToRetry')}`,
         }]);
       } finally {
         if (!cancelled) setBooting(false);
@@ -160,9 +161,42 @@ export default function SupportChatScreen({ navigation, route }) {
 
   useEffect(scrollDown, [messages, thinking, scrollDown]);
 
+  /**
+   * The conversation id, creating one if we do not have it yet.
+   *
+   * WHY THIS EXISTS. Every control used to bail on `if (!conversationId) return`.
+   * So when the opening create failed — backend not deployed yet, a dropped
+   * connection, an expired token — the screen kept its Send button, its quick
+   * replies and "Talk to a person", and EVERY ONE OF THEM silently did nothing,
+   * for ever, with no way back except leaving the screen. Reported from a real
+   * phone: "I am clicking send, nothing happening."
+   *
+   * Now the first thing any action does is make sure there is a conversation.
+   * A failed open becomes a retry on the next tap instead of a dead screen.
+   */
+  const ensureConversation = useCallback(async () => {
+    if (conversationId) return conversationId;
+    const res = await Instance.post('/api/support/conversations', {});
+    const id = res?.data?.data?.id;
+    if (!id) throw new Error('NO_CONVERSATION');
+    setConversationId(id);
+    return id;
+  }, [conversationId]);
+
+  // Says what actually went wrong. "Please try again" with no reason is what
+  // makes a stuck screen impossible to report usefully.
+  const failureLine = (e) => {
+    const code = e?.response?.data?.code;
+    if (code === 'NOT_MIGRATED') return t('support.notReady');
+    const status = e?.response?.status;
+    if (status === 401) return t('support.sessionExpired');
+    if (!e?.response) return t('support.offline');
+    return t('support.sendFailed');
+  };
+
   const send = async (bodyText) => {
     const body = (bodyText != null ? bodyText : text).trim();
-    if (!body || !conversationId || sendingRef.current) return;
+    if (!body || sendingRef.current) return;
     sendingRef.current = true;
     setText('');
 
@@ -175,13 +209,14 @@ export default function SupportChatScreen({ navigation, route }) {
     setThinking(true);
 
     try {
-      await Instance.post(`/api/support/conversations/${conversationId}/messages`, { body });
-      await loadThread(conversationId);
+      const id = await ensureConversation();
+      await Instance.post(`/api/support/conversations/${id}/messages`, { body });
+      await loadThread(id);
     } catch (e) {
       setMessages((prev) => [...prev, {
         id: `err-${Date.now()}`,
         sender: 'system',
-        body: t('support.sendFailed'),
+        body: failureLine(e),
       }]);
     } finally {
       setThinking(false);
@@ -190,13 +225,13 @@ export default function SupportChatScreen({ navigation, route }) {
   };
 
   const talkToPerson = async () => {
-    if (!conversationId) return;
     setThinking(true);
     try {
-      await Instance.post(`/api/support/conversations/${conversationId}/escalate`);
-      await loadThread(conversationId);
-    } catch (_) {
-      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, sender: 'system', body: t('support.sendFailed') }]);
+      const id = await ensureConversation();
+      await Instance.post(`/api/support/conversations/${id}/escalate`);
+      await loadThread(id);
+    } catch (e) {
+      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, sender: 'system', body: failureLine(e) }]);
     } finally {
       setThinking(false);
     }
