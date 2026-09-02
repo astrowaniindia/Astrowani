@@ -28,6 +28,7 @@ import ReferralPopup from './pages/ReferralPopup';
 import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
 import Support from './pages/Support';
+import SupportInbox from './pages/SupportInbox';
 import FreeBotChat from './pages/FreeBotChat';
 import FreeCallBookings from './pages/FreeCallBookings';
 import GuideAvatar from './pages/GuideAvatar';
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="referral-popup" element={<ReferralPopup />} />
         <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="support-inbox" element={<SupportInbox />} />
         <Route path="support" element={<Support />} />
         <Route path="new-entries" element={<NewEntries />} />
         <Route path="astrologers" element={<Astrologers />} />
