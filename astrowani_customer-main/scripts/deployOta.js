@@ -187,7 +187,19 @@ for (const platform of targets) {
   // If a future hot-updater renames that string this will report FAILED for a
   // deploy that worked. That is the safe direction: a false alarm you can see
   // beats a false success you cannot.
-  const run = spawnSync('npx', args, { cwd: ROOT, encoding: 'utf8', shell: true });
+  // --require raises undici's 10s default timeout, which is shorter than a
+  // bundle upload takes on anything but a fast link — see longFetchTimeouts.js.
+  const run = spawnSync('npx', args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    shell: true,
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${JSON.stringify(
+        path.join(__dirname, 'longFetchTimeouts.js'),
+      )}`.trim(),
+    },
+  });
   const output = `${run.stdout || ''}${run.stderr || ''}`;
   process.stdout.write(output);
 
