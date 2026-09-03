@@ -224,7 +224,8 @@ export default function Support({navigation}) {
       <View style={[styles.row, mine ? styles.rowRight : styles.rowLeft]}>
         {!mine && (
           <View style={[styles.avatar, isHuman && styles.avatarHuman]}>
-            <Ionicons name={isHuman ? 'person' : 'sparkles'} size={moderateScale(14)} color="#fff" />
+            {/* Headset, not a sparkle - see the customer app's screen. */}
+            <Ionicons name={isHuman ? 'person' : 'headset'} size={moderateScale(14)} color="#fff" />
           </View>
         )}
         <View style={{maxWidth: '78%'}}>

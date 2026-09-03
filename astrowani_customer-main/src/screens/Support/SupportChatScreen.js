@@ -284,8 +284,12 @@ export default function SupportChatScreen({ navigation, route }) {
       <View style={[styles.row, mine ? styles.rowRight : styles.rowLeft]}>
         {!mine && (
           <View style={[styles.avatar, isHuman && styles.avatarHuman]}>
+            {/* A headset, not a sparkle: this is customer support, and the
+                sparkle read as "AI magic" for a bot that is deliberately a
+                fixed set of written answers. The human's avatar stays a
+                person, so the two are still distinguishable at a glance. */}
             <Ionicons
-              name={isHuman ? 'person' : 'sparkles'}
+              name={isHuman ? 'person' : 'headset'}
               size={moderateScale(14)}
               color="#fff"
             />
