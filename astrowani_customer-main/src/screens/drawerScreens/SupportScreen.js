@@ -27,7 +27,9 @@ import { LanguageContext } from '../../context/LanguageContext';
 // Plain-language state, never the internal status string. A customer should not
 // have to learn our vocabulary to know whether someone is coming.
 const STATE = {
-  bot: { key: 'stateBot', color: '#8a7c76', icon: 'sparkles' },
+  // Headset, matching the bot's avatar in the thread. A sparkle read as "AI
+  // magic", which is the wrong promise for a fixed set of written answers.
+  bot: { key: 'stateBot', color: '#8a7c76', icon: 'headset' },
   awaiting_human: { key: 'stateAwaiting', color: '#E67E22', icon: 'time-outline' },
   human: { key: 'stateHuman', color: '#1a8f4c', icon: 'person' },
   resolved: { key: 'stateResolved', color: '#1a8f4c', icon: 'checkmark-circle' },
