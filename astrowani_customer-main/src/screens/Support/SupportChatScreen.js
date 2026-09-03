@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 
@@ -75,6 +76,20 @@ function TypingDots() {
   );
 }
 
+/**
+ * Auth header for every support call.
+ *
+ * `Instance` (api/ApiCall.js) has NO request interceptor — it never attaches the
+ * token. Every authenticated screen in this app passes the header by hand, and
+ * these calls did not, so the backend saw no token, answered 401, and the screen
+ * reported "your session has expired" to people whose session was perfectly
+ * fine. Reported from a real phone.
+ */
+async function auth() {
+  const token = await AsyncStorage.getItem('token');
+  return { headers: { Authorization: `Bearer ${token}` } };
+}
+
 export default function SupportChatScreen({ navigation, route }) {
   const { t } = useContext(LanguageContext);
   const insets = useSafeAreaInsets();
@@ -107,7 +122,7 @@ export default function SupportChatScreen({ navigation, route }) {
   }, []);
 
   const loadThread = useCallback(async (id) => {
-    const res = await Instance.get(`/api/support/conversations/${id}`);
+    const res = await Instance.get(`/api/support/conversations/${id}`, await auth());
     if (res?.data?.success) applyThread(res.data.data);
   }, [applyThread]);
 
@@ -119,7 +134,7 @@ export default function SupportChatScreen({ navigation, route }) {
         if (conversationId) {
           await loadThread(conversationId);
         } else {
-          const res = await Instance.post('/api/support/conversations', {});
+          const res = await Instance.post('/api/support/conversations', {}, await auth());
           if (cancelled) return;
           if (res?.data?.success) {
             setConversationId(res.data.data.id);
@@ -176,7 +191,7 @@ export default function SupportChatScreen({ navigation, route }) {
    */
   const ensureConversation = useCallback(async () => {
     if (conversationId) return conversationId;
-    const res = await Instance.post('/api/support/conversations', {});
+    const res = await Instance.post('/api/support/conversations', {}, await auth());
     const id = res?.data?.data?.id;
     if (!id) throw new Error('NO_CONVERSATION');
     setConversationId(id);
@@ -210,7 +225,7 @@ export default function SupportChatScreen({ navigation, route }) {
 
     try {
       const id = await ensureConversation();
-      await Instance.post(`/api/support/conversations/${id}/messages`, { body });
+      await Instance.post(`/api/support/conversations/${id}/messages`, { body }, await auth());
       await loadThread(id);
     } catch (e) {
       setMessages((prev) => [...prev, {
@@ -228,7 +243,7 @@ export default function SupportChatScreen({ navigation, route }) {
     setThinking(true);
     try {
       const id = await ensureConversation();
-      await Instance.post(`/api/support/conversations/${id}/escalate`);
+      await Instance.post(`/api/support/conversations/${id}/escalate`, {}, await auth());
       await loadThread(id);
     } catch (e) {
       setMessages((prev) => [...prev, { id: `err-${Date.now()}`, sender: 'system', body: failureLine(e) }]);
@@ -241,7 +256,7 @@ export default function SupportChatScreen({ navigation, route }) {
     if (!conversationId) return;
     setRated(true);
     try {
-      await Instance.post(`/api/support/conversations/${conversationId}/satisfaction`, { rating });
+      await Instance.post(`/api/support/conversations/${conversationId}/satisfaction`, { rating }, await auth());
       await loadThread(conversationId);
     } catch (_) { /* a failed rating must not interrupt anything */ }
   };

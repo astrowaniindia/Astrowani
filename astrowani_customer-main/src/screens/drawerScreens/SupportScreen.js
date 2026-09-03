@@ -20,6 +20,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 
@@ -41,7 +42,11 @@ export default function SupportScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await Instance.get('/api/support/conversations');
+      // Instance does not attach the token itself — see SupportChatScreen's auth().
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.get('/api/support/conversations', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       setRows(res?.data?.data || []);
     } catch (_) {
       // A failed list must not block starting a new conversation — that is the

@@ -25,6 +25,7 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
 import {LanguageContext} from '../context/LanguageContext';
 
@@ -57,6 +58,19 @@ function TypingDots() {
   );
 }
 
+/**
+ * Auth header for every support call.
+ *
+ * `Instance` (api/ApiCall.js) has NO request interceptor — it never attaches the
+ * token, and every authenticated screen here passes the header by hand. These
+ * calls did not, so the backend saw no token, answered 401, and the screen told
+ * people their session had expired when it had not.
+ */
+async function auth() {
+  const token = await AsyncStorage.getItem('token');
+  return {headers: {Authorization: `Bearer ${token}`}};
+}
+
 export default function Support({navigation}) {
   const {t} = useContext(LanguageContext);
 
@@ -80,7 +94,7 @@ export default function Support({navigation}) {
   }, []);
 
   const loadThread = useCallback(async id => {
-    const res = await Instance.get(`/api/support/conversations/${id}`);
+    const res = await Instance.get(`/api/support/conversations/${id}`, await auth());
     if (res?.data?.success) applyThread(res.data.data);
   }, [applyThread]);
 
@@ -91,7 +105,7 @@ export default function Support({navigation}) {
     let cancelled = false;
     (async () => {
       try {
-        const list = await Instance.get('/api/support/conversations');
+        const list = await Instance.get('/api/support/conversations', await auth());
         const open = (list?.data?.data || []).find(c =>
           ['bot', 'awaiting_human', 'human'].includes(c.status));
         if (cancelled) return;
@@ -100,7 +114,7 @@ export default function Support({navigation}) {
           setConversationId(open.id);
           await loadThread(open.id);
         } else {
-          const res = await Instance.post('/api/support/conversations', {});
+          const res = await Instance.post('/api/support/conversations', {}, await auth());
           if (cancelled) return;
           if (res?.data?.success) {
             setConversationId(res.data.data.id);
@@ -146,7 +160,7 @@ export default function Support({navigation}) {
    */
   const ensureConversation = useCallback(async () => {
     if (conversationId) return conversationId;
-    const res = await Instance.post('/api/support/conversations', {});
+    const res = await Instance.post('/api/support/conversations', {}, await auth());
     const id = res?.data?.data?.id;
     if (!id) throw new Error('NO_CONVERSATION');
     setConversationId(id);
@@ -170,7 +184,7 @@ export default function Support({navigation}) {
     setThinking(true);
     try {
       const id = await ensureConversation();
-      await Instance.post(`/api/support/conversations/${id}/messages`, {body});
+      await Instance.post(`/api/support/conversations/${id}/messages`, {body}, await auth());
       await loadThread(id);
     } catch (e) {
       setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: failureLine(e)}]);
@@ -184,7 +198,7 @@ export default function Support({navigation}) {
     setThinking(true);
     try {
       const id = await ensureConversation();
-      await Instance.post(`/api/support/conversations/${id}/escalate`);
+      await Instance.post(`/api/support/conversations/${id}/escalate`, {}, await auth());
       await loadThread(id);
     } catch (e) {
       setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: failureLine(e)}]);
