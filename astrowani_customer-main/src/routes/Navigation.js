@@ -77,6 +77,10 @@ import ShubhMuhurat from '../screens/drawerScreens/FreeSeviceScreen/ShubhMuhurat
 import Home from '../screens/Home/Home';
 import ReferAndEarnScreen from '../screens/drawerScreens/ReferAndEarnScreen';
 import MyOrdersScreen from '../screens/drawerScreens/MyOrdersScreen';
+// "What's coming to Astrowani" — the browsable tour of features being built. These are
+// informational screens, not live mechanics; see components/gamification/gamificationFeatures.js.
+import GamificationHub from '../screens/Gamification/GamificationHub';
+import FeatureIntroScreen from '../screens/Gamification/FeatureIntroScreen';
 import VoiceNotesScreen from '../screens/drawerScreens/VoiceNotesScreen';
 import Settings from '../screens/drawerScreens/Settings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
@@ -264,6 +268,26 @@ export default function Navigation({ initialRoute }) {
             headerTitleStyle: {
               fontSize: moderateScale(18),
             },
+          }}
+        />
+        <Stack.Screen
+          name="GamificationHub"
+          component={GamificationHub}
+          options={{
+            title: "What's coming",
+            headerStyle: {backgroundColor: COLORS.AstroMaroon},
+            headerTintColor: '#fff',
+            headerTitleStyle: {fontSize: moderateScale(18)},
+          }}
+        />
+        <Stack.Screen
+          name="FeatureIntro"
+          component={FeatureIntroScreen}
+          options={{
+            title: 'Coming soon',
+            headerStyle: {backgroundColor: COLORS.AstroMaroon},
+            headerTintColor: '#fff',
+            headerTitleStyle: {fontSize: moderateScale(18)},
           }}
         />
         <Stack.Screen

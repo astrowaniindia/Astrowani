@@ -51,6 +51,9 @@ import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen, hasSeenFreeCallOffer, markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
 import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
+// Discovery strip for the not-yet-live gamification features. Purely informational —
+// it introduces them and links to their own screens. No mechanic runs on Home.
+import ComingSoonStrip from '../../components/gamification/ComingSoonStrip';
 import PlacementBanner from '../../components/PlacementBanner';
 import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
 import FreeCallOffer from '../../components/FreeCallOffer';
@@ -1614,6 +1617,16 @@ const Home = ({navigation}) => {
             contentContainerStyle={styles.BlogView}
           />
         )}
+
+        {/* Features being built, introduced rather than operated — each card opens its
+            own screen. Deliberately NOT live widgets: nothing here awards anything yet,
+            and a working-looking control that pays out nothing is worse than no control.
+            Renders nothing once the catalogue empties. */}
+        <View style={styles.separator} />
+        <ComingSoonStrip
+          navigation={navigation}
+          onEvent={id => captureEvent('home_screen_click', {section: `coming_soon_${id}`})}
+        />
 
         {/* Live Aarti / Pooja — admin-set YouTube URL, embedded in-app. Renders
             nothing at all when unset, so this is invisible unless an admin has

@@ -118,6 +118,7 @@ function CustomDrawerContent(props, navigation) {
     { iconName: 'settings', label: t('drawer.settings'), onPress: () => props.navigation.navigate('Settings') },
     { iconName: 'support-agent', label: t('drawer.support'), onPress: () => props.navigation.navigate('SupportScreen') },
     { iconName: 'share', label: t('drawer.shareApp'), onPress: handleShareApp },
+    { trackKey: 'whats_coming', iconName: 'auto-awesome', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
   ];
 
   return (
