@@ -30,6 +30,8 @@ const OFFER_DEFAULTS = {
   assignmentMode: 'manual',
   assignedAstrologerId: '',
   poolAstrologerIds: [],
+  // Purely the faces on the popup — see the "Faces shown on the card" section.
+  displayAstrologerIds: [],
   astrologerName: '',
   astrologerImage: '',
   astrologerExperience: '',
@@ -469,6 +471,42 @@ export default function FreeCallBookings() {
             <div className="field"><label>Specialities</label>
               <input type="text" value={offer.astrologerSpecialities} placeholder="e.g. Vedic Astrology, Career, Marriage"
                 onChange={(e) => setOffer((p) => ({ ...p, astrologerSpecialities: e.target.value }))} /></div>
+
+            <h4 style={{ margin: '18px 0 8px' }}>Faces shown on the card</h4>
+            <p className="muted" style={{ marginTop: -4 }}>
+              The popup shows a small group of photos that shuffle and stop on one of them,
+              so the customer feels they were matched. <strong>The one it stops on is always
+              the astrologer named above</strong> — these others are only shown alongside, and
+              picking someone here does not give them any bookings. Leave this empty and the
+              group is filled automatically from your approved astrologers.
+            </p>
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220,
+              overflowY: 'auto', border: '1px solid var(--line, #ddd)', borderRadius: 8, padding: 10,
+            }}>
+              {astrologers.length === 0 && <span className="muted">No approved astrologers.</span>}
+              {astrologers.map((a) => {
+                const on = (offer.displayAstrologerIds || []).includes(a.id);
+                return (
+                  <label key={a.id} style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => setOffer((p) => {
+                        const cur = p.displayAstrologerIds || [];
+                        return {
+                          ...p,
+                          displayAstrologerIds: e.target.checked
+                            ? [...cur, a.id]
+                            : cur.filter((id) => id !== a.id),
+                        };
+                      })}
+                    />
+                    <span>{astroName(a)}</span>
+                  </label>
+                );
+              })}
+            </div>
 
             <h4 style={{ margin: '18px 0 8px' }}>Scheduling</h4>
             <p className="muted" style={{ marginTop: -4 }}>

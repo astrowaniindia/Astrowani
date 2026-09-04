@@ -1135,6 +1135,7 @@ const translations = {
     'freeCall.giftHint': 'Your free call is waiting',
     'freeCall.slotTaken': 'Someone just took that time. Please pick another.',
     'freeCall.experience': '{{years}} experience',
+    'freeCall.matching': 'Finding your astrologer…',
   },
   Hindi: {
     // Home
@@ -2240,6 +2241,7 @@ const translations = {
     'freeCall.giftHint': 'आपकी मुफ़्त कॉल इंतज़ार कर रही है',
     'freeCall.slotTaken': 'यह समय अभी किसी ने बुक कर लिया। कृपया दूसरा चुनें।',
     'freeCall.experience': '{{years}} का अनुभव',
+    'freeCall.matching': 'आपका ज्योतिषी चुना जा रहा है…',
   },
 };
 

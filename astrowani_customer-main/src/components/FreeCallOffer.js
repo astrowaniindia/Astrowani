@@ -14,8 +14,10 @@
 //
 // Copy (heading, body, button, confirmation) is admin-authored and arrives in
 // `offer`; only structural labels are translated here.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   Modal,
   View,
   Text,
@@ -30,11 +32,114 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { getFreeCallSlots, bookFreeCall } from '../api/FreeCallApi';
 import {useModalPresence} from '../utils/modalPresentation';
+import { captureEvent } from '../utils/Analytics';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
 
-const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
+// `source` says how this was opened ('auto' on first Home load, 'gift_bubble' when the
+// floating bubble is tapped) so the funnel can tell an offer the customer sought out from
+// one that was pushed at them — very different intent, very different conversion rate.
+
+// An ODD number of visible faces, so there is a true middle slot for the ring to
+// sit in. An even count would leave the winner straddling two positions.
+const REEL_VISIBLE = 5;
+const REEL_ITEM_W = scale(64);
+
+const FALLBACK_FACE = require('../assets/images/brandStarLogo.png');
+const faceSource = (uri) => (uri ? { uri } : FALLBACK_FACE);
+
+/**
+ * The face reel: a strip of astrologers that slides past a fixed gold ring in the
+ * middle of the card, decelerates, and stops with one of them centred in it.
+ *
+ * THE CLIENT DOES NOT PICK. `featuredIndex` arrives from the server, which also
+ * shuffles the strip, so the ring lands on whoever the admin configured — this
+ * only animates its way there. A client-side random pick would put the app in
+ * charge of a promise the backend has to keep.
+ *
+ * The reel is a single translateX on the native driver, not a per-face timer:
+ * the winner's resting offset is arithmetic, so it cannot drift off-centre or
+ * stop one face short (which is exactly what an earlier tick-by-tick version did).
+ */
+const REEL_LOOPS = 3;
+
+const AstrologerReel = ({ list, featuredIndex, t, itemW, visible: visibleCount }) => {
+  const n = list.length;
+  const target = featuredIndex >= 0 && featuredIndex < n ? featuredIndex : 0;
+  const [settled, setSettled] = useState(n < 2);
+  const x = useRef(new Animated.Value(0)).current;
+  const pop = useRef(new Animated.Value(n < 2 ? 1 : 0)).current;
+
+  // Enough copies to spin through, plus a tail so the strip never runs out of
+  // faces on the right-hand side of the window mid-spin.
+  const reel = [];
+  for (let r = 0; r <= REEL_LOOPS + 1; r += 1) list.forEach((a, i) => reel.push({ ...a, i, r }));
+
+  const centreOffset = (itemW * visibleCount - itemW) / 2;
+  const finalIndex = n < 2 ? target : REEL_LOOPS * n + target;
+
+  useEffect(() => {
+    x.setValue(centreOffset);
+    if (n < 2) {
+      x.setValue(centreOffset - finalIndex * itemW);
+      return undefined;
+    }
+    const anim = Animated.timing(x, {
+      toValue: centreOffset - finalIndex * itemW,
+      duration: 2200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    anim.start(({ finished }) => {
+      if (!finished) return;
+      setSettled(true);
+      Animated.spring(pop, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
+    });
+    return () => anim.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [n, target, itemW]);
+
+  const ringScale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
+  const tr = (k) => (typeof t === 'function' ? t(k) : k);
+
+  return (
+    <View style={styles.reelWrap}>
+      <View style={[styles.reelWindow, { width: itemW * visibleCount, height: itemW }]}>
+        <Animated.View style={[styles.reel, { transform: [{ translateX: x }] }]}>
+          {reel.map((a, k) => (
+            <View key={`${a.r}-${a.i}`} style={[styles.reelItem, { width: itemW }]}>
+              <Image
+                source={faceSource(a.image)}
+                style={[
+                  styles.face,
+                  { width: itemW - scale(8), height: itemW - scale(8), borderRadius: itemW },
+                  settled && k !== finalIndex && styles.faceDim,
+                ]}
+              />
+            </View>
+          ))}
+        </Animated.View>
+
+        {/* The ring is fixed in the middle of the window — the reel moves, it does
+            not. Whoever comes to rest under it is the pick. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.centreRing,
+            { width: itemW, height: itemW, borderRadius: itemW, left: centreOffset },
+            { transform: [{ scale: ringScale }] },
+          ]}
+        />
+      </View>
+      <Text style={styles.reelLabel} numberOfLines={1}>
+        {settled ? (list[target] || {}).name || '' : tr('freeCall.matching')}
+      </Text>
+    </View>
+  );
+};
+
+const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = 'auto' }) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
   const [dates, setDates] = useState([]);
@@ -56,7 +161,9 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
       setPicked(null);
       setError('');
       setConfirmed(null);
+      if (offer) captureEvent('free_call_offer_shown', { source });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const loadSlots = useCallback(async (dateKey) => {
@@ -73,8 +180,17 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
   }, []);
 
   const goToSlots = () => {
+    captureEvent('free_call_slots_opened', { source });
     setStep('slots');
     loadSlots(null);
+  };
+
+  // Dismissal, as distinct from finishing. Carries the step it was abandoned at, which is
+  // the whole point: leaving on 'intro' means the offer did not land, leaving on 'slots'
+  // means it did and the times on offer did not.
+  const dismiss = () => {
+    captureEvent('free_call_offer_dismissed', { source, step, had_slot_picked: !!picked });
+    if (onClose) onClose();
   };
 
   const confirm = async () => {
@@ -83,10 +199,23 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
     setError('');
     try {
       const res = await bookFreeCall(picked);
+      captureEvent('free_call_booked', {
+        source,
+        slot_start: picked,
+        astrologer_name: res.booking?.astrologerName || offer?.astrologerName || null,
+      });
       setConfirmed(res.booking);
       setStep('done');
       if (onBooked) onBooked(res.booking);
     } catch (e) {
+      // ALREADY_BOOKED is deliberately NOT counted as a failure — it ends on the same
+      // confirmation screen as a successful booking, so counting it here would inflate
+      // the failure rate with outcomes the customer experienced as success. Every other
+      // code is a real failure: SLOT_TAKEN is a capacity signal (add astrologers or
+      // slots), anything else is an error worth seeing.
+      if (e.code !== 'ALREADY_BOOKED') {
+        captureEvent('free_call_booking_failed', { source, slot_start: picked, reason: e.code || 'other' });
+      }
       if (e.code === 'SLOT_TAKEN' || e.code === 'SLOT_PAST') {
         // Someone else won the slot. Re-read the grid so the customer is choosing
         // from the truth, not from the stale list they were just looking at.
@@ -94,6 +223,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
         setPicked(null);
         loadSlots(activeDate);
       } else if (e.code === 'ALREADY_BOOKED' && e.booking) {
+        captureEvent('free_call_already_booked', { source });
         setConfirmed(e.booking);
         setStep('done');
         if (onBooked) onBooked(e.booking);
@@ -111,17 +241,24 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
 
   if (!visible || !offer) return null;
 
-  const astroImage = offer.astrologerImage
-    ? { uri: offer.astrologerImage }
-    : require('../assets/images/brandStarLogo.png');
+  // The cluster is server-built (offer.astrologers + offer.featuredIndex). An older
+  // backend, or an offer with nobody to show, falls back to the single configured
+  // face so the card still renders.
+  const roster = Array.isArray(offer.astrologers) ? offer.astrologers : [];
+  const cluster = roster.length
+    ? roster
+    : (offer.astrologerName || offer.astrologerImage
+      ? [{ name: offer.astrologerName || '', image: offer.astrologerImage || '' }]
+      : []);
+  const featuredIndex = roster.length ? (offer.featuredIndex ?? 0) : 0;
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+    <Modal transparent visible animationType="fade" onRequestClose={step === 'done' ? onClose : dismiss}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.closeBtn}
-            onPress={onClose}
+            onPress={step === 'done' ? onClose : dismiss}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <MaterialIcons name="close" size={moderateScale(20)} color="#fff" />
           </TouchableOpacity>
@@ -140,22 +277,24 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
               </View>
 
               <View style={styles.introBody}>
-                <Image source={astroImage} style={styles.avatar} />
-                <Text style={styles.astroName}>{offer.astrologerName}</Text>
-                {!!offer.astrologerExperience && (
-                  <Text style={styles.astroMeta}>
-                    {tr('freeCall.experience', { years: offer.astrologerExperience })}
-                  </Text>
-                )}
-                {!!offer.astrologerSpecialities && (
-                  <Text style={styles.astroSpec}>{offer.astrologerSpecialities}</Text>
+                {cluster.length > 0 && (
+                  <AstrologerReel
+                    // Remount per opening so the spin replays and picks up a
+                    // freshly-ordered roster rather than freezing on the first one.
+                    key={cluster.map((a) => a.name).join('|')}
+                    list={cluster}
+                    featuredIndex={featuredIndex}
+                    itemW={REEL_ITEM_W}
+                    visible={REEL_VISIBLE}
+                    t={t}
+                  />
                 )}
                 {!!offer.bodyText && <Text style={styles.bodyText}>{offer.bodyText}</Text>}
 
                 <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={goToSlots}>
                   <Text style={styles.ctaText}>{offer.ctaText}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={onClose} style={styles.later}>
+                <TouchableOpacity onPress={dismiss} style={styles.later}>
                   <Text style={styles.laterText}>{tr('freeCall.notNow')}</Text>
                 </TouchableOpacity>
               </View>
@@ -180,7 +319,11 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
                       key={d.key}
                       activeOpacity={0.85}
                       style={[styles.dateChip, on && styles.dateChipOn]}
-                      onPress={() => { setPicked(null); loadSlots(d.key); }}>
+                      onPress={() => {
+                        captureEvent('free_call_date_selected', { source, date: d.key });
+                        setPicked(null);
+                        loadSlots(d.key);
+                      }}>
                       <Text style={[styles.dateDay, on && styles.dateOnTxt]}>{d.label.day}</Text>
                       <Text style={[styles.dateNum, on && styles.dateOnTxt]}>{d.label.date}</Text>
                       <Text style={[styles.dateMon, on && styles.dateOnTxt]}>{d.label.month}</Text>
@@ -211,7 +354,11 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t }) => {
                               s.taken && styles.slotTaken,
                               on && styles.slotOn,
                             ]}
-                            onPress={() => { setPicked(s.start); setError(''); }}>
+                            onPress={() => {
+                              captureEvent('free_call_slot_selected', { source, slot_start: s.start });
+                              setPicked(s.start);
+                              setError('');
+                            }}>
                             <Text style={[
                               styles.slotTxt,
                               s.taken && styles.slotTxtTaken,
@@ -350,26 +497,27 @@ const styles = StyleSheet.create({
   },
 
   introBody: { alignItems: 'center', paddingHorizontal: scale(20), paddingVertical: verticalScale(18) },
-  avatar: {
-    width: scale(84),
-    height: scale(84),
-    borderRadius: scale(42),
-    borderWidth: 2,
+
+  reelWrap: { alignItems: 'center' },
+  // overflow:hidden is what makes this read as a reel rather than a row — faces
+  // appear from one edge and leave by the other.
+  reelWindow: { overflow: 'hidden', justifyContent: 'center' },
+  reel: { flexDirection: 'row', alignItems: 'center' },
+  reelItem: { alignItems: 'center', justifyContent: 'center' },
+  face: { backgroundColor: '#F3E3D2' },
+  faceDim: { opacity: 0.4 },
+  centreRing: {
+    position: 'absolute',
+    top: 0,
+    borderWidth: 3,
     borderColor: COLORS.AstroGold,
-    backgroundColor: '#F3E3D2',
   },
-  astroName: {
-    fontSize: moderateScale(17),
+  reelLabel: {
+    fontSize: moderateScale(15.5),
     fontWeight: '700',
     color: '#2E1A10',
-    marginTop: verticalScale(10),
-  },
-  astroMeta: { fontSize: moderateScale(12.5), color: '#8A6A55', marginTop: verticalScale(2) },
-  astroSpec: {
-    fontSize: moderateScale(12.5),
-    color: '#8A6A55',
-    textAlign: 'center',
-    marginTop: verticalScale(2),
+    marginTop: verticalScale(12),
+    minHeight: verticalScale(20),
   },
   bodyText: {
     fontSize: moderateScale(13.5),

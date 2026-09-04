@@ -30,6 +30,12 @@ const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 // customer whose device is in another timezone still books 3pm IST.
 const FREE_CALL_TZ_OFFSET_MIN = 330; // IST, UTC+5:30
 
+// The face cluster on the offer card. MIN is what the card is designed around —
+// a "shuffle" that lands on somebody is only readable with a few faces to move
+// between — and MAX keeps the row from overflowing a phone width.
+const DISPLAY_ROSTER_MIN = 5;
+const DISPLAY_ROSTER_MAX = 6;
+
 const DEFAULTS = {
   enabled: false,
   durationMinutes: 12,
@@ -50,6 +56,12 @@ const DEFAULTS = {
   assignmentMode: 'manual',
   assignedAstrologerId: '',
   poolAstrologerIds: [],
+  // The FACES on the offer card — a small cluster the customer sees "shuffle"
+  // before one is highlighted. Purely presentational: it has nothing to do with
+  // assignment above, which is what actually decides who rings the customer.
+  // Left empty the server fills the cluster from approved astrologers, so the
+  // card never renders a lonely single photo.
+  displayAstrologerIds: [],
   // The name/photo the CUSTOMER sees on the offer card. Deliberately separate
   // from the assignment above: assignment is internal routing, and in 'manual'
   // mode nobody is assigned yet when the customer is looking at the card.
@@ -109,6 +121,10 @@ async function loadOffer() {
   if (typeof merged.assignedAstrologerId !== 'string') merged.assignedAstrologerId = '';
   if (!Array.isArray(merged.poolAstrologerIds)) merged.poolAstrologerIds = [];
   merged.poolAstrologerIds = merged.poolAstrologerIds.filter((id) => typeof id === 'string' && id);
+  if (!Array.isArray(merged.displayAstrologerIds)) merged.displayAstrologerIds = [];
+  merged.displayAstrologerIds = merged.displayAstrologerIds
+    .filter((id) => typeof id === 'string' && id)
+    .slice(0, DISPLAY_ROSTER_MAX);
   // An empty pool would mean a capacity of zero, i.e. nothing bookable at all.
   // Falling back to manual keeps the offer working and leaves the bookings in the
   // admin's queue, which is recoverable; a dead offer is not.
@@ -352,6 +368,113 @@ async function isNewCustomer(customerId) {
   }
 }
 
+/**
+ * The face cluster shown on the offer card, and which of those faces the card
+ * settles on.
+ *
+ * THIS IS PRESENTATION, NOT ROUTING. The customer sees the cluster shuffle and
+ * stop on somebody, which reads as a random match — but the stopping point is
+ * chosen HERE, on the server, and the astrologer who actually rings them is
+ * decided separately at booking time by assigneeCandidates(). The client never
+ * picks; if it did, the card could promise a face the admin never intended.
+ *
+ * The featured entry is the offer's configured display astrologer. Everyone else
+ * is filler: whoever the admin listed in displayAstrologerIds, topped up from
+ * approved astrologers when that leaves the cluster too thin to animate.
+ *
+ * Order is shuffled per request so the highlight does not land in the same spot
+ * every time, which is what would give the trick away.
+ */
+let rosterCache = { at: 0, rows: [] };
+
+async function approvedAstrologerFaces() {
+  if (Date.now() - rosterCache.at < 60000) return rosterCache.rows;
+  try {
+    // profile_pic_url is the ONLY image column on this table — `profile_image` is a
+    // legacy fallback name that does not exist here and makes PostgREST 400 (see
+    // ASTROLOGER_LIST_COLUMNS in index.js).
+    const { data, error } = await db
+      .from('astrologers')
+      .select('id, first_name, last_name, profile_pic_url, approval_status, is_suspended')
+      .limit(200);
+    if (error) {
+      console.warn('[freeCallRoutes] display roster read failed:', error.message);
+      return rosterCache.rows;
+    }
+    const rows = (data || [])
+      .filter((a) => !a.is_suspended && (!a.approval_status || a.approval_status === 'approved'))
+      .map((a) => ({
+        id: a.id,
+        name: astrologerFullName(a) || 'Astrologer',
+        image: a.profile_pic_url || '',
+      }));
+    rosterCache = { at: Date.now(), rows };
+    return rows;
+  } catch (_) {
+    // A cluster is decoration. Failing to read it must never take the offer down.
+    return rosterCache.rows;
+  }
+}
+
+function shuffled(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = crypto.randomInt(i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+async function buildDisplayRoster(offer) {
+  const featured = {
+    name: offer.astrologerName || '',
+    image: offer.astrologerImage || '',
+    featured: true,
+  };
+
+  const all = await approvedAstrologerFaces();
+  const byId = new Map(all.map((a) => [a.id, a]));
+
+  const picked = [];
+  const seen = new Set();
+  const take = (entry) => {
+    const key = (entry.name || '').trim().toLowerCase();
+    if (!entry.name || seen.has(key)) return;
+    seen.add(key);
+    picked.push({ name: entry.name, image: entry.image || '' });
+  };
+
+  if (featured.name) seen.add(featured.name.trim().toLowerCase());
+
+  offer.displayAstrologerIds.forEach((id) => {
+    const a = byId.get(id);
+    if (a) take(a);
+  });
+
+  // Top up. Faces WITH a photo first — a cluster of grey placeholders is worse
+  // than a smaller cluster, so photoless astrologers are only used as a last
+  // resort to reach the minimum.
+  if (picked.length + (featured.name ? 1 : 0) < DISPLAY_ROSTER_MIN) {
+    const rest = shuffled(all.filter((a) => !seen.has(a.name.trim().toLowerCase())));
+    rest.sort((a, b) => (b.image ? 1 : 0) - (a.image ? 1 : 0));
+    for (const a of rest) {
+      if (picked.length + (featured.name ? 1 : 0) >= DISPLAY_ROSTER_MIN) break;
+      take(a);
+    }
+  }
+
+  let list = shuffled(picked).slice(0, DISPLAY_ROSTER_MAX - (featured.name ? 1 : 0));
+
+  if (featured.name) {
+    const at = crypto.randomInt(list.length + 1);
+    list = [...list.slice(0, at), { name: featured.name, image: featured.image }, ...list.slice(at)];
+    return { astrologers: list, featuredIndex: at };
+  }
+  // No configured display astrologer: the cluster still animates, it just lands
+  // on whoever happens to be first. Nothing is promised either way.
+  return { astrologers: list, featuredIndex: list.length ? 0 : -1 };
+}
+
 const publicOffer = (offer) => ({
   enabled: offer.enabled,
   durationMinutes: offer.durationMinutes,
@@ -389,10 +512,15 @@ module.exports = function registerFreeCallRoutes(app) {
       // A disabled offer is not an error — the app just shows nothing.
       return res.status(200).json({ success: true, enabled: false, eligible: false, booking: null });
     }
+    // The face cluster is built per request so its order (and therefore where the
+    // highlight lands) differs each time the card is opened.
+    const roster = await buildDisplayRoster(offer);
+    const shown = { ...publicOffer(offer), ...roster };
+
     const customer = await resolveCustomer(req);
     if (!customer) {
       return res.status(200).json({
-        success: true, enabled: true, eligible: false, booking: null, offer: publicOffer(offer),
+        success: true, enabled: true, eligible: false, booking: null, offer: shown,
       });
     }
     const booking = await findLiveBooking(customer.id);
@@ -402,7 +530,7 @@ module.exports = function registerFreeCallRoutes(app) {
       enabled: true,
       eligible,
       booking: publicBooking(booking),
-      offer: publicOffer(offer),
+      offer: shown,
     });
   }));
 
