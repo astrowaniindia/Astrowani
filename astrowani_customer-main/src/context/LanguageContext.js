@@ -171,6 +171,18 @@ const translations = {
     'settings.confirmDeleteMsg': 'Are you sure you want to delete your account? Once deleted, all your saved history will be lost. Do you still wish to continue?',
     'settings.deleteBtn': 'Delete',
     'settings.accountDeleted': 'Account deleted successfully',
+    'settings.deleteChecking': 'Checking your account…',
+    'settings.deleteBalanceWarning': 'Your wallet balance of ₹{{amount}} will be lost. It cannot be refunded or restored. Consider using it before you delete.',
+    'settings.deleteBlockedSession': 'You are in a consultation right now. Please end it, then try again.',
+    'settings.deletePreviewFailed': 'We could not reach the server to check your account. Please check your connection and try again.',
+    'session.expiredTitle': 'Please log in again',
+    'session.expiredMsg': 'Your session has expired for security. Log in again to continue — your wallet balance and history are safe.',
+    'errorBoundary.title': 'Something went wrong',
+    'errorBoundary.subtitle': 'This screen ran into a problem. Your account and wallet are unaffected.',
+    'errorBoundary.retry': 'Try again',
+    'errorBoundary.goHome': 'Go to Home',
+    'settings.deleteFailedTitle': 'Could not delete account',
+    'settings.deleteFailedMsg': 'Something went wrong and your account was NOT deleted. Please try again, or contact support.',
     'settings.loggedOut': 'Logged out successfully',
 
     // Login / OTP
@@ -1304,6 +1316,18 @@ const translations = {
     'settings.confirmDeleteMsg': 'क्या आप वाकई अपना खाता हटाना चाहते हैं? एक बार हटाने के बाद, आपका सहेजा गया सारा इतिहास खो जाएगा। क्या आप फिर भी जारी रखना चाहते हैं?',
     'settings.deleteBtn': 'हटाएं',
     'settings.accountDeleted': 'खाता सफलतापूर्वक हटा दिया गया',
+    'settings.deleteChecking': 'आपका खाता जांचा जा रहा है…',
+    'settings.deleteBalanceWarning': 'आपके वॉलेट में मौजूद ₹{{amount}} समाप्त हो जाएंगे। यह राशि न वापस मिलेगी और न बहाल की जा सकेगी। खाता हटाने से पहले इसका उपयोग कर लें।',
+    'settings.deleteBlockedSession': 'आप अभी परामर्श में हैं। कृपया उसे समाप्त करें, फिर दोबारा प्रयास करें।',
+    'settings.deletePreviewFailed': 'हम आपका खाता जांचने के लिए सर्वर से संपर्क नहीं कर सके। कृपया अपना इंटरनेट कनेक्शन जांचें और दोबारा प्रयास करें।',
+    'session.expiredTitle': 'कृपया दोबारा लॉग इन करें',
+    'session.expiredMsg': 'सुरक्षा कारणों से आपका सत्र समाप्त हो गया है। जारी रखने के लिए दोबारा लॉग इन करें — आपका वॉलेट बैलेंस और इतिहास सुरक्षित है।',
+    'errorBoundary.title': 'कुछ गड़बड़ हो गई',
+    'errorBoundary.subtitle': 'इस स्क्रीन में समस्या आ गई। आपके खाते और वॉलेट पर कोई असर नहीं पड़ा है।',
+    'errorBoundary.retry': 'दोबारा कोशिश करें',
+    'errorBoundary.goHome': 'होम पर जाएं',
+    'settings.deleteFailedTitle': 'खाता नहीं हटाया जा सका',
+    'settings.deleteFailedMsg': 'कुछ गड़बड़ हुई और आपका खाता हटाया नहीं गया। कृपया दोबारा प्रयास करें, या सहायता से संपर्क करें।',
     'settings.loggedOut': 'सफलतापूर्वक लॉग आउट हो गया',
 
     // Login / OTP
@@ -2295,6 +2319,31 @@ const translateEnglish = (key, params) => {
   return str;
 };
 
+// The language the Provider currently has, mirrored at module scope so code that
+// runs OUTSIDE the React tree can still translate — specifically the axios 401
+// interceptor in api/ApiCall.js, which has to tell the customer their session
+// expired and has no component to read context from. Kept in sync by the Provider
+// below; falls back to English until it loads, which is also the Provider's own
+// initial state, so the two can never disagree in a visible way.
+let currentLanguage = 'English';
+
+/**
+ * t() for non-React callers. Identical resolution to the Provider's own t()
+ * (chosen language -> English -> the raw key), including {{param}} interpolation.
+ *
+ * Prefer `useContext(LanguageContext).t` inside components; this exists only for
+ * module-level code that has no context available.
+ */
+export const translate = (key, params) => {
+  let str = translations[currentLanguage]?.[key] ?? translations.English[key] ?? key;
+  if (params) {
+    Object.keys(params).forEach(p => {
+      str = str.replace(new RegExp(`{{${p}}}`, 'g'), params[p]);
+    });
+  }
+  return str;
+};
+
 // A missing Provider must never be fatal. `createContext()` with no default
 // returns undefined, so every consumer doing
 // `const {language, t} = useContext(LanguageContext)` throws
@@ -2318,6 +2367,7 @@ export const LanguageProvider = ({ children }) => {
         const savedLang = await AsyncStorage.getItem('appLanguage');
         if (savedLang) {
           setLanguage(savedLang);
+          currentLanguage = savedLang; // keep the standalone translate() in step
         }
       } catch (error) {
         console.log('Error loading language', error);
@@ -2328,6 +2378,7 @@ export const LanguageProvider = ({ children }) => {
 
   const changeLanguage = async (lang) => {
     setLanguage(lang);
+    currentLanguage = lang; // keep the standalone translate() in step
     try {
       await AsyncStorage.setItem('appLanguage', lang);
     } catch (error) {

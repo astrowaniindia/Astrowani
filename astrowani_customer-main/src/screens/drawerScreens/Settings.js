@@ -8,6 +8,7 @@ import {
   ScrollView,
   Alert,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -20,23 +21,75 @@ import {resetWalletBalance} from '../../hooks/useWalletBalance';
 // pages for its acceptance checkbox, and a legal URL should exist in one place.
 import {LEGAL_LINKS} from '../../config/legal';
 import {useModalPresence} from '../../utils/modalPresentation';
-import {captureEvent} from '../../utils/Analytics';
+import {captureEvent, resetAnalyticsIdentity} from '../../utils/Analytics';
+import {getDeletePreview, deleteAccount} from '../../api/AccountApi';
 
 export default function Settings({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  // What deletion will actually cost, fetched when the modal opens. `null` = still
+  // loading; the confirm button stays disabled until it arrives, so nobody can delete
+  // an account without first being shown the wallet balance they are forfeiting.
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   // Declares this modal to the presentation registry so root-level popups
   // wait for it instead of colliding with it on iOS (utils/modalPresentation).
   useModalPresence(logoutModalVisible || deleteModalVisible);
 
-  const handleDeleteAccount = () => {
-    // The strongest churn signal the app can emit. Note this handler currently only
-    // shows a confirmation — it does not call a delete endpoint — so the event records
-    // the request, which is the thing worth counting either way.
-    captureEvent('account_delete_requested');
-    setDeleteModalVisible(false);
-    Alert.alert(t('settings.accountDeleted'));
+  const openDeleteModal = async () => {
+    // The strongest churn signal the app can emit — recorded on the tap, so an
+    // abandoned deletion still counts as intent to leave.
+    captureEvent('account_delete_tapped');
+    setDeletePreview(null);
+    setDeleteModalVisible(true);
+    try {
+      setDeletePreview(await getDeletePreview());
+    } catch (_) {
+      // Could not reach the server. Leave the confirm button disabled rather than
+      // letting somebody tap Delete on an unknown state — the modal shows the error.
+      setDeletePreview({error: true});
+    }
+  };
+
+  /**
+   * Actually delete the account.
+   *
+   * This used to show "Account deleted successfully" and call nothing at all — no
+   * deletion endpoint existed. It now waits on a real server response and only clears
+   * the session once the backend has confirmed, so a failure surfaces as a failure
+   * instead of a false reassurance.
+   */
+  const handleDeleteAccount = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const result = await deleteAccount();
+      // Captured BEFORE resetAnalyticsIdentity(), or it would be attributed to a fresh
+      // anonymous id instead of the account that just left — same ordering rule as the
+      // logout event in CustomDrawerContent.js.
+      captureEvent('account_deleted', {mode: result?.mode || 'unknown'});
+
+      // Order matters: the account is already gone server-side, so the local session
+      // must go too, and the app must land somewhere that does not try to load data
+      // for a customer who no longer exists.
+      resetAnalyticsIdentity();
+      resetWalletBalance();
+      await AsyncStorage.removeItem('token');
+      setDeleteModalVisible(false);
+      navigation.reset({index: 0, routes: [{name: 'Login'}]});
+      Alert.alert(t('settings.accountDeleted'));
+    } catch (err) {
+      captureEvent('account_delete_failed', {reason: err?.code || 'error'});
+      Alert.alert(
+        t('settings.deleteFailedTitle'),
+        err?.code === 'ACTIVE_SESSION'
+          ? t('settings.deleteBlockedSession')
+          : err?.message || t('settings.deleteFailedMsg'),
+      );
+    } finally {
+      setDeleting(false);
+    }
   };
   const handleLogout = async () => {
     try {
@@ -212,10 +265,7 @@ export default function Settings({navigation}) {
 
         <TouchableOpacity
           style={[styles.item, styles.delete]}
-          onPress={() => {
-            captureEvent('account_delete_tapped');
-            setDeleteModalVisible(true);
-          }}>
+          onPress={openDeleteModal}>
           <View style={styles.itemContent}>
             <Icon name="delete" size={25} color="red" style={styles.icon} />
             <Text style={[styles.text, styles.deleteText]}>
@@ -257,7 +307,7 @@ export default function Settings({navigation}) {
       <Modal
         transparent={true}
         visible={deleteModalVisible}
-        onRequestClose={() => setDeleteModalVisible(false)}
+        onRequestClose={() => (deleting ? null : setDeleteModalVisible(false))}
         animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -265,16 +315,53 @@ export default function Settings({navigation}) {
             <Text style={styles.modalMessage}>
               {t('settings.confirmDeleteMsg')}
             </Text>
+
+            {/* Everything below states a real consequence. The confirm button stays
+                disabled until the preview lands, so the balance warning can never be
+                missed by someone tapping through quickly. */}
+            {deletePreview === null && (
+              <View style={styles.deleteInfoRow}>
+                <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+                <Text style={styles.deleteInfoText}>{t('settings.deleteChecking')}</Text>
+              </View>
+            )}
+
+            {deletePreview?.error && (
+              <Text style={styles.deleteWarnText}>{t('settings.deletePreviewFailed')}</Text>
+            )}
+
+            {deletePreview?.blockedReason === 'ACTIVE_SESSION' && (
+              <Text style={styles.deleteWarnText}>{t('settings.deleteBlockedSession')}</Text>
+            )}
+
+            {deletePreview?.canDelete && deletePreview.walletBalance > 0 && (
+              <Text style={styles.deleteWarnText}>
+                {t('settings.deleteBalanceWarning').replace(
+                  '{{amount}}',
+                  String(deletePreview.walletBalance),
+                )}
+              </Text>
+            )}
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelButton}
+                disabled={deleting}
                 onPress={() => setDeleteModalVisible(false)}>
                 <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.confirmButton}
+                style={[
+                  styles.confirmButton,
+                  (!deletePreview?.canDelete || deleting) && styles.confirmButtonDisabled,
+                ]}
+                disabled={!deletePreview?.canDelete || deleting}
                 onPress={handleDeleteAccount}>
-                <Text style={styles.confirmText}>{t('settings.deleteBtn')}</Text>
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmText}>{t('settings.deleteBtn')}</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -376,6 +463,29 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
     fontFamily: 'Lato-Regular',
     color: '#fff',
+  },
+  // Greyed while the delete preview is still loading, or while the request is in
+  // flight, so the destructive button is never live on an unknown state.
+  confirmButtonDisabled: {
+    backgroundColor: '#c9a49a',
+  },
+  deleteInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: verticalScale(14),
+  },
+  deleteInfoText: {
+    fontSize: moderateScale(13),
+    fontFamily: 'Lato-Regular',
+    color: '#666',
+    marginLeft: scale(8),
+  },
+  deleteWarnText: {
+    fontSize: moderateScale(13),
+    fontFamily: 'Lato-Regular',
+    color: '#C0392B',
+    marginBottom: verticalScale(14),
+    lineHeight: verticalScale(18),
   },
   languageOption: {
     flexDirection: 'row',

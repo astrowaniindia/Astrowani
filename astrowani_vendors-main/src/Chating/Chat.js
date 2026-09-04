@@ -100,16 +100,18 @@ const ChatScreen = () => {
   // --- get chat history from Supabase ---
   const getHistoryMsg = async (currentUserId, currentRoomId) => {
     try {
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('room_id', currentRoomId)
-        .order('created_at', { ascending: false })
-        .limit(50); // limit for now
+      // Via the backend, not Supabase directly — the publishable key no longer has
+      // SELECT on chat_messages (hardening_09). The endpoint decides membership from
+      // the room id's own `idA_idB` shape.
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.get('/api/chat/messages', {
+        params: { roomId: currentRoomId },
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      if (error) throw error;
-      
-      const result = data || [];
+      // Endpoint returns oldest-first; this screen's formatter expects newest-first
+      // and reverses at the end, so match the shape the old query produced.
+      const result = (res.data?.data || []).slice().reverse();
       console.log('📩 getHistory received count:', result.length);
 
       const formattedMessages = result.map(msg => ({
@@ -126,6 +128,19 @@ const ChatScreen = () => {
   };
 
   // --- initialize Supabase ---
+  //
+  // ⚠️ This Realtime subscription is INERT after hardening_09: postgres_changes honours
+  // the same table grants as a normal read, and `anon` no longer has SELECT on
+  // chat_messages, so no INSERT event will ever be delivered here.
+  //
+  // Left in place rather than rewritten because this screen has NO live entry point —
+  // it is registered as route "Chat" in NavigationScreen.js but nothing navigates to
+  // it, and the two production banners with action_type='screen'/action_value='Chat'
+  // are both app='customer', so they open the CUSTOMER app's astrologer-list screen,
+  // not this one (checked against the live banners table, 2026-09-05).
+  //
+  // If this screen is ever brought back into use, live delivery must move to the
+  // socket's `new_chat_message` event, the way VendorChatSession.js already does it.
   const initializeSupabaseChat = (currentUserId, currentRoomId) => {
     console.log('🔌 Initializing Supabase channel for room:', currentRoomId);
     

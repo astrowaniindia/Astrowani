@@ -106,13 +106,24 @@ const VendorChatSession = ({ route, navigation }) => {
           endSessionLocal(data.reason);
         });
 
-        // Load existing messages
-        const { data: msgs } = await supabase
-          .from('chat_messages')
-          .select('*')
-          .eq('session_id', finalSessionId)
-          .order('created_at', { ascending: true });
-        if (msgs) setMessages(msgs);
+        // Load existing messages.
+        //
+        // Via the backend, not Supabase directly: the publishable key in this APK no
+        // longer has SELECT on chat_messages (hardening_09), because it could read
+        // every consultation on the platform, not just this one. The endpoint checks
+        // that the caller is actually a participant of this session.
+        try {
+          const token = await AsyncStorage.getItem('token');
+          const res = await Instance.get('/api/chat/messages', {
+            params: { sessionId: finalSessionId },
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.data?.data) setMessages(res.data.data);
+        } catch (histErr) {
+          // History is not worth failing the session over — live messages still arrive
+          // over the socket below, so an empty backlog degrades rather than blocking.
+          console.log('Failed to load chat history:', histErr?.message);
+        }
 
         // Live message delivery + typing indicator over the socket's session room
         // (already joined above for signal_connection/session_ended) instead of a

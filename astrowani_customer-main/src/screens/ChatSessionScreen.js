@@ -316,13 +316,31 @@ const ChatSessionScreen = ({ route, navigation }) => {
             });
             captureEvent('chat_started', { session_id: data.id });
 
-            // Load existing messages
-            const { data: msgs } = await supabase
-              .from('chat_messages')
-              .select('*')
-              .eq('session_id', data.id)
-              .order('created_at', { ascending: true });
-            if (msgs) setMessages(msgs);
+            // Load existing messages.
+            //
+            // Via the backend, not Supabase directly: the publishable key in this APK
+            // no longer has SELECT on chat_messages (hardening_09), because it could
+            // read every consultation on the platform, not just this one. The endpoint
+            // checks that the caller is actually a participant of this session.
+            // Declared out here because the "first connect?" check further down reads
+            // it to decide whether to auto-send the customer's birth details.
+            let msgs = null;
+            try {
+              const token = await AsyncStorage.getItem('token');
+              const res = await Instance.get('/api/chat/messages', {
+                params: { sessionId: data.id },
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (res.data?.data) {
+                msgs = res.data.data;
+                setMessages(msgs);
+              }
+            } catch (histErr) {
+              // History is not worth failing the session over — live messages still
+              // arrive over the socket below, so an empty backlog degrades rather
+              // than blocking the chat from starting.
+              console.log('Failed to load chat history:', histErr?.message);
+            }
 
             // Live message delivery + typing indicator over the socket's session room
             // (already joined above for signal_connection/session_ended) instead of a

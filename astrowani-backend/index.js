@@ -637,6 +637,11 @@ require('./src/referralPopupRoutes')(app);
 // /api/app/review-prompt (both fail closed), plus the admin "notify everyone" send.
 require('./src/appPromptRoutes')(app);
 
+// Self-service account deletion — /api/account/delete-preview + /api/account/delete.
+// The customer id always comes from the JWT, never from the request, so these can
+// only ever act on the caller's own account.
+require('./src/accountRoutes')(app);
+
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
 
@@ -3363,6 +3368,78 @@ app.post('/api/chat/message', async (req, res) => {
   } catch (error) {
     console.error('[Chat] message send error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to send message' });
+  }
+});
+
+/**
+ * Chat history for one session (or one room), for whoever is actually in it.
+ *
+ * WHY THIS EXISTS: both apps used to read `chat_messages` straight from Supabase with
+ * the publishable key that ships inside the APK. That key could therefore SELECT the
+ * `message` column of EVERY consultation on the platform — verified by probe against
+ * production on 2026-09-05. sql/hardening_09_chat_messages_read.sql revokes that grant,
+ * and this endpoint is what the apps use instead.
+ *
+ * The participant check is the whole point, and it mirrors POST /api/chat/message's:
+ * being authenticated is not enough, you must be one of the two people in the session.
+ * Without that this would just move the same leak behind a different door.
+ */
+app.get('/api/chat/messages', async (req, res) => {
+  try {
+    const { sessionId, roomId } = req.query;
+    if (!sessionId && !roomId) {
+      return res.status(400).json({ success: false, message: 'sessionId or roomId is required' });
+    }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Same dual-shape identity resolution as POST /api/chat/message: vendor tokens
+    // already carry a real UUID, customer tokens need the phone -> UUID reconciliation.
+    let viewerId = decoded.userId || decoded.id;
+    const isVendor = decoded.role === 'astrologer' || decoded.role === 'vendor' || !!decoded.astroId || !!decoded.vendorId;
+    if (!isVendor && decoded.phone) {
+      const row = await findCustomerByPhone(supabase, decoded.phone, 'id');
+      if (row) viewerId = row.id;
+    }
+    if (!viewerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    let query = supabaseService.from('chat_messages').select('*');
+
+    if (sessionId) {
+      const { data: sessionRow } = await supabaseService
+        .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+      if (!sessionRow
+        || (String(sessionRow.caller_id) !== String(viewerId) && String(sessionRow.vendor_id) !== String(viewerId))) {
+        return res.status(403).json({ success: false, message: 'Not a participant of this session' });
+      }
+      query = query.eq('session_id', sessionId);
+    } else {
+      // Room ids are built as `[idA, idB].sort().join('_')`, so membership is decidable
+      // from the id itself. An exact segment match, not a substring test — `includes()`
+      // would let a crafted room id containing someone else's id read their history.
+      const parts = String(roomId).split('_');
+      if (!parts.includes(String(viewerId))) {
+        return res.status(403).json({ success: false, message: 'Not a participant of this room' });
+      }
+      query = query.eq('room_id', roomId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: true }).limit(500);
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, data: data || [] });
+  } catch (error) {
+    console.error('[Chat] history fetch error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load messages' });
   }
 });
 

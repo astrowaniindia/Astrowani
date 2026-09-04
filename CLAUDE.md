@@ -2902,3 +2902,258 @@ the last launch made only an `update-check` with no `review-prompt` fetch at all
 > `build=undefined` (native DeviceInfo not ready yet), then `build=23` on every subsequent launch.
 > Harmless by design — the endpoint falls back to version-name comparison when no build is sent and
 > never forces on a missing/unparseable value — but it is why that fallback exists.
+
+---
+
+## Production-readiness pass 2026-09-05: the three launch blockers
+
+A full audit of the customer app ahead of going public. Most of it came back clean — i18n
+parity (1034 keys, zero gaps), the R8/ProGuard config, Sentry wiring, legal URLs, API
+health, and the bundle all checked out. Three things did not, and two of them were fixed
+here.
+
+> **The Gradle release build failing is NOT a code problem.** `assembleRelease` died with
+> exit 134 (SIGABRT) at `createBundleReleaseJsAndAssets`, preceded by a raw V8 frame dump —
+> a Node heap OOM, with 3.9 GB free while Gradle held 2.5 GB and a stale Metro process held
+> another 850 MB. Run standalone, `npx react-native bundle` succeeds in both apps. If this
+> recurs, close stray Metro processes before blaming the diff.
+
+### AU. "Delete my account" was a lie — now a real deletion
+
+`Settings.js`'s handler fired an analytics event, closed the modal, and showed
+**"Account deleted successfully"** in both languages. It called nothing. There was **no
+account-deletion endpoint anywhere in the backend** — the eight `app.delete` routes are all
+admin-only or addresses. Google Play requires working in-app deletion for any app that
+creates accounts, and telling somebody their data is gone when it is not is the part that
+actually matters.
+
+**`src/accountRoutes.js`** (new, registered in `index.js` beside `appPromptRoutes`):
+
+- `GET /api/account/delete-preview` — what deletion will cost. The wallet balance is the
+  load-bearing field: it is forfeited with no refund path, so the app states it in words
+  before the customer confirms.
+- `POST /api/account/delete` — performs it.
+
+**THE ONE RULE: there is deliberately no `:id` in either route.** The customer id comes
+from the verified JWT, never from a body or path param. A self-service delete that accepts
+an id is one typo away from letting any logged-in customer delete any other.
+
+Deletion semantics are lifted from `DELETE /api/admin/customers/:id`, because that logic
+was already reasoned through against the schema's FKs: **hard delete** when nothing
+financial references the row; **soft removal** when `chat_sessions.caller_id` /
+`wallet_transactions.user_id` (both ON DELETE RESTRICT) refuse to destroy the money trail.
+The soft path clears the phone number, which both frees it for re-signup and makes the
+account unreachable, and now also nulls `fcm_token` so no further pushes reach a device
+whose owner has left.
+
+**The only refusal is an active session** (409 `ACTIVE_SESSION`) — deleting mid-call would
+strand an astrologer whose billing counterparty vanished, and it resolves on its own in
+minutes. An in-flight remedy order needs no guard: the soft path preserves the order and
+its address snapshot. `hasActiveSession` fails **CLOSED** on a DB error.
+
+App side: `api/AccountApi.js` (new) — note these **reject** on failure rather than resolving
+to a safe default, the opposite of most helpers here, because swallowing a failure is
+exactly the bug being replaced. The confirm button stays disabled until the preview lands,
+so the balance warning cannot be tapped past. 6 new i18n keys in **both** languages
+(parity re-verified: **1040** each, zero one-sided).
+
+**Verified 2026-09-05 — 23/23 against the live database** via a bare Express harness
+(`index.js` never booted — it starts sessionManager's billing worker against production):
+unauthenticated/malformed tokens 401; a clean account **hard-deletes and the row is
+genuinely gone**; deleting an already-deleted account returns 401 rather than a false
+success; an active session refuses with 409 and leaves the account untouched; once the
+session ends the same account **soft-removes**, gets its phone replaced with a `deleted:`
+tag, has `fcm_token` cleared, becomes unreachable by its old phone, and **retains its
+session history** — which is why it was a soft removal. Every synthetic row deleted.
+
+**STILL OUTSTANDING (not code):** Play also requires a **web** deletion URL alongside the
+in-app one. `astrowani.com` has no such page — add one next to the existing policy pages in
+`config/legal.js` and declare it in the Play Console.
+
+### AV. `chat_messages` was world-readable — closed via a participant-checked endpoint
+
+The publishable key inside both APKs could `SELECT` the `message` column of
+`chat_messages`. Verified by probe against production: 200, all seven columns, 86 rows.
+Every private consultation transcript on the platform, readable by anyone who unzips the
+APK.
+
+**The audit called this "one REVOKE". That was wrong** — `hardening_02` deliberately kept
+`GRANT SELECT ON chat_messages TO anon` because both apps read chat history directly, so
+revoking alone would have broken chat. The real fix needed the read to move server-side
+first.
+
+**`GET /api/chat/messages`** (in `index.js`, beside `POST /api/chat/message`) takes
+`sessionId` or `roomId` and reuses that endpoint's dual-shape identity resolution and its
+participant check — being authenticated is not enough, you must be one of the two people in
+the session. Without that this would just move the same leak behind a different door.
+
+Room membership is decided by **exact segment match** on the `idA_idB` room id, never
+`includes()` — a crafted room id containing someone else's id would otherwise read their
+history. There is a test for exactly that.
+
+Three call sites migrated: customer `ChatSessionScreen.js`, vendor `VendorChatSession.js`
+(both by `sessionId`), vendor `Chating/Chat.js` (by `roomId`).
+
+**Live message delivery is untouched** — both live chat screens already receive new
+messages over the Socket.io session room, not Supabase Realtime. That earlier migration is
+what makes this safe now.
+
+`sql/hardening_09_chat_messages_read.sql` (**written, NOT applied**) does the revoke, with a
+self-verifying `DO $$` tail that raises if any anon/authenticated privilege survives.
+
+> **⚠️ DEPLOY ORDER MATTERS FOR THIS ONE**, unlike most files in `sql/`. Run it BEFORE the
+> backend carrying `GET /api/chat/messages` is deployed and installed apps lose chat
+> history (live messages keep working; the backlog renders empty). Backend first, then the
+> SQL. Rollback is a one-line re-GRANT, recorded at the bottom of the file.
+
+**Note on `Chating/Chat.js`**: its Supabase Realtime subscription becomes **inert** after
+the revoke (postgres_changes honours the same table grants). Left in place with a comment
+rather than rewritten, because the screen has **no live entry point** — it is registered as
+route "Chat" but nothing navigates to it, and the two production banners with
+`action_type='screen'`/`action_value='Chat'` are both `app='customer'`, so they open the
+customer app's astrologer-list screen instead (checked against the live `banners` table —
+this is the dynamic-navigation trap from the 2026-08-21 dead-code purge). It also has a
+pre-existing `socketRef is not defined` error, further evidence it is unreachable.
+
+**Verified 2026-09-05 — 13/13** against the live database: participants (customer *and*
+astrologer) read the message; **a different logged-in customer gets 403 with no content in
+the body**; an unknown sessionId returns 403 rather than 200-with-empty (which would
+confirm existence); and the crafted-roomId substring attack is refused.
+
+### AW. Razorpay live key — NOT rotated, and Claude cannot do it
+
+Still recoverable from git history in one command (`git show cce0b2f^:…GemStoneBuy.tsx`).
+Deleting the file did not un-expose it and history rewriting would not help, since anyone
+who cloned earlier already has it. **Rotation is the only fix**, and it needs dashboard
+access.
+
+Good news: **no code change is required.** Both payment paths already read `keyId` from the
+backend at runtime (`razorpay.RAZORPAY_KEY_ID`, a VPS env var), and
+`git grep "rzp_live\|rzp_test"` across all tracked source returns zero. It is purely
+operational — env change plus restart, no app release, no OTA.
+
+Full runbook: **`MD files/razorpay-key-rotation-runbook.md`**. The order matters —
+generate the new key, update the VPS env, restart, **complete one real ₹1 recharge**
+(a wrong *secret* fails only at `verify-payment`, after the customer has been charged, so a
+clean boot proves nothing), and only then disable the old key.
+
+### Also confirmed during this pass
+
+- ~~**No error boundary anywhere in the customer app.**~~ **FIXED — see AX below.**
+- ~~**No 401 handling.**~~ **FIXED — see AX below.**
+
+Still open:
+
+- **Nine unused permissions** in the merged release manifest (READ/WRITE_CONTACTS,
+  READ/WRITE_CALENDAR, SYSTEM_ALERT_WINDOW, WRITE_SETTINGS, USE_FINGERPRINT,
+  READ_PHONE_STATE) from a template block still labelled "OPTIONAL PERMISSIONS, REMOVE
+  WHATEVER YOU DO NOT NEED". Zero JS call sites; no dependency manifest pulls Contacts or
+  Calendar.
+- `usesCleartextTraffic="true"` in the production manifest with no `http://` left in `src/`.
+- `/api/app/update-check` and `/api/app/review-prompt` **404 in production** — registered in
+  `index.js` but only on this unmerged branch. The app fails closed, but there is currently
+  **no forced-update lever**.
+- `android/gradle.properties` is tracked and carries the upload keystore passwords.
+- iOS: no `Podfile.lock`, Pods never installed, plus the open untappable-Home blocker.
+
+### SQL to run (Supabase SQL editor)
+`sql/hardening_09_chat_messages_read.sql` — **after** deploying the backend that carries
+`GET /api/chat/messages`. See the deploy-order warning above.
+
+### AX. Error boundary + 401 session handling (2026-09-05, same pass)
+
+The two high-severity items the blocker pass deliberately left open.
+
+#### The error boundary
+
+`components/ErrorBoundary.js` (new) — the customer app had **none of any kind**: no
+`componentDidCatch`, no `Sentry.wrap`. A single uncaught render error was a permanent white
+screen whose only recovery was reinstalling. The vendor app has had one since 2026-08-14
+(Sentry `ASTROWANI-VENDOR-4`).
+
+Modelled on the vendor's, with three differences that matter:
+
+- **Uses the standalone `translate()`, not `LanguageContext`.** A boundary has to keep
+  working when the tree below it is broken; a context read is one more thing that can fail
+  at exactly the wrong moment. The vendor's fallback is hardcoded English, which would be a
+  visible regression in an app that is fully bilingual.
+- **Two recovery actions.** "Retry" alone is often useless — a deterministic crash
+  re-throws the instant the subtree remounts. "Go to Home" resets to `DrawerNavigator`,
+  which is the only thing that helps when the crash is screen-specific. Hidden when
+  navigation is not ready, or when the boundary is the root one (`isRoot`), since there
+  would be nowhere to go.
+- Reports `info.componentStack` to Sentry. Without it a boundary report on a minified
+  release build says only "something in the tree threw".
+
+Mounted in **two** places:
+- `App.js`, wrapping `<Navigation/>` with `isRoot` — **inside** `LanguageProvider` so the
+  fallback is in the customer's own language, and **inside** `GestureHandlerRootView` so
+  its buttons are tappable.
+- `routes/Navigation.js`, wrapping `drawerContent` — the drawer renders wallet balance,
+  referral state and the whole menu, so a bad value there used to take down every screen at
+  once. Same placement the vendor app already uses.
+
+Per-screen boundaries are **not** added — that would mean touching ~60 `Stack.Screen`
+registrations. `<ErrorBoundary name="X">` is reusable if a specific screen ever earns one.
+
+#### 401 handling
+
+The backend issues **30-day JWTs** and nothing reacted to a 401. The token was cleared only
+by a manual logout, so an aged-out token produced empty lists, failing calls and silent
+errors with no hint that logging in again was the fix. There were **zero axios
+interceptors** in the app.
+
+`api/ApiCall.js` now has a response interceptor: on a 401 it clears the token, resets
+navigation to `Login` (via the existing `utils/NavigationService` ref), and shows one
+translated "please log in again" alert. It **always re-rejects**, so every caller's own
+`catch` still runs at the normal time.
+
+Two exemptions, both load-bearing:
+- **`AUTH_PATHS`** — the sign-in endpoints legitimately 401 (wrong OTP, unknown number).
+  Reacting to those would bounce someone out of the login flow they are standing in.
+- **No stored token** — then a 401 means "not logged in", not "expired", and the app is
+  already somewhere that expects it. Say nothing.
+
+> **THE BUG THE TEST CAUGHT, and the rule from it: set an async latch BEFORE the first
+> `await`, never after.** The single-fire guard was originally written as
+> `if (handlingExpiredSession) return;` … `await AsyncStorage.getItem('token')` …
+> `handlingExpiredSession = true`. Every `await` yields the event loop, so five concurrent
+> 401s all cleared the check before any of them reached the assignment — **measured: five
+> stacked alerts and five navigation resets**, which is precisely the pile-up the latch
+> exists to prevent. The flag is now set synchronously on entry and released back to
+> `false` on the no-token path (nothing was consumed) or on a 5s timer after a real expiry.
+
+**Verified 2026-09-05 — 23/23, against the REAL module.** The harness loads
+`src/api/ApiCall.js` itself under `@babel/register` with `react-native`, AsyncStorage and
+`@react-navigation/native` stubbed, then drives it through a mock axios adapter — so it
+tests the shipped code, not a copy of it. Covers: the full expiry flow; the caller still
+receiving its rejection; five simultaneous 401s producing exactly one alert and one reset;
+all five auth paths exempt; the no-token case silent; 400/403/404/409/500 inert; 200s
+untouched; and the latch releasing so a genuine later expiry is handled again.
+
+> **Test-harness lesson, the third in this repo:** the first run reported 16/23 with the
+> negative assertions "passing" — but they were passing because the 5s latch from the
+> previous scenario was still held, so nothing *could* have fired. Silence is not success.
+> Fixed by waiting the latch out between scenarios **and** adding explicit
+> `assertFlowStillArmed()` positive controls after each negative block, so "nothing
+> happened" is always distinguishable from "nothing could have happened". Without those
+> controls the async-latch bug above would have shipped behind a green test run.
+
+#### Supporting change
+
+`context/LanguageContext.js` exports **`translate(key, params)`** — a standalone t() for
+code with no React context (the interceptor and the boundary). Identical resolution to the
+Provider's own `t()` (chosen language → English → raw key, with `{{param}}` interpolation),
+reading a module-level `currentLanguage` the Provider keeps in step on load and on
+`changeLanguage`. **Prefer `useContext(LanguageContext).t` inside components** — this exists
+only for module scope.
+
+12 new i18n keys across both features, in **both** languages. Parity re-verified: **1046**
+each, zero one-sided, zero Hindi values identical to their English counterpart.
+
+#### Known gap, deliberate
+
+The interceptor only covers the shared `Instance` axios client. `screens/Home/Wallet/Wallet.js`
+uses raw `axios` + `SOCKET_URL`, and the Free Services screens use bare `fetch` — a 401 on
+those paths still goes unhandled. `Instance` is the newer convention and migrating those is
+worth doing, but it is a wider change than this pass warranted.

@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LanguageContext } from '../context/LanguageContext';
 import Chat from '../screens/chat/Chat';
 import CustomDrawerContent from './CustomDrawerContent'; // Your custom drawer content
+import ErrorBoundary from '../components/ErrorBoundary';
 import UserProfileScreen from '../screens/drawerScreens/UserProfileScreen';
 import ChatSessionScreen from '../screens/ChatSessionScreen';
 import FreeBotChatScreen from '../screens/FreeBotChat/FreeBotChatScreen';
@@ -691,7 +692,15 @@ export default function Navigation({ initialRoute }) {
 function DrawerNavigator({ navigation }) {
   return (
     <Drawer.Navigator
-      drawerContent={props => <CustomDrawerContent {...props} />}
+      // Boundary around the drawer content specifically: it renders the wallet
+      // balance, referral state and the whole menu, so a bad value here used to take
+      // down every screen at once. Matches what the vendor app already does with its
+      // own CustomDrawer (Sentry ASTROWANI-VENDOR-4).
+      drawerContent={props => (
+        <ErrorBoundary name="CustomDrawer">
+          <CustomDrawerContent {...props} />
+        </ErrorBoundary>
+      )}
       screenOptions={{
         headerShown: false,
         // Default swipeEdgeWidth (32dp) requires starting the swipe almost

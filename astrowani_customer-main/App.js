@@ -11,6 +11,7 @@ import CustomAlert, { showAlert } from './src/Component/CustomAlert';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { LanguageProvider } from './src/context/LanguageContext';
+import ErrorBoundary from './src/components/ErrorBoundary';
 
 // Override global Alert.alert to render our CustomAlert component globally
 const originalAlert = Alert.alert;
@@ -71,7 +72,16 @@ const App = () => {
     <SafeAreaProvider>
       <LanguageProvider>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <Navigation initialRoute={userToken ? 'DrawerNavigator' : 'Login'} />
+          {/* Root boundary. Inside LanguageProvider so the fallback renders in the
+              customer's own language, and inside GestureHandlerRootView so the
+              fallback's buttons are actually tappable.
+
+              isRoot: this wraps the navigator itself, so a crash here means there is
+              no navigator left to send anyone "home" with — the fallback offers only
+              Retry. Screen-level boundaries mounted lower down should NOT pass it. */}
+          <ErrorBoundary name="AppRoot" isRoot>
+            <Navigation initialRoute={userToken ? 'DrawerNavigator' : 'Login'} />
+          </ErrorBoundary>
           <CustomAlert />
         </GestureHandlerRootView>
       </LanguageProvider>
