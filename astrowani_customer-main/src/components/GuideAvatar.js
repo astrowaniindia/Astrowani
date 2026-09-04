@@ -18,6 +18,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { hasSeenGuideHint, markGuideHintSeen } from '../utils/onboardingFlags';
+import { captureEvent } from '../utils/Analytics';
 
 const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, alwaysShow = false, avatarSize, offsetX = 0, avatarOffsetY = 0, boxOffsetY = 0, layout = 'stack', onPress }) => {
   const [visible, setVisible] = useState(alwaysShow);
@@ -122,7 +123,7 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
       )}
 
       {!alwaysShow && (
-        <TouchableOpacity activeOpacity={0.85} onPress={dismiss} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => { captureEvent('guide_hint_dismissed', { hint: storageKey || null }); dismiss(); }} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <MaterialIcons name="close" size={moderateScale(13)} color={COLORS.white} />
         </TouchableOpacity>
       )}

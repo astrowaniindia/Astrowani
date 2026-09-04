@@ -142,7 +142,7 @@ const Video = ({navigation}) => {
 
   const initiateVideoCall = async item => {
     try {
-      if (!(await ensureProfileComplete(navigation))) return;
+      if (!(await ensureProfileComplete(navigation, 'video_call'))) return;
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {

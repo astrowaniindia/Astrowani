@@ -29,6 +29,7 @@ import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 // Guarded require, not a static import: react-native-webview is a NATIVE module.
 // OTA (Hot Updater) can only ship this file's JS — it cannot add the native module to
@@ -167,7 +168,7 @@ function LiveCard({ channel, isActive, t }) {
     <View style={styles.card}>
       <View style={styles.playerWrap}>
         {showFallback ? (
-          <TouchableOpacity style={styles.fallback} activeOpacity={0.85} onPress={openOnYouTube}>
+          <TouchableOpacity style={styles.fallback} activeOpacity={0.85} onPress={() => { captureEvent('live_aarti_youtube_opened'); openOnYouTube(); }}>
             {!!channel.videoId && (
               <Image source={{ uri: channel.thumbnail || thumbFor(channel.videoId) }} style={styles.fallbackThumb} />
             )}

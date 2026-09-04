@@ -22,6 +22,13 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {captureEvent} from '../../utils/Analytics';
+import {
+  unreachableState,
+  unreachableLabelKey,
+  unreachableIcon,
+  unreachableAlertKey,
+  unreachableReason,
+} from '../../utils/astrologerAvailability';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FastImage from 'react-native-fast-image';
 import Swiper from 'react-native-swiper';
@@ -270,6 +277,9 @@ const Home = ({navigation}) => {
   // ({enabled, eligible, offer, booking}); the client never decides eligibility.
   const [freeCall, setFreeCall] = useState(null);
   const [freeCallVisible, setFreeCallVisible] = useState(false);
+  // How the offer was opened, threaded into every free-call event so the funnel can
+  // separate the auto-popup from a customer who came back via the gift bubble.
+  const [freeCallSource, setFreeCallSource] = useState('auto');
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -523,7 +533,7 @@ const Home = ({navigation}) => {
   };
 
   const getRoomTokenWebCall = async item => {
-    if (!(await ensureProfileComplete(navigation))) return null;
+    if (!(await ensureProfileComplete(navigation, 'audio_call'))) return null;
     try {
       const token = await AsyncStorage.getItem('token');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
@@ -659,7 +669,7 @@ const Home = ({navigation}) => {
   // Video call from a Home card — mirrors getRoomTokenWebCall but callType:'video'
   // and navigates to VideoCallScreen (same flow as the Video-With-Experts tab).
   const initiateVideoCall = async item => {
-    if (!(await ensureProfileComplete(navigation))) return null;
+    if (!(await ensureProfileComplete(navigation, 'video_call'))) return null;
     try {
       const token = await AsyncStorage.getItem('token');
       const userEntireData = JSON.parse(await AsyncStorage.getItem('userData'));
@@ -865,7 +875,10 @@ const Home = ({navigation}) => {
         setFreeCall(fc);
         if (fc.enabled && fc.eligible) {
           const seen = await hasSeenFreeCallOffer(userData.id);
-          if (!seen) setFreeCallVisible(true);
+          if (!seen) {
+            setFreeCallSource('auto');
+            setFreeCallVisible(true);
+          }
         }
       } catch (_) {
         // getFreeCallOffer already resolves to "off" on failure; this is belt
@@ -1134,21 +1147,23 @@ const Home = ({navigation}) => {
           <Text style={styles.language}>{languages || 'hindi'}</Text>
         </View>
         <View style={styles.btnView}>
-          {item.isOnline === false ? (
+          {unreachableState(item) ? (
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() =>
-                Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', {name: item.name || 'This astrologer'}))
-              }
+              onPress={() => {
+                const st = unreachableState(item);
+                captureEvent('consult_blocked', {reason: unreachableReason(st), intent: 'unknown', astrologer_id: item.userId});
+                Alert.alert(t('alerts.unavailable'), t(unreachableAlertKey(st), {name: item.name || 'This astrologer'}));
+              }}
               style={styles.offlineBtn}>
-              <MaterialIcons name="wifi-off" size={moderateScale(12)} color="white" style={{marginRight: 4}} />
-              <Text style={styles.unavailableBtnTxt}>{t('common.offline')}</Text>
+              <MaterialIcons name={unreachableIcon(unreachableState(item))} size={moderateScale(12)} color="white" style={{marginRight: 4}} />
+              <Text style={styles.unavailableBtnTxt}>{t(unreachableLabelKey(unreachableState(item)))}</Text>
             </TouchableOpacity>
           ) : item.isBusy === true && item.busyReason === 'live' ? (
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={async () => {
-                if (!(await ensureProfileComplete(navigation))) return;
+                if (!(await ensureProfileComplete(navigation, 'live'))) return;
                 if (item.liveSessionId) {
                   navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
                 } else {
@@ -1778,7 +1793,7 @@ const Home = ({navigation}) => {
         </View>
       </Modal>
 
-      <RequestingPopup
+      <RequestingPopup context="home"
         visible={requesting}
         astro={requestAstro}
         onCancel={cancelRequest}
@@ -1814,6 +1829,7 @@ const Home = ({navigation}) => {
         offer={freeCall?.offer}
         phone={user?.phone || ''}
         t={t}
+        source={freeCallSource}
         onClose={() => {
           setFreeCallVisible(false);
           // Suppresses only the automatic popup. The gift bubble below keeps
@@ -1831,7 +1847,11 @@ const Home = ({navigation}) => {
       <FreeCallGiftBubble
         visible={!!freeCall?.enabled && !!freeCall?.eligible && !freeCallVisible}
         label={t('freeCall.giftHint')}
-        onPress={() => setFreeCallVisible(true)}
+        onPress={() => {
+          captureEvent('free_call_gift_bubble_tapped');
+          setFreeCallSource('gift_bubble');
+          setFreeCallVisible(true);
+        }}
       />
     </View>
   );

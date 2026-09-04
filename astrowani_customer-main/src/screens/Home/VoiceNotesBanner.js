@@ -7,6 +7,7 @@ import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 // Home-screen banner surfacing an unheard voice note — matches the "new voice message"
 // prominence pattern used by AstroTalk and similar apps. Renders nothing if there are none.
@@ -38,7 +39,7 @@ const VoiceNotesBanner = ({ navigation }) => {
   if (!unread) return null;
 
   return (
-    <TouchableOpacity style={styles.banner} activeOpacity={0.85} onPress={() => navigation.navigate('VoiceNotes')}>
+    <TouchableOpacity style={styles.banner} activeOpacity={0.85} onPress={() => { captureEvent('voice_notes_banner_tapped'); navigation.navigate('VoiceNotes'); }}>
       <Image
         source={unread.astrologerImage ? { uri: unread.astrologerImage } : require('../../assets/images/esoteric.png')}
         style={styles.avatar}

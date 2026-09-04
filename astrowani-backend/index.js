@@ -110,6 +110,38 @@ const ASTROLOGER_LIST_COLUMNS = [
   'approval_status', 'is_suspended', 'badge',
 ].join(', ');
 
+// `logged_out_at` is kept OUT of the list above and probed for instead.
+//
+// Naming a column that does not exist makes PostgREST answer 400 — see the note
+// in the array. So hardcoding it would mean that deploying this backend before
+// running sql/astrologer_logout_tracking.sql 400s BOTH /api/astrologers and
+// /liveAstrologers, i.e. every astrologer list in the customer app goes blank.
+// Probing once and latching the answer makes deploy order irrelevant, which is
+// the standing rule for this codebase (same posture as src/wallet.js and
+// orderRoutes' dedupeAvailable).
+//
+// Latches per process: once the migration is applied, restart the backend to pick
+// the column up. Until then astrologers simply never read as signed out, which is
+// the pre-existing behaviour.
+let loggedOutColumnAvailable = null;
+
+async function astrologerListColumns() {
+  if (loggedOutColumnAvailable === null) {
+    const { error } = await supabase.from('astrologers').select('logged_out_at').limit(1);
+    loggedOutColumnAvailable = !error;
+    if (error) {
+      console.warn(
+        '[astrologers] logged_out_at column missing — signed-out astrologers will keep '
+        + 'showing as reachable. Run sql/astrologer_logout_tracking.sql, then restart. '
+        + `(${error.message})`,
+      );
+    }
+  }
+  return loggedOutColumnAvailable
+    ? `${ASTROLOGER_LIST_COLUMNS}, logged_out_at`
+    : ASTROLOGER_LIST_COLUMNS;
+}
+
 // 10s is a deliberate trade: availability can lag by up to that, but a stale
 // list cannot cause an incorrect call because /api/call/initiate re-checks busy
 // state and 409s. See src/ttlCache.js.
@@ -162,6 +194,21 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
     // Master online/offline switch — independent of is_available (GO LIVE) and the
     // per-service toggles above. null/undefined (pre-migration rows) treated as online.
     isOnline: astro.is_online !== false,
+    // Signed out of the vendor app entirely: nothing can reach them, and unlike
+    // is_online this is not something they chose to advertise. Shown as
+    // "Unavailable" rather than "Offline" — see sql/astrologer_logout_tracking.sql.
+    // A pre-migration row has no such column, so undefined reads as logged in.
+    isLoggedOut: !!astro.logged_out_at,
+    // The single "can this person be reached at all" answer, derived HERE so the
+    // five card surfaces in the customer app do not each re-implement the rule and
+    // drift apart. True when they switched themselves offline, OR when all three
+    // services are off — an astrologer with nothing enabled is offline in every
+    // sense that matters to a customer, and one unified pill reads better than
+    // three separate red "Unavailable" buttons saying the same thing.
+    isOffline: astro.is_online === false
+      || (astro.is_chat_enabled !== true
+        && astro.is_call_enabled !== true
+        && astro.is_video_call_enabled !== true),
     // Busy = already in an active session or an unanswered pending request with someone
     // else. Independent of the toggles above (a fully-enabled astrologer can still be busy).
     isBusy: busyMap[astro.id]?.isBusy === true,
@@ -1612,10 +1659,25 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
       if (error) throw error;
       if (astroList && astroList.length > 0) {
         supabaseCustomerId = astroList[0].id;
-        if (fcmToken) {
-          const { error: updateError } = await supabaseService
-            .from('astrologers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
-          if (updateError) console.error('Failed to update astrologer fcm_token:', updateError.message);
+        // Signing in clears the signed-out mark. Done here rather than in the app so
+        // it cannot be skipped by an older build, and folded into the same write as
+        // the fcm_token so a login costs one round trip either way.
+        // NOTE: this deliberately does NOT switch is_online back on. That is the
+        // astrologer's own switch and only they may assert they are sitting there
+        // ready to answer — silently flipping it on at login is exactly the lie this
+        // whole change exists to remove.
+        const loginPatch = { logged_out_at: null };
+        if (fcmToken) loginPatch.fcm_token = fcmToken;
+        const { error: updateError } = await supabaseService
+          .from('astrologers').update(loginPatch).eq('id', supabaseCustomerId);
+        if (updateError) {
+          // A missing logged_out_at column (migration not yet applied) must not break
+          // login. Retry with just the token, which is the pre-existing behaviour.
+          console.error('Astrologer login patch failed:', updateError.message);
+          if (fcmToken) {
+            await supabaseService
+              .from('astrologers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+          }
         }
       }
       // else: no row yet (signup) — leave supabaseCustomerId null, app completes
@@ -2451,7 +2513,7 @@ app.get('/api/astrologers', async (req, res) => {
       // eliminate most rows and are covered by idx_astrologers_visible.
       let query = supabase
         .from('astrologers')
-        .select(ASTROLOGER_LIST_COLUMNS)
+        .select(await astrologerListColumns())
         .eq('approval_status', 'approved')
         .not('is_suspended', 'is', true)
         .gt('experience', 0);
@@ -2510,7 +2572,7 @@ app.get('/api/astrologers/liveAstrologers', async (req, res) => {
     const formattedData = await astrologerListCache.get('astrologers:live', async () => {
       const { data, error } = await supabase
         .from('astrologers')
-        .select(ASTROLOGER_LIST_COLUMNS)
+        .select(await astrologerListColumns())
         .eq('is_available', true);
 
       if (error) throw error;
@@ -3955,6 +4017,61 @@ app.get('/vendor/wallet', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // VENDOR WALLET: Request a withdrawal (deducts balance immediately, pending admin payout)
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Astrologer signs out of the vendor app.
+ *
+ * Until this existed, logging out cleared AsyncStorage and nothing else — the row
+ * kept whatever is_online said, so a signed-out astrologer went on showing as
+ * reachable and every request to them rang an empty device until the 75s sweep
+ * marked it 'missed'. See sql/astrologer_logout_tracking.sql.
+ *
+ * Clears fcm_token too: a push announcing an incoming request is worse than
+ * useless on a device that can no longer accept it.
+ *
+ * The service toggles are deliberately LEFT ALONE. They are the astrologer's own
+ * configuration, and wiping them would silently make them rebuild their setup after
+ * every sign-in. logged_out_at is what hides them; the toggles are what they meant.
+ *
+ * Answers 200 even when the write fails. A logout that appears to fail invites the
+ * astrologer to tap it again or, worse, leaves them stuck on a screen they have
+ * already mentally left — and the app has cleared its own storage regardless, so
+ * there is nothing for them to retry.
+ */
+app.post('/api/vendor/logout', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    if (!vendorId || !String(vendorId).includes('-')) {
+      return res.status(400).json({ success: false, message: 'Not an astrologer token' });
+    }
+
+    const { error } = await (supabaseService || supabase)
+      .from('astrologers')
+      .update({ logged_out_at: new Date().toISOString(), fcm_token: null })
+      .eq('id', vendorId);
+
+    if (error) {
+      // Most likely the migration has not been applied yet. Fall back to clearing the
+      // push token on its own, which still stops pushes reaching a dead device.
+      console.error('[vendor logout] could not mark signed out:', error.message);
+      await (supabaseService || supabase)
+        .from('astrologers').update({ fcm_token: null }).eq('id', vendorId);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[vendor logout]', err.message);
+    return res.json({ success: true });
+  }
+});
+
 app.post('/vendor/wallet/withdraw', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;

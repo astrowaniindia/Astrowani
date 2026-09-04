@@ -13,7 +13,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
-import { resetAnalyticsIdentity } from '../utils/Analytics';
+import { resetAnalyticsIdentity, captureEvent } from '../utils/Analytics';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
 import { PLAY_STORE_URL } from '../config/api';
 
@@ -40,8 +40,13 @@ function CustomDrawerContent(props, navigation) {
           'Check out this awesome astrology app! Connect with top astrologers today.\n\n' +
           PLAY_STORE_URL,
       };
-      await Share.share(shareOptions);
+      const res = await Share.share(shareOptions);
+      captureEvent('app_shared', {
+        source: 'drawer',
+        completed: res?.action === Share.sharedAction,
+      });
     } catch (error) {
+      captureEvent('app_share_failed', { source: 'drawer' });
       console.error('Error sharing:', error.message);
     }
   };
@@ -64,6 +69,9 @@ function CustomDrawerContent(props, navigation) {
 
   const handleLogout = async () => {
     try {
+      // Captured BEFORE resetAnalyticsIdentity(), or it would be attributed to a fresh
+      // anonymous id instead of the person who actually logged out.
+      captureEvent('logout');
       resetAnalyticsIdentity();
       resetWalletBalance();
       await AsyncStorage.clear();
@@ -85,11 +93,17 @@ function CustomDrawerContent(props, navigation) {
 
   // Fully custom row (replacing react-navigation's DrawerItem) — gives control over
   // a trailing chevron and a hairline separator, neither of which DrawerItem supports.
-  const DrawerRow = ({ iconName, IconComponent = Icon, label, onPress, danger, isLast }) => (
+  // One choke point for every drawer destination. `trackKey` is a stable English slug,
+  // deliberately not `label` — the label is translated, so a Hindi user's taps would
+  // otherwise land under different property values than an English user's.
+  const DrawerRow = ({ iconName, IconComponent = Icon, label, onPress, danger, isLast, trackKey, section }) => (
     <TouchableOpacity
       activeOpacity={0.6}
       style={[styles.row, !isLast && styles.rowSeparator]}
-      onPress={onPress}
+      onPress={() => {
+        if (trackKey) captureEvent('drawer_item_tapped', { item: trackKey, section: section || null });
+        if (onPress) onPress();
+      }}
     >
       <View style={[styles.iconRing, danger && styles.iconRingDanger]}>
         <View style={[styles.iconWrapper, danger && styles.iconWrapperDanger]}>
@@ -102,22 +116,22 @@ function CustomDrawerContent(props, navigation) {
   );
 
   const accountRows = [
-    { iconName: 'account-balance-wallet', label: t('drawer.myWallet'), onPress: () => props.navigation.navigate('Wallet') },
-    { iconName: 'phone-in-talk', label: t('drawer.mySessions'), onPress: () => props.navigation.navigate('SessionStack') },
-    { iconName: 'favorite', label: t('drawer.myFavorites'), onPress: () => props.navigation.navigate('FavoriteScreen') },
-    { iconName: 'shopping-bag', label: t('drawer.myOrders'), onPress: () => props.navigation.navigate('MyOrders') },
+    { trackKey: 'wallet', iconName: 'account-balance-wallet', label: t('drawer.myWallet'), onPress: () => props.navigation.navigate('Wallet') },
+    { trackKey: 'my_sessions', iconName: 'phone-in-talk', label: t('drawer.mySessions'), onPress: () => props.navigation.navigate('SessionStack') },
+    { trackKey: 'favorites', iconName: 'favorite', label: t('drawer.myFavorites'), onPress: () => props.navigation.navigate('FavoriteScreen') },
+    { trackKey: 'my_orders', iconName: 'shopping-bag', label: t('drawer.myOrders'), onPress: () => props.navigation.navigate('MyOrders') },
   ];
   const exploreRows = [
-    { iconName: 'spa', label: t('drawer.remedies'), onPress: () => props.navigation.navigate('Store') },
-    { iconName: 'question-answer', label: t('drawer.chatWithAstrologer'), onPress: () => props.navigation.navigate('DrawerChat') },
-    { iconName: 'menu-book', label: t('drawer.blogs'), onPress: () => props.navigation.navigate('BlogList') },
-    { iconName: 'mic', label: t('drawer.voiceNotes'), onPress: () => props.navigation.navigate('VoiceNotes') },
+    { trackKey: 'remedies', iconName: 'spa', label: t('drawer.remedies'), onPress: () => props.navigation.navigate('Store') },
+    { trackKey: 'chat_with_astrologer', iconName: 'question-answer', label: t('drawer.chatWithAstrologer'), onPress: () => props.navigation.navigate('DrawerChat') },
+    { trackKey: 'blogs', iconName: 'menu-book', label: t('drawer.blogs'), onPress: () => props.navigation.navigate('BlogList') },
+    { trackKey: 'voice_notes', iconName: 'mic', label: t('drawer.voiceNotes'), onPress: () => props.navigation.navigate('VoiceNotes') },
   ];
   const moreRows = [
-    { iconName: 'card-giftcard', label: t('drawer.referFriend'), onPress: () => props.navigation.navigate('ReferFriend') },
-    { iconName: 'settings', label: t('drawer.settings'), onPress: () => props.navigation.navigate('Settings') },
-    { iconName: 'support-agent', label: t('drawer.support'), onPress: () => props.navigation.navigate('SupportScreen') },
-    { iconName: 'share', label: t('drawer.shareApp'), onPress: handleShareApp },
+    { trackKey: 'refer_friend', iconName: 'card-giftcard', label: t('drawer.referFriend'), onPress: () => props.navigation.navigate('ReferFriend') },
+    { trackKey: 'settings', iconName: 'settings', label: t('drawer.settings'), onPress: () => props.navigation.navigate('Settings') },
+    { trackKey: 'support', iconName: 'support-agent', label: t('drawer.support'), onPress: () => props.navigation.navigate('SupportScreen') },
+    { trackKey: 'share_app', iconName: 'share', label: t('drawer.shareApp'), onPress: handleShareApp },
     { trackKey: 'whats_coming', iconName: 'auto-awesome', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
   ];
 
@@ -148,7 +162,10 @@ function CustomDrawerContent(props, navigation) {
         <TouchableOpacity
           style={styles.profileSection}
           activeOpacity={0.8}
-          onPress={() => props.navigation.navigate('UserProfileScreen', { user: user })}
+          onPress={() => {
+            captureEvent('drawer_item_tapped', { item: 'profile_header', section: 'header' });
+            props.navigation.navigate('UserProfileScreen', { user: user });
+          }}
         >
           <View style={styles.avatarRing}>
             {user?.profilePic ? (
@@ -176,26 +193,26 @@ function CustomDrawerContent(props, navigation) {
           {renderSectionLabel('MY ACCOUNT')}
           <View style={styles.sectionCard}>
             {accountRows.map((r, i) => (
-              <DrawerRow key={r.label} {...r} isLast={i === accountRows.length - 1} />
+              <DrawerRow key={r.label} {...r} section="account" isLast={i === accountRows.length - 1} />
             ))}
           </View>
 
           {renderSectionLabel('EXPLORE')}
           <View style={styles.sectionCard}>
             {exploreRows.map((r, i) => (
-              <DrawerRow key={r.label} {...r} isLast={i === exploreRows.length - 1} />
+              <DrawerRow key={r.label} {...r} section="explore" isLast={i === exploreRows.length - 1} />
             ))}
           </View>
 
           {renderSectionLabel('MORE')}
           <View style={styles.sectionCard}>
             {moreRows.map((r, i) => (
-              <DrawerRow key={r.label} {...r} isLast={i === moreRows.length - 1} />
+              <DrawerRow key={r.label} {...r} section="more" isLast={i === moreRows.length - 1} />
             ))}
           </View>
 
           <View style={[styles.sectionCard, { marginTop: verticalScale(14) }]}>
-            <DrawerRow iconName="logout" label={t('drawer.logout')} onPress={handleLogout} danger isLast />
+            <DrawerRow trackKey="logout" section="more" iconName="logout" label={t('drawer.logout')} onPress={handleLogout} danger isLast />
           </View>
         </View>
 

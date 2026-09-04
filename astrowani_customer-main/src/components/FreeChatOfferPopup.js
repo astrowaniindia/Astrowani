@@ -9,11 +9,18 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { FREE_CHAT_PERSONA } from '../data/freeBotChatPersona';
 import {useModalPresence} from '../utils/modalPresentation';
+import { captureEvent } from '../utils/Analytics';
 
 // `persona` comes from GET /api/free-bot-chat/persona (admin-editable via the
 // dashboard's Free Bot Chat page) — this bundled FREE_CHAT_PERSONA is only the
 // fallback used before that fetch resolves or if it ever fails.
 const FreeChatOfferPopup = ({ visible, persona, onStart, onDismiss }) => {
+  // Impression, so the free-chat funnel starts at "was offered" rather than at
+  // "accepted" — a low start rate and a low offer rate need opposite fixes.
+  React.useEffect(() => {
+    if (visible) captureEvent('free_chat_offer_shown');
+  }, [visible]);
+
   // Declares this modal to the presentation registry so root-level popups wait
   // for it instead of colliding with it on iOS (utils/modalPresentation).
   useModalPresence(visible);
@@ -28,12 +35,22 @@ const FreeChatOfferPopup = ({ visible, persona, onStart, onDismiss }) => {
   const imageSource = persona?.image ? { uri: persona.image } : FREE_CHAT_PERSONA.image;
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onDismiss}>
+    <Modal
+      transparent
+      visible
+      animationType="fade"
+      onRequestClose={() => {
+        captureEvent('free_chat_offer_dismissed', { via: 'back' });
+        if (onDismiss) onDismiss();
+      }}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.closeBtn}
-            onPress={onDismiss}
+            onPress={() => {
+              captureEvent('free_chat_offer_dismissed');
+              if (onDismiss) onDismiss();
+            }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
@@ -45,7 +62,13 @@ const FreeChatOfferPopup = ({ visible, persona, onStart, onDismiss }) => {
           <Text style={styles.meta}>{experience} experience</Text>
           <Text style={styles.specialities}>{specialities}</Text>
 
-          <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={onStart}>
+          <TouchableOpacity
+            style={styles.cta}
+            activeOpacity={0.85}
+            onPress={() => {
+              captureEvent('free_chat_offer_accepted');
+              if (onStart) onStart();
+            }}>
             <Text style={styles.ctaText}>{ctaText}</Text>
           </TouchableOpacity>
         </View>

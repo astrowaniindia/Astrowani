@@ -16,6 +16,7 @@ import Instance from '../api/ApiCall';
 import {COLORS} from '../Theme/Colors';
 import useGiftSender from '../hooks/useGiftSender';
 import {useModalPresence} from '../utils/modalPresentation';
+import {captureEvent} from '../utils/Analytics';
 
 export default function GiftModal({visible, onClose, astrologer, context = 'profile', sessionId}: any) {
   const [gifts, setGifts] = useState<any[]>([]);
@@ -35,6 +36,14 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
   const sending = !!sendingGiftId;
 
   const astrologerId = astrologer?.userId || astrologer?._id;
+
+  // Opening the gift sheet, as opposed to actually sending one (gift_tapped /
+  // gift_sent, both fired inside useGiftSender). Browse-to-send is the interesting
+  // ratio here.
+  useEffect(() => {
+    if (visible) captureEvent('gift_modal_opened', {astrologer_id: astrologerId, context});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const load = async () => {
     setLoading(true);
@@ -115,7 +124,12 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
               <Text style={styles.balanceLabel}>Wallet Balance</Text>
               <Text style={styles.balance}>₹{balance}</Text>
             </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={() => {
+                captureEvent('gift_modal_closed', {astrologer_id: astrologerId, context, had_selection: !!selected});
+                if (onClose) onClose();
+              }}>
               <Text style={styles.closeText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -134,7 +148,10 @@ export default function GiftModal({visible, onClose, astrologer, context = 'prof
                 return (
                   <TouchableOpacity
                     style={[styles.giftItem, isSel && styles.giftItemSelected]}
-                    onPress={() => setSelected(item)}>
+                    onPress={() => {
+                      captureEvent('gift_selected', {astrologer_id: astrologerId, context, gift_id: item?._id, price: item?.price});
+                      setSelected(item);
+                    }}>
                     <Image source={{uri: item.image}} style={styles.giftImage} />
                     <Text style={styles.giftName} numberOfLines={1}>{item.name}</Text>
                     <Text style={styles.price}>₹{item.price}</Text>

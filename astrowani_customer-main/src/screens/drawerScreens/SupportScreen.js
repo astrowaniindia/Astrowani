@@ -23,6 +23,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 // Plain-language state, never the internal status string. A customer should not
 // have to learn our vocabulary to know whether someone is coming.
@@ -62,8 +63,14 @@ export default function SupportScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const openNew = () => navigation.navigate('SupportChat');
-  const openOne = (id) => navigation.navigate('SupportChat', { conversationId: id });
+  const openNew = () => {
+    captureEvent('support_conversation_started');
+    navigation.navigate('SupportChat');
+  };
+  const openOne = (id) => {
+    captureEvent('support_conversation_opened');
+    navigation.navigate('SupportChat', { conversationId: id });
+  };
 
   const renderItem = ({ item }) => {
     const s = STATE[item.status] || STATE.bot;

@@ -20,6 +20,7 @@ import useWalletBalance, { refreshWalletBalance } from '../hooks/useWalletBalanc
 
 import { LanguageContext } from '../context/LanguageContext';
 import CartButton from '../components/shop/CartButton';
+import { captureEvent } from '../utils/Analytics';
 
 // showCart puts the remedies cart icon on the right. Separate from showLanguage because
 // the Remedies ("Services") header shows no wallet/language/notification cluster at all,
@@ -92,6 +93,13 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
   });
 
   const toggleLanguage = () => {
+    // Which language people actually switch TO, app-wide. This drives whether Hindi
+    // copy is worth the effort on every future screen, so it is worth one event.
+    captureEvent('language_toggled', {
+      from: language,
+      to: language === 'Hindi' ? 'English' : 'Hindi',
+      screen: 'header',
+    });
     changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
   };
 
@@ -108,7 +116,10 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
     <View style={{backgroundColor: COLORS.AstroMaroon, paddingTop: insets.top}}>
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
-          <TouchableOpacity onPress={() => (isDrawerDetour ? navigation.getParent().goBack() : navigation.openDrawer())}>
+          <TouchableOpacity onPress={() => {
+            captureEvent('header_tapped', {action: isDrawerDetour ? 'back' : 'open_drawer'});
+            return isDrawerDetour ? navigation.getParent().goBack() : navigation.openDrawer();
+          }}>
             <Ionicons name={isDrawerDetour ? 'arrow-back' : 'menu'} color="white" size={28} />
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
@@ -118,7 +129,7 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
             {showCart && <CartButton />}
             {showLanguage && (
             <>
-            <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={{flexDirection: 'row', alignItems: 'center'}}>
+            <TouchableOpacity onPress={() => { captureEvent('header_tapped', {action: 'wallet'}); navigation.navigate('Wallet'); }} style={{flexDirection: 'row', alignItems: 'center'}}>
               <Text style={styles.balanceText}>₹ {walletBalance}</Text>
               <Ionicons name="wallet-outline" color="white" size={24} />
             </TouchableOpacity>
@@ -127,7 +138,7 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
               <Text style={styles.langPillDivider}>|</Text>
               <Text style={[styles.langPillText, language === 'Hindi' && styles.langPillTextActive]}>हिं</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')} style={{position: 'relative'}}>
+            <TouchableOpacity onPress={() => { captureEvent('header_tapped', {action: 'notifications'}); navigation.navigate('NotificationScreen'); }} style={{position: 'relative'}}>
               <MaterialIcons
                 name="notifications-none"
                 color="white"

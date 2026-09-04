@@ -22,6 +22,7 @@ import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { PLAY_STORE_URL } from '../../config/api';
+import { captureEvent } from '../../utils/Analytics';
 
 const ReferAndEarnScreen = () => {
   const { t } = useContext(LanguageContext);
@@ -55,6 +56,7 @@ const ReferAndEarnScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
+      captureEvent('referral_screen_viewed');
       fetchReferralInfo();
     }, [])
   );
@@ -63,20 +65,38 @@ const ReferAndEarnScreen = () => {
 
   const copyToClipboard = () => {
     if (!code) return;
+    captureEvent('referral_code_copied', { source: 'refer_screen' });
     Clipboard.setString(code);
     Alert.alert(t('refer.copiedTitle'), t('refer.copiedMsg', { code }));
   };
 
   const shareGeneric = async () => {
     try {
-      await Share.share({ message: shareMessage });
-    } catch (_) {}
+      const res = await Share.share({ message: shareMessage });
+      captureEvent('referral_shared', {
+        source: 'refer_screen',
+        channel: 'system_sheet',
+        has_code: !!code,
+        completed: res?.action === Share.sharedAction,
+      });
+    } catch (_) {
+      captureEvent('referral_share_failed', { source: 'refer_screen', channel: 'system_sheet' });
+    }
   };
 
   const shareViaWhatsapp = () => {
-    Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`).catch(() =>
-      Alert.alert(t('refer.whatsappNotInstalled')),
-    );
+    // Handing off to WhatsApp is as far as we can see — there is no callback telling us
+    // whether they actually sent it, so this is an intent, not a confirmed share.
+    captureEvent('referral_shared', {
+      source: 'refer_screen',
+      channel: 'whatsapp',
+      has_code: !!code,
+      completed: null,
+    });
+    Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`).catch(() => {
+      captureEvent('referral_share_failed', { source: 'refer_screen', channel: 'whatsapp', reason: 'not_installed' });
+      Alert.alert(t('refer.whatsappNotInstalled'));
+    });
   };
 
   if (loading) {

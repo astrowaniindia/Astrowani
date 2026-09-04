@@ -128,6 +128,14 @@ const RemedyShop = ({ route, navigation }) => {
   }, [cart, gate.enabled, showNotDeliveringYet, type, wa, localized]);
 
   const openProduct = useCallback((item) => {
+    // The screen view alone says someone reached ProductDetail; it does not say WHICH
+    // product. Viewed-vs-added-to-cart per item is the shop's most useful ratio.
+    captureEvent('product_opened', {
+      item_id: item?._id,
+      remedy_type: type,
+      price: item?.price ?? null,
+      in_stock: item?.inStock !== false,
+    });
     navigation.navigate('ProductDetail', { item, type });
   }, [navigation, type]);
 

@@ -36,6 +36,15 @@ const VerifyOtp = ({navigation, route}) => {
   const [timer, setTimer] = useState(RESEND_SECONDS);
   const otpRef = useRef(null);
 
+  // `flow` splits every event on this shared screen into the signup and login funnels —
+  // the screen is identical for both, and blending them hides which one is leaking.
+  const flow = profileData ? 'signup' : 'login';
+
+  useEffect(() => {
+    captureEvent('otp_screen_viewed', { flow });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (timer <= 0) return;
     const interval = setInterval(() => {
@@ -60,9 +69,11 @@ const VerifyOtp = ({navigation, route}) => {
 
   const handleVerify = async () => {
     if (code.length !== 6) {
+      captureEvent('otp_verify_blocked', { flow, reason: 'incomplete_code', length: code.length });
       showAlert(t('otp.invalidOtpTitle'), t('otp.enterComplete'), 'error');
       return;
     }
+    captureEvent('otp_verify_tapped', { flow, has_referral_code: !!referralCode.trim() });
     setVerifying(true);
     try {
       const fcmToken = await getFcmToken();
@@ -128,6 +139,7 @@ const VerifyOtp = ({navigation, route}) => {
       // rather than leaving the customer waiting out a countdown for a code
       // that is already dead.
       if (data?.code === 'OTP_ATTEMPTS_EXCEEDED') {
+        captureEvent('otp_attempts_exceeded', { flow });
         setCode('');
         otpRef.current?.clear?.();
         setTimer(0);
@@ -141,6 +153,10 @@ const VerifyOtp = ({navigation, route}) => {
 
   const handleResend = async () => {
     if (timer > 0 || resending) return;
+    // A high resend rate is the classic signature of OTP SMS not arriving — the exact
+    // failure this project has hit before (see the OTP non-delivery memory). Worth
+    // being able to watch as a rate, not just as support tickets.
+    captureEvent('otp_resend_tapped', { flow });
     setResending(true);
     try {
       const res = await Instance.post('/api/users/mobile-otp-request', {
@@ -148,11 +164,13 @@ const VerifyOtp = ({navigation, route}) => {
         role,
       });
       if (res?.data?.success) {
+        captureEvent('otp_resent', { flow });
         setCode('');
         otpRef.current?.clear?.();
         setTimer(RESEND_SECONDS);
         showAlert(t('otp.otpSentTitle'), t('otp.newCodeSent'), 'success');
       } else {
+        captureEvent('otp_resend_failed', { flow, reason: res?.data?.code || 'other' });
         showAlert(t('common.error'), res?.data?.message || t('otp.couldNotResend'), 'error');
       }
     } catch (error) {
@@ -163,6 +181,7 @@ const VerifyOtp = ({navigation, route}) => {
       // button unlocks exactly when a resend will actually be accepted, and
       // show its message instead of swallowing it behind a generic failure.
       const data = error?.response?.data;
+      captureEvent('otp_resend_failed', { flow, reason: data?.code || 'other', throttled: !!data?.retryAfterSeconds });
       if (data?.retryAfterSeconds) setTimer(data.retryAfterSeconds);
       showAlert(t('common.error'), data?.message || t('otp.couldNotResendRetry'), 'error');
     } finally {

@@ -7,6 +7,7 @@ import Instance from '../../../api/ApiCall';
 import {COLORS} from '../../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {LanguageContext} from '../../../context/LanguageContext';
+import { captureEvent } from '../../../utils/Analytics';
 
 const History = ({navigation}) => {
   const {t} = useContext(LanguageContext);
@@ -72,7 +73,7 @@ const History = ({navigation}) => {
         <View style={styles.container}>
           <Icon name="history" size={50} color={COLORS.AstroMaroon} style={styles.icon} />
           <Text style={styles.noTransactionText}>{t('walletHistory.noTransaction')}</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.addMoneyButton}>
+          <TouchableOpacity onPress={() => { captureEvent('wallet_history_add_money_tapped'); navigation.goBack(); }} style={styles.addMoneyButton}>
             <Text style={styles.addMoneyText}>{t('walletHistory.addMoney')}</Text>
           </TouchableOpacity>
         </View>

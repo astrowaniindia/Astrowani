@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, ToastAndroid, Alert } from 'react-native';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
+import { captureEvent } from '../utils/Analytics';
 
 const notify = (msg) =>
   Platform.OS === 'android' ? ToastAndroid.show(msg, ToastAndroid.SHORT) : Alert.alert(msg);
@@ -39,16 +40,33 @@ export default function useGiftSender() {
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (res.data?.success) {
+        // Real revenue, same as a recharge — worth its own event with the amount on it.
+        captureEvent('gift_sent', {
+          astrologer_id: astrologerId,
+          gift_id: gift._id,
+          gift_name: gift.name,
+          price: gift.price,
+          context,
+        });
         onBalanceChange?.(res.data.newBalance);
         notify(`Gift sent: ${gift.name}`);
         onSent?.(gift);
       } else if ((res.data?.message || '').toLowerCase().includes('insufficient')) {
+        captureEvent('gift_failed', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context, reason: 'low_balance' });
         showInsufficientBalancePopup(gift);
       } else {
+        captureEvent('gift_failed', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context, reason: 'rejected' });
         notify(res.data?.message || 'Could not send gift');
       }
     } catch (e) {
       const msg = e?.response?.data?.message || 'Could not send gift';
+      captureEvent('gift_failed', {
+        astrologer_id: astrologerId,
+        gift_id: gift._id,
+        price: gift.price,
+        context,
+        reason: msg.toLowerCase().includes('insufficient') ? 'low_balance' : 'error',
+      });
       if (msg.toLowerCase().includes('insufficient')) {
         showInsufficientBalancePopup(gift);
       } else {
@@ -78,7 +96,10 @@ export default function useGiftSender() {
       console.log('[useGiftSender] wallet balance fetch failed:', e?.message);
     }
 
+    captureEvent('gift_tapped', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context });
+
     if (freshBalance != null && freshBalance < gift.price) {
+      captureEvent('gift_blocked', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context, reason: 'low_balance', balance: freshBalance });
       showInsufficientBalancePopup(gift);
       return;
     }
@@ -90,6 +111,7 @@ export default function useGiftSender() {
       confirmText: `Pay ₹${gift.price}`,
       cancelText: 'Cancel',
       onConfirm: () => doSend({ astrologerId, gift, context, sessionId, onSent, onBalanceChange }),
+      onCancel: () => captureEvent('gift_declined', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context }),
     });
   };
 

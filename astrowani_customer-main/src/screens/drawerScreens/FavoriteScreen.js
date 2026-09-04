@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {supabase} from '../../api/SupabaseClient';
 import {moderateScale, verticalScale} from '../../utils/Scaling';
 import {LanguageContext} from '../../context/LanguageContext';
+import {captureEvent} from '../../utils/Analytics';
 
 const FavoriteScreen = ({navigation}) => {
   const {t} = useContext(LanguageContext);
@@ -72,6 +73,7 @@ const FavoriteScreen = ({navigation}) => {
   );
 
   const handleViewprofile = item => {
+    captureEvent('favorite_astrologer_opened', {astrologer_id: item?.userId});
     navigation.navigate('AstrologerInfo', {person: item});
   };
 

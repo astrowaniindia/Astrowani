@@ -11,6 +11,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 const FaqScreen = () => {
   const { t } = React.useContext(LanguageContext);
@@ -36,7 +37,12 @@ const FaqScreen = () => {
           <View key={index} style={styles.section}>
             <TouchableOpacity
               style={styles.header}
-              onPress={() => toggleSection(index)}>
+              onPress={() => {
+                // Which questions people open says exactly what the app is failing to
+                // explain on its own — the cheapest product feedback there is.
+                captureEvent('faq_opened', { index });
+                toggleSection(index);
+              }}>
               <Text
                 style={[
                   styles.headerText,

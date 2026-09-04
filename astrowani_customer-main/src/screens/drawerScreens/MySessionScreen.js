@@ -7,6 +7,7 @@ import {COLORS} from '../../Theme/Colors';
 import {supabase} from '../../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {LanguageContext} from '../../context/LanguageContext';
+import {captureEvent} from '../../utils/Analytics';
 
 const getCustomerId = async () => {
   const userStr = await AsyncStorage.getItem('userData');
@@ -281,7 +282,10 @@ const MySessionsScreen = () => {
                 key={tab.key}
                 style={tabBarStyles.tabItem}
                 activeOpacity={0.7}
-                onPress={() => setActiveKey(tab.key)}>
+                onPress={() => {
+                  captureEvent('my_sessions_tab_switched', {tab: tab.key});
+                  setActiveKey(tab.key);
+                }}>
                 <Text
                   style={[
                     tabBarStyles.tabLabel,

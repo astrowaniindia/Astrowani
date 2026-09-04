@@ -38,6 +38,7 @@ export function ReviewPromptHost() {
       setRating(0);
       setComment('');
       setSubmitting(false);
+      captureEvent('review_prompt_shown', { astrologer_id: opts?.astrologerId });
       setTarget(opts);
     };
     return () => { listener = null; };
@@ -54,6 +55,13 @@ export function ReviewPromptHost() {
 
   const close = () => setTarget(null);
 
+  // Dismissing without rating. Kept separate from close() because close() is also called
+  // on a SUCCESSFUL submit, and counting those as dismissals would be simply wrong.
+  const dismiss = () => {
+    captureEvent('review_prompt_dismissed', { astrologer_id: target?.astrologerId, had_rating: !!rating });
+    setTarget(null);
+  };
+
   const submit = async () => {
     if (!rating) return;
     setSubmitting(true);
@@ -64,7 +72,7 @@ export function ReviewPromptHost() {
         { rating, comment },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      captureEvent('review_submitted', { astrologer_id: target.astrologerId, rating });
+      captureEvent('review_submitted', { astrologer_id: target.astrologerId, rating, source: 'post_session_prompt' });
       // A happy customer is the right moment to ask for a PUBLIC Play Store rating —
       // and someone who just rated a session 1-3 stars is emphatically not. This only
       // records the signal; RateAppPrompt picks it up on the next launch rather than
@@ -73,6 +81,7 @@ export function ReviewPromptHost() {
       close();
       showStatusPopup({ variant: 'success', title: 'Thank you!', message: 'Your review has been submitted.' });
     } catch (err) {
+      captureEvent('review_submit_failed', { astrologer_id: target.astrologerId, status: err?.response?.status || null });
       setSubmitting(false);
       showStatusPopup({
         variant: 'info',
@@ -90,7 +99,7 @@ export function ReviewPromptHost() {
   if (!target) return null;
 
   return (
-    <Modal transparent visible={ready} animationType="fade" onRequestClose={close}>
+    <Modal transparent visible={ready} animationType="fade" onRequestClose={dismiss}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           {target.image ? (
@@ -136,7 +145,7 @@ export function ReviewPromptHost() {
               : <Text style={styles.buttonText}>Submit Review</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={close} style={styles.skipBtn}>
+          <TouchableOpacity onPress={dismiss} style={styles.skipBtn}>
             <Text style={styles.skipText}>Maybe later</Text>
           </TouchableOpacity>
         </Animated.View>

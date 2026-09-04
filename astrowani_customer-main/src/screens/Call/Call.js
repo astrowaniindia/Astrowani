@@ -631,7 +631,7 @@ const CallsList = ({navigation}) => {
 
   const getRoomTokenWebCall = async (item) => {
     try {
-      if (!(await ensureProfileComplete(navigation))) return;
+      if (!(await ensureProfileComplete(navigation, 'audio_call'))) return;
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
@@ -848,7 +848,7 @@ const CallsList = ({navigation}) => {
             style={styles.actionBtnLive}
             activeOpacity={0.8}
             onPress={async () => {
-              if (!(await ensureProfileComplete(navigation))) return;
+              if (!(await ensureProfileComplete(navigation, 'live'))) return;
               if (item.liveSessionId) {
                 navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
               } else {

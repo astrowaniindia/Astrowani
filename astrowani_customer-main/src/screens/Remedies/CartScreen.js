@@ -117,7 +117,7 @@ const CartScreen = ({ navigation }) => {
         </View>
         <Text style={shopStyles.emptyTitle}>{t('cart.empty')}</Text>
         <Text style={shopStyles.emptySub}>{t('cart.emptyHint')}</Text>
-        <TouchableOpacity style={styles.shopBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.shopBtn} onPress={() => { captureEvent('cart_empty_shop_tapped'); navigation.goBack(); }}>
           <Text style={shopStyles.primaryBtnText}>{t('cart.startShopping')}</Text>
         </TouchableOpacity>
       </View>
@@ -154,8 +154,19 @@ const CartScreen = ({ navigation }) => {
               <View style={styles.lineActions}>
                 <QtyStepper
                   qty={line.quantity}
-                  onIncrement={() => cart.increment(line.itemId)}
-                  onDecrement={() => cart.decrement(line.itemId)}
+                  onIncrement={() => {
+                    captureEvent('cart_quantity_changed', { item_id: line.itemId, direction: 'increment', qty: line.quantity + 1 });
+                    cart.increment(line.itemId);
+                  }}
+                  onDecrement={() => {
+                    // Decrementing off 1 removes the line entirely — a different signal
+                    // from trimming a quantity, so it is named differently.
+                    captureEvent(
+                      line.quantity <= 1 ? 'cart_item_removed' : 'cart_quantity_changed',
+                      { item_id: line.itemId, direction: 'decrement', qty: line.quantity - 1 },
+                    );
+                    cart.decrement(line.itemId);
+                  }}
                   size="sm"
                 />
                 <Text style={styles.lineTotal}>₹{line.price * line.quantity}</Text>
@@ -194,7 +205,10 @@ const CartScreen = ({ navigation }) => {
         <TouchableOpacity
           style={styles.card}
           activeOpacity={0.8}
-          onPress={() => navigation.navigate('Addresses', { selectMode: true })}>
+          onPress={() => {
+            captureEvent('cart_address_opened', { has_address: !!address });
+            navigation.navigate('Addresses', { selectMode: true });
+          }}>
           {loadingAddress ? (
             <ActivityIndicator size="small" color={SHOP.brand} style={styles.addrLoader} />
           ) : address ? (

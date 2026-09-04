@@ -11,6 +11,7 @@ import {COLORS} from '../../Theme/Colors';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
 import {LanguageContext} from '../../context/LanguageContext';
+import {captureEvent} from '../../utils/Analytics';
 
 // Keyed by the stable English typeKey (not the translated display label in session.chatType).
 const TYPE_COLORS = {
@@ -26,6 +27,13 @@ const SessionDetails = ({session, handleprofile}) => {
 
   const onRate = () => {
     const astrologerId = session.astro?._id || session.astro?.userId;
+    // Fired even when the tap can't proceed — a button that silently does nothing is
+    // exactly the kind of thing that is invisible without an event on it.
+    captureEvent('session_rate_tapped', {
+      session_type: session.typeKey || null,
+      astrologer_id: astrologerId || null,
+      opened: !!astrologerId,
+    });
     if (!astrologerId) return;
     showReviewPrompt({ astrologerId, name: session.name, image: session.image });
   };
@@ -50,7 +58,10 @@ const SessionDetails = ({session, handleprofile}) => {
         <View style={styles.imgView}>
           <Image source={{uri: session.image}} style={styles.image} />
           <TouchableOpacity
-            onPress={() => handleprofile(session)}
+            onPress={() => {
+              captureEvent('session_view_profile_tapped', {session_type: session.typeKey || null});
+              handleprofile(session);
+            }}
             style={styles.profileButton}>
             <Text style={styles.profileButtonText}>{t('session.viewProfile')}</Text>
           </TouchableOpacity>

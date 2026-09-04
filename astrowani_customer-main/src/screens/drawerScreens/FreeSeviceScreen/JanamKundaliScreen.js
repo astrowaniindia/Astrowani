@@ -21,6 +21,7 @@ import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage
 import { FREE_SERVICES_URL } from '../../../config/api';
 import useSavedProfile from '../../../hooks/useSavedProfile';
 import {showStatusPopup} from '../../../components/StatusPopup';
+import { captureEvent } from '../../../utils/Analytics';
 
 // Parses "HH:MM" or "HH:MM:SS" (the two shapes the backend's time_of_birth
 // column holds, depending on which screen originally wrote it) into a Date
@@ -192,7 +193,7 @@ const JanamKundaliScreen = ({navigation}) => {
             style={styles.useProfileBtn}
             activeOpacity={0.8}
             disabled={profileLoading}
-            onPress={applyMyProfile}>
+            onPress={() => { captureEvent('free_service_profile_autofilled', { service: 'janam_kundali' }); applyMyProfile(); }}>
             {profileLoading ? (
               <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
             ) : (
@@ -300,7 +301,7 @@ const JanamKundaliScreen = ({navigation}) => {
         </View>
 
         <TouchableOpacity
-          onPress={handleShowKundali}
+          onPress={() => { captureEvent('free_service_submitted', { service: 'janam_kundali' }); handleShowKundali(); }}
           style={[styles.Button, loading && styles.disabledButton]}
           disabled={loading}>
           <Text style={styles.ButtonText}>

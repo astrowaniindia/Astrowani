@@ -41,6 +41,13 @@ import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {formatBusyLabel} from '../../utils/busyLabel';
 import {requestNotifyMe} from '../../utils/notifyMe';
 import {captureEvent} from '../../utils/Analytics';
+import {
+  unreachableState,
+  unreachableLabelKey,
+  unreachableIcon,
+  unreachableAlertKey,
+  unreachableReason,
+} from '../../utils/astrologerAvailability';
 import {useModalPresence} from '../../utils/modalPresentation';
 
 const { width } = Dimensions.get('window');
@@ -165,7 +172,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
   const initiateAudioCall = async () => {
     try {
-      if (!(await ensureProfileComplete(navigation))) return;
+      if (!(await ensureProfileComplete(navigation, 'audio_call'))) return;
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
@@ -337,7 +344,7 @@ const AstrologerInfo = ({route, navigation}) => {
 
   const initiateVideoCall = async () => {
     try {
-      if (!(await ensureProfileComplete(navigation))) return;
+      if (!(await ensureProfileComplete(navigation, 'video_call'))) return;
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
@@ -617,12 +624,14 @@ const AstrologerInfo = ({route, navigation}) => {
       // Optimistic flip so the heart responds instantly; revert on failure.
       const next = !isFavorite;
       setIsFavorite(next);
+      captureEvent('favorite_toggled', { astrologer_id: person.userId, favorited: next });
       await Instance.post(
         next ? '/api/favoriteAstrologer/add' : '/api/favoriteAstrologer/remove',
         { astrologerId: person._id },
         { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
       );
     } catch (error) {
+      captureEvent('favorite_toggle_failed', { astrologer_id: person.userId });
       console.error('Favorite toggle failed:', error.message);
       setIsFavorite(prev => !prev); // revert optimistic flip
     }
@@ -637,8 +646,11 @@ const AstrologerInfo = ({route, navigation}) => {
   const chatEnabled = person.isChatEnabled !== false;
   const callEnabled = person.isCallEnabled !== false;
   const videoEnabled = person.isVideoEnabled !== false;
-  // Master offline switch — overrides all three service buttons with one unified state.
-  const isOffline = person.isOnline === false;
+  // Unreachable — signed out ("Unavailable") or switched off ("Offline"). Either way
+  // it overrides all three service buttons with one unified state. The precedence
+  // lives in utils/astrologerAvailability so every card surface agrees.
+  const unreachable = unreachableState(person);
+  const isOffline = !!unreachable;
   // Busy — already in a session or has an unanswered pending request with someone else.
   // Blocks all three service buttons at once (chat/call/video are mutually exclusive).
   const isBusy = !isOffline && person.isBusy === true;
@@ -659,8 +671,8 @@ const AstrologerInfo = ({route, navigation}) => {
   };
 
   const showOffline = () => {
-    captureEvent('consult_blocked', { reason: 'astrologer_offline', intent: 'unknown', astrologer_id: person.userId });
-    Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: person.name || 'This astrologer' }));
+    captureEvent('consult_blocked', { reason: unreachableReason(unreachable), intent: 'unknown', astrologer_id: person.userId });
+    Alert.alert(t('alerts.unavailable'), t(unreachableAlertKey(unreachable), { name: person.name || 'This astrologer' }));
   };
 
   const handleNotifyMe = async () => {
@@ -705,9 +717,9 @@ const AstrologerInfo = ({route, navigation}) => {
 
           {isOffline && (
             <View style={styles.offlineBanner}>
-              <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
+              <MaterialIcons name={unreachableIcon(unreachable)} size={moderateScale(16)} color="#fff" />
               <Text style={styles.offlineBannerText}>
-                {t('alerts.astrologerOffline', { name: person.name || 'This astrologer' })}
+                {t(unreachableAlertKey(unreachable), { name: person.name || 'This astrologer' })}
               </Text>
             </View>
           )}
@@ -887,8 +899,8 @@ const AstrologerInfo = ({route, navigation}) => {
             style={styles.actionBtnOffline}
             activeOpacity={0.8}
             onPress={showOffline}>
-            <MaterialIcons name="wifi-off" size={moderateScale(20)} color="#fff" />
-            <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(8) }]}>{t('common.offline')}</Text>
+            <MaterialIcons name={unreachableIcon(unreachable)} size={moderateScale(20)} color="#fff" />
+            <Text style={[styles.actionBtnTextUnavailable, { marginLeft: scale(8) }]}>{t(unreachableLabelKey(unreachable))}</Text>
           </TouchableOpacity>
         ) : isLive ? (
           // Live is a "happening right now" state, not a wait — tapping jumps straight into
@@ -897,7 +909,7 @@ const AstrologerInfo = ({route, navigation}) => {
             style={[styles.actionBtnLive, { flex: 3 }]}
             activeOpacity={0.8}
             onPress={async () => {
-              if (!(await ensureProfileComplete(navigation))) return;
+              if (!(await ensureProfileComplete(navigation, 'live'))) return;
               if (person.liveSessionId) {
                 navigation.navigate('LiveViewerScreen', { sessionId: person.liveSessionId, astrologer: person });
               } else {
@@ -971,13 +983,13 @@ const AstrologerInfo = ({route, navigation}) => {
         context="profile"
       />
 
-      <RequestingPopup
+      <RequestingPopup context="astrologer_profile_call"
         visible={isCallWaiting}
         astro={person}
         onCancel={cancelCallRequest}
       />
 
-      <RequestingPopup
+      <RequestingPopup context="astrologer_profile_chat"
         visible={requesting}
         astro={requestAstro}
         onCancel={cancelRequest}

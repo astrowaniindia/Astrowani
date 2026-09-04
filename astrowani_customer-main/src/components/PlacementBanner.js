@@ -61,6 +61,15 @@ const PlacementBanner = ({
   const [intervalMs, setIntervalMs] = React.useState(4000);
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
+  // Which slides have already been counted as seen during THIS mount. A rotating
+  // carousel would otherwise fire an impression every few seconds for as long as the
+  // screen is open — tens of thousands of near-worthless events a day, and a CTR
+  // denominator that measures dwell time rather than reach. One impression per banner
+  // per screen visit is what makes banner_click / banner_impression a real CTR.
+  const seenSlidesRef = React.useRef(new Set());
+  React.useEffect(() => {
+    seenSlidesRef.current = new Set();
+  }, [placement, app, apiLanguage]);
 
   const cacheKey = `banners_${app}_${placement}_${apiLanguage}`;
 
@@ -112,6 +121,24 @@ const PlacementBanner = ({
           .map((b) => ({ uri: b.imageUrl, actionType: b.actionType, actionValue: b.actionValue }))
       : fallbackImages.map((source) => ({ source, actionType: 'none', actionValue: null }));
 
+  // Impression for whichever slide is currently on screen, deduped per mount.
+  const impressionIndex = slides.length ? currentIndex % slides.length : -1;
+  React.useEffect(() => {
+    if (impressionIndex < 0) return;
+    const slide = slides[impressionIndex];
+    if (!slide) return;
+    const id = `${impressionIndex}:${slide.uri || 'local'}`;
+    if (seenSlidesRef.current.has(id)) return;
+    seenSlidesRef.current.add(id);
+    captureEvent('banner_impression', {
+      placement,
+      banner_index: impressionIndex,
+      action_type: slide.actionType || 'none',
+      is_fallback: !slide.uri,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [impressionIndex, slides.length, placement]);
+
   React.useEffect(() => {
     if (slides.length <= 1) return;
     const interval = setInterval(() => {
@@ -133,7 +160,13 @@ const PlacementBanner = ({
     // chat_top/video_top/call_top) — the admin Analytics home-screen query filters
     // this down to the two home_* placements rather than this component only firing
     // on Home, since the same component is reused across multiple screens.
-    captureEvent('banner_click', { placement });
+    captureEvent('banner_click', {
+      placement,
+      banner_index: safeIndex,
+      action_type: active?.actionType || 'none',
+      action_value: active?.actionValue || null,
+      is_fallback: !active?.uri,
+    });
     // The screen gets first refusal on the tap. Checked BEFORE the action-type
     // guard below, so a banner with no action configured can still be used purely
     // as a trigger — which is how the free-chat banner works.

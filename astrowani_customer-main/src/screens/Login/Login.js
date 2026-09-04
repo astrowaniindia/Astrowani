@@ -36,6 +36,12 @@ const Login = ({navigation}) => {
   // default text before the real config arrives.
   const [guideAvatarConfig, setGuideAvatarConfig] = useState(null);
 
+  // Top of the login funnel. Everything downstream (submit -> otp sent -> verified ->
+  // completed) is a percentage of this, so without it a drop-off has no denominator.
+  useEffect(() => {
+    captureEvent('login_screen_viewed');
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     Instance.get('/api/guide-avatar/config')
@@ -46,10 +52,12 @@ const Login = ({navigation}) => {
 
   const validateFields = () => {
     if (!phoneNumber) {
+      captureEvent('login_validation_failed', { reason: 'phone_empty' });
       showAlert(t('login.validationError'), t('login.phoneEmpty'), 'error');
       return false;
     }
     if (phoneNumber.length < 10) {
+      captureEvent('login_validation_failed', { reason: 'phone_too_short' });
       showAlert(
         t('login.validationError'),
         t('login.phoneTooShort'),
@@ -107,7 +115,10 @@ const Login = ({navigation}) => {
       />
 
       <TouchableOpacity
-        onPress={toggleLanguage}
+        onPress={() => {
+          captureEvent('language_toggled', { from: language, screen: 'login' });
+          toggleLanguage();
+        }}
         activeOpacity={0.7}
         style={[styles.langPill, { top: insets.top + verticalScale(12) }]}>
         <Text style={[styles.langPillText, language === 'English' && styles.langPillTextActive]}>EN</Text>
@@ -180,19 +191,28 @@ const Login = ({navigation}) => {
             </Text>
             <TouchableOpacity
               style={styles.termsLink}
-              onPress={() => Linking.openURL(LEGAL_LINKS.termsOfUse).catch(() => {})}>
+              onPress={() => {
+                captureEvent('legal_link_opened', { link: 'terms', screen: 'login' });
+                Linking.openURL(LEGAL_LINKS.termsOfUse).catch(() => {});
+              }}>
               <Text style={styles.linktext}>{t('settings.termsOfUse')}</Text>
             </TouchableOpacity>
             <Text style={styles.termsText}>{t('login.and')}</Text>
             <TouchableOpacity
               style={styles.termsLink}
-              onPress={() => Linking.openURL(LEGAL_LINKS.privacyPolicy).catch(() => {})}>
+              onPress={() => {
+                captureEvent('legal_link_opened', { link: 'privacy', screen: 'login' });
+                Linking.openURL(LEGAL_LINKS.privacyPolicy).catch(() => {});
+              }}>
               <Text style={styles.linktext}>{t('settings.privacyPolicy')}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.footerContainer}>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+            <TouchableOpacity onPress={() => {
+              captureEvent('auth_mode_switched', { to: 'signup', from: 'login', via: 'inline_link' });
+              navigation.navigate('Register');
+            }}>
               <Text style={styles.registerText}>{t('login.register')}</Text>
             </TouchableOpacity>
           </View>
@@ -215,7 +235,10 @@ const Login = ({navigation}) => {
           offsetX={-scale(43)}
           avatarOffsetY={verticalScale(53)}
           boxOffsetY={verticalScale(18)}
-          onPress={() => navigation.navigate('Register')}
+          onPress={() => {
+            captureEvent('auth_mode_switched', { to: 'signup', from: 'login', via: 'button' });
+            navigation.navigate('Register');
+          }}
         />
       )}
     </KeyboardAvoidingView>

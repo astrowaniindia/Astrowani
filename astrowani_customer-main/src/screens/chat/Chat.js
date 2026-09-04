@@ -83,7 +83,7 @@ const Chat = ({ navigation }) => {
         onRefresh={onRefresh}
       />
 
-      <RequestingPopup
+      <RequestingPopup context="chat_list"
         visible={requesting}
         astro={requestAstro}
         onCancel={cancelRequest}

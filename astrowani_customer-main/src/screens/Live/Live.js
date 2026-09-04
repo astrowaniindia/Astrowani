@@ -9,6 +9,7 @@ import Instance from '../../api/ApiCall';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { LanguageContext } from '../../context/LanguageContext';
 import useLiveListSync from '../../hooks/useLiveListSync';
+import { captureEvent } from '../../utils/Analytics';
 
 const Live = ({ navigation }) => {
   const { t } = React.useContext(LanguageContext);
@@ -53,7 +54,10 @@ const Live = ({ navigation }) => {
   };
 
   const handlePress = async (item) => {
-    if (!(await ensureProfileComplete(navigation))) return;
+    captureEvent('live_join_tapped', { astrologer_id: item?.userId, session_id: item?.sessionId });
+    // profile_gate_blocked is fired inside ensureProfileComplete itself, for all 14
+    // gated call sites at once — see utils/profileGate.js.
+    if (!(await ensureProfileComplete(navigation, 'live'))) return;
     navigation.navigate('LiveViewerScreen', { sessionId: item.sessionId, astrologer: item });
   };
 

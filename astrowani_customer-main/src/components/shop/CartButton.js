@@ -28,6 +28,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale } from '../../utils/Scaling';
 import { useCart } from '../../context/CartContext';
+import { captureEvent } from '../../utils/Analytics';
 
 const ICON_SIZE = moderateScale(24);
 const BADGE = scale(16);
@@ -40,7 +41,10 @@ const CartButton = ({ color = COLORS.white, style }) => {
   return (
     <TouchableOpacity
       style={[styles.box, style]}
-      onPress={() => navigation.navigate('Cart')}
+      onPress={() => {
+        captureEvent('cart_viewed', { from: 'header', lines: cart.count });
+        navigation.navigate('Cart');
+      }}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`Cart, ${count} item${count === 1 ? '' : 's'}`}

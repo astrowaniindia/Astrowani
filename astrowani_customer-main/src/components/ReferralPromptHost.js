@@ -15,6 +15,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 import { PLAY_STORE_URL } from '../config/api';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
+import { captureEvent } from '../utils/Analytics';
 
 let listener = null;
 // Both args optional — an admin-triggered popup (see Home.js's 'show_referral_popup'
@@ -37,6 +38,9 @@ export function ReferralPromptHost() {
       setOverrideTitle(customTitle || null);
       setOverrideMessage(customMessage || null);
       setVisible(true);
+      // 'admin' = pushed from the admin's Referral Popup page, 'auto' = the normal
+      // post-free-chat nudge. They convert very differently, so never blend them.
+      captureEvent('referral_prompt_shown', { trigger: customTitle ? 'admin' : 'auto' });
       try {
         const token = await AsyncStorage.getItem('token');
         const res = await Instance.get('/api/customer/referral-info', {
@@ -62,15 +66,27 @@ export function ReferralPromptHost() {
     }
   }, [visible]);
 
-  const close = () => setVisible(false);
+  const close = () => {
+    captureEvent('referral_prompt_dismissed');
+    setVisible(false);
+  };
 
   const share = async () => {
     const message = code
       ? `Join me on Astrowani! Use my referral code ${code} when you sign up — download: ${PLAY_STORE_URL}`
       : `Join me on Astrowani! Download: ${PLAY_STORE_URL}`;
     try {
-      await Share.share({ message });
-    } catch (_) {}
+      const res = await Share.share({ message });
+      // The OS sheet reports whether they actually picked a target or backed out.
+      // Only the first is a real referral share; counting both overstates it.
+      captureEvent('referral_shared', {
+        source: 'prompt',
+        has_code: !!code,
+        completed: res?.action === Share.sharedAction,
+      });
+    } catch (_) {
+      captureEvent('referral_share_failed', { source: 'prompt' });
+    }
   };
 
   // Root-level popup: this component sits BELOW any screen modal, so presenting

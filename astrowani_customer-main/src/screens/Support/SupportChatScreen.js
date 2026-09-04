@@ -32,6 +32,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 // While a human owns the thread there is no push-free way to learn they replied,
 // so the screen polls. Only while it is focused and only while a person is
@@ -212,6 +213,9 @@ export default function SupportChatScreen({ navigation, route }) {
   const send = async (bodyText) => {
     const body = (bodyText != null ? bodyText : text).trim();
     if (!body || sendingRef.current) return;
+    // `via` separates a tapped quick-reply from something the customer typed themselves —
+    // a high typed rate means the canned options aren't covering real questions.
+    captureEvent('support_message_sent', { via: bodyText != null ? 'quick_reply' : 'typed' });
     sendingRef.current = true;
     setText('');
 
@@ -240,12 +244,15 @@ export default function SupportChatScreen({ navigation, route }) {
   };
 
   const talkToPerson = async () => {
+    // The bot failing to answer, measured. This is the single most useful support number.
+    captureEvent('support_escalated_to_human');
     setThinking(true);
     try {
       const id = await ensureConversation();
       await Instance.post(`/api/support/conversations/${id}/escalate`, {}, await auth());
       await loadThread(id);
     } catch (e) {
+      captureEvent('support_escalation_failed');
       setMessages((prev) => [...prev, { id: `err-${Date.now()}`, sender: 'system', body: failureLine(e) }]);
     } finally {
       setThinking(false);
@@ -254,6 +261,7 @@ export default function SupportChatScreen({ navigation, route }) {
 
   const rate = async (rating) => {
     if (!conversationId) return;
+    captureEvent('support_rated', { rating });
     setRated(true);
     try {
       await Instance.post(`/api/support/conversations/${conversationId}/satisfaction`, { rating }, await auth());

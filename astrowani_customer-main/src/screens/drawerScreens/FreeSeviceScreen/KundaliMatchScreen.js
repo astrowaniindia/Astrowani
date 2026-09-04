@@ -25,6 +25,7 @@ import { LanguageContext } from '../../../context/LanguageContext';
 import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
 import useSavedProfile from '../../../hooks/useSavedProfile';
 import {showStatusPopup} from '../../../components/StatusPopup';
+import { captureEvent } from '../../../utils/Analytics';
 
 function parseTimeString(t) {
   if (!t) return null;
@@ -257,7 +258,7 @@ const KundaliMatchScreen = ({navigation}) => {
             style={styles.useProfileBtn}
             activeOpacity={0.8}
             disabled={fillingWho !== null}
-            onPress={() => applyProfileTo('boy')}>
+            onPress={() => { captureEvent('free_service_profile_autofilled', { service: 'kundali_match', side: 'boy' }); applyProfileTo('boy'); }}>
             {fillingWho === 'boy' ? (
               <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
             ) : (
@@ -376,7 +377,7 @@ const KundaliMatchScreen = ({navigation}) => {
             style={styles.useProfileBtn}
             activeOpacity={0.8}
             disabled={fillingWho !== null}
-            onPress={() => applyProfileTo('girl')}>
+            onPress={() => { captureEvent('free_service_profile_autofilled', { service: 'kundali_match', side: 'girl' }); applyProfileTo('girl'); }}>
             {fillingWho === 'girl' ? (
               <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
             ) : (
@@ -487,7 +488,7 @@ const KundaliMatchScreen = ({navigation}) => {
         </View>
 
         <TouchableOpacity
-            onPress={handleShowReport}
+            onPress={() => { captureEvent('free_service_submitted', { service: 'kundali_match' }); handleShowReport(); }}
           style={styles.Button}>
           <Text style={styles.ButtonText}>{t('match.showReport')}</Text>
         </TouchableOpacity>

@@ -19,6 +19,7 @@ import {
 import {LanguageContext} from '../../../context/LanguageContext';
 import BasicDetails from './BasicDetails';
 import GunaDetails from './GunaDetails';
+import { captureEvent } from '../../../utils/Analytics';
 
 function Person({name, manglik, onView, glyph, t}) {
   return (
@@ -28,7 +29,7 @@ function Person({name, manglik, onView, glyph, t}) {
       </View>
       <Text style={styles.personName}>{name}</Text>
       <Badge text={manglik ? 'Manglik' : 'Non-Manglik'} tone={manglik ? 'bad' : 'good'} />
-      <TouchableOpacity style={styles.viewBtn} onPress={onView} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.viewBtn} onPress={() => { captureEvent('kundali_match_report_opened'); if (onView) onView(); }} activeOpacity={0.85}>
         <Text style={styles.viewBtnText}>{t('kundali.showKundali')}</Text>
         <Ionicons name="chevron-forward" size={moderateScale(13)} color={ASTRO.maroon} />
       </TouchableOpacity>

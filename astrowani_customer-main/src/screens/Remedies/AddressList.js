@@ -9,6 +9,7 @@ import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
 import { listAddresses, updateAddress, deleteAddress } from '../../api/OrdersApi';
 import SHOP, { shopStyles, cardShadow } from '../../components/shop/shopTheme';
+import { captureEvent } from '../../utils/Analytics';
 
 const LABEL_ICON = { home: 'home', work: 'work', other: 'place' };
 
@@ -41,6 +42,7 @@ const AddressList = ({ navigation, route }) => {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const select = async (address) => {
+    captureEvent('address_selected', { select_mode: !!selectMode, already_default: !!address.is_default });
     if (address.is_default) {
       if (selectMode) navigation.goBack();
       return;
@@ -122,11 +124,11 @@ const AddressList = ({ navigation, route }) => {
         <View style={styles.actions}>
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => navigation.navigate('AddressForm', { address: item })}>
+            onPress={() => { captureEvent('address_edit_tapped'); navigation.navigate('AddressForm', { address: item }); }}>
             <Icon name="edit" size={moderateScale(14)} color={SHOP.brand} />
             <Text style={styles.actionText}>{t('address.edit')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => confirmDelete(item)}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => { captureEvent('address_delete_tapped'); confirmDelete(item); }}>
             <Icon name="delete-outline" size={moderateScale(14)} color={SHOP.danger} />
             <Text style={[styles.actionText, { color: SHOP.danger }]}>{t('address.delete')}</Text>
           </TouchableOpacity>
@@ -169,7 +171,10 @@ const AddressList = ({ navigation, route }) => {
       <View style={styles.footer}>
         <TouchableOpacity
           style={shopStyles.primaryBtn}
-          onPress={() => navigation.navigate('AddressForm', { makeDefault: addresses.length === 0 })}>
+          onPress={() => {
+            captureEvent('address_add_tapped', { existing_count: addresses.length });
+            navigation.navigate('AddressForm', { makeDefault: addresses.length === 0 });
+          }}>
           <Icon name="add" size={moderateScale(19)} color={COLORS.white} />
           <Text style={[shopStyles.primaryBtnText, styles.addBtnText]}>{t('address.addNew')}</Text>
         </TouchableOpacity>

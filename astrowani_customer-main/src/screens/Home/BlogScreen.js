@@ -12,6 +12,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import RenderHTML from 'react-native-render-html';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 const HTML_TAGS_STYLES = {
   body: { fontFamily: 'Lato-Regular', color: '#333333' },
@@ -123,7 +124,7 @@ const BlogScreen = ({ route }) => {
             <View style={styles.langTabRow}>
               <TouchableOpacity
                 style={[styles.langTab, activeLang === 'en' && styles.langTabActive]}
-                onPress={() => setActiveLang('en')}
+                onPress={() => { captureEvent('blog_language_switched', { to: 'en' }); setActiveLang('en'); }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.langTabText, activeLang === 'en' && styles.langTabTextActive]}>
@@ -132,7 +133,7 @@ const BlogScreen = ({ route }) => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.langTab, activeLang === 'hi' && styles.langTabActive]}
-                onPress={() => setActiveLang('hi')}
+                onPress={() => { captureEvent('blog_language_switched', { to: 'hi' }); setActiveLang('hi'); }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.langTabText, activeLang === 'hi' && styles.langTabTextActive]}>

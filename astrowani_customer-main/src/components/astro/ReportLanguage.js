@@ -26,6 +26,7 @@ import {runAstroReport} from '../../api/astroApi';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {ASTRO} from './AstroUI';
+import { captureEvent } from '../../utils/Analytics';
 
 // The app stores its language as 'English' | 'Hindi'; the API wants 'en' | 'hi'.
 export const apiLang = (language) => (language === 'Hindi' ? 'hi' : 'en');
@@ -181,10 +182,10 @@ export function ReportLanguageToggle({language, busy, onSwitch, disabled}) {
         <Animated.View
           style={[styles.knob, {width: half, transform: [{translateX: knobX}]}]}
         />
-        <TouchableOpacity style={[styles.half, {width: half}]} onPress={() => go('English')} activeOpacity={0.8}>
+        <TouchableOpacity style={[styles.half, {width: half}]} onPress={() => { captureEvent('report_language_switched', {to: 'English'}); go('English'); }} activeOpacity={0.8}>
           <Text style={[styles.label, active === 'English' && styles.labelActive]}>EN</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.half, {width: half}]} onPress={() => go('Hindi')} activeOpacity={0.8}>
+        <TouchableOpacity style={[styles.half, {width: half}]} onPress={() => { captureEvent('report_language_switched', {to: 'Hindi'}); go('Hindi'); }} activeOpacity={0.8}>
           <Text style={[styles.label, active === 'Hindi' && styles.labelActive]}>हिं</Text>
         </TouchableOpacity>
       </View>

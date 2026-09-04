@@ -17,6 +17,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import useSessionIntroBanner from '../hooks/useSessionIntroBanner';
 import { LanguageContext } from '../context/LanguageContext';
+import { captureEvent } from '../utils/Analytics';
 
 const DISMISS_AFTER_MS = 25000;
 
@@ -43,7 +44,7 @@ const SessionIntroBanner = ({ visible = true, style }) => {
     <Animated.View style={[styles.wrap, { opacity: fade }, style]}>
       <MaterialIcons name="lightbulb-outline" size={moderateScale(17)} color={COLORS.AstroGold} />
       <Text style={styles.text}>{text}</Text>
-      <TouchableOpacity onPress={() => setDismissed(true)} hitSlop={10} style={styles.close}>
+      <TouchableOpacity onPress={() => { captureEvent('session_intro_banner_dismissed'); setDismissed(true); }} hitSlop={10} style={styles.close}>
         <MaterialIcons name="close" size={moderateScale(15)} color="rgba(255,255,255,0.7)" />
       </TouchableOpacity>
     </Animated.View>

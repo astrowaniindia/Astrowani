@@ -81,6 +81,24 @@ function CustomDrawer(props) {
   );
   const handleLogout = async () => {
     try {
+      // Tell the backend FIRST, while the token still exists — AsyncStorage.clear()
+      // below throws it away. Until this call existed, logging out changed nothing
+      // server-side: the astrologer kept showing as reachable to customers and every
+      // request rang a device nobody was holding, ending as 'missed' 75s later.
+      //
+      // Deliberately not blocking on failure. The endpoint answers 200 even when its
+      // own write fails, and a logout that refuses to complete because the network is
+      // down would trap the astrologer in an account they have already left.
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (token) {
+          await Instance.post('/api/vendor/logout', {}, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      } catch (e) {
+        console.log('logout: could not mark signed out —', e?.message);
+      }
       resetAnalyticsIdentity();
       await AsyncStorage.clear();
       props.navigation.navigate('Login');

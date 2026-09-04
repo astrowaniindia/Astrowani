@@ -27,6 +27,7 @@ import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import GiftModal from '../../Component/Modal';
 import {LanguageContext} from '../../context/LanguageContext';
+import {captureEvent} from '../../utils/Analytics';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -157,6 +158,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
 
   const sendComment = () => {
     const msg = comment.trim();
+    if (msg) captureEvent('live_comment_sent', {session_id: sessionId});
     if (!msg) return;
     // No optimistic add — the backend echoes live_comment to everyone in the room
     // (including us, since we joined live_<sessionId>), so adding here would duplicate it.
@@ -186,7 +188,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           <Text style={styles.name} numberOfLines={1}>{astrologer?.name || t('common.astrologer')}</Text>
           <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{t('common.live')}</Text></View>
         </View>
-        <TouchableOpacity style={styles.closeBtn} onPress={() => { cleanup(true); navigation.goBack(); }}>
+        <TouchableOpacity style={styles.closeBtn} onPress={() => { captureEvent('live_left', {session_id: sessionId}); cleanup(true); navigation.goBack(); }}>
           <MaterialIcons name="close" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -228,7 +230,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           <TouchableOpacity style={styles.sendBtn} onPress={sendComment}>
             <MaterialIcons name="send" size={22} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.giftBtn} onPress={() => setGiftVisible(true)}>
+          <TouchableOpacity style={styles.giftBtn} onPress={() => { captureEvent('live_gift_opened', {session_id: sessionId}); setGiftVisible(true); }}>
             <MaterialIcons name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
           </TouchableOpacity>
         </View>

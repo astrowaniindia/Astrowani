@@ -7,8 +7,11 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { LanguageContext } from '../context/LanguageContext';
 import {useModalPresence} from '../utils/modalPresentation';
+import { captureEvent } from '../utils/Analytics';
 
-const RequestingPopup = ({ visible, astro, onCancel }) => {
+// `context` names the screen that raised the request, since this popup is shared by five
+// of them (Home, Chat, Search, AstrologerInfo, ExpertsList).
+const RequestingPopup = ({ visible, astro, onCancel, context = 'unknown' }) => {
   const { t } = React.useContext(LanguageContext);
   // Declares this modal to the presentation registry so root-level popups wait
   // for it instead of colliding with it on iOS (utils/modalPresentation).
@@ -23,7 +26,19 @@ const RequestingPopup = ({ visible, astro, onCancel }) => {
           <ActivityIndicator size="large" color={COLORS.AstroGold} />
           <Text style={styles.title}>{t('home.requestSent')}</Text>
           <Text style={styles.sub}>{t('home.waitingFor', { name })}</Text>
-          <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => {
+              // Giving up while waiting for an astrologer to answer. Distinct from the
+              // request being rejected or timing out, and the only one of the three
+              // that is a decision by the customer.
+              captureEvent('request_cancelled_by_customer', {
+                context,
+                astrologer_id: astro?.userId || astro?._id || null,
+              });
+              if (onCancel) onCancel();
+            }}
+            activeOpacity={0.85}>
             <Text style={styles.cancelText}>{t('home.cancelRequest')}</Text>
           </TouchableOpacity>
         </View>

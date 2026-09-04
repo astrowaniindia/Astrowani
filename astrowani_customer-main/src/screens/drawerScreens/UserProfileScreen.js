@@ -25,6 +25,7 @@ import { supabase } from '../../api/SupabaseClient';
 import { LanguageContext } from '../../context/LanguageContext';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
 import {useModalPresence} from '../../utils/modalPresentation';
+import {captureEvent} from '../../utils/Analytics';
 
 const UserProfileScreen = ({navigation, route}) => {
   const { t } = React.useContext(LanguageContext);
@@ -145,14 +146,21 @@ const UserProfileScreen = ({navigation, route}) => {
   };
 
   const handleUpdate = async () => {
+    captureEvent('profile_save_tapped');
+
     // 1. Profile Picture validation
     if (!userProfile.profilePic) {
+      // The profile gate blocks chat/call/video until this screen is completed, so a
+      // validation rule that stops people here stops them spending money. Each one is
+      // reported separately so the worst offender is obvious.
+      captureEvent('profile_validation_failed', { field: 'profile_pic' });
       showCustomAlert(t('userProfile.validationError'), t('userProfile.uploadProfilePhoto'));
       return;
     }
 
     // 2. Name validation
     if (!userProfile.firstName || !userProfile.firstName.trim()) {
+      captureEvent('profile_validation_failed', { field: 'name' });
       showCustomAlert(t('userProfile.validationError'), t('userProfile.enterFullName'));
       return;
     }
@@ -166,10 +174,12 @@ const UserProfileScreen = ({navigation, route}) => {
     // 4. Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!userProfile.email || !userProfile.email.trim()) {
+      captureEvent('profile_validation_failed', { field: 'email', reason: 'empty' });
       setEmailError(t('userProfile.emailEmpty'));
       showCustomAlert(t('userProfile.validationError'), t('userProfile.emailEmpty'));
       return;
     } else if (!emailRegex.test(userProfile.email)) {
+      captureEvent('profile_validation_failed', { field: 'email', reason: 'invalid' });
       setEmailError(t('userProfile.emailInvalid'));
       showCustomAlert(t('userProfile.validationError'), t('userProfile.emailInvalid'));
       return;
@@ -258,6 +268,17 @@ const UserProfileScreen = ({navigation, route}) => {
 
       const updated = response?.data?.data;
       if (updated) {
+        // Which fields people actually fill matters — the astro reports are useless
+        // without birth details, so a low time_of_birth completion rate is a product
+        // problem, not a data problem.
+        captureEvent('profile_saved', {
+          has_dob: !!userProfile.dateOfBirth,
+          has_time_of_birth: !!tob,
+          has_city: !!userProfile.city,
+          has_email: !!userProfile.email,
+          has_profile_pic: !!profilePicUrl,
+          has_hand_pic: !!handPicUrl,
+        });
         // Refresh the cached user so the profile gate unlocks immediately everywhere.
         await AsyncStorage.setItem('userData', JSON.stringify(updated));
         showCustomAlert(t('userProfile.success'), t('userProfile.updatedSuccessfully'), [
@@ -267,6 +288,7 @@ const UserProfileScreen = ({navigation, route}) => {
         throw new Error('Update failed');
       }
     } catch (err) {
+      captureEvent('profile_save_failed', { reason: err.response?.data?.code || 'other' });
       showCustomAlert(t('common.error'), err.response?.data?.message || t('userProfile.updateError'));
     } finally {
       setLoading(false);
@@ -372,10 +394,10 @@ const UserProfileScreen = ({navigation, route}) => {
   return (
     <View style={styles.container}>
       <View style={styles.tabsContainer}>
-        <TouchableOpacity style={[styles.tab, activeTab === 'Profile' && styles.activeTab]} onPress={() => setActiveTab('Profile')}>
+        <TouchableOpacity style={[styles.tab, activeTab === 'Profile' && styles.activeTab]} onPress={() => { captureEvent('profile_tab_switched', { tab: 'profile' }); setActiveTab('Profile'); }}>
           <Text style={activeTab === 'Profile' ? styles.tabTextActive : styles.tabTextInactive}>{t('userProfile.personalInfo')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, activeTab === 'Hand Photo' && styles.activeTab]} onPress={() => setActiveTab('Hand Photo')}>
+        <TouchableOpacity style={[styles.tab, activeTab === 'Hand Photo' && styles.activeTab]} onPress={() => { captureEvent('profile_tab_switched', { tab: 'hand_photo' }); setActiveTab('Hand Photo'); }}>
           <Text style={activeTab === 'Hand Photo' ? styles.tabTextActive : styles.tabTextInactive}>{t('userProfile.palmHandPhoto')}</Text>
         </TouchableOpacity>
       </View>

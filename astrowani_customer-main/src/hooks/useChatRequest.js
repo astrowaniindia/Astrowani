@@ -54,7 +54,7 @@ const useChatRequest = (navigation) => {
     setSubmitting(true);
     try {
       // Profile gate — locked until the customer completes their profile.
-      if (!(await ensureProfileComplete(navigation))) return;
+      if (!(await ensureProfileComplete(navigation, 'chat'))) return;
 
       const userStr = await AsyncStorage.getItem('userData');
       const user = userStr ? JSON.parse(userStr) : null;

@@ -7,6 +7,7 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import useNotificationBadgeSync from '../../hooks/useNotificationBadgeSync';
+import { captureEvent } from '../../utils/Analytics';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -105,7 +106,10 @@ const NotificationScreen = () => {
     <TouchableOpacity
       activeOpacity={0.8}
       style={[styles.notificationCard, item.is_read && styles.readCard]}
-      onPress={() => markAsRead(item)}>
+      onPress={() => {
+        captureEvent('notification_opened', { was_unread: !item.is_read });
+        markAsRead(item);
+      }}>
       <View style={[styles.iconBadgeRing, item.is_read ? styles.iconBadgeRingRead : styles.iconBadgeRingUnread]}>
         <View style={[styles.iconBadge, item.is_read ? styles.iconBadgeRead : styles.iconBadgeUnread]}>
           <Icon name="notifications" size={19} color={item.is_read ? COLORS.AstroMaroon : COLORS.white} />
@@ -143,7 +147,12 @@ const NotificationScreen = () => {
             </Text>
           </View>
           {unreadCount > 0 && (
-            <TouchableOpacity onPress={markAllRead} style={styles.markAllBtn}>
+            <TouchableOpacity
+              onPress={() => {
+                captureEvent('notifications_mark_all_read', { unread_count: unreadCount });
+                markAllRead();
+              }}
+              style={styles.markAllBtn}>
               <Text style={styles.markAllText}>Mark all read</Text>
             </TouchableOpacity>
           )}

@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 // Guarded require, NOT a static import. react-native-webview is a native module, and OTA
 // (Hot Updater) ships only JS — it cannot add native code to a binary built before the
@@ -187,13 +188,18 @@ export default function StoreWebView() {
         <Text style={styles.fallbackBody}>
           {WebView ? t('store.offlineBody') : t('store.updateBody')}
         </Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={WebView ? retry : () => Linking.openURL(STORE_URL)}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => {
+            captureEvent('store_webview_fallback_tapped', { action: WebView ? 'retry' : 'open_external' });
+            return WebView ? retry() : Linking.openURL(STORE_URL);
+          }}>
           <Text style={styles.primaryBtnTxt}>
             {WebView ? t('store.retry') : t('store.openInBrowser')}
           </Text>
         </TouchableOpacity>
         {!!WebView && (
-          <TouchableOpacity style={styles.linkBtn} onPress={() => Linking.openURL(STORE_URL)}>
+          <TouchableOpacity style={styles.linkBtn} onPress={() => { captureEvent('store_webview_fallback_tapped', { action: 'open_external' }); Linking.openURL(STORE_URL); }}>
             <Text style={styles.linkBtnTxt}>{t('store.openInBrowser')}</Text>
           </TouchableOpacity>
         )}

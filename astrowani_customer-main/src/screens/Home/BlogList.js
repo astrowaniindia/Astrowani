@@ -15,6 +15,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LanguageContext } from '../../context/LanguageContext';
 import useBlogListSync from '../../hooks/useBlogListSync';
+import { captureEvent } from '../../utils/Analytics';
 
 const BlogList = ({ navigation }) => {
   const { language } = useContext(LanguageContext);
@@ -86,7 +87,10 @@ const BlogList = ({ navigation }) => {
 
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate('BlogScreen', { data: item })}
+        onPress={() => {
+          captureEvent('blog_opened', { blog_id: item?.id || item?._id || null, from: 'blog_list' });
+          navigation.navigate('BlogScreen', { data: item });
+        }}
         style={styles.card}
         activeOpacity={0.85}
       >

@@ -6,6 +6,7 @@
 // are filled (hand/palm photo excluded) everything unlocks automatically.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { showStatusPopup } from '../components/StatusPopup';
+import { captureEvent } from './Analytics';
 
 const s = (v) => (v == null ? '' : String(v)).trim();
 
@@ -31,9 +32,31 @@ export const getStoredUser = async () => {
 // Gate a money/interaction action. Returns true if allowed; otherwise shows a prompt,
 // sends the user to the profile screen, and returns false. Use as:
 //   if (!(await ensureProfileComplete(navigation))) return;
-export const ensureProfileComplete = async (navigation) => {
+// Which of the required fields are missing, for analytics. Named separately from
+// isProfileComplete so that function stays a cheap boolean with no extra work.
+const missingProfileFields = (u) => {
+  const out = [];
+  if (!u) return ['all'];
+  if (!(s(u.name) || s(u.firstName))) out.push('name');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(u.email))) out.push('email');
+  if (!s(u.gender)) out.push('gender');
+  if (!(s(u.dob) || s(u.dateOfBirth))) out.push('dob');
+  if (!(s(u.placeOfBirth) || s(u.place_of_birth) || s(u.city) || s(u.address?.city))) out.push('place_of_birth');
+  return out;
+};
+
+// `intent` names the action that was blocked ('chat', 'audio_call', 'video_call',
+// 'live'). Instrumented HERE rather than at the 14 call sites so a new gated action is
+// measured the day it is added — and because a customer turned away by this gate leaves
+// no other trace at all: they simply never reach the next screen.
+export const ensureProfileComplete = async (navigation, intent = 'unknown') => {
   const user = await getStoredUser();
   if (isProfileComplete(user)) return true;
+  captureEvent('profile_gate_blocked', {
+    intent,
+    missing_fields: missingProfileFields(user),
+    is_new_user: !user,
+  });
   showStatusPopup({
     variant: 'info',
     title: 'Complete Your Profile',

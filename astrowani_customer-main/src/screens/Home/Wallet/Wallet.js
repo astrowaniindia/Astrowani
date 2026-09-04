@@ -43,9 +43,14 @@ const Wallet = ({navigation}) => {
   const handleSubmit = async () => {
     const finalAmount = parseInt(amount, 10);
     if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) {
+      captureEvent('recharge_invalid_amount', { entered: amount });
       Alert.alert(t('wallet.invalidAmount'), t('wallet.enterValidAmount'));
       return;
     }
+    // Fired on tap, before anything can fail — this is the denominator of the recharge
+    // funnel. Without it a drop-off at the Razorpay sheet is indistinguishable from
+    // nobody ever having tried.
+    captureEvent('recharge_started', { amount: finalAmount });
     setProcessing(true);
     try {
       const token = await AsyncStorage.getItem('token');
@@ -98,6 +103,18 @@ const Wallet = ({navigation}) => {
       Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
     } catch (error) {
       const message = error?.response?.data?.message || error?.description || error?.message || 'Something went wrong';
+      // Razorpay reports a customer closing the sheet as code 0 / 'Payment Cancelled'.
+      // That is abandonment, not a failure, and lumping the two together would make a
+      // healthy payment integration look broken.
+      const cancelled =
+        error?.code === 0 ||
+        error?.code === '0' ||
+        /cancel/i.test(String(error?.description || error?.reason || ''));
+      captureEvent('recharge_failed', {
+        amount: finalAmount,
+        cancelled,
+        reason: error?.response?.data?.code || error?.code || (cancelled ? 'user_cancelled' : 'other'),
+      });
       Alert.alert(t('wallet.paymentFailed'), message);
     } finally {
       setProcessing(false);
@@ -107,7 +124,10 @@ const Wallet = ({navigation}) => {
   const renderPreset = ({item}) => (
     <TouchableOpacity
       style={styles.presetChip}
-      onPress={() => setAmount(item.toString())}>
+      onPress={() => {
+        captureEvent('recharge_amount_selected', { amount: item, via: 'preset' });
+        setAmount(item.toString());
+      }}>
       <Text style={styles.presetText}>+ ₹{item}</Text>
     </TouchableOpacity>
   );

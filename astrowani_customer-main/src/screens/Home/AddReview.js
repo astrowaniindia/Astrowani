@@ -6,6 +6,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 const AddReview = ({ route, navigation }) => {
   const { t } = useContext(LanguageContext);
@@ -16,10 +17,12 @@ const AddReview = ({ route, navigation }) => {
 
   const handleSubmit = async () => {
     if (rating === 0) {
+      captureEvent('review_validation_failed', { field: 'rating' });
       Alert.alert(t('common.error'), t('addReview.ratingRequired'));
       return;
     }
     if (!comment.trim()) {
+      captureEvent('review_validation_failed', { field: 'comment' });
       Alert.alert(t('common.error'), t('addReview.commentRequired'));
       return;
     }
@@ -38,10 +41,16 @@ const AddReview = ({ route, navigation }) => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      // Same event name the shared post-session prompt fires, with `source` to tell the
+      // two paths apart — one number for "reviews written", splittable when needed.
+      captureEvent('review_submitted', { astrologer_id: person?.userId || person?._id, rating, source: 'add_review_screen' });
       Alert.alert(t('common.success'), t('addReview.submittedMsg'), [
         { text: t('common.ok'), onPress: () => navigation.goBack() }
       ]);
     } catch (err) {
+      // Reviews are eligibility-gated server-side (a completed session is required), so
+      // a 403 here is a real product signal, not noise.
+      captureEvent('review_submit_failed', { astrologer_id: person?.userId || person?._id, status: err?.response?.status || null });
       console.log('Error adding review:', err?.response?.data || err.message);
       Alert.alert(t('common.error'), err?.response?.data?.error || t('addReview.failedSubmit'));
     } finally {
@@ -55,7 +64,7 @@ const AddReview = ({ route, navigation }) => {
       
       <View style={styles.starsContainer}>
         {[1, 2, 3, 4, 5].map((star) => (
-          <TouchableOpacity key={star} onPress={() => setRating(star)}>
+          <TouchableOpacity key={star} onPress={() => { captureEvent('review_rating_selected', { rating: star }); setRating(star); }}>
             <MaterialIcons
               name="star"
               size={moderateScale(40)}

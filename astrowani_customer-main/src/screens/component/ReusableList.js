@@ -22,6 +22,13 @@ import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { captureEvent } from '../../utils/Analytics';
+import {
+  unreachableState,
+  unreachableLabelKey,
+  unreachableIcon,
+  unreachableAlertKey,
+  unreachableReason,
+} from '../../utils/astrologerAvailability';
 import {useModalPresence} from '../../utils/modalPresentation';
 
 const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refreshing, onRefresh}) => {
@@ -56,10 +63,11 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     Alert.alert(t('alerts.unavailable'), t(key, { name: item.name || 'This astrologer' }));
   };
 
-  // Master offline switch overrides every per-service button with one unified red "Offline" pill.
-  const showOffline = (item) => {
-    captureEvent('consult_blocked', { reason: 'astrologer_offline', intent: buttonType || 'unknown', astrologer_id: item.userId });
-    Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || 'This astrologer' }));
+  // Unreachable — signed out, or switched off — overrides every per-service button
+  // with one unified red pill. The two read differently; see utils/astrologerAvailability.
+  const showUnreachable = (item, state) => {
+    captureEvent('consult_blocked', { reason: unreachableReason(state), intent: buttonType || 'unknown', astrologer_id: item.userId });
+    Alert.alert(t('alerts.unavailable'), t(unreachableAlertKey(state), { name: item.name || 'This astrologer' }));
   };
 
   // Busy overrides every per-service button too (chat/call/video are mutually exclusive —
@@ -82,7 +90,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
   // waiting to be notified makes no sense for something happening right now. Falls back to
   // the Live tab if liveSessionId hasn't landed yet (a stale card mid-refresh).
   const goToLive = async (item) => {
-    if (!(await ensureProfileComplete(navigation))) return;
+    if (!(await ensureProfileComplete(navigation, 'live'))) return;
     if (item.liveSessionId) {
       navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
     } else {
@@ -91,16 +99,17 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
   };
 
   const renderButton = (item) => {
-    if (item.isOnline === false && buttonType !== 'view profile') {
+    const unreachable = unreachableState(item);
+    if (unreachable && buttonType !== 'view profile') {
       return (
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[styles.actionBtnUnavailableChat, styles.smallButton]}
             activeOpacity={0.8}
-            onPress={() => showOffline(item)}
+            onPress={() => showUnreachable(item, unreachable)}
           >
-            <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
-            <Text style={styles.chatText}>{t('common.offline')}</Text>
+            <MaterialIcons name={unreachableIcon(unreachable)} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
+            <Text style={styles.chatText}>{t(unreachableLabelKey(unreachable))}</Text>
           </TouchableOpacity>
         </View>
       );

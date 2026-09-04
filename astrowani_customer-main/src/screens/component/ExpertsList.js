@@ -22,6 +22,13 @@ import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
+import {
+  unreachableState,
+  unreachableLabelKey,
+  unreachableIcon,
+  unreachableAlertKey,
+  unreachableReason,
+} from '../../utils/astrologerAvailability';
 import { getWalletBalance } from '../../utils/wallet';
 import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
 import StarRating from '../../components/StarRating';
@@ -74,9 +81,11 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
     Alert.alert(t('alerts.unavailable'), t(UNAVAILABLE_KEY[label] || 'alerts.notAvailableChat', { name: item.name || t('common.astrologer') }));
   };
 
-  const showOffline = (item) => {
-    captureEvent('consult_blocked', { reason: 'astrologer_offline', intent: 'unknown', astrologer_id: item.userId });
-    Alert.alert(t('alerts.unavailable'), t('alerts.astrologerOffline', { name: item.name || t('common.astrologer') }));
+  // Signed out reads as "Unavailable", switched off reads as "Offline" — one rule,
+  // shared with every other card surface (utils/astrologerAvailability).
+  const showUnreachable = (item, state) => {
+    captureEvent('consult_blocked', { reason: unreachableReason(state), intent: 'unknown', astrologer_id: item.userId });
+    Alert.alert(t('alerts.unavailable'), t(unreachableAlertKey(state), { name: item.name || t('common.astrologer') }));
   };
 
   // Tell the vendor the customer abandoned the pending request (dismisses their popup).
@@ -118,7 +127,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
   // Self-contained audio/video initiation (type = 'audio' | 'video').
   const initiateCall = async (item, type) => {
     try {
-      if (!(await ensureProfileComplete(navigation))) return;
+      if (!(await ensureProfileComplete(navigation, type === 'video' ? 'video_call' : 'audio_call'))) return;
       const token = await AsyncStorage.getItem('token');
       const userDataStr = await AsyncStorage.getItem('userData');
       if (!userDataStr || !token) {
@@ -325,21 +334,21 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           </View>
 
           <View style={styles.actionsCol}>
-            {item.isOnline === false ? (
+            {unreachableState(item) ? (
               <TouchableOpacity
                 activeOpacity={0.85}
                 style={[styles.actionBtn, styles.offlineBtn]}
-                onPress={() => showOffline(item)}
+                onPress={() => showUnreachable(item, unreachableState(item))}
               >
-                <MaterialIcons name="wifi-off" size={moderateScale(16)} color="#fff" />
-                <Text style={styles.actionBtnText}>{t('common.offline')}</Text>
+                <MaterialIcons name={unreachableIcon(unreachableState(item))} size={moderateScale(16)} color="#fff" />
+                <Text style={styles.actionBtnText}>{t(unreachableLabelKey(unreachableState(item)))}</Text>
               </TouchableOpacity>
             ) : item.isBusy === true && item.busyReason === 'live' ? (
               <TouchableOpacity
                 activeOpacity={0.85}
                 style={[styles.actionBtn, styles.liveBtn]}
                 onPress={async () => {
-                  if (!(await ensureProfileComplete(navigation))) return;
+                  if (!(await ensureProfileComplete(navigation, 'live'))) return;
                   if (item.liveSessionId) {
                     navigation.navigate('LiveViewerScreen', { sessionId: item.liveSessionId, astrologer: item });
                   } else {
@@ -410,10 +419,10 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       />
 
       {/* Chat request popup (driven by useChatRequest) */}
-      <RequestingPopup visible={requesting} astro={requestAstro} onCancel={cancelRequest} />
+      <RequestingPopup context="experts_list_chat" visible={requesting} astro={requestAstro} onCancel={cancelRequest} />
 
       {/* Audio/Video call waiting popup */}
-      <RequestingPopup visible={isCallWaiting} astro={waitingAstro} onCancel={cancelCallRequest} />
+      <RequestingPopup context="experts_list_call" visible={isCallWaiting} astro={waitingAstro} onCancel={cancelCallRequest} />
     </View>
   );
 };

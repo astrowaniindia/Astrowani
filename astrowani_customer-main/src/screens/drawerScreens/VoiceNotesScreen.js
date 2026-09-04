@@ -8,6 +8,7 @@ import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import { captureEvent } from '../../utils/Analytics';
 
 Sound.setCategory('Playback');
 
@@ -97,7 +98,7 @@ const VoiceNotesScreen = () => {
             {new Date(item.created_at).toLocaleDateString('en-IN')}
           </Text>
         </View>
-        <TouchableOpacity style={styles.playBtn} onPress={() => togglePlay(item)}>
+        <TouchableOpacity style={styles.playBtn} onPress={() => { captureEvent('voice_note_play_toggled', { note_id: item?.id || null }); togglePlay(item); }}>
           <Icon name={isPlaying ? 'pause' : 'play'} size={20} color="#fff" />
         </TouchableOpacity>
       </View>

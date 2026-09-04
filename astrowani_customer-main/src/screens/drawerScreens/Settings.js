@@ -20,6 +20,7 @@ import {resetWalletBalance} from '../../hooks/useWalletBalance';
 // pages for its acceptance checkbox, and a legal URL should exist in one place.
 import {LEGAL_LINKS} from '../../config/legal';
 import {useModalPresence} from '../../utils/modalPresentation';
+import {captureEvent} from '../../utils/Analytics';
 
 export default function Settings({navigation}) {
   const {t} = React.useContext(LanguageContext);
@@ -30,11 +31,16 @@ export default function Settings({navigation}) {
   useModalPresence(logoutModalVisible || deleteModalVisible);
 
   const handleDeleteAccount = () => {
+    // The strongest churn signal the app can emit. Note this handler currently only
+    // shows a confirmation — it does not call a delete endpoint — so the event records
+    // the request, which is the thing worth counting either way.
+    captureEvent('account_delete_requested');
     setDeleteModalVisible(false);
     Alert.alert(t('settings.accountDeleted'));
   };
   const handleLogout = async () => {
     try {
+      captureEvent('logout', {source: 'settings'});
       resetWalletBalance();
       await AsyncStorage.removeItem('token');
 
@@ -56,7 +62,7 @@ export default function Settings({navigation}) {
     <View style={styles.container}>
       <ScrollView style={styles.scrollContainer}>
         <TouchableOpacity
-          onPress={() => navigation.navigate('AboutUsScreen')}
+          onPress={() => { captureEvent('settings_item_tapped', {item: 'about_us'}); navigation.navigate('AboutUsScreen'); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -71,7 +77,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('FaqScreen')}
+          onPress={() => { captureEvent('settings_item_tapped', {item: 'faq'}); navigation.navigate('FaqScreen'); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -86,7 +92,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         {/* <TouchableOpacity
-          onPress={() => navigation.navigate('SupportScreen')}
+          onPress={() => { captureEvent('settings_item_tapped', {item: 'support'}); navigation.navigate('SupportScreen'); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -101,7 +107,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity> */}
 
         <TouchableOpacity
-          onPress={() => Linking.openURL(LEGAL_LINKS.refundCancellation)}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'refund_cancellation', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.refundCancellation); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -116,7 +122,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => Linking.openURL(LEGAL_LINKS.privacyPolicy)}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'privacy', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.privacyPolicy); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -131,7 +137,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => Linking.openURL(LEGAL_LINKS.termsOfUse)}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'terms', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.termsOfUse); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -146,7 +152,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => Linking.openURL(LEGAL_LINKS.childSafety)}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'child_safety', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.childSafety); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -161,7 +167,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => Linking.openURL(LEGAL_LINKS.safetyGuidelines)}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'safety_guidelines', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.safetyGuidelines); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -176,7 +182,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => Linking.openURL(LEGAL_LINKS.reportVulnerability)}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'report_vulnerability', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.reportVulnerability); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -206,7 +212,10 @@ export default function Settings({navigation}) {
 
         <TouchableOpacity
           style={[styles.item, styles.delete]}
-          onPress={() => setDeleteModalVisible(true)}>
+          onPress={() => {
+            captureEvent('account_delete_tapped');
+            setDeleteModalVisible(true);
+          }}>
           <View style={styles.itemContent}>
             <Icon name="delete" size={25} color="red" style={styles.icon} />
             <Text style={[styles.text, styles.deleteText]}>

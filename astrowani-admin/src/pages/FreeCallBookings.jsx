@@ -32,6 +32,9 @@ const OFFER_DEFAULTS = {
   poolAstrologerIds: [],
   // Purely the faces on the popup — see the "Faces shown on the card" section.
   displayAstrologerIds: [],
+  // Points at a real astrologers row; name + photo are read from that profile.
+  // The astrologerName/astrologerImage pair below is only the manual fallback.
+  displayFeaturedAstrologerId: '',
   astrologerName: '',
   astrologerImage: '',
   astrologerExperience: '',
@@ -288,6 +291,17 @@ export default function FreeCallBookings() {
     [offer.poolAstrologerIds, astrologers],
   );
 
+  // The face the customer sees. A picked astrologer's name comes from their
+  // profile, so the typed field is blank in that case — reading it directly here
+  // made the summary claim "No astrologer set" while the card showed somebody.
+  const shownAstrologerName = useMemo(() => {
+    if (offer.displayFeaturedAstrologerId) {
+      const a = astrologers.find((x) => x.id === offer.displayFeaturedAstrologerId);
+      if (a) return astroName(a);
+    }
+    return offer.astrologerName || '';
+  }, [offer.displayFeaturedAstrologerId, offer.astrologerName, astrologers]);
+
   const todayKey = IST_DAY.format(new Date());
 
   return (
@@ -346,7 +360,7 @@ export default function FreeCallBookings() {
               : offer.assignmentMode === 'pool'
                 ? `Split across ${(offer.poolAstrologerIds || []).length} astrologers`
                 : 'Assigned by hand per booking'} ·
-            {' '}{offer.astrologerName || 'No astrologer set'} · {offer.durationMinutes}&nbsp;min ·
+            {' '}{shownAstrologerName || 'No astrologer set'} · {offer.durationMinutes}&nbsp;min ·
             {' '}{String(offer.openHour).padStart(2, '0')}:00–{String(offer.closeHour).padStart(2, '0')}:00 ·
             {' '}{offer.slotMinutes}&nbsp;min slots · booking up to {offer.daysAhead} days ahead
           </p>
@@ -451,26 +465,39 @@ export default function FreeCallBookings() {
 
             <h4 style={{ margin: '18px 0 8px' }}>The astrologer shown to the customer</h4>
             <p className="muted" style={{ marginTop: -4 }}>
-              This is only the face on the offer card. It is separate from who actually
-              takes the call above — in "assign by hand" mode nobody is assigned yet when
-              the customer is looking at this card.
+              The popup shuffles a group of faces and stops on this one. It is only the
+              face on the card — it is separate from who actually takes the call above,
+              and in "assign by hand" mode nobody is assigned yet when the customer is
+              looking at it.
             </p>
-            <ImageField
-              label="Astrologer photo (URL or upload)"
-              value={offer.astrologerImage}
-              onChange={(v) => setOffer((p) => ({ ...p, astrologerImage: v }))}
-            />
-            <div className="two-col">
-              <div className="field"><label>Name</label>
-                <input type="text" value={offer.astrologerName}
-                  onChange={(e) => setOffer((p) => ({ ...p, astrologerName: e.target.value }))} /></div>
-              <div className="field"><label>Experience</label>
-                <input type="text" value={offer.astrologerExperience} placeholder="e.g. 15 years"
-                  onChange={(e) => setOffer((p) => ({ ...p, astrologerExperience: e.target.value }))} /></div>
+            <div className="field">
+              <label>Pick from your astrologers</label>
+              <select
+                value={offer.displayFeaturedAstrologerId || ''}
+                onChange={(e) => setOffer((p) => ({ ...p, displayFeaturedAstrologerId: e.target.value }))}>
+                <option value="">— enter a name and photo by hand instead —</option>
+                {astrologers.map((a) => (
+                  <option key={a.id} value={a.id}>{astroName(a)}</option>
+                ))}
+              </select>
+              <p className="muted" style={{ margin: '6px 0 0' }}>
+                Their name and photo are read from their profile, so you do not upload
+                anything and it stays right when they change their picture.
+              </p>
             </div>
-            <div className="field"><label>Specialities</label>
-              <input type="text" value={offer.astrologerSpecialities} placeholder="e.g. Vedic Astrology, Career, Marriage"
-                onChange={(e) => setOffer((p) => ({ ...p, astrologerSpecialities: e.target.value }))} /></div>
+
+            {!offer.displayFeaturedAstrologerId && (
+              <>
+                <ImageField
+                  label="Astrologer photo (URL or upload)"
+                  value={offer.astrologerImage}
+                  onChange={(v) => setOffer((p) => ({ ...p, astrologerImage: v }))}
+                />
+                <div className="field"><label>Name</label>
+                  <input type="text" value={offer.astrologerName}
+                    onChange={(e) => setOffer((p) => ({ ...p, astrologerName: e.target.value }))} /></div>
+              </>
+            )}
 
             <h4 style={{ margin: '18px 0 8px' }}>Faces shown on the card</h4>
             <p className="muted" style={{ marginTop: -4 }}>

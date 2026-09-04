@@ -74,6 +74,12 @@ export default function Register({ navigation }) {
 
   // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config).
   const [guideAvatarConfig, setGuideAvatarConfig] = useState(null);
+
+  // Top of the signup funnel — every step_completed below is a share of this.
+  useEffect(() => {
+    captureEvent('signup_screen_viewed');
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     Instance.get('/api/guide-avatar/config')
@@ -192,21 +198,30 @@ export default function Register({ navigation }) {
   };
 
   const applyPickedAsset = (response) => {
-    if (response.didCancel) return;
+    if (response.didCancel) {
+      captureEvent('signup_photo_cancelled');
+      return;
+    }
     if (response.errorCode) {
+      captureEvent('signup_photo_failed', { code: response.errorCode });
       console.log('ImagePicker Error: ', response.errorMessage);
       return;
     }
     const source = response.assets?.[0];
-    if (source) setImage(`data:${source.type || 'image/jpeg'};base64,${source.base64}`);
+    if (source) {
+      captureEvent('signup_photo_added');
+      setImage(`data:${source.type || 'image/jpeg'};base64,${source.base64}`);
+    }
   };
 
   const handleImageLibraryLaunch = () => {
+    captureEvent('signup_photo_source_chosen', { source: 'gallery' });
     setShowImagePickerModal(false);
     launchImageLibrary({ mediaType: 'photo', quality: 1, includeBase64: true }, applyPickedAsset);
   };
 
   const handleCameraLaunch = () => {
+    captureEvent('signup_photo_source_chosen', { source: 'camera' });
     setShowImagePickerModal(false);
     launchCamera(
       { mediaType: 'photo', quality: 1, includeBase64: true, saveToPhotos: true, cameraType: 'back' },
@@ -239,7 +254,13 @@ export default function Register({ navigation }) {
 
   const handleNext = () => {
     const err = validateStep(step);
-    if (err) { showAlert(t('common.error'), err, 'error'); return; }
+    if (err) {
+      // Which step rejects people, and on what. Step 3's terms checkbox and the
+      // mobile-number rules are the two that can silently stall a signup.
+      captureEvent('signup_step_blocked', { step: step + 1 });
+      showAlert(t('common.error'), err, 'error');
+      return;
+    }
     captureEvent('signup_step_completed', { step: step + 1 });
     if (step < TOTAL_STEPS - 1) { goToStep(step + 1, 1); return; }
     handleSubmit();
@@ -305,7 +326,13 @@ export default function Register({ navigation }) {
   };
 
   const handleBack = () => {
-    if (step > 0) { goToStep(step - 1, -1); return; }
+    if (step > 0) {
+      captureEvent('signup_step_back', { step: step + 1 });
+      goToStep(step - 1, -1);
+      return;
+    }
+    // Leaving step 1 backwards is abandoning signup entirely, not moving within it.
+    captureEvent('signup_abandoned', { step: 1 });
     navigation.goBack();
   };
 
@@ -441,7 +468,7 @@ export default function Register({ navigation }) {
             {step === 1 && (
               <>
                 <Field label={t('register.dobLabel')} optional optionalText={t('register.optional')}>
-                  <TouchableOpacity style={styles.pickerRow} onPress={() => setShowDobPicker(true)} activeOpacity={0.8}>
+                  <TouchableOpacity style={styles.pickerRow} onPress={() => { captureEvent('signup_field_opened', { field: 'dob' }); setShowDobPicker(true); }} activeOpacity={0.8}>
                     <Icon name="cake" size={moderateScale(19)} color={COLORS.AstroMaroon} />
                     <Text style={[styles.pickerText, !dobSet && styles.pickerPlaceholder]}>
                       {dobSet ? dob.toDateString() : t('register.dobPlaceholder')}
@@ -461,7 +488,7 @@ export default function Register({ navigation }) {
                 )}
 
                 <Field label={t('register.tobLabel')} optional optionalText={t('register.optional')}>
-                  <TouchableOpacity style={styles.pickerRow} onPress={() => setShowTimePicker(true)} activeOpacity={0.8}>
+                  <TouchableOpacity style={styles.pickerRow} onPress={() => { captureEvent('signup_field_opened', { field: 'time_of_birth' }); setShowTimePicker(true); }} activeOpacity={0.8}>
                     <Icon name="schedule" size={moderateScale(19)} color={COLORS.AstroMaroon} />
                     <Text style={[styles.pickerText, !tobSet && styles.pickerPlaceholder]}>
                       {tobSet

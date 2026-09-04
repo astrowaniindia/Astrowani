@@ -5,6 +5,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
 import SHOP, { cardShadow } from '../../components/shop/shopTheme';
+import { captureEvent } from '../../utils/Analytics';
 
 // Order confirmed. Reached with navigation.replace, so the hardware back button can't walk
 // the customer back into the payment screen and re-trigger a paid checkout.
@@ -20,6 +21,14 @@ const OrderSuccess = ({ navigation, route }) => {
   // Short, readable reference. The full UUID is meaningless to a customer reading it out
   // over the phone, and the admin Orders page can find an order from the last segment.
   const reference = order.id ? String(order.id).split('-').pop().toUpperCase() : null;
+
+  // Reached only after the server confirmed payment, so this is the true bottom of the
+  // remedies funnel — `order_placed` fires before the money is confirmed and can therefore
+  // overcount. Use this one as the purchase count.
+  React.useEffect(() => {
+    captureEvent('order_confirmed', { order_id: order.id || null, amount: amount ?? null, payment_method: method || null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -53,7 +62,10 @@ const OrderSuccess = ({ navigation, route }) => {
 
       <TouchableOpacity
         style={styles.primaryBtn}
-        onPress={() => navigation.replace('MyOrders')}>
+        onPress={() => {
+          captureEvent('order_success_cta', { cta: 'track_order', order_id: order.id || null });
+          navigation.replace('MyOrders');
+        }}>
         <Icon name="local-shipping" size={moderateScale(18)} color={COLORS.white} />
         <Text style={styles.primaryBtnText}>{t('checkout.trackOrder')}</Text>
       </TouchableOpacity>
@@ -64,7 +76,10 @@ const OrderSuccess = ({ navigation, route }) => {
         // is cart → payment, and neither is somewhere to return to after paying. Named
         // explicitly instead of popToTop() because the root stack's first screen is
         // Splash, not the app home.
-        onPress={() => navigation.navigate('DrawerNavigator')}>
+        onPress={() => {
+          captureEvent('order_success_cta', { cta: 'continue_shopping', order_id: order.id || null });
+          navigation.navigate('DrawerNavigator');
+        }}>
         <Text style={styles.secondaryBtnText}>{t('checkout.continueShopping')}</Text>
       </TouchableOpacity>
     </View>

@@ -14,6 +14,7 @@ import debounce from 'lodash.debounce';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import {LanguageContext} from '../../context/LanguageContext';
+import {captureEvent} from '../../utils/Analytics';
 
 const SearchScreen = ({navigation, route}) => {
   const {t} = React.useContext(LanguageContext);
@@ -50,6 +51,15 @@ const SearchScreen = ({navigation, route}) => {
       return isNameMatch || isSpecialtyMatch;
     });
 
+    // Fired from inside the DEBOUNCED filter, so this is one event per settled query
+    // rather than one per keystroke. A high zero_results rate is the signal worth
+    // watching — it says people are looking for something the catalogue doesn't have.
+    captureEvent('search_performed', {
+      query_length: query.length,
+      results: filtered?.length || 0,
+      zero_results: !filtered || filtered.length === 0,
+    });
+
     setFilteredData(filtered);
   };
 
@@ -77,9 +87,13 @@ const SearchScreen = ({navigation, route}) => {
   const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
 
   const handleAstrologer = item => {
+    captureEvent('search_result_tapped', {astrologer_id: item?.userId, target: 'profile'});
     navigation.navigate('AstrologerInfo', {person: item});
   };
-  const handleChat = item => sendChatRequest(item);
+  const handleChat = item => {
+    captureEvent('search_result_tapped', {astrologer_id: item?.userId, target: 'chat'});
+    return sendChatRequest(item);
+  };
 
   return (
     <View style={styles.container}>
@@ -123,7 +137,10 @@ const SearchScreen = ({navigation, route}) => {
           <View style={styles.mostSearchedContainer}>
             {mostSearched.map((item, index) => (
               <TouchableOpacity
-                onPress={() => navigation.navigate('Chat')}
+                onPress={() => {
+                  captureEvent('most_searched_tapped', {term: item});
+                  navigation.navigate('Chat');
+                }}
                 key={index}
                 style={styles.mostSearchedItem}>
                 <Text style={styles.mostText}>{item}</Text>
@@ -133,7 +150,7 @@ const SearchScreen = ({navigation, route}) => {
         </View>
       )}
 
-      <RequestingPopup
+      <RequestingPopup context="search"
         visible={requesting}
         astro={requestAstro}
         onCancel={cancelRequest}

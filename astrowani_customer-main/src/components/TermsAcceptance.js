@@ -12,11 +12,13 @@ import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import {LEGAL_LINKS} from '../config/legal';
 import {LanguageContext} from '../context/LanguageContext';
+import {captureEvent} from '../utils/Analytics';
 
 export default function TermsAcceptance({accepted, onChange, style}) {
   const {t} = React.useContext(LanguageContext);
 
-  const open = (url) => {
+  const open = (url, which) => {
+    captureEvent('legal_link_opened', {link: which, screen: 'signup'});
     // Never let a dead or malformed URL crash the sign-up screen.
     Linking.openURL(url).catch(() => {});
   };
@@ -24,7 +26,12 @@ export default function TermsAcceptance({accepted, onChange, style}) {
   return (
     <View style={[styles.row, style]}>
       <TouchableOpacity
-        onPress={() => onChange(!accepted)}
+        onPress={() => {
+          // The terms checkbox is a hard gate on step 3 of signup — knowing how many
+          // people tick it, and how many untick it again, is worth one event.
+          captureEvent('terms_toggled', {accepted: !accepted});
+          onChange(!accepted);
+        }}
         activeOpacity={0.7}
         // Generous hit slop: the box itself is small, and a consent control that
         // is fiddly to tap reads as a broken one.
@@ -38,11 +45,11 @@ export default function TermsAcceptance({accepted, onChange, style}) {
 
       <Text style={styles.text}>
         {t('register.acceptPrefix')}
-        <Text style={styles.link} onPress={() => open(LEGAL_LINKS.termsOfUse)}>
+        <Text style={styles.link} onPress={() => open(LEGAL_LINKS.termsOfUse, 'terms')}>
           {t('register.termsAndConditions')}
         </Text>
         {t('register.acceptAnd')}
-        <Text style={styles.link} onPress={() => open(LEGAL_LINKS.privacyPolicy)}>
+        <Text style={styles.link} onPress={() => open(LEGAL_LINKS.privacyPolicy, 'privacy')}>
           {t('settings.privacyPolicy')}
         </Text>
         {/* Empty in English, where the sentence is already complete. Hindi is

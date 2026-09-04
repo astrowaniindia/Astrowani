@@ -40,6 +40,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { SOCKET_URL } from '../config/api';
 import { navigationRef } from '../utils/NavigationService';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
+import { captureEvent } from '../utils/Analytics';
 
 // How long the ring stays on screen before it gives up on its own. The astrologer's
 // side keeps ringing for as long as they hold the screen; this is only about not
@@ -169,6 +170,14 @@ export const FreeCallIncomingHost = () => {
   const accept = useCallback(() => {
     if (!call) return;
     const target = call;
+    // The payoff of the whole free-call funnel: a booking that turned into a real
+    // answered call. Booked-but-never-answered is the number that decides whether the
+    // offer is working, and it is only visible if both ends are recorded.
+    captureEvent('free_call_answered', {
+      booking_id: target.bookingId,
+      astrologer_id: target.astrologerId,
+      duration_minutes: target.durationMinutes,
+    });
     clearRing();
     // Same screen the paid calls use. freeCall only changes what is displayed and
     // adds the hard stop — the session is already priced at 0 server-side.
@@ -188,6 +197,10 @@ export const FreeCallIncomingHost = () => {
     if (!call || busy) return;
     setBusy(true);
     const target = call;
+    captureEvent('free_call_declined', {
+      booking_id: target.bookingId,
+      astrologer_id: target.astrologerId,
+    });
     // Dismiss immediately — the customer said no, so the UI should not sit there
     // waiting on a network round trip to agree with them.
     clearRing();

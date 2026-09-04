@@ -10,6 +10,7 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import { listOrders, cancelOrder } from '../../api/OrdersApi';
+import { captureEvent } from '../../utils/Analytics';
 import SHOP, { cardShadow } from '../../components/shop/shopTheme';
 import {useModalPresence} from '../../utils/modalPresentation';
 
@@ -58,9 +59,13 @@ const MyOrdersScreen = ({ navigation }) => {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchOrders(); }, [fetchOrders]));
+  useFocusEffect(useCallback(() => {
+    captureEvent('my_orders_viewed');
+    fetchOrders();
+  }, [fetchOrders]));
 
   const confirmCancel = (order) => {
+    captureEvent('order_cancel_tapped', { order_id: order.id, status: order.status, payment_method: order.payment_method || null });
     const refundNote = order.payment_status === 'paid'
       ? (order.payment_method === 'wallet' ? t('orders.cancelRefundWallet') : t('orders.cancelRefundOnline'))
       : '';
@@ -68,7 +73,7 @@ const MyOrdersScreen = ({ navigation }) => {
       t('orders.cancelTitle'),
       `${t('orders.cancelMessage')}${refundNote ? `\n\n${refundNote}` : ''}`,
       [
-        { text: t('orders.keepOrder'), style: 'cancel' },
+        { text: t('orders.keepOrder'), style: 'cancel', onPress: () => captureEvent('order_cancel_abandoned', { order_id: order.id }) },
         {
           text: t('orders.cancelOrder'),
           style: 'destructive',
@@ -76,6 +81,12 @@ const MyOrdersScreen = ({ navigation }) => {
             setCancellingId(order.id);
             try {
               const res = await cancelOrder(order.id);
+              captureEvent('order_cancelled', {
+                order_id: order.id,
+                refunded: !!res?.refund?.refunded,
+                refund_pending: !!res?.refund?.pending,
+                amount: res?.refund?.amount ?? null,
+              });
               await fetchOrders();
               if (res?.refund?.refunded) {
                 Alert.alert(t('orders.cancelled'), t('orders.refundedToWallet', { amount: res.refund.amount }));
@@ -83,6 +94,7 @@ const MyOrdersScreen = ({ navigation }) => {
                 Alert.alert(t('orders.cancelled'), t('orders.refundPending'));
               }
             } catch (err) {
+              captureEvent('order_cancel_failed', { order_id: order.id, reason: err.code || 'other' });
               Alert.alert(t('common.error'), err.message);
             } finally {
               setCancellingId(null);

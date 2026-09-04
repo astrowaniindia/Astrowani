@@ -21,6 +21,7 @@ import {
   ASTRO, SectionCard, Prose, Callout, ZODIAC_GLYPH, Reveal, ConsultCta,
 } from '../../../components/astro/AstroUI';
 import {useFreeServiceLanguage} from '../../../components/astro/ReportLanguage';
+import { captureEvent } from '../../../utils/Analytics';
 
 const ZODIAC_SIGNS = [
   {sign: 'aries', name: 'Aries', element: 'fire', dateRange: {start: '2024-03-21', end: '2024-04-19'}},
@@ -115,7 +116,7 @@ export default function Horoscope({navigation}) {
             <Reveal key={z.sign} index={Math.floor(i / 4)} style={styles.gridCellWrap}>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => setSelected(z)}
+                onPress={() => { captureEvent('horoscope_sign_selected', { sign: z?.name || z?.sign || null }); setSelected(z); }}
                 style={[styles.gridCell, on && styles.gridCellOn]}>
                 <Text
                   style={[
@@ -172,7 +173,7 @@ export default function Horoscope({navigation}) {
               <TouchableOpacity
                 style={styles.moreBtn}
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('HoroscopeDetails', {data: horoscopeData})}>
+                onPress={() => { captureEvent('horoscope_details_opened'); navigation.navigate('HoroscopeDetails', {data: horoscopeData}); }}>
                 <Text style={styles.moreBtnText}>{t('free.fullReading')}</Text>
                 <Ionicons name="chevron-forward" size={moderateScale(16)} color={COLORS.white} />
               </TouchableOpacity>

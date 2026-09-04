@@ -10,6 +10,7 @@ import {getWalletBalance} from '../utils/wallet';
 import {chargeFreeService} from '../api/freeServicesApi';
 import {LanguageContext} from '../context/LanguageContext';
 import {showStatusPopup} from '../components/StatusPopup';
+import {captureEvent} from '../utils/Analytics';
 
 const FREE_SERVICE_PRICE = 1;
 
@@ -18,10 +19,12 @@ export default function useFreeServicePurchase() {
   const [charging, setCharging] = useState(false);
 
   async function purchase(serviceKey, serviceName) {
+    captureEvent('free_service_tapped', {service_key: serviceKey});
     setCharging(true);
     try {
       const balance = await getWalletBalance();
       if (balance < FREE_SERVICE_PRICE) {
+        captureEvent('free_service_blocked', {service_key: serviceKey, reason: 'low_balance', balance});
         showStatusPopup({
           variant: 'insufficient',
           title: t('alerts.insufficientBalance'),
@@ -41,12 +44,20 @@ export default function useFreeServicePurchase() {
           onCancel: () => resolve(false),
         });
       });
-      if (!confirmed) return false;
+      if (!confirmed) {
+        captureEvent('free_service_declined', {service_key: serviceKey, price: FREE_SERVICE_PRICE});
+        return false;
+      }
 
       const requestId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
       await chargeFreeService(serviceKey, requestId);
+      captureEvent('free_service_purchased', {service_key: serviceKey, price: FREE_SERVICE_PRICE});
       return true;
     } catch (err) {
+      captureEvent('free_service_failed', {
+        service_key: serviceKey,
+        reason: err.isInsufficientBalance ? 'low_balance' : (err.code || 'other'),
+      });
       if (err.isInsufficientBalance) {
         showStatusPopup({
           variant: 'insufficient',

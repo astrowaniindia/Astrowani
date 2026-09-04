@@ -10,6 +10,7 @@ import {LanguageContext} from '../../../context/LanguageContext';
 import {showStatusPopup} from '../../../components/StatusPopup';
 import {apiLang} from '../../../components/astro/ReportLanguage';
 import {astroServiceLabel} from '../../../utils/astroServiceLabel';
+import {captureEvent} from '../../../utils/Analytics';
 
 export default function useAstroPurchase(serviceKey) {
   const {t} = useContext(LanguageContext);
@@ -35,6 +36,9 @@ export default function useAstroPurchase(serviceKey) {
       showStatusPopup({variant: 'info', title: t('astro.notAvailable'), message: t('astro.notAvailableMsg')});
       return null;
     }
+    // One choke point for all 10 paid report screens — instrumenting here rather than in
+    // each screen means a new report screen is tracked the day it is written.
+    captureEvent('astro_report_submitted', {service_key: serviceKey});
     setSubmitting(true);
     try {
       // Re-fetch right before charging — the backend always charges its own current DB
@@ -45,6 +49,13 @@ export default function useAstroPurchase(serviceKey) {
       setService(freshService);
 
       if (balance < freshService.price) {
+        captureEvent('astro_report_blocked', {
+          service_key: serviceKey,
+          reason: 'low_balance',
+          price: freshService.price,
+          balance,
+          shortfall: freshService.price - balance,
+        });
         showStatusPopup({
           variant: 'insufficient',
           title: t('alerts.insufficientBalance'),
@@ -66,13 +77,25 @@ export default function useAstroPurchase(serviceKey) {
           onCancel: () => resolve(false),
         });
       });
-      if (!confirmed) return null;
+      if (!confirmed) {
+        // Seeing the price and declining is a pricing signal, and it is invisible unless
+        // it is recorded — nothing else in the funnel distinguishes it from never trying.
+        captureEvent('astro_report_purchase_declined', {service_key: serviceKey, price: freshService.price});
+        return null;
+      }
+      captureEvent('astro_report_purchase_confirmed', {service_key: serviceKey, price: freshService.price});
 
       // Generate in whatever language the app is currently set to, so a Hindi user gets a
       // Hindi report without having to toggle after the fact.
       lastPayload.current = payload;
-      return await runAstroReport(serviceKey, {...payload, lang: apiLang(language)});
+      const result = await runAstroReport(serviceKey, {...payload, lang: apiLang(language)});
+      captureEvent('astro_report_generated', {service_key: serviceKey, price: freshService.price});
+      return result;
     } catch (err) {
+      captureEvent('astro_report_failed', {
+        service_key: serviceKey,
+        reason: err.isInsufficientBalance ? 'low_balance' : (err.code || 'other'),
+      });
       if (err.isInsufficientBalance) {
         showStatusPopup({variant: 'insufficient', title: t('alerts.insufficientBalance'), message: t('astro.rechargeToView')});
       } else {

@@ -16,6 +16,7 @@ import { LanguageContext } from '../../context/LanguageContext';
 // The four categories, their bundled fallbacks and the admin-override merge now
 // live in one place — Home's Remedies row renders the same four cards.
 import { buildRemedyCategories } from './remedyCategories';
+import { captureEvent } from '../../utils/Analytics';
 
 const Remedies = () => {
   const navigation = useNavigation();
@@ -36,7 +37,7 @@ const Remedies = () => {
     navigation.navigate('RemedyShop', { type: item.type, title: item.title });
   };
   const renderItem = ({ item }) => (
-    <TouchableOpacity onPress={() => handleBookPuja(item)} style={styles.card}>
+    <TouchableOpacity onPress={() => { captureEvent('remedy_category_tapped', { category: item?.type || item?.title || null }); handleBookPuja(item); }} style={styles.card}>
       <View style={styles.textContainer}>
         <View style={styles.textOverlay}>
           <Text style={styles.title}>{item.title}</Text>
