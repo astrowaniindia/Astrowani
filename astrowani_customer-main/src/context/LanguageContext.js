@@ -1132,6 +1132,24 @@ const translations = {
     'freeCall.minutes': '{{count}} minutes, free',
     'freeCall.notNow': 'Maybe later',
     'freeCall.done': 'Done',
+
+    // ── App update prompt (components/AppUpdatePrompt.js) ──
+    // These are FALLBACKS only. The live copy comes from the admin's App Prompts page
+    // (app_settings.app_update_config) so wording can change without an app release;
+    // these render when that copy has not been filled in.
+    'appUpdate.title': 'A new version is available',
+    'appUpdate.message': 'Update Astrowani to get the latest features, faster calls and important fixes.',
+    'appUpdate.versionLabel': 'Version {{version}}',
+    'appUpdate.required': 'This update is required to keep using the app.',
+    'appUpdate.updateNow': 'Update now',
+    'appUpdate.opening': 'Opening Play Store…',
+    'appUpdate.later': 'Later',
+
+    // ── Play Store review prompt (components/RateAppPrompt.js) ──
+    'rateApp.title': 'Enjoying Astrowani?',
+    'rateApp.message': 'A quick rating on the Play Store helps other people find us. It takes less than a minute.',
+    'rateApp.rateNow': 'Rate on Play Store',
+    'rateApp.later': 'Maybe later',
     'freeCall.giftHint': 'Your free call is waiting',
     'freeCall.slotTaken': 'Someone just took that time. Please pick another.',
     'freeCall.experience': '{{years}} experience',
@@ -2238,6 +2256,21 @@ const translations = {
     'freeCall.minutes': '{{count}} मिनट, मुफ़्त',
     'freeCall.notNow': 'बाद में',
     'freeCall.done': 'ठीक है',
+
+    // ── App update prompt (components/AppUpdatePrompt.js) ──
+    'appUpdate.title': 'नया अपडेट उपलब्ध है',
+    'appUpdate.message': 'नई सुविधाओं और ज़रूरी सुधारों के लिए Astrowani को अपडेट करें।',
+    'appUpdate.versionLabel': 'वर्जन {{version}}',
+    'appUpdate.required': 'ऐप इस्तेमाल करते रहने के लिए यह अपडेट ज़रूरी है।',
+    'appUpdate.updateNow': 'अभी अपडेट करें',
+    'appUpdate.opening': 'Play Store खुल रहा है…',
+    'appUpdate.later': 'बाद में',
+
+    // ── Play Store review prompt (components/RateAppPrompt.js) ──
+    'rateApp.title': 'Astrowani पसंद आया?',
+    'rateApp.message': 'Play Store पर एक छोटी सी रेटिंग से और लोग हम तक पहुँच पाते हैं। एक मिनट से भी कम लगेगा।',
+    'rateApp.rateNow': 'Play Store पर रेट करें',
+    'rateApp.later': 'बाद में',
     'freeCall.giftHint': 'आपकी मुफ़्त कॉल इंतज़ार कर रही है',
     'freeCall.slotTaken': 'यह समय अभी किसी ने बुक कर लिया। कृपया दूसरा चुनें।',
     'freeCall.experience': '{{years}} का अनुभव',

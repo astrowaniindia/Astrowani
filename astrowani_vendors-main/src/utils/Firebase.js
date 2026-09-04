@@ -70,7 +70,12 @@ export async function requestUserPermission() {
     }
   }
 }
-const ADMIN_NOTIFICATION_TYPES = ['admin_broadcast', 'admin_personal'];
+// 'app_update' / 'app_review' come from the admin's App Prompts page
+// (astrowani-backend/src/appPromptRoutes.js). They are plain informational
+// notifications and render through the same generic path as an admin broadcast —
+// data-only, so they reach this handler and get our large icon instead of being
+// auto-displayed by the OS.
+const ADMIN_NOTIFICATION_TYPES = ['admin_broadcast', 'admin_personal', 'app_update', 'app_review'];
 
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);

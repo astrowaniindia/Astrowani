@@ -18,6 +18,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from './StatusPopup';
 import { captureEvent } from '../utils/Analytics';
+import { markReviewGoodMoment } from '../utils/appPrompts';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
 let listener = null;
@@ -64,6 +65,11 @@ export function ReviewPromptHost() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       captureEvent('review_submitted', { astrologer_id: target.astrologerId, rating });
+      // A happy customer is the right moment to ask for a PUBLIC Play Store rating —
+      // and someone who just rated a session 1-3 stars is emphatically not. This only
+      // records the signal; RateAppPrompt picks it up on the next launch rather than
+      // opening a second modal on top of the success popup below.
+      if (rating >= 4) markReviewGoodMoment();
       close();
       showStatusPopup({ variant: 'success', title: 'Thank you!', message: 'Your review has been submitted.' });
     } catch (err) {

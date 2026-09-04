@@ -25,6 +25,7 @@ import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
 import ReferralPopup from './pages/ReferralPopup';
+import AppPrompts from './pages/AppPrompts';
 import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
 import Support from './pages/Support';
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="missed" element={<Missed />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="referral-popup" element={<ReferralPopup />} />
+        <Route path="app-prompts" element={<AppPrompts />} />
         <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="reports" element={<Reports />} />
         <Route path="support-inbox" element={<SupportInbox />} />

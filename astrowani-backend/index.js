@@ -586,6 +586,10 @@ require('./src/notificationRoutes')(app);
 // Admin-triggerable referral popup (broadcast/personal send + history)
 require('./src/referralPopupRoutes')(app);
 
+// App-update prompt + Play Store review prompt — public /api/app/update-check and
+// /api/app/review-prompt (both fail closed), plus the admin "notify everyone" send.
+require('./src/appPromptRoutes')(app);
+
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
 

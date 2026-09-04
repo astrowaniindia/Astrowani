@@ -5,6 +5,8 @@ import { Platform, PermissionsAndroid } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import Instance from '../api/ApiCall';
 import { navigate, navigationRef } from './NavigationService';
+import { showAppUpdatePrompt } from '../components/AppUpdatePrompt';
+import { showRateAppPrompt } from '../components/RateAppPrompt';
 
 const CHANNEL_ID = 'astrowani-default';
 
@@ -192,6 +194,16 @@ function handleNotificationTap(remoteMessage) {
     navigate('SupportChat', conversationId ? { conversationId } : undefined);
   } else if (type === 'active_session') {
     handleActiveSessionTap(remoteMessage.data);
+  } else if (type === 'app_update' || type === 'app_review') {
+    // Tapping a store-prompt push raises the matching in-app popup rather than
+    // jumping straight to the Play Store: the popup carries the reason and the
+    // "Later" option, and — for app_update — re-checks with the server first, so a
+    // push that arrives after the user has already updated shows nothing at all.
+    if (type === 'app_update') {
+      showAppUpdatePrompt();
+    } else {
+      showRateAppPrompt(null, { force: true, trigger: 'push' });
+    }
   }
 }
 

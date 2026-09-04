@@ -23,6 +23,7 @@ const links = [
   { to: '/live-aarti', label: 'Live Aarti & Pooja' },
   { to: '/missed', label: 'Missed Sessions' },
   { to: '/notifications', label: 'Notifications' },
+  { to: '/app-prompts', label: 'App Prompts' },
   { to: '/referral-popup', label: 'Referral Popup' },
   { to: '/free-bot-chat', label: 'Free Bot Chat' },
   // The free 12-minute intro CALL, which replaced the free bot chat above.

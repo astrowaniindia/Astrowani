@@ -40,6 +40,8 @@ import OrderSuccess from '../screens/Remedies/OrderSuccess';
 import { ReviewPromptHost } from '../components/ReviewPrompt';
 import { ReferralPromptHost } from '../components/ReferralPromptHost';
 import { FreeCallIncomingHost } from '../components/FreeCallIncoming';
+import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
+import { RateAppPromptHost } from '../components/RateAppPrompt';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
@@ -653,6 +655,11 @@ export default function Navigation({ initialRoute }) {
         call in this app that travels in that direction — so the "someone is calling
         you" screen has to live at the root, not on any one screen. */}
     <FreeCallIncomingHost />
+    {/* Store-facing prompts. Both run their own launch check and stay silent unless
+        the admin has configured them; the update prompt suppresses the review one so
+        they can never stack. */}
+    <AppUpdatePromptHost />
+    <RateAppPromptHost />
     </>
   );
 }

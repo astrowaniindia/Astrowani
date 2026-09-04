@@ -12,6 +12,11 @@ const { sendPush } = require('./push');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
+const {
+  invalidateAppPromptCache,
+  UPDATE_KEY: APP_PROMPT_UPDATE_KEY,
+  REVIEW_KEY: APP_PROMPT_REVIEW_KEY,
+} = require('./appPromptRoutes');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
 // Phone canonicalization + the tolerant "is this number already an astrologer"
 // lookup, shared with the OTP/login path so an admin-created account is stored in
@@ -1440,6 +1445,13 @@ module.exports = function registerAdminRoutes(app) {
     if (key === 'live_aarti_youtube_url') contentCache.invalidate('live-aarti:');
     if (key === 'remedy_unavailable_title' || key === 'remedy_unavailable_message') {
       contentCache.invalidate('remedy-unavailable-popup:');
+    }
+    // The update/review prompt configs are served through appPromptRoutes' own 60s
+    // TtlCache. Dropping the entry makes an admin edit take effect on the next app
+    // launch instead of up to a minute later — which matters most for switching a
+    // wrongly-configured "force update" back OFF.
+    if (key === APP_PROMPT_UPDATE_KEY || key === APP_PROMPT_REVIEW_KEY) {
+      invalidateAppPromptCache(key);
     }
     return res.json({ success: true });
   }));

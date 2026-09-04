@@ -2713,3 +2713,192 @@ correct in the database (2:00 PM IST, phone snapshotted), and after booking **bo
 and the gift box disappear** on relaunch — the "gone once booked" rule. `ThemedDateTimePicker`
 renders themed and the pre-1970 year selection was confirmed working by the user. No
 free-call errors in logcat.
+
+---
+
+## Subsystem added 2026-09-04: app-update prompt + Play Store review prompt
+
+### AR. "Please update" and "please rate us", in both apps, with pushes
+
+Two popups, both admin-configured, both shown at app launch and both raisable on demand
+from the admin as a push + in-app notification.
+
+**The rules this is built on:**
+
+1. **The SERVER decides whether an update is due, not the app.** `GET /api/app/update-check`
+   is handed the installed `version` + `build` and answers `{updateAvailable, force, storeUrl,
+   copy}`. The comparison rules live in one place that can be corrected without shipping a new
+   build — which is exactly the thing a broken update prompt would prevent. The app renders
+   the answer and never infers "force" on its own.
+2. **EVERY failure path returns "do not prompt", with HTTP 200.** Config missing, unparseable
+   JSON, disabled, an unparseable version string, no store listing for the platform — all
+   answer `updateAvailable:false` / `enabled:false`. A missed nudge is recoverable; a
+   non-dismissible "please update" wall in front of an already-current app is not. `null`
+   from `compareVersions` (anything not a plain dotted number) is treated as "not behind" and
+   **never** as "force".
+3. **Nobody is asked to review twice.** Tapping through to the store sets a permanent local
+   flag; "Maybe later" is honoured for `remindAfterDays`. In the customer app the ask is also
+   chained to a **4-or-5-star session rating** — deliberately keeping unhappy customers away
+   from a public review form.
+
+**Soft vs forced**: below `latestVersion`/`latestBuild` → soft prompt with "Later" (snoozed
+for `remindAfterHours`). Below `minSupportedVersion`/`minSupportedBuild` → forced: no Later,
+`onRequestClose` neutered, and a `BackHandler` subscription returning `true` so Android's back
+gesture cannot escape it either. A forced prompt also **ignores the snooze** and stays on
+screen after the store opens. The admin page shows a standing warning naming every app that
+currently has a forced update configured.
+
+**Build number beats version name** when both sides have one — `versionCode` is monotonic,
+a version *name* can be re-used. Version name is the fallback for a client that sent no build.
+
+### Files
+
+| File | Role |
+|---|---|
+| `sql/app_update_review_prompts.sql` | Seeds two JSON blobs into `app_settings`. **Seeded `enabled:false` for updates on purpose** — a wrong version number here asks everyone to install a build that does not exist. |
+| `src/appPromptRoutes.js` | The two public GETs + `POST /api/admin/app-prompts/notify`. 60s `TtlCache` on the config. |
+| `scripts/appPromptCheck.js` | 28 DB-free assertions on the comparison. **Run after touching the arithmetic.** |
+| customer/vendor `src/utils/appPrompts.js` | Fetchers + AsyncStorage bookkeeping (snooze, open count, "already rated"). Duplicated per app, as every other cross-app utility here is. |
+| customer/vendor `src/components/{AppUpdatePrompt,RateAppPrompt}.js` | The two hosts, mounted once at the navigation root. |
+| `astrowani-admin/src/pages/AppPrompts.jsx` | Both configs + the notify form. Saves through the existing generic `PATCH /api/admin/settings` — no new settings endpoint. |
+
+`adminRoutes.js`'s settings PATCH now calls `invalidateAppPromptCache` for these two keys, so
+switching a wrongly-set forced update back OFF takes effect on the next app launch rather than
+up to a minute later.
+
+### Notifications
+
+`POST /api/admin/app-prompts/notify` delivers three ways, the same shape as
+`notificationRoutes.js`: a `notifications` row per recipient (the durable bell-list record), a
+socket event (`show_update_popup` / `show_review_popup`) to each personal room for anyone
+foregrounded, and a data-only FCM push. Logged to the existing `notification_broadcasts`
+rather than a fourth broadcast table.
+
+**A broadcast cannot produce a false "please update"**: the update host re-runs the server
+check before it shows anything, so recipients already on the newest build see nothing. The
+review broadcast skips the usage gates but still never asks anyone who has already rated.
+
+Push routing: customer `PushNotification.js` maps `app_update` / `app_review` taps to the
+matching popup (not straight to the store — the popup carries the reason and the Later
+option). Vendor `Firebase.js` adds both to `ADMIN_NOTIFICATION_TYPES` so they display.
+
+### Two things worth remembering
+
+- **The two prompts are mutually exclusive at launch.** Both hosts check on mount, so without
+  a guard a user who is behind AND due a review gets two stacked modals. `setUpdatePromptActive`
+  in `appPrompts.js` gives the update prompt precedence. On iOS `useDeferredPresent` serialises
+  *presentation*, but it does not decide *precedence* — that is this flag's job.
+- **The good-rating chain is a FLAG, not a direct call.** `ReviewPrompt.js` finishes by showing
+  a success popup; raising a second root modal on top of it is the stacked-modal shape that
+  freezes iOS. It writes `appReviewGoodMoment` instead and `RateAppPrompt` picks it up on the
+  next launch (expiring after 7 days).
+
+### SQL to run (Supabase SQL editor)
+`sql/app_update_review_prompts.sql` — idempotent. Until it runs, both endpoints fail closed and
+no popup appears anywhere, so the app changes are safe to ship first.
+
+### Verified 2026-09-04
+`scripts/appPromptCheck.js` **28/28**. A bare-Express harness mounting `appPromptRoutes` against
+the LIVE database: **51/51** — fails closed when unconfigured/corrupt/disabled; the full decision
+matrix (current, ahead, one behind, below minimum, exactly at minimum, build-beats-name,
+unparseable, absent); vendor config independent and pointed at its own listing; iOS gets no
+prompt (no listing exists); admin free-text clamped (`minAppOpens` 0→1, negative days→0, absurd
+snooze→365); and the notify route 401s without a token, **403s on a customer token**, and 400s on
+bad kind/audience/copy. `app_settings` restored exactly — both keys deleted, as they did not
+exist before.
+
+Admin page driven in a real browser against that harness (gitignored `.env.local`, removed
+afterwards): all three cards render, the sidebar link works, the forced-update warning appears
+as soon as a minimum version is entered, **Save persists and the public endpoint immediately
+serves the new config** (proving the cache invalidation), and the notify form refuses empty copy
+before any network call and names the exact audience in its confirm. **No broadcast was actually
+sent** — the confirm was cancelled, since that harness talks to the live database.
+
+Both RN apps bundle clean for Android. Admin `npm run build` succeeds. Lint clean on every new
+file; the 3 customer + 1 vendor errors reported are pre-existing `exhaustive-deps` (confirmed by
+re-running lint against a stashed tree). i18n parity re-checked: **1034** keys, 0 one-sided.
+
+**Not exercised on a device**, and the SQL is not applied — so nothing is live yet.
+
+### ⚠️ This ships over OTA — but the version numbers do not come from it
+`react-native-device-info` was already installed in both apps, so there is no native change and
+this is a normal JS-only OTA. But note the prompt compares against whatever an admin typed into
+the App Prompts page, **not** against the Play Store. After publishing a new build, update
+`latestVersion` / `latestBuild` there or the prompt never fires; set it to a version that is not
+published yet and it fires for everyone with nothing to install.
+
+### AS. Emulator verification 2026-09-04 — and the forced-update bug it caught
+
+Driven on an Android 16 emulator (Pixel_7, customer app, debuggable build over Metro) against a
+**local stub** of the two endpoints rather than production: both apps point at
+`backend.astrowani.com`, so enabling the update prompt in the live `app_settings` to see a popup
+would have shown "please update" to every real customer. The stub returned the exact response
+shape the real endpoint produces (already verified 51/51 against the live DB) with a
+runtime-switchable scenario. `src/config/api.js` was temporarily pointed at `http://10.0.2.2:4500`
+and **reverted** — `git diff` on that file is empty.
+
+**Confirmed working on-device**: the client sends its real `version=24.1&build=33` from
+DeviceInfo; the soft prompt renders with brand styling and interpolated version; **"Later"
+snoozes across a full app restart** even while the server still reports an update; the forced
+prompt overrides that snooze and drops the Later button; "Rate on Play Store" opens the Play
+Store; and after tapping it the review prompt **never asks again** — the harness log proves the
+app short-circuits on `hasReviewed()` before even fetching the config.
+
+> **THE BUG, and the rule from it: a forced prompt CANNOT be a `<Modal>` on Android.**
+> First run of the forced case, one back press dismissed the "Update required" dialog and left
+> the app fully usable — the exact thing a forced update exists to prevent. Instrumented logging
+> showed the back press produced **no JS callback at all**: neither `onRequestClose` (a no-op for
+> forced) nor a `BackHandler` subscription that was confirmed armed. RN 0.77's
+> `ReactModalHostView` creates its Dialog with `FLAG_NOT_FOCUSABLE`, so the back key never
+> reaches the dialog's own key listener, yet the dialog is torn down natively anyway — leaving JS
+> still believing `visible === true`, so it could never re-show either.
+>
+> **Fix**: a forced prompt renders as a plain absolutely-positioned overlay
+> (`styles.forcedOverlayRoot`, `absoluteFillObject` + `zIndex`/`elevation` 9999) in the normal
+> view tree, in **both** apps. Nothing native can dismiss a View. Verified: back now merely
+> backgrounds the app (normal root-screen behaviour) and the overlay **is still there on
+> resume** — so there is no way into the app past a required update. A soft prompt stays a
+> `<Modal>`, since it is meant to be dismissible.
+
+> **Separate observation, NOT fixed and NOT caused by this work**: `BackHandler` appears to be
+> inert on this emulator. A subscription confirmed armed never fired, and back exited the app
+> instead. The likely cause is Android 16 + `targetSdkVersion 36`, where predictive back is
+> default-on and the legacy `onBackPressed` path RN's `BackHandler` depends on is no longer
+> invoked (the manifest sets no `android:enableOnBackInvokedCallback`). If that is right it
+> affects every existing `BackHandler` in the customer app — `ChatSessionScreen.js`,
+> `VoiceCallScreen.tsx`, `VideoCallScreen.tsx`, `Register.jsx`, `StoreWebView.js` — whose
+> back-interception would be silently doing nothing on Android 14+. **Worth confirming on a real
+> device before acting**; it is a native/manifest matter and was out of scope here. The overlay
+> fix above deliberately does not depend on `BackHandler` working.
+
+### AT. Vendor-app emulator verification 2026-09-04
+
+Same method as the customer run above (local stub on `10.0.2.2:4500`, vendor
+`src/config/api.js` temporarily repointed and **reverted** — `cmp` against HEAD confirms it is
+byte-identical). The vendor app was not installed on the AVD; built and installed with
+`.\gradlew.bat installDebug` **from PowerShell** (BUILD SUCCESSFUL in 3m 10s — Gradle must not be
+driven from the Bash tool here, see subsystem AE).
+
+The stub served **deliberately different vendor copy**, so a vendor run that silently fell back to
+the customer config would show wrong text on screen rather than passing.
+
+**Confirmed on-device**: the vendor sends `app=vendor version=6.6 build=23`; the soft prompt renders
+the *vendor's own* copy and version; **"Later" snoozes across a full restart**; the forced prompt
+overrides that snooze, drops the Later button, and — the fix from subsystem AS — **survives a back
+press and is still there on resume**; the review prompt shows vendor copy; "Rate on Play Store"
+opens `details?id=com.astrowaniVendor` (confirmed from the intent in logcat, i.e. the astrologer
+listing, not the customer one); and afterwards the app **never asks again** — the harness log shows
+the last launch made only an `update-check` with no `review-prompt` fetch at all.
+
+> **Two testing traps worth remembering, both of which produced a false result first:**
+> - **A `grep -q` on a scenario-agnostic pattern matches a HISTORICAL log line.** `grep "review-prompt] app=vendor"`
+>   matched a hit from an earlier scenario and reported "fetched" when nothing had happened in the
+>   current one. Always include the scenario/marker in the pattern, or compare line numbers.
+> - **The other app kept stealing the foreground.** With both apps installed, the customer app's
+>   task resurfaced and paused the vendor's 8s review timer, so the prompt silently never fired.
+>   `am force-stop` the other package before timing anything.
+>
+> Also observed: the very first `update-check` after a fresh `installDebug` sent
+> `build=undefined` (native DeviceInfo not ready yet), then `build=23` on every subsequent launch.
+> Harmless by design — the endpoint falls back to version-name comparison when no build is sent and
+> never forces on a missing/unparseable value — but it is why that fallback exists.

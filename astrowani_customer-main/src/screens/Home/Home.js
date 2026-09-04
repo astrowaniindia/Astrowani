@@ -42,6 +42,8 @@ import { SOCKET_URL } from '../../config/api';
 import { readCache, writeCache } from '../../utils/cacheFetch';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
+import { showAppUpdatePrompt } from '../../components/AppUpdatePrompt';
+import { showRateAppPrompt } from '../../components/RateAppPrompt';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
@@ -383,6 +385,17 @@ const Home = ({navigation}) => {
       // admin's own title/message instead of the default copy.
       socketRef.current.on('show_referral_popup', ({ title, body }) => {
         showReferralPrompt(title, body);
+      });
+      // Admin-pushed store prompts (astrowani-admin's App Prompts page). The update
+      // host re-runs its own server check before showing anything, so a broadcast
+      // sent to everyone cannot raise "please update" on an already-current build.
+      socketRef.current.on('show_update_popup', ({ title, body }) => {
+        showAppUpdatePrompt({ title, message: body });
+      });
+      // force: an admin asking explicitly overrides the usual "used it enough yet"
+      // gates — but NOT the "already rated" rule, which is honoured in every path.
+      socketRef.current.on('show_review_popup', ({ title, body }) => {
+        showRateAppPrompt({ title, message: body }, { force: true, trigger: 'admin' });
       });
     };
     setup();

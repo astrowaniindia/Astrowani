@@ -56,6 +56,9 @@ import Settings from '../screens/Settings';
 import AboutUsScreen from '../screens/AboutUsScreen';
 import FaqScreen from '../screens/FaqScreen';
 import ReferralPopupHost from '../components/ReferralPopupHost';
+import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
+import { RateAppPromptHost } from '../components/RateAppPrompt';
+import useAppPromptSync from '../utils/useAppPromptSync';
 import { StatusPopupHost } from '../components/StatusPopup';
 import useReferralPopupSync from '../utils/useReferralPopupSync';
 const Stack = createNativeStackNavigator();
@@ -79,6 +82,8 @@ function NavigationScreen() {
   // Admin-triggered referral popup (astrowani-admin's Referral Popup page) — lives at the
   // navigation root so it can fire regardless of which screen the vendor is currently on.
   useReferralPopupSync(astroId);
+  // Admin-pushed "please update" / "please rate us" popups.
+  useAppPromptSync(astroId);
 
   // Written by the notification Accept action (see index.js's notifee.onBackgroundEvent) so
   // the vendor lands straight in the live call/chat instead of just the dashboard. Checked in
@@ -465,6 +470,11 @@ function NavigationScreen() {
       </Stack.Navigator>
       </PostHogProvider>
       <ReferralPopupHost />
+      {/* Store-facing prompts. Both run their own launch check and stay silent
+          unless the admin has configured them; the update prompt suppresses the
+          review one so they can never stack. */}
+      <AppUpdatePromptHost />
+      <RateAppPromptHost />
       <StatusPopupHost />
     </NavigationContainer>
   );
