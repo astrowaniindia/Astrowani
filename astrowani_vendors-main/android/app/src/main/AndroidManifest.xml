@@ -3,19 +3,44 @@
 
 <uses-permission android:name="android.permission.INTERNET" />
 <uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
- <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
-    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
-    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
 
+    <!-- REMOVED 2026-09-05, all six verified unused before deletion (zero references
+         across src/ and the app's own Kotlin, and no dependency manifest declares them):
+           SYSTEM_ALERT_WINDOW, WRITE_SETTINGS  — Play "special access" permissions that
+             attract review scrutiny; nothing here draws over other apps or writes system
+             settings.
+           USE_FINGERPRINT, USE_BIOMETRIC       — no biometric library is even installed.
+           READ_EXTERNAL_STORAGE                — nothing reads the gallery directly; the
+             image pickers use the system picker.
+           READ_PHONE_STATE                     — react-native-callkeep declares this,
+             but react-native.config.js keeps callkeep OFF Android entirely (CallKit is an
+             iOS-only problem), so its manifest never merges here. Confirmed against the
+             merged release manifest: with our line gone, the permission is gone.
+         They came from a scaffolding block originally labelled "OPTIONAL PERMISSIONS,
+         REMOVE WHATEVER YOU DO NOT NEED" and were never pruned. -->
 
-    <!-- These require runtime permissions on Android 6.0 (M) and above -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
+    <!-- Comes in unbounded from react-native-fs / image-crop-picker / audio-recorder-player.
+         Capped here because scoped storage makes it a no-op from API 29 anyway, so an
+         uncapped declaration only widens what Play sees us asking for. tools:node="replace"
+         is required — without it the merger keeps the libraries' unbounded version. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:node="replace"/>
+    <!-- Declared only to CAP it. Nothing here reads the gallery directly, but the
+         manifest merger IMPLIES this permission from WRITE_EXTERNAL_STORAGE above
+         (a legacy compatibility rule — confirmed in the merger's own blame report:
+         "IMPLIED ... reason: com.dooboolab.audiorecorderplayer requested
+         WRITE_EXTERNAL_STORAGE"). An implied permission arrives with NO maxSdkVersion,
+         so without this line the cap above achieves only half the job. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:node="replace"/>
+
     <!-- To use Foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- Required from Android 14 (API 34) to run a foreground service of type
@@ -57,14 +82,6 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
-          <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="otpless"
-                    android:scheme="otpless.xei0ekae23xpdnhkaqrj"/>
-          </intent-filter>
       </activity>
       <!-- Status-bar icon FCM uses for notifications delivered while the app is backgrounded/killed
            (Android always renders this as a plain white silhouette — OS-mandated style). -->

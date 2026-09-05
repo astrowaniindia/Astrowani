@@ -139,6 +139,38 @@ const translations = {
     'settings.termsConditions': 'Terms & Conditions',
     'settings.safetyGuidelines': 'Safety Guidelines',
     'settings.childSafety': 'Child Safety',
+    // Account deletion. The balance warning says "earnings", not "balance": this is
+    // money the astrologer worked for, and the honest advice is to withdraw first.
+    'settings.deleteAccount': 'Delete my account',
+    'settings.confirmDeleteTitle': 'Delete your account?',
+    'settings.confirmDeleteMsg':
+      'This permanently removes your astrologer account. Your profile stops appearing to customers and you will no longer receive calls or chats. This cannot be undone.',
+    'settings.deleteChecking': 'Checking your account…',
+    'settings.deletePreviewFailed':
+      'Could not check your account right now. Please try again when you are back online.',
+    'settings.deleteBlockedSession':
+      'You are in a consultation right now. Please end it, then try again.',
+    'settings.deleteBlockedWithdrawal':
+      'You have a withdrawal being processed. Please wait until it is paid or rejected, then try again.',
+    'settings.deleteBalanceWarning':
+      'You still have ₹{{amount}} in earnings. This will be forfeited and cannot be refunded — withdraw it before deleting.',
+    'settings.deleteBtn': 'Delete',
+    'settings.accountDeleted': 'Your account has been deleted.',
+    'settings.deleteFailedTitle': 'Could not delete account',
+    'settings.deleteFailedMsg': 'Something went wrong. Please try again, or contact support.',
+
+    // Shown by components/ErrorBoundary.js when a subtree crashes. Kept short and
+    // non-technical: the astrologer's next action is Retry or Go home, not a diagnosis.
+    'errorBoundary.title': 'Something went wrong',
+    'errorBoundary.subtitle': 'This screen ran into a problem. You can try again, or go back to your dashboard.',
+    'errorBoundary.retry': 'Try again',
+    'errorBoundary.goHome': 'Go to dashboard',
+
+    // Shown by the axios 401 interceptor (api/ApiCall.js) when the stored token has
+    // aged out. Names the cause, because "something went wrong" would leave the
+    // astrologer retrying a call that can never succeed.
+    'session.expiredTitle': 'Please log in again',
+    'session.expiredMsg': 'Your session has expired for security. Log in again to continue — your earnings and session history are safe.',
     // Registration screen. This screen was hardcoded English until 2026-08-16,
     // when the Terms & Conditions checkbox was added and translating two lines
     // in an otherwise-English form would have looked broken.
@@ -423,6 +455,31 @@ const translations = {
     'settings.termsConditions': 'नियम और शर्तें',
     'settings.safetyGuidelines': 'सुरक्षा दिशानिर्देश',
     'settings.childSafety': 'बाल सुरक्षा',
+    'settings.deleteAccount': 'मेरा खाता हटाएं',
+    'settings.confirmDeleteTitle': 'क्या आप अपना खाता हटाना चाहते हैं?',
+    'settings.confirmDeleteMsg':
+      'इससे आपका ज्योतिषी खाता हमेशा के लिए हट जाएगा। आपकी प्रोफ़ाइल ग्राहकों को दिखना बंद हो जाएगी और आपको कॉल या चैट मिलना बंद हो जाएंगी। इसे वापस नहीं किया जा सकता।',
+    'settings.deleteChecking': 'आपका खाता जांचा जा रहा है…',
+    'settings.deletePreviewFailed':
+      'अभी आपका खाता जांचा नहीं जा सका। नेटवर्क आने पर दोबारा कोशिश करें।',
+    'settings.deleteBlockedSession':
+      'आप अभी एक परामर्श में हैं। उसे समाप्त करें, फिर दोबारा कोशिश करें।',
+    'settings.deleteBlockedWithdrawal':
+      'आपकी एक निकासी प्रोसेस हो रही है। भुगतान होने या अस्वीकार होने तक प्रतीक्षा करें, फिर दोबारा कोशिश करें।',
+    'settings.deleteBalanceWarning':
+      'आपकी ₹{{amount}} कमाई अभी बाकी है। यह जब्त हो जाएगी और वापस नहीं मिलेगी — हटाने से पहले इसे निकाल लें।',
+    'settings.deleteBtn': 'हटाएं',
+    'settings.accountDeleted': 'आपका खाता हटा दिया गया है।',
+    'settings.deleteFailedTitle': 'खाता नहीं हटाया जा सका',
+    'settings.deleteFailedMsg': 'कुछ गड़बड़ हुई। दोबारा कोशिश करें या सपोर्ट से संपर्क करें।',
+
+    'errorBoundary.title': 'कुछ गड़बड़ हो गई',
+    'errorBoundary.subtitle': 'इस स्क्रीन में समस्या आ गई। आप दोबारा कोशिश कर सकते हैं, या डैशबोर्ड पर वापस जा सकते हैं।',
+    'errorBoundary.retry': 'दोबारा कोशिश करें',
+    'errorBoundary.goHome': 'डैशबोर्ड पर जाएं',
+
+    'session.expiredTitle': 'कृपया दोबारा लॉग इन करें',
+    'session.expiredMsg': 'सुरक्षा कारणों से आपका सत्र समाप्त हो गया है। जारी रखने के लिए दोबारा लॉग इन करें — आपकी कमाई और सत्र इतिहास सुरक्षित है।',
     'registration.uploadImage': 'चित्र अपलोड करें (5MB से कम)',
     'registration.fullName': 'पूरा नाम',
     'registration.selectSkills': 'विशेषज्ञता चुनें',
@@ -591,6 +648,31 @@ const translations = {
 // but the same shape can happen in production any time a consumer renders
 // outside the Provider — including during an OTA bundle swap or a remount.
 // Giving the context a real default degrades to English instead of crashing.
+// The language the Provider currently has, mirrored at module scope so code that runs
+// OUTSIDE the React tree can still translate — specifically the axios 401 interceptor
+// in api/ApiCall.js and the ErrorBoundary fallback, neither of which has a component
+// to read context from. Kept in step by the Provider below; falls back to English
+// until it loads, which is also the Provider's own initial state, so the two can never
+// disagree in a visible way.
+let currentLanguage = 'English';
+
+/**
+ * t() for non-React callers. Identical resolution to the Provider's own t()
+ * (chosen language -> English -> the raw key), plus {{param}} interpolation.
+ *
+ * Prefer `useContext(LanguageContext).t` inside components; this exists only for
+ * module-level code that has no context available.
+ */
+export const translate = (key, params) => {
+  let str = translations[currentLanguage]?.[key] ?? translations.English[key] ?? key;
+  if (params) {
+    Object.keys(params).forEach((p) => {
+      str = str.replace(new RegExp(`{{${p}}}`, 'g'), params[p]);
+    });
+  }
+  return str;
+};
+
 export const LanguageContext = createContext({
   language: 'English',
   changeLanguage: () => {},
@@ -604,7 +686,10 @@ export const LanguageProvider = ({ children }) => {
     const loadLanguage = async () => {
       try {
         const savedLang = await AsyncStorage.getItem('vendorAppLanguage');
-        if (savedLang) setLanguage(savedLang);
+        if (savedLang) {
+          setLanguage(savedLang);
+          currentLanguage = savedLang; // keep the standalone translate() in step
+        }
       } catch (error) {
         console.log('Error loading language', error);
       }
@@ -614,6 +699,7 @@ export const LanguageProvider = ({ children }) => {
 
   const changeLanguage = async (lang) => {
     setLanguage(lang);
+    currentLanguage = lang; // keep the standalone translate() in step
     try {
       await AsyncStorage.setItem('vendorAppLanguage', lang);
     } catch (error) {

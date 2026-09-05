@@ -55,7 +55,13 @@ yarn-error.log
 
 # Bundle artifact
 *.jsbundle
-android/app/src/main/assets/index.android.bundle
+# The whole generated assets dir, not just index.android.bundle: a release build also
+# drops modules.json here, and an untracked file anywhere under this app makes
+# `git status --porcelain -- .` dirty, which scripts/deployOta.js refuses to deploy on.
+# So a plain `assembleRelease` used to block the next OTA for no real reason.
+android/app/src/main/assets/
+# Kotlin incremental-build session state, written by any Gradle run.
+android/.kotlin/
 
 # Ruby / CocoaPods
 **/Pods/

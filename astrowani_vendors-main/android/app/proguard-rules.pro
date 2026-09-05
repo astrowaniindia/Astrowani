@@ -172,10 +172,4 @@
 -keep class com.reactnative.ivpusic.imagepicker.** { *; }
 -dontwarn com.reactnative.ivpusic.imagepicker.**
 
-# OTPLESS: dead code (nothing imports startOtpVerification.js) but the native SDK
-# is still compiled into the APK via the otpless-react-native dependency, so its
-# classes must survive R8 or the app can fail to initialise.
--keep class com.otpless.** { *; }
--dontwarn com.otpless.**
-
 -keep class com.BV.LinearGradient.** { *; }

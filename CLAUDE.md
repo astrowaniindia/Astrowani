@@ -3157,3 +3157,252 @@ The interceptor only covers the shared `Instance` axios client. `screens/Home/Wa
 uses raw `axios` + `SOCKET_URL`, and the Free Services screens use bare `fetch` — a 401 on
 those paths still goes unhandled. `Instance` is the newer convention and migrating those is
 worth doing, but it is a wider change than this pass warranted.
+
+---
+
+## Production-readiness pass 2026-09-05 (VENDOR app): the launch blockers
+
+A full audit of the astrologer app ahead of going public, the vendor counterpart to the
+customer pass above. Most of it came back clean and is recorded under "what was already
+fine" at the end — the release build, signing, ProGuard, Sentry/PostHog wiring, legal
+URLs, i18n key parity, and the whole incoming-call notification stack. Six things were
+not, and all six are fixed here.
+
+### AY. Account deletion for astrologers — the Play blocker
+
+Unlike the customer app (which had a *fake* delete button), the vendor app had **nothing
+at all**: no delete option in `Settings.js` (its `SETTINGS_SCREENS` array was literally
+empty), and no astrologer-facing route anywhere in the backend — `src/accountRoutes.js`
+resolved customers only, and the sole astrologer delete was admin-gated. The app creates
+accounts at signup, so Play requires working in-app deletion.
+
+`src/accountRoutes.js` now also exports **`registerVendorAccountRoutes(app)`**, registered
+in `index.js` on the line after the customer one. Same one rule: **the id comes from the
+verified JWT and there is deliberately no `:id` in either route** — a self-service delete
+that accepts an id is one typo away from letting any astrologer delete any other.
+
+`GET /api/vendor/account/delete-preview` + `POST /api/vendor/account/delete`. Semantics
+follow `DELETE /api/admin/astrologers/:id` rather than the customer flow, because that
+logic was already reasoned through against the schema's FKs: **hard delete** when nothing
+financial references the row; **soft removal** when `chat_sessions.vendor_id` /
+`vendor_wallet_transactions.vendor_id` (ON DELETE RESTRICT) refuse to destroy the earnings
+trail.
+
+**TWO THINGS DIFFER FROM THE CUSTOMER SIDE, both because an astrologer's balance is money
+they EARNED rather than money they deposited:**
+
+1. **A `pending` or `approved` withdrawal BLOCKS deletion** (409 `PENDING_WITHDRAWAL`).
+   That amount has already left `wallet_balance` and an admin is part-way through paying
+   it out; destroying the account underneath that leaves a payout with no payee. It
+   resolves on its own once the admin marks it paid or rejected, so it is a wait, not a
+   refusal. `paid`/`rejected` are settled and do not block.
+2. **The preview reports the balance as forfeited EARNINGS**, and the app's warning tells
+   them to *withdraw first*. The customer flow only has to warn; this one has to advise.
+
+An active session also blocks (409 `ACTIVE_SESSION`), same as the customer side. Both
+checks **fail CLOSED** on a DB error — a one-minute wait is recoverable, tearing an
+account down mid-consultation is not.
+
+**Soft removal must DE-LIST, not just rename.** An astrologer row that only has its name
+and phone changed is still listed, still bookable, and still rung by the backend. So the
+soft path sets `approval_status='rejected'`, `is_suspended=true`, `is_available=false`,
+`is_live=false`, all three `is_*_enabled=false`, and nulls `fcm_token`, alongside the
+`deleted:<id>:<ts>` phone tag that frees the number for re-signup.
+
+> **Bug the harness caught, and the rule from it: a soft-removed account must stop
+> resolving from a retained token.** The phone-first lookup correctly misses a row tagged
+> `deleted:`, but `resolveAstrologer`'s **id fallback found it anyway** — so a token saved
+> from before the deletion kept working for the remaining life of a 30-day JWT.
+> `resolveAstrologer` now returns null for any row whose `phone_number` starts with
+> `deleted:`. **`resolveCustomer` in the same file has the same id-fallback shape and was
+> NOT changed** — out of scope for this pass, but it is the same gap and is worth closing.
+
+App side: new `src/api/AccountApi.js` (these **reject** on failure rather than resolving to
+a safe default — the opposite of most helpers here, because swallowing a failure is exactly
+the bug this class of feature exists to prevent), and a rewritten `screens/Settings.js`
+whose confirm button stays **disabled until the preview lands**, so the earnings warning
+cannot be tapped past. 12 new i18n keys in both languages.
+
+### AZ. Root error boundary (the app had none above the drawer)
+
+`ErrorBoundary` existed but was used in exactly one place — wrapping `CustomDrawer` in
+`NavigationScreen.js`. `App.js` rendered `<NavigationScreen/>` bare, so an uncaught render
+error in any of ~50 screens was a permanent white screen recoverable only by reinstalling.
+
+Now mounted at the root as `<ErrorBoundary name="AppRoot" isRoot>`. **Placement is
+load-bearing**: INSIDE `LanguageProvider` so the fallback renders in the astrologer's own
+language, and INSIDE `GestureHandlerRootView` so its buttons are tappable.
+
+The boundary itself was upgraded to match the customer app's: it now reports
+`info.componentStack` to Sentry (without it a boundary report on a minified release build
+says only "something in the tree threw"), offers a second **"Go to dashboard"** action
+(Retry alone is useless against a deterministic crash — it re-throws the instant the
+subtree remounts), and renders **translated** copy instead of hardcoded English via the new
+standalone `translate()`. `isRoot` hides "Go to dashboard", since that boundary wraps the
+navigator and there would be nowhere to go.
+
+### BA. 401 / expired-session handling
+
+`src/api/ApiCall.js` had **no interceptors at all**, while the backend issues **30-day**
+astrologer JWTs. An aged-out token produced empty history, a dead wallet screen and
+silently failing accepts, with nothing telling the astrologer that logging in again was
+the fix. Port of the customer interceptor, against the vendor's own auth paths.
+
+Exempt: `/api/users/mobile-otp-request`, `/api/users/mobile-otp-verify`,
+`/api/vendor/register` (which carries the short-lived **pre-registration** token, not a
+session one) and `/api/upload-image`. Reacting to their legitimate 401s would bounce
+someone out of the flow they are standing in.
+
+Two behaviours carried over deliberately:
+- **The async latch is set BEFORE the first `await`.** Every `await` yields the event loop;
+  with the flag set further down, concurrent 401s all clear the guard before any reaches
+  the assignment. Measured on the customer app: five stacked alerts and five navigation
+  resets.
+- **No stored token = "not logged in", not "expired"** — stay silent, and re-arm the latch
+  immediately rather than on the 5s timer, because nothing was consumed.
+
+One vendor-specific difference: this clears **only the token**, not `AsyncStorage.clear()`.
+The logout path clears everything because the astrologer chose to leave; here they are
+about to sign back into the same account and `astroId`/`fcmToken`/language are still theirs.
+
+**Known gap, same as the customer app:** the interceptor only covers the shared `Instance`
+client. `GoLiveScreen.tsx`, `AstrologersScreen.js` and the Enx screens use raw `axios`.
+
+Supporting change: `context/LanguageContext.js` now exports **`translate(key, params)`** —
+a standalone t() for code with no React context (the interceptor and the boundary), reading
+a module-level `currentLanguage` the Provider keeps in step on load and on `changeLanguage`.
+**Prefer `useContext(LanguageContext).t` inside components**; this exists only for module
+scope.
+
+### BB. Manifest permissions: 28 → 18 in the merged release manifest
+
+Six permissions were declared and **verified unused before deletion** (zero references
+across `src/` and the app's own Kotlin): `SYSTEM_ALERT_WINDOW`, `WRITE_SETTINGS`,
+`READ_PHONE_STATE`, `USE_FINGERPRINT`, `USE_BIOMETRIC`, `READ_EXTERNAL_STORAGE`. They came
+from a scaffolding block still labelled "OPTIONAL PERMISSIONS, REMOVE WHATEVER YOU DO NOT
+NEED". The first two are Play **special-access** permissions that attract review scrutiny;
+no biometric library is even installed.
+
+> **`READ_PHONE_STATE` is safe to drop here specifically because
+> `react-native.config.js` keeps react-native-callkeep OFF Android** (CallKit is an
+> iOS-only problem), so callkeep's manifest — which declares it — never merges. Confirmed
+> against the merged release manifest, not assumed: with our line gone, the permission is
+> gone. Do not generalise this to the iOS build.
+
+Both storage permissions are now **capped at `maxSdkVersion="28"`**, which needs
+`tools:node="replace"` or the merger keeps the libraries' unbounded version.
+`READ_EXTERNAL_STORAGE` has to be declared explicitly *to cap it*: the merger **IMPLIES**
+it from `WRITE_EXTERNAL_STORAGE` (a legacy rule — the merger's own blame report says
+`IMPLIED ... reason: com.dooboolab.audiorecorderplayer requested WRITE_EXTERNAL_STORAGE`),
+and an implied permission arrives with no `maxSdkVersion`, so capping only the write half
+does half the job.
+
+### BC. `otpless-react-native` removed — dead code carrying every critical advisory
+
+Its only importer was `src/utils/startOtpVerification.js`, which **nothing imported**. It
+was still shipping the native SDK, a deep-link `intent-filter`, a custom maven repo,
+ProGuard keeps, and **all 4 of this app's critical npm advisories**
+(`minimist` → `optimist` → `ts-lint` → `otpless-react-native`).
+
+`react-native.config.js` had already anticipated this: its otpless entry noted that "the
+real fix is removing the dependency from package.json, which is an Android-affecting change
+and so is left as a separate decision". That decision is now made and verified —
+`assembleRelease` succeeds without it. Removing it also dropped **`ACCESS_WIFI_STATE`,
+`CHANGE_WIFI_STATE`, `CHANGE_NETWORK_STATE` and `GET_SIGNATURES`** out of the merged
+manifest, which the OTPLESS SDK was contributing. Remaining npm highs are metro / RN build
+tooling, not shipped at runtime.
+
+### BD. A plain `assembleRelease` used to block the next OTA
+
+`android/app/src/main/assets/` (a release build writes `modules.json` there, and only
+`index.android.bundle` was ignored) and `android/.kotlin/` were untracked build artifacts.
+Any untracked file under this app makes `git status --porcelain -- .` dirty, and
+`scripts/deployOta.js` **refuses to deploy on a dirty tree** — so simply building the app
+blocked the next OTA for no real reason. Both are gitignored now.
+
+### Verified 2026-09-05
+
+- **Vendor deletion — 35/35 against the LIVE database**, via a bare Express harness
+  mounting only `src/accountRoutes.js`. **`index.js` was deliberately never booted** — it
+  starts sessionManager's billing worker AND `checkEarningsResets()` (which would zero
+  `today_earnings` across every astrologer) against production. Covered: all four auth
+  refusals; a clean account **hard-deletes and the row is genuinely gone**; re-deleting
+  returns 401 rather than a false success; a balance is reported but does **not** block; an
+  active session blocks with the account left untouched; a pending withdrawal blocks and a
+  `paid` one does not; and the soft path retains session history while replacing the phone,
+  rejecting + suspending, disabling chat/call/video, and clearing `fcm_token`. Teardown
+  confirmed **0 synthetic astrologers left behind**.
+- **401 interceptor — 26/26 against the REAL module**, loaded under `@babel/register` with
+  react-native, AsyncStorage and the navigation ref stubbed and driven through a mock axios
+  adapter, so it tests the shipped file rather than a copy. Covers the full expiry flow, the
+  caller still receiving its rejection, **five simultaneous 401s producing exactly one alert
+  and one reset**, all four auth paths exempt, the silent no-token path re-arming
+  immediately, 400/403/404/409/500 inert, 200 untouched, and a missing navigator still
+  clearing the token without crashing.
+  - Every negative block is followed by an explicit `assertFlowStillArmed()` positive
+    control. **"Nothing happened" is not a pass unless something could have happened** — the
+    5s latch would otherwise make a broken interceptor look green.
+  - Harness note: stub modules consumed through babel's `interopRequireDefault` need
+    `__esModule: true`, or `.default` resolves to `{default: {...}}` and every method is
+    undefined. And the RN babel preset is required, not `preset-env` — `LanguageContext.js`
+    contains JSX.
+- **`assembleRelease` BUILD SUCCESSFUL** with R8 on, twice (once after the JS/backend work,
+  once after the manifest tightening). APK signed with the real upload key
+  (`CN=Astrowani, OU=App, O=Astrowani, L=Delhi, C=IN`), not debug.
+- Merged release manifest re-read to confirm every permission change landed, both storage
+  caps applied, zero `otpless` occurrences, and `CallForegroundService` still declared with
+  `foregroundServiceType="microphone"`.
+- `eslint --quiet` clean on all changed files. i18n parity re-verified: **277 keys each**,
+  zero one-sided, zero Hindi values identical to their English counterpart, and every one of
+  the 18 new keys confirmed referenced outside `LanguageContext.js`.
+
+**Not exercised on a device.** The deletion flow in particular deserves one real run before
+release.
+
+### What was already fine (checked, no action taken)
+
+Release build with R8, upload-key signing, the conservative ProGuard rules, real Sentry DSN
+and PostHog key, no hardcoded secrets beyond the expected Supabase publishable key, no
+`http://`/ngrok/localhost in `src/`, all 7 legal URLs returning 200,
+`/api/app/update-check` + `/api/app/review-prompt` both live in production (this file
+previously recorded them as 404 — they are not), profile images uploaded to Storage rather
+than base64 into the DB, bank details excluded from the anon grant, only four narrow
+`.eq('id', astroId)`-scoped direct Supabase writes, and the incoming-call notification stack
+(channel v2, ringtone in every app state, foreground-service mic, Accept/Reject in both
+fore- and background).
+
+### Still open on the vendor app (NOT fixed in this pass)
+
+1. **Keystore passwords are committed** — `android/gradle.properties` is git-tracked and
+   carries `MYAPP_UPLOAD_STORE_PASSWORD` / `MYAPP_UPLOAD_KEY_PASSWORD`. The `.keystore`
+   itself is correctly gitignored, so this is not an immediate compromise, but the passwords
+   are in history.
+2. **`usesCleartextTraffic="true"`** in the release manifest with no `http://` left in
+   `src/`.
+3. **i18n is half-done** — keys are in perfect parity, but only 25 of 53 screen/component
+   files consume `LanguageContext`. Dashboard, FreeCalls, both Earning screens,
+   PendingApproval and the drawer labels "WhatsApp Customers" / "My Free Calls" /
+   "Referrals & Commission" are hardcoded English next to translated ones.
+4. **No way to report or block an abusive customer.** Customers can report astrologers; the
+   reverse does not exist. Relevant under Play's UGC policy for an app with chat.
+5. **A cluster of dead screens is still registered and bundled** — `Chating/Chat.js`,
+   `Drawer/ChatHistory.js`, `HIstory/CallHistory.tsx`, `VideoCallHistory`, `LiveCallHistory`,
+   `ChatHiostory`, `AstrologersScreen`, plus `EnxConferenceScreen`/`EnxJoinScreen`/`JoinRoom`.
+   Confirmed unreachable — nothing navigates to any of them (`SessionHistory` superseded
+   them). `Chat.js` carries a latent `socketRef is not defined` ReferenceError at its send
+   handler, and all 13 `via.placeholder.com` avatar fallbacks live in this cluster (**that
+   domain is dead** — measured: a 20s timeout, no response). Harmless only because the chain
+   is unreachable. **Before deleting any of these, re-check the two admin-driven dynamic
+   navigation paths** (`banners.action_value`, FCM `data.screen`) as the 2026-08-21 purge
+   did — a grep of `src/` will not reveal an admin-configured target.
+6. **A web account-deletion URL is still required by Play**, alongside the in-app one now
+   shipped. `astrowani.com` has no such page. Same outstanding item as the customer app.
+7. **iOS is not shippable** — no `Podfile.lock`, Pods never installed, so an iOS OTA has no
+   destination.
+8. 39 eslint errors app-wide, all pre-existing `exhaustive-deps` or unused imports.
+
+### ⚠️ Ships how?
+
+The JS half (deletion UI, boundary, interceptor, i18n) is OTA-able. The **manifest and
+dependency changes are native and need a full Play Store release**, and the backend needs a
+deploy before the in-app delete button will work at all.

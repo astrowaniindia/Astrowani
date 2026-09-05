@@ -30,33 +30,15 @@ module.exports = {
       },
     },
 
-    // Keep otpless-react-native OFF iOS. It is DEAD CODE in this app: the only
-    // file that imports it is src/utils/startOtpVerification.js, and nothing
-    // imports that (verified by grep across the whole app). Astrologers sign in
-    // through our own backend OTP, not OTPless.
-    //
-    // Left linked it would, on every iOS build:
-    //   * make otpless-react-native a SWIFT pod in the target -- its whole
-    //     implementation is ios/OtplessReactNative.swift -- which is the exact
-    //     class of pod that already cost this project two builds to sort out
-    //     (see the LINKAGE note in ios/Podfile, and the RNSentry stub removal in
-    //     scripts/apply-native-patches.js),
-    //   * pull the external `OtplessSDK/Core` 2.2.9 pod off the CocoaPods CDN,
-    //     adding a network dependency and an unpinned-to-us third party to the
-    //     first build of an app that has never compiled on iOS at all, and
-    //   * ship a third-party authentication SDK inside the binary that has to be
-    //     accounted for in the App Review privacy answers, for zero functionality.
-    //
-    // ANDROID IS DELIBERATELY UNTOUCHED. Only the ios key is overridden, so the
-    // Android build links exactly what it links today -- this change cannot
-    // affect the shipping Play Store app. If OTPless is ever actually adopted,
-    // delete this entry; if it stays dead, the real fix is removing the
-    // dependency from package.json, which is an Android-affecting change and so
-    // is left as a separate decision.
-    'otpless-react-native': {
-      platforms: {
-        ios: null,
-      },
-    },
+    // The otpless-react-native entry that used to sit here is GONE (2026-09-05),
+    // together with the dependency itself. It noted that "the real fix is removing
+    // the dependency from package.json, which is an Android-affecting change and so
+    // is left as a separate decision" — that decision has now been made and verified:
+    // the package was dead code (its only importer, src/utils/startOtpVerification.js,
+    // was imported by nothing), it carried all four of this app's critical npm
+    // advisories via minimist -> optimist -> ts-lint, and `assembleRelease` succeeds
+    // without it. Removing it also dropped ACCESS_WIFI_STATE, CHANGE_WIFI_STATE,
+    // CHANGE_NETWORK_STATE and GET_SIGNATURES out of the merged manifest, which the
+    // OTPLESS SDK was contributing.
   },
 };

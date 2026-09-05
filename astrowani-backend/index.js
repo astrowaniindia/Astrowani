@@ -637,10 +637,12 @@ require('./src/referralPopupRoutes')(app);
 // /api/app/review-prompt (both fail closed), plus the admin "notify everyone" send.
 require('./src/appPromptRoutes')(app);
 
-// Self-service account deletion — /api/account/delete-preview + /api/account/delete.
-// The customer id always comes from the JWT, never from the request, so these can
+// Self-service account deletion. Customers: /api/account/delete-preview + /api/account/delete.
+// Astrologers: /api/vendor/account/delete-preview + /api/vendor/account/delete.
+// The account id always comes from the JWT, never from the request, so these can
 // only ever act on the caller's own account.
 require('./src/accountRoutes')(app);
+require('./src/accountRoutes').registerVendorAccountRoutes(app);
 
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
