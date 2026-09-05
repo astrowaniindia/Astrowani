@@ -34,6 +34,7 @@ const REFERRAL_REWARD_AMOUNT = 50;
 const smsProviders = require('./src/smsProviders');
 const { TtlCache } = require('./src/ttlCache');
 const { contentCache } = require('./src/contentCache');
+const { chunkIds } = require('./src/pagedSelect');
 const { createLiveAartiPoller } = require('./src/liveAarti');
 const { startAstrologerFanout } = require('./src/astrologerFanout');
 const { startTableFanout } = require('./src/tableFanout');
@@ -2327,6 +2328,16 @@ app.get('/api/blogs', async (req, res) => {
   }
 });
 
+// The columns /api/remedies actually serves. select('*') additionally pulled
+// is_active, sort_order, created_at and updated_at — 35 KB per response that no
+// caller has ever read — and measured 2.08 s against 0.84 s for this list.
+// NO_CHANNEL is the same list for a database where sql/remedy_channel.sql has not
+// been applied yet; naming a missing column in a select is a 42703, which would turn
+// the graceful fallback below into the very failure it exists to absorb.
+const REMEDY_ITEM_COLUMNS_NO_CHANNEL =
+  'id, type, title, description, price, image, mrp, unit_label, subcategory, stock, title_hi, description_hi';
+const REMEDY_ITEM_COLUMNS = `${REMEDY_ITEM_COLUMNS_NO_CHANNEL}, channel`;
+
 // Remedies shop — list active items by type (puja | gemstone | specific_puja).
 app.get('/api/remedies', async (req, res) => {
   try {
@@ -2335,13 +2346,30 @@ app.get('/api/remedies', async (req, res) => {
     // 'both' belongs to either. Omitting the param returns everything, which is what any
     // caller written before the split gets — the behaviour it already had.
     const channel = ['app', 'shop'].includes(req.query.channel) ? req.query.channel : null;
+
+    // Pagination is OPT-IN and the default is deliberately the whole catalogue.
+    // All three callers today replace their entire catalogue from one response and
+    // then filter, search and page CLIENT-side — Wani Shop's recomputeCatalog() most
+    // of all — so quietly defaulting to a page would empty the storefront rather than
+    // speed it up. A caller that sends ?limit gets a page and the `total` it needs to
+    // ask for the next one; a caller that sends nothing gets exactly what it gets
+    // today. Same backwards-compatible posture as `channel` and orders.source.
+    // `?limit=` with no value is an absent limit, not a request for one row — an
+    // empty string coerces to 0, which would otherwise clamp up to 1.
+    const rawLimit = String(req.query.limit ?? '').trim();
+    const parsedLimit = rawLimit === '' ? NaN : parseInt(rawLimit, 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : null;
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
     // The channel is part of the cache key, or the first caller to warm the cache would
-    // serve its own storefront's catalogue to the other one.
+    // serve its own storefront's catalogue to the other one. Paging is applied AFTER
+    // the cache, so the full catalogue is fetched once and every page is served from
+    // it — paging inside the key would give each page its own 10-second cold miss.
     const cacheKey = `remedies:${req.query.type || 'all'}:${channel || 'any'}`;
     const payload = await contentCache.get(cacheKey, async () => {
       let query = supabase
         .from('remedy_items')
-        .select('*')
+        .select(REMEDY_ITEM_COLUMNS)
         .eq('is_active', true)
         .order('sort_order', { ascending: true });
       if (req.query.type) query = query.eq('type', req.query.type);
@@ -2355,7 +2383,7 @@ app.get('/api/remedies', async (req, res) => {
       if (error && (error.code === '42703' || error.code === 'PGRST204' || /channel/.test(error.message || ''))) {
         console.warn('[remedies] remedy_items.channel is missing — run sql/remedy_channel.sql. Serving both storefronts the same catalogue.');
         let retry = supabase
-          .from('remedy_items').select('*').eq('is_active', true)
+          .from('remedy_items').select(REMEDY_ITEM_COLUMNS_NO_CHANNEL).eq('is_active', true)
           .order('sort_order', { ascending: true });
         if (req.query.type) retry = retry.eq('type', req.query.type);
         ({ data, error } = await retry);
@@ -2367,21 +2395,35 @@ app.get('/api/remedies', async (req, res) => {
       // priced by its own `price`, which is every puja and vastu row and every
       // gemstone until an admin fills the weights in - so a database without the
       // table behaves exactly as it does today.
+      //
+      // THE IDS MUST BE CHUNKED. A single .in('item_id', ids) builds every id into the
+      // URL: 497 uuids is a 19.5 KB query string, which overflows PostgREST's ~16 KB
+      // header limit. That does not fail fast — it fails as a socket-level
+      // UND_ERR_HEADERS_OVERFLOW after ~10 SECONDS, and because the error was only
+      // checked with `if (!vErr)` it was swallowed silently. Every cache miss on this
+      // endpoint therefore paid 10 seconds to end up with no variants at all. Measured
+      // 2026-09-05: 10.7 s cold, of which 9.6 s was this one query failing.
+      // src/pagedSelect.js's chunkIds exists for exactly this and was written with this
+      // 414/overflow class of bug in its own header comment.
       const variantsByItem = {};
       try {
         const ids = (data || []).map((r) => r.id);
-        if (ids.length) {
+        for (const batch of chunkIds(ids)) {
           const { data: vs, error: vErr } = await supabase
             .from('remedy_item_variants')
             .select('id, item_id, label, ratti, price, mrp, stock, sort_order')
-            .in('item_id', ids)
+            .in('item_id', batch)
             .eq('is_active', true)
             .order('sort_order', { ascending: true });
-          if (!vErr) {
-            (vs || []).forEach((v) => {
-              (variantsByItem[v.item_id] = variantsByItem[v.item_id] || []).push(v);
-            });
+          // A real failure is now logged rather than silently costing every item its
+          // weights. Pricing still degrades to the item's own `price`, as before.
+          if (vErr) {
+            console.warn('[remedies] variant lookup failed:', vErr.message || vErr);
+            continue;
           }
+          (vs || []).forEach((v) => {
+            (variantsByItem[v.item_id] = variantsByItem[v.item_id] || []).push(v);
+          });
         }
       } catch (_) {
         // Table not created yet. Every item falls back to its single price.
@@ -2427,7 +2469,15 @@ app.get('/api/remedies', async (req, res) => {
         })),
       };
     });
-    return res.status(200).json(payload);
+    if (limit === null) return res.status(200).json(payload);
+    const all = payload.data || [];
+    return res.status(200).json({
+      data: all.slice(offset, offset + limit),
+      total: all.length,
+      limit,
+      offset,
+      hasMore: offset + limit < all.length,
+    });
   } catch (err) {
     noteReadFailure('remedies', err);
     return res.status(200).json({ data: [] });
