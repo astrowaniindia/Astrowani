@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TextInput,
+  BackHandler,
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -42,6 +43,12 @@ const VerifyOtp = ({navigation, route}) => {
 
   useEffect(() => {
     captureEvent('otp_screen_viewed', { flow });
+    const onBack = () => {
+      captureEvent('otp_back_tapped', { flow });
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -199,7 +206,10 @@ const VerifyOtp = ({navigation, route}) => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => navigation.goBack()}>
+            onPress={() => {
+              captureEvent('otp_back_tapped', { flow });
+              navigation.goBack();
+            }}>
             <Icon name="arrow-back" size={24} color={COLORS.white} />
           </TouchableOpacity>
           <Image

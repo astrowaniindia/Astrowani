@@ -351,10 +351,14 @@ module.exports = function registerPostHogRoutes(app) {
     const def = AUTH_FUNNELS[type];
 
     const selects = def.stages.map((s) => s.screenName
-      ? `count(DISTINCT if(event = '$screen' AND properties.$screen_name = '${s.screenName}', person_id, NULL)) AS ${s.key}`
+      ? `count(DISTINCT if((event = '$screen' AND properties.$screen_name = '${s.screenName}') OR event = '${s.screenName === 'Register' ? 'signup_screen_viewed' : 'login_screen_viewed'}', person_id, NULL)) AS ${s.key}`
       : `count(DISTINCT if(event = '${s.event}', person_id, NULL)) AS ${s.key}`
     ).join(',\n        ');
-    const eventList = def.stages.map((s) => `'${s.event || '$screen'}'`).join(', ');
+    const eventList = [
+      ...def.stages.map((s) => `'${s.event || '$screen'}'`),
+      "'signup_screen_viewed'",
+      "'login_screen_viewed'",
+    ].join(', ');
 
     const rows = await runHogQL(`
       SELECT
