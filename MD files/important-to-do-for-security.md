@@ -78,6 +78,21 @@ By default, if `CORS_ORIGINS` is unset, the server permits API requests from any
    pm2 restart astrowani-backend
    ```
 
+## 4. Apply Customer Concurrency & Anti-Double-Billing SQL in Supabase
+
+### Why this matters
+Guarantees at the database level that a customer can never have duplicate concurrent requests or duplicate active billing sessions, physically preventing double-billing under rapid multi-clicking:
+1. `uq_one_pending_call_per_customer`: Customer can never have more than one pending call request.
+2. `uq_one_pending_chat_per_customer`: Customer can never have more than one pending chat request.
+3. `uq_one_active_session_per_customer`: Customer can never have more than one `is_active = true` session at a time, completely preventing simultaneous wallet per-minute drains.
+
+### Action Steps
+1. In the **Supabase Dashboard**, go to **SQL Editor**.
+2. Click **New Query**.
+3. Copy and run the contents of:
+   `astrowani-backend/sql/hardening_10_customer_concurrency_race.sql`
+4. Click **Run**.
+
 ---
 
 ## ✅ Post-Configuration Verification

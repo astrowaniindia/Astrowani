@@ -552,6 +552,7 @@ const CallsList = ({navigation}) => {
   const navigatedRef = useRef(false);
   // Tracks the in-flight request so cancel/back marks it cancelled + notifies the vendor
   const activeCallRef = useRef(null);
+  const isInitiatingRef = useRef(false);
 
   // Notify the vendor that the customer abandoned the pending request (dismisses their popup)
   // status: 'cancelled' (user abandoned) | 'missed' (timeout) | 'rejected' (vendor declined — don't overwrite)
@@ -630,6 +631,8 @@ const CallsList = ({navigation}) => {
   };
 
   const getRoomTokenWebCall = async (item) => {
+    if (isWaiting || isInitiatingRef.current) return;
+    isInitiatingRef.current = true;
     try {
       if (!(await ensureProfileComplete(navigation, 'audio_call'))) return;
       const token = await AsyncStorage.getItem('token');
@@ -775,11 +778,18 @@ const CallsList = ({navigation}) => {
     } catch (err) {
       setIsWaiting(false);
       if (err?.response?.status === 409) {
-        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        const errorData = err.response.data;
+        showStatusPopup({
+          variant: 'busy',
+          title: errorData?.selfBusy ? t('status.youAreBusyTitle') : t('status.astrologerBusyTitle'),
+          message: errorData?.selfBusy ? (errorData.message || t('alerts.selfBusy')) : t('alerts.astrologerBusy'),
+        });
         return;
       }
       console.error('[CallScreen] getRoomTokenWebCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
+    } finally {
+      isInitiatingRef.current = false;
     }
   };
   const fetchCalls = useCallback(async () => {

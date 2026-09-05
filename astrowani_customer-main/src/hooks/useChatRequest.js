@@ -49,7 +49,7 @@ const useChatRequest = (navigation) => {
   };
 
   const sendChatRequest = async (item) => {
-    if (submittingRef.current) return; // already in flight — ignore the extra taps
+    if (submittingRef.current || requesting) return; // already in flight or waiting for response — ignore extra taps
     submittingRef.current = true;
     setSubmitting(true);
     try {

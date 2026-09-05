@@ -63,6 +63,21 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
     Alert.alert(t('alerts.unavailable'), t(key, { name: item.name || 'This astrologer' }));
   };
 
+  // Debounce guard to block rapid repeated clicks on action buttons
+  const lastActionPressRef = React.useRef(0);
+  const handleActionPress = (item, type, enabled) => {
+    if (!enabled) {
+      showUnavailable(item, type);
+      return;
+    }
+    const now = Date.now();
+    if (now - lastActionPressRef.current < 1500) {
+      return; // ignore rapid multi-taps within 1.5 seconds
+    }
+    lastActionPressRef.current = now;
+    if (actionButton) actionButton(item);
+  };
+
   // Unreachable — signed out, or switched off — overrides every per-service button
   // with one unified red pill. The two read differently; see utils/astrologerAvailability.
   const showUnreachable = (item, state) => {
@@ -154,7 +169,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             <TouchableOpacity
               style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
               activeOpacity={0.8}
-              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'video'))}
+              onPress={() => handleActionPress(item, 'video', enabled)}
             >
               <MaterialIcons name={enabled ? 'videocam' : 'videocam-off'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
               <Text style={styles.chatText}>{enabled ? t('common.video') : t('alerts.unavailable')}</Text>
@@ -170,7 +185,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             <TouchableOpacity
               style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
               activeOpacity={0.8}
-              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'call'))}
+              onPress={() => handleActionPress(item, 'call', enabled)}
             >
               <MaterialIcons name={enabled ? 'call' : 'phone-disabled'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
               <Text style={styles.chatText}>{enabled ? t('common.call') : t('alerts.unavailable')}</Text>
@@ -182,7 +197,12 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
         return (
           <TouchableOpacity
             style={styles.actionBtnProfile}
-            onPress={() => actionButton(item)}
+            onPress={() => {
+              const now = Date.now();
+              if (now - lastActionPressRef.current < 1000) return;
+              lastActionPressRef.current = now;
+              actionButton(item);
+            }}
           >
             <Text style={styles.actionBtnProfileText}>{t('common.viewProfile')}</Text>
           </TouchableOpacity>
@@ -195,7 +215,7 @@ const ReusableList = ({data, actionButton, handleAstrologer, buttonType, refresh
             <TouchableOpacity
               style={[enabled ? styles.actionBtnChat : styles.actionBtnUnavailableChat, styles.smallButton]}
               activeOpacity={0.8}
-              onPress={() => (enabled ? actionButton(item) : showUnavailable(item, 'chat'))}
+              onPress={() => handleActionPress(item, 'chat', enabled)}
             >
               <MaterialIcons name={enabled ? 'chat' : 'speaker-notes-off'} size={moderateScale(16)} color="#fff" style={{marginRight: 2}} />
               <Text style={styles.chatText}>{enabled ? t('common.chat') : t('alerts.unavailable')}</Text>

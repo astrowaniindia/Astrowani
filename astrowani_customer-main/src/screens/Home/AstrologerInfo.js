@@ -136,6 +136,7 @@ const AstrologerInfo = ({route, navigation}) => {
   const callSocketRef = useRef(null);
   // Tracks the in-flight call request so cancel/back can tell the vendor to dismiss its popup
   const activeCallRef = useRef(null);
+  const isCallInitiatingRef = useRef(false);
 
   const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
 
@@ -184,6 +185,8 @@ const AstrologerInfo = ({route, navigation}) => {
   }, []);
 
   const initiateAudioCall = async () => {
+    if (isCallWaiting || isCallInitiatingRef.current) return;
+    isCallInitiatingRef.current = true;
     try {
       if (!(await ensureProfileComplete(navigation, 'audio_call'))) return;
       const token = await AsyncStorage.getItem('token');
@@ -347,15 +350,24 @@ const AstrologerInfo = ({route, navigation}) => {
     } catch (err) {
       setIsCallWaiting(false);
       if (err?.response?.status === 409) {
-        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        const errorData = err.response.data;
+        showStatusPopup({
+          variant: 'busy',
+          title: errorData?.selfBusy ? t('status.youAreBusyTitle') : t('status.astrologerBusyTitle'),
+          message: errorData?.selfBusy ? (errorData.message || t('alerts.selfBusy')) : t('alerts.astrologerBusy'),
+        });
         return;
       }
       console.error('[AstrologerInfo] initiateAudioCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateCall'));
+    } finally {
+      isCallInitiatingRef.current = false;
     }
   };
 
   const initiateVideoCall = async () => {
+    if (isVideoWaiting || isCallInitiatingRef.current) return;
+    isCallInitiatingRef.current = true;
     try {
       if (!(await ensureProfileComplete(navigation, 'video_call'))) return;
       const token = await AsyncStorage.getItem('token');
@@ -519,11 +531,18 @@ const AstrologerInfo = ({route, navigation}) => {
     } catch (err) {
       setIsCallWaiting(false);
       if (err?.response?.status === 409) {
-        showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+        const errorData = err.response.data;
+        showStatusPopup({
+          variant: 'busy',
+          title: errorData?.selfBusy ? t('status.youAreBusyTitle') : t('status.astrologerBusyTitle'),
+          message: errorData?.selfBusy ? (errorData.message || t('alerts.selfBusy')) : t('alerts.astrologerBusy'),
+        });
         return;
       }
       console.error('[AstrologerInfo] initiateVideoCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
+    } finally {
+      isCallInitiatingRef.current = false;
     }
   };
 

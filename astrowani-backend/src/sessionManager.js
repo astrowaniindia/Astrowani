@@ -52,6 +52,8 @@ class SessionManager {
     this.earningsResetStateLoaded = false;
     // Re-entrancy guard for the 30s billing poll — see checkActiveSessions().
     this.isCheckingSessions = false;
+    // Map tracking when a session room was first observed with 0 connected sockets: sessionId -> timestampMs
+    this.emptyRoomSince = new Map();
     console.log('SessionManager Instance Created.');
   }
 
@@ -548,6 +550,37 @@ class SessionManager {
    * Processes a single billing cycle (1 minute)
    */
   async processBilling(session) {
+    // Zero-occupant empty room guard:
+    // If socket.io is available, check whether any sockets are connected in the session room.
+    // If both parties have disconnected/left (e.g. app closed/swiped mid-call), pause billing.
+    // If 0 participants remain for >30 seconds, auto-terminate the session to prevent money leaks.
+    if (this.io && this.io.sockets && this.io.sockets.adapter) {
+      const room = this.io.sockets.adapter.rooms.get(session.id);
+      const occupantCount = room ? room.size : 0;
+      if (occupantCount === 0) {
+        const firstEmpty = this.emptyRoomSince.get(session.id);
+        const nowMs = Date.now();
+        if (!firstEmpty) {
+          this.emptyRoomSince.set(session.id, nowMs);
+          console.warn(`[SessionManager] Session ${session.id} has 0 connected participants. Pausing billing tick.`);
+          return;
+        } else if (nowMs - firstEmpty >= 30000) {
+          console.warn(`[SessionManager] Session ${session.id} empty for ${Math.round((nowMs - firstEmpty) / 1000)}s — force terminating abandoned session.`);
+          this.emptyRoomSince.delete(session.id);
+          await this.terminateSession(session.id, 'Session abandoned: zero connected participants');
+          return;
+        } else {
+          console.warn(`[SessionManager] Session ${session.id} still empty (${Math.round((nowMs - firstEmpty) / 1000)}s). Pausing billing tick.`);
+          return;
+        }
+      } else {
+        // Room has active participants, clear any empty room timer
+        if (this.emptyRoomSince.has(session.id)) {
+          this.emptyRoomSince.delete(session.id);
+        }
+      }
+    }
+
     console.log(`[SessionManager] Billing session ${session.id} via RPC`);
 
     try {
@@ -627,6 +660,7 @@ class SessionManager {
    */
   async terminateSession(sessionId, reason = 'Normal termination') {
     console.log(`[SessionManager] Terminating session ${sessionId}. Reason: ${reason}`);
+    this.emptyRoomSince.delete(sessionId);
     
     // Fetch session first to get caller_id and vendor_id
     const { data: session } = await supabase

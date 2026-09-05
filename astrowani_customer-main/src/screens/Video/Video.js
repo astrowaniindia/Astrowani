@@ -48,6 +48,7 @@ const Video = ({navigation}) => {
   const navigatedRef = useRef(false);
   // Tracks the in-flight request so cancel/back marks it cancelled + notifies the vendor
   const activeCallRef = useRef(null);
+  const isInitiatingRef = useRef(false);
 
   // Notify the vendor that the customer abandoned the pending request (dismisses their popup)
   const notifyVendorCancelled = (status = 'cancelled') => {
@@ -141,6 +142,8 @@ const Video = ({navigation}) => {
   };
 
   const initiateVideoCall = async item => {
+    if (isWaiting || isInitiatingRef.current) return;
+    isInitiatingRef.current = true;
     try {
       if (!(await ensureProfileComplete(navigation, 'video_call'))) return;
       const token = await AsyncStorage.getItem('token');
@@ -225,14 +228,16 @@ const Video = ({navigation}) => {
           recieverName: item.name,
           recieverImage: item.profileImage || '',
           recieverId: item.userId || item._id,
-          perMinuteCharge: Number(item.videoPrice) || 0,
+          // The paying side had no idea what it was being charged: the rate and
+          // the "billing active" badge existed only on the vendor's screen.
+          perMinuteCharge: Number(item.videoPrice ?? item.chargePerMinute ?? item.pricing) || 0,
         });
       };
 
       const cleanupAndAlert = (msg, status = 'cancelled', title = 'Call Ended') => {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
-        notifyVendorCancelled(status);
+        notifyVendorCancelled(status); // dismiss the vendor's incoming-call popup
         if (callChannelRef.current) {
           supabase.removeChannel(callChannelRef.current);
           callChannelRef.current = null;
@@ -257,7 +262,7 @@ const Video = ({navigation}) => {
 
       // Supabase Realtime backup
       const channel = supabase
-        .channel(`video_call_request_${requestData.id}`)
+        .channel(`call_request_videoscreen_${requestData.id}`)
         .on(
           'postgres_changes',
           {
@@ -283,8 +288,19 @@ const Video = ({navigation}) => {
       }, 60000);
     } catch (err) {
       setIsWaiting(false);
+      if (err?.response?.status === 409) {
+        const errorData = err.response.data;
+        showStatusPopup({
+          variant: 'busy',
+          title: errorData?.selfBusy ? t('status.youAreBusyTitle') : t('status.astrologerBusyTitle'),
+          message: errorData?.selfBusy ? (errorData.message || t('alerts.selfBusy')) : t('alerts.astrologerBusy'),
+        });
+        return;
+      }
       console.error('[VideoScreen] initiateVideoCall error:', err);
       Alert.alert(t('common.error'), t('alerts.failedInitiateVideoCall'));
+    } finally {
+      isInitiatingRef.current = false;
     }
   };
 

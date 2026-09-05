@@ -284,7 +284,9 @@ const { Server } = require('socket.io');
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  pingInterval: 10000,
+  pingTimeout: 5000,
 });
 // Exposed so route modules (e.g. src/notificationRoutes.js) can emit to a user's
 // personal room without needing io threaded through as a constructor argument —
@@ -3156,6 +3158,10 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
   }
 });
 
+// In-flight mutex sets for customer call/chat requests to block simultaneous rapid multi-taps
+const activeCallInitiations = new Set();
+const activeChatInitiations = new Set();
+
 // WebRTC Call Initiate — no third-party room server needed; signaling goes through socket.io
 app.post('/api/call/initiate', async (req, res) => {
   try {
@@ -3180,162 +3186,188 @@ app.post('/api/call/initiate', async (req, res) => {
     }
     const callerInfo = customer;
 
-    // Check astrologer eligibility and per-minute charge
-    const { data: astroData } = await supabaseService
-      .from('astrologers')
-      .select('call_charge_per_minute, video_charge_per_minute, audio_price, video_price, approval_status, is_suspended')
-      .eq('id', receiverId)
-      .maybeSingle();
-
-    if (!astroData || astroData.approval_status !== 'approved' || astroData.is_suspended) {
-      return res.status(404).json({ success: false, message: 'Astrologer is currently unavailable' });
+    // Mutex check: prevent concurrent in-flight initiate requests from the same customer
+    if (activeCallInitiations.has(callerInfo.id) || activeChatInitiations.has(callerInfo.id)) {
+      return res.status(409).json({
+        success: false,
+        busy: true,
+        selfBusy: true,
+        message: 'A call or chat request is already being processed for your account. Please wait.',
+      });
     }
+    activeCallInitiations.add(callerInfo.id);
 
-    const perMinCharge = callType === 'video'
-      ? Number(astroData.video_charge_per_minute ?? astroData.video_price ?? 0)
-      : Number(astroData.call_charge_per_minute ?? astroData.audio_price ?? 0);
-
-    if (perMinCharge > 0) {
-      const { data: custBalRow } = await supabaseService
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', callerInfo.id)
+    try {
+      // Check astrologer eligibility and per-minute charge
+      const { data: astroData } = await supabaseService
+        .from('astrologers')
+        .select('call_charge_per_minute, video_charge_per_minute, audio_price, video_price, approval_status, is_suspended')
+        .eq('id', receiverId)
         .maybeSingle();
-      const currentBal = Number(custBalRow?.wallet_balance ?? 0);
-      if (currentBal < perMinCharge) {
-        return res.status(400).json({
-          success: false,
-          code: 'INSUFFICIENT_FUNDS',
-          message: `Insufficient wallet balance. At least ₹${perMinCharge} required to start this call.`,
-          balance: currentBal,
-          required: perMinCharge,
-        });
+
+      if (!astroData || astroData.approval_status !== 'approved' || astroData.is_suspended) {
+        return res.status(404).json({ success: false, message: 'Astrologer is currently unavailable' });
       }
-    }
 
-    // FAIRNESS FIX (added 2026-08-14 — money/billing audit): checkAstrologerBusy above only
-    // ever gated the astrologer side — nothing stopped this same customer from also being
-    // mid-session/mid-request with someone else, double-booking one wallet across two
-    // simultaneous sessions. See busyStatus.js checkCustomerBusy for the full reasoning.
-    const customerBusyStatus = await checkCustomerBusy(supabase, callerInfo.id);
-    if (customerBusyStatus.busy) {
-      return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
-    }
+      const perMinCharge = callType === 'video'
+        ? Number(astroData.video_charge_per_minute ?? astroData.video_price ?? 0)
+        : Number(astroData.call_charge_per_minute ?? astroData.audio_price ?? 0);
 
-    const sessionId = crypto.randomUUID();
-    const roomId = crypto.randomUUID();
-
-    // The row itself, not just the socket/push notifications — moved server-side so the
-    // anon key no longer needs a direct INSERT grant on call_requests. See
-    // DATABASE_HARDENING_HANDOFF.md STEP 3. room_token stays null: it was already
-    // vestigial (this endpoint never returned a real vendorToken for clients to store).
-    // session_id is stored here too (not just sent over the socket) so the Supabase
-    // Realtime backup listener on the vendor side (HomeScreen.js — used when the socket
-    // event is missed) has the same sessionId the customer already has. Without this, a
-    // vendor accepting via the Realtime path got sessionId: null and /api/session/accept
-    // let a fresh random id get generated for chat_sessions — different from the id the
-    // customer's call screen was already listening on, so the call never connected.
-    const { data: requestRow, error: requestErr } = await supabase
-      .from('call_requests')
-      .insert([{
-        customer_id: callerInfo.id,
-        astrologer_id: receiverId,
-        customer_name: callerInfo.name,
-        call_type: callType || 'audio',
-        status: 'pending',
-        room_id: roomId,
-        room_token: null,
-        session_id: sessionId,
-      }])
-      .select('id')
-      .single();
-    if (requestErr) {
-      // 23505 = unique_violation on uq_one_pending_call_per_astrologer (hardening_04) —
-      // another request for this astrologer landed between our busy-check read and this
-      // insert (confirmed race under concurrency via scripts/testConcurrency.js). Treat it
-      // exactly like the pre-check finding the astrologer busy, not a server error.
-      if (requestErr.code === '23505') {
-        return res.status(409).json({ success: false, busy: true, busySince: new Date().toISOString(), reason: 'session', message: 'Astrologer is busy right now' });
+      if (perMinCharge > 0) {
+        const { data: custBalRow } = await supabaseService
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', callerInfo.id)
+          .maybeSingle();
+        const currentBal = Number(custBalRow?.wallet_balance ?? 0);
+        if (currentBal < perMinCharge) {
+          return res.status(400).json({
+            success: false,
+            code: 'INSUFFICIENT_FUNDS',
+            message: `Insufficient wallet balance. At least ₹${perMinCharge} required to start this call.`,
+            balance: currentBal,
+            required: perMinCharge,
+          });
+        }
       }
-      throw requestErr;
-    }
-    const requestId = requestRow.id;
 
-    // Notify vendor via socket — no ENX tokens, WebRTC signaling happens via socket.io
-    io.to(receiverId).emit('incoming_call', {
-      callType: callType || 'audio',
-      callerName: callerInfo.name,
-      callerId: callerInfo.id,
-      sessionId: sessionId,
-      roomId: roomId,
-    });
+      // FAIRNESS FIX (added 2026-08-14 — money/billing audit): checkAstrologerBusy above only
+      // ever gated the astrologer side — nothing stopped this same customer from also being
+      // mid-session/mid-request with someone else, double-booking one wallet across two
+      // simultaneous sessions. See busyStatus.js checkCustomerBusy for the full reasoning.
+      const customerBusyStatus = await checkCustomerBusy(supabase, callerInfo.id);
+      if (customerBusyStatus.busy) {
+        return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
+      }
 
-    console.log(`[Call] Notified vendor ${receiverId} of incoming ${callType || 'audio'} call (WebRTC)`);
+      const sessionId = crypto.randomUUID();
+      const roomId = crypto.randomUUID();
 
-    // Push fallback — the socket above only reaches a vendor whose HomeScreen is currently
-    // mounted; a backgrounded/killed app gets nothing without this. Data-only payload (no
-    // `notification` key) so the vendor app's own code renders the accept/reject notification
-    // instead of Android auto-displaying a plain one.
-    // One lookup now serves both channels: the FCM data push (Android, and iOS while the
-    // app is alive) and the iOS PushKit VoIP push (the only thing that can ring a KILLED
-    // iOS app — see src/voipPush.js for why FCM cannot).
-    supabase.from('astrologers').select('fcm_token, voip_token').eq('id', receiverId).single()
-      .then(({ data }) => {
-        if (data?.fcm_token) {
-          sendPush(data.fcm_token, {
-            data: {
-              type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
-              callerName: callerInfo.name,
-              callerId: callerInfo.id || '',
-              sessionId,
-              roomId,
-            },
-          }).catch((e) => console.error('[Call] push send error:', e.message));
+      // The row itself, not just the socket/push notifications — moved server-side so the
+      // anon key no longer needs a direct INSERT grant on call_requests. See
+      // DATABASE_HARDENING_HANDOFF.md STEP 3. room_token stays null: it was already
+      // vestigial (this endpoint never returned a real vendorToken for clients to store).
+      // session_id is stored here too (not just sent over the socket) so the Supabase
+      // Realtime backup listener on the vendor side (HomeScreen.js — used when the socket
+      // event is missed) has the same sessionId the customer already has. Without this, a
+      // vendor accepting via the Realtime path got sessionId: null and /api/session/accept
+      // let a fresh random id get generated for chat_sessions — different from the id the
+      // customer's call screen was already listening on, so the call never connected.
+      const { data: requestRow, error: requestErr } = await supabase
+        .from('call_requests')
+        .insert([{
+          customer_id: callerInfo.id,
+          astrologer_id: receiverId,
+          customer_name: callerInfo.name,
+          call_type: callType || 'audio',
+          status: 'pending',
+          room_id: roomId,
+          room_token: null,
+          session_id: sessionId,
+        }])
+        .select('id')
+        .single();
+      if (requestErr) {
+        // 23505 = unique_violation on uq_one_pending_call_per_astrologer (hardening_04) —
+        // another request for this astrologer landed between our busy-check read and this
+        // insert (confirmed race under concurrency via scripts/testConcurrency.js). Treat it
+        // exactly like the pre-check finding the astrologer busy, not a server error.
+        // Also catches uq_one_pending_call_per_customer (hardening_10) if customer multi-clicks.
+        if (requestErr.code === '23505') {
+          const isCustomerConstraint = requestErr.message && requestErr.message.includes('uq_one_pending_call_per_customer');
+          return res.status(409).json({
+            success: false,
+            busy: true,
+            selfBusy: isCustomerConstraint,
+            busySince: new Date().toISOString(),
+            reason: isCustomerConstraint ? 'self_busy' : 'session',
+            message: isCustomerConstraint
+              ? 'You already have a call request in progress — please wait.'
+              : 'Astrologer is busy right now',
+          });
         }
+        throw requestErr;
+      }
+      const requestId = requestRow.id;
 
-        // iOS VoIP ring. The payload's keys are consumed in AppDelegate.mm's PushKit
-        // handler, which must report the call to CallKit immediately (iOS kills the app
-        // and eventually revokes the VoIP privilege otherwise), so keep it flat, small,
-        // and stable. `uuid` is the CallKit call identifier and MUST be a real UUID —
-        // sessionId already is one (crypto.randomUUID from this endpoint), so reusing it
-        // means the app can end the right CallKit call later without extra bookkeeping.
-        if (data?.voip_token) {
-          sendVoipPush(data.voip_token, {
-            type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
-            uuid: sessionId,
-            callerName: callerInfo.name || 'Astrowani',
-            callerId: callerInfo.id || '',
-            callType: callType || 'audio',
-            sessionId,
-            roomId,
-          })
-            .then((r) => {
-              if (r && r.unregistered) {
-                // Dead token: app uninstalled, or (very common during the iOS rollout) a
-                // sandbox token being sent to the production APNs host. Clear it so we stop
-                // paying the latency of a doomed send on every call.
-                console.warn(`[Call] clearing dead VoIP token for astrologer ${receiverId} (${r.reason})`);
-                supabaseService
-                  .from('astrologers')
-                  .update({ voip_token: null, voip_platform: null })
-                  .eq('id', receiverId)
-                  .then(() => {})
-                  .catch((e) => console.error('[Call] voip token clear error:', e.message));
-              }
-            })
-            .catch((e) => console.error('[Call] voip send error:', e.message));
-        }
-      })
-      .catch((e) => console.error('[Call] push lookup error:', e.message));
-
-    return res.status(200).json({
-      data: {
+      // Notify vendor via socket — no ENX tokens, WebRTC signaling happens via socket.io
+      io.to(receiverId).emit('incoming_call', {
+        callType: callType || 'audio',
+        callerName: callerInfo.name,
+        callerId: callerInfo.id,
         sessionId: sessionId,
         roomId: roomId,
-        requestId: requestId,
-        receiver: { name: 'Astrologer', image: '' },
-      }
-    });
+      });
+
+      console.log(`[Call] Notified vendor ${receiverId} of incoming ${callType || 'audio'} call (WebRTC)`);
+
+      // Push fallback — the socket above only reaches a vendor whose HomeScreen is currently
+      // mounted; a backgrounded/killed app gets nothing without this. Data-only payload (no
+      // `notification` key) so the vendor app's own code renders the accept/reject notification
+      // instead of Android auto-displaying a plain one.
+      // One lookup now serves both channels: the FCM data push (Android, and iOS while the
+      // app is alive) and the iOS PushKit VoIP push (the only thing that can ring a KILLED
+      // iOS app — see src/voipPush.js for why FCM cannot).
+      supabase.from('astrologers').select('fcm_token, voip_token').eq('id', receiverId).single()
+        .then(({ data }) => {
+          if (data?.fcm_token) {
+            sendPush(data.fcm_token, {
+              data: {
+                type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
+                callerName: callerInfo.name,
+                callerId: callerInfo.id || '',
+                sessionId,
+                roomId,
+              },
+            }).catch((e) => console.error('[Call] push send error:', e.message));
+          }
+
+          // iOS VoIP ring. The payload's keys are consumed in AppDelegate.mm's PushKit
+          // handler, which must report the call to CallKit immediately (iOS kills the app
+          // and eventually revokes the VoIP privilege otherwise), so keep it flat, small,
+          // and stable. `uuid` is the CallKit call identifier and MUST be a real UUID —
+          // sessionId already is one (crypto.randomUUID from this endpoint), so reusing it
+          // means the app can end the right CallKit call later without extra bookkeeping.
+          if (data?.voip_token) {
+            sendVoipPush(data.voip_token, {
+              type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
+              uuid: sessionId,
+              callerName: callerInfo.name || 'Astrowani',
+              callerId: callerInfo.id || '',
+              callType: callType || 'audio',
+              sessionId,
+              roomId,
+            })
+              .then((r) => {
+                if (r && r.unregistered) {
+                  // Dead token: app uninstalled, or (very common during the iOS rollout) a
+                  // sandbox token being sent to the production APNs host. Clear it so we stop
+                  // paying the latency of a doomed send on every call.
+                  console.warn(`[Call] clearing dead VoIP token for astrologer ${receiverId} (${r.reason})`);
+                  supabaseService
+                    .from('astrologers')
+                    .update({ voip_token: null, voip_platform: null })
+                    .eq('id', receiverId)
+                    .then(() => {})
+                    .catch((e) => console.error('[Call] voip token clear error:', e.message));
+                }
+              })
+              .catch((e) => console.error('[Call] voip send error:', e.message));
+          }
+        })
+        .catch((e) => console.error('[Call] push lookup error:', e.message));
+
+      return res.status(200).json({
+        data: {
+          sessionId: sessionId,
+          roomId: roomId,
+          requestId: requestId,
+          receiver: { name: 'Astrologer', image: '' },
+        }
+      });
+    } finally {
+      activeCallInitiations.delete(callerInfo.id);
+    }
   } catch (error) {
     console.error('[Call] initiate error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to initiate call' });
@@ -3373,70 +3405,95 @@ app.post('/api/chat/initiate', async (req, res) => {
     const customer = await resolveCustomerFromReq(req);
     if (!customer || !customer.id) return res.status(401).json({ success: false, message: 'Please log in.' });
 
-    const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
-    if (busyStatus.busy) {
-      return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
+    // Mutex check: prevent concurrent in-flight initiate requests from the same customer
+    if (activeChatInitiations.has(customer.id) || activeCallInitiations.has(customer.id)) {
+      return res.status(409).json({
+        success: false,
+        busy: true,
+        selfBusy: true,
+        message: 'A call or chat request is already being processed for your account. Please wait.',
+      });
     }
+    activeChatInitiations.add(customer.id);
 
-    // Check astrologer eligibility and per-minute charge
-    const { data: astroData } = await supabaseService
-      .from('astrologers')
-      .select('chat_charge_per_minute, chat_price, approval_status, is_suspended')
-      .eq('id', astrologerId)
-      .maybeSingle();
+    try {
+      const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
+      if (busyStatus.busy) {
+        return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
+      }
 
-    if (!astroData || astroData.approval_status !== 'approved' || astroData.is_suspended) {
-      return res.status(404).json({ success: false, message: 'Astrologer is currently unavailable' });
-    }
-
-    const perMinCharge = Number(astroData.chat_charge_per_minute ?? astroData.chat_price ?? 0);
-    if (perMinCharge > 0) {
-      const { data: custBalRow } = await supabaseService
-        .from('customers')
-        .select('wallet_balance')
-        .eq('id', customer.id)
+      // Check astrologer eligibility and per-minute charge
+      const { data: astroData } = await supabaseService
+        .from('astrologers')
+        .select('chat_charge_per_minute, chat_price, approval_status, is_suspended')
+        .eq('id', astrologerId)
         .maybeSingle();
-      const currentBal = Number(custBalRow?.wallet_balance ?? 0);
-      if (currentBal < perMinCharge) {
-        return res.status(400).json({
-          success: false,
-          code: 'INSUFFICIENT_FUNDS',
-          message: `Insufficient wallet balance. At least ₹${perMinCharge} required to start this chat.`,
-          balance: currentBal,
-          required: perMinCharge,
-        });
+
+      if (!astroData || astroData.approval_status !== 'approved' || astroData.is_suspended) {
+        return res.status(404).json({ success: false, message: 'Astrologer is currently unavailable' });
       }
-    }
 
-    // FAIRNESS FIX (added 2026-08-14 — money/billing audit): mirrors the same check added to
-    // /api/call/initiate — one customer shouldn't be able to double-book a second astrologer
-    // while already active/pending with another. See busyStatus.js checkCustomerBusy.
-    const customerBusyStatus = await checkCustomerBusy(supabase, customer.id);
-    if (customerBusyStatus.busy) {
-      return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
-    }
-
-    const { data: row, error } = await supabase
-      .from('chat_requests')
-      .insert([{
-        caller_id: customer.id,
-        receiver_id: astrologerId,
-        status: 'pending',
-        request_type: 'chat',
-        caller_name: customer.name || 'Customer',
-      }])
-      .select('id')
-      .single();
-    if (error) {
-      // 23505 = unique_violation on uq_one_pending_chat_per_astrologer (hardening_04) —
-      // same race as /api/call/initiate, closed the same way.
-      if (error.code === '23505') {
-        return res.status(409).json({ success: false, busy: true, busySince: new Date().toISOString(), reason: 'session', message: 'Astrologer is busy right now' });
+      const perMinCharge = Number(astroData.chat_charge_per_minute ?? astroData.chat_price ?? 0);
+      if (perMinCharge > 0) {
+        const { data: custBalRow } = await supabaseService
+          .from('customers')
+          .select('wallet_balance')
+          .eq('id', customer.id)
+          .maybeSingle();
+        const currentBal = Number(custBalRow?.wallet_balance ?? 0);
+        if (currentBal < perMinCharge) {
+          return res.status(400).json({
+            success: false,
+            code: 'INSUFFICIENT_FUNDS',
+            message: `Insufficient wallet balance. At least ₹${perMinCharge} required to start this chat.`,
+            balance: currentBal,
+            required: perMinCharge,
+          });
+        }
       }
-      throw error;
-    }
 
-    return res.status(200).json({ success: true, requestId: row.id, callerId: customer.id });
+      // FAIRNESS FIX (added 2026-08-14 — money/billing audit): mirrors the same check added to
+      // /api/call/initiate — one customer shouldn't be able to double-book a second astrologer
+      // while already active/pending with another. See busyStatus.js checkCustomerBusy.
+      const customerBusyStatus = await checkCustomerBusy(supabase, customer.id);
+      if (customerBusyStatus.busy) {
+        return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
+      }
+
+      const { data: row, error } = await supabase
+        .from('chat_requests')
+        .insert([{
+          caller_id: customer.id,
+          receiver_id: astrologerId,
+          status: 'pending',
+          request_type: 'chat',
+          caller_name: customer.name || 'Customer',
+        }])
+        .select('id')
+        .single();
+      if (error) {
+        // 23505 = unique_violation on uq_one_pending_chat_per_astrologer (hardening_04)
+        // or uq_one_pending_chat_per_customer (hardening_10)
+        if (error.code === '23505') {
+          const isCustomerConstraint = error.message && error.message.includes('uq_one_pending_chat_per_customer');
+          return res.status(409).json({
+            success: false,
+            busy: true,
+            selfBusy: isCustomerConstraint,
+            busySince: new Date().toISOString(),
+            reason: isCustomerConstraint ? 'self_busy' : 'session',
+            message: isCustomerConstraint
+              ? 'You already have a chat request in progress — please wait.'
+              : 'Astrologer is busy right now',
+          });
+        }
+        throw error;
+      }
+
+      return res.status(200).json({ success: true, requestId: row.id, callerId: customer.id });
+    } finally {
+      activeChatInitiations.delete(customer.id);
+    }
   } catch (error) {
     console.error('[Chat] initiate error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to send chat request' });
@@ -3723,8 +3780,26 @@ app.post('/api/session/accept', async (req, res) => {
       .select('id')
       .single();
 
-    if (sessionErr) throw sessionErr;
-    const sessionId = sessionData?.id;
+    let sessionId;
+    if (sessionErr) {
+      if (sessionErr.code === '23505' && reqBody.sessionId) {
+        // Idempotent retry: session already exists (e.g. rapid double-tap on Accept)
+        const { data: existingSession } = await supabaseService
+          .from('chat_sessions')
+          .select('id, per_minute_charge')
+          .eq('id', reqBody.sessionId)
+          .maybeSingle();
+        if (existingSession) {
+          sessionId = existingSession.id;
+        } else {
+          return res.status(409).json({ ok: false, reason: 'duplicate_session', message: 'Session already created or customer in another session' });
+        }
+      } else {
+        throw sessionErr;
+      }
+    } else {
+      sessionId = sessionData?.id;
+    }
 
     if (resolvedRequestId) {
       const fullPayload = { status: 'accepted', responded_at: new Date().toISOString() };
