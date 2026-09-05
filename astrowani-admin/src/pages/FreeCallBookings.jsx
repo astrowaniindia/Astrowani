@@ -1,45 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import Modal from '../components/Modal';
 
-// The free 12-minute introductory call: the offer's settings, and every booking
-// made against it. Replaces the free 5-minute bot chat (Free Bot Chat page,
-// switched off 2026-08-31).
-//
-// Settings live in one JSON blob under the app_settings key `free_call_offer`,
-// saved through the existing generic /api/admin/settings PATCH — same approach as
-// the Free Bot Chat persona, so this page needed no new settings endpoint.
-//
-// Rescheduling goes through PATCH /api/admin/free-call-bookings/:id, which shares
-// the customer booking path's unique index. An admin therefore CANNOT move a call
-// onto a slot someone else already holds; the server answers 409 and this page
-// says so rather than silently appearing to succeed.
-
-const OFFER_DEFAULTS = {
-  enabled: false,
-  durationMinutes: 12,
-  slotMinutes: 30,
-  openHour: 10,
-  closeHour: 20,
-  daysAhead: 7,
-  minLeadMinutes: 60,
-  // Who takes a NEW booking: 'single' auto-assigns to assignedAstrologerId,
-  // 'manual' leaves it unassigned for an admin to hand out. Either way any
-  // booking can be reassigned from the table below at any time.
-  assignmentMode: 'manual',
-  assignedAstrologerId: '',
-  poolAstrologerIds: [],
-  // Purely the faces on the popup — see the "Faces shown on the card" section.
-  displayAstrologerIds: [],
-  headerText: '',
-  bodyText: '',
-  ctaText: '',
-  successText: '',
-};
+// The free introductory call: list and management of bookings.
+// Offer configuration has been separated into its own section at /free-call-settings.
 
 const STATUSES = ['booked', 'completed', 'missed', 'cancelled'];
 const STATUS_LABEL = {
-  booked: 'booked', completed: 'done', missed: 'missed', cancelled: 'cancelled',
+  booked: 'Upcoming / Booked',
+  completed: 'Completed',
+  missed: 'Missed Call',
+  cancelled: 'Cancelled',
 };
 
 function statusBadge(s) {
@@ -50,8 +22,7 @@ function statusBadge(s) {
 }
 
 // Slot times come back as real instants. They are always displayed in the offer's
-// business timezone (IST), never the admin's browser timezone — an admin working
-// from anywhere must read the same clock time the customer was shown.
+// business timezone (IST), never the admin's browser timezone.
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
   weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
@@ -60,77 +31,68 @@ const IST_FMT = new Intl.DateTimeFormat('en-IN', {
 const fmtSlot = (iso) => (iso ? IST_FMT.format(new Date(iso)) : '—');
 
 const IST_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
-const istDayKey = (iso) => IST_DAY.format(new Date(iso));
+const istDayKey = (iso) => (iso ? IST_DAY.format(new Date(iso)) : '');
 
-const num = (v, fallback) => {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
-};
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - d;
+  const isFuture = diffMs < 0;
+  const absDiffSec = Math.floor(Math.abs(diffMs) / 1000);
+  const diffMin = Math.floor(absDiffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHour / 24);
+
+  if (isFuture) {
+    if (absDiffSec < 60) return 'In a few seconds';
+    if (diffMin < 60) return `In ${diffMin}m`;
+    if (diffHour < 24) return diffHour === 1 ? 'In 1 hour' : `In ${diffHour} hours`;
+    if (diffDays === 1) return 'Tomorrow';
+    return `In ${diffDays} days`;
+  } else {
+    if (absDiffSec < 60) return 'Just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffHour < 24) return diffHour === 1 ? '1 hour ago' : `${diffHour}h ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+}
 
 export default function FreeCallBookings() {
-  const [offer, setOffer] = useState(OFFER_DEFAULTS);
-  const [offerLoaded, setOfferLoaded] = useState(false);
-  const [savingOffer, setSavingOffer] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-
+  const navigate = useNavigate();
+  const [offer, setOffer] = useState(null);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tableMissing, setTableMissing] = useState(false);
 
+  // Filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [datePreset, setDatePreset] = useState('all'); // 'all' | 'today' | 'tomorrow' | 'week' | 'past'
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [upcomingFirst, setUpcomingFirst] = useState(true);
+  const [assigneeFilter, setAssigneeFilter] = useState('');
 
   const [astrologers, setAstrologers] = useState([]);
-  const [assigneeFilter, setAssigneeFilter] = useState('');
   const [rescheduling, setRescheduling] = useState(null);
   const [noting, setNoting] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
-  /* ── offer settings ─────────────────────────────────────────────────────── */
+  /* ── offer settings read-only for pool distribution & quick metrics ────────── */
   const loadOffer = useCallback(async () => {
     try {
       const { data } = await client.get('/api/admin/settings');
       const raw = data.settings?.free_call_offer;
-      if (raw) setOffer({ ...OFFER_DEFAULTS, ...JSON.parse(raw) });
+      if (raw) setOffer(JSON.parse(raw));
     } catch (e) {
       console.error('load free_call_offer failed:', e.message);
-    } finally {
-      setOfferLoaded(true);
     }
   }, []);
-
-  const saveOffer = async (next) => {
-    setSavingOffer(true);
-    try {
-      const payload = {
-        ...next,
-        durationMinutes: num(next.durationMinutes, 12),
-        slotMinutes: num(next.slotMinutes, 30),
-        openHour: num(next.openHour, 10),
-        closeHour: num(next.closeHour, 20),
-        daysAhead: num(next.daysAhead, 7),
-        minLeadMinutes: num(next.minLeadMinutes, 60),
-      };
-      if (payload.closeHour <= payload.openHour) {
-        alert('Closing hour must be later than opening hour.');
-        return;
-      }
-      await client.patch('/api/admin/settings', {
-        key: 'free_call_offer',
-        value: JSON.stringify(payload),
-      });
-      setOffer(payload);
-      alert('Saved. Customers see this the next time the app loads the offer.');
-    } catch (e) {
-      alert(e.response?.data?.message || e.message);
-    } finally {
-      setSavingOffer(false);
-    }
-  };
 
   /* ── bookings ───────────────────────────────────────────────────────────── */
   const load = useCallback(async () => {
@@ -217,8 +179,8 @@ export default function FreeCallBookings() {
         ? [offer.assignedAstrologerId]
         : [];
     if (!ids.length) {
-      alert('Pick who shares the calls first — open "Edit offer" and choose an assignment mode.');
-      setShowSettings(true);
+      alert('Pick who shares the calls first — open Free Call Settings and choose an assignment mode.');
+      navigate('/free-call-settings');
       return;
     }
     const names = ids.map((id) => astroName(astrologers.find((a) => a.id === id) || {})).join(', ');
@@ -248,13 +210,40 @@ export default function FreeCallBookings() {
     patchBooking(row.id, { status });
   };
 
-  // Sorting is done here rather than server-side so the toggle is instant. The
-  // server always returns newest-slot-first; "upcoming first" re-sorts the
-  // still-to-happen calls into ascending order and pushes past ones below, which
-  // is the order an admin actually works in.
+  const copyText = (txt, id) => {
+    if (!txt) return;
+    navigator.clipboard.writeText(txt);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1800);
+  };
+
+  const todayKey = IST_DAY.format(new Date());
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowKey = IST_DAY.format(tomorrowDate);
+
+  // Filter by date preset (client-side fast filter)
+  const filteredByDatePreset = useMemo(() => {
+    if (datePreset === 'all') return rows;
+    const nowMs = Date.now();
+    return rows.filter((r) => {
+      const slotDay = istDayKey(r.slot_start);
+      const slotTime = new Date(r.slot_start).getTime();
+      if (datePreset === 'today') return slotDay === todayKey;
+      if (datePreset === 'tomorrow') return slotDay === tomorrowKey;
+      if (datePreset === 'week') {
+        const diffDays = (slotTime - nowMs) / (1000 * 60 * 60 * 24);
+        return diffDays >= 0 && diffDays <= 7;
+      }
+      if (datePreset === 'past') return slotTime < nowMs;
+      return true;
+    });
+  }, [rows, datePreset, todayKey, tomorrowKey]);
+
+  // Sorting: upcoming first or newest slot first
   const sorted = useMemo(() => {
     const now = Date.now();
-    const copy = [...rows];
+    const copy = [...filteredByDatePreset];
     if (!upcomingFirst) {
       return copy.sort((a, b) => new Date(b.slot_start) - new Date(a.slot_start));
     }
@@ -263,39 +252,66 @@ export default function FreeCallBookings() {
     const past = copy.filter((r) => new Date(r.slot_start).getTime() < now)
       .sort((a, b) => new Date(b.slot_start) - new Date(a.slot_start));
     return [...future, ...past];
-  }, [rows, upcomingFirst]);
+  }, [filteredByDatePreset, upcomingFirst]);
 
   const counts = useMemo(() => {
-    const c = { booked: 0, completed: 0, missed: 0, cancelled: 0, unassigned: 0 };
+    const c = { booked: 0, completed: 0, missed: 0, cancelled: 0, unassigned: 0, today: 0 };
     rows.forEach((r) => {
       if (c[r.status] !== undefined) c[r.status] += 1;
-      // Only still-live calls count as needing an astrologer; a missed or
-      // cancelled one that nobody was assigned is not outstanding work.
       if (!r.astrologer_id && r.status === 'booked') c.unassigned += 1;
+      if (istDayKey(r.slot_start) === todayKey) c.today += 1;
     });
     return c;
-  }, [rows]);
+  }, [rows, todayKey]);
 
-  // Only astrologers still in the approved list count: someone suspended after
-  // being added to the pool no longer takes calls, and no longer adds capacity.
-  const poolCount = useMemo(
-    () => (offer.poolAstrologerIds || []).filter((id) => astrologers.some((a) => a.id === id)).length,
-    [offer.poolAstrologerIds, astrologers],
-  );
-
-  // The face the customer sees. A picked astrologer's name comes from their
-  // profile, so the typed field is blank in that case — reading it directly here
-  // made the summary claim "No astrologer set" while the card showed somebody.
-  const todayKey = IST_DAY.format(new Date());
+  const exportCSV = () => {
+    const headers = ['ID', 'Scheduled Slot (IST)', 'Booked On', 'Customer Name', 'Customer Phone', 'Assigned Astrologer', 'Status', 'Note'];
+    const lines = sorted.map((r) => [
+      r.id,
+      `"${fmtSlot(r.slot_start)}"`,
+      `"${r.created_at ? new Date(r.created_at).toLocaleString('en-IN') : ''}"`,
+      `"${(r.customer_name || '').replace(/"/g, '""')}"`,
+      `"${r.customer_phone || ''}"`,
+      `"${(r.assigneeName || r.astrologer_name || '').replace(/"/g, '""')}"`,
+      r.status,
+      `"${(r.admin_note || '').replace(/"/g, '""')}"`,
+    ]);
+    const csv = [headers.join(','), ...lines.map((l) => l.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `free-call-bookings-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   return (
-    <div>
-      <h1 className="page-title">Free Call Bookings</h1>
-      <p className="muted" style={{ marginTop: -8, marginBottom: 18 }}>
-        The free {offer.durationMinutes || 12}-minute introductory call offered to brand-new
-        customers. The customer picks a slot; the astrologer rings them directly — there is no
-        session, wallet or billing attached to this. All times shown in IST.
-      </p>
+    <div style={{ maxWidth: 1320 }}>
+      {/* ── Page Header ── */}
+      <div className="page-header">
+        <div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--maroon)', background: 'var(--maroon-50)', padding: '3px 10px', borderRadius: 20, marginBottom: 8 }}>
+            <span>📞</span> INTRODUCTORY CALL SESSIONS
+          </div>
+          <h1 className="page-title" style={{ margin: '0 0 6px' }}>Free Call Bookings</h1>
+          <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+            Track and manage all scheduled introductory consultation calls booked by new app customers.
+          </p>
+        </div>
+        <div className="btn-group">
+          <Link to="/free-call-settings" className="btn secondary sm" title="Configure offer settings, duration, and astrologer pool">
+            <span>⚙️</span> Free Call Settings
+          </Link>
+          <button className="btn ghost sm" onClick={exportCSV} title="Export current bookings to CSV">
+            <span>📥</span> Export CSV
+          </button>
+          <button className="btn secondary sm" onClick={load} title="Reload bookings list">
+            <span>🔄</span> Refresh
+          </button>
+        </div>
+      </div>
 
       {tableMissing && (
         <div className="card" style={{ marginBottom: 18, borderLeft: '4px solid #c0392b' }}>
@@ -307,391 +323,438 @@ export default function FreeCallBookings() {
         </div>
       )}
 
-      {/* Manual mode means every booking needs a human decision. That is a fine
-          choice, but it should never be a surprise — this is what turns "why am I
-          assigning 100 of these" into a one-click fix. */}
-      {offerLoaded && offer.enabled && offer.assignmentMode === 'manual' && (
-        <div className="card" style={{ marginBottom: 18, borderLeft: '4px solid #e67e22' }}>
-          <strong>Every booking has to be assigned by hand right now.</strong>
-          <p className="muted" style={{ margin: '6px 0 10px' }}>
-            The offer is set to “assign by hand”, so nobody is put on a booking automatically.
-            Switch to <strong>split automatically across several astrologers</strong> and each new
-            booking goes to whoever has the fewest upcoming calls — 100 bookings across two
-            astrologers lands at roughly 50 each, with no work from you.
-          </p>
-          <button className="btn sm" onClick={() => setShowSettings(true)}>Change how calls are assigned</button>
+      {/* ── Offer Quick Info Banner ── */}
+      {offer && (
+        <div className="card" style={{ marginBottom: 20, padding: '12px 18px', background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {offer.enabled ? (
+                <span className="pill-badge green">● Offer Live</span>
+              ) : (
+                <span className="pill-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>○ Offer Disabled</span>
+              )}
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                <strong>{offer.durationMinutes || 12} min</strong> calls · Slots {String(offer.openHour || 10).padStart(2, '0')}:00–{String(offer.closeHour || 20).padStart(2, '0')}:00 IST ·
+                {' '}{offer.assignmentMode === 'pool' ? `Smart Pool (${(offer.poolAstrologerIds || []).length} astrologers)` : offer.assignmentMode === 'single' ? 'Single Astrologer' : 'Manual Assignment'}
+              </span>
+            </div>
+            <Link to="/free-call-settings" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--maroon)', textDecoration: 'none' }}>
+              Edit Offer Settings →
+            </Link>
+          </div>
         </div>
       )}
 
-      {/* ── Offer settings ─────────────────────────────────────────────── */}
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="row-between">
-          <h3 style={{ margin: 0 }}>
-            The offer{' '}
-            {offerLoaded && (offer.enabled
-              ? <span className="badge green">live</span>
-              : <span className="badge gray">off</span>)}
-          </h3>
-          <button className="btn secondary sm" onClick={() => setShowSettings((v) => !v)}>
-            {showSettings ? 'Hide' : 'Edit offer'}
-          </button>
+      {/* ── KPI Summary Cards ── */}
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 22 }}>
+        <div className="stat" style={{ cursor: 'pointer', borderColor: statusFilter === 'booked' ? 'var(--sky)' : undefined }} onClick={() => setStatusFilter(statusFilter === 'booked' ? '' : 'booked')}>
+          <div className="stat-header">
+            <span className="label">Upcoming / Booked</span>
+            <div className="stat-icon-wrap" style={{ background: '#f0f9ff', color: '#0284c7' }}>📅</div>
+          </div>
+          <div className="value" style={{ color: '#0284c7' }}>{counts.booked}</div>
+          <div className="stat-footer">
+            <span className="muted">Confirmed future slots</span>
+          </div>
         </div>
 
-        {!showSettings && offerLoaded && (
-          <p className="muted" style={{ margin: '8px 0 0' }}>
-            {offer.assignmentMode === 'single'
-              ? `All calls to ${astroName(astrologers.find((a) => a.id === offer.assignedAstrologerId) || {}) || '— not chosen —'}`
-              : offer.assignmentMode === 'pool'
-                ? `Split across ${(offer.poolAstrologerIds || []).length} astrologers`
-                : 'Assigned by hand per booking'} ·
-            {' '}{offer.durationMinutes}&nbsp;min ·
-            {' '}{String(offer.openHour).padStart(2, '0')}:00–{String(offer.closeHour).padStart(2, '0')}:00 ·
-            {' '}{offer.slotMinutes}&nbsp;min slots · booking up to {offer.daysAhead} days ahead
-          </p>
-        )}
-
-        {showSettings && (
-          <div style={{ marginTop: 14 }}>
-            <div className="field checkbox-row">
-              <input
-                id="fc-enabled" type="checkbox" checked={!!offer.enabled}
-                onChange={(e) => setOffer((p) => ({ ...p, enabled: e.target.checked }))}
-              />
-              <label htmlFor="fc-enabled" style={{ margin: 0 }}>
-                Offer is live (shown to eligible new customers)
-              </label>
-            </div>
-
-            <h4 style={{ margin: '18px 0 8px' }}>Who takes the call</h4>
-            <p className="muted" style={{ marginTop: -4 }}>
-              This decides what happens the moment a customer books. You can always reassign
-              any individual booking from the table below, whichever mode this is set to.
-            </p>
-            <div className="field">
-              <label>Assignment</label>
-              <select
-                value={offer.assignmentMode}
-                onChange={(e) => setOffer((p) => ({ ...p, assignmentMode: e.target.value }))}>
-                <option value="manual">Assign by hand — bookings arrive unassigned</option>
-                <option value="single">One astrologer takes them all, automatically</option>
-                <option value="pool">Split automatically across several astrologers</option>
-              </select>
-            </div>
-            {offer.assignmentMode === 'single' && (
-              <div className="field">
-                <label>Astrologer</label>
-                <select
-                  value={offer.assignedAstrologerId || ''}
-                  onChange={(e) => setOffer((p) => ({ ...p, assignedAstrologerId: e.target.value }))}>
-                  <option value="">— choose an astrologer —</option>
-                  {astrologers.map((a) => (
-                    <option key={a.id} value={a.id}>{astroName(a)}</option>
-                  ))}
-                </select>
-                {!offer.assignedAstrologerId && (
-                  <p className="muted" style={{ margin: '4px 0 0', color: '#c0392b' }}>
-                    Nobody chosen yet, so bookings will still arrive unassigned.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {offer.assignmentMode === 'pool' && (
-              <div className="field">
-                <label>Astrologers sharing the calls</label>
-                <p className="muted" style={{ margin: '0 0 8px' }}>
-                  Each new booking goes to whoever currently has the fewest upcoming calls,
-                  so the load evens out on its own — 100 bookings across two astrologers
-                  lands at roughly 50 each. This also multiplies capacity: with{' '}
-                  {poolCount || 'N'} astrologers, {poolCount || 'N'} different customers can
-                  book the same time, one with each of them.
-                </p>
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220,
-                  overflowY: 'auto', border: '1px solid var(--line, #ddd)', borderRadius: 8, padding: 10,
-                }}>
-                  {astrologers.length === 0 && <span className="muted">No approved astrologers.</span>}
-                  {astrologers.map((a) => {
-                    const on = (offer.poolAstrologerIds || []).includes(a.id);
-                    return (
-                      <label key={a.id} style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}>
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={(e) => setOffer((p) => {
-                            const cur = p.poolAstrologerIds || [];
-                            return {
-                              ...p,
-                              poolAstrologerIds: e.target.checked
-                                ? [...cur, a.id]
-                                : cur.filter((id) => id !== a.id),
-                            };
-                          })}
-                        />
-                        <span>{astroName(a)}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                {poolCount === 0 && (
-                  <p className="muted" style={{ margin: '6px 0 0', color: '#c0392b' }}>
-                    Nobody selected. Bookings will arrive unassigned until you pick at least one.
-                  </p>
-                )}
-                {poolCount === 1 && (
-                  <p className="muted" style={{ margin: '6px 0 0' }}>
-                    With one astrologer selected this behaves exactly like "one astrologer
-                    takes them all".
-                  </p>
-                )}
-              </div>
-            )}
-
-            <h4 style={{ margin: '18px 0 8px' }}>Faces shown on the card</h4>
-            <p className="muted" style={{ marginTop: -4 }}>
-              The popup shows a small group of overlapping photos, captioned
-              "By verified &amp; certified astrologers". <strong>No single astrologer is
-              named or highlighted</strong>, and picking someone here does not give them any
-              bookings — it is only whose face appears. Leave this empty and the group is
-              filled automatically from your approved astrologers.
-            </p>
-            <p className="muted" style={{ marginTop: -4 }}>
-              Photos are read live from each astrologer's profile, so nothing is uploaded
-              here and a face is never out of date. Only approved astrologers can appear.
-            </p>
-            <div style={{
-              display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220,
-              overflowY: 'auto', border: '1px solid var(--line, #ddd)', borderRadius: 8, padding: 10,
-            }}>
-              {astrologers.length === 0 && <span className="muted">No approved astrologers.</span>}
-              {astrologers.map((a) => {
-                const on = (offer.displayAstrologerIds || []).includes(a.id);
-                return (
-                  <label key={a.id} style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={(e) => setOffer((p) => {
-                        const cur = p.displayAstrologerIds || [];
-                        return {
-                          ...p,
-                          displayAstrologerIds: e.target.checked
-                            ? [...cur, a.id]
-                            : cur.filter((id) => id !== a.id),
-                        };
-                      })}
-                    />
-                    <span>{astroName(a)}</span>
-                  </label>
-                );
-              })}
-            </div>
-
-            <h4 style={{ margin: '18px 0 8px' }}>Scheduling</h4>
-            <p className="muted" style={{ marginTop: -4 }}>
-              Slots are generated from these. A slot is only offered if the whole call fits
-              inside the working hours, so a {offer.durationMinutes || 12}-minute call will not
-              be offered in the last few minutes before closing.
-            </p>
-            <div className="two-col">
-              <div className="field"><label>Call length (minutes)</label>
-                <input type="number" min="1" max="180" value={offer.durationMinutes}
-                  onChange={(e) => setOffer((p) => ({ ...p, durationMinutes: e.target.value }))} /></div>
-              <div className="field"><label>Slot spacing (minutes)</label>
-                <input type="number" min="5" max="240" value={offer.slotMinutes}
-                  onChange={(e) => setOffer((p) => ({ ...p, slotMinutes: e.target.value }))} /></div>
-            </div>
-            <div className="two-col">
-              <div className="field"><label>Opens at (hour, IST)</label>
-                <input type="number" min="0" max="23" value={offer.openHour}
-                  onChange={(e) => setOffer((p) => ({ ...p, openHour: e.target.value }))} /></div>
-              <div className="field"><label>Closes at (hour, IST)</label>
-                <input type="number" min="1" max="24" value={offer.closeHour}
-                  onChange={(e) => setOffer((p) => ({ ...p, closeHour: e.target.value }))} /></div>
-            </div>
-            <div className="two-col">
-              <div className="field"><label>Bookable days ahead</label>
-                <input type="number" min="1" max="60" value={offer.daysAhead}
-                  onChange={(e) => setOffer((p) => ({ ...p, daysAhead: e.target.value }))} /></div>
-              <div className="field"><label>Minimum notice (minutes)</label>
-                <input type="number" min="0" max="10080" value={offer.minLeadMinutes}
-                  onChange={(e) => setOffer((p) => ({ ...p, minLeadMinutes: e.target.value }))} /></div>
-            </div>
-
-            <h4 style={{ margin: '18px 0 8px' }}>What the customer reads</h4>
-            <div className="field"><label>Popup heading</label>
-              <input type="text" value={offer.headerText}
-                onChange={(e) => setOffer((p) => ({ ...p, headerText: e.target.value }))} /></div>
-            <div className="field"><label>Popup body</label>
-              <textarea rows="2" value={offer.bodyText}
-                onChange={(e) => setOffer((p) => ({ ...p, bodyText: e.target.value }))} /></div>
-            <div className="two-col">
-              <div className="field"><label>Button text</label>
-                <input type="text" value={offer.ctaText}
-                  onChange={(e) => setOffer((p) => ({ ...p, ctaText: e.target.value }))} /></div>
-              <div className="field"><label>Confirmation message</label>
-                <input type="text" value={offer.successText}
-                  onChange={(e) => setOffer((p) => ({ ...p, successText: e.target.value }))} /></div>
-            </div>
-
-            <div className="actions">
-              <button className="btn" disabled={savingOffer} onClick={() => saveOffer(offer)}>
-                {savingOffer ? 'Saving…' : 'Save offer'}
-              </button>
+        <div className="stat" style={{ cursor: 'pointer', borderColor: datePreset === 'today' ? 'var(--emerald)' : undefined }} onClick={() => setDatePreset(datePreset === 'today' ? 'all' : 'today')}>
+          <div className="stat-header">
+            <span className="label" style={{ color: 'var(--emerald)', fontWeight: 700 }}>Today's Scheduled</span>
+            <div className="stat-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
+              <span className="pulse-dot" style={{ display: 'inline-block' }} />
             </div>
           </div>
-        )}
+          <div className="value" style={{ color: 'var(--emerald)' }}>{counts.today}</div>
+          <div className="stat-footer">
+            <span className="pill-badge green">Scheduled for today</span>
+          </div>
+        </div>
+
+        <div className="stat" style={{ cursor: 'pointer', borderColor: statusFilter === 'completed' ? 'var(--emerald)' : undefined }} onClick={() => setStatusFilter(statusFilter === 'completed' ? '' : 'completed')}>
+          <div className="stat-header">
+            <span className="label">Completed</span>
+            <div className="stat-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>✓</div>
+          </div>
+          <div className="value">{counts.completed}</div>
+          <div className="stat-footer">
+            <span className="muted">Calls conducted</span>
+          </div>
+        </div>
+
+        <div className="stat" style={{ cursor: 'pointer', borderColor: statusFilter === 'missed' ? 'var(--crimson)' : undefined }} onClick={() => setStatusFilter(statusFilter === 'missed' ? '' : 'missed')}>
+          <div className="stat-header">
+            <span className="label">Missed Calls</span>
+            <div className="stat-icon-wrap" style={{ background: '#fef2f2', color: '#dc2626' }}>⚠️</div>
+          </div>
+          <div className="value" style={{ color: counts.missed > 0 ? '#dc2626' : undefined }}>{counts.missed}</div>
+          <div className="stat-footer">
+            <span className="muted">Customer did not answer</span>
+          </div>
+        </div>
+
+        <div className="stat" style={{ borderColor: counts.unassigned > 0 ? 'var(--crimson)' : undefined }}>
+          <div className="stat-header">
+            <span className="label" style={{ color: counts.unassigned > 0 ? '#dc2626' : undefined, fontWeight: 700 }}>
+              Needs Astrologer
+            </span>
+            <div className="stat-icon-wrap" style={{ background: counts.unassigned > 0 ? '#fef2f2' : '#f1f5f9', color: counts.unassigned > 0 ? '#dc2626' : '#64748b' }}>
+              👤
+            </div>
+          </div>
+          <div className="value" style={{ color: counts.unassigned > 0 ? '#dc2626' : undefined }}>
+            {counts.unassigned}
+          </div>
+          <div className="stat-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span className="muted">Unassigned calls</span>
+            {counts.unassigned > 0 && (
+              <button
+                className="btn sm"
+                style={{ padding: '3px 8px', fontSize: 11, background: 'var(--maroon)' }}
+                disabled={busy}
+                onClick={distribute}
+                title="Auto-assign unassigned calls among active pool astrologers"
+              >
+                {busy ? 'Sharing…' : 'Distribute'}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── Filters ────────────────────────────────────────────────────── */}
-      <div className="card" style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div className="field" style={{ margin: 0, minWidth: 220 }}>
-          <label>Search</label>
-          <input
-            type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Customer name, phone, astrologer, note"
-          />
-        </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Status</label>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">All</option>
-            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
-        </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Astrologer</label>
-          <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
-            <option value="">All</option>
-            <option value="unassigned">Unassigned</option>
-            {astrologers.map((a) => (
-              <option key={a.id} value={a.id}>{astroName(a)}</option>
+      {/* ── Filter Controls Bar ── */}
+      <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+        {/* Row 1: Quick Date Presets + Search */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          {/* Quick Date Presets */}
+          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+            {[
+              { key: 'all', label: 'All Slots' },
+              { key: 'today', label: "Today's Calls" },
+              { key: 'tomorrow', label: 'Tomorrow' },
+              { key: 'week', label: 'Next 7 Days' },
+              { key: 'past', label: 'Past Calls' },
+            ].map((p) => (
+              <button
+                key={p.key}
+                className={`btn sm ${datePreset === p.key ? '' : 'ghost'}`}
+                style={{
+                  borderRadius: 20,
+                  fontWeight: datePreset === p.key ? 700 : 500,
+                  background: datePreset === p.key ? 'var(--maroon)' : undefined,
+                  color: datePreset === p.key ? '#fff' : undefined,
+                }}
+                onClick={() => setDatePreset(p.key)}
+              >
+                {p.label}
+              </button>
             ))}
-          </select>
-        </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Slot from</label>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Slot to</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </div>
-        <div className="checkbox-row">
-          <input id="fc-upcoming" type="checkbox" checked={upcomingFirst}
-            onChange={(e) => setUpcomingFirst(e.target.checked)} />
-          <label htmlFor="fc-upcoming" style={{ margin: 0 }}>Upcoming first</label>
-        </div>
-        <button className="btn secondary sm" onClick={load}>Refresh</button>
-        {(search || statusFilter || from || to || assigneeFilter) && (
-          <button className="btn secondary sm" onClick={() => {
-            setSearch(''); setStatusFilter(''); setFrom(''); setTo(''); setAssigneeFilter('');
-          }}>Clear</button>
-        )}
-      </div>
+          </div>
 
-      <div className="stat-grid" style={{ marginBottom: 16 }}>
-        <div className="stat"><h3>{counts.booked}</h3><p>Upcoming / booked</p></div>
-        <div className="stat"><h3>{counts.completed}</h3><p>Done</p></div>
-        <div className="stat"><h3>{counts.missed}</h3><p>Missed</p></div>
-        <div className="stat"><h3>{counts.cancelled}</h3><p>Cancelled</p></div>
-        <div className="stat">
-          <h3 style={{ color: counts.unassigned ? '#c0392b' : undefined }}>{counts.unassigned}</h3>
-          <p>Need an astrologer</p>
-          {counts.unassigned > 0 && (
-            <button className="btn sm" style={{ marginTop: 8 }} disabled={busy} onClick={distribute}>
-              {busy ? 'Sharing…' : 'Share them out'}
+          {/* Search box */}
+          <div className="search-bar-wrap">
+            <span className="search-bar-icon">🔍</span>
+            <input
+              type="text"
+              placeholder="Search customer, phone, astrologer, notes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                style={{
+                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', fontSize: 14,
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Secondary Dropdowns & Custom Range */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
+          {/* Status Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Status:</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }}
+            >
+              <option value="">All Statuses</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Astrologer Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Astrologer:</label>
+            <select
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }}
+            >
+              <option value="">All Astrologers</option>
+              <option value="unassigned">⚠️ Unassigned Only</option>
+              {astrologers.map((a) => (
+                <option key={a.id} value={a.id}>{astroName(a)}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Custom Date Inputs */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>From:</label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5 }}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>To:</label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5 }}
+            />
+          </div>
+
+          {/* Upcoming first checkbox */}
+          <label className="checkbox-row" style={{ marginLeft: 'auto', fontSize: 12.5, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={upcomingFirst}
+              onChange={(e) => setUpcomingFirst(e.target.checked)}
+            />
+            {' '}Sort upcoming calls first
+          </label>
+
+          {(search || statusFilter || from || to || assigneeFilter || datePreset !== 'all') && (
+            <button
+              className="btn ghost sm"
+              onClick={() => {
+                setSearch('');
+                setStatusFilter('');
+                setFrom('');
+                setTo('');
+                setAssigneeFilter('');
+                setDatePreset('all');
+              }}
+            >
+              Reset Filters
             </button>
           )}
         </div>
       </div>
 
-      {loading ? <p className="muted">Loading…</p> : sorted.length === 0 ? (
-        <div className="empty">No bookings match these filters.</div>
+      {/* ── Bookings Data Table ── */}
+      {loading ? (
+        <div className="card" style={{ textAlign: 'center', padding: '48px 20px' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)' }}>
+            <span className="pulse-dot" /> Loading introductory call bookings…
+          </div>
+        </div>
+      ) : sorted.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '54px 20px' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📅</div>
+          <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800 }}>No bookings found</h3>
+          <p className="muted" style={{ maxWidth: 420, margin: '0 auto', fontSize: 13 }}>
+            {search || statusFilter || from || to || assigneeFilter || datePreset !== 'all'
+              ? 'No call bookings match the selected filters. Try resetting the filters.'
+              : 'No free call bookings have been made yet.'}
+          </p>
+        </div>
       ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Slot (IST)</th>
+                <th style={{ minWidth: 200 }}>Scheduled Slot (IST)</th>
+                <th style={{ minWidth: 155 }}>Booked On</th>
                 <th>Customer</th>
-                <th>Phone</th>
-                <th style={{ minWidth: 170 }}>Assigned to</th>
+                <th style={{ minWidth: 180 }}>Assigned Astrologer</th>
                 <th>Status</th>
-                <th>Note</th>
-                <th style={{ minWidth: 230 }}>Manage</th>
+                <th>Internal Note</th>
+                <th style={{ textAlign: 'right', minWidth: 210 }}>Manage</th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((r) => {
                 const isToday = istDayKey(r.slot_start) === todayKey;
                 const isPast = new Date(r.slot_start).getTime() < Date.now();
+
                 return (
                   <tr key={r.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: isToday ? 700 : 500 }}>{fmtSlot(r.slot_start)}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {isToday && <strong>Today · </strong>}
-                        {r.duration_minutes} min
-                        {isPast && r.status === 'booked' && <span style={{ color: '#c0392b' }}> · time passed</span>}
-                      </div>
-                      {r.rescheduled_from && (
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          moved from {fmtSlot(r.rescheduled_from)}
-                          {r.reschedule_count > 1 ? ` (${r.reschedule_count}×)` : ''}
-                        </div>
-                      )}
-                    </td>
-                    <td>{r.customer_name || <span className="muted">—</span>}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{r.customer_phone || <span className="muted">—</span>}</td>
+                    {/* 1. Scheduled Slot */}
                     <td>
-                      <select
-                        value={r.astrologer_id || ''}
-                        disabled={busy}
-                        onChange={(e) => assign(r, e.target.value)}
-                      >
-                        <option value="">— unassigned —</option>
-                        {astrologers.map((a) => (
-                          <option key={a.id} value={a.id}>{astroName(a)}</option>
-                        ))}
-                        {/* An assignee who has since been suspended is no longer in
-                            the list above, so show them explicitly rather than
-                            letting the select fall back to "unassigned" and imply
-                            nobody is on it. */}
-                        {r.astrologer_id && !astrologers.some((a) => a.id === r.astrologer_id) && (
-                          <option value={r.astrologer_id}>{r.assigneeName || 'Assigned (inactive)'}</option>
+                      <div>
+                        <div style={{ fontWeight: isToday ? 800 : 700, fontSize: 13.5, color: 'var(--text-primary)' }}>
+                          {fmtSlot(r.slot_start)}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                          {isToday && (
+                            <span className="pill-badge green" style={{ fontWeight: 700 }}>
+                              ● TODAY
+                            </span>
+                          )}
+                          <span className="muted" style={{ fontSize: 11.5 }}>
+                            {formatRelativeTime(r.slot_start)} · {r.duration_minutes || 12} min
+                          </span>
+                          {isPast && r.status === 'booked' && (
+                            <span className="pill-badge amber" style={{ fontSize: 10 }}>
+                              Slot Passed
+                            </span>
+                          )}
+                        </div>
+                        {r.rescheduled_from && (
+                          <div className="muted" style={{ fontSize: 11, marginTop: 2, color: 'var(--amber)' }}>
+                            Rescheduled from {fmtSlot(r.rescheduled_from)} {r.reschedule_count > 1 ? `(${r.reschedule_count}×)` : ''}
+                          </div>
                         )}
-                      </select>
-                      {!r.astrologer_id && r.status === 'booked' && (
-                        <div style={{ fontSize: 12, color: '#c0392b', marginTop: 2 }}>Nobody assigned</div>
-                      )}
-                      {r.astrologer_name && (
-                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                          shown to customer as {r.astrologer_name}
-                        </div>
-                      )}
+                      </div>
                     </td>
-                    <td>{statusBadge(r.status)}</td>
-                    <td style={{ maxWidth: 220 }}>
-                      {r.admin_note
-                        ? <span style={{ fontSize: 13 }}>{r.admin_note}</span>
-                        : <span className="muted">—</span>}
-                    </td>
+
+                    {/* 2. When Did They Book (created_at) */}
                     <td>
-                      <div className="btn-group" style={{ flexWrap: 'wrap', gap: 6 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                          {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </div>
+                        <div className="muted" style={{ fontSize: 11.5 }}>
+                          {r.created_at ? new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
+                          {' '}({formatRelativeTime(r.created_at)})
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* 3. Customer */}
+                    <td>
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {r.customer_name || <span className="muted">Anonymous</span>}
+                        </div>
+                        {r.customer_phone ? (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                            <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)' }}>
+                              {r.customer_phone}
+                            </span>
+                            <button
+                              className="btn ghost sm"
+                              style={{ padding: '1px 5px', fontSize: 10 }}
+                              onClick={() => copyText(r.customer_phone, `p-${r.id}`)}
+                              title="Copy number"
+                            >
+                              {copiedId === `p-${r.id}` ? '✓' : '📋'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="muted" style={{ fontSize: 11 }}>No phone</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 4. Assigned Astrologer */}
+                    <td>
+                      <div>
+                        <select
+                          value={r.astrologer_id || ''}
+                          disabled={busy}
+                          onChange={(e) => assign(r, e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            borderRadius: 8,
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            borderColor: !r.astrologer_id && r.status === 'booked' ? '#ef4444' : undefined,
+                            background: !r.astrologer_id && r.status === 'booked' ? '#fef2f2' : undefined,
+                          }}
+                        >
+                          <option value="">— Unassigned —</option>
+                          {astrologers.map((a) => (
+                            <option key={a.id} value={a.id}>{astroName(a)}</option>
+                          ))}
+                          {r.astrologer_id && !astrologers.some((a) => a.id === r.astrologer_id) && (
+                            <option value={r.astrologer_id}>{r.assigneeName || 'Assigned (Inactive)'}</option>
+                          )}
+                        </select>
+                        {!r.astrologer_id && r.status === 'booked' && (
+                          <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 700, marginTop: 3 }}>
+                            ⚠️ Needs Astrologer
+                          </div>
+                        )}
+                        {r.astrologer_name && (
+                          <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                            Promised face: {r.astrologer_name}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 5. Status */}
+                    <td>
+                      {statusBadge(r.status)}
+                    </td>
+
+                    {/* 6. Admin Note */}
+                    <td style={{ maxWidth: 180 }}>
+                      {r.admin_note ? (
+                        <span
+                          style={{ fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}
+                          onClick={() => { setNoting(r); setNoteText(r.admin_note || ''); }}
+                          title="Click to edit note"
+                        >
+                          {r.admin_note}
+                        </span>
+                      ) : (
+                        <span
+                          className="muted"
+                          style={{ fontSize: 12, cursor: 'pointer' }}
+                          onClick={() => { setNoting(r); setNoteText(''); }}
+                          title="Click to add note"
+                        >
+                          + Add note
+                        </span>
+                      )}
+                    </td>
+
+                    {/* 7. Manage / Actions */}
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="btn-group" style={{ justifyContent: 'flex-end', gap: 6 }}>
                         <select
                           value={r.status}
                           disabled={busy}
                           onChange={(e) => changeStatus(r, e.target.value)}
+                          style={{ padding: '4px 6px', fontSize: 12, borderRadius: 6 }}
                         >
                           {STATUSES.map((s) => (
                             <option key={s} value={s}>{STATUS_LABEL[s]}</option>
                           ))}
                         </select>
-                        <button className="btn secondary sm" disabled={busy}
-                          onClick={() => setRescheduling(r)}>Reschedule</button>
-                        <button className="btn secondary sm" disabled={busy}
-                          onClick={() => { setNoting(r); setNoteText(r.admin_note || ''); }}>Note</button>
+                        <button
+                          className="btn secondary sm"
+                          disabled={busy}
+                          onClick={() => setRescheduling(r)}
+                          title="Move call to a different slot"
+                        >
+                          Reschedule
+                        </button>
+                        <button
+                          className="btn ghost sm"
+                          disabled={busy}
+                          onClick={() => { setNoting(r); setNoteText(r.admin_note || ''); }}
+                          title="Internal admin note"
+                        >
+                          Note
+                        </button>
                       </div>
                     </td>
                   </tr>

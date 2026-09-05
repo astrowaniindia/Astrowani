@@ -76,10 +76,11 @@ const ALL_GROUPS = [
     items: [
       { to: '/sessions', label: 'Live Consultations' },
       { to: '/astro-services', label: 'Astro Services Rates' },
+      { to: '/free-call-bookings', label: 'Free Call Bookings' },
+      { to: '/free-call-settings', label: 'Free Call Settings' },
       { to: '/live', label: 'Live Video Streams' },
       { to: '/live-aarti', label: 'Live Aarti & Pooja' },
       { to: '/missed', label: 'Missed Calls' },
-      { to: '/free-call-bookings', label: 'Free Intro Bookings' },
       { to: '/free-bot-chat', label: 'Bot Chatbot' },
       { to: '/guide-avatar', label: 'Guide Avatar AI' },
     ],

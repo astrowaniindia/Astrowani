@@ -32,6 +32,7 @@ import Support from './pages/Support';
 import SupportInbox from './pages/SupportInbox';
 import FreeBotChat from './pages/FreeBotChat';
 import FreeCallBookings from './pages/FreeCallBookings';
+import FreeCallSettings from './pages/FreeCallSettings';
 import GuideAvatar from './pages/GuideAvatar';
 
 export default function App() {
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="sessions" element={<Sessions />} />
         <Route path="free-bot-chat" element={<FreeBotChat />} />
         <Route path="free-call-bookings" element={<FreeCallBookings />} />
+        <Route path="free-call-settings" element={<FreeCallSettings />} />
         <Route path="guide-avatar" element={<GuideAvatar />} />
       </Route>
     </Routes>
