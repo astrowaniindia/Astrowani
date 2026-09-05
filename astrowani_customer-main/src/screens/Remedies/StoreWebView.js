@@ -69,7 +69,22 @@ function isInternal(url) {
   }
 }
 
-export default function StoreWebView() {
+/**
+ * Where inside the store to open. `route.params.path` is appended to STORE_URL, so
+ * navigate('Store') is unchanged and navigate('Store', {path: 'vastu/?cat=pyramids'})
+ * lands on a category.
+ *
+ * Kept to a PATH rather than a full URL on purpose: this screen deliberately traps
+ * navigation to shop.astrowani.com (see STORE_HOST) and accepting an arbitrary URL from
+ * a caller would be a way around that. A leading slash is tolerated and stripped so
+ * 'vastu/' and '/vastu/' both work.
+ */
+function resolveStoreUrl(path) {
+  if (!path || typeof path !== 'string') return STORE_URL;
+  return STORE_URL + String(path).replace(/^\/+/, '');
+}
+
+export default function StoreWebView({route}) {
   const { t } = useContext(LanguageContext);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -252,7 +267,7 @@ export default function StoreWebView() {
       <WebView
         key={reloadKey + ':' + (token ? 'auth' : 'anon')}
         ref={webRef}
-        source={{ uri: STORE_URL }}
+        source={{ uri: resolveStoreUrl(route?.params?.path) }}
         injectedJavaScriptBeforeContentLoaded={injectAuth}
         // Sent a second time after load. On Android the "before content loaded" injection
         // is not reliably ahead of the page's own first script, and when it lost that race

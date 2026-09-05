@@ -24,8 +24,13 @@ const AUDIENCE_LABELS = {
 // Every spot in the apps a banner can be placed, with the exact image size to upload.
 // Widths/heights are in px — export at this ratio (or larger, same ratio) for a crisp image.
 const PLACEMENTS = {
-  home_primary: { label: 'Home screen — top banner (rotating)', width: 1200, height: 500, note: 'The big banner right under the header, e.g. "100% Cashback".' },
-  home_secondary: { label: 'Home screen — second banner (below the top one)', width: 1200, height: 400, note: 'A smaller banner shown right after the top one, before the astrologer list.' },
+  // Shortened 2026-09-05 (500 -> 400, 400 -> 300) so Home's astrologer list starts
+  // higher up. KEPT IN STEP with astrowani_customer-main PlacementBanner.js
+  // PLACEMENT_ASPECT — the app derives each banner's height from these exact ratios,
+  // so changing one without the other crops the artwork.
+  // Banners uploaded before that date are stored at the old shape and need re-uploading.
+  home_primary: { label: 'Home screen — top banner (rotating)', width: 1200, height: 400, note: 'The big banner right under the header, e.g. "100% Cashback". Re-upload if yours was made before Sep 2026 — the slot is shorter now.' },
+  home_secondary: { label: 'Home screen — second banner (below the top one)', width: 1200, height: 300, note: 'A smaller banner shown right after the top one, before the astrologer list. Re-upload if yours was made before Sep 2026 — the slot is shorter now.' },
   chat_top: { label: 'Chat with Astrologers — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Chat tab.' },
   video_top: { label: 'Video with Experts — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Video tab.' },
   call_top: { label: 'Talk to Experts (Audio) — top banner', width: 1200, height: 300, note: 'Shown above the astrologer list on the Call tab.' },

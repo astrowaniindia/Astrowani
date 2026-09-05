@@ -39,6 +39,8 @@ import FreeServicesScreen from '../drawerScreens/FreeSeviceScreen/FreeServicesSc
 import AnimatedAstrologerMarquee from './AnimatedAstrologerMarquee';
 import LiveAartiSection from './LiveAartiSection';
 import VoiceNotesBanner from './VoiceNotesBanner';
+import ShopCategoryCircles from './ShopCategoryCircles';
+import { routeForService } from '../../utils/astroServiceRoutes';
 import CustomerReview from './Review';
 import axios from 'axios';
 import { showAlert } from '../../Component/CustomAlert';
@@ -72,7 +74,6 @@ import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import useBlogListSync from '../../hooks/useBlogListSync';
 import useChatRequest from '../../hooks/useChatRequest';
 import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
-import { buildRemedyCategories } from '../Remedies/remedyCategories';
 import { astroServiceLabel } from '../../utils/astroServiceLabel';
 import RequestingPopup from '../../components/RequestingPopup';
 import {useModalPresence} from '../../utils/modalPresentation';
@@ -323,17 +324,10 @@ const Home = ({navigation}) => {
       .catch(err => console.log('Failed to load astro services:', err.message));
   }, []);
 
-  // Remedy categories for the Home row below Astro Reports. Null until the first
-  // response; buildRemedyCategories treats null the same as an empty list and
-  // returns the four bundled fallbacks, so the row renders immediately and is
-  // simply overwritten with admin-set titles/images once they arrive — no
-  // spinner, and no empty gap if the request fails outright.
-  const [remedyCategories, setRemedyCategories] = useState(null);
-  React.useEffect(() => {
-    Instance.get('/api/remedy-categories')
-      .then(res => setRemedyCategories(res?.data?.data || []))
-      .catch(err => console.log('Failed to load remedy categories:', err.message));
-  }, []);
+  // The /api/remedy-categories fetch that used to live here went with the
+  // "Astrowani Remedies" row (removed 2026-09-05) — it was the row's only consumer,
+  // so keeping it would have been a request on every Home mount feeding nothing.
+  // The Remedies tab still fetches it for its own use.
 
   const ASTRO_SERVICE_ICONS = {
     Kundli: 'https://img.icons8.com/color/128/scroll.png',
@@ -348,22 +342,11 @@ const Home = ({navigation}) => {
     'PDF Reports': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
   };
 
-  const ASTRO_SERVICE_ROUTES = {
-    kundli: 'KundliInputScreen',
-    matching: 'MatchingInputScreen',
-    chart: 'ChartInputScreen',
-    dasha: 'DashaInputScreen',
-    dosh: 'DoshInputScreen',
-    numerology: 'NumerologyInputScreen',
-    'lal-kitab': 'LalKitabInputScreen',
-    'kp-astrology': 'KPAstrologyInputScreen',
-    tarot: 'TarotScreen',
-    'pdf-report': 'PdfReportInputScreen',
-  };
-
+  // Route map moved to utils/astroServiceRoutes.js — AstroReportsScreen needs the same
+  // one, and two copies would drift the moment a service is added.
   const handleAstroServiceSelect = service => {
     captureEvent('home_screen_click', {section: 'astro_report_card', label: service.title || service.key});
-    const routeName = ASTRO_SERVICE_ROUTES[service.key];
+    const routeName = routeForService(service.key);
     if (routeName) navigation.navigate(routeName);
   };
 
@@ -1372,6 +1355,13 @@ const Home = ({navigation}) => {
           shadowOpacity: 0.1,
           shadowRadius: 5
         }}>
+          {/* The three Wani Shop entry points, sitting above the banner. These
+              replace the old "Astrowani Remedies" row that used to live below Astro
+              Reports — that row opened the NATIVE RemedyShop while the bottom tab
+              called "Wani Shop" opened the web storefront, so the app had two
+              differently-named shops. Everything now points at the one shop. */}
+          <ShopCategoryCircles navigation={navigation} />
+
           {/* Both Home banners are the way into the free 5-minute chat while the
               customer can still claim it: tapping one opens the offer instead of
               following the banner's own action. Once it has been used they become
@@ -1571,38 +1561,14 @@ const Home = ({navigation}) => {
 
         <View style={styles.separator} />
 
-        {/* Remedies — added below Astro Reports 2026-08-20, in the same
-            image-card row as Astro Reports so the two read as one family of
-            offerings. Same four categories as the Remedies tab (shared via
-            remedyCategories.js), so an admin edit shows up in both places.
-            No price badge: unlike a report, a remedy's cost depends on the
-            individual item picked inside RemedyShop, so a single number here
-            would be wrong for most of them. */}
-        <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>{t('home.remedies')}</Text>
-          <TouchableOpacity
-            style={styles.viewAllBtn}
-            onPress={() => {
-              captureEvent('home_screen_click', {section: 'view_all_remedies'});
-              navigation.navigate('Remedies');
-            }}>
-            <Text style={styles.viewAll}>{t('home.viewAll')}</Text>
-          </TouchableOpacity>
-        </View>
-        <FreeServicesScreen
-          services={buildRemedyCategories(remedyCategories, language, t).map(c => ({
-            id: c.id,
-            title: c.title,
-            icon: c.image?.uri || c.image,
-          }))}
-          onServiceSelect={item => {
-            captureEvent('home_screen_click', {section: 'remedy_card', label: item.title});
-            navigation.navigate('RemedyShop', {type: item.id, title: item.title});
-          }}
-          variant="image"
-        />
+        {/* The "Astrowani Remedies" category row used to sit here (added 2026-08-20).
+            Removed 2026-09-05: it opened the native RemedyShop, while the bottom tab
+            labelled "Wani Shop" opened the web storefront — two shops under two names,
+            which is exactly the confusion this removal is for. The single way in is now
+            ShopCategoryCircles, above the Home banner.
 
-        <View style={styles.separator} />
+            RemedyShop and its route are deliberately left registered: the drawer and
+            the admin-driven banners can still target them. */}
 
         <View style={[styles.topAstrologers, styles.boxedHeader]}>
           <Text style={styles.topAstrologerTxt}>{t('home.blog')}</Text>

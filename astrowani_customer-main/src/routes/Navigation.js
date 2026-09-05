@@ -373,6 +373,10 @@ export default function Navigation({ initialRoute }) {
           })}
         />
         {[
+          // The index for everything below it. Added 2026-09-05 — the ten report screens
+          // were each registered here but the only way to reach one was the Astro Reports
+          // row part-way down Home.
+          ['AstroReportsScreen', () => require('../screens/drawerScreens/AstroServices/AstroReportsScreen').default, 'Astro Reports'],
           ['KundliInputScreen', () => require('../screens/drawerScreens/AstroServices/KundliInputScreen').default, 'Kundli Report'],
           ['KundliResultScreen', () => require('../screens/drawerScreens/AstroServices/KundliResultScreen').default, 'Kundli Report'],
           ['MatchingInputScreen', () => require('../screens/drawerScreens/AstroServices/MatchingInputScreen').default, 'Kundli Matching'],

@@ -2482,9 +2482,29 @@ var BRAND_LOGO = "/assets/83b48ab72f6c.png";
     gifts:      '/assets/vastu-cat-gifts.jpg'
   };
 
+  /* Open on a category when the URL asks for one: /vastu/?cat=pyramids.
+     Added so the customer app's Home screen can send someone straight to a category
+     instead of dropping them on the full 450-item vastu list to find it themselves.
+
+     Validated against VASTU_CAT_ORDER rather than trusted, so a typo or a stale link
+     falls back to 'all' — the exact behaviour this page had before — instead of
+     filtering to a category that does not exist and rendering an empty grid.
+
+     Read once here, at the state's declaration, rather than hooked into any particular
+     render: every path that draws the tiles or the grid reads vastuState, so doing it
+     here means none of them need to know this feature exists. */
+  function vastuCatFromUrl(){
+    try {
+      var m = /[?&]cat=([^&#]+)/.exec(location.search);
+      if (!m) return 'all';
+      var want = decodeURIComponent(m[1]).toLowerCase();
+      return VASTU_CAT_ORDER.indexOf(want) >= 0 ? want : 'all';
+    } catch (e) { return 'all'; }
+  }
+
   // `shown` is how many of the filtered list are currently in the DOM. renderVastu()
   // resets it to the first batch; the Show-more button raises it.
-  var vastuState = { q:'', cat:'all', dir:'all', sort:'featured', shown:0 };
+  var vastuState = { q:'', cat:vastuCatFromUrl(), dir:'all', sort:'featured', shown:0 };
 
   /* The STORED group wins. Reading it off the title was right about three times in four
      when measured against 414 real products, which means one product in four sat under the

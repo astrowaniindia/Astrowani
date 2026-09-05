@@ -24,8 +24,16 @@ import { readCache, writeCache } from '../utils/cacheFetch';
 // height from the ratio instead means the box is always the shape of the image, so
 // nothing is ever cropped, on any device width.
 const PLACEMENT_ASPECT = {
-  home_primary: 1200 / 500,
-  home_secondary: 1200 / 400,
+  // Shortened 2026-09-05 (500 -> 400, 400 -> 300) so the astrologer list starts higher
+  // up Home. On a 411dp screen with 15dp margins that takes the pair from ~286dp of
+  // banner to ~222dp — about 64dp handed back to the content below.
+  //
+  // ⚠️ CHANGED IN STEP with astrowani-admin/src/pages/Banners.jsx PLACEMENTS. These two
+  // are one contract. Banners uploaded BEFORE this change were cropped to the old shape
+  // and will now be cover-cropped top and bottom until they are re-uploaded — that is
+  // unavoidable, not a bug in the sizing: the stored image is genuinely the wrong shape.
+  home_primary: 1200 / 400,
+  home_secondary: 1200 / 300,
   chat_top: 1200 / 300,
   video_top: 1200 / 300,
   call_top: 1200 / 300,
