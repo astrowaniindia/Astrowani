@@ -1148,8 +1148,8 @@ const translations = {
     'freeCall.confirm': 'Confirm booking',
     'freeCall.booking': 'Booking…',
     'freeCall.yourCall': 'Your free call',
-    'freeCall.callingYou': '{{name}} will call you on {{phone}}. You do not need to do anything else.',
-    'freeCall.callingYouNoPhone': '{{name}} will call you on your registered number. You do not need to do anything else.',
+    'freeCall.callingYou': 'An astrologer from Astrowani will call you on {{phone}} at your booking time. You do not need to do anything else.',
+    'freeCall.callingYouNoPhone': 'An astrologer from Astrowani will call you on your registered number at your booking time. You do not need to do anything else.',
     'freeCall.minutes': '{{count}} minutes, free',
     'freeCall.notNow': 'Maybe later',
     'freeCall.done': 'Done',
@@ -1175,6 +1175,7 @@ const translations = {
     'freeCall.slotTaken': 'Someone just took that time. Please pick another.',
     'freeCall.experience': '{{years}} experience',
     'freeCall.matching': 'Finding your astrologer…',
+    'freeCall.byVerifiedAstrologers': 'By verified & certified astrologers',
   },
   Hindi: {
     // Home
@@ -2293,8 +2294,8 @@ const translations = {
     'freeCall.confirm': 'बुकिंग पक्की करें',
     'freeCall.booking': 'बुक हो रहा है…',
     'freeCall.yourCall': 'आपकी मुफ़्त कॉल',
-    'freeCall.callingYou': '{{name}} आपको {{phone}} पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
-    'freeCall.callingYouNoPhone': '{{name}} आपको आपके रजिस्टर्ड नंबर पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
+    'freeCall.callingYou': 'एस्ट्रोवाणी के एक ज्योतिषी आपके बुकिंग समय पर आपको {{phone}} पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
+    'freeCall.callingYouNoPhone': 'एस्ट्रोवाणी के एक ज्योतिषी आपके बुकिंग समय पर आपको आपके रजिस्टर्ड नंबर पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
     'freeCall.minutes': '{{count}} मिनट, मुफ़्त',
     'freeCall.notNow': 'बाद में',
     'freeCall.done': 'ठीक है',
@@ -2317,6 +2318,7 @@ const translations = {
     'freeCall.slotTaken': 'यह समय अभी किसी ने बुक कर लिया। कृपया दूसरा चुनें।',
     'freeCall.experience': '{{years}} का अनुभव',
     'freeCall.matching': 'आपका ज्योतिषी चुना जा रहा है…',
+    'freeCall.byVerifiedAstrologers': 'प्रमाणित एवं सत्यापित ज्योतिषियों द्वारा',
   },
 };
 

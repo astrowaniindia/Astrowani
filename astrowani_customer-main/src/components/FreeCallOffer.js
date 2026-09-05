@@ -14,10 +14,8 @@
 //
 // Copy (heading, body, button, confirmation) is admin-authored and arrives in
 // `offer`; only structural labels are translated here.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Animated,
-  Easing,
   Modal,
   View,
   Text,
@@ -41,99 +39,54 @@ const BORDER = '#E9D9C9';
 // floating bubble is tapped) so the funnel can tell an offer the customer sought out from
 // one that was pushed at them — very different intent, very different conversion rate.
 
-// An ODD number of visible faces, so there is a true middle slot for the ring to
-// sit in. An even count would leave the winner straddling two positions.
-const REEL_VISIBLE = 5;
-const REEL_ITEM_W = scale(64);
+// How many faces the overlapping cluster shows. The backend already returns a
+// roster of 5-6 (DISPLAY_ROSTER_MIN/MAX in freeCallRoutes.js); this caps what is
+// drawn so a longer roster cannot overflow a narrow phone.
+const CLUSTER_MAX = 5;
+const CLUSTER_FACE = scale(46);
+// Negative margin between faces — how far each one tucks under the previous.
+const CLUSTER_OVERLAP = scale(14);
 
 const FALLBACK_FACE = require('../assets/images/brandStarLogo.png');
 const faceSource = (uri) => (uri ? { uri } : FALLBACK_FACE);
 
 /**
- * The face reel: a strip of astrologers that slides past a fixed gold ring in the
- * middle of the card, decelerates, and stops with one of them centred in it.
+ * The astrologer cluster: a static row of overlapping faces.
  *
- * THE CLIENT DOES NOT PICK. `featuredIndex` arrives from the server, which also
- * shuffles the strip, so the ring lands on whoever the admin configured — this
- * only animates its way there. A client-side random pick would put the app in
- * charge of a promise the backend has to keep.
+ * Replaced the spinning "reel" (2026-09-05). The reel animated a strip past a gold
+ * ring and stopped on one astrologer, which made the card a promise about a
+ * PARTICULAR person. The offer is not that — whoever is free takes the call, and
+ * pool mode can assign any of several — so the card now shows the panel as a group
+ * and says who they are collectively, with no name and nothing moving.
  *
- * The reel is a single translateX on the native driver, not a per-face timer:
- * the winner's resting offset is arithmetic, so it cannot drift off-centre or
- * stop one face short (which is exactly what an earlier tick-by-tick version did).
+ * No Animated, no timers, no featuredIndex: this renders once and holds still.
+ * Deliberately so — the brief was to remove the animation completely.
  */
-const REEL_LOOPS = 3;
-
-const AstrologerReel = ({ list, featuredIndex, t, itemW, visible: visibleCount }) => {
-  const n = list.length;
-  const target = featuredIndex >= 0 && featuredIndex < n ? featuredIndex : 0;
-  const [settled, setSettled] = useState(n < 2);
-  const x = useRef(new Animated.Value(0)).current;
-  const pop = useRef(new Animated.Value(n < 2 ? 1 : 0)).current;
-
-  // Enough copies to spin through, plus a tail so the strip never runs out of
-  // faces on the right-hand side of the window mid-spin.
-  const reel = [];
-  for (let r = 0; r <= REEL_LOOPS + 1; r += 1) list.forEach((a, i) => reel.push({ ...a, i, r }));
-
-  const centreOffset = (itemW * visibleCount - itemW) / 2;
-  const finalIndex = n < 2 ? target : REEL_LOOPS * n + target;
-
-  useEffect(() => {
-    x.setValue(centreOffset);
-    if (n < 2) {
-      x.setValue(centreOffset - finalIndex * itemW);
-      return undefined;
-    }
-    const anim = Animated.timing(x, {
-      toValue: centreOffset - finalIndex * itemW,
-      duration: 2200,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
-    anim.start(({ finished }) => {
-      if (!finished) return;
-      setSettled(true);
-      Animated.spring(pop, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
-    });
-    return () => anim.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [n, target, itemW]);
-
-  const ringScale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
+const AstrologerCluster = ({ list, t }) => {
+  const faces = (list || []).slice(0, CLUSTER_MAX);
   const tr = (k) => (typeof t === 'function' ? t(k) : k);
+  if (!faces.length) return null;
 
   return (
-    <View style={styles.reelWrap}>
-      <View style={[styles.reelWindow, { width: itemW * visibleCount, height: itemW }]}>
-        <Animated.View style={[styles.reel, { transform: [{ translateX: x }] }]}>
-          {reel.map((a, k) => (
-            <View key={`${a.r}-${a.i}`} style={[styles.reelItem, { width: itemW }]}>
-              <Image
-                source={faceSource(a.image)}
-                style={[
-                  styles.face,
-                  { width: itemW - scale(8), height: itemW - scale(8), borderRadius: itemW },
-                  settled && k !== finalIndex && styles.faceDim,
-                ]}
-              />
-            </View>
-          ))}
-        </Animated.View>
-
-        {/* The ring is fixed in the middle of the window — the reel moves, it does
-            not. Whoever comes to rest under it is the pick. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.centreRing,
-            { width: itemW, height: itemW, borderRadius: itemW, left: centreOffset },
-            { transform: [{ scale: ringScale }] },
-          ]}
-        />
+    <View style={styles.clusterWrap}>
+      <View style={styles.clusterRow}>
+        {faces.map((a, i) => (
+          <Image
+            key={`${a.name || 'astro'}-${i}`}
+            source={faceSource(a.image)}
+            style={[
+              styles.clusterFace,
+              // Every face after the first slides left to sit under its neighbour.
+              // zIndex descends so the leftmost reads as the top of the stack, which
+              // is the convention these avatar clusters use everywhere else.
+              i > 0 && { marginLeft: -CLUSTER_OVERLAP },
+              { zIndex: faces.length - i },
+            ]}
+          />
+        ))}
       </View>
-      <Text style={styles.reelLabel} numberOfLines={1}>
-        {settled ? (list[target] || {}).name || '' : tr('freeCall.matching')}
+      <Text style={styles.clusterLabel} numberOfLines={2}>
+        {tr('freeCall.byVerifiedAstrologers')}
       </Text>
     </View>
   );
@@ -202,7 +155,9 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = '
       captureEvent('free_call_booked', {
         source,
         slot_start: picked,
-        astrologer_name: res.booking?.astrologerName || offer?.astrologerName || null,
+        // Whoever the backend actually assigned, or null in manual mode where
+        // nobody is assigned yet. No longer falls back to a display persona.
+        astrologer_name: res.booking?.astrologerName || null,
       });
       setConfirmed(res.booking);
       setStep('done');
@@ -241,16 +196,12 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = '
 
   if (!visible || !offer) return null;
 
-  // The cluster is server-built (offer.astrologers + offer.featuredIndex). An older
-  // backend, or an offer with nobody to show, falls back to the single configured
-  // face so the card still renders.
-  const roster = Array.isArray(offer.astrologers) ? offer.astrologers : [];
-  const cluster = roster.length
-    ? roster
-    : (offer.astrologerName || offer.astrologerImage
-      ? [{ name: offer.astrologerName || '', image: offer.astrologerImage || '' }]
-      : []);
-  const featuredIndex = roster.length ? (offer.featuredIndex ?? 0) : 0;
+  // The roster is server-built (offer.astrologers) and is now the only source of
+  // faces. The typed astrologerName/Image persona that used to back-fill this was
+  // removed with the reel (2026-09-05) — a face belonging to nobody bookable is
+  // the exact promise this offer should not make. An empty roster renders no
+  // cluster at all rather than a placeholder, which AstrologerCluster handles.
+  const cluster = Array.isArray(offer.astrologers) ? offer.astrologers : [];
 
   return (
     <Modal transparent visible animationType="fade" onRequestClose={step === 'done' ? onClose : dismiss}>
@@ -277,18 +228,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = '
               </View>
 
               <View style={styles.introBody}>
-                {cluster.length > 0 && (
-                  <AstrologerReel
-                    // Remount per opening so the spin replays and picks up a
-                    // freshly-ordered roster rather than freezing on the first one.
-                    key={cluster.map((a) => a.name).join('|')}
-                    list={cluster}
-                    featuredIndex={featuredIndex}
-                    itemW={REEL_ITEM_W}
-                    visible={REEL_VISIBLE}
-                    t={t}
-                  />
-                )}
+                {cluster.length > 0 && <AstrologerCluster list={cluster} t={t} />}
                 {!!offer.bodyText && <Text style={styles.bodyText}>{offer.bodyText}</Text>}
 
                 <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={goToSlots}>
@@ -407,13 +347,20 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = '
                   {/* Prefer the number snapshotted on the booking — that is the
                       one the astrologer will dial. Falls back to the profile's,
                       and to a phone-less sentence if neither is known, so this
-                      can never read "will call you on ." */}
+                      can never read "will call you on ."
+
+                      No astrologer NAME here (2026-09-05). The offer is not a
+                      promise about a particular person — pool mode can assign any
+                      of several, and in manual mode nobody is assigned yet when
+                      this screen is shown, so naming one would have been a claim
+                      the backend might not keep. `confirmed.astrologerName` is
+                      still snapshotted on the booking for the admin and the
+                      vendor's own list; it just isn't quoted to the customer. */}
                   {(() => {
                     const num = confirmed.customerPhone || phone || '';
-                    const who = confirmed.astrologerName || offer.astrologerName;
                     return num
-                      ? tr('freeCall.callingYou', { name: who, phone: num })
-                      : tr('freeCall.callingYouNoPhone', { name: who });
+                      ? tr('freeCall.callingYou', { phone: num })
+                      : tr('freeCall.callingYouNoPhone');
                   })()}
                 </Text>
                 <TouchableOpacity style={[styles.cta, styles.ctaFooter]} activeOpacity={0.85} onPress={onClose}>
@@ -498,26 +445,25 @@ const styles = StyleSheet.create({
 
   introBody: { alignItems: 'center', paddingHorizontal: scale(20), paddingVertical: verticalScale(18) },
 
-  reelWrap: { alignItems: 'center' },
-  // overflow:hidden is what makes this read as a reel rather than a row — faces
-  // appear from one edge and leave by the other.
-  reelWindow: { overflow: 'hidden', justifyContent: 'center' },
-  reel: { flexDirection: 'row', alignItems: 'center' },
-  reelItem: { alignItems: 'center', justifyContent: 'center' },
-  face: { backgroundColor: '#F3E3D2' },
-  faceDim: { opacity: 0.4 },
-  centreRing: {
-    position: 'absolute',
-    top: 0,
-    borderWidth: 3,
-    borderColor: COLORS.AstroGold,
+  clusterWrap: { alignItems: 'center' },
+  clusterRow: { flexDirection: 'row', alignItems: 'center' },
+  clusterFace: {
+    width: CLUSTER_FACE,
+    height: CLUSTER_FACE,
+    borderRadius: CLUSTER_FACE / 2,
+    backgroundColor: '#F3E3D2',
+    // The white ring is what separates one face from the next once they overlap —
+    // without it the cluster reads as one blurred shape at this size.
+    borderWidth: 2,
+    borderColor: '#fff',
   },
-  reelLabel: {
-    fontSize: moderateScale(15.5),
+  clusterLabel: {
+    fontSize: moderateScale(13.5),
     fontWeight: '700',
     color: '#2E1A10',
     marginTop: verticalScale(12),
-    minHeight: verticalScale(20),
+    textAlign: 'center',
+    paddingHorizontal: scale(10),
   },
   bodyText: {
     fontSize: moderateScale(13.5),

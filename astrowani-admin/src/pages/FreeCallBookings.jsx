@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
-import ImageField from '../components/ImageField';
 
 // The free 12-minute introductory call: the offer's settings, and every booking
 // made against it. Replaces the free 5-minute bot chat (Free Bot Chat page,
@@ -32,13 +31,6 @@ const OFFER_DEFAULTS = {
   poolAstrologerIds: [],
   // Purely the faces on the popup — see the "Faces shown on the card" section.
   displayAstrologerIds: [],
-  // Points at a real astrologers row; name + photo are read from that profile.
-  // The astrologerName/astrologerImage pair below is only the manual fallback.
-  displayFeaturedAstrologerId: '',
-  astrologerName: '',
-  astrologerImage: '',
-  astrologerExperience: '',
-  astrologerSpecialities: '',
   headerText: '',
   bodyText: '',
   ctaText: '',
@@ -294,14 +286,6 @@ export default function FreeCallBookings() {
   // The face the customer sees. A picked astrologer's name comes from their
   // profile, so the typed field is blank in that case — reading it directly here
   // made the summary claim "No astrologer set" while the card showed somebody.
-  const shownAstrologerName = useMemo(() => {
-    if (offer.displayFeaturedAstrologerId) {
-      const a = astrologers.find((x) => x.id === offer.displayFeaturedAstrologerId);
-      if (a) return astroName(a);
-    }
-    return offer.astrologerName || '';
-  }, [offer.displayFeaturedAstrologerId, offer.astrologerName, astrologers]);
-
   const todayKey = IST_DAY.format(new Date());
 
   return (
@@ -360,7 +344,7 @@ export default function FreeCallBookings() {
               : offer.assignmentMode === 'pool'
                 ? `Split across ${(offer.poolAstrologerIds || []).length} astrologers`
                 : 'Assigned by hand per booking'} ·
-            {' '}{shownAstrologerName || 'No astrologer set'} · {offer.durationMinutes}&nbsp;min ·
+            {' '}{offer.durationMinutes}&nbsp;min ·
             {' '}{String(offer.openHour).padStart(2, '0')}:00–{String(offer.closeHour).padStart(2, '0')}:00 ·
             {' '}{offer.slotMinutes}&nbsp;min slots · booking up to {offer.daysAhead} days ahead
           </p>
@@ -463,49 +447,17 @@ export default function FreeCallBookings() {
               </div>
             )}
 
-            <h4 style={{ margin: '18px 0 8px' }}>The astrologer shown to the customer</h4>
-            <p className="muted" style={{ marginTop: -4 }}>
-              The popup shuffles a group of faces and stops on this one. It is only the
-              face on the card — it is separate from who actually takes the call above,
-              and in "assign by hand" mode nobody is assigned yet when the customer is
-              looking at it.
-            </p>
-            <div className="field">
-              <label>Pick from your astrologers</label>
-              <select
-                value={offer.displayFeaturedAstrologerId || ''}
-                onChange={(e) => setOffer((p) => ({ ...p, displayFeaturedAstrologerId: e.target.value }))}>
-                <option value="">— enter a name and photo by hand instead —</option>
-                {astrologers.map((a) => (
-                  <option key={a.id} value={a.id}>{astroName(a)}</option>
-                ))}
-              </select>
-              <p className="muted" style={{ margin: '6px 0 0' }}>
-                Their name and photo are read from their profile, so you do not upload
-                anything and it stays right when they change their picture.
-              </p>
-            </div>
-
-            {!offer.displayFeaturedAstrologerId && (
-              <>
-                <ImageField
-                  label="Astrologer photo (URL or upload)"
-                  value={offer.astrologerImage}
-                  onChange={(v) => setOffer((p) => ({ ...p, astrologerImage: v }))}
-                />
-                <div className="field"><label>Name</label>
-                  <input type="text" value={offer.astrologerName}
-                    onChange={(e) => setOffer((p) => ({ ...p, astrologerName: e.target.value }))} /></div>
-              </>
-            )}
-
             <h4 style={{ margin: '18px 0 8px' }}>Faces shown on the card</h4>
             <p className="muted" style={{ marginTop: -4 }}>
-              The popup shows a small group of photos that shuffle and stop on one of them,
-              so the customer feels they were matched. <strong>The one it stops on is always
-              the astrologer named above</strong> — these others are only shown alongside, and
-              picking someone here does not give them any bookings. Leave this empty and the
-              group is filled automatically from your approved astrologers.
+              The popup shows a small group of overlapping photos, captioned
+              "By verified &amp; certified astrologers". <strong>No single astrologer is
+              named or highlighted</strong>, and picking someone here does not give them any
+              bookings — it is only whose face appears. Leave this empty and the group is
+              filled automatically from your approved astrologers.
+            </p>
+            <p className="muted" style={{ marginTop: -4 }}>
+              Photos are read live from each astrologer's profile, so nothing is uploaded
+              here and a face is never out of date. Only approved astrologers can appear.
             </p>
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220,

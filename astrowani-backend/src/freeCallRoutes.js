@@ -56,24 +56,22 @@ const DEFAULTS = {
   assignmentMode: 'manual',
   assignedAstrologerId: '',
   poolAstrologerIds: [],
-  // The FACES on the offer card — a small cluster the customer sees "shuffle"
-  // before one is highlighted. Purely presentational: it has nothing to do with
-  // assignment above, which is what actually decides who rings the customer.
-  // Left empty the server fills the cluster from approved astrologers, so the
-  // card never renders a lonely single photo.
+  // The FACES on the offer card — a static cluster of overlapping photos.
+  // Purely presentational: it has nothing to do with assignment above, which is
+  // what actually decides who rings the customer. Left empty the server fills the
+  // cluster from approved astrologers, so the card never renders a lonely photo.
+  //
+  // NOBODY IS SINGLED OUT (2026-09-05). The card used to spin a reel and stop on
+  // one astrologer, backed by a `displayFeaturedAstrologerId` plus a typed
+  // astrologerName/Image/Experience/Specialities persona. All of that is gone: the
+  // cluster shows the panel as a group under "By verified & certified astrologers",
+  // because the offer is not a promise about a particular person — pool mode can
+  // assign any of several, and in manual mode nobody is assigned yet when the
+  // customer is looking at the card.
+  //
+  // Stored blobs from before that date may still carry those keys; they are simply
+  // ignored, since DEFAULTS is what defines the shape.
   displayAstrologerIds: [],
-  // WHOSE FACE THE REEL STOPS ON. Prefer this over the astrologerName/Image pair
-  // below: it points at a real astrologers row, so the name and photo are read
-  // from that profile and stay right when they change their picture. The manual
-  // pair is the fallback, for a persona with no account.
-  displayFeaturedAstrologerId: '',
-  // The name/photo the CUSTOMER sees on the offer card. Deliberately separate
-  // from the assignment above: assignment is internal routing, and in 'manual'
-  // mode nobody is assigned yet when the customer is looking at the card.
-  astrologerName: 'Acharya Vishal Sharma',
-  astrologerImage: '',
-  astrologerExperience: '15 years',
-  astrologerSpecialities: 'Vedic Astrology, Career, Marriage',
   headerText: 'Your first 12-minute call is on us',
   bodyText: 'Pick a date and time that suits you. Our astrologer will call you directly — you do not have to do anything else.',
   ctaText: 'Book my free call',
@@ -130,7 +128,6 @@ async function loadOffer() {
   merged.displayAstrologerIds = merged.displayAstrologerIds
     .filter((id) => typeof id === 'string' && id)
     .slice(0, DISPLAY_ROSTER_MAX);
-  if (typeof merged.displayFeaturedAstrologerId !== 'string') merged.displayFeaturedAstrologerId = '';
   // An empty pool would mean a capacity of zero, i.e. nothing bookable at all.
   // Falling back to manual keeps the offer working and leaves the bookings in the
   // admin's queue, which is recoverable; a dead offer is not.
@@ -432,31 +429,19 @@ function shuffled(arr) {
 }
 
 /**
- * The name and photo the CUSTOMER is shown — one resolver, because two callers
- * need the same answer: the offer card and the booking row that snapshots what
- * the customer was promised. They must never disagree.
+ * The faces on the offer card, as a flat list. Nobody is featured and no name is
+ * returned for the customer to read — the card renders these as an overlapping
+ * cluster under "By verified & certified astrologers".
  *
- * A chosen astrologer wins over the typed name/photo and is read live from their
- * profile, so an admin picks a person once instead of re-uploading a photo that
- * goes stale the moment that astrologer changes their picture. The typed pair
- * remains the fallback — for a persona with no account, and for when the chosen
- * astrologer is later suspended and drops out of the approved list.
+ * Everyone here is a real, approved astrologer read live from their profile, so a
+ * photo never goes stale and the card can never show someone who has since been
+ * suspended. There is deliberately no typed-persona fallback any more: showing a
+ * face that belongs to nobody bookable is exactly the promise this offer should
+ * not make.
  */
-async function featuredIdentity(offer) {
-  const all = await approvedAstrologerFaces();
-  const chosen = offer.displayFeaturedAstrologerId
-    ? all.find((a) => a.id === offer.displayFeaturedAstrologerId)
-    : null;
-  return {
-    name: (chosen && chosen.name) || offer.astrologerName || '',
-    image: (chosen && chosen.image) || offer.astrologerImage || '',
-  };
-}
-
 async function buildDisplayRoster(offer) {
   const all = await approvedAstrologerFaces();
   const byId = new Map(all.map((a) => [a.id, a]));
-  const featured = await featuredIdentity(offer);
 
   const picked = [];
   const seen = new Set();
@@ -467,10 +452,8 @@ async function buildDisplayRoster(offer) {
     picked.push({ name: entry.name, image: entry.image || '' });
   };
 
-  if (featured.name) seen.add(featured.name.trim().toLowerCase());
-
+  // An admin's explicit picks come first, in the order they chose them.
   offer.displayAstrologerIds.forEach((id) => {
-    if (id === offer.displayFeaturedAstrologerId) return; // already the featured face
     const a = byId.get(id);
     if (a) take(a);
   });
@@ -478,42 +461,21 @@ async function buildDisplayRoster(offer) {
   // Top up. Faces WITH a photo first — a cluster of grey placeholders is worse
   // than a smaller cluster, so photoless astrologers are only used as a last
   // resort to reach the minimum.
-  if (picked.length + (featured.name ? 1 : 0) < DISPLAY_ROSTER_MIN) {
+  if (picked.length < DISPLAY_ROSTER_MIN) {
     const rest = shuffled(all.filter((a) => !seen.has(a.name.trim().toLowerCase())));
     rest.sort((a, b) => (b.image ? 1 : 0) - (a.image ? 1 : 0));
     for (const a of rest) {
-      if (picked.length + (featured.name ? 1 : 0) >= DISPLAY_ROSTER_MIN) break;
+      if (picked.length >= DISPLAY_ROSTER_MIN) break;
       take(a);
     }
   }
 
-  let list = shuffled(picked).slice(0, DISPLAY_ROSTER_MAX - (featured.name ? 1 : 0));
-
-  if (featured.name) {
-    const at = crypto.randomInt(list.length + 1);
-    list = [...list.slice(0, at), { name: featured.name, image: featured.image }, ...list.slice(at)];
-    return {
-      astrologers: list,
-      featuredIndex: at,
-      // Echoed back so the card's name line and the booking confirmation quote the
-      // SAME person the reel stopped on, even when that came from a picked profile
-      // rather than the typed fields.
-      astrologerName: featured.name,
-      astrologerImage: featured.image,
-    };
-  }
-  // No configured display astrologer: the cluster still animates, it just lands
-  // on whoever happens to be first. Nothing is promised either way.
-  return { astrologers: list, featuredIndex: list.length ? 0 : -1 };
+  return { astrologers: shuffled(picked).slice(0, DISPLAY_ROSTER_MAX) };
 }
 
 const publicOffer = (offer) => ({
   enabled: offer.enabled,
   durationMinutes: offer.durationMinutes,
-  astrologerName: offer.astrologerName,
-  astrologerImage: offer.astrologerImage,
-  astrologerExperience: offer.astrologerExperience,
-  astrologerSpecialities: offer.astrologerSpecialities,
   headerText: offer.headerText,
   bodyText: offer.bodyText,
   ctaText: offer.ctaText,
@@ -662,10 +624,12 @@ module.exports = function registerFreeCallRoutes(app) {
       status: 'booked',
       customer_name: customer.name || null,
       customer_phone: customer.mobile || null,
-      // The name the customer was SHOWN on the offer card. Not the assignee —
-      // see the DEFAULTS note. Snapshotted so editing the offer later never
-      // rewrites what a past customer was promised.
-      astrologer_name: (await featuredIdentity(offer)).name || null,
+      // Left null on purpose. This used to snapshot the persona the customer was
+      // shown on the card; the card no longer names anybody, so there is nothing
+      // to promise and nothing to preserve. The real assignee is `astrologer_id`
+      // (set by the candidate loop below), and every reader already falls back to
+      // resolving the name from that row — see the vendor/admin list builders.
+      astrologer_name: null,
     };
 
     // Candidates are ordered emptiest-first. We walk down them because the
