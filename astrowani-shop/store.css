@@ -863,10 +863,19 @@
     .foot-assure{gap:12px 20px; margin-top:34px;}
   }
 
-  /* Very small phones (<=360px): one column reads better than two cramped ones. */
+  /* Very small phones (<=360px).
+     This block USED to drop the grids to one column, on the reasoning that two
+     columns would be too cramped. In practice 360px is the most common Android
+     viewport there is, so that was not an edge case — it was most of the traffic,
+     and it turned a 33-item gemstone list into 33 full-width cards to scroll past.
+     Reported from a real phone; two cramped columns beat a very long scroll.
+     At 360px a card is ~156px wide, which is what the <=520px rule was already
+     sizing for with minmax(160px). */
   @media (max-width: 360px){
-    .product-grid{grid-template-columns:1fr;}
-    .purpose-grid{grid-template-columns:1fr;}
+    .product-grid{gap:10px;}
+    .purpose-grid{gap:9px;}
+    .card-body{padding:9px 9px 11px;}
+    .card-name{font-size:12.5px;}
     .hero h1{font-size:30px;}
   }
 
