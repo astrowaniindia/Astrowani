@@ -182,6 +182,7 @@ export default function Analytics() {
   const [authFunnelType, setAuthFunnelType] = useState('signup');
   const [freeCallFunnel, setFreeCallFunnel] = useState(null);
   const [servicesEngagement, setServicesEngagement] = useState(null);
+  const [walletFunnel, setWalletFunnel] = useState(null);
 
   // Shared date range for every card on the page (except D1/D7 Retention, a rolling
   // cohort window that doesn't fit a simple from/to filter).
@@ -306,6 +307,7 @@ export default function Analytics() {
         client.get('/api/admin/analytics/blocked-attempts', { params: dateParams }),
         client.get('/api/admin/analytics/free-call-funnel', { params: dateParams }).catch(() => ({ data: null })),
         client.get('/api/admin/analytics/services-engagement', { params: dateParams }).catch(() => ({ data: null })),
+        client.get('/api/admin/analytics/wallet-funnel', { params: dateParams }).catch(() => ({ data: null })),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -326,6 +328,7 @@ export default function Analytics() {
       setBlockedAttempts(blockedRes.data);
       setFreeCallFunnel(freeCallRes?.data || null);
       setServicesEngagement(servicesRes?.data || null);
+      setWalletFunnel(walletRes?.data || null);
       setNotConfigured(false);
       setError('');
     } catch (e) {
@@ -1012,6 +1015,42 @@ export default function Analytics() {
             Tapped a category you aren't delivering yet:{' '}
             <b>{remediesFunnel?.blockedCategoryTapped ?? 0}</b> people
           </span>
+        </div>
+      </div>
+
+      {/* ── Wallet Recharge Funnel ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Wallet Recharge Funnel (customer app)</h3>
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
+              Conversion of customers adding balance to their wallet via Razorpay checkout.
+            </p>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {walletFunnel?.stages?.length ? (
+            <StepFunnel stages={walletFunnel.stages} baseLabel="opened wallet" />
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>No wallet recharge activity in this range.</p>
+          )}
+        </div>
+
+        <div className="row-between" style={{ marginTop: 16, flexWrap: 'wrap', gap: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+            <span className="muted">
+              Recharge Failures / Cancellations:{' '}
+              <strong style={{ color: (walletFunnel?.failed ?? 0) > 0 ? 'var(--red)' : 'inherit' }}>
+                {walletFunnel?.failed ?? 0}
+              </strong>
+            </span>
+            {walletFunnel?.failures?.length > 0 && (
+              <span className="muted">
+                Failure Breakdown: {walletFunnel.failures.map((f) => `${f.reason}: ${f.count}`).join(', ')}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

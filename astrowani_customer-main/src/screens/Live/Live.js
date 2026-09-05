@@ -40,7 +40,10 @@ const Live = ({ navigation }) => {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { getLiveAstro(); }, [getLiveAstro]));
+  useFocusEffect(useCallback(() => {
+    captureEvent('live_screen_viewed');
+    getLiveAstro();
+  }, [getLiveAstro]));
 
   // Was an unfiltered per-mount Supabase Realtime subscription on the whole
   // `live_sessions` table — replaced with the shared backend fanout (see

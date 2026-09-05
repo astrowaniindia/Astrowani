@@ -613,6 +613,49 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Wallet Recharge Funnel: viewed → selected amount → started payment → recharged ──
+  app.get('/api/admin/analytics/wallet-funnel', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const rows = await runHogQL(`
+      SELECT
+        count(DISTINCT if(event = 'wallet_viewed', person_id, NULL)) AS viewed,
+        count(DISTINCT if(event = 'recharge_amount_selected', person_id, NULL)) AS selected,
+        count(DISTINCT if(event = 'recharge_started', person_id, NULL)) AS started,
+        count(DISTINCT if(event = 'wallet_recharged', person_id, NULL)) AS recharged,
+        count(DISTINCT if(event = 'recharge_failed', person_id, NULL)) AS failed
+      FROM events
+      WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+        AND event IN ('wallet_viewed', 'recharge_amount_selected', 'recharge_started', 'wallet_recharged', 'recharge_failed')
+    `);
+    const [viewed, selected, started, recharged, failed] = rows[0] || [0, 0, 0, 0, 0];
+
+    const failureRows = await runHogQL(`
+      SELECT properties.reason AS reason, count() AS n
+      FROM events
+      WHERE event = 'recharge_failed' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+      GROUP BY reason
+      ORDER BY n DESC
+      LIMIT 10
+    `);
+    const failures = failureRows.map(([reason, n]) => ({
+      reason: reason || '(unspecified)',
+      count: Number(n) || 0,
+    }));
+
+    return res.json({
+      success: true,
+      basis: 'persons',
+      stages: [
+        { key: 'viewed', label: 'Opened Wallet', count: Number(viewed) || 0 },
+        { key: 'selected', label: 'Selected Amount', count: Number(selected) || 0 },
+        { key: 'started', label: 'Initiated Payment', count: Number(started) || 0 },
+        { key: 'recharged', label: 'Recharged Successfully', count: Number(recharged) || 0 },
+      ],
+      failed: Number(failed) || 0,
+      failures,
+    });
+  }));
+
   console.log(isConfigured()
     ? '[postHogRoutes] Analytics routes registered under /api/admin/analytics'
     : '[postHogRoutes] Analytics routes registered but POSTHOG_* env vars are unset — will 503 until configured');

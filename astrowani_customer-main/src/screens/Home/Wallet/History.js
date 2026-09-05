@@ -33,6 +33,7 @@ const History = ({navigation}) => {
 
   useFocusEffect(
     useCallback(() => {
+      captureEvent('wallet_history_viewed');
       fetchTransactions();
     }, [])
   );
