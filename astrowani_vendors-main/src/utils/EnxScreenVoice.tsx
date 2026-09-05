@@ -31,6 +31,7 @@ import {captureEvent} from './Analytics';
 import {startCallForegroundService, stopCallForegroundService} from './callForegroundService';
 import {endCallKitCall} from './callKeep';
 import {LanguageContext} from '../context/LanguageContext';
+import {createIceRecovery} from './iceRecovery';
 
 interface Props {
   route: any;
@@ -82,6 +83,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const callDurationRef = useRef(0);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const iceRecoveryRef = useRef<any>(null);
   const localStreamRef = useRef<any>(null);
   const iceCandidateBufferRef = useRef<any[]>([]);
   const readyRetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -139,6 +141,10 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   // ─── WebRTC cleanup ─────────────────────────────────────────────────────────
   const cleanupWebRTC = useCallback(() => {
     if (readyRetryRef.current) { clearInterval(readyRetryRef.current); readyRetryRef.current = null; }
+    if (iceRecoveryRef.current) {
+      iceRecoveryRef.current.dispose();
+      iceRecoveryRef.current = null;
+    }
     if (pcRef.current) {
       try { pcRef.current.close(); } catch (_) {}
       pcRef.current = null;
@@ -288,8 +294,21 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
               console.log('[Vendor/Voice] Emitted signal_connection for session:', sessionId);
             }
           }
-        } else if (state === 'failed' || state === 'closed') {
-          if (!isEndingRef.current) { isEndingRef.current = true; doEndCall(); }
+        } else {
+          // 'failed' no longer ends the call outright. The customer is the offerer
+          // and may be sending an ICE-restart offer at this very moment, which the
+          // webrtc_offer handler below already answers correctly (it re-runs
+          // setRemoteDescription + createAnswer with no once-only guard). Hold the
+          // line until the recovery window expires — see utils/iceRecovery.js.
+          if (!iceRecoveryRef.current) {
+            iceRecoveryRef.current = createIceRecovery({
+              label: 'Vendor/Voice',
+              onGiveUp: () => {
+                if (!isEndingRef.current) { isEndingRef.current = true; doEndCall(); }
+              },
+            });
+          }
+          iceRecoveryRef.current.handleState(state);
         }
       };
     };

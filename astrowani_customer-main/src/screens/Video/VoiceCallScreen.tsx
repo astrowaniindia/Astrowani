@@ -33,6 +33,7 @@ import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {captureEvent} from '../../utils/Analytics';
 import {LanguageContext} from '../../context/LanguageContext';
+import {createIceRecovery} from '../../utils/iceRecovery';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -90,6 +91,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const isEndingRef = useRef(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const iceRecoveryRef = useRef<any>(null);
   const localStreamRef = useRef<any>(null);
   const iceCandidateBufferRef = useRef<any[]>([]);
   const vendorReadyHandledRef = useRef(false);
@@ -154,6 +156,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
   // ─── WebRTC cleanup ─────────────────────────────────────────────────────────
   const cleanupWebRTC = useCallback(() => {
+    if (iceRecoveryRef.current) {
+      iceRecoveryRef.current.dispose();
+      iceRecoveryRef.current = null;
+    }
     if (pcRef.current) {
       try { pcRef.current.close(); } catch (_) {}
       pcRef.current = null;
@@ -316,8 +322,33 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             stopRingCountdown();
             startCallTimer();
           }
-        } else if (state === 'failed' || state === 'closed') {
-          if (!isEndingRef.current) { isEndingRef.current = true; doEndCall(); }
+        } else {
+          // 'failed' no longer ends the call outright. It is the state WebRTC is
+          // designed to recover FROM (wifi -> mobile data, a tower handover, a
+          // lift), so an ICE restart is attempted first — see utils/iceRecovery.js.
+          // The customer is always the offerer, so this side owns the restart.
+          if (!iceRecoveryRef.current) {
+            iceRecoveryRef.current = createIceRecovery({
+              label: 'Customer/Voice',
+              restartIce: async () => {
+                const peer: any = pcRef.current;
+                const sock = socketRef.current;
+                if (!peer || !sock) { throw new Error('peer connection or socket gone'); }
+                // Re-gathers candidates on the EXISTING connection: the media
+                // tracks, the session and the billing all survive untouched.
+                const restartOffer = await peer.createOffer({iceRestart: true});
+                await peer.setLocalDescription(restartOffer);
+                sock.emit('webrtc_offer', {
+                  sessionId: sessionIdRef.current,
+                  offer: peer.localDescription,
+                });
+              },
+              onGiveUp: () => {
+                if (!isEndingRef.current) { isEndingRef.current = true; doEndCall(); }
+              },
+            });
+          }
+          iceRecoveryRef.current.handleState(state);
         }
       };
     };
