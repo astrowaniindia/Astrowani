@@ -27,15 +27,15 @@ function statusBadge(s) {
     : s === 'cancelled' ? 'red'
       : s === 'pending_payment' ? 'gray'
         : s === 'placed' ? 'amber' : 'blue';
-  return <span className={`badge ${cls}`}>{STATUS_LABEL[s] || s}</span>;
+  return <span className={`badge ${cls}`}><span className="badge-dot" /> {STATUS_LABEL[s] || s}</span>;
 }
 
 function paymentBadge(r) {
-  if (r.payment_status === 'paid') return <span className="badge green">Paid</span>;
-  if (r.payment_status === 'refunded') return <span className="badge gray">Refunded</span>;
-  if (r.payment_status === 'refund_pending') return <span className="badge red">Refund due</span>;
-  if (r.payment_status === 'failed') return <span className="badge red">Failed</span>;
-  return <span className="badge amber">Pending</span>;
+  if (r.payment_status === 'paid') return <span className="badge green"><span className="badge-dot" /> Paid</span>;
+  if (r.payment_status === 'refunded') return <span className="badge gray"><span className="badge-dot" /> Refunded</span>;
+  if (r.payment_status === 'refund_pending') return <span className="badge red"><span className="badge-dot" /> Refund due</span>;
+  if (r.payment_status === 'failed') return <span className="badge red"><span className="badge-dot" /> Failed</span>;
+  return <span className="badge amber"><span className="badge-dot" /> Pending</span>;
 }
 
 function addressText(r) {
@@ -152,7 +152,17 @@ export default function Orders() {
 
   return (
     <div>
-      <h1 className="page-title">Orders</h1>
+      <div className="page-header">
+        <div>
+          <h1>Store Orders & Remedies</h1>
+          <p>Track customer orders, gemstone shipments, and remedy fulfillment.</p>
+        </div>
+        <div className="btn-group">
+          <button className="btn secondary sm" onClick={() => setShowCommissions((v) => !v)}>
+            {showCommissions ? 'Hide Commissions' : 'Referral Commissions'}
+          </button>
+        </div>
+      </div>
 
       <div className="card" style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div className="field" style={{ margin: 0, minWidth: 200 }}>
