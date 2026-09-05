@@ -89,8 +89,22 @@ class InsufficientFunds extends Error {
   }
 }
 
+function toError(err) {
+  if (!err) return new Error('Unknown error');
+  if (err instanceof Error) return err;
+  const e = new Error(err.message || 'Database error');
+  if (err.code) e.code = err.code;
+  if (err.details) e.details = err.details;
+  if (err.hint) e.hint = err.hint;
+  return e;
+}
+
 const isInsufficient = (err) =>
-  !!err && /INSUFFICIENT_FUNDS/.test(`${err.message || ''}${err.details || ''}${err.hint || ''}`);
+  !!err && (
+    /INSUFFICIENT_FUNDS/i.test(`${err.message || ''}${err.details || ''}${err.hint || ''}`) ||
+    err.code === '23514' ||
+    /chk_customers_balance_nonneg/i.test(err.message || '')
+  );
 
 /**
  * Move money on a customer wallet. `amount` is signed: positive credits,
@@ -122,7 +136,7 @@ async function adjustCustomerWallet(customerId, amount, opts = {}) {
   if (!error) return Number(data);
   if (isInsufficient(error)) throw new InsufficientFunds();
   throwIfAmbiguous(error, 'adjustCustomerWallet');
-  if (!isMissingFn(error)) throw error;
+  if (!isMissingFn(error)) throw toError(error);
 
   warnFallback('adjustCustomerWallet');
   return legacyAdjust({
@@ -159,7 +173,7 @@ async function adjustVendorWallet(astrologerId, amount, opts = {}) {
   if (!error) return Number(data);
   if (isInsufficient(error)) throw new InsufficientFunds();
   throwIfAmbiguous(error, 'adjustVendorWallet');
-  if (!isMissingFn(error)) throw error;
+  if (!isMissingFn(error)) throw toError(error);
 
   warnFallback('adjustVendorWallet');
   return legacyAdjust({
@@ -205,7 +219,7 @@ async function transferCustomerToVendor(customerId, astrologerId, amount, opts =
   }
   if (isInsufficient(error)) throw new InsufficientFunds();
   throwIfAmbiguous(error, 'transferCustomerToVendor');
-  if (!isMissingFn(error)) throw error;
+  if (!isMissingFn(error)) throw toError(error);
 
   warnFallback('transferCustomerToVendor');
   // Debit first so a failure here cannot credit an astrologer for free.
@@ -239,7 +253,7 @@ async function adjustAdminWallet(amount, opts = {}) {
 
   if (!error) return Number(data);
   throwIfAmbiguous(error, 'adjustAdminWallet');
-  if (!isMissingFn(error)) throw error;
+  if (!isMissingFn(error)) throw toError(error);
 
   warnFallback('adjustAdminWallet');
   const { data: adminWallet } = await db.from('admin_wallet').select('id, balance').limit(1).single();

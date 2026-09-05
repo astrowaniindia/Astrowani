@@ -417,25 +417,55 @@ io.on('connection', (socket) => {
     cancelPendingSessionTermination(sessionId, realId);
   });
 
-  socket.on('initiate_call', (data) => {
+  const getSocketActor = async () => {
+    if (socket.data?.userId) return socket.data.userId;
+    const authId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+    if (authId) socket.data.userId = authId;
+    return authId;
+  };
+
+  socket.on('initiate_call', async (data) => {
+    if (!data || !data.astrologer_id) return;
+    const actorId = await getSocketActor();
+    if (!actorId) {
+      console.warn(`[socket] unauthenticated initiate_call from socket ${socket.id} dropped`);
+      return;
+    }
     console.log('Incoming call to:', data.astrologer_id);
     io.to(data.astrologer_id).emit('incoming_call', data);
   });
 
-  socket.on('accept_call', (data) => {
+  socket.on('accept_call', async (data) => {
+    if (!data || !data.customer_id) return;
+    const actorId = await getSocketActor();
+    if (!actorId) {
+      console.warn(`[socket] unauthenticated accept_call from socket ${socket.id} dropped`);
+      return;
+    }
     console.log('Call accepted by vendor, notifying customer:', data.customer_id);
     io.to(data.customer_id).emit('call_accepted', data);
   });
 
-  socket.on('reject_call', (data) => {
+  socket.on('reject_call', async (data) => {
+    if (!data || !data.customer_id) return;
+    const actorId = await getSocketActor();
+    if (!actorId) {
+      console.warn(`[socket] unauthenticated reject_call from socket ${socket.id} dropped`);
+      return;
+    }
     console.log('Call rejected by vendor, notifying customer:', data.customer_id);
     io.to(data.customer_id).emit('call_rejected', data);
   });
 
   // Customer cancelled/backed out (manually, or the client-side ring timeout) before the
   // vendor answered — dismiss the vendor's in-app popup AND its heads-up OS notification.
-  socket.on('cancel_call', (data) => {
+  socket.on('cancel_call', async (data) => {
     if (!data || !data.astrologer_id) return;
+    const actorId = await getSocketActor();
+    if (!actorId) {
+      console.warn(`[socket] unauthenticated cancel_call from socket ${socket.id} dropped`);
+      return;
+    }
     console.log('Call cancelled by customer, notifying vendor:', data.astrologer_id);
     io.to(data.astrologer_id).emit('call_cancelled', data);
 
@@ -489,8 +519,22 @@ io.on('connection', (socket) => {
     }
   });
 
+  // SECURITY: Require verified participant identity before terminating a session
   socket.on('end_session', async (data) => {
-    console.log('Manual end session requested:', data.sessionId);
+    if (!data || !data.sessionId) return;
+    const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+    if (!realId) {
+      console.warn(`[socket] end_session rejected for ${data.sessionId} — missing/invalid auth token`);
+      return;
+    }
+    const { data: sessionRow } = await supabaseService
+      .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', data.sessionId).maybeSingle();
+    if (!sessionRow
+      || (String(sessionRow.caller_id) !== String(realId) && String(sessionRow.vendor_id) !== String(realId))) {
+      console.warn(`[socket] end_session rejected — ${realId} is not a participant of session ${data.sessionId}`);
+      return;
+    }
+    console.log('Manual end session requested by verified participant:', realId, 'for session:', data.sessionId);
     await sessionManager.terminateSession(data.sessionId, 'User ended session');
     io.to(data.sessionId).emit('session_ended', { sessionId: data.sessionId, reason: 'User ended session' });
   });
@@ -3129,38 +3173,53 @@ app.post('/api/call/initiate', async (req, res) => {
       return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
     }
 
-    // Resolve caller identity from JWT
-    const authHeader = req.headers.authorization;
-    const token_jwt = authHeader && authHeader.split(' ')[1];
-    let callerInfo = { name: 'User', id: null };
-    if (token_jwt) {
-      try {
-        const decoded = jwt.verify(token_jwt, process.env.JWT_SECRET);
-        callerInfo.id = decoded.userId || decoded.id;
+    // Resolve caller identity from JWT (strictly required)
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer || !customer.id) {
+      return res.status(401).json({ success: false, message: 'Please log in to initiate a call.' });
+    }
+    const callerInfo = customer;
 
-        // Always resolve to real Supabase UUID by phone — stale JWTs may carry a
-        // user_<timestamp> id that is not a valid UUID for billing.
-        if (decoded.phone) {
-          // Tolerant of legacy JWT phone formats — see src/customerLookup.js.
-          const byPhone = await findCustomerByPhone(supabase, decoded.phone, 'id, name')
-            .then((r) => (r ? [r] : []));
-          if (byPhone && byPhone.length > 0) {
-            callerInfo.id = byPhone[0].id;
-            callerInfo.name = byPhone[0].name || callerInfo.name;
-          }
-        }
-      } catch(e) {}
+    // Check astrologer eligibility and per-minute charge
+    const { data: astroData } = await supabaseService
+      .from('astrologers')
+      .select('call_charge_per_minute, video_charge_per_minute, audio_price, video_price, approval_status, is_suspended')
+      .eq('id', receiverId)
+      .maybeSingle();
+
+    if (!astroData || astroData.approval_status !== 'approved' || astroData.is_suspended) {
+      return res.status(404).json({ success: false, message: 'Astrologer is currently unavailable' });
+    }
+
+    const perMinCharge = callType === 'video'
+      ? Number(astroData.video_charge_per_minute ?? astroData.video_price ?? 0)
+      : Number(astroData.call_charge_per_minute ?? astroData.audio_price ?? 0);
+
+    if (perMinCharge > 0) {
+      const { data: custBalRow } = await supabaseService
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', callerInfo.id)
+        .maybeSingle();
+      const currentBal = Number(custBalRow?.wallet_balance ?? 0);
+      if (currentBal < perMinCharge) {
+        return res.status(400).json({
+          success: false,
+          code: 'INSUFFICIENT_FUNDS',
+          message: `Insufficient wallet balance. At least ₹${perMinCharge} required to start this call.`,
+          balance: currentBal,
+          required: perMinCharge,
+        });
+      }
     }
 
     // FAIRNESS FIX (added 2026-08-14 — money/billing audit): checkAstrologerBusy above only
     // ever gated the astrologer side — nothing stopped this same customer from also being
     // mid-session/mid-request with someone else, double-booking one wallet across two
     // simultaneous sessions. See busyStatus.js checkCustomerBusy for the full reasoning.
-    if (callerInfo.id) {
-      const customerBusyStatus = await checkCustomerBusy(supabase, callerInfo.id);
-      if (customerBusyStatus.busy) {
-        return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
-      }
+    const customerBusyStatus = await checkCustomerBusy(supabase, callerInfo.id);
+    if (customerBusyStatus.busy) {
+      return res.status(409).json({ success: false, busy: true, selfBusy: true, busySince: customerBusyStatus.busySince, message: 'You already have an active or pending call/chat — finish that one first.' });
     }
 
     const sessionId = crypto.randomUUID();
@@ -3317,6 +3376,36 @@ app.post('/api/chat/initiate', async (req, res) => {
     const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
     if (busyStatus.busy) {
       return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
+    }
+
+    // Check astrologer eligibility and per-minute charge
+    const { data: astroData } = await supabaseService
+      .from('astrologers')
+      .select('chat_charge_per_minute, chat_price, approval_status, is_suspended')
+      .eq('id', astrologerId)
+      .maybeSingle();
+
+    if (!astroData || astroData.approval_status !== 'approved' || astroData.is_suspended) {
+      return res.status(404).json({ success: false, message: 'Astrologer is currently unavailable' });
+    }
+
+    const perMinCharge = Number(astroData.chat_charge_per_minute ?? astroData.chat_price ?? 0);
+    if (perMinCharge > 0) {
+      const { data: custBalRow } = await supabaseService
+        .from('customers')
+        .select('wallet_balance')
+        .eq('id', customer.id)
+        .maybeSingle();
+      const currentBal = Number(custBalRow?.wallet_balance ?? 0);
+      if (currentBal < perMinCharge) {
+        return res.status(400).json({
+          success: false,
+          code: 'INSUFFICIENT_FUNDS',
+          message: `Insufficient wallet balance. At least ₹${perMinCharge} required to start this chat.`,
+          balance: currentBal,
+          required: perMinCharge,
+        });
+      }
     }
 
     // FAIRNESS FIX (added 2026-08-14 — money/billing audit): mirrors the same check added to

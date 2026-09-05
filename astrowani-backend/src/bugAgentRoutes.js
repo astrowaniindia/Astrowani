@@ -5,6 +5,7 @@
 // even indirectly. This route only ever reads the error log.
 // ─────────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
+const crypto = require('crypto');
 const { LOG_FILE } = require('./errorLogger');
 
 function requireBugAgentToken(req, res, next) {
@@ -13,8 +14,10 @@ function requireBugAgentToken(req, res, next) {
     return res.status(503).json({ success: false, message: 'Bug agent access not configured' });
   }
   const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace('Bearer ', '');
-  if (token !== expected) {
+  const token = authHeader.replace('Bearer ', '').trim();
+  const tokenBuf = Buffer.from(token);
+  const expectedBuf = Buffer.from(expected);
+  if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
   next();

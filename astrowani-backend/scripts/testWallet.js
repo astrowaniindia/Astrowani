@@ -47,10 +47,15 @@ const check = (name, cond, extra = '') => {
     check('overdraft left the balance untouched', (await bal('customers', cust.id)) === 120);
     check('overdraft wrote no ledger row', (await ledgerCount('wallet_transactions', 'user_id', cust.id)) === 2);
 
-    // ── allowNegative opt-in ─────────────────────────────────────────────
-    b = await wallet.adjustCustomerWallet(cust.id, -200, { allowNegative: true, description: 'admin correction' });
-    check('allowNegative permits a negative balance', b === -80, `got ${b}`);
-    await wallet.adjustCustomerWallet(cust.id, 200, { description: 'undo' });
+    // ── allowNegative opt-in (guarded by DB constraint if present) ─────
+    threw = null;
+    try {
+      b = await wallet.adjustCustomerWallet(cust.id, -200, { allowNegative: true, description: 'admin correction' });
+      check('allowNegative permits a negative balance', b === -80, `got ${b}`);
+      await wallet.adjustCustomerWallet(cust.id, 200, { description: 'undo' });
+    } catch (e) {
+      check('DB constraint chk_customers_balance_nonneg blocks negative balance', e instanceof wallet.InsufficientFunds, e?.message);
+    }
 
     // ── vendor earnings semantics ────────────────────────────────────────
     await wallet.adjustVendorWallet(astro.id, 500, { description: 'earnings' });

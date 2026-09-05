@@ -61,9 +61,19 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ success: false, message: err.message || 'Server error' });
 });
 
+const { rateLimit } = require('express-rate-limit');
+
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts. Please try again after 15 minutes.' },
+});
+
 module.exports = function registerAdminRoutes(app) {
   // ── Login ────────────────────────────────────────────────────────────────
-  app.post('/api/admin/login', h(async (req, res) => {
+  app.post('/api/admin/login', adminLoginLimiter, h(async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Email and password required' });
