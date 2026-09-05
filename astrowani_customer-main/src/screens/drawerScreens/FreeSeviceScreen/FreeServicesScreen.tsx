@@ -14,6 +14,8 @@ import { COLORS } from '../../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 // @ts-ignore — AstroUI is plain JS; Babel strips types at bundle time.
 import { Reveal } from '../../../components/astro/AstroUI';
+// @ts-ignore
+import { captureEvent } from '../../../utils/Analytics';
 
 // Define types for your service items
 type ServiceItem = {
@@ -50,6 +52,15 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   showPrice = false,
   variant = 'badge',
 }) => {
+  const handlePress = (item: ServiceItem) => {
+    captureEvent('free_service_tile_tapped', {
+      service_id: item.id,
+      service_title: item.title,
+      variant,
+    });
+    onServiceSelect(item);
+  };
+
   const renderService = ({ item, index }: { item: ServiceItem; index: number }) => {
     if (variant === 'image') {
       return (
@@ -58,7 +69,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
         // feel like part of the same product.
         <Reveal index={index}>
         <TouchableOpacity
-          onPress={() => onServiceSelect(item)}
+          onPress={() => handlePress(item)}
           style={styles.imageCard}
           activeOpacity={0.85}
         >
@@ -91,7 +102,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
     return (
       <Reveal index={index}>
       <TouchableOpacity
-        onPress={() => onServiceSelect(item)}
+        onPress={() => handlePress(item)}
         style={styles.serviceBox}
         activeOpacity={0.7}
       >

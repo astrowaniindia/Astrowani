@@ -363,7 +363,13 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = '
                       : tr('freeCall.callingYouNoPhone');
                   })()}
                 </Text>
-                <TouchableOpacity style={[styles.cta, styles.ctaFooter]} activeOpacity={0.85} onPress={onClose}>
+                <TouchableOpacity
+                  style={[styles.cta, styles.ctaFooter]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    captureEvent('free_call_confirmed_done');
+                    if (onClose) onClose();
+                  }}>
                   <Text style={styles.ctaText}>{tr('freeCall.done')}</Text>
                 </TouchableOpacity>
               </View>

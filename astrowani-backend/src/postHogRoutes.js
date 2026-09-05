@@ -522,6 +522,93 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Free Introductory Call Funnel: Offer Shown → Slots Opened → Slot Picked → Booked → Answered ──
+  app.get('/api/admin/analytics/free-call-funnel', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const rows = await runHogQL(`
+      SELECT
+        count(DISTINCT if(event = 'free_call_offer_shown', person_id, NULL)) AS shown,
+        count(DISTINCT if(event = 'free_call_slots_opened', person_id, NULL)) AS slotsOpened,
+        count(DISTINCT if(event IN ('free_call_slot_selected', 'free_call_slot_picked'), person_id, NULL)) AS slotPicked,
+        count(DISTINCT if(event = 'free_call_booked', person_id, NULL)) AS booked,
+        count(DISTINCT if(event = 'free_call_answered', person_id, NULL)) AS answered,
+        count(DISTINCT if(event = 'free_call_offer_dismissed', person_id, NULL)) AS dismissed,
+        count(DISTINCT if(event = 'free_call_booking_failed', person_id, NULL)) AS failed,
+        count(DISTINCT if(event = 'free_call_declined', person_id, NULL)) AS declined
+      FROM events
+      WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+        AND event IN ('free_call_offer_shown', 'free_call_slots_opened', 'free_call_slot_selected',
+                      'free_call_slot_picked', 'free_call_booked', 'free_call_answered',
+                      'free_call_offer_dismissed', 'free_call_booking_failed', 'free_call_declined')
+    `);
+    const [shown, slotsOpened, slotPicked, booked, answered, dismissed, failed, declined] =
+      rows[0] || [0, 0, 0, 0, 0, 0, 0, 0];
+
+    // Dismissal breakdown by step
+    const dismissRows = await runHogQL(`
+      SELECT properties.step AS step, count() AS n
+      FROM events
+      WHERE event = 'free_call_offer_dismissed' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+      GROUP BY step
+      ORDER BY n DESC
+    `);
+    const dismissBreakdown = dismissRows.map(([step, n]) => ({ step: step || 'unknown', count: Number(n) || 0 }));
+
+    return res.json({
+      success: true,
+      basis: 'persons',
+      stages: [
+        { key: 'shown', label: 'Offer Shown', count: Number(shown) || 0 },
+        { key: 'slotsOpened', label: 'Opened Slots', count: Number(slotsOpened) || 0 },
+        { key: 'slotPicked', label: 'Selected Slot', count: Number(slotPicked) || 0 },
+        { key: 'booked', label: 'Booked Free Call', count: Number(booked) || 0 },
+        { key: 'answered', label: 'Call Answered', count: Number(answered) || 0 },
+      ],
+      dismissed: Number(dismissed) || 0,
+      failed: Number(failed) || 0,
+      declined: Number(declined) || 0,
+      dismissBreakdown,
+    });
+  }));
+
+  // ── Astrology Services & Free Tools Engagement Breakdown ──
+  app.get('/api/admin/analytics/services-engagement', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const rows = await runHogQL(`
+      SELECT
+        count(DISTINCT if(event = 'horoscope_sign_selected' OR event = 'horoscope_details_opened', person_id, NULL)) AS horoscope,
+        count(DISTINCT if(event = 'free_service_submitted' AND properties.service = 'janam_kundali', person_id, NULL)) AS kundali,
+        count(DISTINCT if(event = 'free_service_submitted' AND properties.service = 'kundali_match', person_id, NULL)) AS kundaliMatch,
+        count(DISTINCT if(event = 'panchang_viewed', person_id, NULL)) AS panchang,
+        count(DISTINCT if(event = 'astro_report_submitted' OR event = 'astro_report_generated', person_id, NULL)) AS astroReports,
+        count(DISTINCT if(event = 'live_join_tapped' OR event = 'live_stream_connected' OR event = 'live_viewer_joined', person_id, NULL)) AS liveStreams,
+        count(DISTINCT if(event = 'live_aarti_youtube_opened', person_id, NULL)) AS liveAarti,
+        count(DISTINCT if(event = 'wallet_viewed', person_id, NULL)) AS walletViews
+      FROM events
+      WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+        AND event IN ('horoscope_sign_selected', 'horoscope_details_opened', 'free_service_submitted',
+                      'panchang_viewed', 'astro_report_submitted', 'astro_report_generated',
+                      'live_join_tapped', 'live_stream_connected', 'live_viewer_joined',
+                      'live_aarti_youtube_opened', 'wallet_viewed')
+    `);
+    const [horoscope, kundali, kundaliMatch, panchang, astroReports, liveStreams, liveAarti, walletViews] =
+      rows[0] || [0, 0, 0, 0, 0, 0, 0, 0];
+
+    return res.json({
+      success: true,
+      services: [
+        { key: 'horoscope', label: 'Daily Horoscope', users: Number(horoscope) || 0, icon: '♈' },
+        { key: 'kundali', label: 'Janam Kundali', users: Number(kundali) || 0, icon: '📜' },
+        { key: 'kundaliMatch', label: 'Kundali Matching', users: Number(kundaliMatch) || 0, icon: '💍' },
+        { key: 'panchang', label: 'Daily Panchang', users: Number(panchang) || 0, icon: '📅' },
+        { key: 'astroReports', label: 'Astro Reports', users: Number(astroReports) || 0, icon: '🔮' },
+        { key: 'liveStreams', label: 'Live Video Streams', users: Number(liveStreams) || 0, icon: '📹' },
+        { key: 'liveAarti', label: 'Live Aarti & Pooja', users: Number(liveAarti) || 0, icon: '🪔' },
+        { key: 'walletViews', label: 'Wallet Screen Views', users: Number(walletViews) || 0, icon: '👛' },
+      ].sort((a, b) => b.users - a.users),
+    });
+  }));
+
   console.log(isConfigured()
     ? '[postHogRoutes] Analytics routes registered under /api/admin/analytics'
     : '[postHogRoutes] Analytics routes registered but POSTHOG_* env vars are unset — will 503 until configured');

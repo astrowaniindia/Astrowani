@@ -91,7 +91,11 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       const pc = new RTCPeerConnection(ICE_SERVERS);
       pcRef.current = pc;
       (pc as any).ontrack = (e: any) => {
-        if (e.streams && e.streams[0]) { setRemoteStreamURL((e.streams[0] as any).toURL()); setConnecting(false); }
+        if (e.streams && e.streams[0]) {
+          setRemoteStreamURL((e.streams[0] as any).toURL());
+          setConnecting(false);
+          captureEvent('live_stream_connected', {session_id: sessionId, astrologer_id: astrologerId});
+        }
       };
       (pc as any).onicecandidate = (e: any) => {
         if (e.candidate) {
@@ -109,6 +113,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
         socket.emit('live_join', {
           sessionId, astrologerId, viewerId: viewerIdRef.current, viewerName: viewerNameRef.current,
         });
+        captureEvent('live_viewer_joined', {session_id: sessionId, astrologer_id: astrologerId});
       });
 
       // The backend resolves the locally-cached id above against the verified JWT identity

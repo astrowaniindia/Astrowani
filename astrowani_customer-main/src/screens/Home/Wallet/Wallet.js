@@ -39,6 +39,10 @@ const Wallet = ({navigation}) => {
   const [amount, setAmount] = useState('');
   const [processing, setProcessing] = useState(false);
 
+  React.useEffect(() => {
+    captureEvent('wallet_viewed');
+  }, []);
+
   // Server-verified flow: backend creates the Order (amount is server-trusted from
   // that point on) → checkout pays against it → backend verifies the signature before
   // crediting wallet_balance. Never credits anything based on a client-reported "success".

@@ -270,6 +270,7 @@ import { useNavigation } from '@react-navigation/native';
 import { LanguageContext } from '../../../context/LanguageContext';
 import { useFreeServiceLanguage } from '../../../components/astro/ReportLanguage';
 import { FREE_SERVICES_URL } from '../../../config/api';
+import { captureEvent } from '../../../utils/Analytics';
 
 
 const PanchangScreen = () => {
@@ -293,6 +294,10 @@ const PanchangScreen = () => {
   // coordinates on selection and surfaces its own failures inline.
 
   useEffect(() => {
+    captureEvent('panchang_viewed', {
+      date: date.toISOString().slice(0, 10),
+      language: apiLanguage,
+    });
     const fetchPanchangData = async () => {
       try {
         setLoading(true);

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -179,6 +180,8 @@ export default function Analytics() {
   const [homeFlow, setHomeFlow] = useState(null);
   const [authFunnel, setAuthFunnel] = useState(null);
   const [authFunnelType, setAuthFunnelType] = useState('signup');
+  const [freeCallFunnel, setFreeCallFunnel] = useState(null);
+  const [servicesEngagement, setServicesEngagement] = useState(null);
 
   // Shared date range for every card on the page (except D1/D7 Retention, a rolling
   // cohort window that doesn't fit a simple from/to filter).
@@ -301,6 +304,8 @@ export default function Analytics() {
         // request row ever existed (low balance, busy, service off).
         client.get('/api/admin/analytics/auth-failures', { params: dateParams }),
         client.get('/api/admin/analytics/blocked-attempts', { params: dateParams }),
+        client.get('/api/admin/analytics/free-call-funnel', { params: dateParams }).catch(() => ({ data: null })),
+        client.get('/api/admin/analytics/services-engagement', { params: dateParams }).catch(() => ({ data: null })),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -319,6 +324,8 @@ export default function Analytics() {
       setAstroPerf(astroPerfRes.data.astrologers || []);
       setAuthFailures(authFailuresRes.data);
       setBlockedAttempts(blockedRes.data);
+      setFreeCallFunnel(freeCallRes?.data || null);
+      setServicesEngagement(servicesRes?.data || null);
       setNotConfigured(false);
       setError('');
     } catch (e) {
@@ -784,6 +791,49 @@ export default function Analytics() {
         })()}
       </div>
 
+      {/* ── Free Introductory Call Funnel ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Free Introductory Call Funnel (customer app)</h3>
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
+              Conversion of first-time customers from promotional offer impression to answered consultation call.
+            </p>
+          </div>
+          <div className="btn-group">
+            <Link to="/free-call-bookings" className="btn secondary sm">View Bookings</Link>
+            <Link to="/free-call-settings" className="btn ghost sm">Settings</Link>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {freeCallFunnel?.stages?.length ? (
+            <StepFunnel stages={freeCallFunnel.stages} baseLabel="offer shown" />
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>No free call offer activity in this range.</p>
+          )}
+        </div>
+
+        <div className="row-between" style={{ marginTop: 16, flexWrap: 'wrap', gap: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+            <span className="muted">
+              Dismissed Offer: <strong style={{ color: 'var(--text-primary)' }}>{freeCallFunnel?.dismissed ?? 0}</strong>
+              {freeCallFunnel?.dismissBreakdown?.length > 0 && (
+                <span style={{ fontSize: 12, marginLeft: 4 }}>
+                  ({freeCallFunnel.dismissBreakdown.map((d) => `${d.step}: ${d.count}`).join(', ')})
+                </span>
+              )}
+            </span>
+            <span className="muted">
+              Booking Failures: <strong style={{ color: (freeCallFunnel?.failed ?? 0) > 0 ? 'var(--red)' : 'inherit' }}>{freeCallFunnel?.failed ?? 0}</strong>
+            </span>
+            <span className="muted">
+              Customer Declined Ring: <strong style={{ color: (freeCallFunnel?.declined ?? 0) > 0 ? 'var(--amber)' : 'inherit' }}>{freeCallFunnel?.declined ?? 0}</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between">
           <h3 style={{ margin: 0 }}>Call &amp; Chat Funnel (customer app)</h3>
@@ -963,6 +1013,45 @@ export default function Analytics() {
             <b>{remediesFunnel?.blockedCategoryTapped ?? 0}</b> people
           </span>
         </div>
+      </div>
+
+      {/* ── Astrology Services & Free Tools Engagement Breakdown ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Astrology Services &amp; Free Tools Engagement</h3>
+        <p className="muted" style={{ marginTop: 4, marginBottom: 16, fontSize: 13 }}>
+          Unique customer users engaging with daily tools, kundali charts, matchmaking, reports, and video streams.
+        </p>
+        {(servicesEngagement?.services?.length ?? 0) === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No tool activity recorded in this range.</p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {servicesEngagement.services.map((s) => (
+              <div
+                key={s.key}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  background: 'var(--surface-muted, #f8fafc)',
+                  border: '1px solid var(--border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>{s.icon}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.label}</div>
+                    <span className="muted" style={{ fontSize: 11.5 }}>Active users</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--maroon)' }}>
+                  {s.users.toLocaleString('en-IN')}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>

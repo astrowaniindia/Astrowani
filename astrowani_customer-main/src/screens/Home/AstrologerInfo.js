@@ -55,6 +55,19 @@ const { width } = Dimensions.get('window');
 const AstrologerInfo = ({route, navigation}) => {
   const { t } = React.useContext(LanguageContext);
   const {person} = route.params;
+
+  useEffect(() => {
+    if (person?.userId || person?._id) {
+      captureEvent('astrologer_profile_viewed', {
+        astrologer_id: person.userId || person._id,
+        astrologer_name: person.name,
+        specialties: person.specialties?.map((s) => s.name || s) || [],
+        rate_call: person.charges?.call,
+        rate_chat: person.charges?.chat,
+      });
+    }
+  }, [person]);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [isFavorite, setIsFavorite] = useState(person.isFavorite || false);
   const [loading, setLoading] = useState(false);
