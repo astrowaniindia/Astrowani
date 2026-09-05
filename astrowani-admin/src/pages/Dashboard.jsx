@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 
@@ -41,11 +41,11 @@ export default function Dashboard() {
           <p>Real-time statistics, active consultations, and operational shortcuts.</p>
         </div>
         <div className="btn-group">
-          <Link to="/astrologers" className="btn secondary sm">
-            <span>👥</span> Astrologers
+          <Link to="/customers" className="btn secondary sm">
+            <span>👥</span> Customer Tracking
           </Link>
-          <Link to="/orders" className="btn sm">
-            <span>🛍️</span> Store Orders
+          <Link to="/new-entries" className="btn sm">
+            <span>⭐</span> New Astrologers
           </Link>
         </div>
       </div>
@@ -60,33 +60,33 @@ export default function Dashboard() {
           </div>
           <span className="muted" style={{ fontSize: 12 }}>Direct operational shortcuts</span>
         </div>
-        <div className="attention-grid">
-          {/* Card 1: Astrologer Approvals */}
-          <Link to="/astrologers" className="attention-card">
+        <div className="attention-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          {/* Card 1: New Astrologers Onboarding */}
+          <Link to="/new-entries" className="attention-card">
             <div className="attention-card-left">
               <div className="attention-icon-box" style={{ background: '#fef3c7', color: '#b45309' }}>
                 ⭐
               </div>
               <div>
-                <div className="attention-count">{stats ? `${stats.astrologers ?? 0} Total` : '…'}</div>
-                <div className="attention-desc">Manage onboarding and rates</div>
+                <div className="attention-count">New Astrologers</div>
+                <div className="attention-desc">Vetting pipeline & approval review</div>
               </div>
             </div>
             <div className="attention-action">Review →</div>
           </Link>
 
-          {/* Card 2: Orders to Fulfill */}
-          <Link to="/orders" className="attention-card">
+          {/* Card 2: New Customers Tracking */}
+          <Link to="/customers" className="attention-card">
             <div className="attention-card-left">
-              <div className="attention-icon-box" style={{ background: '#dbeafe', color: '#1d4ed8' }}>
-                🛍️
+              <div className="attention-icon-box" style={{ background: 'var(--maroon-50)', color: 'var(--maroon)' }}>
+                👥
               </div>
               <div>
-                <div className="attention-count">Store Orders</div>
-                <div className="attention-desc">Gemstones, yantras & remedies fulfillment</div>
+                <div className="attention-count">Customer Tracking</div>
+                <div className="attention-desc">Track real-time app signups & wallets</div>
               </div>
             </div>
-            <div className="attention-action">Manage →</div>
+            <div className="attention-action">Track →</div>
           </Link>
 
           {/* Card 3: Live Consultations */}
@@ -101,6 +101,20 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="attention-action">Monitor →</div>
+          </Link>
+
+          {/* Card 4: Orders to Fulfill */}
+          <Link to="/orders" className="attention-card">
+            <div className="attention-card-left">
+              <div className="attention-icon-box" style={{ background: '#dbeafe', color: '#1d4ed8' }}>
+                🛍️
+              </div>
+              <div>
+                <div className="attention-count">Store Orders</div>
+                <div className="attention-desc">Gemstones, yantras & remedies fulfillment</div>
+              </div>
+            </div>
+            <div className="attention-action">Manage →</div>
           </Link>
         </div>
       </div>

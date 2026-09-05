@@ -63,6 +63,7 @@ export default function App() {
         <Route path="support-inbox" element={<SupportInbox />} />
         <Route path="support" element={<Support />} />
         <Route path="new-entries" element={<NewEntries />} />
+        <Route path="new-astrologers" element={<NewEntries />} />
         <Route path="astrologers" element={<Astrologers />} />
         <Route path="reviews" element={<Reviews />} />
         <Route path="leaderboard" element={<Leaderboard />} />

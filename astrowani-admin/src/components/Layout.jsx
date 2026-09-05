@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
@@ -59,14 +59,14 @@ const ALL_GROUPS = [
   {
     id: 'people',
     workspace: 'astrology',
-    title: 'Astrologers & Directory',
+    title: 'Astrologers & Users',
     items: [
       { to: '/astrologers', label: 'Astrologers Directory' },
-      { to: '/new-entries', label: 'New Onboarding' },
+      { to: '/new-entries', label: 'New Astrologers', badge: 'Review' },
+      { to: '/customers', label: 'Customer Tracking', badge: 'Live' },
       { to: '/leaderboard', label: 'Earnings Leaderboard' },
       { to: '/reviews', label: 'Customer Reviews' },
       { to: '/withdrawals', label: 'Payout Requests' },
-      { to: '/customers', label: 'Customer Accounts' },
     ],
   },
   {
