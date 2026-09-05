@@ -5,6 +5,7 @@ import {ASTRO, ReportShell, SectionCard, Callout} from '../../../components/astr
 import ZoomableChart from '../../../components/astro/ZoomableChart';
 import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
 // Divisional charts are identified by their D-number (d1, d9, …); show which one this is
 // rather than an unlabelled square, since the whole point of the report is choosing a
@@ -40,6 +41,8 @@ const DIVISIONS = {
 export default function ChartResultScreen({route, navigation}) {
   const {t, language} = React.useContext(LanguageContext);
   const {data, busy} = useReportLanguage(route, navigation);
+  // Paid content: confirm before a reflex back-press throws it away.
+  useConfirmLeaveReport(navigation, !busy);
 
   const div = String(data?.division || '').toLowerCase();
   const entry = DIVISIONS[div];

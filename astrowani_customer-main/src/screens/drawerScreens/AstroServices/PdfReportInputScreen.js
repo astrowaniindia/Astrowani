@@ -1,10 +1,11 @@
 import React, {useState} from 'react';
-import {View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator} from 'react-native';
+import {View, Text, TextInput, StyleSheet, ScrollView} from 'react-native';
 import {Dropdown} from 'react-native-element-dropdown';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import BirthDetailsForm from './BirthDetailsForm';
+import SwipeToConfirm from '../../../components/SwipeToConfirm';
 import useAstroPurchase from './useAstroPurchase';
 import {LanguageContext} from '../../../context/LanguageContext';
 
@@ -69,16 +70,18 @@ export default function PdfReportInputScreen({navigation}) {
           renderRightIcon={() => <Ionicons name="chevron-down-outline" color={COLORS.AstroMaroon} size={20} />}
         />
       </View>
-      <TouchableOpacity
-        style={[styles.button, (!isComplete || submitting) && styles.disabled]}
-        disabled={!isComplete || submitting}
-        onPress={onSubmit}>
-        {submitting ? (
-          <ActivityIndicator color={COLORS.black} />
-        ) : (
-          <Text style={styles.buttonText}>{t('astro.generatePdfReport')}{service ? ` — ₹${service.price}` : ''}</Text>
-        )}
-      </TouchableOpacity>
+      {/* Slide, not tap. This is where the wallet is debited, and a deliberate
+          drag is much harder to do by accident than a tap on a phone held in one
+          hand. Disabled until the details are complete, exactly as the button was. */}
+      <View style={styles.swipeWrap}>
+        <SwipeToConfirm
+          label={service ? t('astroReports.slideToPay', {price: service.price}) : t('astroReports.slideToStart')}
+          confirmingLabel={t('astroReports.confirming')}
+          onConfirm={onSubmit}
+          busy={submitting}
+          disabled={!isComplete}
+        />
+      </View>
     </ScrollView>
   );
 }
@@ -99,10 +102,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, backgroundColor: COLORS.white, borderColor: COLORS.AshGray,
   },
   dropdown: {width: '100%', height: verticalScale(50)},
-  button: {
-    height: verticalScale(48), marginTop: verticalScale(10), justifyContent: 'center', alignItems: 'center',
-    borderRadius: moderateScale(8), backgroundColor: COLORS.AstroGold,
-  },
-  disabled: {opacity: 0.5},
-  buttonText: {color: COLORS.black, fontSize: moderateScale(14), fontFamily: 'Lato-Bold'},
+  swipeWrap: {marginTop: verticalScale(14)},
 });

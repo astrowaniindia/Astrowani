@@ -4,10 +4,13 @@ import {ASTRO, ReportShell} from '../../../components/astro/AstroUI';
 import {KootaBreakdown, DoshaVerdict, AggregateMatch} from '../../../components/astro/AstroBlocks';
 import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
 export default function MatchingResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
   const {data, busy} = useReportLanguage(route, navigation);
+  // Paid content: confirm before a reflex back-press throws it away.
+  useConfirmLeaveReport(navigation, !busy);
 
   return (
     <View style={styles.main}>

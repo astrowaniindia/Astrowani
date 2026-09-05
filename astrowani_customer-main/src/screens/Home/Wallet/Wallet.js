@@ -14,6 +14,8 @@ import {
   InputAccessoryView,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
+import SwipeToConfirm from '../../../components/SwipeToConfirm';
+import { describeRazorpayError } from '../../../utils/razorpayError';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -102,20 +104,28 @@ const Wallet = ({navigation}) => {
       setAmount('');
       Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
     } catch (error) {
-      const message = error?.response?.data?.message || error?.description || error?.message || 'Something went wrong';
-      // Razorpay reports a customer closing the sheet as code 0 / 'Payment Cancelled'.
-      // That is abandonment, not a failure, and lumping the two together would make a
-      // healthy payment integration look broken.
-      const cancelled =
-        error?.code === 0 ||
-        error?.code === '0' ||
-        /cancel/i.test(String(error?.description || error?.reason || ''));
+      // Our own API failures carry a real message; Razorpay's need unwrapping, or
+      // the customer is shown its raw JSON envelope. See utils/razorpayError.js —
+      // both of those were live bugs on this screen.
+      const apiMessage = error?.response?.data?.message;
+      const rzp = describeRazorpayError(error);
+
       captureEvent('recharge_failed', {
         amount: finalAmount,
-        cancelled,
-        reason: error?.response?.data?.code || error?.code || (cancelled ? 'user_cancelled' : 'other'),
+        cancelled: rzp.cancelled,
+        reason: error?.response?.data?.code || rzp.code || (rzp.cancelled ? 'user_cancelled' : 'other'),
       });
-      Alert.alert(t('wallet.paymentFailed'), message);
+
+      // Backing out of the checkout sheet is abandonment, not a failure. Saying
+      // nothing is correct: nothing was charged, and the customer knows they
+      // pressed back. A red "Payment Failed" there reads as though their money is
+      // in limbo.
+      if (!rzp.cancelled) {
+        Alert.alert(
+          t('wallet.paymentFailed'),
+          apiMessage || rzp.message || (rzp.network ? t('wallet.networkError') : t('wallet.tryAgain')),
+        );
+      }
     } finally {
       setProcessing(false);
     }
@@ -188,16 +198,18 @@ const Wallet = ({navigation}) => {
           <Text style={styles.billText}>{t('wallet.totalPayable')}</Text>
           <Text style={styles.billAmount}>₹{amount || '0'}</Text>
         </View>
-        <TouchableOpacity
-          style={[styles.submitBtn, (!amount || processing) && styles.disabledBtn]}
-          onPress={handleSubmit}
-          disabled={!amount || processing}
-        >
-          <Text style={styles.submitTxt}>
-            {processing ? t('wallet.processing') : t('wallet.proceedToPay')}
-          </Text>
-          {!processing && <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />}
-        </TouchableOpacity>
+        {/* Slide, not tap — this opens Razorpay and takes real money. A drag is
+            much harder to trigger by accident than a button under a thumb, and it
+            matches the confirm gesture used on the paid astro reports. */}
+        <View style={styles.swipeWrap}>
+          <SwipeToConfirm
+            label={t('wallet.slideToPay')}
+            confirmingLabel={t('wallet.processing')}
+            onConfirm={handleSubmit}
+            busy={processing}
+            disabled={!amount}
+          />
+        </View>
       </View>
       </View>
       </TouchableWithoutFeedback>
@@ -374,22 +386,5 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     marginTop: verticalScale(2),
   },
-  submitBtn: {
-    backgroundColor: COLORS.AstroMaroon,
-    flexDirection: 'row',
-    paddingHorizontal: scale(25),
-    paddingVertical: verticalScale(15),
-    borderRadius: moderateScale(12),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  disabledBtn: {
-    backgroundColor: '#ccc',
-  },
-  submitTxt: {
-    color: COLORS.white,
-    fontSize: moderateScale(16),
-    fontFamily: 'Lato-Bold',
-    marginRight: scale(8),
-  },
+  swipeWrap: {marginTop: verticalScale(4)},
 });

@@ -5,10 +5,14 @@ import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {ConsultCta} from '../../../components/astro/AstroUI';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
-export default function PdfReportResultScreen({route}) {
+export default function PdfReportResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
   const {data} = route.params || {};
+  // The most costly one to lose by reflex: this screen holds the link to a PDF the
+  // customer has already paid for, and leaving discards it.
+  useConfirmLeaveReport(navigation);
 
   return (
     <View style={styles.main}>

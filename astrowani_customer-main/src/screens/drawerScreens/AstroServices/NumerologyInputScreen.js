@@ -9,6 +9,7 @@ import useAstroPurchase from './useAstroPurchase';
 import {LanguageContext} from '../../../context/LanguageContext';
 import useSavedProfile from '../../../hooks/useSavedProfile';
 import {showStatusPopup} from '../../../components/StatusPopup';
+import SwipeToConfirm from '../../../components/SwipeToConfirm';
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -104,16 +105,18 @@ export default function NumerologyInputScreen({navigation}) {
           }}
         />
       )}
-      <TouchableOpacity
-        style={[styles.button, (!isComplete || submitting) && styles.disabled]}
-        disabled={!isComplete || submitting}
-        onPress={onSubmit}>
-        {submitting ? (
-          <ActivityIndicator color={COLORS.black} />
-        ) : (
-          <Text style={styles.buttonText}>{t('astro.getNumerologyReport')}{service ? ` — ₹${service.price}` : ''}</Text>
-        )}
-      </TouchableOpacity>
+      {/* Slide, not tap. This is where the wallet is debited, and a deliberate
+          drag is much harder to do by accident than a tap on a phone held in one
+          hand. Disabled until the details are complete, exactly as the button was. */}
+      <View style={styles.swipeWrap}>
+        <SwipeToConfirm
+          label={service ? t('astroReports.slideToPay', {price: service.price}) : t('astroReports.slideToStart')}
+          confirmingLabel={t('astroReports.confirming')}
+          onConfirm={onSubmit}
+          busy={submitting}
+          disabled={!isComplete}
+        />
+      </View>
     </ScrollView>
   );
 }

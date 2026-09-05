@@ -7,6 +7,7 @@ import {ASTRO, ReportShell, SectionCard, Callout} from '../../../components/astr
 import {DoshaVerdict, doshaPresence} from '../../../components/astro/AstroBlocks';
 import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
 /**
  * At-a-glance summary of all four doshas.
@@ -56,6 +57,8 @@ function DoshaSummary({items, index}) {
 export default function DoshResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
   const {data, busy} = useReportLanguage(route, navigation);
+  // Paid content: confirm before a reflex back-press throws it away.
+  useConfirmLeaveReport(navigation, !busy);
 
   // doshaPresence is shared with DoshaVerdict so the summary tile and the section below it
   // can never disagree about whether a dosha is present.

@@ -27,3 +27,29 @@ export const ASTRO_SERVICE_ROUTES = {
 export function routeForService(key) {
   return ASTRO_SERVICE_ROUTES[key] || null;
 }
+
+/**
+ * The artwork each report uses, keyed by the same service `key`.
+ *
+ * Home already had this map but keyed by a short display name ('Kundli',
+ * 'Lal Kitab'), which meant it could not be reused anywhere that has a service
+ * row in hand. Keyed by `key` here so Home and AstroReportsScreen show the SAME
+ * image for the same report — two different pictures for one product is the kind
+ * of drift that makes an app feel unfinished.
+ */
+export const ASTRO_SERVICE_ICONS = {
+  kundli: 'https://img.icons8.com/color/128/scroll.png',
+  matching: 'https://img.icons8.com/color/128/like.png',
+  chart: 'https://img.icons8.com/color/128/combo-chart.png',
+  dasha: 'https://img.icons8.com/color/128/planet.png',
+  dosh: 'https://cdn-icons-png.flaticon.com/128/564/564619.png',
+  numerology: 'https://img.icons8.com/color/128/123.png',
+  'lal-kitab': 'https://img.icons8.com/color/128/book.png',
+  'kp-astrology': 'https://img.icons8.com/color/128/compass.png',
+  tarot: 'https://img.icons8.com/color/128/tarot-cards.png',
+  'pdf-report': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
+};
+
+export function iconForService(key) {
+  return ASTRO_SERVICE_ICONS[key] || null;
+}

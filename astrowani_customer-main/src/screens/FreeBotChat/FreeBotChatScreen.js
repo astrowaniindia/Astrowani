@@ -29,7 +29,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Instance from '../../api/ApiCall';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import { FREE_CHAT_PERSONA } from '../../data/freeBotChatPersona';
-import { getOpeningMessage, getBotReply } from '../../utils/freeChatBotEngine';
+import { getOpeningMessage, getBotReply, resetChatSession } from '../../utils/freeChatBotEngine';
 import { captureEvent } from '../../utils/Analytics';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -68,6 +68,10 @@ const FreeBotChatScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     captureEvent('free_bot_chat_started');
+    // The engine keeps per-conversation memory (which topics it has already
+    // probed, which lines it has used). Clearing it here means a second chat
+    // starts fresh instead of resuming halfway through the first one's script.
+    resetChatSession();
     const openingTimer = setTimeout(() => appendMessage('bot', getOpeningMessage()), 600);
     // Marks the free chat as used the instant the customer actually enters it —
     // not on completion — so it can't be re-offered no matter how they leave.
@@ -116,7 +120,12 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     setText('');
     appendMessage('me', msg);
     setBotTyping(true);
-    const reply = await getBotReply(msg, messages);
+    // The engine needs the clock: under a minute left it stops opening new
+    // threads and moves to its closing turn, which names that a remedy exists
+    // for what was discussed without giving it away.
+    const reply = await getBotReply(msg, messages, {
+      secondsLeft: Math.max(0, CHAT_DURATION_SECONDS - seconds),
+    });
     setBotTyping(false);
     if (!hasEndedRef.current) appendMessage('bot', reply);
   };

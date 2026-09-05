@@ -40,7 +40,7 @@ import AnimatedAstrologerMarquee from './AnimatedAstrologerMarquee';
 import LiveAartiSection from './LiveAartiSection';
 import VoiceNotesBanner from './VoiceNotesBanner';
 import ShopCategoryCircles from './ShopCategoryCircles';
-import { routeForService } from '../../utils/astroServiceRoutes';
+import { routeForService, iconForService } from '../../utils/astroServiceRoutes';
 import CustomerReview from './Review';
 import axios from 'axios';
 import { showAlert } from '../../Component/CustomAlert';
@@ -329,19 +329,9 @@ const Home = ({navigation}) => {
   // so keeping it would have been a request on every Home mount feeding nothing.
   // The Remedies tab still fetches it for its own use.
 
-  const ASTRO_SERVICE_ICONS = {
-    Kundli: 'https://img.icons8.com/color/128/scroll.png',
-    Matching: 'https://img.icons8.com/color/128/like.png',
-    Chart: 'https://img.icons8.com/color/128/combo-chart.png',
-    Dasha: 'https://img.icons8.com/color/128/planet.png',
-    Dosh: 'https://cdn-icons-png.flaticon.com/128/564/564619.png',
-    Numerology: 'https://img.icons8.com/color/128/123.png',
-    'Lal Kitab': 'https://img.icons8.com/color/128/book.png',
-    'KP Astrology': 'https://img.icons8.com/color/128/compass.png',
-    Tarot: 'https://img.icons8.com/color/128/tarot-cards.png',
-    'PDF Reports': 'https://cdn-icons-png.flaticon.com/128/337/337946.png',
-  };
-
+  // Icon map moved to utils/astroServiceRoutes.js alongside the route map, and
+  // re-keyed from `category` to the stable service `key` — same images, one copy.
+  //
   // Route map moved to utils/astroServiceRoutes.js — AstroReportsScreen needs the same
   // one, and two copies would drift the moment a service is added.
   const handleAstroServiceSelect = service => {
@@ -1551,7 +1541,10 @@ const Home = ({navigation}) => {
             // a bundled translation between those two, keyed by the stable
             // service key. Admin-set name_hi still wins.
             displayTitle: astroServiceLabel(s, language, t),
-            icon: s.image || ASTRO_SERVICE_ICONS[s.category],
+            // Shared with AstroReportsScreen (utils/astroServiceRoutes.js) and keyed
+            // by the stable service `key` rather than `category`, so the same report
+            // cannot end up with two different pictures depending on where it is seen.
+            icon: s.image || iconForService(s.key),
             price: s.price,
           }))}
           onServiceSelect={handleAstroServiceSelect}

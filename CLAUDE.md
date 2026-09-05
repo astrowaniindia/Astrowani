@@ -2391,10 +2391,18 @@ for it and `/api/store/config` is live; nothing on the site calls either.
 
 ## Session 2026-08-31: free-chat off, themed date picker, brown icon, free-call bookings
 
-### AJ. Free 5-minute bot chat switched OFF (the toggle already existed)
+### AJ. Free 5-minute bot chat toggled via admin (the toggle already existed)
 
-`app_settings.free_bot_chat_persona.enabled` is now **false**. The admin toggle was
-already built (admin -> Free Bot Chat -> "Enabled"); nothing new was needed to turn it off.
+> **⚠️ CORRECTED 2026-09-05: this section said the bot chat is OFF. IT IS ON.**
+> Measured against production: `app_settings.free_bot_chat_persona.enabled` is
+> **`true`**, persona "Acharya Priya", and tapping either Home banner opens the offer
+> for anyone still eligible (`Home.js` → `openFreeChatFromBanner`). It was switched off
+> on 2026-08-31 and switched back on afterwards without this file being updated.
+> **Check `app_settings` before believing any on/off claim in here** — this one was
+> repeated as fact in a later session and had to be corrected by the user.
+
+`app_settings.free_bot_chat_persona.enabled` is an admin toggle, already built
+(admin -> Free Bot Chat -> "Enabled"); nothing new was needed to flip it either way.
 Two real bugs in the DISABLED path were fixed first, both of which would have bitten the
 moment the switch was flipped:
 
@@ -3406,3 +3414,148 @@ fore- and background).
 The JS half (deletion UI, boundary, interceptor, i18n) is OTA-able. The **manifest and
 dependency changes are native and need a full Play Store release**, and the backend needs a
 deploy before the in-app delete button will work at all.
+
+---
+
+## Session 2026-09-05 (later): Home shop entry, slide-to-pay, and a real chat engine
+
+### AY. Astro Reports: an index that did not exist, then a shop-shaped one
+
+The ten paid report screens were each registered in `Navigation.js` but the only way
+into one was a row part-way down Home. `AstroReportsScreen` is that index.
+
+It went through three shapes in one sitting, and the last one is the point: a
+**two-across grid** of square tiles (artwork, price badge, name), tapping one opens a
+**bottom sheet** with the description and a slide control. The intermediate versions —
+full-bleed image cards, then wide horizontal rows — both failed the same test: ten
+items became four or five screens of scrolling on a phone.
+
+**The artwork bug worth remembering.** The first version used `iconForService()` and
+looked nothing like Home. Home renders `s.image` — admin-uploaded card art (a kundli
+chart, the matching hands, the dasha wheel) — and falls back to a generic icon only if
+that is missing. Reading the fallback FIRST meant the whole screen rendered generic
+icons8 glyphs while Home showed real illustrations. `ASTRO_SERVICE_ICONS` moved to
+`utils/astroServiceRoutes.js` and was re-keyed from `category` to the stable service
+`key`, so Home and this screen now read one map. **Always prefer `item.image`.**
+
+### AZ. Slide-to-confirm on every path where money leaves
+
+`components/SwipeToConfirm.js` — PanResponder + Animated, no gesture-handler, so it
+works inside a Modal with no provider above it. Knob with a looping arrow nudge that
+stops the moment a drag starts, label fades as the knob crosses it, 75% threshold, and
+`onMoveShouldSetPanResponder` claims only clearly-horizontal movement so it cannot
+steal a ScrollView's vertical drags.
+
+Wired into **all 9 report purchase screens** and the **wallet's add-money** button.
+Labels say "Slide right to pay ₹99" / "Slide right to pay" in both languages.
+
+**The Confirm Purchase popup was DELETED, deliberately.** With a slide in front of it,
+the flow asked the customer to confirm the same decision twice — and the second dialog
+is the one people learn to dismiss without reading, which makes it worse than useless.
+
+> **9 of the 10 screens were converted by script.** The pattern matched exactly in 9
+> and the 10th (`NumerologyInputScreen`, which builds its own form) was done by hand.
+> A scripted edit across payment screens is fine, but lint passing is not the same as
+> the gesture working — that needs a real tap-through, which is how the two bugs below
+> were found.
+
+### BA. Two live bugs found by actually using it
+
+**1. Razorpay cancellation was reported as a failure, in raw JSON.** The check tested
+`error.code === 0` — but **0 is NETWORK_ERROR; PAYMENT_CANCELLED is 2**. So an ordinary
+back-press out of the checkout sheet fell through to the error branch and printed
+`error.description`, which is not a sentence but Razorpay's serialised envelope. The
+customer saw `{"error":{"code":"BAD_REQUEST_ERROR","description":"undefined",…}}`.
+
+`utils/razorpayError.js` now owns this: cancel (code 2) shows **nothing at all** —
+nothing was charged and the customer knows they pressed back, so a red "Payment Failed"
+only implies their money is in limbo. Real failures get the human sentence unwrapped
+out of the envelope (Razorpay genuinely sends the string `"undefined"` there), with
+separate copy for network errors.
+
+**2. Insufficient balance was a dead end.** The reports path called `showStatusPopup`
+directly with a single OK button. It now uses `showInsufficientBalanceAlert` — the same
+helper chat/call/video already used — so it offers **Recharge** and **Refer & Earn ₹50**.
+Applied to both places it can fire: the pre-flight check and the backend rejection.
+
+### BB. Losing a paid report to a reflex back-press
+
+`hooks/useConfirmLeaveReport.js`, on all 10 result surfaces. A report is bought once and
+rendered once; pressing back the way you leave any other screen threw it away, and the
+only way back was paying again.
+
+- Uses navigation's **`beforeRemove`, not `BackHandler`** — one listener covers the
+  header arrow, the hardware button and the swipe, and it does not depend on a mechanism
+  this repo already documents as unreliable on Android 14+ (subsystem AS).
+- **Only a real back gesture is intercepted.** A programmatic reset — logout, deep link,
+  the 401 interceptor — passes straight through, so nothing can be trapped behind it.
+- Gated on there being something to lose: skipped while loading, and on Tarot only once
+  the reading is drawn.
+- Rendered through `StatusPopup`, not `Alert.alert`. **`App.js` only re-skins
+  single-button alerts** — anything with a choice falls through to the bare OS dialog,
+  which is why the first version looked like stock Android. "Stay here" is the primary
+  action; leaving costs money, so it is not the easy one to hit.
+
+### BC. The free 5-minute chat engine, rebuilt (78 → 527 lines)
+
+Still **no AI and no network** — deterministic rules over hand-written Vedic content, so
+it works offline, costs nothing per message, and can never say something nobody wrote.
+
+The old engine matched a keyword and returned one of two canned lines, so five minutes
+was five minutes of fortune-cookie. Three rules now:
+
+1. **It converses rather than answers.** Every topic has a PROBE turn before its INSIGHT
+   turn, and it asks for birth details early — an astrologer asks before telling.
+2. **It never hands off.** No "let me connect you", no team, no admin, no naming another
+   astrologer. Asserted by regex over the whole transcript.
+3. **The last minute names a remedy without giving it.** Under 60s it says a specific
+   upaay exists for what was discussed, attributed to the right planet for that topic,
+   and does not say what it is — honest about why (needs exact birth time, needs more
+   time than remains). Never claims it was already given, never promises follow-up.
+
+14 topics mapped to real houses and ruling planets, 7 direct-concept handlers (Sade
+Sati, Manglik, Kaal Sarp, rashi, dasha, gemstone, nakshatra) so a factual question gets
+a factual answer instead of a love reading, and Hinglish keywords throughout
+(`shaadi`, `naukri`, `paisa`, `karz`, `bimari`, `bacha`, `zameen`) because that is how
+customers type. Variety is combinatorial — replies assemble from separate pools and
+`pick()` will not repeat a line until its pool is exhausted.
+
+**Verified 14/14** by driving the real module through a 12-turn simulated session:
+zero verbatim repeats, 7 turns asking a question back, 9 using real astrological
+vocabulary, and — asked point blank "please tell me the remedy" in the final minute —
+still withholding, checked against a regex for actual prescribing (`wear a…`,
+`recite…`, `donate…`, `108 times`, `rudraksha`).
+
+> **⚠️ THIS IS LIVE.** `free_bot_chat_persona.enabled` is `true` in production. This
+> engine is the experience every eligible new customer gets the moment it is OTA'd —
+> it is not dormant code. Weakest seam: genuinely off-topic input falls through to the
+> `general` pool, which is coherent but not tailored.
+
+### Also in this pass
+
+- **Home:** the old "Astrowani Remedies" row removed (it opened the native RemedyShop
+  while the tab labelled "Wani Shop" opened the web storefront — two shops, two names),
+  replaced by five circular buttons above the banner: Gemstones, Pujas, Vastu, Pyramids,
+  Reports. Pyramids is 277 of 497 catalogue items and had no direct entry point;
+  `store.js` now reads `?cat=` on `/vastu/` and `StoreWebView` takes an optional `path`.
+  **Verified in a browser against production:** `?cat=pyramids` → "Showing 40 of 277",
+  a bad category → the full 450 list, not an empty grid.
+- **Banners shortened** 1200×500 → 1200×400 and 1200×400 → 1200×300, in step across
+  `PlacementBanner.js` and the admin's `PLACEMENTS` — they are one contract, and the
+  already-uploaded art had to be re-uploaded or it cover-cropped.
+- Thought-of-the-day falls back to "Jai Shree Ram".
+
+### Still open
+
+- **The Wani Shop renders one column per row on the user's phone.** Not reproduced:
+  the live CSS gives `repeat(2, 1fr)` under 640px, and a real browser at 375px measured
+  `165.5px 165.5px` with 2 columns. Needs a check in the phone's own Chrome to tell
+  whether it is the WebView or the device width.
+- **VPS 522s, four occurrences in one day**, including one before any deploy and one on
+  `manu.astrowani.com` (i.e. nginx itself, not the Node process). A 2-minute sample came
+  back 24/24 clean, so it is sporadic rather than constant. Unresolved; the next step is
+  `free -h && pm2 status && dmesg | grep -i oom` on the box. `deploy-admin.yml` running
+  `npm install && npm run build` ON the VPS is the prime suspect.
+- **Measured load behaviour:** 15 concurrent requests to `/api/astrologers` took 1.08s →
+  3.71s, and `/api/remedies` serves **435 KB unpaginated** at 1.8s warm / 11.7s cold.
+  Neither is fixed.

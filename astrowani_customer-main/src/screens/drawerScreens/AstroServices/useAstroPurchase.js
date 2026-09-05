@@ -8,6 +8,8 @@ import {useContext, useEffect, useRef, useState} from 'react';
 import {getAstroServices, getWalletBalance, runAstroReport} from '../../../api/astroApi';
 import {LanguageContext} from '../../../context/LanguageContext';
 import {showStatusPopup} from '../../../components/StatusPopup';
+import {showInsufficientBalanceAlert} from '../../../utils/insufficientBalanceAlert';
+import {navigationRef} from '../../../utils/NavigationService';
 import {apiLang} from '../../../components/astro/ReportLanguage';
 import {astroServiceLabel} from '../../../utils/astroServiceLabel';
 import {captureEvent} from '../../../utils/Analytics';
@@ -56,33 +58,24 @@ export default function useAstroPurchase(serviceKey) {
           balance,
           shortfall: freshService.price - balance,
         });
-        showStatusPopup({
-          variant: 'insufficient',
-          title: t('alerts.insufficientBalance'),
-          message: t('astro.reportCostsMsg', {price: freshService.price, balance}),
+        // The shared prompt the chat/call/video paths already use: it offers a way
+        // FORWARD (recharge, or refer a friend for ₹50) instead of an OK button that
+        // leaves the customer at a dead end with no idea what to do next.
+        showInsufficientBalanceAlert({
+          navigation: navigationRef,
+          minRequired: freshService.price,
+          balance,
+          t,
+          intent: 'report',
         });
         return null;
       }
 
-      const confirmed = await new Promise((resolve) => {
-        showStatusPopup({
-          variant: 'confirmPay',
-          title: t('astro.confirmPurchase'),
-          // Translated name, not the raw English one — this message is otherwise
-          // fully Hindi, so `name` was the single English word in the sentence.
-          message: t('astro.confirmPurchaseMsg', {price: freshService.price, name: astroServiceLabel(freshService, language, t)}),
-          confirmText: t('astro.payAmount', {price: freshService.price}),
-          cancelText: t('common.cancel'),
-          onConfirm: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
-      if (!confirmed) {
-        // Seeing the price and declining is a pricing signal, and it is invisible unless
-        // it is recorded — nothing else in the funnel distinguishes it from never trying.
-        captureEvent('astro_report_purchase_declined', {service_key: serviceKey, price: freshService.price});
-        return null;
-      }
+      // The "Confirm Purchase" popup that used to sit here is GONE (2026-09-05).
+      // The purchase control is now a slide-to-confirm, which is already a
+      // deliberate gesture that states the price — asking again straight after was
+      // confirming the same decision twice, and the second dialog is the one people
+      // learn to dismiss without reading.
       captureEvent('astro_report_purchase_confirmed', {service_key: serviceKey, price: freshService.price});
 
       // Generate in whatever language the app is currently set to, so a Hindi user gets a
@@ -97,7 +90,16 @@ export default function useAstroPurchase(serviceKey) {
         reason: err.isInsufficientBalance ? 'low_balance' : (err.code || 'other'),
       });
       if (err.isInsufficientBalance) {
-        showStatusPopup({variant: 'insufficient', title: t('alerts.insufficientBalance'), message: t('astro.rechargeToView')});
+        // Same prompt as the pre-flight check above — the backend can also reject on
+        // balance if it moved between the check and the call, and that customer needs
+        // the same two ways out.
+        showInsufficientBalanceAlert({
+          navigation: navigationRef,
+          minRequired: service?.price ?? 0,
+          balance: 0,
+          t,
+          intent: 'report',
+        });
       } else {
         showStatusPopup({variant: 'info', title: t('common.error'), message: err.message || t('astro.failedToGenerate')});
       }

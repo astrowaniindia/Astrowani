@@ -7,11 +7,14 @@ import {
 } from '../../../components/astro/AstroBlocks';
 import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
 export default function KundliResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
   // Owns the payload so the header's EN/हिं toggle can swap it for the Hindi one.
   const {data, busy} = useReportLanguage(route, navigation);
+  // Paid content: confirm before a reflex back-press throws it away.
+  useConfirmLeaveReport(navigation, !busy);
 
   return (
     <View style={styles.main}>

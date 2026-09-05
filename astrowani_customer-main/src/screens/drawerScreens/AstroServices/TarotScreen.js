@@ -5,11 +5,15 @@ import {COLORS} from '../../../Theme/Colors';
 import useAstroPurchase from './useAstroPurchase';
 import ReportResultView from './ReportResultView';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
-export default function TarotScreen() {
+export default function TarotScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
   const [reading, setReading] = useState(null);
   const {service, submitting, submit} = useAstroPurchase('tarot');
+  // Only once a reading has been paid for and drawn — before that there is nothing
+  // to lose and a prompt would just be in the way.
+  useConfirmLeaveReport(navigation, !!reading);
 
   const onDraw = async () => {
     setReading(null);

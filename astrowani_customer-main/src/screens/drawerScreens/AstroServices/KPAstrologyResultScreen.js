@@ -5,10 +5,13 @@ import ZoomableChart from '../../../components/astro/ZoomableChart';
 import {PlanetTable, KpCusps, KpSignificators} from '../../../components/astro/AstroBlocks';
 import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
 export default function KPAstrologyResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
   const {data, busy} = useReportLanguage(route, navigation);
+  // Paid content: confirm before a reflex back-press throws it away.
+  useConfirmLeaveReport(navigation, !busy);
 
   // kp/planet_details nests the list under `planets` with the ascendant beside it —
   // PlanetTable understands that shape, but the ascendant is worth showing in the same

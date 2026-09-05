@@ -6,6 +6,7 @@ import {ASTRO, ReportShell, SectionCard, PLANET_GLYPH} from '../../../components
 import {DashaTimeline, InfoSection} from '../../../components/astro/AstroBlocks';
 import {useReportLanguage, TranslatingOverlay} from '../../../components/astro/ReportLanguage';
 import {LanguageContext} from '../../../context/LanguageContext';
+import useConfirmLeaveReport from '../../../hooks/useConfirmLeaveReport';
 
 /**
  * The five nested levels that are running RIGHT NOW, as one stack.
@@ -62,6 +63,8 @@ function CurrentStack({order, index}) {
 export default function DashaResultScreen({route, navigation}) {
   const {t} = React.useContext(LanguageContext);
   const {data, busy} = useReportLanguage(route, navigation);
+  // Paid content: confirm before a reflex back-press throws it away.
+  useConfirmLeaveReport(navigation, !busy);
   const cur = data?.currentMahadashaFull;
 
   return (
