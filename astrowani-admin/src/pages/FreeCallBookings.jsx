@@ -30,6 +30,23 @@ const IST_FMT = new Intl.DateTimeFormat('en-IN', {
 });
 const fmtSlot = (iso) => (iso ? IST_FMT.format(new Date(iso)) : '—');
 
+function formatDob(d) {
+  if (!d) return null;
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+    const [y, m, day] = d.slice(0, 10).split('-');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mon = months[parseInt(m, 10) - 1] || m;
+    return `${day} ${mon} ${y}`;
+  }
+  try {
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return String(d);
+    return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return String(d);
+  }
+}
+
 const IST_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
 const istDayKey = (iso) => (iso ? IST_DAY.format(new Date(iso)) : '');
 
@@ -265,13 +282,16 @@ export default function FreeCallBookings() {
   }, [rows, todayKey]);
 
   const exportCSV = () => {
-    const headers = ['ID', 'Scheduled Slot (IST)', 'Booked On', 'Customer Name', 'Customer Phone', 'Assigned Astrologer', 'Status', 'Note'];
+    const headers = ['ID', 'Scheduled Slot (IST)', 'Booked On', 'Customer Name', 'Customer Phone', 'Customer DOB', 'Customer Birth Time', 'Customer Birth Place', 'Assigned Astrologer', 'Status', 'Note'];
     const lines = sorted.map((r) => [
       r.id,
       `"${fmtSlot(r.slot_start)}"`,
       `"${r.created_at ? new Date(r.created_at).toLocaleString('en-IN') : ''}"`,
       `"${(r.customer_name || '').replace(/"/g, '""')}"`,
       `"${r.customer_phone || ''}"`,
+      `"${r.customer_dob ? formatDob(r.customer_dob) : ''}"`,
+      `"${r.customer_time_of_birth || ''}"`,
+      `"${(r.customer_place_of_birth || '').replace(/"/g, '""')}"`,
       `"${(r.assigneeName || r.astrologer_name || '').replace(/"/g, '""')}"`,
       r.status,
       `"${(r.admin_note || '').replace(/"/g, '""')}"`,
@@ -657,6 +677,34 @@ export default function FreeCallBookings() {
                           </div>
                         ) : (
                           <span className="muted" style={{ fontSize: 11 }}>No phone</span>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontSize: 11,
+                            padding: '2px 7px',
+                            borderRadius: 6,
+                            background: r.customer_dob ? '#fef3c7' : '#f1f5f9',
+                            color: r.customer_dob ? '#92400e' : 'var(--text-muted)',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}>
+                            <span>🎂</span>
+                            {r.customer_dob ? (
+                              <span>
+                                DOB: <strong>{formatDob(r.customer_dob)}</strong>
+                                {r.customer_time_of_birth ? ` (${r.customer_time_of_birth.slice(0, 5)})` : ''}
+                              </span>
+                            ) : (
+                              <span>DOB: Not set</span>
+                            )}
+                          </span>
+                        </div>
+                        {r.customer_place_of_birth && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }} title={r.customer_place_of_birth}>
+                            📍 {r.customer_place_of_birth.length > 24 ? `${r.customer_place_of_birth.slice(0, 24)}…` : r.customer_place_of_birth}
+                          </div>
                         )}
                       </div>
                     </td>

@@ -698,7 +698,7 @@ module.exports = function registerFreeCallRoutes(app) {
     // shown on the offer card). The admin table shows both.
     let query = db
       .from('free_call_bookings')
-      .select('*, assignee:astrologer_id (id, first_name, last_name, phone_number)', { count: 'exact' });
+      .select('*, assignee:astrologer_id (id, first_name, last_name, phone_number), customer:customer_id (id, name, mobile, dob, time_of_birth, place_of_birth, gender)', { count: 'exact' });
     if (status && status !== 'all') query = query.eq('status', status);
     if (req.query.astrologerId === 'unassigned') query = query.is('astrologer_id', null);
     else if (req.query.astrologerId) query = query.eq('astrologer_id', req.query.astrologerId);
@@ -731,6 +731,10 @@ module.exports = function registerFreeCallRoutes(app) {
       total: count || 0,
       bookings: (data || []).map((b) => ({
         ...b,
+        customer_dob: b.customer?.dob || b.customer_dob || null,
+        customer_time_of_birth: b.customer?.time_of_birth || null,
+        customer_place_of_birth: b.customer?.place_of_birth || null,
+        customer_gender: b.customer?.gender || null,
         assigneeName: astrologerFullName(b.assignee),
         slotLabel: formatSlotLabel(new Date(b.slot_start)),
         dateKey: businessDateKey(new Date(b.slot_start)),
@@ -800,7 +804,7 @@ module.exports = function registerFreeCallRoutes(app) {
 
     const { data, error } = await db
       .from('free_call_bookings').update(patch).eq('id', req.params.id)
-      .select('*, assignee:astrologer_id (id, first_name, last_name, phone_number)').single();
+      .select('*, assignee:astrologer_id (id, first_name, last_name, phone_number), customer:customer_id (id, name, mobile, dob, time_of_birth, place_of_birth, gender)').single();
     if (error) {
       if (error.code === '23505') {
         // With one booking per astrologer per slot, a clash now means "that
@@ -819,6 +823,10 @@ module.exports = function registerFreeCallRoutes(app) {
       success: true,
       booking: {
         ...data,
+        customer_dob: data.customer?.dob || data.customer_dob || null,
+        customer_time_of_birth: data.customer?.time_of_birth || null,
+        customer_place_of_birth: data.customer?.place_of_birth || null,
+        customer_gender: data.customer?.gender || null,
         assigneeName: astrologerFullName(data.assignee),
         slotLabel: formatSlotLabel(new Date(data.slot_start)),
         dateKey: businessDateKey(new Date(data.slot_start)),
@@ -841,7 +849,7 @@ module.exports = function registerFreeCallRoutes(app) {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await db
       .from('free_call_bookings')
-      .select('*')
+      .select('*, customer:customer_id (id, name, mobile, dob, time_of_birth, place_of_birth, gender)')
       .eq('astrologer_id', astrologerId)
       .neq('status', 'cancelled')
       .gte('slot_start', since)
@@ -863,6 +871,10 @@ module.exports = function registerFreeCallRoutes(app) {
         status: b.status,
         customerName: b.customer_name,
         customerPhone: b.customer_phone,
+        customerDob: b.customer?.dob || b.customer_dob || null,
+        customerTimeOfBirth: b.customer?.time_of_birth || null,
+        customerPlaceOfBirth: b.customer?.place_of_birth || null,
+        customerGender: b.customer?.gender || null,
         adminNote: b.admin_note,
         slotLabel: formatSlotLabel(new Date(b.slot_start)),
         dateKey: businessDateKey(new Date(b.slot_start)),

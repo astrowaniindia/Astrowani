@@ -771,7 +771,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: var(--shadow-xs);
 }
 
@@ -1107,6 +1107,10 @@ textarea {
   display: inline-block;
 }
 
+.action-menu.is-open {
+  z-index: 60;
+}
+
 .action-menu-trigger {
   background: #ffffff;
   border: 1px solid var(--border);
@@ -1121,31 +1125,43 @@ textarea {
   justify-content: center;
   transition: all var(--transition-fast);
   box-shadow: var(--shadow-xs);
+  cursor: pointer;
 }
 
-.action-menu-trigger:hover {
-  background: var(--surface-muted);
+.action-menu-trigger:hover,
+.action-menu-trigger.active {
+  background: var(--maroon-50);
   color: var(--maroon);
-  border-color: var(--maroon-100);
+  border-color: var(--maroon-200);
 }
 
 .action-menu-dropdown {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  z-index: 50;
-  background: #fff;
+  z-index: 100;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: var(--shadow-xl);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   min-width: 190px;
   padding: 6px;
-  overflow: hidden;
   animation: menuIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.action-menu-dropdown.open-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  animation: menuInUp 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes menuIn {
   from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes menuInUp {
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -1380,13 +1396,25 @@ textarea {
   justify-content: space-between;
   transition: all var(--transition-fast);
   position: relative;
-  overflow: hidden;
+  z-index: 1;
 }
 
 .astro-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: #cbd5e1;
+  z-index: 5;
+}
+
+.astro-card.menu-active,
+.astro-card:has(.action-menu-dropdown),
+.astro-card:focus-within {
+  z-index: 50 !important;
+}
+
+tr.menu-active {
+  position: relative;
+  z-index: 50 !important;
 }
 
 .astro-card-top {

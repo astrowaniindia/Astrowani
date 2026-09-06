@@ -4,7 +4,8 @@ import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 import ActionMenu from '../components/ActionMenu';
 
-function StatusBadge({ s }) {
+function StatusBadge({ s, isSuspended }) {
+  if (isSuspended) return <span className="badge red"><span className="badge-dot" /> Suspended</span>;
   if (s === 'approved') return <span className="badge green"><span className="badge-dot" /> Approved</span>;
   if (s === 'rejected') return <span className="badge red"><span className="badge-dot" /> Rejected</span>;
   return <span className="badge amber"><span className="badge-dot" /> Pending Review</span>;
@@ -67,7 +68,9 @@ export default function Astrologers() {
 
   const matchesFilter = (r) => {
     if (statusFilter === 'suspended') return !!r.is_suspended;
-    if (statusFilter !== 'all') return r.approval_status === statusFilter;
+    if (statusFilter === 'approved') return r.approval_status === 'approved' && !r.is_suspended;
+    if (statusFilter === 'pending') return r.approval_status === 'pending' && !r.is_suspended;
+    if (statusFilter === 'rejected') return r.approval_status === 'rejected' && !r.is_suspended;
     return true;
   };
 
@@ -298,7 +301,7 @@ export default function Astrologers() {
                   <div className="astro-card-info">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                       <div className="astro-card-name">{name(r)}</div>
-                      <StatusBadge s={r.approval_status} />
+                      <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                       {r.phone_number || 'No phone'} • {r.experience ? `${r.experience} yrs` : 'New'}
@@ -347,7 +350,16 @@ export default function Astrologers() {
                   ₹{(r.wallet_balance ?? 0).toLocaleString('en-IN')}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {r.approval_status === 'pending' && (
+                  {r.is_suspended ? (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      style={{ background: 'var(--amber)', color: '#fff' }}
+                      onClick={() => patch(r.id, { is_suspended: false })}
+                    >
+                      Unsuspend
+                    </button>
+                  ) : r.approval_status === 'pending' ? (
                     <button
                       type="button"
                       className="btn sm"
@@ -356,7 +368,7 @@ export default function Astrologers() {
                     >
                       ✓ Approve
                     </button>
-                  )}
+                  ) : null}
                   <button
                     type="button"
                     className="btn sm secondary"
@@ -369,7 +381,7 @@ export default function Astrologers() {
                       { label: 'Approve Profile', onClick: () => patch(r.id, { approval_status: 'approved' }) },
                     r.approval_status !== 'rejected' &&
                       { label: 'Reject Profile', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
-                    { label: r.is_suspended ? 'Unsuspend' : 'Suspend', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
+                    { label: r.is_suspended ? 'Unsuspend Account' : 'Suspend Account', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
                     { label: 'Adjust Wallet', onClick: () => { setTopup(r); setAmount(''); } },
                     { label: 'Delete Profile', danger: true, onClick: () => remove(r) },
                   ]} />
@@ -416,7 +428,7 @@ export default function Astrologers() {
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{r.email || 'No email'}</div>
                   </td>
                   <td>
-                    <StatusBadge s={r.approval_status} />
+                    <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
                   </td>
                   <td>
                     <AstroBadge badge={r.badge} />
@@ -435,10 +447,21 @@ export default function Astrologers() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                      {r.is_suspended && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          style={{ background: 'var(--amber)', color: '#fff', padding: '4px 8px', fontSize: '11.5px' }}
+                          onClick={() => patch(r.id, { is_suspended: false })}
+                        >
+                          Unsuspend
+                        </button>
+                      )}
                       <button type="button" className="btn sm secondary" onClick={() => openEdit(r)}>Edit</button>
                       <ActionMenu items={[
                         r.approval_status !== 'approved' && { label: 'Approve Profile', onClick: () => patch(r.id, { approval_status: 'approved' }) },
-                        { label: r.is_suspended ? 'Unsuspend' : 'Suspend', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
+                        r.approval_status !== 'rejected' && { label: 'Reject Profile', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
+                        { label: r.is_suspended ? 'Unsuspend Account' : 'Suspend Account', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
                         { label: 'Adjust Wallet', onClick: () => { setTopup(r); setAmount(''); } },
                         { label: 'Delete', danger: true, onClick: () => remove(r) },
                       ]} />
@@ -483,14 +506,29 @@ export default function Astrologers() {
               </select>
             </div>
             <div className="field">
-              <label>Badge</label>
-              <select value={editing.badge || ''} onChange={(e) => set('badge', e.target.value || null)}>
-                <option value="">None</option>
-                <option value="verified">Verified</option>
-                <option value="top_rated">Top Rated</option>
-                <option value="celebrity">Celebrity</option>
+              <label>Account Status</label>
+              <select
+                value={editing.is_suspended ? 'suspended' : 'active'}
+                onChange={(e) => set('is_suspended', e.target.value === 'suspended')}
+                style={{
+                  borderColor: editing.is_suspended ? 'var(--crimson)' : undefined,
+                  color: editing.is_suspended ? 'var(--crimson)' : undefined,
+                  fontWeight: 600,
+                }}
+              >
+                <option value="active">Active (Normal)</option>
+                <option value="suspended">Suspended</option>
               </select>
             </div>
+          </div>
+          <div className="field">
+            <label>Badge</label>
+            <select value={editing.badge || ''} onChange={(e) => set('badge', e.target.value || null)}>
+              <option value="">None</option>
+              <option value="verified">Verified</option>
+              <option value="top_rated">Top Rated</option>
+              <option value="celebrity">Celebrity</option>
+            </select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div className="field">
