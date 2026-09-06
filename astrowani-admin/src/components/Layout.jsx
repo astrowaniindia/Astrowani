@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 // Primary Workspaces — groups 29 tools into 4 logical departments
 const WORKSPACES = [
@@ -124,6 +125,7 @@ const ALL_GROUPS = [
 
 export default function Layout() {
   const { admin, logout, isAuthed } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState('');
   const [activeWorkspace, setActiveWorkspace] = useState('all');
@@ -289,6 +291,17 @@ export default function Layout() {
           </div>
 
           <div className="topbar-right">
+            <button
+              type="button"
+              className="theme-toggle-btn"
+              onClick={toggleTheme}
+              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              aria-label="Toggle Theme"
+            >
+              <span className="theme-toggle-icon">{isDark ? '☀️' : '🌙'}</span>
+              <span className="theme-toggle-label">{isDark ? 'Light' : 'Dark'}</span>
+            </button>
+
             <div className="status-badge">
               <span className="pulse-dot" />
               <span>Production Live • Synchronized</span>
