@@ -599,7 +599,7 @@ export default function FreeCallBookings() {
               <tr>
                 <th style={{ minWidth: 200 }}>Scheduled Slot (IST)</th>
                 <th style={{ minWidth: 155 }}>Booked On</th>
-                <th>Customer</th>
+                <th style={{ minWidth: 240 }}>Customer</th>
                 <th style={{ minWidth: 180 }}>Assigned Astrologer</th>
                 <th>Status</th>
                 <th>Internal Note</th>
@@ -678,17 +678,20 @@ export default function FreeCallBookings() {
                         ) : (
                           <span className="muted" style={{ fontSize: 11 }}>No phone</span>
                         )}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
-                          <span style={{
-                            fontSize: 11,
-                            padding: '2px 7px',
+                        {/* Birth Details (DOB + Time + Full Place) */}
+                        <div style={{ marginTop: 5, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <div style={{
+                            fontSize: 11.5,
+                            padding: '3px 8px',
                             borderRadius: 6,
                             background: r.customer_dob ? '#fef3c7' : '#f1f5f9',
                             color: r.customer_dob ? '#92400e' : 'var(--text-muted)',
                             fontWeight: 600,
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 4
+                            gap: 5,
+                            width: 'fit-content',
+                            whiteSpace: 'nowrap'
                           }}>
                             <span>🎂</span>
                             {r.customer_dob ? (
@@ -699,13 +702,25 @@ export default function FreeCallBookings() {
                             ) : (
                               <span>DOB: Not set</span>
                             )}
-                          </span>
-                        </div>
-                        {r.customer_place_of_birth && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }} title={r.customer_place_of_birth}>
-                            📍 {r.customer_place_of_birth.length > 24 ? `${r.customer_place_of_birth.slice(0, 24)}…` : r.customer_place_of_birth}
                           </div>
-                        )}
+
+                          {r.customer_place_of_birth && (
+                            <div style={{
+                              fontSize: 11.5,
+                              color: 'var(--text-secondary)',
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: 4,
+                              lineHeight: 1.35,
+                              marginTop: 1
+                            }}>
+                              <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>📍</span>
+                              <span style={{ wordBreak: 'break-word', fontWeight: 500 }}>
+                                {r.customer_place_of_birth}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
 
