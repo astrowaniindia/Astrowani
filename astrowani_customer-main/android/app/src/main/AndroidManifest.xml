@@ -1,16 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-<!-- <uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /> -->
     <uses-permission android:name="android.permission.INTERNET" />
   
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <!-- Capped rather than removed: scoped storage makes it a no-op from API 29 anyway,
+         so an uncapped declaration only widens what Play sees us asking for. No library
+         here declares it (verified in the merger blame report), but tools:node="replace"
+         is kept so a future dependency cannot reintroduce it unbounded.
+         READ_EXTERNAL_STORAGE / READ_MEDIA_IMAGES stay fully removed below — the image
+         picker uses the system photo picker, which needs no permission. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:node="replace"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -20,24 +22,25 @@
  
  <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
- <!-- OPTIONAL PERMISSIONS, REMOVE WHATEVER YOU DO NOT NEED -->
-  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-  <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
-  <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
-
-
-  <!-- These require runtime permissions on M -->
-  <uses-permission android:name="android.permission.CAMERA"/>
-
-  <uses-permission android:name="android.permission.READ_CONTACTS"/>
-  <uses-permission android:name="android.permission.WRITE_CONTACTS"/>
-  <uses-permission android:name="android.permission.READ_CALENDAR"/>
-  <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
+ <!-- REMOVED 2026-09-09, all eight verified unused before deletion: zero references
+      across src/, no dependency in package.json provides them, and the release
+      manifest-merger blame report attributes every one solely to THIS file (no library
+      declares them, so plain deletion is sufficient — no tools:node="remove" needed):
+        SYSTEM_ALERT_WINDOW, WRITE_SETTINGS  - Play "special access" permissions that
+          attract review scrutiny; nothing here draws over other apps or writes system
+          settings.
+        READ_PHONE_STATE                     - no telephony code; react-native-callkeep
+          is not installed in this app at all.
+        USE_FINGERPRINT                      - no biometric library is installed.
+        READ/WRITE_CONTACTS, READ/WRITE_CALENDAR - no contacts or calendar library exists
+          in package.json; nothing has ever read or written either.
+      They came from a scaffolding block originally labelled "OPTIONAL PERMISSIONS,
+      REMOVE WHATEVER YOU DO NOT NEED" and were never pruned. This mirrors the same
+      cleanup done on the vendor app on 2026-09-05. -->
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 <uses-permission android:name="android.permission.VIBRATE" />
 <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-  <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
   <!-- to use Forground service -->
 
 
