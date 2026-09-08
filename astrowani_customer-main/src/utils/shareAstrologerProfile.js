@@ -99,7 +99,11 @@ export function buildAstrologerShareMessage({ astrologer, mode = 'recommend', t 
   const rating = Number(astrologer?.rating ?? astrologer?.averageRating);
   const reviews = Number(astrologer?.totalReviews);
   if (mode !== 'self' && Number.isFinite(rating) && rating > 0 && Number.isFinite(reviews) && reviews > 0) {
-    lines.push(t('share.ratingLine', { rating: rating.toFixed(1), count: reviews }));
+    // The review COUNT is deliberately not shown. It still gates the line -- a
+    // rating nobody gave is a claim, not a fact -- but a genuine 5.0 from two
+    // early customers reads as weaker than saying nothing, and this text goes
+    // to strangers who cannot tell the difference between new and unpopular.
+    lines.push(t('share.ratingLine', { rating: rating.toFixed(1) }));
   }
 
   lines.push('');
