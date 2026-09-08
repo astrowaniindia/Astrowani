@@ -737,7 +737,22 @@ export const LanguageProvider = ({ children }) => {
     }
   };
 
-  const t = (key) => translations[language]?.[key] ?? translations['English'][key] ?? key;
+  // Interpolates {{param}} placeholders, matching the standalone translate() above and
+  // the customer app's t(). It previously ignored its second argument entirely, so any
+  // key carrying a placeholder rendered the braces literally to the astrologer --
+  // Support.tsx's t('vsupport.statusWithAgent', {name}) showed "{{name}} from support",
+  // and the shared-profile message read "I am {{name}}, an astrologer on Astrowani."
+  // Found on a device; a unit test against the CUSTOMER app's strings could not catch it,
+  // because only this app's t() was missing the feature.
+  const t = (key, params) => {
+    let str = translations[language]?.[key] ?? translations['English'][key] ?? key;
+    if (params) {
+      Object.keys(params).forEach((param) => {
+        str = str.replace(new RegExp(`{{${param}}}`, 'g'), params[param]);
+      });
+    }
+    return str;
+  };
 
   return (
     <LanguageContext.Provider value={{ language, changeLanguage, t }}>
