@@ -31,29 +31,55 @@ const NAMASTE = '\uD83D\uDE4F';
 // text rather than leaving the user staring at a button that appears dead.
 const IMAGE_TIMEOUT_MS = 6000;
 
+// Used when the server does not say, or says something that is not an image type.
+const DEFAULT_IMAGE_MIME = 'image/jpeg';
+
 /**
  * Fetch a remote image and return it as a data: URI, which is what
  * react-native-share accepts directly -- avoiding a filesystem dependency
  * (the customer app has no react-native-fs).
  * Returns null on any failure or timeout; never throws.
  */
+function mimeFromDataUri(uri) {
+  const m = /^data:([^;,]+)/.exec(uri || '');
+  return m && /^image\//.test(m[1]) ? m[1] : DEFAULT_IMAGE_MIME;
+}
+
 async function imageAsDataUri(imageUrl) {
   if (!imageUrl || typeof imageUrl !== 'string') return null;
   // Already inline (older base64 profile rows) -- hand it straight back.
-  if (imageUrl.startsWith('data:')) return imageUrl;
+  if (imageUrl.startsWith('data:')) return { dataUri: imageUrl, mime: mimeFromDataUri(imageUrl) };
   if (!imageUrl.startsWith('http')) return null;
 
   try {
     const withTimeout = (async () => {
       const res = await fetch(imageUrl);
       if (!res.ok) return null;
+      // Read the type from the RESPONSE HEADER, not from the Blob.
+      //
+      // React Native's Blob does not carry the content type through from fetch --
+      // blob.type is an empty string even when the server sent "image/jpeg" (measured
+      // on device: status 200, ctype image/jpeg, blob.size 57444, blob.type ""). With
+      // no type, FileReader emits "data:application/octet-stream;base64,..." and
+      // react-native-share cannot turn that into a file Uri. It fails inside its own
+      // Android code with
+      //     Attempt to invoke virtual method 'String android.net.Uri.getScheme()'
+      //     on a null object reference
+      // and the photo silently never attaches -- the exact bug this comment exists to
+      // stop coming back. These profile URLs also carry NO file extension
+      // (.../astrologer-profiles/1786899317973), so the type is the only signal there is.
+      const headerMime = String(res.headers && res.headers.get('content-type') || '')
+        .split(';')[0].trim().toLowerCase();
+      const mime = /^image\//.test(headerMime) ? headerMime : DEFAULT_IMAGE_MIME;
       const blob = await res.blob();
       return await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onerror = () => resolve(null);
         reader.onloadend = () => {
           const out = reader.result;
-          resolve(typeof out === 'string' && out.startsWith('data:') ? out : null);
+          if (typeof out !== 'string' || out.indexOf(',') < 0) return resolve(null);
+          // Rebuild the prefix with the real type; keep the payload untouched.
+          resolve({ dataUri: 'data:' + mime + ';base64,' + out.slice(out.indexOf(',') + 1), mime });
         };
         reader.readAsDataURL(blob);
       });
@@ -137,12 +163,37 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
   const report = (name, props) => { try { onEvent && onEvent(name, props); } catch (_) {} };
 
   const imageUrl = astrologer?.profileImage || astrologer?.profile_pic_url || astrologer?.image;
-  const dataUri = await imageAsDataUri(imageUrl);
+  const image = await imageAsDataUri(imageUrl);
 
-  // 1. Photo + text.
-  if (dataUri) {
+  // 1. Photo + text. `type` and `filename` are both required on Android: these profile
+  //    URLs have no file extension, so without them react-native-share has nothing to
+  //    derive a file name from and fails to build a Uri (see imageAsDataUri above).
+  if (image && image.dataUri) {
     try {
-      await Share.open({ title, message, url: dataUri, failOnCancel: false });
+      await Share.open({
+        title,
+        message,
+        url: image.dataUri,
+        type: image.mime,
+        filename: 'astrowani-astrologer',
+        // MUST be true. react-native-share decodes the base64 to a real file and hands
+        // the receiving app a content:// Uri for it. With this false (its default) it
+        // writes to getExternalCacheDir()/Download -- which is null whenever external
+        // storage is unavailable, so the write fails, getURI() returns null, and
+        // ClipData.newUri then throws
+        //     NullPointerException: ... android.net.Uri.getScheme() on a null object
+        // inside the library. Our catch then falls through to text-only and the photo
+        // silently never attaches. Measured on an Android 17 emulator.
+        //
+        // The library's own FileProvider config agrees: share_download_paths.xml
+        // declares <cache-path path="/"> (the INTERNAL cache, which is what this flag
+        // selects) but its <external-path path="Download/"> points at
+        // /sdcard/Download, NOT at getExternalCacheDir()/Download where the external
+        // branch actually writes. So the internal path is the only one wired up
+        // correctly end to end.
+        useInternalStorage: true,
+        failOnCancel: false,
+      });
       report('astrologer_profile_shared', { mode, with_image: true, astrologer_id: astrologerId });
       return true;
     } catch (_) {
