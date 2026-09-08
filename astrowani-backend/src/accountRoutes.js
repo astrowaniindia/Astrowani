@@ -23,7 +23,7 @@
 
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
-const { findCustomerByPhone } = require('./customerLookup');
+const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -49,10 +49,9 @@ async function resolveCustomer(req) {
     const row = await findCustomerByPhone(db, decoded.phone, 'id, name, mobile, wallet_balance');
     if (row) customer = row;
   }
-  if (!customer && userId && String(userId).includes('-')) {
-    const { data } = await db
-      .from('customers').select('id, name, mobile, wallet_balance').eq('id', userId).single();
-    if (data) customer = data;
+  // Guarded: a soft-removed account must not resolve from a retained token.
+  if (!customer && userId) {
+    customer = await findCustomerById(db, userId, 'id, name, mobile, wallet_balance');
   }
   return customer;
 }
@@ -158,11 +157,32 @@ module.exports = (app) => {
       // successful deletion.
       if (delErr.code !== '23503') throw delErr;
 
+      // Clear every personal field, not just the ones that make the account
+      // unreachable. Only the financial trail (chat_sessions / wallet_transactions,
+      // which is what the RESTRICT above is protecting) has to survive a deletion
+      // request; birth details, contact details and photographs are not accounting
+      // records and there is no lawful basis to keep them once the customer has asked
+      // us to delete. Leaving them behind also made astrowani.com/delete-account/'s
+      // description of this flow untrue, which is the same class of problem as the
+      // fake "Account deleted successfully" toast this endpoint replaced.
+      // Every column below is nullable (verified against production before writing).
       const deletedTag = `deleted:${id}:${Date.now()}`;
       const { error: softErr } = await db.from('customers').update({
         mobile: deletedTag,
         name: customer.name ? `${customer.name} (deleted)` : 'Deleted user',
         fcm_token: null, // stop every future push to a device whose owner has left
+        email: null,
+        // Birth details: date + time + place is strongly identifying on its own, and
+        // is the most sensitive thing this app holds about a customer.
+        dob: null,
+        time_of_birth: null,
+        place_of_birth: null,
+        gender: null,
+        marital_status: null,
+        state: null,
+        // Photographs. hand_image is a palm photo submitted for palmistry readings.
+        profile_image: null,
+        hand_image: null,
       }).eq('id', id);
       if (softErr) throw softErr;
 
@@ -382,6 +402,26 @@ module.exports.registerVendorAccountRoutes = (app) => {
         phone_number: deletedTag,
         first_name: 'Deleted',
         last_name: 'astrologer',
+        // Same reasoning as the customer path above: hiding the row is not the same
+        // as deleting the person. Only the earnings trail has to survive.
+        // BANK DETAILS ARE THE IMPORTANT ONES — a full account number, IFSC and UPI
+        // id sitting in the row forever after someone asked to be deleted is the
+        // single worst thing either app retains. Safe to clear here specifically
+        // because deletion is already refused while a withdrawal is pending or
+        // approved (see pendingWithdrawalAmount above), so no payout can be in
+        // flight that would still need them.
+        // Every column below is nullable (verified against production before writing).
+        bank_account_number: null,
+        bank_ifsc: null,
+        bank_account_holder: null,
+        bank_name: null,
+        upi_id: null,
+        email: null,
+        date_of_birth: null,
+        gender: null,
+        profile_pic_url: null,
+        bio: null,
+        voip_token: null, // the VoIP push identifier, same reasoning as fcm_token
         // Everything below is what actually HIDES them. An astrologer row that is
         // merely renamed is still listed, still bookable, and still rung by the backend.
         approval_status: 'rejected',

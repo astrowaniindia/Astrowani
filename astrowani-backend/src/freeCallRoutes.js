@@ -16,7 +16,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
-const { findCustomerByPhone } = require('./customerLookup');
+const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { requireAdmin } = require('./adminRoutes');
 const { sendPush } = require('./push');
 const { checkAstrologerBusy, checkCustomerBusy } = require('./busyStatus');
@@ -156,9 +156,9 @@ async function resolveCustomer(req) {
     customer = await findCustomerByPhone(db, decoded.phone, 'id, name, mobile');
   }
   const userId = decoded.userId || decoded._id || decoded.id;
-  if (!customer && userId && String(userId).includes('-')) {
-    const { data } = await db.from('customers').select('id, name, mobile').eq('id', userId).single();
-    if (data) customer = data;
+  // Guarded: a soft-removed account must not resolve from a retained token.
+  if (!customer && userId) {
+    customer = await findCustomerById(db, userId, 'id, name, mobile');
   }
   return customer;
 }

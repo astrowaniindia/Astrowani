@@ -8,7 +8,7 @@
 // call never charges a customer, and a customer with insufficient balance never triggers an
 // external call (saves API quota on requests that would fail anyway).
 const jwt = require('jsonwebtoken');
-const { findCustomerByPhone } = require('./customerLookup');
+const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
@@ -72,9 +72,9 @@ async function resolveCustomer(req) {
         .then((r) => (r ? [r] : []));
     if (data && data.length) customer = data[0];
   }
-  if (!customer && userId && String(userId).includes('-')) {
-    const { data } = await db.from('customers').select('id, wallet_balance').eq('id', userId).single();
-    if (data) customer = data;
+  // Guarded: a soft-removed account must not resolve from a retained token.
+  if (!customer && userId) {
+    customer = await findCustomerById(db, userId, 'id, wallet_balance');
   }
   return customer;
 }

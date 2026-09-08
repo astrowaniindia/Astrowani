@@ -25,7 +25,7 @@
 //     handled this payment, which is a SUCCESS, not an error.
 
 const jwt = require('jsonwebtoken');
-const { findCustomerByPhone } = require('./customerLookup');
+const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { createClient } = require('@supabase/supabase-js');
 const razorpay = require('./razorpay');
 const wallet = require('./wallet');
@@ -71,10 +71,9 @@ async function resolveCustomer(req) {
         .then((r) => (r ? [r] : []));
     if (data && data.length) customer = data[0];
   }
-  if (!customer && userId && String(userId).includes('-')) {
-    const { data } = await db
-      .from('customers').select('id, name, mobile, wallet_balance').eq('id', userId).single();
-    if (data) customer = data;
+  // Guarded: a soft-removed account must not resolve from a retained token.
+  if (!customer && userId) {
+    customer = await findCustomerById(db, userId, 'id, name, mobile, wallet_balance');
   }
   return customer;
 }

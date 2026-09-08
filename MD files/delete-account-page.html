@@ -1,0 +1,137 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Astrowani — "Delete Your Account" page.
+
+     PUBLISH AT:  https://astrowani.com/delete-account/
+     HOW:         WordPress → Pages → Add New → title "Delete Your Account"
+                  → add a "Custom HTML" block (or an Elementor "Text Editor"
+                  widget) → paste everything below this comment.
+                  Set the permalink slug to exactly: delete-account
+
+     WHY THIS PAGE EXISTS: Google Play requires a publicly reachable account
+     deletion URL for any app that lets users create an account, IN ADDITION to
+     the in-app deletion flow. It must be reachable without signing in, and the
+     URL is declared in Play Console → App content → Data safety.
+
+     BEFORE PUBLISHING, CONFIRM THE TWO PLACEHOLDERS MARKED "CONFIRM:" BELOW.
+     Everything else is drawn from the actual behaviour of
+     astrowani-backend/src/accountRoutes.js and is accurate as written.
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div style="max-width:760px;margin:0 auto;line-height:1.65;">
+
+  <h1>Delete Your Astrowani Account</h1>
+
+  <p>This page explains how to delete your account and what happens to your data
+  when you do. It applies to both of our apps:</p>
+
+  <ul>
+    <li><strong>Astrowani</strong> — for customers (<code>com.astrowanicustomer</code>)</li>
+    <li><strong>Astrowani Astrologer</strong> — for astrologers (<code>com.astrowaniVendor</code>)</li>
+  </ul>
+
+  <h2>Option 1 — Delete from inside the app (fastest)</h2>
+
+  <p>You can delete your account yourself, at any time, without contacting us:</p>
+
+  <ol>
+    <li>Open the app and make sure you are signed in.</li>
+    <li>Tap the menu icon in the top-left corner to open the side menu.</li>
+    <li>Tap <strong>Settings</strong>.</li>
+    <li>Tap <strong>Delete my account</strong>.</li>
+    <li>Read the confirmation screen — it shows your current wallet balance,
+        which will be forfeited — then confirm.</li>
+  </ol>
+
+  <p>Deletion takes effect immediately. You will be signed out and will not be
+  able to sign back in with that account.</p>
+
+  <h2>Option 2 — Ask us to delete it for you</h2>
+
+  <p>If you have uninstalled the app, cannot sign in, or would simply prefer we
+  handle it, contact us and we will delete the account for you:</p>
+
+  <ul>
+    <!-- CONFIRM: replace with a mailbox that is actually monitored. -->
+    <li><strong>Email:</strong> <a href="mailto:support@astrowani.com">support@astrowani.com</a></li>
+    <li><strong>Phone:</strong> +91-7297900990</li>
+  </ul>
+
+  <p>Please write from, or tell us, the mobile number registered on the account —
+  that number is how we identify it. We will verify that the request comes from
+  the account holder before deleting anything. We aim to action verified requests
+  within <strong>7 days</strong>, and will complete them within 30 days at the latest.</p>
+
+  <h2>What is deleted</h2>
+
+  <p>When your account is deleted, we delete:</p>
+
+  <ul>
+    <li>Your profile — name, mobile number, email, gender, and the birth details
+        (date, time and place of birth) used to generate your readings</li>
+    <li>Your profile photo</li>
+    <li>Your chat messages with astrologers</li>
+    <li>Your call and chat requests</li>
+    <li>Your saved delivery addresses</li>
+    <li>Your favourites, reviews and ratings</li>
+    <li>Your referral records and support tickets</li>
+    <li>Your voice notes</li>
+    <li>Your notification token, so the app can no longer send you notifications</li>
+  </ul>
+
+  <p>If you use the <strong>Astrowani Astrologer</strong> app, this additionally
+  deletes your public astrologer profile and biography, and your payout details —
+  bank account number, IFSC, account holder name and UPI id.</p>
+
+  <h2>What is kept, and why</h2>
+
+  <p>Indian law requires us to retain financial records, so a small amount of
+  information survives deletion where you have transacted with us:</p>
+
+  <ul>
+    <li><strong>Consultation and payment records</strong> — the date, duration and
+        amount of consultations you paid for, wallet top-ups, and any orders you
+        placed. These are accounting records we are legally required to keep.</li>
+    <li>Where these records exist, the account row itself is retained in a
+        <strong>de-identified</strong> form. Your mobile number is removed and
+        replaced with an internal reference, and your name, email address, birth
+        details, photographs and — for astrologers — your bank account and UPI
+        details are all erased. What remains is a bare reference the payment
+        records point at. It cannot be signed into, searched for, or contacted, and
+        it is no longer linked to you by any personal identifier.</li>
+  </ul>
+
+  <p>These records are kept for as long as required by applicable Indian
+  accounting and tax law, and are then deleted.
+  <!-- CONFIRM with your accountant/lawyer before publishing: the usual figure is
+       8 financial years under s.128 of the Companies Act, 2013. State the period
+       explicitly here — Play reviewers look for a concrete retention period. -->
+  If you have never paid for a consultation or added money to your wallet, there
+  are no such records and your account is deleted outright, with nothing retained.</p>
+
+  <h2>Two things to know before you delete</h2>
+
+  <ul>
+    <li><strong>Your wallet balance is forfeited.</strong> Money remaining in your
+        Astrowani wallet is not refundable on deletion. If you have a balance,
+        use it or request a refund <em>before</em> deleting. Astrologers should
+        withdraw their earnings first — withdrawn earnings are unaffected, but any
+        balance left in the app is lost.</li>
+    <li><strong>You cannot delete during a live consultation.</strong> If you are
+        in a chat, call or video session, end it first and then try again. This is
+        to protect billing for the astrologer you are speaking to. Astrologers
+        also cannot delete while a withdrawal request is still being processed —
+        wait until it is marked paid or rejected, then try again.</li>
+  </ul>
+
+  <h2>Deletion is permanent</h2>
+
+  <p>We cannot restore a deleted account, its history, or its wallet balance. If
+  you sign up again later with the same mobile number, it will be a new account
+  starting from zero.</p>
+
+  <h2>Questions</h2>
+
+  <p>See our <a href="https://astrowani.com/privacy-policy/">Privacy Policy</a>
+  for how we handle your data generally, or contact us using the details above.</p>
+
+</div>

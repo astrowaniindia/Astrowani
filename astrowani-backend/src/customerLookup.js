@@ -95,9 +95,61 @@ async function findAstrologerByPhone(db, phone, columns = 'id') {
   return data[0];
 }
 
+/**
+ * Resolve a customer row by uuid, refusing accounts that have been deleted.
+ *
+ * WHY THIS IS NOT JUST `.eq('id', id)`
+ * Self-service deletion (src/accountRoutes.js) cannot always destroy the row —
+ * chat_sessions.caller_id and wallet_transactions.user_id are ON DELETE RESTRICT,
+ * so an account with payment history is soft-removed instead: every personal field
+ * is cleared and `mobile` is replaced with a `deleted:<id>:<ts>` tag.
+ *
+ * That tag makes the PHONE lookup miss, which is what blocks sign-in. But every
+ * resolveCustomer() in this codebase falls back to `.eq('id', decoded.id)` when the
+ * phone lookup misses — and that fallback found the soft-removed row happily. So a
+ * JWT saved before deletion kept working for the rest of its 30-day life, on an
+ * account its owner had asked us to delete.
+ *
+ * The astrologer side of accountRoutes.js already guards against exactly this; its
+ * own comment noted the customer resolvers had the same shape and were left for
+ * later. This is that fix, in one place rather than five copies.
+ *
+ * `mobile` is appended to the caller's column list so the guard works regardless of
+ * what they asked for, then stripped back out so no caller sees a column it did not
+ * request (several pass their result straight into a response body).
+ *
+ * @param {object} db       Supabase client
+ * @param {string} id       uuid from the JWT
+ * @param {string} columns  select() list, e.g. 'id, name'
+ * @returns {Promise<object|null>} the row, or null if absent or deleted
+ */
+async function findCustomerById(db, id, columns = 'id, name') {
+  if (!id || !String(id).includes('-')) return null;
+  const asked = columns.split(',').map((c) => c.trim()).filter(Boolean);
+  const need = asked.includes('mobile') ? asked : asked.concat('mobile');
+  const { data, error } = await db
+    .from('customers')
+    .select(need.join(', '))
+    .eq('id', id)
+    .limit(1);
+  if (error || !data || !data.length) return null;
+  const row = data[0];
+  if (isDeletedCustomer(row)) return null;
+  if (!asked.includes('mobile')) delete row.mobile;
+  return row;
+}
+
+/** True for a row soft-removed by self-service deletion. */
+function isDeletedCustomer(row) {
+  return !!row && String(row.mobile || '').startsWith('deleted:');
+}
+
 module.exports = {
   canonicalDigits,
   phoneVariants,
   findCustomerByPhone,
+  findCustomerById,
+  isDeletedCustomer,
   findAstrologerByPhone,
 };
+

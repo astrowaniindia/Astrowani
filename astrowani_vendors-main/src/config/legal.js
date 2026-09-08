@@ -8,6 +8,10 @@
 export const LEGAL_LINKS = {
   termsOfUse: 'https://astrowani.com/term_conditions/',
   privacyPolicy: 'https://astrowani.com/privacy-policy/',
+  // Google Play requires a publicly reachable deletion URL in ADDITION to the
+  // in-app flow (Settings -> Delete my account). Declared in Play Console ->
+  // App content -> Data safety; kept here so the apps can link it too.
+  deleteAccount: 'https://astrowani.com/delete-account/',
 };
 
 export default LEGAL_LINKS;

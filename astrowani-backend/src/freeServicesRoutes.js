@@ -14,7 +14,7 @@
 // signs. The five content endpoints below stay unauthenticated and uncharged on purpose;
 // the ₹1 paywall is a separate, single gate in front of the visit as a whole.
 const jwt = require('jsonwebtoken');
-const { findCustomerByPhone } = require('./customerLookup');
+const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
 const wallet = require('./wallet');
@@ -47,9 +47,9 @@ async function resolveCustomer(req) {
         .then((r) => (r ? [r] : []));
     if (data && data.length) customer = data[0];
   }
-  if (!customer && userId && String(userId).includes('-')) {
-    const { data } = await db.from('customers').select('id, wallet_balance').eq('id', userId).single();
-    if (data) customer = data;
+  // Guarded: a soft-removed account must not resolve from a retained token.
+  if (!customer && userId) {
+    customer = await findCustomerById(db, userId, 'id, wallet_balance');
   }
   return customer;
 }

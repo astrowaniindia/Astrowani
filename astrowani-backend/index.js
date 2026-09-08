@@ -12,7 +12,7 @@ const { noteReadFailure, getDegradation } = require('./src/degradation');
 // Tolerant phone->account resolution. A JWT minted before the Aug-2026 phone
 // normalization carries a raw claim that no longer exact-matches the migrated
 // customers.mobile column; see src/customerLookup.js for the full failure mode.
-const { findCustomerByPhone, findAstrologerByPhone } = require('./src/customerLookup');
+const { findCustomerByPhone, findAstrologerByPhone, isDeletedCustomer } = require('./src/customerLookup');
 // iOS PushKit/CallKit ring for the vendor app. Degrades to a logged no-op when APNs
 // credentials are absent, so this require is safe on an unconfigured deployment.
 const { sendVoipPush, isVoipReady } = require('./src/voipPush');
@@ -2713,6 +2713,25 @@ async function resolveCustomerFromReq(req) {
       // then matches nothing.
       const row = await findCustomerByPhone(supabase, decoded.phone, 'id, name');
       if (row) { id = row.id; name = row.name || name; }
+      else if (id && String(id).includes('-')) {
+        // The phone claim missed. That is USUALLY a legacy token shape (see above),
+        // but it is also exactly what a self-service deletion looks like: deletion
+        // replaces `mobile` with a `deleted:` tag, so the phone lookup can no longer
+        // find the row while `decoded.userId` still points straight at it. Without
+        // this, a JWT saved before deletion kept working for the rest of its 30-day
+        // life on an account its owner asked us to delete.
+        //
+        // Deliberately narrow: only a row that EXISTS and is deleted-tagged refuses.
+        // A uuid with no row keeps the previous behaviour (returns the id as-is), so
+        // this cannot regress any legacy-token path. Costs one query only when the
+        // phone lookup already missed, which for a healthy account never happens.
+        const { data: byId } = await supabase
+          .from('customers').select('id, name, mobile').eq('id', id).limit(1);
+        if (byId && byId.length) {
+          if (isDeletedCustomer(byId[0])) return null;
+          name = byId[0].name || name;
+        }
+      }
     }
     return { id, name };
   } catch (_) {
