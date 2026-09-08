@@ -1,0 +1,168 @@
+// Share an astrologer's profile out of the app: their photo, a formal introduction,
+// and the Play Store link.
+//
+// TWO MODES, because the sentence changes with who is sharing:
+//   'self'      the astrologer sharing their OWN profile  -> "I am X ... consult me"
+//   'recommend' a customer sharing SOMEBODY ELSE'S        -> "I recommend X ... consult them"
+// The vendor app has a near-identical copy of this file. Deliberately a per-app copy
+// rather than a shared module: the two React Native apps have no common source root,
+// so a "shared" file would have to be reached through a relative path out of one app
+// and into the other, which breaks Metro's watch roots. Same reasoning as config/legal.js.
+//
+// WHY react-native-share AND NOT React Native's own Share:
+// RN's built-in Share sends TEXT ONLY on Android -- its `url` is just appended to the
+// message. Attaching an actual image needs the native module. It stays imported
+// defensively all the same (see the fallback chain below), because a share that
+// silently does nothing is worse than a share without a picture.
+//
+// NOTHING HERE MAY THROW INTO THE CALLER. Every failure degrades: photo -> no photo,
+// rich sheet -> plain sheet. Sharing is a promotional nicety; it must never be able to
+// break a profile screen.
+
+import { Share as RNShare } from 'react-native';
+import Share from 'react-native-share';
+import { PLAY_STORE_URL } from '../config/api';
+
+// Folded hands. Written as an escape rather than the literal character so the file
+// survives any toolchain that is not UTF-8 clean end to end.
+const NAMASTE = '\uD83D\uDE4F';
+
+// The photo is a nicety; the message is the point. If the image is slow we send the
+// text rather than leaving the user staring at a button that appears dead.
+const IMAGE_TIMEOUT_MS = 6000;
+
+/**
+ * Fetch a remote image and return it as a data: URI, which is what
+ * react-native-share accepts directly -- avoiding a filesystem dependency
+ * (the customer app has no react-native-fs).
+ * Returns null on any failure or timeout; never throws.
+ */
+async function imageAsDataUri(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') return null;
+  // Already inline (older base64 profile rows) -- hand it straight back.
+  if (imageUrl.startsWith('data:')) return imageUrl;
+  if (!imageUrl.startsWith('http')) return null;
+
+  try {
+    const withTimeout = (async () => {
+      const res = await fetch(imageUrl);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onerror = () => resolve(null);
+        reader.onloadend = () => {
+          const out = reader.result;
+          resolve(typeof out === 'string' && out.startsWith('data:') ? out : null);
+        };
+        reader.readAsDataURL(blob);
+      });
+    })();
+
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), IMAGE_TIMEOUT_MS));
+    return await Promise.race([withTimeout, timeout]);
+  } catch (_) {
+    return null;
+  }
+}
+
+/** "Vedic Astrology, Tarot" from the several shapes the API has used for specialties. */
+function specialtiesText(astrologer) {
+  const raw = astrologer?.specialties || astrologer?.categoryNames;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const names = raw
+    .map((s) => (typeof s === 'string' ? s : s?.name))
+    .filter(Boolean);
+  return names.length ? names.slice(0, 4).join(', ') : null;
+}
+
+/**
+ * The message body. Exported so it can be unit-tested without a share sheet, and so
+ * the vendor app's copy can be diffed against this one.
+ */
+export function buildAstrologerShareMessage({ astrologer, mode = 'recommend', t }) {
+  const name = astrologer?.name || astrologer?.firstName || t('share.fallbackName');
+  // Emoji lives here, not in the translation files -- one definition instead of four
+  // (two apps x two languages), and translators never have to preserve a surrogate pair.
+  const lines = [NAMASTE + ' ' + t('share.namaste'), ''];
+
+  lines.push(mode === 'self' ? t('share.selfLine', { name }) : t('share.otherLine', { name }));
+
+  const years = Number(astrologer?.experience);
+  if (Number.isFinite(years) && years > 0) lines.push(t('share.experienceLine', { years }));
+
+  const specialties = specialtiesText(astrologer);
+  if (specialties) lines.push(t('share.specialtiesLine', { list: specialties }));
+
+  // Only a rating somebody actually gave. A default 5.0 with no reviews behind it
+  // reads as a claim, and this text goes to strangers.
+  const rating = Number(astrologer?.rating ?? astrologer?.averageRating);
+  const reviews = Number(astrologer?.totalReviews);
+  if (mode !== 'self' && Number.isFinite(rating) && rating > 0 && Number.isFinite(reviews) && reviews > 0) {
+    lines.push(t('share.ratingLine', { rating: rating.toFixed(1), count: reviews }));
+  }
+
+  lines.push('');
+  lines.push(mode === 'self' ? t('share.selfClosing') : t('share.otherClosing', { name }));
+  lines.push('');
+  lines.push(t('share.downloadLine'));
+  lines.push(PLAY_STORE_URL);
+
+  return lines.join('\n');
+}
+
+/**
+ * Open the share sheet for an astrologer's profile.
+ *
+ * @param {object}   astrologer  the profile being shared
+ * @param {string}   mode        'self' | 'recommend'
+ * @param {function} t           translation fn from LanguageContext
+ * @param {function} [onEvent]   optional analytics hook: (name, props) => void
+ * @returns {Promise<boolean>} whether the sheet opened (NOT whether the user sent)
+ */
+export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t, onEvent }) {
+  const message = buildAstrologerShareMessage({ astrologer, mode, t });
+  // The two apps disagree about `userId`: it is the astrologer's id in the customer
+  // app, but an OBJECT of name/gender/phone fields in the vendor app's Profile screen.
+  // Take it only when it is actually a string, so analytics never receives an object
+  // (or, worse, a phone number) in place of an id.
+  const astrologerId = typeof astrologer?.userId === 'string'
+    ? astrologer.userId
+    : (astrologer?._id || astrologer?.id || null);
+  const title = t('share.dialogTitle');
+  const report = (name, props) => { try { onEvent && onEvent(name, props); } catch (_) {} };
+
+  const imageUrl = astrologer?.profileImage || astrologer?.profile_pic_url || astrologer?.image;
+  const dataUri = await imageAsDataUri(imageUrl);
+
+  // 1. Photo + text.
+  if (dataUri) {
+    try {
+      await Share.open({ title, message, url: dataUri, failOnCancel: false });
+      report('astrologer_profile_shared', { mode, with_image: true, astrologer_id: astrologerId });
+      return true;
+    } catch (_) {
+      // fall through -- a share sheet that refuses an attachment must not lose the text
+    }
+  }
+
+  // 2. Text only, still through the native sheet.
+  try {
+    await Share.open({ title, message, failOnCancel: false });
+    report('astrologer_profile_shared', { mode, with_image: false, astrologer_id: astrologerId });
+    return true;
+  } catch (_) {}
+
+  // 3. Last resort: React Native's own sheet. Covers the case where the native module
+  //    is missing entirely -- e.g. a JS bundle that reached a build predating it.
+  try {
+    await RNShare.share({ message });
+    report('astrologer_profile_shared', { mode, with_image: false, fallback: true, astrologer_id: astrologerId });
+    return true;
+  } catch (_) {}
+
+  report('astrologer_profile_share_failed', { mode, astrologer_id: astrologerId });
+  return false;
+}
+
+export default shareAstrologerProfile;

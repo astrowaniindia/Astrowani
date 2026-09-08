@@ -19,6 +19,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { fetchAstrologerRow } from '../../utils/vendorProfile';
 import { LanguageContext } from '../../context/LanguageContext';
+import { shareAstrologerProfile } from '../../utils/shareAstrologerProfile';
+import { captureEvent } from '../../utils/Analytics';
 
 export default function Profile({ navigation }) {
   const { t } = useContext(LanguageContext);
@@ -72,6 +74,29 @@ export default function Profile({ navigation }) {
       fetchData();
     }, []),
   );
+  // Share my own profile: photo, a formal introduction and the CUSTOMER app's Play
+  // Store link (not this app's -- the recipient is a prospective client, see
+  // config/api.js CUSTOMER_PLAY_STORE_URL). mode 'self' makes the copy first person:
+  // "I am X ... you can consult me".
+  const [sharing, setSharing] = useState(false);
+  const onShareProfile = async () => {
+    if (sharing || !data) return;   // the image fetch can take a moment; no double sheets
+    setSharing(true);
+    try {
+      const ok = await shareAstrologerProfile({
+        astrologer: data,
+        mode: 'self',
+        t,
+        onEvent: captureEvent,
+      });
+      // The helper never throws and already falls back twice; false means even the
+      // built-in sheet refused, which is worth saying rather than looking dead.
+      if (!ok) Alert.alert(t('share.failedTitle'), t('share.failed'));
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await AsyncStorage.clear();
@@ -105,10 +130,23 @@ export default function Profile({ navigation }) {
           <Text style={styles.profileName}>{data?.name || 'Name not available'}</Text>
           <Text style={styles.profileEmail}>{data?.email || 'Email not available'}</Text>
           
-          <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditProfile')}>
-            <Icon name="edit" size={16} color={COLORS.white} />
-            <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditProfile')}>
+              <Icon name="edit" size={16} color={COLORS.white} />
+              <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.editButton, sharing && styles.editButtonBusy]}
+              onPress={onShareProfile}
+              disabled={sharing}>
+              {sharing ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Icon name="share" size={16} color={COLORS.white} />
+              )}
+              <Text style={styles.editButtonText}>{t('share.shareMyProfile')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -249,6 +287,14 @@ const styles = StyleSheet.create({
     color: '#EEEEEE',
     marginTop: verticalScale(4),
   },
+  // Row wrapper so Edit and Share sit side by side. It owns the top margin that used
+  // to be on the button itself, and wraps on a narrow screen rather than overflowing.
+  headerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: verticalScale(15),
+  },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -256,9 +302,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(15),
     paddingVertical: verticalScale(8),
     borderRadius: moderateScale(20),
-    marginTop: verticalScale(15),
+    marginHorizontal: scale(4),
+    marginVertical: verticalScale(4),
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.5)',
+  },
+  editButtonBusy: {
+    opacity: 0.7,
   },
   editButtonText: {
     color: COLORS.white,

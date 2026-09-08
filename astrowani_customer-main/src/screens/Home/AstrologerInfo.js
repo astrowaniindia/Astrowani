@@ -8,7 +8,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Share,
   Dimensions,
   Modal,
   StatusBar,
@@ -41,6 +40,7 @@ import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {formatBusyLabel} from '../../utils/busyLabel';
 import {requestNotifyMe} from '../../utils/notifyMe';
 import {captureEvent} from '../../utils/Analytics';
+import { shareAstrologerProfile } from '../../utils/shareAstrologerProfile';
 import {
   unreachableState,
   unreachableLabelKey,
@@ -638,14 +638,22 @@ const AstrologerInfo = ({route, navigation}) => {
     fetchFavorites();
   }, [navigation, person._id]);
 
+  // Share this astrologer's profile: their photo, a formal introduction and the Play
+  // Store link. Was a bare "Check out X on Astrowani!" with no link at all, so a
+  // recipient had nothing to act on. mode 'recommend' -- the customer is sharing
+  // SOMEBODY ELSE's profile, so the copy is third person ("I recommend X ... consult
+  // them"), unlike the vendor app where an astrologer shares their own.
   const onShare = async () => {
-    try {
-      await Share.share({
-        message: `Check out ${person.name || 'this Astrologer'} on Astrowani!`,
-      });
-    } catch (error) {
-      alert(error.message);
-    }
+    const ok = await shareAstrologerProfile({
+      astrologer: person,
+      mode: 'recommend',
+      t,
+      onEvent: captureEvent,
+    });
+    // shareAstrologerProfile never throws and already falls back twice; a false here
+    // means even RN's own sheet refused to open, which is worth telling the user about
+    // rather than leaving the button looking dead.
+    if (!ok) showStatusPopup({ variant: 'info', title: t('share.failedTitle'), message: t('share.failed') });
   };
 
   const toggleFavorite = async () => {
