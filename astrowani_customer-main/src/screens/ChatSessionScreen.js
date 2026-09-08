@@ -145,6 +145,13 @@ const ChatSessionScreen = ({ route, navigation }) => {
   };
 
   // ─── Auto first message: customer birth details → astrologer ───────────────
+  //
+  // Identifies the auto-sent details message when reading back history, so the send
+  // gate below can ask "already sent?" instead of "is the chat empty?". Deliberately
+  // excludes the leading emoji: this must match the text of messages ALREADY in the
+  // database, and plain ASCII cannot be broken by an encoding difference.
+  const DETAILS_MARKER = 'Namaste! Here are my details for the reading:';
+
   const sendCustomerDetails = async (sessionData, senderId) => {
     try {
       // Pull the latest profile from the backend, not a direct `customers` read —
@@ -357,10 +364,28 @@ const ChatSessionScreen = ({ route, navigation }) => {
               setVendorTyping(isTyping);
             });
 
-            // On the very first connect (no prior messages), auto-send the customer's
-            // birth details so the astrologer has them up front. Sent after subscribing
-            // so it also renders on the customer's own screen via Realtime.
-            if ((!msgs || msgs.length === 0) && !detailsSentRef.current) {
+            // Auto-send the customer's birth details so the astrologer has them up
+            // front. Sent after subscribing so it also renders on the customer's own
+            // screen via Realtime.
+            //
+            // The condition is "have my details already been sent in this session?",
+            // NOT "is the chat empty?". It used to be the latter, and the astrologer's
+            // own greeting suppressed it: the session goes active, this screen polls
+            // once a second and then fetches history, and if the astrologer types
+            // "Hello" inside that window their message is already in the response.
+            // msgs.length was then 1, not 0, so the details were never sent at all and
+            // the astrologer had to ask for a date of birth by hand. Observed in
+            // production 2026-09-08: greeting at 20:13:00.203 on a session started at
+            // 20:12:56.693 -- a 3.5s race the fetch only wins when the round trip is
+            // quick. Whoever typed first decided it.
+            //
+            // Matching the marker rather than counting messages also means a reconnect
+            // mid-session still will not duplicate them, and a FAILED history fetch
+            // (msgs null) errs toward sending -- sending twice is recoverable, an
+            // astrologer reading a chart without a birth date is not.
+            const detailsAlreadySent = Array.isArray(msgs)
+              && msgs.some((m) => String((m && m.message) || '').includes(DETAILS_MARKER));
+            if (!detailsAlreadySent && !detailsSentRef.current) {
               detailsSentRef.current = true;
               await sendCustomerDetails(data, userId);
             }
