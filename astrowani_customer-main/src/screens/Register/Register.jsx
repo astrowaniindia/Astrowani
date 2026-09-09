@@ -390,10 +390,34 @@ export default function Register({ navigation }) {
         />
       </View>
 
+      {/*
+        NO keyboardVerticalOffset. It MUST stay 0 here, and the reason is measured,
+        not guessed.
+
+        The offset exists to compensate for content sitting above a KeyboardAvoidingView
+        that the view cannot see — which is the case only when the KAV is the screen
+        root. This one already renders BELOW the header and progress bar, and React
+        Native measures that as frame.y = 132, so an offset double-counts it.
+
+        Worse, the offset leaks as PERMANENT padding once the keyboard has been used.
+        On hide, iOS reports the keyboard frame at screenY = window height, and RN
+        computes:
+
+            keyboardY = 852 - offset
+            padding   = max(frame.y + frame.height - keyboardY, 0)
+
+        With offset = insets.top + verticalScale(60) = 59 + 75 = 134 that gives
+        max(132 + 720 - 718, 0) = 134pt of padding instead of 0 — so after the first
+        tap into any field the form permanently lost 134pt, the footer jumped to the
+        middle of the screen and a dead band appeared beneath it. Measured on an
+        iPhone 14 Pro: the ScrollView went from h605 to h471 and never recovered.
+
+        Android never showed this because `behavior` is undefined there, so the KAV
+        is inert.
+      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={insets.top + verticalScale(60)}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/*
           style={{flex: 1}} is LOAD-BEARING, not tidying.
 
