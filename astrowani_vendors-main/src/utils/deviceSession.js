@@ -8,10 +8,10 @@
 // Blocking the second sign-in until they log out on the old device was considered
 // and rejected: an astrologer whose old phone is lost, broken, sold or simply not
 // to hand would be locked out of their own income with no self-service way back.
-import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
-import { preserveDeviceId } from './deviceId';
+import { showStatusPopup } from '../components/StatusPopup';
+import { preserveDeviceId, getDeviceId } from './deviceId';
 
 /** "Android, 2 hours ago" — enough to recognise the device, nothing more. */
 function describeDevice(d, t) {
@@ -33,24 +33,68 @@ function describeDevice(d, t) {
  *
  * @returns {Promise<boolean>} true = continue here and sign the others out.
  *
- * Uses Alert rather than a themed modal on purpose: this fires during the sign-in
- * transition, before any screen has settled, and a root-level modal raised at that
- * moment is the stacked-modal shape that freezes iOS (see the ios_platform_traps
- * memory). cancelable:false so it cannot be dismissed into an undecided state.
+ * Uses the app's own themed popup rather than the OS Alert. An earlier version used
+ * Alert on the theory that a root-level modal raised during the sign-in transition
+ * was the stacked-modal shape that freezes iOS — but this is awaited BEFORE
+ * navigation.reset, so only one modal is ever on screen, and the plain white system
+ * dialog looked broken next to the rest of the app on both platforms.
+ *
+ * Dismissing it (Android back) resolves FALSE — the safe direction, since it keeps
+ * the device the astrologer is actually holding rather than silently taking over.
  */
 export function confirmDeviceTakeover(others, t) {
   const list = (others || []).map((d) => describeDevice(d, t)).join('\n');
   return new Promise((resolve) => {
-    Alert.alert(
-      t('device.alreadySignedInTitle'),
-      t('device.alreadySignedInBody', { list }),
-      [
-        { text: t('device.keepOther'), style: 'cancel', onPress: () => resolve(false) },
-        { text: t('device.continueHere'), style: 'destructive', onPress: () => resolve(true) },
-      ],
-      { cancelable: false },
-    );
+    showStatusPopup({
+      variant: 'info',
+      title: t('device.alreadySignedInTitle'),
+      message: t('device.alreadySignedInBody', { list }),
+      confirmText: t('device.continueHere'),
+      cancelText: t('device.keepOther'),
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
   });
+}
+
+/**
+ * End this device's session because ANOTHER device took the account over.
+ *
+ * Deliberately does NOT call /api/vendor/logout: the row for this device is already
+ * gone (the takeover deleted it), and calling logout would look like "the last
+ * device signed out" and stamp logged_out_at on an account that is signed in and
+ * online elsewhere — reintroducing the exact bug this whole subsystem exists to fix.
+ */
+export async function forceSignOutLocally() {
+  try {
+    await AsyncStorage.clear();
+  } catch (_) { /* ignore */ }
+  // clear() takes the device id with it; see deviceId.js.
+  await preserveDeviceId();
+}
+
+/**
+ * Is this device still signed in, or did another device take over while we were away?
+ *
+ * ⚠ FAILS OPEN in every direction — any error, any unreadable answer, and any
+ * response that is not an explicit `signedIn: false` returns true. Wrongly signing
+ * an astrologer out mid-shift costs them income; leaving a stale session up merely
+ * shows a screen they can log out of.
+ */
+export async function isStillSignedIn() {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) return true; // not signed in at all — not our problem to decide
+    const deviceId = await getDeviceId();
+    const res = await Instance.get('/api/vendor/devices/check', {
+      params: { deviceId },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res?.data?.signedIn !== false;
+  } catch (e) {
+    console.log('[deviceSession] session check failed, assuming signed in —', e?.message);
+    return true;
+  }
 }
 
 /**

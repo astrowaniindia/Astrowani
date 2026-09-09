@@ -275,8 +275,69 @@ async function pushTargetFor(astrologerId) {
   };
 }
 
+/**
+ * Every signed-in device for this astrologer, or NULL when that cannot be known.
+ *
+ * The null/[] distinction is the whole point and mirrors countDevices: NULL means
+ * "unreadable — missing table, unapplied migration, query failure", while [] means
+ * "read fine, genuinely no devices". Callers deciding whether to end somebody's
+ * session must treat NULL as "leave them alone", never as "nobody is signed in".
+ */
+async function listDevices(astrologerId) {
+  if (!astrologerId) return null;
+  const { data, error } = await db
+    .from('vendor_devices')
+    .select('device_id, platform, last_seen_at')
+    .eq('astrologer_id', astrologerId);
+
+  if (error) {
+    if (isMissingTable(error)) { noteMissing('listDevices'); return null; }
+    console.error('[vendorDevices] listDevices failed:', error.message);
+    return null;
+  }
+  return data || [];
+}
+
+/**
+ * The socket room name for one specific device.
+ *
+ * Sockets join TWO rooms: the account room (the astrologer id, used for things
+ * every device should see — notifications, badges, prompts) and this device room,
+ * used for anything that must reach exactly one handset.
+ */
+function deviceRoom(astrologerId, deviceId) {
+  return `${astrologerId}::${deviceId}`;
+}
+
+/**
+ * The socket room that should receive a live RING for this astrologer.
+ *
+ * Ringing goes to the NEWEST signed-in device only, matching pushTargetFor —
+ * otherwise a second signed-in phone rings for a call it cannot be handed, and
+ * two devices race to accept the same customer.
+ *
+ * ⚠ Falls back to the ACCOUNT room whenever a device cannot be resolved: no rows,
+ * the migration not applied, an old build that sends no deviceId, or a read
+ * failure. That fallback is load-bearing and must not be "tightened" — a ring
+ * that reaches every device is a nuisance, but a ring that reaches NO device is a
+ * lost consultation and lost income for the astrologer.
+ */
+async function ringRoomFor(astrologerId) {
+  if (!astrologerId) return null;
+  try {
+    const device = await activeDevice(astrologerId);
+    if (device && device.device_id) return deviceRoom(astrologerId, device.device_id);
+  } catch (err) {
+    console.error('[vendorDevices] ringRoomFor fell back to the account room:', err.message);
+  }
+  return String(astrologerId);
+}
+
 module.exports = {
   pushTargetFor,
+  listDevices,
+  deviceRoom,
+  ringRoomFor,
   listOtherDevices,
   signOutOtherDevices,
   registerDevice,

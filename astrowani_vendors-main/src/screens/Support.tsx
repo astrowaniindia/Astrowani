@@ -22,6 +22,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform,
   KeyboardAvoidingView, ActivityIndicator, Animated, Easing,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
@@ -73,6 +74,11 @@ async function auth() {
 
 export default function Support({navigation}) {
   const {t} = useContext(LanguageContext);
+  // This screen had NO safe-area handling: its maroon header sat directly at y=0, so
+  // on a notched iPhone the title rendered underneath the dynamic island. Android was
+  // unaffected because the status bar is not an overlay there, which is why it only
+  // showed up on the first real iOS pass.
+  const insets = useSafeAreaInsets();
 
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -246,7 +252,7 @@ export default function Support({navigation}) {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      <View style={[styles.header, {paddingTop: insets.top + verticalScale(10)}]}>
         <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backBtn} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
           <Ionicons name="arrow-back" size={moderateScale(23)} color="#fff" />
         </TouchableOpacity>
@@ -321,7 +327,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.AstroMaroon,
     paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(10),
+    // paddingTop is applied inline from the safe-area inset; only the bottom is fixed.
+    paddingBottom: verticalScale(10),
   },
   backBtn: {padding: scale(4), marginRight: scale(6)},
   headerTitle: {color: '#fff', fontSize: moderateScale(16.5), fontWeight: 'bold'},

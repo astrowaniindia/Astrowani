@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Dimensions} from 'react-native';
 import IntroSplash from '../screens/Splash/IntroSplash';
 import { NavigationContainer } from '@react-navigation/native';
 import { PostHogProvider } from 'posthog-react-native';
@@ -488,7 +488,14 @@ function DrawerNavigator({ navigation }) {
           <CustomDrawer {...props} />
         </ErrorBoundary>
       )}
-      screenOptions={{ headerShown: false }}>
+      screenOptions={{
+        headerShown: false,
+        // Give the drawer an explicit width. Left unset, react-navigation's default
+        // sizing made it span almost the entire screen on a real phone, so opening it
+        // read as a full-screen takeover rather than a side panel. Capped so it does
+        // not become absurdly wide on a tablet.
+        drawerStyle: { width: Math.min(Dimensions.get('window').width * 0.82, 330) },
+      }}>
       <Drawer.Screen
         name="HomeStack"
         component={HomeStack}

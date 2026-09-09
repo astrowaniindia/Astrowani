@@ -15,6 +15,7 @@ import {
   Animated,
   Pressable,
   RefreshControl,
+  AppState,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
@@ -37,6 +38,9 @@ import { startRinging, stopRinging } from '../../utils/incomingRingtone';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import { getDeviceId } from '../../utils/deviceId';
+import { forceSignOutLocally, isStillSignedIn } from '../../utils/deviceSession';
+import { showStatusPopup } from '../../components/StatusPopup';
 
 // Same key scheme as incomingRequestNotifications.js's idKeyFor — must match so accept/reject/
 // dismiss here also cancels the OS notification (and its ringtone tracking) for the same request.
@@ -87,6 +91,38 @@ const toggleStyles = StyleSheet.create({
 
 const HomeScreen = () => {
   const navigation = useNavigation();
+
+  // Ends this session when another device has taken the account over. Shared by the
+  // live socket event and the on-foreground re-check below, so both routes behave
+  // identically no matter which notices first.
+  const forcedOutRef = useRef(false);
+  const handleForcedSignOut = useCallback(async () => {
+    if (forcedOutRef.current) return;   // one popup, one reset — never a pile-up
+    forcedOutRef.current = true;
+    try { stopRinging(); } catch (_) {}
+    await forceSignOutLocally();
+    showStatusPopup({
+      variant: 'info',
+      title: t('device.signedOutTitle'),
+      message: t('device.signedOutBody'),
+      buttonText: t('device.signedOutOk'),
+      onClose: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+    });
+  }, [navigation, t]);
+
+  // A device that was backgrounded or killed never receives the live
+  // force_signed_out event, so re-check whenever the app comes back to the
+  // foreground. isStillSignedIn fails OPEN — only an explicit "your device row is
+  // gone" ends the session, never a network blip.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (next) => {
+      if (next !== 'active' || forcedOutRef.current) return;
+      const ok = await isStillSignedIn();
+      if (!ok) handleForcedSignOut();
+    });
+    return () => sub.remove();
+  }, [handleForcedSignOut]);
+
   const { t } = useContext(LanguageContext);
   const socketRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -234,8 +270,21 @@ const HomeScreen = () => {
     }
 
     if (socketRef.current) {
-      console.log('Emitting join_room for vendor/astrologer:', astroId);
-      socketRef.current.emit('join_room', astroId);
+      // Join with THIS device's id. The backend puts the socket in a device-scoped
+      // room as well as the account room, and rings only the newest device — without
+      // the id it falls back to the account room and every signed-in phone rings.
+      const myDeviceId = await getDeviceId();
+      console.log('Emitting join_room for vendor/astrologer:', astroId, 'device:', myDeviceId);
+      socketRef.current.emit('join_room', astroId, myDeviceId);
+
+      // Another device took the account over. The row for this device is already
+      // gone server-side, so this session can no longer be rung — say so plainly
+      // instead of leaving a dead "You are Online" screen up.
+      socketRef.current.off('force_signed_out');
+      socketRef.current.on('force_signed_out', () => {
+        console.log('[Vendor] force_signed_out received — another device took over');
+        handleForcedSignOut();
+      });
 
       // Socket path: fast notification for the popup (does NOT navigate directly — handleAccept does that)
       socketRef.current.off('incoming_call'); // prevent duplicate listeners on re-init

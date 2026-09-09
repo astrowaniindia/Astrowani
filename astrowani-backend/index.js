@@ -423,7 +423,9 @@ function scheduleSessionAbandonCheck(sessionId, participantId) {
 io.on('connection', (socket) => {
   console.log('A user connected via Socket.io:', socket.id);
 
-  socket.on('join_room', async (userId) => {
+  // deviceId is OPTIONAL and second so every existing caller — and every installed
+  // build that emits join_room with one argument — keeps working unchanged.
+  socket.on('join_room', async (userId, deviceId) => {
     const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
     if (!realId) {
       console.warn(`[socket] join_room rejected for claimed id ${userId} — missing/invalid auth token`);
@@ -433,7 +435,20 @@ io.on('connection', (socket) => {
       console.warn(`[socket] join_room: claimed id ${userId} did not match verified id ${realId} — joining the verified room only`);
     }
     socket.join(realId);
-    console.log(`User ${realId} joined their personal room (verified).`);
+
+    // A SECOND, device-scoped room. The account room above still exists and still
+    // receives everything every device should see (notifications, badges, prompts);
+    // this one carries what must reach exactly ONE handset — the ring, and the
+    // forced sign-out when another device takes the account over.
+    //
+    // Without this the per-device model was database-only: pushTargetFor targeted
+    // one device for FCM while io.to(astroId) rang all of them, so a foregrounded
+    // second device rang for calls it could never be handed. Measured 2026-09-10.
+    if (deviceId) {
+      socket.data.deviceId = String(deviceId);
+      socket.join(vendorDevices.deviceRoom(realId, deviceId));
+    }
+    console.log(`User ${realId} joined their personal room (verified)${deviceId ? ` + device ${String(deviceId).slice(0, 8)}…` : ''}.`);
   });
 
   // SECURITY (2026-08-08 — see MD files/security-audit-2026-08-08.md, "chat room-membership
@@ -481,8 +496,9 @@ io.on('connection', (socket) => {
       console.warn(`[socket] unauthenticated initiate_call from socket ${socket.id} dropped`);
       return;
     }
-    console.log('Incoming call to:', data.astrologer_id);
-    io.to(data.astrologer_id).emit('incoming_call', data);
+    const ringRoom = await vendorDevices.ringRoomFor(data.astrologer_id);
+    console.log(`Incoming call to: ${data.astrologer_id} (ringing ${ringRoom})`);
+    io.to(ringRoom).emit('incoming_call', data);
   });
 
   socket.on('accept_call', async (data) => {
@@ -3412,8 +3428,11 @@ app.post('/api/call/initiate', async (req, res) => {
       }
       const requestId = requestRow.id;
 
-      // Notify vendor via socket — no ENX tokens, WebRTC signaling happens via socket.io
-      io.to(receiverId).emit('incoming_call', {
+      // Notify vendor via socket — no ENX tokens, WebRTC signaling happens via socket.io.
+      // Ring the NEWEST signed-in device only (see vendorDevices.ringRoomFor); this
+      // falls back to the account room when no device can be resolved.
+      const ringRoom = await vendorDevices.ringRoomFor(receiverId);
+      io.to(ringRoom).emit('incoming_call', {
         callType: callType || 'audio',
         callerName: callerInfo.name,
         callerId: callerInfo.id,
@@ -4517,12 +4536,80 @@ app.post('/api/vendor/devices/sign-out-others', async (req, res) => {
       return res.status(400).json({ success: false, message: 'deviceId is required' });
     }
 
+    // Read the other devices BEFORE deleting them — once the rows are gone there is
+    // no way to address those handsets.
+    let victims = [];
+    try {
+      victims = await vendorDevices.listOtherDevices(vendorId, deviceId);
+    } catch (e) {
+      console.error('[vendor devices] could not list devices before takeover:', e.message);
+    }
+
     const signedOut = await vendorDevices.signOutOtherDevices(vendorId, deviceId);
-    console.log(`[vendor devices] ${vendorId} took over: ${signedOut} other device(s) signed out`);
+
+    // Deleting the row stops that device being RUNG. It does not end its SESSION —
+    // the app still holds a valid 30-day JWT and sits on Home showing "You are
+    // Online". Measured 2026-09-10: the astrologer confirmed the takeover and the
+    // old device stayed signed in. So tell it, over its own device room.
+    //
+    // Best-effort by design: a device that is backgrounded or killed never receives
+    // this. That case is covered by the app re-checking on foreground
+    // (GET /api/vendor/devices/check), not by this event.
+    for (const d of victims) {
+      if (!d || !d.device_id) continue;
+      io.to(vendorDevices.deviceRoom(vendorId, d.device_id)).emit('force_signed_out', {
+        reason: 'takeover',
+        at: new Date().toISOString(),
+      });
+    }
+
+    console.log(`[vendor devices] ${vendorId} took over: ${signedOut} other device(s) signed out, ${victims.length} notified`);
     return res.json({ success: true, signedOut });
   } catch (err) {
     console.error('[vendor devices] sign-out-others failed:', err.message);
     return res.status(500).json({ success: false, message: 'Could not sign out the other devices' });
+  }
+});
+
+/**
+ * "Is this device still signed in?"
+ *
+ * The safety net for the force-signed-out event above, which a backgrounded or
+ * killed app never receives. The vendor app calls this when it returns to the
+ * foreground; a false answer means another device took the account over.
+ *
+ * ⚠ FAILS OPEN, and every branch here matters. `signedIn: true` is returned for a
+ * missing table, an unapplied migration, a read failure, a caller that sends no
+ * deviceId, and an astrologer who has NO device rows at all (an old build that
+ * never registered one). Signing somebody out wrongly kicks a working astrologer
+ * off mid-shift and costs them income; leaving a stale session signed in merely
+ * shows a screen they can log out of. Only an explicit "rows exist and yours is
+ * not among them" is treated as signed out.
+ */
+app.get('/api/vendor/devices/check', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    let decoded;
+    try {
+      decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    const deviceId = req.query.deviceId;
+    if (!vendorId || !String(vendorId).includes('-') || !deviceId) {
+      return res.json({ success: true, signedIn: true });
+    }
+
+    const rows = await vendorDevices.listDevices(vendorId);
+    if (rows === null) return res.json({ success: true, signedIn: true });   // unreadable / no table
+    if (rows.length === 0) return res.json({ success: true, signedIn: true }); // never registered
+    const mine = rows.some((d) => String(d.device_id) === String(deviceId));
+    return res.json({ success: true, signedIn: mine });
+  } catch (err) {
+    console.error('[vendor devices] check failed:', err.message);
+    return res.json({ success: true, signedIn: true });
   }
 });
 

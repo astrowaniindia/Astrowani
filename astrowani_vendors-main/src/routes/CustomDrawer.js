@@ -6,6 +6,7 @@ import {
   Image,
   TouchableOpacity,
   StatusBar,
+  Platform,
 } from 'react-native';
 import {DrawerContentScrollView, DrawerItem} from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -25,6 +26,17 @@ import { fetchAstrologerRow } from '../utils/vendorProfile';
 import { LanguageContext } from '../context/LanguageContext';
 function CustomDrawer(props) {
   const insets = useSafeAreaInsets();
+  // ⚠ Do NOT rely on insets.top alone here. Inside a drawer, react-navigation can
+  // consume the safe-area insets before this component sees them, so insets.top
+  // comes back 0 on exactly the notched devices that need it — which is how the
+  // header ended up drawn underneath the status bar / dynamic island (reported on
+  // a real iPhone, 2026-09-10). Falling back to the platform's own status-bar
+  // height means the worst case is a few extra points of padding, never a title
+  // hidden behind the clock.
+  const safeTop = Math.max(
+    insets.top,
+    Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 24),
+  );
   const { language, changeLanguage, t } = useContext(LanguageContext);
   const [user, setUser] = useState(null);
   const [data, setData] = useState(null);
@@ -125,7 +137,7 @@ function CustomDrawer(props) {
       {/* Header Section */}
       <LinearGradient
         colors={['#3d1c11', COLORS.AstroMaroon]}
-        style={[styles.headerSection, {paddingTop: insets.top + verticalScale(20)}]}>
+        style={[styles.headerSection, {paddingTop: safeTop + verticalScale(20)}]}>
         <Text style={styles.appTitle}>Astrowani Vendors</Text>
         <TouchableOpacity
           style={styles.userInfoSection}
