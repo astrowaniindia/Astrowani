@@ -9,7 +9,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   StatusBar,
   ImageBackground,
   ScrollView,
@@ -279,7 +278,12 @@ const VendorChatSession = ({ route, navigation }) => {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, {paddingTop: insets.top}]}>
+    // NOT SafeAreaView. This screen applies the safe-area insets ITSELF —
+    // insets.top here and insets.bottom on the input row below — and SafeAreaView
+    // applies them again as its own padding, so both edges were counted twice
+    // (~59pt top, ~34pt bottom on an iPhone 14 Pro). A plain View makes the manual
+    // insets the single source of truth. Same defect Register.jsx had.
+    <View style={[styles.safeArea, {paddingTop: insets.top}]}>
       <StatusBar backgroundColor={COLORS.AstroMaroon} barStyle="light-content" />
 
       {/* ── Header ─────────────────────────────── */}
@@ -367,7 +371,7 @@ const VendorChatSession = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 };
 

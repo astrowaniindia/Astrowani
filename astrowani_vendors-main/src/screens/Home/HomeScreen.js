@@ -572,7 +572,18 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/*
+        style={{flex: 1}} is what PINS the bottom bar below. Without it the
+        ScrollView sizes to its own content instead of claiming the space above
+        the bar, so the bar sits wherever the content happens to end — and with
+        content taller than the screen it is pushed off entirely. Android's
+        ScrollView measurement fills the parent regardless; iOS does not.
+
+        The style is literally named fixedBottomBar, so pinning is the intent.
+        Same defect the customer app's Register screen had.
+      */}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
