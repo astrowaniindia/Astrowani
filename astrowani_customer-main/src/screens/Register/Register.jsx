@@ -560,7 +560,20 @@ export default function Register({ navigation }) {
                     in chat, and it can never be used for a chart. The picker stores a
                     resolved "City, State, Country" instead. Same keyless provider as
                     the report screens, so there is no billing dependency. */}
-                <Field label={t('register.pobLabel')} optional optionalText={t('register.optional')}>
+                {/*
+                  zIndex is REQUIRED here, and PlaceAutocomplete already having one is
+                  not enough. zIndex only orders siblings within the SAME parent: the
+                  component's own zIndex:1000 wrapper lives inside this Field, so it
+                  competes with the Field's other children — not with the hint card
+                  below, which is a sibling of the FIELD. With neither carrying a
+                  zIndex, paint order decided it and the later hint card covered the
+                  suggestions dropdown.
+                */}
+                <Field
+                  label={t('register.pobLabel')}
+                  optional
+                  optionalText={t('register.optional')}
+                  style={styles.placeField}>
                   <PlaceAutocomplete
                     placeholder={t('register.placeOfBirth')}
                     inputStyle={styles.input}
@@ -675,9 +688,9 @@ export default function Register({ navigation }) {
 // Labelled field wrapper. The old form was placeholder-only, so every label
 // vanished the moment the user started typing and the filled form read as a
 // column of unlabelled values.
-function Field({ label, optional, optionalText, children }) {
+function Field({ label, optional, optionalText, children, style }) {
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, style]}>
       <Text style={styles.fieldLabel}>
         {label}
         {optional && <Text style={styles.optionalTag}>{`  ${optionalText}`}</Text>}
@@ -835,6 +848,10 @@ const styles = StyleSheet.create({
   },
   pickerText: { flex: 1, marginLeft: scale(10), fontSize: moderateScale(14.5), color: '#2b1a12' },
   pickerPlaceholder: { color: '#9b8f8a' },
+
+  // Above the hint card that follows it, so the suggestions dropdown is not
+  // painted over. elevation is the Android half of the same fix.
+  placeField: { zIndex: 20, elevation: 20 },
 
   noteCard: {
     flexDirection: 'row',
