@@ -187,6 +187,15 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
   const imageUrl = astrologer?.profileImage || astrologer?.profile_pic_url || astrologer?.image;
   const image = await imageAsDataUri(imageUrl);
 
+  // iOS infers what an attachment IS from the filename's EXTENSION, not from `type`.
+  // With a bare 'astrowani-astrologer' the share sheet showed "File - 62 KB" and only
+  // offered Copy / Print / Save to Files, instead of treating it as a photo. Android
+  // is unaffected either way because react-native-share reads `type` there.
+  // Measured on an iPhone 14 Pro simulator, 2026-09-09.
+  const ext = image && /png/i.test(image.mime || '') ? '.png'
+    : image && /webp/i.test(image.mime || '') ? '.webp'
+    : '.jpg';
+
   // 1. Photo + text. `type` and `filename` are both required on Android: these profile
   //    URLs have no file extension, so without them react-native-share has nothing to
   //    derive a file name from and fails to build a Uri (see imageAsDataUri above).
@@ -197,7 +206,7 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
         message,
         url: image.dataUri,
         type: image.mime,
-        filename: 'astrowani-astrologer',
+        filename: `astrowani-astrologer${ext}`,
         // MUST be true. react-native-share decodes the base64 to a real file and hands
         // the receiving app a content:// Uri for it. With this false (its default) it
         // writes to getExternalCacheDir()/Download -- which is null whenever external
