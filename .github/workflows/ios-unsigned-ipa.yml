@@ -1,8 +1,17 @@
 name: iOS unsigned IPA
 
-# Produces an UNSIGNED .ipa you can download on Windows and install on a real
-# iPhone by re-signing it locally with a FREE Apple ID (Sideloadly / AltStore).
-# This is the iOS answer to "give me an APK I can test before paying".
+# Produces an UNSIGNED iOS build you can test without a Mac and without an Apple
+# Developer account. Two targets, and they are NOT interchangeable:
+#
+#   target: device     -> an .ipa for a real iPhone/iPad. Re-sign it on Windows
+#                         with Sideloadly/AltStore using a FREE Apple ID.
+#   target: simulator  -> a zipped .app for the iOS Simulator, which is what
+#                         Appetize.io accepts. Uploading a DEVICE build there
+#                         fails with "App is not a simulator build".
+#
+# For pure UI work prefer simulator: no cable, no Sideloadly, and no 7-day
+# free-provisioning expiry. Use device when you need real hardware (camera, mic,
+# WebRTC media, Razorpay).
 #
 # WHY THIS WORKFLOW EXISTS AT ALL:
 # An .ipa cannot be built without macOS + Xcode, and there is no Mac here. EAS
@@ -44,6 +53,25 @@ on:
         options:
           - customer
           - vendor
+      target:
+        # device    -> an .ipa for a REAL iPhone/iPad, re-signed with Sideloadly.
+        # simulator -> a .app for the iOS Simulator, which is what Appetize.io and
+        #              a local `xcrun simctl install` accept.
+        #
+        # THESE ARE DIFFERENT BINARIES AND ARE NOT INTERCHANGEABLE. A device build
+        # uploaded to Appetize is rejected with "App is not a simulator build";
+        # a simulator build cannot be installed on a phone at all.
+        #
+        # Simulator is usually the better loop for UI work: no Apple account, no
+        # Sideloadly, no cable, and no 7-day free-provisioning expiry. It cannot
+        # test the camera, microphone, real WebRTC media, push, or Razorpay.
+        description: Real device (.ipa) or Simulator (.app for Appetize)
+        required: true
+        default: device
+        type: choice
+        options:
+          - device
+          - simulator
 
 jobs:
   build:
@@ -69,6 +97,18 @@ jobs:
             echo "workspace=AstrologyApp.xcworkspace"   >> "$GITHUB_OUTPUT"
             echo "product=AstrologyApp.app"             >> "$GITHUB_OUTPUT"
             echo "ipa=Astrowani-unsigned.ipa"           >> "$GITHUB_OUTPUT"
+          fi
+
+          # Device vs simulator differ in SDK, destination, the directory Xcode
+          # writes the product to, and how the result is packaged.
+          if [ "${{ inputs.target }}" = "simulator" ]; then
+            echo "sdk=iphonesimulator"                          >> "$GITHUB_OUTPUT"
+            echo "destination=generic/platform=iOS Simulator"    >> "$GITHUB_OUTPUT"
+            echo "productdir=Release-iphonesimulator"            >> "$GITHUB_OUTPUT"
+          else
+            echo "sdk=iphoneos"                                  >> "$GITHUB_OUTPUT"
+            echo "destination=generic/platform=iOS"              >> "$GITHUB_OUTPUT"
+            echo "productdir=Release-iphoneos"                   >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-node@v4
@@ -115,9 +155,9 @@ jobs:
         # a pod whose version genuinely is not in the local cache yet.
         run: pod install || pod install --repo-update
 
-      # Build for a real device (-sdk iphoneos, arm64) with signing off. A
-      # simulator build is a completely different binary and will NOT run on a
-      # phone, so this must not be confused with the EAS ios-simulator profile.
+      # Build with code signing switched off. SDK and destination come from the
+      # `target` input -- see the header. A simulator build is a completely
+      # different binary from a device one and will NOT run on a phone.
       #
       # The full log is kept as a file and only its tail printed. A compile
       # failure's real error is routinely thousands of lines above the end of an
@@ -125,7 +165,7 @@ jobs:
       # naming the target, not the cause. Losing it costs another ~10-minute
       # macOS run to reproduce, which matters most for the vendor app: its
       # CallKit/PushKit AppDelegate code has never been compiled by anything.
-      - name: Build unsigned .app
+      - name: Build unsigned app
         working-directory: ${{ steps.app.outputs.dir }}/ios
         env:
           RCT_NEW_ARCH_ENABLED: '0'
@@ -135,9 +175,9 @@ jobs:
             -workspace "${{ steps.app.outputs.workspace }}" \
             -scheme "${{ steps.app.outputs.scheme }}" \
             -configuration Release \
-            -sdk iphoneos \
+            -sdk "${{ steps.app.outputs.sdk }}" \
             -derivedDataPath build \
-            -destination 'generic/platform=iOS' \
+            -destination "${{ steps.app.outputs.destination }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -158,27 +198,38 @@ jobs:
           if-no-files-found: ignore
 
       # An .ipa is just a zip containing Payload/<App>.app -- nothing more.
-      - name: Package into .ipa
+      # Device: an .ipa is just a zip containing Payload/<App>.app -- nothing more.
+      # Simulator: Appetize wants the .app itself, zipped WITHOUT a Payload folder.
+      # Wrapping a simulator build in Payload/ produces something neither Appetize
+      # nor `xcrun simctl install` will accept.
+      - name: Package
         working-directory: ${{ steps.app.outputs.dir }}/ios
         run: |
-          APP="build/Build/Products/Release-iphoneos/${{ steps.app.outputs.product }}"
+          APP="build/Build/Products/${{ steps.app.outputs.productdir }}/${{ steps.app.outputs.product }}"
           if [ ! -d "$APP" ]; then
             echo "::error::built .app not found at $APP"
             ls -la build/Build/Products/ || true
             exit 1
           fi
-          rm -rf Payload && mkdir -p Payload
-          cp -R "$APP" Payload/
-          zip -qry "${{ steps.app.outputs.ipa }}" Payload
-          rm -rf Payload
-          ls -lh "${{ steps.app.outputs.ipa }}"
+          if [ "${{ inputs.target }}" = "simulator" ]; then
+            OUT="${{ steps.app.outputs.scheme }}-simulator.zip"
+            # -y preserves symlinks; a .app's Frameworks rely on them.
+            ( cd "$(dirname "$APP")" && zip -qry "$OLDPWD/$OUT" "$(basename "$APP")" )
+            ls -lh "$OUT"
+          else
+            rm -rf Payload && mkdir -p Payload
+            cp -R "$APP" Payload/
+            zip -qry "${{ steps.app.outputs.ipa }}" Payload
+            rm -rf Payload
+            ls -lh "${{ steps.app.outputs.ipa }}"
+          fi
 
       # Sanity-check the bundle before handing it over: a green build would not
       # catch a font or config file that never made it into the app.
       - name: Verify bundle contents
         working-directory: ${{ steps.app.outputs.dir }}/ios
         run: |
-          APP="build/Build/Products/Release-iphoneos/${{ steps.app.outputs.product }}"
+          APP="build/Build/Products/${{ steps.app.outputs.productdir }}/${{ steps.app.outputs.product }}"
           echo "--- required files ---"
           # main.jsbundle is listed because its absence is invisible until
           # runtime: the "Bundle React Native code and images" phase can no-op
@@ -189,12 +240,14 @@ jobs:
           done
           echo "--- fonts at bundle root (UIAppFonts looks here) ---"
           ls "$APP" | grep -i '\.ttf$' | sed 's/^/  /' || echo "  NONE FOUND"
-          echo "--- architectures (must include arm64, must NOT be x86_64-only) ---"
+          echo "--- architectures ---"
+          echo "  (device: arm64. simulator on an Apple-silicon runner: arm64 too --"
+          echo "   that is a SIMULATOR arm64 slice, not a device one, and is correct.)"
           lipo -info "$APP/${{ steps.app.outputs.scheme }}" || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.app }}-ios-unsigned-ipa
-          path: ${{ steps.app.outputs.dir }}/ios/${{ steps.app.outputs.ipa }}
+          name: ${{ inputs.app }}-ios-unsigned-${{ inputs.target }}
+          path: ${{ steps.app.outputs.dir }}/ios/${{ inputs.target == 'simulator' && format('{0}-simulator.zip', steps.app.outputs.scheme) || steps.app.outputs.ipa }}
           retention-days: 14
           if-no-files-found: error
