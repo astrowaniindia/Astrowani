@@ -20,7 +20,29 @@
 // break a profile screen.
 
 import { Share as RNShare } from 'react-native';
-import Share from 'react-native-share';
+
+// Loaded defensively, NOT as a static import.
+//
+// react-native-share's entry point runs TurboModuleRegistry.getEnforcing('RNShare')
+// at module-evaluation time, which THROWS when the native module is absent. This file
+// is reached from Navigation.js -> AstrologerInfo -> here at app startup, so a static
+// import would crash the whole app on any build that predates the native dependency.
+//
+// That is not hypothetical: an OTA ships the entire JS bundle at the current commit to
+// phones running the LAST STORE BUILD. Until a release carrying react-native-share is
+// live, every installed app would white-screen on launch. Same class of trap as the
+// react-native-razorpay 2.3.0 -> 3.0.0 bundle noted in CLAUDE.md.
+//
+// With this guard the old builds simply fall through to React Native's own Share
+// (text, no photo -- see the fallback chain in shareAstrologerProfile) and start
+// attaching the photo once the store build lands. Nothing to remove afterwards.
+let Share = null;
+try {
+  // eslint-disable-next-line global-require
+  Share = require('react-native-share').default || null;
+} catch (_) {
+  Share = null;
+}
 import { CUSTOMER_PLAY_STORE_URL as PLAY_STORE_URL } from '../config/api';
 
 // Folded hands. Written as an escape rather than the literal character so the file
@@ -168,7 +190,7 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
   // 1. Photo + text. `type` and `filename` are both required on Android: these profile
   //    URLs have no file extension, so without them react-native-share has nothing to
   //    derive a file name from and fails to build a Uri (see imageAsDataUri above).
-  if (image && image.dataUri) {
+  if (Share && image && image.dataUri) {
     try {
       await Share.open({
         title,
@@ -201,8 +223,9 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
     }
   }
 
-  // 2. Text only, still through the native sheet.
+  // 2. Text only, still through the native sheet (skipped when the module is absent).
   try {
+    if (!Share) throw new Error('react-native-share unavailable');
     await Share.open({ title, message, failOnCancel: false });
     report('astrologer_profile_shared', { mode, with_image: false, astrologer_id: astrologerId });
     return true;
