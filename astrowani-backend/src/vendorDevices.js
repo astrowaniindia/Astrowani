@@ -191,6 +191,64 @@ async function buildDeviceMap(astrologerIds) {
 }
 
 /**
+ * The astrologer's OTHER signed-in devices — everything except the one asking.
+ *
+ * Used at login to warn "you are already signed in on another device". Returns
+ * only what the warning needs to be specific (platform, when it was last seen);
+ * push tokens are credentials and never leave the server.
+ *
+ * @returns {Promise<Array<{device_id, platform, last_seen_at}>>} empty on any
+ *   failure — a warning that cannot be shown must never block a sign-in.
+ */
+async function listOtherDevices(astrologerId, exceptDeviceId) {
+  if (!astrologerId) return [];
+  let q = db
+    .from('vendor_devices')
+    .select('device_id, platform, last_seen_at, app_version')
+    .eq('astrologer_id', astrologerId)
+    .order('last_seen_at', { ascending: false });
+  if (exceptDeviceId) q = q.neq('device_id', String(exceptDeviceId));
+
+  const { data, error } = await q;
+  if (error) {
+    if (isMissingTable(error)) noteMissing('listOtherDevices');
+    else console.error('[vendorDevices] listOtherDevices failed:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Sign out every device EXCEPT the one named — the "take over this account"
+ * action, run only after the astrologer confirms it at login.
+ *
+ * keepDeviceId is required and the delete is scoped to the astrologer's own rows,
+ * so this can never reach another account's devices. Without a keepDeviceId it
+ * refuses rather than deleting everything, which would sign the caller out too.
+ *
+ * @returns {Promise<number>} how many devices were signed out; 0 on refusal or failure.
+ */
+async function signOutOtherDevices(astrologerId, keepDeviceId) {
+  if (!astrologerId || !keepDeviceId) return 0;
+
+  const others = await listOtherDevices(astrologerId, keepDeviceId);
+  if (others.length === 0) return 0;
+
+  const { error } = await db
+    .from('vendor_devices')
+    .delete()
+    .eq('astrologer_id', astrologerId)
+    .neq('device_id', String(keepDeviceId));
+
+  if (error) {
+    if (isMissingTable(error)) noteMissing('signOutOtherDevices');
+    else console.error('[vendorDevices] signOutOtherDevices failed:', error.message);
+    return 0;
+  }
+  return others.length;
+}
+
+/**
  * The push tokens to use for an astrologer, with the legacy fallback applied.
  *
  * Prefers the newest signed-in device; falls back to the account-level columns
@@ -219,6 +277,8 @@ async function pushTargetFor(astrologerId) {
 
 module.exports = {
   pushTargetFor,
+  listOtherDevices,
+  signOutOtherDevices,
   registerDevice,
   removeDevice,
   countDevices,

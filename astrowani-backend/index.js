@@ -1879,12 +1879,30 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
 
   console.log(`User ${phoneNumber} logged in successfully. Supabase ID: ${supabaseCustomerId}`);
 
+  // Already signed in somewhere else? Tell the app so it can warn before letting
+  // them in. Sending it on the SUCCESS response, rather than refusing the login, is
+  // deliberate: the OTP has already been consumed by this point, so a refusal would
+  // force a fresh OTP just to answer a question. The app decides what to do —
+  // confirm and take over via /api/vendor/devices/sign-out-others, or sign itself
+  // out. Only ever populated for astrologers on a build that sends a deviceId.
+  let otherDevices = [];
+  if (isVendor && supabaseCustomerId && deviceId) {
+    try {
+      otherDevices = (await vendorDevices.listOtherDevices(supabaseCustomerId, deviceId))
+        .map((d) => ({ platform: d.platform || 'unknown', lastSeenAt: d.last_seen_at }));
+    } catch (e) {
+      // A warning that cannot be built must never block a sign-in.
+      console.error('[otp-verify] could not list other devices:', e.message);
+    }
+  }
+
   // Return token to the app
   return res.status(200).json({
     success: true,
     message: 'OTP verified successfully',
     token: token,
-    user: { id: supabaseCustomerId || `user_${Date.now()}`, phoneNumber, role }
+    user: { id: supabaseCustomerId || `user_${Date.now()}`, phoneNumber, role },
+    otherDevices,
   });
 });
 
@@ -4462,6 +4480,52 @@ app.get('/vendor/wallet', async (req, res) => {
  * already mentally left — and the app has cleared its own storage regardless, so
  * there is nothing for them to retry.
  */
+/**
+ * "Sign me in here and sign out my other devices."
+ *
+ * Called by the vendor app only after the astrologer CONFIRMS the warning shown
+ * at login (see `otherDevices` on the OTP-verify response). Requires this device
+ * to name itself, and keeps it — a takeover that signed out every device would
+ * sign out the caller too.
+ *
+ * Blocking the second sign-in instead was considered and rejected: an astrologer
+ * whose old phone is lost, broken or sold would be locked out of their own income
+ * with no self-service way back in, and every case becomes a support ticket.
+ *
+ * Deliberately does NOT touch logged_out_at or fcm_token. This device stays signed
+ * in, so the account is still reachable — the legacy columns describe the account,
+ * and the account has not signed out.
+ */
+app.post('/api/vendor/devices/sign-out-others', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    if (!vendorId || !String(vendorId).includes('-')) {
+      return res.status(400).json({ success: false, message: 'Not an astrologer token' });
+    }
+
+    const { deviceId } = req.body || {};
+    if (!deviceId) {
+      return res.status(400).json({ success: false, message: 'deviceId is required' });
+    }
+
+    const signedOut = await vendorDevices.signOutOtherDevices(vendorId, deviceId);
+    console.log(`[vendor devices] ${vendorId} took over: ${signedOut} other device(s) signed out`);
+    return res.json({ success: true, signedOut });
+  } catch (err) {
+    console.error('[vendor devices] sign-out-others failed:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not sign out the other devices' });
+  }
+});
+
 app.post('/api/vendor/logout', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
