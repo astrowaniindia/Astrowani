@@ -196,6 +196,28 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
     : image && /webp/i.test(image.mime || '') ? '.webp'
     : '.jpg';
 
+  // The share sheet shows the FILENAME as the item's title, so a generic
+  // 'astrowani-astrologer' is what the recipient sees above the photo. Use the
+  // astrologer's actual name instead.
+  //
+  // Sanitised because this becomes a real file on disk and is handed to another
+  // app through a content provider: keep letters, COMBINING MARKS, digits, spaces,
+  // underscores and hyphens; drop everything else, path separators included.
+  //
+  // \p{M} is NOT optional. Devanagari vowel signs (matras) are combining marks
+  // rather than letters in Unicode, so matching only \p{L} silently strips them and
+  // "आचार्य विशाल शर्मा" arrives as the mangled "आचरय वशल शरम".
+  //
+  // Whitespace runs are collapsed and the length capped, since some receivers
+  // truncate or reject very long names. Falls back to the old slug if sanitising
+  // leaves nothing usable (a name that was entirely punctuation, say).
+  const shareName = String(astrologer?.name || astrologer?.firstName || '')
+    .replace(/[^\p{L}\p{M}\p{N} _-]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50);
+  const shareFilename = `${shareName || 'astrowani-astrologer'}${ext}`;
+
   // 1. Photo + text. `type` and `filename` are both required on Android: these profile
   //    URLs have no file extension, so without them react-native-share has nothing to
   //    derive a file name from and fails to build a Uri (see imageAsDataUri above).
@@ -206,7 +228,7 @@ export async function shareAstrologerProfile({ astrologer, mode = 'recommend', t
         message,
         url: image.dataUri,
         type: image.mime,
-        filename: `astrowani-astrologer${ext}`,
+        filename: shareFilename,
         // MUST be true. react-native-share decodes the base64 to a real file and hands
         // the receiving app a content:// Uri for it. With this false (its default) it
         // writes to getExternalCacheDir()/Download -- which is null whenever external
