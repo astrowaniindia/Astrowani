@@ -24,6 +24,9 @@ const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
+// iOS-only currency for the App Store's In-App Purchase requirement. Used by the
+// gift path below; never by consultations or remedy orders, which are exempt.
+const coins = require('./src/coins');
 
 // What the app ADVERTISES for a referral ("Get ₹50 per friend"). This is display
 // only — the amount actually credited comes from referrals.reward_amount on the
@@ -708,6 +711,13 @@ require('./src/orderRoutes')(app);
 // Astrologer referral commission on remedy orders. Registered after orderRoutes
 // because it requires adminRoutes' requireAdmin, which is exported there.
 require('./src/remedyReferralRoutes')(app);
+
+// Coins — the iOS-only currency that satisfies App Store Guideline 3.1.1 for the
+// three digital-content paths (astro reports, gifts, free services). Coins NEVER
+// pay for a consultation or a remedy order: those are exempt from Apple's cut
+// (1:1 real-time person-to-person, and physical goods) and must keep using the
+// Razorpay-funded rupee wallet. See sql/coin_schema.sql.
+require('./src/coinRoutes')(app);
 
 // Free 12-minute introductory call — customer booking + admin management.
 // Also needs adminRoutes' requireAdmin, so it registers after it.
@@ -5174,9 +5184,36 @@ app.post('/api/gift/send', async (req, res) => {
     if (giftErr || !gift) return res.status(400).json({ success: false, message: 'Gift not found' });
     const amount = Number(gift.price) || 0;
 
-    const balance = Number(customer.wallet_balance) || 0;
+    // Which balance pays. iOS must send 'coins': live gifting is a one-to-many digital
+    // experience, which App Store Guideline 3.1.1 requires to go through In-App Purchase.
+    // Android and every existing build send nothing and keep paying in rupees, so the
+    // default must stay 'wallet'. 1 coin == 1 rupee of gift price.
+    //
+    // The ASTROLOGER is credited in rupees either way — they have no coin balance and must
+    // never have one, since coins cannot be withdrawn. See transfer_coins_to_vendor.
+    const payWithCoins = (req.body?.payWith || 'wallet') === 'coins';
+
+    // Read lazily and only on the coin path, so the rupee path is unaffected before
+    // sql/coin_schema.sql is applied. readSpendableBalance never throws.
+    let balance;
+    if (payWithCoins) {
+      const coinRead = await coins.readSpendableBalance(customer.id);
+      if (!coinRead.ok) {
+        console.error('POST /api/gift/send coin balance unavailable:', coinRead.reason);
+        return res.status(503).json({
+          success: false,
+          message: 'Gifting is temporarily unavailable. You have not been charged.',
+        });
+      }
+      balance = coinRead.balance;
+    } else {
+      balance = Number(customer.wallet_balance) || 0;
+    }
     if (balance < amount) {
-      return res.status(400).json({ success: false, message: 'Insufficient balance' });
+      return res.status(400).json({
+        success: false,
+        message: payWithCoins ? 'Not enough coins' : 'Insufficient balance',
+      });
     }
 
     const vendorCredit = Math.round(amount * GIFT_VENDOR_SHARE);
@@ -5201,13 +5238,36 @@ app.post('/api/gift/send', async (req, res) => {
 
     let giftBalances;
     try {
-      giftBalances = await wallet.transferCustomerToVendor(customer.id, astrologerId, amount, {
-        vendorAmount: vendorCredit,
-        description: `Gift: ${gift.name}`,
-        sessionId: sessionId || null,
-        idempotencyKey: giftIdempotencyKey,
-      });
+      if (payWithCoins) {
+        // Coins out of the customer, RUPEES into the astrologer — both legs inside one
+        // plpgsql function so they cannot come apart, exactly as the rupee path does.
+        const r = await coins.transferCoinsToVendor(customer.id, astrologerId, amount, {
+          vendorAmount: vendorCredit,
+          description: `Gift: ${gift.name}`,
+          sessionId: sessionId || null,
+          idempotencyKey: giftIdempotencyKey,
+        });
+        // Normalised to the rupee path's shape so everything downstream is identical.
+        giftBalances = { customerBalance: r.coinBalance, vendorBalance: r.vendorBalance };
+      } else {
+        giftBalances = await wallet.transferCustomerToVendor(customer.id, astrologerId, amount, {
+          vendorAmount: vendorCredit,
+          description: `Gift: ${gift.name}`,
+          sessionId: sessionId || null,
+          idempotencyKey: giftIdempotencyKey,
+        });
+      }
     } catch (giftErr2) {
+      if (giftErr2 instanceof coins.InsufficientCoins) {
+        return res.status(400).json({ success: false, message: 'Not enough coins' });
+      }
+      if (giftErr2.code === 'COIN_FN_UNAVAILABLE') {
+        console.error('POST /api/gift/send coin schema missing:', giftErr2.message);
+        return res.status(503).json({
+          success: false,
+          message: 'Gifting is temporarily unavailable. You have not been charged.',
+        });
+      }
       if (giftErr2 instanceof wallet.InsufficientFunds) {
         return res.status(400).json({ success: false, message: 'Insufficient balance' });
       }

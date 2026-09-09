@@ -18,6 +18,7 @@ const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
 const wallet = require('./wallet');
+const coins = require('./coins');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -235,19 +236,59 @@ module.exports = function registerFreeServicesRoutes(app) {
         return res.status(400).json({ success: false, message: `Unknown free service "${service}"` });
       }
 
-      const balance = Number(customer.wallet_balance) || 0;
+      // iOS pays in coins — this unlocks digital content in the app, so App Store
+      // Guideline 3.1.1 applies here as much as to a full report, trivial though the
+      // amount is. Android and existing builds send nothing and keep paying in rupees.
+      const payWithCoins = (req.body?.payWith || 'wallet') === 'coins';
+
+      // Read lazily and only on the coin path, so nothing changes for the rupee path
+      // before sql/coin_schema.sql is applied. readSpendableBalance never throws.
+      let balance;
+      if (payWithCoins) {
+        const coinRead = await coins.readSpendableBalance(customer.id);
+        if (!coinRead.ok) {
+          console.error('[free-services] coin balance unavailable:', coinRead.reason);
+          return res.status(503).json({
+            success: false,
+            message: 'This is temporarily unavailable. You have not been charged.',
+          });
+        }
+        balance = coinRead.balance;
+      } else {
+        balance = Number(customer.wallet_balance) || 0;
+      }
       if (balance < FREE_SERVICE_PRICE) {
-        return res.status(400).json({ success: false, message: 'Insufficient balance' });
+        return res.status(400).json({
+          success: false,
+          message: payWithCoins ? 'Not enough coins' : 'Insufficient balance',
+        });
       }
 
+      // payWith is deliberately NOT part of this key — it is the payment method, not the
+      // thing being bought, and requestId already makes each access unique.
       const idempotencyKey = `free-service:${customer.id}:${service}:${requestId}`;
       let newBalance;
       try {
-        newBalance = await wallet.adjustCustomerWallet(customer.id, -FREE_SERVICE_PRICE, {
-          description: `Free Service: ${service}`,
-          idempotencyKey,
-        });
+        newBalance = payWithCoins
+          ? await coins.adjustCustomerCoins(customer.id, -FREE_SERVICE_PRICE, {
+              description: `Free Service: ${service}`,
+              idempotencyKey,
+            })
+          : await wallet.adjustCustomerWallet(customer.id, -FREE_SERVICE_PRICE, {
+              description: `Free Service: ${service}`,
+              idempotencyKey,
+            });
       } catch (err) {
+        if (err instanceof coins.InsufficientCoins) {
+          return res.status(400).json({ success: false, message: 'Not enough coins' });
+        }
+        if (err.code === 'COIN_FN_UNAVAILABLE') {
+          console.error('[free-services] coin schema missing:', err.message);
+          return res.status(503).json({
+            success: false,
+            message: 'This is temporarily unavailable. You have not been charged.',
+          });
+        }
         if (err instanceof wallet.InsufficientFunds) {
           return res.status(400).json({ success: false, message: 'Insufficient balance' });
         }

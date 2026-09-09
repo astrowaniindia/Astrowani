@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { callJyotisham } = require('./jyotishamClient');
 const wallet = require('./wallet');
+const coins = require('./coins');
 const { contentCache } = require('./contentCache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -90,12 +91,35 @@ function missingFields(body, fields) {
  * Fails CLOSED (returns false) on any error: a false negative merely re-applies the normal
  * balance gate, whereas a false positive would hand out a report for free.
  */
+/**
+ * Has this exact report already been paid for, in EITHER currency?
+ *
+ * Both ledgers are checked because the same report can be bought with rupees on
+ * Android and with coins on iOS, under the same idempotency key (payWith is
+ * excluded from the key on purpose). Checking only the rupee ledger would let a
+ * customer who bought a report on iOS be charged again for re-opening it, or for
+ * flipping it to Hindi — the exact bug this function exists to prevent.
+ *
+ * The coin lookup tolerates the table not existing yet, so this keeps working
+ * unchanged before sql/coin_schema.sql is applied.
+ */
 async function isAlreadyPurchased(idempotencyKey) {
   try {
     const { data, error } = await db
       .from('wallet_transactions')
       .select('id')
       .eq('idempotency_key', idempotencyKey)
+      .limit(1);
+    if (!error && Array.isArray(data) && data.length > 0) return true;
+  } catch (_) { /* fall through to the coin ledger */ }
+
+  try {
+    // transfer/debit keys are suffixed by the atomic functions, so match the
+    // prefix rather than requiring an exact hit.
+    const { data, error } = await db
+      .from('coin_transactions')
+      .select('id')
+      .like('idempotency_key', `${idempotencyKey}%`)
       .limit(1);
     if (error) return false;
     return Array.isArray(data) && data.length > 0;
@@ -429,12 +453,45 @@ module.exports = function registerAstroRoutes(app) {
     }
 
     const price = Number(service.price) || 0;
-    const balance = Number(customer.wallet_balance) || 0;
+
+    // Which balance pays for this. iOS must send 'coins': a report is digital content
+    // consumed in the app, so App Store Guideline 3.1.1 requires it to be bought with
+    // In-App Purchase. Android (and every existing build) sends nothing and keeps using
+    // the rupee wallet, which is why the default is 'wallet' — an old client must not
+    // change behaviour. 1 coin == 1 rupee of catalogue price, so `price` is the cost in
+    // either currency.
+    const payWithCoins = (req.body?.payWith || 'wallet') === 'coins';
+
+    // Coin balance is read lazily and ONLY on the coin path. Selecting coin_balance in
+    // resolveCustomer would make every report fail before sql/coin_schema.sql is applied,
+    // so the rupee path stays completely untouched by this feature.
+    //
+    // readSpendableBalance never throws — this handler has no outer try/catch, so a throw
+    // here would be an unhandled rejection rather than a response.
+    let balance;
+    if (payWithCoins) {
+      const coinRead = await coins.readSpendableBalance(customer.id);
+      if (!coinRead.ok) {
+        console.error(`POST /api/astro/${key} coin balance unavailable:`, coinRead.reason);
+        return res.status(503).json({
+          success: false,
+          message: 'Purchases are temporarily unavailable. You have not been charged.',
+        });
+      }
+      balance = coinRead.balance;
+    } else {
+      balance = Number(customer.wallet_balance) || 0;
+    }
 
     // Idempotency key is derived here (before the balance gate) because it is also what
     // tells us whether this exact report has ALREADY been paid for. See the note at the
     // debit below for why `lang` is excluded.
-    const { lang: _lang, ...billableBody } = req.body || {};
+    //
+    // `payWith` is excluded for the same reason as `lang`: it describes HOW the report is
+    // paid for, not WHAT is bought. Including it would give the same report two different
+    // keys, so a customer who bought it on Android and reopened it on iOS would be charged
+    // a second time.
+    const { lang: _lang, payWith: _payWith, ...billableBody } = req.body || {};
     const requestHash = crypto.createHash('sha256').update(JSON.stringify(billableBody)).digest('hex').slice(0, 16);
     const idempotencyKey = `astro-report:${customer.id}:${key}:${requestHash}`;
 
@@ -479,11 +536,28 @@ module.exports = function registerAstroRoutes(app) {
     // call, which is the intended trade — the customer paid for the content once.)
     let newBalance;
     try {
-      newBalance = await wallet.adjustCustomerWallet(customer.id, -price, {
-        description: `Astro Report: ${service.name}`,
-        idempotencyKey,
-      });
+      newBalance = payWithCoins
+        ? await coins.adjustCustomerCoins(customer.id, -price, {
+            description: `Astro Report: ${service.name}`,
+            idempotencyKey,
+          })
+        : await wallet.adjustCustomerWallet(customer.id, -price, {
+            description: `Astro Report: ${service.name}`,
+            idempotencyKey,
+          });
     } catch (err) {
+      // Coins and rupees raise different insufficiency errors; both mean the same
+      // thing to the customer, so normalise before the shared handling below.
+      if (err instanceof coins.InsufficientCoins) {
+        return res.status(400).json({ success: false, message: 'Not enough coins' });
+      }
+      if (err.code === 'COIN_FN_UNAVAILABLE') {
+        console.error(`POST /api/astro/${key} coin schema missing (report generated, not delivered):`, err.message);
+        return res.status(503).json({
+          success: false,
+          message: 'Purchases are temporarily unavailable. You have not been charged.',
+        });
+      }
       // The report was already generated at this point, but the customer must never receive
       // it for free — including the race where the pre-check above passed but the balance
       // changed (e.g. another purchase) before this atomic debit ran.
@@ -497,6 +571,12 @@ module.exports = function registerAstroRoutes(app) {
 
     // The customer has now definitely been charged — a platform-ledger failure past this
     // point must not block delivery of a report already paid for; log loudly instead.
+    //
+    // Platform revenue is recorded at SPEND time in rupees, for a coin purchase as much as
+    // a wallet one, because 1 coin == 1 rupee of catalogue price. Nothing is credited when
+    // coins are BOUGHT (see coinRoutes.js), so there is no double count. Apple's commission
+    // is a cost of sale and is not modelled here — same as Razorpay's fee on the wallet
+    // path — so this figure is gross revenue in both cases.
     try {
       await wallet.adjustAdminWallet(price, {
         description: `Astro Report purchased: ${service.name}`,
