@@ -18,7 +18,11 @@ import {LanguageContext} from '../context/LanguageContext';
 import {getDeletePreview, deleteAccount} from '../api/AccountApi';
 import {captureEvent, resetAnalyticsIdentity} from '../utils/Analytics';
 
-const SETTINGS_SCREENS = [];
+// Managing blocked customers has to live in the app, not a support ticket: both
+// stores expect whoever blocked someone to be able to see and undo that list.
+const SETTINGS_SCREENS = [
+  {labelKey: 'moderation.blockedTitle', icon: 'person-off', screen: 'BlockedCustomers'},
+];
 
 const SETTINGS_LINKS = [
   {labelKey: 'settings.aboutUs', icon: 'info', url: 'https://astrowani.com/about-us/'},

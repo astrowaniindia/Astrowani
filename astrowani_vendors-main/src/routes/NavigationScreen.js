@@ -26,6 +26,7 @@ import VideoCallHistory from '../screens/HIstory/VideoCallHistory';
 import MyCustomers from '../screens/Drawer/MyCustomers';
 import RemedyReferrals from '../screens/Drawer/RemedyReferrals';
 import FreeCalls from '../screens/Drawer/FreeCalls';
+import BlockedCustomers from '../screens/Drawer/BlockedCustomers';
 import WhatsAppChats from '../screens/Drawer/WhatsAppChats';
 import DetailedChat from '../screens/Drawer/DetailedChat';
 import AstrologersListScreen from '../screens/AstrologersScreen';
@@ -345,6 +346,13 @@ function NavigationScreen() {
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
           })}
+        />
+        <Stack.Screen
+          name="BlockedCustomers"
+          component={BlockedCustomers}
+          // headerShown:false — the screen draws its own header so it can apply the
+          // safe-area inset itself, the same fix Support.tsx needed.
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="FreeCalls"

@@ -27,6 +27,7 @@ const wallet = require('./src/wallet');
 // Per-device astrologer sign-in state. Signing out on one device must not sign
 // the astrologer out on another — see sql/vendor_devices.sql.
 const vendorDevices = require('./src/vendorDevices');
+const customerModeration = require('./src/customerModeration');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -755,6 +756,7 @@ require('./src/appPromptRoutes')(app);
 // only ever act on the caller's own account.
 require('./src/accountRoutes')(app);
 require('./src/accountRoutes').registerVendorAccountRoutes(app);
+require('./src/moderationRoutes')(app);
 
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);
@@ -3324,6 +3326,19 @@ app.post('/api/call/initiate', async (req, res) => {
     }
     const callerInfo = customer;
 
+    // A block is ENFORCED here, not merely recorded. Refused with 403 and a NEUTRAL
+    // message that does not say "you have been blocked": telling an abusive person
+    // exactly who cut them off invites retaliation against that astrologer, which is
+    // the opposite of what a block is for. isBlocked fails OPEN — see
+    // src/customerModeration.js for why that direction was chosen on this path.
+    if (await customerModeration.isBlocked(receiverId, callerInfo.id)) {
+      return res.status(403).json({
+        success: false,
+        blocked: true,
+        message: 'This astrologer is not accepting consultations from you at the moment.',
+      });
+    }
+
     // Mutex check: prevent concurrent in-flight initiate requests from the same customer
     if (activeCallInitiations.has(callerInfo.id) || activeChatInitiations.has(callerInfo.id)) {
       return res.status(409).json({
@@ -3533,6 +3548,18 @@ app.post('/api/chat/check-availability', async (req, res) => {
   try {
     const { astrologerId } = req.body;
     if (!astrologerId) return res.status(400).json({ success: false, message: 'astrologerId required' });
+    // Pre-check only — /api/chat/initiate re-checks and is the real gate. This exists
+    // so the customer is told before a request row is written, not after.
+    const requester = await resolveCustomerFromReq(req);
+    if (requester && requester.id
+        && await customerModeration.isBlocked(astrologerId, requester.id)) {
+      return res.status(403).json({
+        success: false,
+        blocked: true,
+        message: 'This astrologer is not accepting consultations from you at the moment.',
+      });
+    }
+
     const busyStatus = await checkAstrologerBusy(supabase, astrologerId);
     if (busyStatus.busy) {
       return res.status(409).json({ success: false, busy: true, busySince: busyStatus.busySince, reason: busyStatus.reason, message: busyStatus.reason === 'live' ? 'Astrologer is live right now and cannot take calls or chats' : 'Astrologer is busy right now' });
@@ -3556,6 +3583,16 @@ app.post('/api/chat/initiate', async (req, res) => {
 
     const customer = await resolveCustomerFromReq(req);
     if (!customer || !customer.id) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    // Same enforced block as the call path — a block that stopped calls but let chat
+    // through would not be a block at all.
+    if (await customerModeration.isBlocked(astrologerId, customer.id)) {
+      return res.status(403).json({
+        success: false,
+        blocked: true,
+        message: 'This astrologer is not accepting consultations from you at the moment.',
+      });
+    }
 
     // Mutex check: prevent concurrent in-flight initiate requests from the same customer
     if (activeChatInitiations.has(customer.id) || activeCallInitiations.has(customer.id)) {

@@ -1122,6 +1122,74 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, data });
   }));
 
+  // ── Customer reports (astrologer moderation flags) ────────────────────────
+  // The mirror of /api/admin/reports below. Both stores expect reporting to work in
+  // BOTH directions for an app whose users communicate; this is the side an
+  // astrologer files. Tolerates the migration not being applied — the page shows an
+  // empty list with tableMissing rather than a 500.
+  app.get('/api/admin/customer-reports', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('customer_reports')
+      .select('*, customers(name, mobile), astrologers(first_name, last_name, phone_number)')
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (error) {
+      const code = String(error.code || '');
+      if (code === 'PGRST205' || code === '42P01') {
+        return res.json({ success: true, data: [], tableMissing: true });
+      }
+      throw error;
+    }
+    return res.json({ success: true, data: data || [] });
+  }));
+
+  app.patch('/api/admin/customer-reports/:id', requireAdmin, h(async (req, res) => {
+    const { status, admin_note } = req.body || {};
+    if (!['reviewed', 'actioned'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+    const { data, error } = await db
+      .from('customer_reports')
+      .update({ status, admin_note: admin_note || null, reviewed_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Notify the astrologer who filed it, same as the customer-facing direction.
+    if (admin_note && data.astrologer_id) {
+      const { data: astroRow } = await db
+        .from('astrologers').select('fcm_token').eq('id', data.astrologer_id).single();
+      if (astroRow?.fcm_token) {
+        sendPush(astroRow.fcm_token, {
+          title: 'Update on your report',
+          body: admin_note,
+          data: { type: 'report_update', reportId: data.id },
+        }).catch((e) => console.error('[customer-reports] push send error:', e.message));
+      }
+    }
+    return res.json({ success: true, data });
+  }));
+
+  // Read-only visibility of who has blocked whom. Blocking is the astrologer's own
+  // call and an admin does not override it here — this exists so a support agent can
+  // explain to a customer why they cannot reach someone.
+  app.get('/api/admin/customer-blocks', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('customer_blocks')
+      .select('*, customers(name, mobile), astrologers(first_name, last_name)')
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (error) {
+      const code = String(error.code || '');
+      if (code === 'PGRST205' || code === '42P01') {
+        return res.json({ success: true, data: [], tableMissing: true });
+      }
+      throw error;
+    }
+    return res.json({ success: true, data: data || [] });
+  }));
+
   // ── Astrologer reports (customer moderation flags) ────────────────────────
   app.get('/api/admin/reports', requireAdmin, h(async (req, res) => {
     const { data, error } = await db

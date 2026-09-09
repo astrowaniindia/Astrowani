@@ -4028,3 +4028,110 @@ This machine ran out of memory repeatedly, and every failure looked like somethi
   will not retry against a new one without a `force-stop`.
 - `adb shell /sdcard/...` from Git Bash needs `MSYS_NO_PATHCONV=1`, or the path is
   rewritten to `C:/Program Files/Git/sdcard/...`.
+
+---
+
+## Subsystem added 2026-09-10: astrologer-side moderation (report + block a customer)
+
+### BO. The missing half of reporting, and a web deletion page
+
+**Why**: customers could report astrologers (`astrologer_reports`, 2026-07) but the
+reverse did not exist — an astrologer being abused in chat had no recourse at all.
+Both stores require this for an app whose users communicate: Apple Guideline 1.2
+(Safety — User-Generated Content) expects a way to report offensive content **and** to
+block abusive users; Google Play's UGC policy asks for the same. It was the last
+policy-shaped gap on the vendor app.
+
+Deliberately mirrors `astrologer_reports` — same columns, same `pending/reviewed/actioned`
+vocabulary, same no-RLS choice — so the admin review workflow is one shape in both
+directions.
+
+| File | Role |
+|---|---|
+| `sql/customer_moderation_schema.sql` | `customer_reports` + `customer_blocks`. **APPLIED 2026-09-10.** |
+| `src/customerModeration.js` | `isBlocked` / `blockCustomer` / `unblockCustomer` / `listBlocked` / `reportCustomer` |
+| `src/moderationRoutes.js` | the four vendor endpoints |
+| `src/adminRoutes.js` | `/api/admin/customer-reports` (+ PATCH), `/api/admin/customer-blocks` |
+| vendor `src/api/ModerationApi.js` | client |
+| vendor `src/components/ReportCustomerSheet.js` | the shared report sheet |
+| vendor `src/screens/Drawer/BlockedCustomers.js` | review + undo, from Settings |
+
+**A BLOCK IS ENFORCED, NOT ADVISORY.** `customerModeration.isBlocked` is checked at
+**three** points: `/api/call/initiate`, `/api/chat/initiate` (the two real writes) and
+`/api/chat/check-availability` (the pre-check, so the customer is told before a request
+row exists). A block that stopped calls but let chat through would not be a block, and
+one that only hid a row would satisfy neither store.
+
+**Things that are load-bearing:**
+
+- **The refusal message is NEUTRAL** — "This astrologer is not accepting consultations
+  from you at the moment", never "you have been blocked". Naming the person who cut
+  someone off invites retaliation against that astrologer, which is the opposite of what
+  a block is for.
+- **`isBlocked` FAILS OPEN**, and this is the uncomfortable direction, so it is stated
+  in the source too. It runs on the initiation path for EVERY call and chat: failing
+  closed would take the whole marketplace dark on one transient database error. The cost
+  is that a blocked customer might get through during an outage.
+- **Idempotency is the `UNIQUE (astrologer_id, customer_id)` index, not a read-then-write.**
+  A 23505 is the constraint working and is returned as `alreadyBlocked: true`, not an
+  error. Verified: blocking twice writes exactly one row, so unblocking always fully
+  unblocks. Do not "optimise" this into a select-then-insert.
+- **Reporting and blocking are independent.** The sheet offers both together with block
+  as an opt-in checkbox, but the server treats them separately: an astrologer may want to
+  flag someone without losing a paying customer, or cut contact without filing a
+  complaint. Blocking alongside a report is best-effort — the report must not be lost
+  because the block failed.
+- **Reports are never deduped**; blocks always are.
+- **The blocked list masks phone numbers** to the last four digits — enough to recognise
+  who this is, without handing back the full number of somebody they chose to cut off.
+- **The report entry point is inside the live chat** (a flag in the header), because that
+  is where abuse happens and store review looks for the mechanism to sit with the content.
+  Settings → Blocked customers is the management surface; a block must be undoable
+  in-app, not only by support ticket.
+- Every write takes `astrologer_id` from the **verified JWT**; there is deliberately no
+  `/:astrologerId` anywhere in `moderationRoutes.js`.
+
+**Deploy order does not matter.** Pre-migration `isBlocked` returns false everywhere and
+the write paths report `NOT_CONFIGURED` (503) rather than throwing — proven 7/7 before
+the migration was applied. The schema has a self-verifying `DO $$` tail that RAISES if
+either table or the unique pair is missing, because a half-applied migration here fails
+**silently**: blocking would appear to work in the app while never stopping anyone.
+
+### Verified 2026-09-10 — migration APPLIED, 28/28 over HTTP against the live database
+
+`moderationRoutes` mounted on a bare Express app (**`index.js` never booted** — it starts
+sessionManager's billing worker and `checkEarningsResets()` against production), driven
+with a real minted vendor JWT against the real tables. Covered: all three auth refusals
+(no token, and a legacy `user_<timestamp>` customer token, both 401); validation (missing
+customerId, unknown reason, missing reason all 400); **`isBlocked` flipping to true and
+back**; blocking twice returning `alreadyBlocked` with **exactly one row**; the block not
+applying in reverse; the masked phone number; unblocking twice still 200 rather than 404;
+report-alone NOT blocking; report+alsoBlock enforcing; and both reports recorded. Teardown
+asserted both tables back to their starting counts and contact restored.
+
+Backend `node --check` clean on all four changed/new files; vendor lint clean; i18n parity
+**335 keys, zero one-sided**; vendor Android bundle **6,163,016 bytes**.
+
+**Not exercised on a device.** The sheet, the blocked list and the in-chat entry point
+need one real pass.
+
+### The account-deletion web page
+
+`MD files/account-deletion-page-copy.md` — ready-to-paste copy for
+`https://astrowani.com/delete-account/`, still **NOT PUBLISHED**.
+
+Written store-neutral on purpose: it opens with **Play's** requirement (a publicly
+reachable page needing no login, declared under Data safety → Account deletion) and then
+Apple's 5.1.1(v), so it does not read as an Apple compliance artifact. Covers both apps,
+an in-app route and an email route with identity verification, and states timelines.
+
+**The "What we keep, and why" section is the important one.** A blanket "everything is
+erased" would be false — transaction records are retained under the Income-Tax Act — and
+an untrue claim there is exactly what gets flagged. It says plainly what is kept, that it
+is unlinked from the person's identity, that wallet balances are forfeited, and that
+reviews may remain visible without a name.
+
+The in-app steps in that copy were verified against both apps before writing: drawer →
+Settings → Delete Account exists in each. **Two placeholders to fill before publishing**
+(flagged at the top of the file): the support email, and the 8-year retention figure,
+which appears twice.

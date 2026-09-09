@@ -25,6 +25,7 @@ import useElapsedSeconds from '../utils/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
+import ReportCustomerSheet from '../components/ReportCustomerSheet';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -35,6 +36,10 @@ const SCRIPTED_REPLIES = [
 
 const VendorChatSession = ({ route, navigation }) => {
   const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId } = route.params;
+  // Report/block, reachable DURING the conversation — the moment abuse happens is
+  // the moment the astrologer needs this, not after the session has ended. Both
+  // stores expect the reporting mechanism to sit with the content it is about.
+  const [reportOpen, setReportOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const { t } = useContext(LanguageContext);
 
@@ -305,6 +310,14 @@ const VendorChatSession = ({ route, navigation }) => {
           )}
         </View>
 
+        <TouchableOpacity
+          style={styles.reportBtn}
+          onPress={() => setReportOpen(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel={t('moderation.reportTitle')}>
+          <Ionicons name="flag-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+
         <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
 
         <TouchableOpacity style={styles.endBtn} onPress={endSession}>
@@ -371,6 +384,12 @@ const VendorChatSession = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <ReportCustomerSheet
+        visible={reportOpen}
+        customer={{ id: callerId, name: callerName }}
+        onClose={() => setReportOpen(false)}
+      />
     </View>
   );
 };
@@ -396,6 +415,11 @@ const styles = StyleSheet.create({
   },
   backBtn: { marginRight: 8, padding: 4 },
   headerAvatarFallback: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', marginRight: 10, justifyContent: 'center', alignItems: 'center' },
+  reportBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginRight: 4,
+  },
   headerInfo: { flex: 1, marginRight: 8 },
   callerName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   charge: { color: COLORS.AstroGold, fontSize: 12, marginTop: 2 },
