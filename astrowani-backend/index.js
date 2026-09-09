@@ -4278,16 +4278,33 @@ app.get('/api/free-bot-chat/persona', async (req, res) => {
 // original hardcoded copy so an unconfigured/misconfigured value never breaks
 // either screen. Only enabled/text is admin-controlled — position/animation
 // stay hardcoded per screen, not sensible to expose as raw pixel offsets.
+//
+// THE DEFAULT TEXT IS DELIBERATELY EMPTY. Both apps already carry their own
+// localised copy and fall back to it when this is blank:
+//     Login.js     ->  config.login.textEn    || t('login.guideHint')
+//     Register.jsx ->  config.register.textEn || t('register.guideStep1')
+//
+// Shipping a non-empty default here duplicates that copy in a second place, and
+// the backend copy WINS — which is exactly what went wrong. When signup became a
+// three-step flow (commit 29e0b9c) the app got new step-aware copy ("Namaste!
+// Let's start with your name and a photo.") but this default was left on the old
+// pre-rewrite sentence, so customers kept seeing the stale line and the new copy
+// was unreachable. The orphaned `register.fillInfoNote` key in the app's
+// LanguageContext.js is the other half of that same rewrite.
+//
+// Empty means "the app decides", which also keeps step 1 consistent with steps 2
+// and 3 — those have no backend counterpart and always use the bundled strings.
+// An admin setting real text in the dashboard still overrides, exactly as before.
 const GUIDE_AVATAR_CONFIG_DEFAULT = {
   login: {
     enabled: true,
-    textEn: 'First time here? Tap Register to sign up!',
-    textHi: 'पहली बार यहाँ आए हैं? पंजीकरण करने के लिए टैप करें!',
+    textEn: '',
+    textHi: '',
   },
   register: {
     enabled: true,
-    textEn: 'Fill the Information for Astrologer',
-    textHi: 'ज्योतिषी के लिए जानकारी भरें',
+    textEn: '',
+    textHi: '',
   },
 };
 app.get('/api/guide-avatar/config', async (req, res) => {
