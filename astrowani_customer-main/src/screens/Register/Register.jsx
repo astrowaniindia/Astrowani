@@ -391,8 +391,24 @@ export default function Register({ navigation }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={insets.top + verticalScale(60)}>
+        {/*
+          style={{flex: 1}} is LOAD-BEARING, not tidying.
+
+          Without it the ScrollView never claims the space between the progress
+          bar and the footer — it sizes to its own content — so the footer sat
+          wherever the content happened to end. On iOS that put the Continue /
+          Submit button in the middle of the screen with a large dead area
+          beneath it, while Android looked correct, because the two platforms
+          measure ScrollView content differently. Same divergence that made
+          Home's cream section collapse to zero height on iOS only.
+
+          flexGrow: 1 on the content container is the other half: it lets a SHORT
+          step (step 1 is only a photo, a name and a gender) still fill the
+          available height instead of bunching at the top.
+        */}
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <Animated.View style={{ opacity: fade, transform: [{ translateX: slide }] }}>
