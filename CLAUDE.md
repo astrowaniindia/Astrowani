@@ -3879,3 +3879,152 @@ One open bug, iPad-specific and unrelated: **Home cards are untappable on iPad**
 iPhone is fine (confirmed on the simulator this session), so it is not a blocker for a
 phone release, but it is real and still unexplained. See the
 `ios-home-touch-investigation` memory, which records what has been eliminated.
+
+---
+
+## Session 2026-09-10: the per-device model reached the socket layer
+
+The 2026-09-09 per-device sign-in work was tested on two real handsets and **both
+bugs it was built to prevent still happened**. The fixes are below; the durable part
+is BN, which is about how the earlier testing managed to report green.
+
+### BL. Ringing and forced sign-out are SOCKET problems, not database problems
+
+**What was reported**, doing the two-device pass on a real iPhone + Android:
+
+1. The "already signed in on another device" warning appeared correctly.
+2. Choosing **Continue here** signed the new device in — but the **old device stayed
+   signed in**, still showing "You are Online".
+3. A call from the customer app then **rang BOTH devices**.
+
+**One root cause for 2 and 3: the per-device model existed only in the database and
+the FCM push path. The live socket layer was still account-level.**
+
+| Path | Device-aware before | After |
+|---|---|---|
+| `vendor_devices` table | yes | yes |
+| FCM push (`pushTargetFor`) | yes | yes |
+| **Socket `io.to(astroId)`** | **no — every device** | `ringRoomFor()` |
+| **Ending another device's session** | **did not exist** | `force_signed_out` + foreground re-check |
+
+`io.to(receiverId).emit('incoming_call', ...)` reaches every socket in the astrologer's
+room, and **a foregrounded app is rung by the socket, not by FCM** — so `pushTargetFor`
+targeting one device was bypassed entirely for exactly the case that matters.
+
+And `signOutOtherDevices` deletes a row. **Deleting a row does not end a session**: that
+app still holds a valid 30-day JWT, never re-checks, and sits on Home looking online.
+
+**The fix — two rooms per socket.** `join_room` now takes an OPTIONAL second argument,
+so every existing caller and every installed build keeps working:
+
+- the **account room** (`astroId`) still carries everything every device should see —
+  notifications, badges, prompts;
+- a **device room** (`astroId::deviceId`, `vendorDevices.deviceRoom`) carries what must
+  reach exactly one handset: the ring, and the forced sign-out.
+
+`vendorDevices.ringRoomFor(astrologerId)` resolves the newest device and returns its
+room. **Its fallback to the ACCOUNT room is load-bearing and must not be "tightened"** —
+no device rows, unapplied migration, an old build that sends no deviceId, or any read
+failure all fall back. A ring that reaches every device is a nuisance; a ring that
+reaches NO device is a lost consultation and lost income for the astrologer.
+
+**Takeover now ends the other session.** `/api/vendor/devices/sign-out-others` reads the
+victim devices **before** deleting them (once the rows are gone there is no way to
+address those handsets), then emits `force_signed_out` to each device room. The vendor
+app clears its token and returns to Login.
+
+`forceSignOutLocally()` deliberately does **NOT** call `/api/vendor/logout`: that row is
+already gone, and logging out would look like "the last device signed out" and stamp
+`logged_out_at` on an account that is signed in and online elsewhere — reintroducing the
+exact bug this subsystem exists to fix.
+
+**The backgrounded-device gap.** A killed or backgrounded app never receives the socket
+event, so `GET /api/vendor/devices/check` re-validates on foreground (`AppState` in
+HomeScreen). **It FAILS OPEN in every direction** — missing table, unapplied migration,
+read failure, no deviceId, and **zero rows** all answer `signedIn: true`. Only an
+explicit "rows exist and yours is not among them" ends a session. Wrongly signing an
+astrologer out mid-shift costs them income; a stale session merely shows a screen they
+can log out of. `vendorDevices.listDevices()` returns **null vs []** for exactly this
+reason, mirroring `countDevices`.
+
+### BM. Three UI defects from the same test pass
+
+- **Themed popups, not the OS Alert.** The takeover confirm now uses the app's own
+  `StatusPopup` (already mounted at the navigation root, already supports a two-button
+  confirm). The original used `Alert` on the theory that a root modal raised during the
+  sign-in transition was the stacked-modal shape that freezes iOS — but it is awaited
+  **before** `navigation.reset`, so only one modal is ever on screen. Dismissing it
+  resolves **false**, the safe direction: keep the device they are actually holding.
+- **`Support.tsx` had NO safe-area handling at all** — no `SafeAreaView`, no insets. Its
+  maroon header sat at y=0, so on a notched iPhone the title rendered under the dynamic
+  island. Android was unaffected (its status bar is not an overlay), which is why it
+  survived until the first real iOS pass.
+- **The drawer.** Given an explicit width (`82%`, capped at 330) — unset,
+  react-navigation's default made it span nearly the whole screen and read as a takeover
+  rather than a side panel. For the status-bar overlap, **do not trust `insets.top`
+  alone inside a drawer**: react-navigation can consume the safe-area insets before the
+  content component sees them, so it can come back 0 on exactly the notched devices that
+  need it. `CustomDrawer` now uses `Math.max(insets.top, ios ? 44 : StatusBar.currentHeight)`.
+  Worst case is a few extra points of padding; the failure it replaces is a title hidden
+  behind the clock. **Still wants a visual confirm on a real iPhone.**
+
+### BN. THE TESTING LESSON — a harness that only tests YOUR module reports green
+
+The 2026-09-09 work was recorded here as "verified 24/24 against production". That was
+true, and it was **not worth much**: every assertion called `src/vendorDevices.js`
+directly. The module was correct. The **delivery path around it** — `io.to()` in
+`index.js`, and the absence of any way to end another device's session — was never
+touched by a single assertion, and that is where both reported bugs lived.
+
+**When a feature's whole point is that something reaches ONE destination and not
+another, the test must assert on the DELIVERY, not on the helper that computes the
+destination.** A green run against the resolver proves the resolver; it says nothing
+about the three call sites that ignore it. Grep for every caller of the thing you are
+changing and check each one is actually routed through it.
+
+The same applies to the two documented log traps, both of which produced a false result
+again this session: a `grep` over an uncleared `logcat` buffer matched a **historical**
+"Unable to load script" and reported a red screen that was minutes old, and Android's
+`SatelliteController` `PersistableBundle` spam drowns any grep for "bundle". Clear the
+buffer first, filter that tag out, and treat a screenshot as the ground truth.
+
+### Verified 2026-09-10
+
+**18/18 against the live database** via a bare harness calling `vendorDevices` directly
+(`index.js` never booted — it starts sessionManager's billing worker and
+`checkEarningsResets()` against production): the account-room fallback with zero
+devices, newest-device targeting (and explicitly NOT the account room and NOT the older
+device), takeover removing the other device while keeping the caller, ring re-targeting
+afterwards, and all four fail-open branches of the check decision. Every synthetic row
+deleted, table confirmed back to its starting state.
+
+Backend `node --check` clean. Vendor lint clean (the 2 reported `exhaustive-deps` errors
+in `HomeScreen.js` and `NavigationScreen.js` are pre-existing, confirmed against HEAD).
+i18n parity **305 keys, zero one-sided**. Vendor Android bundle succeeds at
+**6,140,034 bytes**. Deployed to the VPS (run 34415275670, 15s) and confirmed live in
+production: `/api/vendor/devices/check` answers **401** unauthenticated while a
+non-existent sibling route answers 404, so the 401 is the real route and not a catch-all.
+
+**NOT yet exercised on two real devices** — that is the only thing that will confirm the
+ring reaches one handset and the old session actually dies. The app half needs a build;
+the backend half is already live.
+
+### One local-environment note that cost most of this session
+
+This machine ran out of memory repeatedly, and every failure looked like something else:
+
+- **Killing a background Gradle task does NOT kill the Gradle daemon.** It stays resident
+  at `-Xmx4g` holding ~2.5 GB of commit charge and blocked the emulator from launching.
+- **Metro forks one transform worker per CPU core.** With a 4.6 GB qemu running, the OS
+  refused to `spawn` them (`errno -4094`) and the workers that did start died at 20 MB.
+  `--max-workers=1` (or 2) is the fix; `--reset-cache` makes it far worse by
+  re-transforming everything.
+- **These OOMs are NOT Node's heap ceiling.** `--max-old-space-size` does not help. The
+  proof: at 17 MB of commit remaining, bash itself could not fork `curl`
+  (`fork: retry: Resource temporarily unavailable`). It is whole-system commit exhaustion.
+- Metro can be **killed silently by the OS mid-bundle** — no crash line, no OOM message,
+  last log entry a harmless warning. **Check the server is alive before debugging the
+  client**; a red "Unable to load script" screen usually means Metro is gone, and the app
+  will not retry against a new one without a `force-stop`.
+- `adb shell /sdcard/...` from Git Bash needs `MSYS_NO_PATHCONV=1`, or the path is
+  rewritten to `C:/Program Files/Git/sdcard/...`.
