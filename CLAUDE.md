@@ -3710,3 +3710,172 @@ bundle succeeds at 7,672,399 bytes.
 App Store Server Notifications v2 plus a policy decision, because the schema forbids a negative
 coin balance so the decision cannot be deferred to the code. Until then a refund takes the money
 back from us and leaves the coins with the customer. Noted at the bottom of `src/appleIap.js`.
+
+---
+
+## Session 2026-09-09: first real iOS test pass on the customer app
+
+The customer app was driven end to end on an iOS simulator (Appetize) for the first
+time. Everything the user tested worked — chat, call, video, payments, recharge,
+support, Home — and five real defects surfaced, four of them mine from this session.
+The durable part is the traps, below.
+
+### BG. The iOS layout traps — all four were on ONE screen (Register)
+
+The signup form rendered inside a box in the middle of the screen with dead space
+above and below, while Android was correct. It took three wrong fixes and a
+diagnostic build to find. **Two of the three "wrong" fixes were real defects and
+they stay** — they just were not the reported problem.
+
+**1. `keyboardVerticalOffset` leaks as PERMANENT padding. This was the actual bug.**
+
+A freshly opened Register was fine. Tapping any field cost it 134pt for the rest of
+the session: the footer jumped to mid-screen and a dead band appeared beneath it.
+Measured with on-screen `onLayout` probes on an iPhone 14 Pro:
+
+```
+                fresh        after one keyboard open/close
+    root        h852         h852
+    kav         h720 y132    h720 y132
+    scroll      h605         h471          <- lost 134
+    footer      y605         y502
+```
+
+`keyboardVerticalOffset` compensates for content above a `KeyboardAvoidingView` that
+the view cannot see — which applies ONLY when the KAV is the screen root. Register's
+KAV already renders below the header, and RN measures that as `frame.y = 132`, so the
+offset double-counted it. Worse, on keyboard-HIDE iOS reports the keyboard frame at
+`screenY = window height` and RN computes:
+
+```
+    padding = max(frame.y + frame.height - (windowHeight - offset), 0)
+            = max(132 + 720 - (852 - 134), 0) = 134     // should be 0
+```
+
+**Rule: a KeyboardAvoidingView that is NOT the screen root must have no
+`keyboardVerticalOffset`.** Its own measured `frame.y` already accounts for anything
+above it. Android never showed this because `behavior` is `undefined` there, so the
+KAV is inert — which is exactly why it survived so long.
+
+**2. A ScrollView needs `style={{flex: 1}}`, not just `contentContainerStyle`.**
+Without it the ScrollView sizes to its content and never claims the space between the
+header and a footer below it, so the footer sits wherever the content happens to end.
+Android's measurement fills the parent regardless; iOS does not. Same divergence that
+collapsed Home's cream section (subsystem AS). Pair it with `flexGrow: 1` on the
+content container so a SHORT screen still fills the height.
+
+**3. `SafeAreaView` + manual `useSafeAreaInsets()` double-counts both edges.**
+Register wrapped itself in `SafeAreaView` AND applied `insets.top` to its header and
+`insets.bottom` to its footer — roughly 59pt and 34pt counted twice on a 14 Pro. Pick
+one. A plain `View` plus manual insets is the clearer choice when the screen already
+needs the numbers for its own padding.
+
+**4. `zIndex` only orders siblings within the SAME parent.** The place-of-birth
+suggestions dropdown was painted over by the hint card below it, even though
+`PlaceAutocomplete` already carries `zIndex: 1000` on its wrapper and positions the
+list absolutely. That wrapper sits inside a `<Field>`, so its zIndex competed with the
+Field's own children — while the hint card is a sibling of the FIELD. Neither of those
+two carried a zIndex, so paint order won. Fixed by giving the FIELD the zIndex.
+The other six screens using `PlaceAutocomplete` were checked and need nothing: on each
+it is a direct sibling of whatever follows, so its own zIndex already applies.
+
+### BH. Supabase image transform: `width=` alone does NOT scale proportionally
+
+Astrologer avatars rendered squashed on every screen after a well-intentioned
+thumbnail optimisation. `?width=300` sets the width and **leaves the height
+untouched**:
+
+```
+    800x800  ->  300x800   (aspect 1.000 -> 0.375)
+    500x500  ->  300x500
+```
+
+The apps draw those into circular frames with `cover`, which stretches them back out —
+so faces looked *enlarged* rather than obviously narrow, which is why it read as
+"pictures became big" rather than "pictures are squashed".
+
+**Always pass BOTH dimensions plus `resize=contain`:**
+`?width=300&height=300&resize=contain&quality=70`. `contain` preserves aspect and
+never crops, which matters because the circular frames already crop — cropping twice
+cuts faces off. A square source returns 300x300, a 505x546 source returns 277x300.
+
+`thumbnailUrl()` in `index.js` builds this, so it applies to every astrologer photo
+everywhere (all list screens, Home carousel and marquee, profile, Live, My Sessions,
+drawer, and the shared profile image) and to astrologers who sign up later.
+Payload across 13 astrologers: **1,066 KB -> 490 KB**, warm load 0.34-1.5s -> ~0.1s.
+
+### BI. Share sheet: two traps
+
+- **iOS infers an attachment's type from the filename EXTENSION, not the `type`
+  field.** With a bare `astrowani-astrologer` the sheet showed "File · 62 KB" and only
+  offered Copy / Print / Save to Files. Adding `.jpg` made it "JPEG Image" with Save
+  Image and Assign to Contact. Android was unaffected — react-native-share reads
+  `type` there — which is why it only appeared on the first iOS run.
+- **Sanitising a name for a filename must keep `\p{M}`.** The filename is now the
+  astrologer's own name, sanitised because it becomes a real file handed to another
+  app. Matching only `\p{L}\p{N}` silently stripped Devanagari vowel signs and turned
+  "आचार्य विशाल शर्मा" into "आचरय वशल शरम" — matras are combining MARKS, not letters.
+  Caught by running the sanitiser over real name shapes before committing.
+
+The message now labels both stores, since one message reaches both platforms:
+`Android: <url>` always, and `iPhone: <url>` **only when `APP_STORE_URL` is
+non-empty**. It is empty today and deliberately carries no placeholder — this text
+goes to strangers and a dead App Store link reads as a broken app. Set `APP_STORE_URL`
+(customer) and `CUSTOMER_APP_STORE_URL` (vendor) to
+`https://apps.apple.com/app/id<APPLE_ID>` and both lines appear with no code change.
+
+### BJ. The iOS build workflow now builds for the Simulator too
+
+`.github/workflows/ios-unsigned-ipa.yml` takes a `target` input: `device` (an `.ipa`
+to sideload) or `simulator` (a `.app` for Appetize). **They are different binaries and
+neither substitutes for the other** — a device build uploaded to Appetize is rejected
+with "App is not a simulator build".
+
+For UI work prefer `simulator`: no Apple account, no Sideloadly, no cable, no 7-day
+expiry. It cannot test camera, microphone, real WebRTC media, push or Razorpay.
+
+Two packaging traps, both of which cost a round trip:
+- **Do not pre-zip a simulator build.** GitHub always wraps an artifact in its own zip,
+  so uploading a zip hands the user a zip-inside-a-zip and Appetize answers "No .app
+  folder found". The `.app` is staged under `_appetize/` and uploaded as loose files,
+  so GitHub's own zip has `<App>.app` at its root and is uploadable as-is.
+- **Windows PowerShell's `Compress-Archive` writes BACKSLASH path separators**, which
+  the ZIP spec forbids and strict unzippers read as flat filenames. Use `tar.exe -a -c
+  -f out.zip <App>.app` instead, and verify no entry contains a backslash.
+
+### BK. The methodology lesson, worth more than any single fix
+
+Three fixes for the signup layout were wrong because **every screenshot being reasoned
+from was in the broken-after-keyboard state, and nobody knew it** — the user had typed
+into a field before the first screenshot, and a freshly opened screen was fine. The
+code read correctly at every level: `flex: 1` present everywhere, no height
+constraints on the route, launch storyboard configured, scaling helper normal.
+
+What settled it in one round was a throwaway build on a `diag/` branch that rendered
+`Dimensions`, the insets, and each container's measured `onLayout` height and y on
+screen. **When a layout is wrong and the code says it should be right, stop reading and
+measure.** Put the instrumentation on its own branch so temporary code never reaches
+`main`, and delete the branch afterwards.
+
+Related: a run's status is the source of truth, not `gh run watch`. This machine's
+connection to GitHub dropped mid-transfer three times in one session — twice on
+artifact downloads, once on a watch, which reported "failed" for a build that was
+still compiling. Artifact downloads are retried in a loop for the same reason.
+
+### Customer app status after this session
+
+Code-complete. Everything remaining is operational:
+
+1. **Apple Developer Program enrolment** — gates every item below.
+2. **App Store Connect record** — its numeric id is needed in THREE places: the
+   `iPhone:` share link, the backend's `APPLE_IAP_APP_APPLE_ID`, and the listing.
+3. **Five coin products** matching `coin_packs.product_id`, plus Apple's tax and
+   banking forms, without which IAP cannot go live.
+4. **Apple root certificates** into `astrowani-backend/certs/apple/`.
+5. **A web account-deletion page** — Apple requires it as Play does, and
+   `astrowani.com` still has none.
+
+One open bug, iPad-specific and unrelated: **Home cards are untappable on iPad**.
+iPhone is fine (confirmed on the simulator this session), so it is not a blocker for a
+phone release, but it is real and still unexplained. See the
+`ios-home-touch-investigation` memory, which records what has been eliminated.
