@@ -12,6 +12,8 @@ import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { captureEvent } from '../utils/Analytics';
 import { PAY_WITH, PAYS_WITH_COINS, formatSpendable, getSpendableBalance } from '../utils/payments';
+// Standalone t() — this hook has no LanguageContext consumer of its own.
+import { translate } from '../context/LanguageContext';
 
 const notify = (msg) =>
   Platform.OS === 'android' ? ToastAndroid.show(msg, ToastAndroid.SHORT) : Alert.alert(msg);
@@ -101,6 +103,32 @@ export default function useGiftSender() {
       if (freshBalance != null) onBalanceChange?.(freshBalance);
     } catch (e) {
       console.log('[useGiftSender] balance fetch failed:', e?.message);
+
+      // ON iOS A FAILED COIN READ MUST STOP THE GIFT. It must NOT fall through to
+      // "let the backend decide", which is the correct behaviour for rupees only.
+      //
+      // Measured 2026-09-09: against a backend without the coin routes deployed,
+      // GET /api/coins/balance 404s, this catch swallowed it, the gift was sent
+      // with payWith:'coins', and the OLD backend — which does not know that field
+      // — charged the RUPEE wallet instead. The customer was shown "21 coins" and
+      // debited ₹21, twice. That is both a lie to the customer and exactly the
+      // App Store 3.1.1 violation coins exist to prevent: a digital gift paid for
+      // out of a Razorpay-funded wallet.
+      //
+      // Failing closed costs a retry. Failing open costs real money charged in the
+      // wrong currency, and cannot be detected from the app.
+      if (PAYS_WITH_COINS) {
+        captureEvent('gift_blocked', {
+          astrologer_id: astrologerId, gift_id: gift._id, price: gift.price,
+          context, reason: 'coin_balance_unavailable',
+        });
+        showStatusPopup({
+          variant: 'insufficient',
+          title: translate('coins.unavailableTitle'),
+          message: translate('coins.unavailable'),
+        });
+        return;
+      }
     }
 
     captureEvent('gift_tapped', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context });

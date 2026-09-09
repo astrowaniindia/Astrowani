@@ -162,6 +162,33 @@ async function buildCategoryMap() {
   }
 }
 
+/**
+ * Rewrite a Supabase Storage image URL to its resized/re-encoded variant.
+ *
+ * Astrologer photos are uploaded at full camera resolution and were served that
+ * way to every list screen, where they render as ~85px avatars. Measured
+ * 2026-09-09 against production: 13 astrologers = 1,066 KB of images, 57-138 KB
+ * each, 0.34-1.5s apiece. That is the "images take forever to appear" complaint,
+ * and it is worst on a first run when nothing is cached.
+ *
+ * Supabase's render endpoint resizes and re-encodes on demand, and caches the
+ * result. Same photo at width=300: ~24 KB (-82%), and 0.13-0.21s once warm.
+ *
+ * 300px covers a ~85px avatar at 3x density and the profile header too, so one
+ * size serves every surface rather than adding a second field the apps would
+ * each have to choose between.
+ *
+ * Anything that is not a Supabase public-object URL is returned untouched --
+ * notably the bundled backend.astrowani.com fallbacks, which are already small.
+ */
+function thumbnailUrl(url, width = 300) {
+  if (typeof url !== 'string' || !url.includes('/storage/v1/object/public/')) return url;
+  // The render endpoint rejects a URL that already carries a query string of its
+  // own, so only rewrite clean object URLs.
+  if (url.includes('?')) return url;
+  return `${url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')}?width=${width}&quality=70`;
+}
+
 function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
   const rawCats = Array.isArray(astro.specialties)
     ? astro.specialties
@@ -183,7 +210,7 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
     // never trusted here, even if the one-time backfill (scripts/backfillAstrologerImages.js)
     // hasn't reached this row yet.
     profileImage: (astro.profile_pic_url && !astro.profile_pic_url.startsWith('data:'))
-      ? astro.profile_pic_url
+      ? thumbnailUrl(astro.profile_pic_url)
       : `https://backend.astrowani.com/public/images/astro${(index % 4) + 1}.png`,
     chargePerMinute: astro.call_charge_per_minute || 15,
     pricing: astro.call_charge_per_minute || 15,

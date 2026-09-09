@@ -212,10 +212,21 @@ jobs:
             exit 1
           fi
           if [ "${{ inputs.target }}" = "simulator" ]; then
-            OUT="${{ steps.app.outputs.scheme }}-simulator.zip"
-            # -y preserves symlinks; a .app's Frameworks rely on them.
-            ( cd "$(dirname "$APP")" && zip -qry "$OLDPWD/$OUT" "$(basename "$APP")" )
-            ls -lh "$OUT"
+            # ⚠ DO NOT PRE-ZIP A SIMULATOR BUILD.
+            #
+            # GitHub ALWAYS wraps an artifact in its own zip on download. Uploading
+            # a zip therefore hands the user a zip containing a zip, and Appetize —
+            # which unzips exactly once and looks for a .app — rejects it with
+            # "No .app folder found". That cost a real round trip on 2026-09-09.
+            #
+            # Instead the .app is staged in its own directory and uploaded as loose
+            # files. actions/upload-artifact roots the archive at the least common
+            # ancestor of what it matches, so matching `_appetize/**` puts
+            # AstrologyApp.app/ at the ROOT of GitHub's own zip — which is then
+            # uploadable to Appetize directly, with no unzip step at all.
+            rm -rf _appetize && mkdir -p _appetize
+            cp -R "$APP" _appetize/
+            du -sh _appetize
           else
             rm -rf Payload && mkdir -p Payload
             cp -R "$APP" Payload/
@@ -248,6 +259,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.app }}-ios-unsigned-${{ inputs.target }}
-          path: ${{ steps.app.outputs.dir }}/ios/${{ inputs.target == 'simulator' && format('{0}-simulator.zip', steps.app.outputs.scheme) || steps.app.outputs.ipa }}
+          # simulator: loose files under _appetize/, so GitHub's own download zip
+          #            has <App>.app at its root and Appetize accepts it as-is.
+          # device:    the .ipa, which is already the format Sideloadly wants.
+          path: ${{ steps.app.outputs.dir }}/ios/${{ inputs.target == 'simulator' && '_appetize/**' || steps.app.outputs.ipa }}
           retention-days: 14
           if-no-files-found: error
