@@ -36,7 +36,6 @@ import {
   Image,
   Modal,
   PermissionsAndroid,
-  SafeAreaView,
   Animated,
   Easing,
   BackHandler,
@@ -361,7 +360,11 @@ export default function Register({ navigation }) {
   const STEP_SUBS = [t('register.step1Sub'), t('register.step2Sub'), t('register.step3Sub')];
 
   return (
-    <SafeAreaView style={styles.container}>
+    // NOT SafeAreaView. This screen applies the safe-area insets ITSELF —
+    // insets.top on the header, insets.bottom on the footer — and SafeAreaView
+    // applies them again as its own padding, so both edges were counted twice.
+    // Using a plain View makes the manual insets the single source of truth.
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
 
       <View style={[styles.header, { paddingTop: insets.top + verticalScale(10) }]}>
@@ -641,7 +644,7 @@ export default function Register({ navigation }) {
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
