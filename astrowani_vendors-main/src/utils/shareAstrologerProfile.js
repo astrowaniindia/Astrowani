@@ -43,7 +43,7 @@ try {
 } catch (_) {
   Share = null;
 }
-import { CUSTOMER_PLAY_STORE_URL as PLAY_STORE_URL } from '../config/api';
+import { CUSTOMER_PLAY_STORE_URL as PLAY_STORE_URL, CUSTOMER_APP_STORE_URL as APP_STORE_URL } from '../config/api';
 
 // Folded hands. Written as an escape rather than the literal character so the file
 // survives any toolchain that is not UTF-8 clean end to end.
@@ -158,7 +158,14 @@ export function buildAstrologerShareMessage({ astrologer, mode = 'recommend', t 
   lines.push(mode === 'self' ? t('share.selfClosing') : t('share.otherClosing', { name }));
   lines.push('');
   lines.push(t('share.downloadLine'));
-  lines.push(PLAY_STORE_URL);
+  // ONE message goes to both platforms — the sender has no idea what the recipient
+  // is on — so each store link is labelled rather than sent bare.
+  //
+  // The iPhone line appears only once CUSTOMER_APP_STORE_URL is set. A placeholder or a
+  // guessed App Store URL would be worse than omitting it: this text goes to
+  // strangers, and a dead link reads as a broken app. See config/api.js.
+  lines.push(t('share.androidLink', { url: PLAY_STORE_URL }));
+  if (APP_STORE_URL) lines.push(t('share.iosLink', { url: APP_STORE_URL }));
 
   return lines.join('\n');
 }

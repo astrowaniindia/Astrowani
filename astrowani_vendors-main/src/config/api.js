@@ -13,3 +13,9 @@ export const SOCKET_URL = 'https://backend.astrowani.com';
 // astrowani_customer-main/src/config/api.js PLAY_STORE_URL.
 export const CUSTOMER_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.astrowanicustomer';
+
+// iOS counterpart of CUSTOMER_PLAY_STORE_URL. EMPTY UNTIL THE LISTING EXISTS, and
+// deliberately the same string as the customer app's APP_STORE_URL.
+// See that file for why a placeholder is not used.
+export const CUSTOMER_APP_STORE_URL = '';
+
