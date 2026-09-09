@@ -24,6 +24,9 @@ const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
+// Per-device astrologer sign-in state. Signing out on one device must not sign
+// the astrologer out on another — see sql/vendor_devices.sql.
+const vendorDevices = require('./src/vendorDevices');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -200,7 +203,7 @@ function thumbnailUrl(url, width = 300) {
     `?width=${width}&height=${width}&resize=contain&quality=70`;
 }
 
-function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
+function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}, deviceSet = null) {
   const rawCats = Array.isArray(astro.specialties)
     ? astro.specialties
     : (astro.specialties ? [astro.specialties] : []);
@@ -240,7 +243,11 @@ function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
     // is_online this is not something they chose to advertise. Shown as
     // "Unavailable" rather than "Offline" — see sql/astrologer_logout_tracking.sql.
     // A pre-migration row has no such column, so undefined reads as logged in.
-    isLoggedOut: !!astro.logged_out_at,
+    // A device row PROVES signed in. The ABSENCE of one proves nothing — installed
+    // vendor builds send no deviceId and never will — so it falls back to the legacy
+    // flag rather than hiding someone. Reading "no rows" as signed-out would make
+    // every astrologer on an old build vanish the moment this deploys.
+    isLoggedOut: deviceSet && deviceSet.has(astro.id) ? false : !!astro.logged_out_at,
     // The single "can this person be reached at all" answer, derived HERE so the
     // five card surfaces in the customer app do not each re-implement the rule and
     // drift apart. True when they switched themselves offline, OR when all three
@@ -524,8 +531,9 @@ io.on('connection', (socket) => {
     // the time a cancel happens the vendor app is running with a live socket and receives
     // the `call_cancelled` emit above. Its handler calls RNCallKeep.endCall() to dismiss the
     // CallKit screen (see src/utils/callKeep.js in the vendor app).
-    supabase.from('astrologers').select('fcm_token').eq('id', data.astrologer_id).single()
-      .then(({ data: astro }) => {
+    // Newest signed-in device, falling back to the legacy column.
+    vendorDevices.pushTargetFor(data.astrologer_id)
+      .then((astro) => {
         if (astro?.fcm_token) {
           sendPush(astro.fcm_token, {
             data: { type: 'cancel_incoming_request', roomId: data.roomId || '' },
@@ -1671,7 +1679,13 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // `termsAccepted` tells us the account came from the Register screen's explicit
   // checkbox rather than the Login screen's passive notice. It is a label only —
   // the timestamp itself is stamped server-side (see termsAcceptanceFields).
-  const { phoneNumber: rawPhoneNumber, otp, fcmToken, role, referralCode, termsAccepted } = req.body;
+  // deviceId / devicePlatform / appVersion are sent by updated vendor builds only.
+  // Their ABSENCE is normal and must keep working — see the compatibility rule in
+  // src/vendorDevices.js.
+  const {
+    phoneNumber: rawPhoneNumber, otp, fcmToken, role, referralCode, termsAccepted,
+    deviceId, devicePlatform, appVersion,
+  } = req.body;
 
   if (!rawPhoneNumber || !otp) {
     return res.status(400).json({ success: false, message: 'Phone number and OTP are required' });
@@ -1768,6 +1782,16 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         // astrologer's own switch and only they may assert they are sitting there
         // ready to answer — silently flipping it on at login is exactly the lie this
         // whole change exists to remove.
+        // Per-device sign-in. The legacy columns below are STILL maintained: old
+        // builds send no deviceId, and the reachability rule falls back to them for
+        // any astrologer with no device rows. See src/vendorDevices.js.
+        await vendorDevices.registerDevice(supabaseCustomerId, {
+          deviceId,
+          fcmToken,
+          platform: devicePlatform,
+          appVersion,
+        });
+
         const loginPatch = { logged_out_at: null };
         if (fcmToken) loginPatch.fcm_token = fcmToken;
         const { error: updateError } = await supabaseService
@@ -2682,8 +2706,14 @@ app.get('/api/astrologers', async (req, res) => {
       // not expressible in PostgREST, but it now runs over a far smaller set.
       const visibleRows = (data || []).filter(astrologerVisibleToCustomers);
 
-      const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
-      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
+      // One extra query per request, not one per row — same reason buildBusyMap is
+      // batched. See src/vendorDevices.js.
+      const [categoryMap, busyMap, deviceSet] = await Promise.all([
+        buildCategoryMap(),
+        buildBusyMap(supabase),
+        vendorDevices.buildDeviceMap(visibleRows.map((a) => a.id)),
+      ]);
+      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap, deviceSet));
     });
 
     // Optional category filter — ?category=<categoryId|name>. Matches by category UUID
@@ -2732,8 +2762,14 @@ app.get('/api/astrologers/liveAstrologers', async (req, res) => {
       // Live section also respects the approval + profile-complete gates.
       const visibleRows = data.filter(astrologerVisibleToCustomers);
 
-      const [categoryMap, busyMap] = await Promise.all([buildCategoryMap(), buildBusyMap(supabase)]);
-      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap));
+      // One extra query per request, not one per row — same reason buildBusyMap is
+      // batched. See src/vendorDevices.js.
+      const [categoryMap, busyMap, deviceSet] = await Promise.all([
+        buildCategoryMap(),
+        buildBusyMap(supabase),
+        vendorDevices.buildDeviceMap(visibleRows.map((a) => a.id)),
+      ]);
+      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap, deviceSet));
     });
 
     return res.status(200).json({ data: formattedData });
@@ -2926,8 +2962,8 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
     const { vendorId } = req.body;
     if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
 
-    const { data: vendorRow } = await supabaseService
-      .from('astrologers').select('fcm_token').eq('id', vendorId).limit(1).single();
+    // Newest signed-in device, falling back to the legacy column. See src/vendorDevices.js.
+    const vendorRow = await vendorDevices.pushTargetFor(vendorId);
 
     if (vendorRow?.fcm_token) {
       await sendPush(vendorRow.fcm_token, {
@@ -2962,8 +2998,8 @@ app.post('/api/push/notify-chat-cancelled', async (req, res) => {
     const { vendorId } = req.body;
     if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
 
-    const { data: vendorRow } = await supabaseService
-      .from('astrologers').select('fcm_token').eq('id', vendorId).limit(1).single();
+    // Newest signed-in device, falling back to the legacy column. See src/vendorDevices.js.
+    const vendorRow = await vendorDevices.pushTargetFor(vendorId);
 
     if (vendorRow?.fcm_token) {
       await sendPush(vendorRow.fcm_token, {
@@ -3029,8 +3065,9 @@ app.get('/api/favoriteAstrologer', async (req, res) => {
     // Preserve the favorites order (most-recently-added first).
     const byId = {};
     (astros || []).forEach((a) => { byId[a.id] = a; });
+    const favDeviceSet = await vendorDevices.buildDeviceMap(Object.keys(byId));
     const formatted = ids
-      .map((id, i) => (byId[id] ? formatAstrologer(byId[id], i, categoryMap) : null))
+      .map((id, i) => (byId[id] ? formatAstrologer(byId[id], i, categoryMap, {}, favDeviceSet) : null))
       .filter(Boolean)
       .map((a) => ({ ...a, isFavorite: true }));
     return res.status(200).json({ favoriteAstrologer: formatted });
@@ -3375,8 +3412,19 @@ app.post('/api/call/initiate', async (req, res) => {
       // One lookup now serves both channels: the FCM data push (Android, and iOS while the
       // app is alive) and the iOS PushKit VoIP push (the only thing that can ring a KILLED
       // iOS app — see src/voipPush.js for why FCM cannot).
-      supabase.from('astrologers').select('fcm_token, voip_token').eq('id', receiverId).single()
-        .then(({ data }) => {
+      // Ring the astrologer's NEWEST signed-in device, falling back to the legacy
+      // account-level columns when there are no device rows (an old build, or the
+      // migration not yet applied). Ringing EVERY device was considered and
+      // deliberately not done: answering on one would leave the other ringing, and a
+      // CallKit screen left ringing is something iOS penalises. See src/vendorDevices.js.
+      Promise.all([
+        supabase.from('astrologers').select('fcm_token, voip_token').eq('id', receiverId).single(),
+        vendorDevices.activeDevice(receiverId),
+      ])
+        .then(([{ data: legacy }, device]) => {
+          const data = device
+            ? { fcm_token: device.fcm_token || legacy?.fcm_token, voip_token: device.voip_token || legacy?.voip_token }
+            : legacy;
           if (data?.fcm_token) {
             sendPush(data.fcm_token, {
               data: {
@@ -4430,6 +4478,26 @@ app.post('/api/vendor/logout', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Not an astrologer token' });
     }
 
+    // Sign out THIS device only.
+    //
+    // THE BUG THIS FIXES: these two columns are account-level, so an unconditional
+    // write here signed the astrologer out everywhere. Measured 2026-09-09 — an
+    // astrologer online on an iPhone was hidden from every customer, and had their
+    // push token wiped, because they logged out of the Android app afterwards.
+    // Their own screen still read "You are Online".
+    //
+    // The legacy columns are only touched when the LAST device leaves, because only
+    // then is the astrologer genuinely signed out. `remaining === null` means the
+    // table is unavailable or the app sent no deviceId (an old build), and in both
+    // cases we must behave exactly as before rather than guess.
+    const { remaining } = await vendorDevices.removeDevice(vendorId, req.body?.deviceId);
+    const isLastDevice = remaining === null || remaining === 0;
+
+    if (!isLastDevice) {
+      console.log(`[vendor logout] ${vendorId} signed out one device, ${remaining} still signed in — account left reachable`);
+      return res.json({ success: true, remainingDevices: remaining });
+    }
+
     const { error } = await (supabaseService || supabase)
       .from('astrologers')
       .update({ logged_out_at: new Date().toISOString(), fcm_token: null })
@@ -5102,7 +5170,9 @@ app.get('/api/live/active', async (req, res) => {
     // Same eligibility gate as every other customer-facing list — a suspended or
     // never-approved astrologer must not appear here even if their live_sessions row
     // is still (incorrectly, or from before they were suspended) marked active.
-    (astros || []).filter(astrologerVisibleToCustomers).forEach((a, i) => { byId[a.id] = formatAstrologer(a, i, categoryMap); });
+    const liveVisible = (astros || []).filter(astrologerVisibleToCustomers);
+    const liveDeviceSet = await vendorDevices.buildDeviceMap(liveVisible.map((a) => a.id));
+    liveVisible.forEach((a, i) => { byId[a.id] = formatAstrologer(a, i, categoryMap, {}, liveDeviceSet); });
 
     const data = sessions
       .filter((s) => byId[s.astrologer_id])
