@@ -16,6 +16,7 @@ import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import {COLORS} from '../Theme/Colors';
 import EvilIcons from 'react-native-vector-icons/EvilIcons';
 import Instance from '../api/ApiCall';
+import { getDeviceId, preserveDeviceId } from '../utils/deviceId';
 import {useFocusEffect} from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {resetAnalyticsIdentity} from '../utils/Analytics';
@@ -92,7 +93,11 @@ function CustomDrawer(props) {
       try {
         const token = await AsyncStorage.getItem('token');
         if (token) {
-          await Instance.post('/api/vendor/logout', {}, {
+          // Sign out THIS device only. Without the deviceId the backend falls back
+          // to the old account-level sign-out, which is the bug where logging out
+          // here hid the astrologer while they were signed in and online on another
+          // phone. See utils/deviceId.js.
+          await Instance.post('/api/vendor/logout', { deviceId: await getDeviceId() }, {
             headers: { Authorization: `Bearer ${token}` },
           });
         }
@@ -101,6 +106,12 @@ function CustomDrawer(props) {
       }
       resetAnalyticsIdentity();
       await AsyncStorage.clear();
+      // clear() takes the device id with it. Put it back, or the next sign-in on
+      // this same handset looks like a brand-new device — and if this logout never
+      // reached the server (offline, app killed), its row survives and the
+      // astrologer is warned they are "signed in on another device" that is really
+      // this same phone.
+      await preserveDeviceId();
       props.navigation.navigate('Login');
     } catch (error) {
       console.error('Error logging out:', error);

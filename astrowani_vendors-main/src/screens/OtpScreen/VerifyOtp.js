@@ -17,6 +17,8 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {OtpInput} from 'react-native-otp-entry';
 import Instance from '../../api/ApiCall';
+import { deviceInfoPayload } from '../../utils/deviceId';
+import { confirmDeviceTakeover, signOutOtherDevices, abandonThisSignIn } from '../../utils/deviceSession';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {identifyVendor} from '../../utils/Analytics';
 import {syncVoipTokenWithBackend} from '../../utils/callKeep';
@@ -108,10 +110,16 @@ const VerifyOtp = ({navigation, route}) => {
     }
     setVerifying(true);
     try {
+      // Identify THIS device so it can be signed out on its own later. Without it
+      // the backend falls back to account-level sign-out, which is the bug where
+      // logging out on one phone hid the astrologer while they were online on
+      // another. See utils/deviceId.js.
+      const device = await deviceInfoPayload();
       const res = await Instance.post('/api/users/mobile-otp-verify', {
         phoneNumber,
         otp: code,
         role,
+        ...device,
       });
       if (res?.data?.success && res?.data?.token) {
         if (isRealId(res.data.user?.id)) {
@@ -119,6 +127,25 @@ const VerifyOtp = ({navigation, route}) => {
           await AsyncStorage.setItem('token', res.data.token);
           await AsyncStorage.setItem('astroId', String(res.data.user.id));
           identifyVendor(res.data.user.id);
+
+          // Already signed in somewhere else? Say so before letting them in.
+          //
+          // With ringing going to the NEWEST device only, a second signed-in device
+          // is a trap: it shows "You are Online" with every toggle green and never
+          // receives a call. The astrologer has to be told, and given the choice.
+          const others = Array.isArray(res.data.otherDevices) ? res.data.otherDevices : [];
+          if (others.length > 0) {
+            const proceed = await confirmDeviceTakeover(others, t);
+            if (!proceed) {
+              // They chose to keep the other device. Undo this sign-in locally, and
+              // remove the row this login just created so nothing is left claiming
+              // this phone is signed in.
+              await abandonThisSignIn(res.data.token, device.deviceId);
+              setVerifying(false);
+              return;
+            }
+            await signOutOtherDevices(res.data.token, device.deviceId);
+          }
     // iOS: a PushKit token issued before login has no astrologer to attach to, so
     // upload it now that one exists. Best-effort and awaited only briefly - failing to
     // register must never block a successful login. No-op on Android.
