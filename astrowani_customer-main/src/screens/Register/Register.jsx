@@ -68,6 +68,10 @@ const DEFAULT_DOB_ANCHOR = () => {
   return d;
 };
 
+// Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281). Kept as a
+// named constant so the style below cannot drift from the artwork.
+const GUIDE_AVATAR_ASPECT = 145 / 281;
+
 export default function Register({ navigation }) {
   const { t, language } = React.useContext(LanguageContext);
   const insets = useSafeAreaInsets();
@@ -672,7 +676,18 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(14),
     marginBottom: verticalScale(4),
   },
-  guideAvatarImg: { width: scale(52), height: scale(52) },
+  // The mascot asset is 145x281 — a TALL character, not a square.
+  //
+  // This used to be a 52x52 box with resizeMode="contain", so the art actually
+  // rendered at 27x52 and left ~25px of empty box between the character and its
+  // speech bubble. That gap is what made the mascot read as small, thin and
+  // detached from the bubble it is supposed to be speaking from.
+  //
+  // Sizing by the asset's real aspect makes the image fill its box exactly, so
+  // the bubble's 10px marginLeft is a real 10px gap. Set the WIDTH and let
+  // aspectRatio derive the height — swapping the artwork for a different shape
+  // then rescales correctly instead of silently reintroducing the dead space.
+  guideAvatarImg: { width: scale(36), aspectRatio: GUIDE_AVATAR_ASPECT },
   guideBubble: {
     flex: 1,
     backgroundColor: '#fff',
