@@ -3405,8 +3405,18 @@ fore- and background).
    did — a grep of `src/` will not reveal an admin-configured target.
 6. **A web account-deletion URL is still required by Play**, alongside the in-app one now
    shipped. `astrowani.com` has no such page. Same outstanding item as the customer app.
-7. **iOS is not shippable** — no `Podfile.lock`, Pods never installed, so an iOS OTA has no
-   destination.
+7. ~~**iOS is not shippable** — no `Podfile.lock`, Pods never installed, so an iOS OTA has no
+   destination.~~ **STALE — corrected 2026-09-09.** Pods DO install: both the EAS builds and
+   `.github/workflows/ios-unsigned-ipa.yml` run `pod install` on a macOS runner, and the
+   customer app's last five unsigned-IPA runs all went green (most recently 2026-09-09,
+   arm64, with `main.jsbundle`, `GoogleService-Info.plist`, `PrivacyInfo.xcprivacy` and every
+   font verified present in the bundle). The vendor app's simulator build `ebab0359` compiled
+   its CallKit/PushKit code on the first attempt. iOS OTA also works — `AppDelegate.bundleURL`
+   was fixed to return `[HotUpdater bundleURL]` during the Phase 5 pre-flight. What is
+   genuinely absent is a **committed** `Podfile.lock` (they are produced on CI) and, above
+   everything else, the **Apple Developer Program enrolment** — which is what actually gates
+   signing, TestFlight, the APNs `.p8`, In-App Purchase products and the store itself.
+   See `MD files/ios-port-plan-2026-08-24.md` and both apps' `ios/README-iOS-SETUP.md`.
 8. 39 eslint errors app-wide, all pre-existing `exhaustive-deps` or unused imports.
 
 ### ⚠️ Ships how?
@@ -3559,3 +3569,144 @@ still withholding, checked against a regex for actual prescribing (`wear a…`,
 - **Measured load behaviour:** 15 concurrent requests to `/api/astrologers` took 1.08s →
   3.71s, and `/api/remedies` serves **435 KB unpaginated** at 1.8s warm / 11.7s cold.
   Neither is fixed.
+
+---
+
+## Subsystem added 2026-09-09: iOS In-App Purchase — coins
+
+### BA. Why coins exist, and the one rule that governs them
+
+Apple requires In-App Purchase for digital content consumed in the app (App Store Review
+Guideline 3.1.1). Three of the five customer wallet spend paths are digital content and are
+therefore in scope on iOS. Two are **exempt** and must never be touched.
+
+| Spend path | Code | Apple's view | iOS currency |
+|---|---|---|---|
+| Per-minute chat/audio/video consultation | `sessionManager.js` | 1:1 real-time person-to-person — **exempt** | rupees |
+| Remedy shop (gemstones, pujas, delivered) | `orderRoutes.js` | physical goods — **exempt** | rupees |
+| Astro reports | `astroRoutes.js` | digital content | **coins** |
+| Gifts (live + profile) | `index.js` | one-to-many digital | **coins** |
+| "Free services" ₹1 charge | `freeServicesRoutes.js` | digital content | **coins** |
+
+> **THE RULE: coins buy reports, gifts and free services. NOTHING ELSE.** There is no
+> coin→rupee conversion and no withdrawal path. If coins ever pay for a consultation or a
+> remedy order, Apple's 15% silently starts applying to the largest **exempt** revenue line
+> in the business. That is also why IAP is NOT on wallet top-ups — funding the rupee wallet
+> through Apple would have taxed consultations and the shop by construction.
+
+**1 coin == ₹1 of catalogue price.** This is what preserves the auspicious gift pricing
+(21 / 51 / 108 / 111 / 251 / 501) that Apple's India price tiers could never express. Packs
+are sold at whatever tiers Apple offers and spent at our own prices, so the admin keeps full
+pricing control and adding a gift never needs an App Store Connect change.
+
+### Files
+
+| File | Role |
+|---|---|
+| `sql/coin_schema.sql` | `customers.coin_balance`, `coin_transactions`, `coin_packs`, `adjust_customer_coins()`, `transfer_coins_to_vendor()`, RLS. **APPLIED 2026-09-09.** |
+| `src/coins.js` | Atomic coin movement — the coin counterpart of `wallet.js` |
+| `src/appleIap.js` | StoreKit 2 JWS verification against Apple's root certificates |
+| `src/coinRoutes.js` | `/api/coins/packs`, `/api/coins/balance`, `/api/coins/verify-purchase` |
+| customer `src/utils/payments.js` | **The one place** deciding rupees vs coins |
+| customer `src/utils/iap.js` | StoreKit setup, listener-based crediting, pending-purchase recovery |
+| customer `src/api/CoinsApi.js` | Balance, packs, verification |
+| customer `src/screens/Coins/CoinStore.js` | The store |
+
+### Things that are load-bearing — do not "simplify" them
+
+- **There is no sandbox/production flag, deliberately.** A TestFlight purchase is SANDBOX and
+  the same binary from the App Store is PRODUCTION. Pinning either gives a build that verifies
+  perfectly in TestFlight and rejects every real purchase on launch day. `appleIap.js` tries
+  production, then sandbox, and records which answered. This is the same shape as the vendor
+  app's `APNS_PRODUCTION` trap, already documented as "the single most common cause of VoIP
+  push silently doing nothing".
+- **`setup({storekitMode: 'STOREKIT2_MODE'})` must run before `initConnection`.**
+  react-native-iap defaults to `STOREKIT1_MODE`, under which a purchase carries a base64 app
+  receipt and `jwsRepresentationIos` is **undefined** — so the backend, which verifies a
+  StoreKit 2 JWS signature, would reject every purchase.
+- **A transaction is finished ONLY after the backend credits it**, and crediting runs from the
+  StoreKit **listener**, not from `requestPurchase`'s return value. A purchase can complete
+  long after the tap (Ask to Buy, an interrupted sheet, a dropped connection). Finishing early
+  loses a paying customer's coins permanently; leaving it unfinished is safe, because StoreKit
+  redelivers next launch and the backend dedupes on Apple's `transactionId`.
+- **Replaying a purchase returns 200, never an error.** An error would make the app refuse to
+  finish the transaction, so StoreKit would redeliver it forever. Same rule as
+  `POST /api/orders/verify-payment`.
+- **`coins.js` has NO legacy read-modify-write fallback**, unlike `wallet.js`. A missing
+  function throws — correct on a debit, and correct on a credit too, because the caller must
+  not finish the transaction when crediting fails.
+- **A coin gift debits COINS and credits the astrologer in RUPEES**, both legs inside one
+  plpgsql function (`transfer_coins_to_vendor`). Astrologers have no coin balance and must
+  never have one — coins cannot be withdrawn.
+- **`payWith` is excluded from every idempotency key**, exactly as `lang` already was. It is
+  how you pay, not what you buy; including it would charge twice for the same report across
+  platforms. `isAlreadyPurchased` checks **both** ledgers for the same reason.
+- **Platform revenue is recorded at SPEND, not at coin purchase**, so there is no double
+  count. Apple's commission is a cost of sale and is not modelled — same as Razorpay's fee on
+  the rupee path. Both figures are gross.
+- **`readSpendableBalance` never throws.** `POST /api/astro/:key` has no outer try/catch, so a
+  throw there is an unhandled rejection rather than a response under Express 4.
+- **`showInsufficientBalanceAlert` takes an explicit `spendsCoins`, never `Platform.OS`.** On
+  iOS both currencies coexist: a customer blocked on a ₹ consultation must still be sent to
+  the Wallet, not the coin store. The referral offer is suppressed on the coin path because
+  that reward pays rupees.
+
+### ⚠️ Two traps specific to react-native-iap
+
+1. **Version 16.x CANNOT be used here.** v14+ uses Nitro Modules, which require **RN 0.79+**;
+   this app is on **0.77.2**. The README says to fall back to `13.1.0` — **that version does
+   not exist**. The real last pre-Nitro release is **13.0.4**, which is what is pinned.
+2. **It is EXCLUDED FROM ANDROID AUTOLINKING** in `react-native.config.js`. Left on, it links
+   Google Play Billing and merges `com.android.vending.BILLING` into the manifest — a new
+   permission on a **live Play Store listing**, for a payment system Android does not use.
+   Same mechanism the vendor app uses for react-native-callkeep. Importing the package on
+   Android is still safe (it destructures `NativeModules`, which yields `undefined` rather
+   than throwing, and only builds a `NativeEventEmitter` inside the listener that `initIap`
+   returns before reaching off-iOS). **Verify with `npx react-native config`, and after any
+   change read the MERGED manifest for `billing` — expect zero hits.**
+
+### Android is untouched
+
+All three paths send `payWith`, which the backend defaults to `'wallet'` when absent, so every
+installed Android build behaves exactly as before. The coin balance is read lazily on the coin
+path only — nothing selects `coin_balance` on the rupee path.
+
+### Verified 2026-09-09 — migration APPLIED, money path proven
+
+`sql/coin_schema.sql` applied to production; its self-verifying tail returned exactly one
+`adjust_customer_coins` overload. `coin_packs` seeded with 5 packs; `/api/coins/packs` serves
+them with **no prices** (Apple owns those — the app pairs each `productId` with StoreKit's
+`localizedPrice`).
+
+**Money path 21/21** against the live database, calling `src/coins.js` directly — **`index.js`
+was deliberately never booted** (it starts sessionManager's billing worker AND
+`checkEarningsResets()`, which would zero `today_earnings` across every astrologer). Covered:
+credit; **replaying the same Apple transaction credits nothing, under the same key or a
+different one**; debit; re-charging the same report debits nothing; overspend refused with the
+balance untouched; and the **gift path** — coins out of the customer, rupees into the
+astrologer, counted as earnings, replay-safe, and an unaffordable gift leaving **neither** side
+changed (proving the two legs are atomic). Teardown asserted: customer coins, astrologer
+wallet and earnings all back to baseline, zero synthetic ledger rows left.
+
+Route harness 6/6. Customer app lint clean, i18n parity **1084 keys, zero one-sided**, Android
+bundle succeeds at 7,672,399 bytes.
+
+### Outstanding — blocks real purchases, not the code
+
+1. **Apple Developer Program enrolment.** Coin products live in App Store Connect and sandbox
+   testers need a paid account. Nothing here can be exercised on a device until this lands.
+2. **Apple root certificates** → `astrowani-backend/certs/apple/` (from
+   apple.com/certificateauthority — public files, safe to commit). Verification refuses to run
+   without them, answering 503 `APPLE_IAP_NOT_CONFIGURED`, which the app treats as retryable so
+   no purchase is lost.
+3. **`APPLE_IAP_APP_APPLE_ID`** in the VPS env (the numeric App Store id).
+4. Create the five products in App Store Connect — ids must match `coin_packs.product_id`
+   exactly — and complete Apple's **tax and banking** forms, without which IAP cannot go live.
+5. No admin UI for coin packs yet; the table exists and is edited by SQL.
+
+### Known gap, deliberate
+
+**Refunds are not handled.** Apple lets a customer refund after spending the coins. That needs
+App Store Server Notifications v2 plus a policy decision, because the schema forbids a negative
+coin balance so the decision cannot be deferred to the code. Until then a refund takes the money
+back from us and leaves the coins with the customer. Noted at the bottom of `src/appleIap.js`.
