@@ -186,7 +186,18 @@ function thumbnailUrl(url, width = 300) {
   // The render endpoint rejects a URL that already carries a query string of its
   // own, so only rewrite clean object URLs.
   if (url.includes('?')) return url;
-  return `${url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')}?width=${width}&quality=70`;
+  // BOTH dimensions plus resize=contain are REQUIRED. `width=` alone does NOT
+  // scale proportionally — it sets the width and LEAVES THE HEIGHT ALONE, so an
+  // 800x800 photo came back 300x800 and every avatar rendered horizontally
+  // squashed. Measured 2026-09-09 across four real profile photos: 800x800 ->
+  // 300x800 (aspect 1.000 -> 0.375) and 500x500 -> 300x500.
+  //
+  // `contain` fits the image inside the box and preserves the aspect ratio, so a
+  // square photo returns 300x300 and a portrait returns e.g. 200x300. It never
+  // crops, which matters because the apps render these in circular frames that do
+  // their own cropping — cropping twice would cut faces off.
+  return `${url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')}` +
+    `?width=${width}&height=${width}&resize=contain&quality=70`;
 }
 
 function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}) {
