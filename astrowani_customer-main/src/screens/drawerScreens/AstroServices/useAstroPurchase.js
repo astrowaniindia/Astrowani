@@ -5,7 +5,8 @@
 // calling the report endpoint. Returns the report payload on success, null on any
 // cancellation/failure (screen just checks truthiness before navigating).
 import {useContext, useEffect, useRef, useState} from 'react';
-import {getAstroServices, getWalletBalance, runAstroReport} from '../../../api/astroApi';
+import {getAstroServices, runAstroReport} from '../../../api/astroApi';
+import {getSpendableBalance, PAYS_WITH_COINS} from '../../../utils/payments';
 import {LanguageContext} from '../../../context/LanguageContext';
 import {showStatusPopup} from '../../../components/StatusPopup';
 import {showInsufficientBalanceAlert} from '../../../utils/insufficientBalanceAlert';
@@ -46,7 +47,7 @@ export default function useAstroPurchase(serviceKey) {
       // Re-fetch right before charging — the backend always charges its own current DB
       // price regardless, but the price the user is SHOWN and asked to confirm here must
       // match that same current price, never a value cached from when this screen mounted.
-      const [freshList, balance] = await Promise.all([getAstroServices(), getWalletBalance()]);
+      const [freshList, balance] = await Promise.all([getAstroServices(), getSpendableBalance()]);
       const freshService = freshList.find((s) => s.key === serviceKey) || service;
       setService(freshService);
 
@@ -67,6 +68,9 @@ export default function useAstroPurchase(serviceKey) {
           balance,
           t,
           intent: 'report',
+          // Reports are paid in coins on iOS, so send them to the coin store rather
+          // than the rupee wallet, which could not unblock this purchase.
+          spendsCoins: PAYS_WITH_COINS,
         });
         return null;
       }

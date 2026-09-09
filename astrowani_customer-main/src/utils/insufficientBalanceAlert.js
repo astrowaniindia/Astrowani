@@ -14,14 +14,29 @@ import { showStatusPopup } from '../components/StatusPopup';
  * @param {number} opts.minRequired - minimum balance needed for this action
  * @param {number} opts.balance - the customer's current balance
  * @param {(key: string) => string} [opts.t] - optional translate function; falls back to English
- * @param {'chat'|'call'|'video'} [opts.intent] - what the customer was trying to start.
+ * @param {'chat'|'call'|'video'|'report'} [opts.intent] - what the customer was trying to start.
  *   Forwarded to the consult_blocked analytics event so "video is priced out of reach"
  *   is distinguishable from "chat is" — they need different fixes.
+ * @param {boolean} [opts.spendsCoins=false] - true when the blocked purchase is paid in
+ *   COINS rather than rupees (iOS reports / gifts / free services — see utils/payments.js).
+ *
+ *   This is passed explicitly rather than derived from Platform.OS, because on iOS the two
+ *   currencies coexist: consultations stay in RUPEES there (1:1 real-time person-to-person
+ *   is exempt from Apple's In-App Purchase requirement), while reports move to coins.
+ *   Switching on the platform alone would send someone blocked on a ₹ consultation to the
+ *   coin store, where nothing they buy would help.
  */
-export function showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent }) {
-  const title = t ? t('alerts.insufficientBalance') : 'Insufficient Balance';
-  const message = `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. ` +
-    `Recharge your wallet, or refer a friend using your referral code to get ₹50 free.`;
+export function showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent, spendsCoins = false }) {
+  const title = spendsCoins
+    ? (t ? t('coins.notEnough') : 'Not enough coins')
+    : (t ? t('alerts.insufficientBalance') : 'Insufficient Balance');
+
+  // Referral rewards are paid in RUPEES, so offering "Refer & Earn ₹50" to someone short
+  // of COINS would point at money that cannot buy the thing they are blocked on.
+  const message = spendsCoins
+    ? `You need at least ${minRequired} coins for this. You have ${balance}.`
+    : `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. ` +
+      `Recharge your wallet, or refer a friend using your referral code to get ₹50 free.`;
 
   showStatusPopup({
     variant: 'insufficient',
@@ -35,10 +50,15 @@ export function showInsufficientBalanceAlert({ navigation, minRequired, balance,
       balance: Number(balance) || 0,
       shortfall: Math.max(0, (Number(minRequired) || 0) - (Number(balance) || 0)),
     },
-    confirmText: 'Recharge',
-    onConfirm: () => navigation?.navigate?.('Wallet'),
-    extraText: 'Refer & Earn ₹50',
-    onExtra: () => navigation?.navigate?.('ReferFriend'),
+    confirmText: spendsCoins ? (t ? t('coins.topUp') : 'Get coins') : 'Recharge',
+    onConfirm: () => navigation?.navigate?.(spendsCoins ? 'CoinStore' : 'Wallet'),
+    // The referral reward is rupees, so it is only offered on the rupee path.
+    ...(spendsCoins
+      ? {}
+      : {
+          extraText: 'Refer & Earn ₹50',
+          onExtra: () => navigation?.navigate?.('ReferFriend'),
+        }),
     cancelText: 'Cancel',
   });
 }

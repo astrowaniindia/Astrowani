@@ -6,7 +6,7 @@
 // purchase(serviceKey, serviceName) that resolves true (go ahead and navigate) or false
 // (insufficient balance / user cancelled / charge failed — all already surfaced via popup).
 import {useContext, useState} from 'react';
-import {getWalletBalance} from '../utils/wallet';
+import {getSpendableBalance, formatSpendable} from '../utils/payments';
 import {chargeFreeService} from '../api/freeServicesApi';
 import {LanguageContext} from '../context/LanguageContext';
 import {showStatusPopup} from '../components/StatusPopup';
@@ -22,13 +22,13 @@ export default function useFreeServicePurchase() {
     captureEvent('free_service_tapped', {service_key: serviceKey});
     setCharging(true);
     try {
-      const balance = await getWalletBalance();
+      const balance = await getSpendableBalance();
       if (balance < FREE_SERVICE_PRICE) {
         captureEvent('free_service_blocked', {service_key: serviceKey, reason: 'low_balance', balance});
         showStatusPopup({
           variant: 'insufficient',
           title: t('alerts.insufficientBalance'),
-          message: t('freeServices.costMsg', {price: FREE_SERVICE_PRICE, balance}),
+          message: t('freeServices.costMsg', {price: formatSpendable(FREE_SERVICE_PRICE), balance: formatSpendable(balance)}),
         });
         return false;
       }
@@ -37,8 +37,8 @@ export default function useFreeServicePurchase() {
         showStatusPopup({
           variant: 'confirmPay',
           title: t('astro.confirmPurchase'),
-          message: t('freeServices.confirmMsg', {price: FREE_SERVICE_PRICE, name: serviceName}),
-          confirmText: t('astro.payAmount', {price: FREE_SERVICE_PRICE}),
+          message: t('freeServices.confirmMsg', {price: formatSpendable(FREE_SERVICE_PRICE), name: serviceName}),
+          confirmText: t('astro.payAmount', {price: formatSpendable(FREE_SERVICE_PRICE)}),
           cancelText: t('common.cancel'),
           onConfirm: () => resolve(true),
           onCancel: () => resolve(false),

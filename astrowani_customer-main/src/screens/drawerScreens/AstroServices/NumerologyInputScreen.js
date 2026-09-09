@@ -10,6 +10,7 @@ import {LanguageContext} from '../../../context/LanguageContext';
 import useSavedProfile from '../../../hooks/useSavedProfile';
 import {showStatusPopup} from '../../../components/StatusPopup';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
+import {formatSpendable} from '../../../utils/payments';
 
 function toApiDate(d) {
   const dd = String(d.getDate()).padStart(2, '0');
@@ -110,7 +111,7 @@ export default function NumerologyInputScreen({navigation}) {
           hand. Disabled until the details are complete, exactly as the button was. */}
       <View style={styles.swipeWrap}>
         <SwipeToConfirm
-          label={service ? t('astroReports.slideToPay', {price: service.price}) : t('astroReports.slideToStart')}
+          label={service ? t('astroReports.slideToPay', {price: formatSpendable(service.price)}) : t('astroReports.slideToStart')}
           confirmingLabel={t('astroReports.confirming')}
           onConfirm={onSubmit}
           busy={submitting}

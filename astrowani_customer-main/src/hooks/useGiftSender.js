@@ -11,6 +11,7 @@ import { Platform, ToastAndroid, Alert } from 'react-native';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { captureEvent } from '../utils/Analytics';
+import { PAY_WITH, PAYS_WITH_COINS, formatSpendable, getSpendableBalance } from '../utils/payments';
 
 const notify = (msg) =>
   Platform.OS === 'android' ? ToastAndroid.show(msg, ToastAndroid.SHORT) : Alert.alert(msg);
@@ -21,8 +22,10 @@ export default function useGiftSender() {
   const showInsufficientBalancePopup = (gift) => {
     showStatusPopup({
       variant: 'insufficient',
-      title: 'Insufficient Balance',
-      message: `You need ₹${gift.price} to send "${gift.name}" but your wallet doesn't have enough. Please recharge and try again.`,
+      title: PAYS_WITH_COINS ? 'Not Enough Coins' : 'Insufficient Balance',
+      message: PAYS_WITH_COINS
+        ? `You need ${formatSpendable(gift.price)} to send "${gift.name}". Please top up and try again.`
+        : `You need ₹${gift.price} to send "${gift.name}" but your wallet doesn't have enough. Please recharge and try again.`,
     });
   };
 
@@ -36,7 +39,11 @@ export default function useGiftSender() {
       const token = await AsyncStorage.getItem('token');
       const res = await Instance.post(
         '/api/gift/send',
-        { astrologerId, giftId: gift._id, context, sessionId, clientRequestId },
+        // payWith: 'coins' on iOS. Live gifting is a one-to-many digital experience,
+        // which App Store Guideline 3.1.1 requires to go through In-App Purchase.
+        // The ASTROLOGER is still credited in rupees either way — they withdraw
+        // rupees and have no coin balance. See the backend's transfer_coins_to_vendor.
+        { astrologerId, giftId: gift._id, context, sessionId, clientRequestId, payWith: PAY_WITH },
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (res.data?.success) {
@@ -88,12 +95,12 @@ export default function useGiftSender() {
     // own authoritative balance check (in doSend, below) is still the real enforcement.
     let freshBalance = null;
     try {
-      const token = await AsyncStorage.getItem('token');
-      const walletRes = await Instance.get('/api/wallet', { headers: { Authorization: `Bearer ${token}` } });
-      freshBalance = walletRes.data?.data?.balance ?? null;
+      // Coins on iOS, rupees on Android — one helper so this gate can never check
+      // the wrong currency against a price the other one pays.
+      freshBalance = await getSpendableBalance();
       if (freshBalance != null) onBalanceChange?.(freshBalance);
     } catch (e) {
-      console.log('[useGiftSender] wallet balance fetch failed:', e?.message);
+      console.log('[useGiftSender] balance fetch failed:', e?.message);
     }
 
     captureEvent('gift_tapped', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context });
@@ -107,8 +114,10 @@ export default function useGiftSender() {
     showStatusPopup({
       variant: 'confirmPay',
       title: 'Confirm Gift',
-      message: `₹${gift.price} will be debited from your wallet to send "${gift.name}".`,
-      confirmText: `Pay ₹${gift.price}`,
+      message: PAYS_WITH_COINS
+        ? `${formatSpendable(gift.price)} will be deducted to send "${gift.name}".`
+        : `₹${gift.price} will be debited from your wallet to send "${gift.name}".`,
+      confirmText: `Pay ${formatSpendable(gift.price)}`,
       cancelText: 'Cancel',
       onConfirm: () => doSend({ astrologerId, gift, context, sessionId, onSent, onBalanceChange }),
       onCancel: () => captureEvent('gift_declined', { astrologer_id: astrologerId, gift_id: gift._id, price: gift.price, context }),

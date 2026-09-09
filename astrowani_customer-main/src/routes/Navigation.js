@@ -46,6 +46,8 @@ import { RateAppPromptHost } from '../components/RateAppPrompt';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
+import CoinStore from '../screens/Coins/CoinStore';
+import { initIap } from '../utils/iap';
 import History from '../screens/Home/Wallet/History';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
@@ -103,6 +105,14 @@ export default function Navigation({ initialRoute }) {
   useEffect(() => {
     applySessionReplaySetting();
     loadAnalyticsEnvironment();
+    // StoreKit, for the iOS coin purchases. A no-op on Android.
+    //
+    // Deliberately at app start rather than when the coin store opens: a purchase
+    // interrupted on a previous launch (lost connectivity before the credit
+    // landed, or an "Ask to Buy" approved later) is redelivered as soon as the
+    // listener attaches, and must be credited whether or not the customer happens
+    // to visit the store again. initIap never throws.
+    initIap();
   }, []);
 
   // Written by PushNotification.js's handleActiveSessionTap when the persistent
@@ -627,6 +637,19 @@ export default function Navigation({ initialRoute }) {
               fontSize: moderateScale(18),
             },
           }}
+        />
+        {/*
+          Coins — iOS only in practice (utils/payments.js TOP_UP_ROUTE points here
+          only on iOS), but registered unconditionally so a deep link or an
+          admin-configured banner action_value cannot land on an unknown route.
+          The screen renders its own "iOS only" message off-iOS.
+
+          Its own header is drawn inside the screen, hence headerShown: false.
+        */}
+        <Stack.Screen
+          name="CoinStore"
+          component={CoinStore}
+          options={{headerShown: false}}
         />
         <Stack.Screen
           name="Wallet"

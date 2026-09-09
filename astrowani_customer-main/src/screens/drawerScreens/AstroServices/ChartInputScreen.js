@@ -8,6 +8,7 @@ import BirthDetailsForm from './BirthDetailsForm';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
 import useAstroPurchase from './useAstroPurchase';
 import {LanguageContext} from '../../../context/LanguageContext';
+import {formatSpendable} from '../../../utils/payments';
 
 const DIVISIONS = [
   {label: 'D1 — Rasi Chart', value: 'd1'}, {label: 'D3', value: 'd3'}, {label: 'D4', value: 'd4'},
@@ -58,7 +59,7 @@ export default function ChartInputScreen({navigation}) {
           hand. Disabled until the details are complete, exactly as the button was. */}
       <View style={styles.swipeWrap}>
         <SwipeToConfirm
-          label={service ? t('astroReports.slideToPay', {price: service.price}) : t('astroReports.slideToStart')}
+          label={service ? t('astroReports.slideToPay', {price: formatSpendable(service.price)}) : t('astroReports.slideToStart')}
           confirmingLabel={t('astroReports.confirming')}
           onConfirm={onSubmit}
           busy={submitting}

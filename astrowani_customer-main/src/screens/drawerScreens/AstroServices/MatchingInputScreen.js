@@ -6,6 +6,7 @@ import BirthDetailsForm from './BirthDetailsForm';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
 import useAstroPurchase from './useAstroPurchase';
 import {LanguageContext} from '../../../context/LanguageContext';
+import {formatSpendable} from '../../../utils/payments';
 
 export default function MatchingInputScreen({navigation}) {
   const {t} = React.useContext(LanguageContext);
@@ -33,7 +34,7 @@ export default function MatchingInputScreen({navigation}) {
           hand. Disabled until the details are complete, exactly as the button was. */}
       <View style={styles.swipeWrap}>
         <SwipeToConfirm
-          label={service ? t('astroReports.slideToPay', {price: service.price}) : t('astroReports.slideToStart')}
+          label={service ? t('astroReports.slideToPay', {price: formatSpendable(service.price)}) : t('astroReports.slideToStart')}
           confirmingLabel={t('astroReports.confirming')}
           onConfirm={onSubmit}
           busy={submitting}

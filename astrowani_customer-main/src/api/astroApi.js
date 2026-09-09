@@ -3,6 +3,7 @@
 // "insufficient balance" error shape so screens don't repeat this boilerplate.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance, { LONG_REQUEST_TIMEOUT_MS } from './ApiCall';
+import { PAY_WITH } from '../utils/payments';
 
 async function authHeaders() {
   const token = await AsyncStorage.getItem('token');
@@ -28,7 +29,17 @@ export async function runAstroReport(key, payload) {
   try {
     // Report generation waits on the third-party Jyotisham API, so it needs
     // longer than the client's 20s default. See LONG_REQUEST_TIMEOUT_MS.
-    const res = await Instance.post(`/api/astro/${key}`, payload, { headers, timeout: LONG_REQUEST_TIMEOUT_MS });
+    //
+    // `payWith` is injected here rather than by each of the ten report screens, so
+    // there is one place that can be wrong. On iOS it is 'coins' — a generated
+    // report is digital content and App Store Guideline 3.1.1 requires In-App
+    // Purchase. On Android it is 'wallet', which is also what the backend assumes
+    // when the field is absent, so older builds are unaffected.
+    const res = await Instance.post(
+      `/api/astro/${key}`,
+      { ...payload, payWith: PAY_WITH },
+      { headers, timeout: LONG_REQUEST_TIMEOUT_MS },
+    );
     return res.data?.data;
   } catch (err) {
     const status = err.response?.status;
