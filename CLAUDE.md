@@ -4516,3 +4516,33 @@ astrologer back on. The only direct writers were two functions in vendor
 
 Checks: backend `node --check` clean; HomeScreen lint back to its 1 pre-existing
 `exhaustive-deps` error (same count as HEAD); i18n 441 keys, each exactly once per language.
+
+Rollout: backend deployed (run 34532256753), then a gated chain confirmed the route live in
+production (no-auth 401, sibling 404) BEFORE shipping the vendor OTA — a new build calling
+a missing route would flip every switch back.
+
+### BW. Request statuses + notification read flags moved server-side (2026-09-11)
+
+The last any-row anon UPDATEs the apps depended on: `call_requests.status`,
+`chat_requests.status`, `notifications.is_read`. Anyone holding the key could cancel other
+customers' pending consultations.
+
+- **`POST /api/requests/:kind/:id/status`** (`kind` = `call` | `chat`) — customer JWT. The
+  ONLY thing a customer ever did to these rows was abandon their own pending request, so
+  that is all this allows: owner must match (`call_requests.customer_id` /
+  `chat_requests.caller_id`), target must be `cancelled` or `missed`, and the row must still
+  be `pending` — an atomic claim, so a request the astrologer just accepted is never
+  overwritten. 0 rows → 200 `{changed:false}` (already resolved elsewhere).
+- **`POST /api/notifications/read`** `{ids}` — customer OR astrologer. Account type comes
+  from the verified token's claims (`role:'astrologer'` / `astroId`), **not a phone lookup**:
+  one number can be both a customer and an astrologer, and a phone lookup would mark the
+  wrong account's rows. Scoped to `customer_id` / `astrologer_id`; foreign ids match nothing.
+- **Customer app**: new `api/RequestsApi.js` (`markRequestStatus`, `markNotificationsRead`,
+  both resolve and never throw — they replace fire-and-forget writes). Wired into all five
+  call entry points' cancel helpers, `useChatRequest` (timeout + cancel) and
+  `NotificationScreen` (one + mark-all). No direct write to the three tables remains in
+  the customer app (grep-verified). Lint per file equals HEAD.
+- **Vendor app**: `Notification.js` mark-read (the only vendor write of the three).
+- **`sql/hardening_13_revoke_request_status_and_notification_update.sql` — written, NOT
+  applied.** Apply only after BOTH apps' OTAs are picked up; early-apply harm is bounded
+  (a cancel becomes a 75s-sweep 'missed', a read badge un-sticks) and stated in the file.

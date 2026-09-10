@@ -17,6 +17,7 @@ import {captureEvent} from '../../utils/Analytics';
 import {COLORS} from '../../Theme/Colors';
 import {SOCKET_URL} from '../../config/api';
 import {supabase} from '../../api/SupabaseClient';
+import { markRequestStatus } from '../../api/RequestsApi';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {ensureProfileComplete} from '../../utils/profileGate';
 import PlacementBanner from '../../components/PlacementBanner';
@@ -56,11 +57,7 @@ const Video = ({navigation}) => {
     activeCallRef.current = null;
     if (!active?.requestId) return;
     if (status !== 'rejected') {
-      supabase
-        .from('call_requests')
-        .update({status})
-        .eq('id', active.requestId)
-        .then(() => {}, () => {});
+      markRequestStatus('call', active.requestId, status);
     }
     socketRef.current?.emit('cancel_call', {
       astrologer_id: active.astrologerId,

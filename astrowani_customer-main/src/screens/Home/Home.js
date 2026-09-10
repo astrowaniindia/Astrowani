@@ -45,6 +45,7 @@ import CustomerReview from './Review';
 import axios from 'axios';
 import { showAlert } from '../../Component/CustomAlert';
 import { supabase } from '../../api/SupabaseClient';
+import { markRequestStatus } from '../../api/RequestsApi';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
@@ -476,11 +477,7 @@ const Home = ({navigation}) => {
     activeCallRef.current = null;
     if (active?.requestId) {
       if (status !== 'rejected') {
-        supabase
-          .from('call_requests')
-          .update({ status })
-          .eq('id', active.requestId)
-          .then(() => {}, () => {});
+        markRequestStatus('call', active.requestId, status);
       }
       // Fast path: socket event so the vendor popup closes immediately.
       socketRef.current?.emit('cancel_call', {

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SectionList, TouchableOpacity, RefreshControl }
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
+import { markNotificationsRead } from '../../api/RequestsApi';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -89,14 +90,14 @@ const NotificationScreen = () => {
   const markAsRead = async (item) => {
     if (item.is_read) return;
     setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
-    await supabase.from('notifications').update({ is_read: true }).eq('id', item.id);
+    await markNotificationsRead([item.id]);
   };
 
   const markAllRead = async () => {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
     if (!unreadIds.length) return;
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
+    await markNotificationsRead(unreadIds);
   };
 
   const sections = useMemo(() => groupByDay(notifications), [notifications]);

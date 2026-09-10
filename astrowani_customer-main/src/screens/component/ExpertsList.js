@@ -17,6 +17,7 @@ import { COLORS } from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../api/SupabaseClient';
+import { markRequestStatus } from '../../api/RequestsApi';
 import { SOCKET_URL } from '../../config/api';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
@@ -94,7 +95,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
     activeCallRef.current = null;
     if (!active?.requestId) return;
     if (status !== 'rejected') {
-      supabase.from('call_requests').update({ status }).eq('id', active.requestId).then(() => {}, () => {});
+      markRequestStatus('call', active.requestId, status);
     }
     callSocketRef.current?.emit('cancel_call', {
       astrologer_id: active.astrologerId,

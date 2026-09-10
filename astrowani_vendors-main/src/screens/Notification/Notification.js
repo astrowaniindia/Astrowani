@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator, 
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
+import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import useNotificationBadgeSync from '../../utils/useNotificationBadgeSync';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -64,7 +65,21 @@ export default function Notification() {
   const markAsRead = async (item) => {
     if (item.is_read) return;
     setData((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
-    await supabase.from('notifications').update({ is_read: true }).eq('id', item.id);
+    // Through the backend (2026-09-11), never Supabase directly — a direct write needed the
+    // public key to be able to change is_read on EVERY row. Best-effort: the row is already
+    // shown as read above, and a failed write only means the badge returns on next load.
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        await Instance.post(
+          '/api/notifications/read',
+          { ids: [item.id] },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+      }
+    } catch (e) {
+      console.log('[notifications] mark-read failed —', e?.message);
+    }
   };
 
   const renderNotificationItem = ({ item }) => (

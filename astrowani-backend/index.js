@@ -2999,6 +2999,105 @@ app.post('/api/vendor/availability', async (req, res) => {
   }
 });
 
+// A customer abandons their own pending call/chat request (2026-09-11).
+//
+// WHY: the customer app wrote call_requests.status / chat_requests.status straight
+// through the public Supabase key, so the anon role needed UPDATE on those columns for
+// EVERY row — anyone holding the key could cancel other customers' pending requests,
+// or flip a pending request to 'accepted'/'rejected' and confuse both apps.
+//
+// Deliberately narrow, because this is the ONLY thing the customer ever did to these
+// rows: the caller must own the request (call_requests.customer_id /
+// chat_requests.caller_id), the target must be 'cancelled' or 'missed', and the row must
+// still be 'pending' — an atomic claim, so a request the astrologer has just accepted is
+// never overwritten. 0 rows matched is answered 200 {changed:false}: the request was
+// already resolved elsewhere, which is not the customer's error.
+const CUSTOMER_REQUEST_TABLES = {
+  call: { table: 'call_requests', owner: 'customer_id' },
+  chat: { table: 'chat_requests', owner: 'caller_id' },
+};
+const CUSTOMER_SETTABLE_REQUEST_STATUSES = ['cancelled', 'missed'];
+
+app.post('/api/requests/:kind/:id/status', async (req, res) => {
+  try {
+    const target = CUSTOMER_REQUEST_TABLES[req.params.kind];
+    if (!target) return res.status(404).json({ success: false, message: 'Unknown request type' });
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { status } = req.body || {};
+    if (!CUSTOMER_SETTABLE_REQUEST_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "status must be 'cancelled' or 'missed'" });
+    }
+    const { data, error } = await supabaseService
+      .from(target.table)
+      .update({ status })
+      .eq('id', req.params.id)
+      .eq(target.owner, customer.id)
+      .eq('status', 'pending')
+      .select('id');
+    if (error) {
+      // A malformed id (not a uuid) is the client's mistake, not ours.
+      if (error.code === '22P02') return res.status(400).json({ success: false, message: 'Invalid request id' });
+      throw error;
+    }
+    return res.status(200).json({ success: true, changed: !!(data && data.length) });
+  } catch (e) {
+    console.error('[requests] customer status update error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not update the request' });
+  }
+});
+
+// Mark the caller's own notifications read — customer OR astrologer (2026-09-11).
+//
+// WHY: both apps wrote notifications.is_read straight through the public key, so the
+// anon role needed UPDATE on that column for EVERY row. Low harm on its own, but it was
+// the last direct write keeping that grant alive.
+//
+// Which kind of account is calling is decided from the verified token's own claims
+// (astrologer tokens carry role:'astrologer' and/or astroId), NOT by looking the phone
+// up — a person can be both a customer and an astrologer on the same number, and a
+// phone lookup would then mark the wrong account's notifications. Every update is
+// additionally scoped to that account's own column, so ids belonging to someone else
+// simply match nothing.
+app.post('/api/notifications/read', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').split(' ')[1];
+    let decoded = null;
+    try { decoded = token ? jwt.verify(token, process.env.JWT_SECRET) : null; } catch (_) { decoded = null; }
+    if (!decoded) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    let ownerColumn;
+    let ownerId;
+    if (decoded.role === 'astrologer' || decoded.astroId) {
+      ownerColumn = 'astrologer_id';
+      ownerId = await resolveVendorIdFromReq(req);
+    } else {
+      ownerColumn = 'customer_id';
+      ownerId = (await resolveCustomerFromReq(req))?.id;
+    }
+    if (!ownerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every((x) => typeof x === 'string')) {
+      return res.status(400).json({ success: false, message: 'ids must be a non-empty array of up to 500 ids' });
+    }
+    const { data, error } = await supabaseService
+      .from('notifications')
+      .update({ is_read: true })
+      .in('id', ids)
+      .eq(ownerColumn, ownerId)
+      .select('id');
+    if (error) {
+      if (error.code === '22P02') return res.status(400).json({ success: false, message: 'Invalid notification id' });
+      throw error;
+    }
+    return res.status(200).json({ success: true, updated: (data || []).length });
+  } catch (e) {
+    console.error('[notifications] mark-read error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not update notifications' });
+  }
+});
+
 // The customer app's SupportScreen.js has always posted here for "Refund Request" /
 // technical/account/feedback tickets — this route never existed, so every submission
 // silently failed (generic Error alert, nothing reached anyone). Found during the

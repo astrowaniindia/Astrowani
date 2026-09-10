@@ -6,6 +6,7 @@ import { useState, useRef, useContext } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
+import { markRequestStatus } from '../api/RequestsApi';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { showInsufficientBalanceAlert } from '../utils/insufficientBalanceAlert';
@@ -236,7 +237,7 @@ const useChatRequest = (navigation) => {
       timeoutRef.current = setTimeout(async () => {
         timeoutRef.current = null;
         try {
-          await supabase.from('chat_requests').update({ status: 'missed' }).eq('id', requestIdRef.current);
+          await markRequestStatus('chat', requestIdRef.current, 'missed');
         } catch (_) {}
         notifyVendorRequestCancelled();
         setRequesting(false);
@@ -260,10 +261,7 @@ const useChatRequest = (navigation) => {
   const cancelRequest = async () => {
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
     if (pendingRequestId) {
-      await supabase
-        .from('chat_requests')
-        .update({ status: 'cancelled' })
-        .eq('id', pendingRequestId);
+      await markRequestStatus('chat', pendingRequestId, 'cancelled');
     }
     notifyVendorRequestCancelled();
     setRequesting(false);

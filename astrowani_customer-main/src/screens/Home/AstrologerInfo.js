@@ -28,6 +28,7 @@ import useGiftSender from '../../hooks/useGiftSender';
 import useChatRequest from '../../hooks/useChatRequest';
 import RequestingPopup from '../../components/RequestingPopup';
 import {supabase} from '../../api/SupabaseClient';
+import { markRequestStatus } from '../../api/RequestsApi';
 import {SOCKET_URL} from '../../config/api';
 import {showStatusPopup} from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
@@ -147,11 +148,7 @@ const AstrologerInfo = ({route, navigation}) => {
     activeCallRef.current = null;
     if (!active?.requestId) return;
     if (status !== 'rejected') {
-      supabase
-        .from('call_requests')
-        .update({ status })
-        .eq('id', active.requestId)
-        .then(() => {}, () => {});
+      markRequestStatus('call', active.requestId, status);
     }
     callSocketRef.current?.emit('cancel_call', {
       astrologer_id: active.astrologerId,
