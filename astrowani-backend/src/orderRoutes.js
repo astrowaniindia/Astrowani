@@ -337,6 +337,79 @@ function pickAddressFields(body) {
   };
 }
 
+/**
+ * Claim a Razorpay-paid order, record it, take the stock — the ONE implementation,
+ * shared by POST /api/orders/verify-payment (the app) and POST /api/razorpay/webhook
+ * (Razorpay, when the app died before verifying). The status claim
+ * (pending_payment -> placed) succeeds for exactly one caller, so both can arrive
+ * for the same payment and it still completes once.
+ *
+ * @param {object}  p
+ * @param {string}  p.razorpayOrderId
+ * @param {string}  p.razorpayPaymentId
+ * @param {string} [p.customerId]          the app scopes to its customer; the webhook has none
+ * @param {number} [p.expectedAmountPaise] the webhook's captured amount; a mismatch refuses
+ */
+async function completeOrderPayment({ razorpayOrderId, razorpayPaymentId, customerId = null, expectedAmountPaise = null }) {
+  let rq = db.from('orders').select('id, grand_total, total').eq('razorpay_order_id', razorpayOrderId);
+  if (customerId) rq = rq.eq('customer_id', customerId);
+  const { data: row, error: readErr } = await rq.maybeSingle();
+  if (readErr) throw readErr;
+  if (!row) return { matched: false };
+  if (expectedAmountPaise != null) {
+    const due = Number(row.grand_total != null ? row.grand_total : row.total);
+    if (Math.round(due * 100) !== Number(expectedAmountPaise)) {
+      return { matched: true, amountMismatch: true, orderId: row.id };
+    }
+  }
+
+  // The atomic claim. Only succeeds once per order. A second call (retry, double-tap,
+  // replay, or the webhook racing the app) matches 0 rows and is a no-op — success, not
+  // an error, because the first call already did the work.
+  let cq = db.from('orders').update({
+    razorpay_payment_id: razorpayPaymentId,
+    status: 'placed',
+    payment_status: 'paid',
+    paid_at: new Date().toISOString(),
+  })
+    .eq('razorpay_order_id', razorpayOrderId)
+    .eq('status', 'pending_payment');
+  if (customerId) cq = cq.eq('customer_id', customerId);
+  const { data: claimed, error: claimErr } = await cq.select('*');
+  if (claimErr) throw claimErr;
+
+  if (!claimed || !claimed.length) {
+    let eq = db.from('orders').select('*, order_items(*)').eq('razorpay_order_id', razorpayOrderId);
+    if (customerId) eq = eq.eq('customer_id', customerId);
+    const { data: existing } = await eq.maybeSingle();
+    if (existing && existing.payment_status === 'paid') return { matched: true, alreadyProcessed: true, order: existing };
+    return { matched: true, payable: false };
+  }
+
+  const order = claimed[0];
+  await logStatus(order.id, 'placed', `Paid online (payment ${razorpayPaymentId})`);
+
+  // Stock comes off at confirmation, never at add-to-cart, so an abandoned checkout
+  // never holds inventory hostage.
+  const { data: lines } = await db.from('order_items')
+    .select('item_id, quantity').eq('order_id', order.id);
+  if (lines && lines.length) {
+    const withStock = [];
+    const { data: stockRows } = await db.from('remedy_items')
+      .select('id, stock').in('id', lines.map((l) => l.item_id).filter(Boolean));
+    const stockById = new Map((stockRows || []).map((r) => [r.id, r.stock]));
+    for (const l of lines) {
+      if (!l.item_id) continue;
+      withStock.push({ itemId: l.item_id, quantity: l.quantity, stock: stockById.get(l.item_id) ?? null });
+    }
+    await moveStock(withStock, -1);
+  }
+
+  const { data: full } = await db.from('orders')
+    .select('*, order_items(*), order_status_events(*)').eq('id', order.id).single();
+  return { matched: true, placed: true, order: full || order };
+}
+
 module.exports = (app) => {
   // Async wrapper so a thrown error becomes a 500 through Express's error middleware
   // (src/errorLogger.js) rather than an unhandled rejection. Same helper shape as
@@ -846,56 +919,20 @@ module.exports = (app) => {
       return res.status(400).json({ success: false, message: 'Payment verification failed' });
     }
 
-    // The atomic claim. Only succeeds once per order, and only for the customer who
-    // created it. A second verify call (retry, double-tap, replay) matches 0 rows and is a
-    // no-op — success, not an error, because the first call already did the work.
-    const { data: claimed, error: claimErr } = await db.from('orders').update({
-      razorpay_payment_id,
-      status: 'placed',
-      payment_status: 'paid',
-      paid_at: new Date().toISOString(),
-    })
-      .eq('razorpay_order_id', razorpay_order_id)
-      .eq('customer_id', customer.id)
-      .eq('status', 'pending_payment')
-      .select('*');
-    if (claimErr) throw claimErr;
-
-    if (!claimed || !claimed.length) {
-      const { data: existing } = await db.from('orders')
-        .select('*, order_items(*)')
-        .eq('razorpay_order_id', razorpay_order_id)
-        .eq('customer_id', customer.id)
-        .single();
-      if (existing?.payment_status === 'paid') {
-        return res.status(200).json({ success: true, alreadyProcessed: true, order: existing });
-      }
+    // Claim, record, take stock — shared with the Razorpay webhook (see
+    // completeOrderPayment above), scoped to this customer.
+    const result = await completeOrderPayment({
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      customerId: customer.id,
+    });
+    if (result.alreadyProcessed) {
+      return res.status(200).json({ success: true, alreadyProcessed: true, order: result.order });
+    }
+    if (!result.placed) {
       return res.status(409).json({ success: false, message: 'Order not found or not payable' });
     }
-
-    const order = claimed[0];
-    await logStatus(order.id, 'placed', `Paid online (payment ${razorpay_payment_id})`);
-
-    // Stock comes off at confirmation, never at add-to-cart, so an abandoned checkout
-    // never holds inventory hostage.
-    const { data: lines } = await db.from('order_items')
-      .select('item_id, quantity').eq('order_id', order.id);
-    if (lines && lines.length) {
-      const withStock = [];
-      const { data: stockRows } = await db.from('remedy_items')
-        .select('id, stock').in('id', lines.map((l) => l.item_id).filter(Boolean));
-      const stockById = new Map((stockRows || []).map((r) => [r.id, r.stock]));
-      for (const l of lines) {
-        if (!l.item_id) continue;
-        withStock.push({ itemId: l.item_id, quantity: l.quantity, stock: stockById.get(l.item_id) ?? null });
-      }
-      await moveStock(withStock, -1);
-    }
-
-    const { data: full } = await db.from('orders')
-      .select('*, order_items(*), order_status_events(*)').eq('id', order.id).single();
-
-    return res.status(200).json({ success: true, order: full || order });
+    return res.status(200).json({ success: true, order: result.order });
   }));
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1015,3 +1052,5 @@ module.exports = (app) => {
     return res.json({ success: true, refund });
   }));
 };
+
+module.exports.completeOrderPayment = completeOrderPayment;

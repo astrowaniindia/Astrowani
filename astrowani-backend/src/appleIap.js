@@ -199,8 +199,34 @@ function reasonToRefuse(txn, knownProductIds) {
   return null;
 }
 
+/**
+ * Verify an App Store Server Notification v2 (`signedPayload`) and return it decoded.
+ * Same production-then-sandbox approach as verifyTransaction, for the same reason:
+ * a TestFlight refund arrives signed for SANDBOX, a real one for PRODUCTION.
+ */
+async function verifyNotification(signedPayload) {
+  buildVerifiers();
+  if (configError) throw configError;
+  if (typeof signedPayload !== 'string' || signedPayload.split('.').length !== 3) {
+    throw new AppleIapVerificationFailed('the notification is not a well-formed JWS');
+  }
+  const failures = [];
+  for (const { env, verifier } of verifiers) {
+    try {
+      const payload = await verifier.verifyAndDecodeNotification(signedPayload);
+      return { ...payload, _environment: env };
+    } catch (err) {
+      failures.push(`${env}: ${err?.message || err}`);
+    }
+  }
+  throw new AppleIapVerificationFailed(
+    `the notification could not be verified against either environment. ${failures.join(' | ')}`,
+  );
+}
+
 module.exports = {
   verifyTransaction,
+  verifyNotification,
   reasonToRefuse,
   isConfigured,
   BUNDLE_ID,
@@ -212,7 +238,9 @@ module.exports = {
 /*
  * NOT DONE YET, deliberately, and worth knowing before this goes live:
  *
- * 1. REFUNDS. Apple lets a customer request a refund after they have spent the
+ * 1. REFUNDS — NOW HANDLED (2026-09-11) by src/appleNotificationRoutes.js, which
+ *    claws back whatever coins are left. The original note follows.
+ *    Apple lets a customer request a refund after they have spent the
  *    coins. Handling that needs App Store Server Notifications v2 (a webhook
  *    Apple calls with REFUND / REVOKE), which is a separate endpoint plus a
  *    policy decision about what to do when the coins are already spent —

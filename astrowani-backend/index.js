@@ -24,6 +24,7 @@ const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
+const walletRecharge = require('./src/walletRecharge');
 // Per-device astrologer sign-in state. Signing out on one device must not sign
 // the astrologer out on another — see sql/vendor_devices.sql.
 const vendorDevices = require('./src/vendorDevices');
@@ -703,7 +704,9 @@ app.use(express.json({
   // body is useless for verifying it. Captured only for that one path —
   // keeping a copy of every 10mb request would be pure waste.
   verify: (req, _res, buf) => {
-    if (req.originalUrl && req.originalUrl.startsWith('/api/whatsapp/webhook')) {
+    // Razorpay signs its webhook the same way, over the exact bytes it sent.
+    if (req.originalUrl && (req.originalUrl.startsWith('/api/whatsapp/webhook')
+        || req.originalUrl.startsWith('/api/razorpay/webhook'))) {
       req.rawBody = buf;
     }
   },
@@ -772,6 +775,8 @@ require('./src/uploadRoutes')(app);
 // order history and cancellation. Owns /api/addresses/* and all of /api/orders/*,
 // including the GET /api/orders/mine that used to live in this file.
 require('./src/orderRoutes')(app);
+// Razorpay -> us, for payments whose app died before verify-payment landed.
+require('./src/razorpayWebhookRoutes')(app);
 // Astrologer referral commission on remedy orders. Registered after orderRoutes
 // because it requires adminRoutes' requireAdmin, which is exported there.
 require('./src/remedyReferralRoutes')(app);
@@ -782,6 +787,8 @@ require('./src/remedyReferralRoutes')(app);
 // (1:1 real-time person-to-person, and physical goods) and must keep using the
 // Razorpay-funded rupee wallet. See sql/coin_schema.sql.
 require('./src/coinRoutes')(app);
+// Apple -> us: refunds / revocations of coin purchases (App Store Server Notifications v2).
+require('./src/appleNotificationRoutes')(app);
 
 // Free 12-minute introductory call — customer booking + admin management.
 // Also needs adminRoutes' requireAdmin, so it registers after it.
@@ -4301,43 +4308,22 @@ app.post('/api/wallet/verify-payment', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Payment verification failed' });
     }
 
-    // Atomic claim: only succeeds once per order, for the customer that created it. A second
-    // verify call for the same order (retry, double-tap, replay) finds 0 rows and is a no-op —
-    // NOT an error, since the first call may have already credited the wallet successfully.
-    const { data: claimed, error: claimErr } = await supabaseService
-      .from('wallet_recharges')
-      .update({ razorpay_payment_id, status: 'paid', paid_at: new Date().toISOString() })
-      .eq('razorpay_order_id', razorpay_order_id)
-      .eq('customer_id', customer.id)
-      .eq('status', 'created')
-      .select();
-    if (claimErr) throw claimErr;
-
-    if (!claimed || !claimed.length) {
-      const { data: existing } = await supabaseService
-        .from('wallet_recharges')
-        .select('status')
-        .eq('razorpay_order_id', razorpay_order_id)
-        .eq('customer_id', customer.id)
-        .single();
-      if (existing?.status === 'paid') {
-        const { data: cust } = await supabaseService.from('customers').select('wallet_balance').eq('id', customer.id).single();
-        return res.status(200).json({ success: true, alreadyProcessed: true, newBalance: cust?.wallet_balance ?? null });
-      }
+    // Claim + credit, exactly once — shared with the Razorpay webhook
+    // (src/walletRecharge.js), which completes the same recharge if the app dies
+    // before this call lands. Both key the credit on the payment id, so the two
+    // paths cannot double-credit, and a claimed-but-uncredited recharge self-heals.
+    const result = await walletRecharge.completeRecharge({
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      customerId: customer.id,
+    });
+    if (!result.matched || result.payable === false) {
       return res.status(409).json({ success: false, message: 'Order not found or not payable' });
     }
-
-    const rechargeRow = claimed[0];
-
-    // Balance change + ledger row in one transaction. Keyed on the Razorpay
-    // payment id, so even if the status claim above were somehow bypassed the
-    // credit still cannot be applied twice.
-    const newBalance = await wallet.adjustCustomerWallet(customer.id, Number(rechargeRow.amount), {
-      description: `Wallet recharge via Razorpay (payment ${razorpay_payment_id})`,
-      idempotencyKey: `razorpay:${razorpay_payment_id}`,
-    });
-
-    return res.status(200).json({ success: true, newBalance });
+    if (result.alreadyProcessed) {
+      return res.status(200).json({ success: true, alreadyProcessed: true, newBalance: result.newBalance ?? null });
+    }
+    return res.status(200).json({ success: true, newBalance: result.newBalance });
   } catch (err) {
     console.error('POST /api/wallet/verify-payment error:', err.message);
     return res.status(500).json({ success: false, message: 'Could not verify payment' });

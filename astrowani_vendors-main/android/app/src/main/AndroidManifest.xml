@@ -62,15 +62,19 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" tools:node="remove" />
 
+    <!-- enableOnBackInvokedCallback=false: targetSdk 36 turns predictive back ON by default,
+         and then Android 16 never calls Activity.onBackPressed() - the only path React Native
+         0.77's ReactActivity uses to reach JS BackHandler. Without this, every BackHandler in
+         the app is silently inert on Android 16 (measured on an Android 16 emulator). -->
     <application
+      android:enableOnBackInvokedCallback="false"
       android:name=".MainApplication"
       android:label="@string/app_name"
       android:icon="@mipmap/ic_launcher"
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme"
-      android:supportsRtl="true"
-      android:usesCleartextTraffic="true">
+      android:supportsRtl="true">
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

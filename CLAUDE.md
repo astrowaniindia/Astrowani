@@ -1195,10 +1195,11 @@ matching what is already there.
 > against the code before acting on any "open issue" below.
 
 **Open issues (NOT yet fixed — do not assume any of these are handled):**
-- **RLS is OFF on the core tables.** The publishable key shipped in both APKs can INSERT and
-  UPDATE `customers`, `astrologers`, `chat_sessions`, `call_requests` — including
-  `wallet_balance` and `*_charge_per_minute` — and can READ astrologer bank details, customer
-  birth data, and every `chat_messages` transcript. Verified by probe.
+- ~~**RLS is OFF on the core tables.** The publishable key … can INSERT and UPDATE
+  `customers`, `astrologers` …~~ **STALE — re-measured 2026-09-11, see BT.** Column-level
+  grants now deny anon ALL access to `customers`, wallet tables, orders, coins, admin tables
+  and `chat_messages`, and deny SELECT of astrologer wallet/bank/`fcm_token`. What anon can
+  still do is a short list of any-row UPDATEs on status/toggle columns, recorded in BT.
 - **RLS cannot simply be enabled.** The apps authenticate with our own Express JWT, not
   Supabase Auth, so `auth.uid()` inside a policy is always NULL and no ownership policy is
   expressible. Turning RLS on today breaks every direct-from-app query without securing
@@ -1211,7 +1212,9 @@ matching what is already there.
   must set `next_billing_at` in the same write. **⚠ 2026-09-10: there are currently ZERO such
   rows** — the two long-lived ones were cleaned up. The trap in the code is still real and the
   rule still stands, but the file previously implied live rows exist; they do not.
-- No rate limiting, no `helmet`, no compression; `cors()` is fully open.
+- ~~No rate limiting, no `helmet`, no compression; `cors()` is fully open.~~ **STALE —
+  corrected 2026-09-11:** `index.js` (~line 698) now applies helmet + compression + a CORS
+  allowlist + a general per-IP rate limit.
 
 ### V. Things that are now enforced — do not undo them
 
@@ -1582,7 +1585,11 @@ two real `no-dupe-keys` eslint errors went with it.
 **The live Razorpay key is still in git history.** Deleting the file does not un-expose it —
 **rotate that key in the Razorpay dashboard.** History was deliberately NOT rewritten.
 
-### Known gap, still deliberately out of scope
+### ~~Known gap, still deliberately out of scope~~ — CLOSED 2026-09-11, see BT
+
+> **The webhook now exists** (`POST /api/razorpay/webhook`, subsystem BT). The text below
+> is the original note, kept for history. It goes live once `RAZORPAY_WEBHOOK_SECRET` is
+> set and the webhook is added in the Razorpay dashboard.
 
 There is **no Razorpay webhook**. If a customer's payment succeeds but the app dies before
 `verify-payment` lands, the order stays `pending_payment` — money taken, order invisible in
@@ -1718,8 +1725,8 @@ pricing or demand.
 
 ### Still outstanding (not code)
 
-1. `analytics_environment` is still `'test'` in `app_settings`, so every PostHog-backed card
-   reads zero by design. Flip it in the admin's Analytics page on launch day.
+1. ~~`analytics_environment` is still `'test'`~~ **DONE 2026-09-11 — flipped to
+   `'production'`.** Production events are now counted by every PostHog-backed card.
 2. `SENTRY_AUTH_TOKEN` is unset, so the App Health card 503s with an explanatory message.
 3. Historical events with a null `environment` (873 `$screen`) stay invisible — unavoidable,
    they predate the tag and cannot be attributed to test or production after the fact.
@@ -3720,7 +3727,8 @@ bundle succeeds at 7,672,399 bytes.
 
 ### Known gap, deliberate
 
-**Refunds are not handled.** Apple lets a customer refund after spending the coins. That needs
+**⚠ CLOSED 2026-09-11 — refunds ARE handled now, see BT** (`POST /api/apple/notifications`
+claws back whatever coins are left). Original note: **Refunds are not handled.** Apple lets a customer refund after spending the coins. That needs
 App Store Server Notifications v2 plus a policy decision, because the schema forbids a negative
 coin balance so the decision cannot be deferred to the code. Until then a refund takes the money
 back from us and leaves the coins with the customer. Noted at the bottom of `src/appleIap.js`.
@@ -4338,3 +4346,105 @@ entry, not all of them.**
 **Still open (measured 2026-09-11):** `usesCleartextTraffic="true"` in BOTH apps' manifests,
 and BOTH apps' tracked `android/gradle.properties` still carry the upload keystore password
 keys.
+
+---
+
+## Session 2026-09-11: pre-launch gaps closed (Razorpay webhook, Apple refunds, manifests, access)
+
+### BT. What was finished, and what is still yours
+
+| # | Item | State |
+|---|---|---|
+| 6 | `usesCleartextTraffic` removed from both apps' MAIN manifests | **Done** (debug manifests keep it — Metro is http) |
+| 7 | Razorpay webhook | **Done in code**, inert until you set the secret |
+| 8 | Apple coin refunds (App Store Server Notifications v2) | **Done in code**, inert until Apple enrolment |
+| 10 | Android 14+/16 `BackHandler` inert | **Done** — `enableOnBackInvokedCallback="false"` |
+| 11 | Core-table access | Re-measured; `hardening_10` written, **not applied** |
+| 12 | Admin built on the VPS | **Done** — builds on the Actions runner now |
+| 13 | `free_call_booking_assignment.sql` | **Yours** to run (performance only; 4 rows today) |
+| 14 | `analytics_environment` | **Done** → `production`. `SENTRY_AUTH_TOKEN` is yours |
+
+**6 + 10 are NATIVE (manifest) — they need a Play Store release, not an OTA.**
+Item 10's cause: `targetSdk 36` makes predictive back default-on, and RN 0.77's
+`ReactActivity` intercepts back through the legacy `onBackPressed()`, which Android no
+longer calls under predictive back — so every `BackHandler` in both apps (chat/call
+screens, Register, StoreWebView, the forced-update wall's backup) was silently doing
+nothing on Android 14+. The opt-out restores the legacy path. The forced-update overlay
+(subsystem AS) never depended on BackHandler and stays as it is.
+
+#### 7 — Razorpay webhook (`src/razorpayWebhookRoutes.js`)
+
+Closes the "paid but the app died before verify-payment" gap for BOTH wallet recharges
+and remedy orders. The completion logic was extracted so the app and the webhook run
+**the identical code**:
+
+- `src/walletRecharge.js` → `completeRecharge()` — used by `/api/wallet/verify-payment`
+  and the webhook. Credit keyed `razorpay:<paymentId>` exactly as before.
+- `orderRoutes.completeOrderPayment()` — used by `/api/orders/verify-payment` and the
+  webhook (claim → `logStatus` → `moveStock`).
+
+Load-bearing details:
+- **HMAC over the RAW bytes.** `express.json`'s `verify` hook in `index.js` now captures
+  `req.rawBody` for `/api/razorpay/webhook` as well as the WhatsApp webhook. Re-serialising
+  `req.body` would not reproduce Razorpay's bytes and every signature would fail.
+- **Fails CLOSED**: no `RAZORPAY_WEBHOOK_SECRET` → 503 for every call. Razorpay retries.
+- **Amount mismatch refuses** (logged `AMOUNT MISMATCH … needs a human`), leaves the row
+  claimable, answers 200 — retrying can't fix it.
+- Unknown order ids and unhandled events answer 200 so Razorpay stops retrying; real
+  errors answer 500 so it retries (both paths are idempotent).
+- **New: self-healing.** A recharge found already `paid` re-applies its credit under the
+  same key. That's a no-op normally, and it now completes the old gap where a claim
+  succeeded but the credit failed, which used to leave `paid` with no money forever.
+
+**To turn it on (yours):** Razorpay Dashboard → Settings → Webhooks → Add
+`https://backend.astrowani.com/api/razorpay/webhook`, events `payment.captured` +
+`order.paid`, any long random secret → set the same value as `RAZORPAY_WEBHOOK_SECRET` in
+the VPS env → restart.
+
+#### 8 — Apple refunds (`src/appleNotificationRoutes.js`, `appleIap.verifyNotification`)
+
+`REFUND`/`REVOKE` → take back `min(coins credited, current balance)`, key
+`apple-refund:<txnId>`; the ledger description states how many had already been spent.
+`REFUND_REVERSED` → restore exactly what the refund took, key
+`apple-refund-reversed:<txnId>`. **Never pushes a balance negative, never touches
+rupees.** If everything was already spent there's no ledger row (amount > 0 is a CHECK),
+so the loud `console.error` IS the record. One retry on `INSUFFICIENT_COINS` covers a
+spend racing the clawback. Unconfigured verifier → 503 so Apple retries. **Setup
+(after enrolment):** App Store Connect → App Store Server Notifications → V2, Production
+AND Sandbox URL `https://backend.astrowani.com/api/apple/notifications`.
+
+**Verified 2026-09-11 — 31/31 against the live database** (bare Express harness; index.js
+never booted): all webhook refusals; wallet credit exactly once across webhook, webhook
+replay and the app path; another customer can't complete the recharge; exactly one ledger
+row; self-heal; order placed once, with one status event on replay; refund recovers 70 of
+100 after 30 were spent; replay recovers nothing; reversal restores exactly 70, once; Apple
+route 400/503. Teardown: wallet back to ₹4700, coins back to 0, zero synthetic rows.
+**Not yet exercised against Razorpay's own servers** — that needs the dashboard webhook +
+secret, then one real ₹1 recharge.
+
+#### 11 — core-table access, re-measured (read-only probes, nothing written)
+
+Anon is **denied** all access to `customers`, wallet tables, admin tables, orders, coins,
+`vendor_devices`, `customer_blocks` and `app_settings` writes; astrologer
+wallet/bank/`fcm_token` SELECT is denied. Anon **can still UPDATE any row** of:
+`call_requests.status`, `chat_requests.status`, `notifications.is_read`,
+`chat_sessions.is_active/ended_at`, `astrologers.is_online/is_chat_enabled/is_available/fcm_token`.
+
+- `sql/hardening_10_revoke_chat_sessions_update.sql` closes the `chat_sessions` one (it
+  allows killing any live consultation or creating a zombie session). Safe now: neither app
+  writes `chat_sessions`. Self-verifying tail. **Not applied — yours to run.**
+- The rest ARE used by the apps directly (cancel/reject writes, read-receipts, vendor
+  toggles, FCM token), so revoking them needs a backend endpoint + app migration + OTA +
+  wait for adoption + revoke. Worst residual: **`astrologers.fcm_token` can be overwritten
+  for any astrologer**, which redirects their incoming-call pushes. That's the first one to
+  move server-side. Not started.
+
+#### 12 — admin build moved off the VPS (`.github/workflows/deploy-admin.yml`)
+
+Builds on the runner with `VITE_API_URL=https://backend.astrowani.com` (the value measured
+in the live bundle — the VPS's untracked `.env` used to supply it), scps a tarball, and
+extracts to `dist.new` then swaps, so a dropped upload never serves half a build. No more
+`git reset` of the shared checkout, so it can't race `deploy-backend.yml`. It ends with a
+200 check on `manu.astrowani.com`. `/api/remedies` was already gzipped by Cloudflare
+(258 KB → 43 KB), and uptime's last 60 runs were green, so the 522s remain unexplained;
+the VPS build was the leading suspect and it's now gone.

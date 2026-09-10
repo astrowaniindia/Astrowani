@@ -11,15 +11,30 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and deploy (retries the connection, serializes against deploy-backend)
-        # Same lock as deploy-backend.yml, same reason: a commit touching both
-        # astrowani-admin/** and astrowani-backend/** triggers both workflows
-        # at once, and both `git reset --hard` the SAME shared checkout
-        # (/var/www/astrowani-monorepo) — confirmed via the Actions tab racing
-        # each other on 2026-08-10. The `flock` below on the same lock file
-        # path as deploy-backend.yml means whichever one gets there first runs,
-        # the other just waits its turn instead of corrupting the shared repo
-        # mid-checkout. See MD files/vps-git-deploy-guide.md.
+      # BUILD ON THE RUNNER, NOT THE VPS (changed 2026-09-11). This used to SSH in and
+      # run `npm install && npm run build` on the production box, which is the same
+      # machine serving the API — a Vite build competing with Node for RAM was the
+      # prime suspect for the sporadic 522s. The VPS now only receives static files.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build
+        working-directory: astrowani-admin
+        env:
+          # Baked into the bundle at build time. This is the value the live admin
+          # build was already carrying (measured 2026-09-11) — the VPS's untracked
+          # .env supplied it before. Without it client.js falls back to localhost.
+          VITE_API_URL: https://backend.astrowani.com
+        run: |
+          npm install
+          npm run build
+          test -f dist/index.html
+          tar -czf /tmp/admin-dist.tgz -C dist .
+
+      - name: Upload and swap in (retries the connection)
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -30,26 +45,29 @@ jobs:
           echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
+          # Extract into a fresh directory first, then swap, so a dropped connection
+          # mid-upload can never leave a half-written dist being served. No flock and
+          # no `git reset` any more: this no longer touches the shared checkout that
+          # deploy-backend.yml resets, so the two workflows cannot race.
           cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
           set -e
-          exec 9>/tmp/astrowani-deploy.lock
-          flock -w 300 9 || { echo "Timed out waiting for the other deploy to finish"; exit 1; }
-
-          cd /var/www/astrowani-monorepo
-          git fetch origin main
-          git reset --hard origin/main
-          cd astrowani-admin
-          npm install
-          npm run build
-          rm -rf /var/www/astrowani/admin/dist/*
-          cp -r dist/* /var/www/astrowani/admin/dist/
+          NEW=/var/www/astrowani/admin/dist.new
+          rm -rf "$NEW" && mkdir -p "$NEW"
+          tar -xzf /tmp/admin-dist.tgz -C "$NEW"
+          rm -f /tmp/admin-dist.tgz
+          test -f "$NEW/index.html"
+          rm -rf /var/www/astrowani/admin/dist.old
+          if [ -d /var/www/astrowani/admin/dist ]; then mv /var/www/astrowani/admin/dist /var/www/astrowani/admin/dist.old; fi
+          mv "$NEW" /var/www/astrowani/admin/dist
           chown -R www-data:www-data /var/www/astrowani/admin
+          echo "admin dist swapped in"
           REMOTE_SCRIPT
 
           attempt=1
           max_attempts=5
-          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
-            -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 -i $HOME/.ssh/deploy_key"
+          until scp $SSH_OPTS /tmp/admin-dist.tgz "$VPS_USER@$VPS_HOST:/tmp/admin-dist.tgz" \
+            && ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "SSH deploy failed after $max_attempts attempts — giving up."
               exit 1
@@ -58,3 +76,9 @@ jobs:
             attempt=$((attempt + 1))
             sleep 20
           done
+
+      - name: Confirm the live admin serves the new build
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' https://manu.astrowani.com/)
+          echo "manu.astrowani.com -> $code"
+          test "$code" = "200"
