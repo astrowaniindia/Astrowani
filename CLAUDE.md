@@ -4546,3 +4546,11 @@ customers' pending consultations.
 - **`sql/hardening_13_revoke_request_status_and_notification_update.sql` — written, NOT
   applied.** Apply only after BOTH apps' OTAs are picked up; early-apply harm is bounded
   (a cancel becomes a 75s-sweep 'missed', a read badge un-sticks) and stated in the file.
+
+Rollout 2026-09-11, gated the same way as BV: commit `0e146c8`, backend deployed, then
+production confirmed both routes live (requests no-auth 401, notifications no-auth 401,
+sibling 404) BEFORE either OTA shipped. Customer OTA android `01a08d44…` / ios `01a08d4a…`;
+astrologer OTA android `01a08d51…` / ios `01a08d57…`. **The hardening_13 clock starts at
+these.** The signed-in success paths were not exercised against production (the local
+`JWT_SECRET` is not production's — see BU); confirm on devices by cancelling a pending call
+and marking a notification read in each app.
