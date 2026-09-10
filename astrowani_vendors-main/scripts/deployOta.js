@@ -143,21 +143,100 @@ if (targets.includes('ios') && !fs.existsSync(path.join(ROOT, 'ios', 'Podfile.lo
 // The one failure mode an OTA cannot detect for itself. A bundle whose JS calls
 // a native module the installed binary does not have fails at runtime, silently,
 // on every phone — the react-native-razorpay 2.3.0 -> 3.0.0 case in CLAUDE.md.
+//
+// ⚠ THIS USED TO COMPARE HEAD~1..HEAD, WHICH IS THE WRONG BASELINE AND MADE THE
+// GUARD NEARLY USELESS. An OTA does not ship "the last commit" — it ships the whole
+// bundle at HEAD to phones running the last STORE BUILD. Measured 2026-09-10: the
+// customer app had gained two native modules (react-native-iap, react-native-share)
+// since its installed versionCode, and the guard said nothing, because the last
+// commit happened to be a docs edit. Both turned out to be safe, but only because
+// they were checked by hand.
+//
+// The baseline is therefore the last commit that bumped versionCode — that is when
+// a store build was cut, so everything after it is what an OTA adds on top of the
+// binary people actually have.
+function lastReleaseCommit() {
+  try {
+    const c = sh('git log -1 --format=%H -G"versionCode" -- android/app/build.gradle');
+    return c || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Does this dependency ship native code? A package with an android/ or ios/
+ * directory, or a podspec, has a native side that an OTA cannot deliver.
+ * Unknown (not installed) counts as native — the cautious direction.
+ */
+function shipsNativeCode(name) {
+  try {
+    const base = path.join(ROOT, 'node_modules', ...name.split('/'));
+    if (!fs.existsSync(base)) return true;
+    if (fs.existsSync(path.join(base, 'android'))) return true;
+    if (fs.existsSync(path.join(base, 'ios'))) return true;
+    return fs.readdirSync(base).some((f) => f.endsWith('.podspec'));
+  } catch (_) {
+    return true;
+  }
+}
+
+/** Dependency names whose entry changed between two commits. */
+function changedDeps(range) {
+  let diff = '';
+  try {
+    diff = sh(`git diff ${range} --relative -- package.json`);
+  } catch (_) {
+    return [];
+  }
+  const names = new Set();
+  diff.split('\n').forEach((line) => {
+    if (!/^[+-]\s*"/.test(line)) return;
+    const m = line.match(/^[+-]\s*"([^"]+)"\s*:/);
+    // Skip package.json's own top-level fields; only dependency entries matter.
+    if (m && !['name', 'version', 'private', 'main', 'scripts'].includes(m[1])) names.add(m[1]);
+  });
+  return [...names];
+}
+
 try {
-  // --relative + `-- .` because git reports paths from the REPO root even when
-  // run in a subdirectory, so in this monorepo the filter below was matching
-  // against 'astrowani_customer-main/ios/...' and never firing.
-  const changed = sh('git diff --name-only --relative HEAD~1..HEAD -- .');
-  const nativeTouched = changed
-    .split('\n')
-    .filter((f) => /^(package\.json|ios\/|android\/)/.test(f) && !/\.md$/.test(f));
-  if (nativeTouched.length) {
-    say('  ⚠  The last commit touched native or dependency files:');
-    nativeTouched.slice(0, 12).forEach((f) => say(`       ${f}`));
+  const releaseCommit = lastReleaseCommit();
+  const range = releaseCommit ? `${releaseCommit}..HEAD` : 'HEAD~1..HEAD';
+
+  if (!releaseCommit) {
+    say('  Note: could not find the last versionCode bump, so the native check below');
+    say('  only covers the last commit. Treat it as weak evidence.');
     say('');
-    say('  An OTA carries JS only. If any of this added or changed a NATIVE module,');
-    say('  the new JS will run against the old native code on every installed phone.');
-    say('  Confirm the native API is unchanged, or ship a store build instead.');
+  }
+
+  const deps = changedDeps(range);
+  const native = deps.filter(shipsNativeCode);
+  const jsOnly = deps.filter((d) => !native.includes(d));
+
+  const changed = sh(`git diff --name-only --relative ${range} -- .`)
+    .split('\n')
+    .filter((f) => /^(ios\/|android\/)/.test(f) && !/\.md$/.test(f));
+
+  if (native.length) {
+    say('  ⚠  NATIVE DEPENDENCIES CHANGED since the last store build:');
+    native.forEach((d) => say(`       ${d}`));
+    say('');
+    say('  An OTA carries JS only. This new JS will run against the OLD native code');
+    say('  on every installed phone. Before deploying, confirm for EACH module that');
+    say('  its JS does not call a native API the installed binary lacks — a package');
+    say('  using TurboModuleRegistry.getEnforcing THROWS on import when its native');
+    say('  side is missing, and will crash the app at startup.');
+    say('  If you cannot confirm it, ship a store build instead.');
+    say('');
+  }
+  if (jsOnly.length) {
+    say(`  Note: JS-only dependency changes since the last store build: ${jsOnly.join(', ')}`);
+    say('');
+  }
+  if (changed.length) {
+    say('  Note: native project files changed since the last store build:');
+    changed.slice(0, 10).forEach((f) => say(`       ${f}`));
+    say('  These cannot ship over OTA at all — they need a store build.');
     say('');
   }
 } catch (_) { /* advisory only */ }
