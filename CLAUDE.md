@@ -4135,3 +4135,48 @@ The in-app steps in that copy were verified against both apps before writing: dr
 Settings → Delete Account exists in each. **Two placeholders to fill before publishing**
 (flagged at the top of the file): the support email, and the 8-year retention figure,
 which appears twice.
+
+### BP. iOS OTA audit 2026-09-10 — both apps were already wired, nothing was added
+
+Checked because it was assumed only the customer app had iOS OTA. It is wired
+**identically in both**, at every layer, and no change was needed:
+
+| Layer | customer | vendor |
+|---|---|---|
+| `@hot-updater/react-native` ^0.35.10 (+ bare/supabase/cli) | yes | yes |
+| `hot-updater.config.ts` — bare + Hermes, supabase storage/db, `updateStrategy: 'appVersion'` | identical | identical |
+| `HotUpdater.wrap` in `index.js`, same `baseURL` edge function | yes | yes |
+| `AppDelegate.mm` release branch returns `[HotUpdater bundleURL]` | yes | yes |
+| NOT excluded from iOS autolinking | yes | yes |
+
+**The `AppDelegate.mm` override is the load-bearing part** and it is easy to lose in a
+future RN upgrade that regenerates the file. `@hot-updater/react-native` installs **no
+swizzle and no `+load` hook** — verified previously by grepping its `ios/` sources for
+`method_exchangeImplementations`, zero hits — so without the explicit call, iOS would
+download OTA bundles and then keep launching the one baked into the `.app`. Updates
+would silently never apply, which is worse than failing loudly. `bundleURL` is
+deliberately NOT declared in either `AppDelegate.h`: both subclass `RCTAppDelegate`,
+which already declares it, so the `.mm` override is the correct shape.
+
+**The only autolinking exclusions in either app are Android-only and unrelated** —
+`react-native-iap` (customer, so Play Billing never merges into a live listing) and
+`react-native-callkeep` (vendor). Neither touches hot-updater or iOS. If a future
+exclusion is added, re-check that it does not name hot-updater.
+
+**One deliberate difference, and the vendor's is the better one:** the vendor wraps
+inside a `try/catch` and wraps `App || StartupErrorScreen`, so a build whose
+`require('./App')` throws can still pull a fixed bundle and heal itself on the next
+launch. The customer imports at top level and wraps `App` directly — if its require
+ever threw, the update check would never run and only a new store build could fix it.
+Worth porting the vendor's shape to the customer app if that file is touched again.
+
+**What is still genuinely missing for iOS OTA is a CONSUMER, not the wiring.** Neither
+app has an App Store or TestFlight build in the field, so an iOS bundle uploads and
+waits. `npm run deploy:ota` says so explicitly when `ios/Podfile.lock` is absent
+("this app has never been built for iOS"), which is accurate about the local checkout —
+the lockfiles are produced on the macOS CI runner and are not committed. Everything here
+is gated behind Apple Developer Program enrolment.
+
+Bundles shipped this session, both platforms, same bundle each time:
+`01a08876-9f68-72f8-9a0b-6ac79ba3a1bd` (device-session fixes) and
+`01a08896-396e-7cf4-aee2-ac54cd191e6e` (moderation UI).
