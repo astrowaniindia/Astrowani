@@ -4484,3 +4484,35 @@ astrologer's `vendor_devices.fcm_token` updated and a customer call still rings.
 Still anon-writable on any row after this: `call_requests.status`, `chat_requests.status`,
 `notifications.is_read`, `chat_sessions.is_active/ended_at` (hardening_10 closes it) and
 the astrologer availability toggles. Each needs the same move before its revoke.
+
+The vendor OTA carrying this shipped to BOTH platforms 2026-09-11 (android
+`01a08d2e…`, ios `01a08d32…`). The hardening_11 clock starts there.
+
+### BV. Availability toggles moved server-side (2026-09-11)
+
+Same hole as BU, bigger blast radius: the public key could flip `is_online` /
+`is_available` / `is_chat_enabled` / `is_call_enabled` / `is_video_call_enabled` on **any**
+astrologer — one request could take the whole marketplace offline, or switch a suspended
+astrologer back on. The only direct writers were two functions in vendor
+`HomeScreen.js`.
+
+- **`POST /api/vendor/availability`** `{field, enabled}` (`index.js`, beside the FCM route).
+  Astrologer from the JWT; `field` must be one of `VENDOR_TOGGLE_FIELDS` (exactly those
+  five) and `enabled` a real boolean, else 400. **Switching OFF is always allowed** — an
+  astrologer must never be stuck online. **Switching ON is refused (403 `NOT_ALLOWED`)
+  for a suspended or not-approved account**, the same line the admin draws when it
+  suspends someone. The client never enforced that; now the server does.
+- **Vendor app**: `updateToggleStatus(field, status, {track})` posts there and **returns
+  whether it stuck**. The online switch, the three service switches and GO LIVE all
+  flip back and show `home.availabilityFailed` (new key, both languages) on failure —
+  previously a failed write left the switch showing a state that was not real. GO LIVE
+  passes `track:false` so it is not double-counted as `availability_toggled` next to its
+  own `go_live_toggled` event.
+- **`sql/hardening_12_revoke_astrologer_toggle_update.sql` — written, NOT applied, and must
+  NOT be applied yet**, for the same old-build reason as hardening_11 (an OLD build shows
+  the switch changed while nothing happened). Its tail raises if any of the five is still
+  writable and prints every other astrologers column anon can still update. Apply with or
+  after hardening_11.
+
+Checks: backend `node --check` clean; HomeScreen lint back to its 1 pre-existing
+`exhaustive-deps` error (same count as HEAD); i18n 441 keys, each exactly once per language.

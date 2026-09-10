@@ -526,7 +526,9 @@ const HomeScreen = () => {
   const guardedToggle = (setter, field, v) => {
     if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
     setter(v);
-    updateToggleStatus(field, v);
+    updateToggleStatus(field, v).then((ok) => {
+      if (!ok) { setter(!v); showToast(t('home.availabilityFailed')); }
+    });
   };
 
   const fetchData = async () => {
@@ -558,11 +560,26 @@ const HomeScreen = () => {
   // binding constraint on marketplace revenue, and none of it was measured: a drop in
   // connect rates caused by astrologers going offline looked identical to one caused by
   // customers losing interest.
-  const updateToggleStatus = async (field, status) => {
-    const astroId = await AsyncStorage.getItem('astroId');
-    if (!astroId) return;
-    await supabase.from('astrologers').update({ [field]: status }).eq('id', astroId);
-    captureEvent('availability_toggled', { field, enabled: !!status });
+  //
+  // Goes through the backend (2026-09-11), never Supabase directly: a direct write needed
+  // the public key to be able to change these columns on ANY astrologer. Returns whether
+  // the change stuck, so callers can put the switch back when the server refuses (e.g. a
+  // suspended account trying to go online) instead of showing a state that is not real.
+  const updateToggleStatus = async (field, status, { track = true } = {}) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return false;
+      await Instance.post(
+        '/api/vendor/availability',
+        { field, enabled: !!status },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (track) captureEvent('availability_toggled', { field, enabled: !!status });
+      return true;
+    } catch (e) {
+      console.log('[availability] toggle failed —', e?.message);
+      return false;
+    }
   };
 
   // Master online/offline switch — makes the astrologer show as offline everywhere in the
@@ -571,25 +588,30 @@ const HomeScreen = () => {
   const toggleOnlineStatus = (v) => {
     if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
     setIsOnline(v);
-    updateToggleStatus('is_online', v);
-    showToast(v ? t('home.nowOnline') : t('home.nowOffline'));
+    updateToggleStatus('is_online', v).then((ok) => {
+      if (ok) {
+        showToast(v ? t('home.nowOnline') : t('home.nowOffline'));
+      } else {
+        setIsOnline(!v);
+        showToast(t('home.availabilityFailed'));
+      }
+    });
   };
 
   const toggleLiveStatus = async () => {
     const newStatus = !isLive;
-    const astroId = await AsyncStorage.getItem('astroId');
-    if (!astroId) return;
-    const { error } = await supabase
-      .from('astrologers')
-      .update({ is_available: newStatus })
-      .eq('id', astroId);
-    if (!error) {
-      setIsLive(newStatus);
-      // Separate from availability_toggled: GO LIVE gates the Live section only, and
-      // is a different decision from being reachable for calls and chats.
-      captureEvent('go_live_toggled', { live: newStatus });
-      showToast(newStatus ? t('home.nowLive') : t('home.nowNotLive'));
+    // track:false — GO LIVE has its own go_live_toggled event below; counting it as an
+    // availability_toggled too would skew the admin's availability analytics.
+    const ok = await updateToggleStatus('is_available', newStatus, { track: false });
+    if (!ok) {
+      showToast(t('home.availabilityFailed'));
+      return;
     }
+    setIsLive(newStatus);
+    // Separate from availability_toggled: GO LIVE gates the Live section only, and
+    // is a different decision from being reachable for calls and chats.
+    captureEvent('go_live_toggled', { live: newStatus });
+    showToast(newStatus ? t('home.nowLive') : t('home.nowNotLive'));
   };
 
   useFocusEffect(

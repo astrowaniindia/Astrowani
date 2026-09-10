@@ -2958,6 +2958,47 @@ app.post('/api/vendor/fcm-token', async (req, res) => {
   }
 });
 
+// Availability toggles: the master online switch, GO LIVE, and the three per-service
+// switches (2026-09-11).
+//
+// WHY: the vendor app wrote these straight through the public Supabase key, so the anon
+// role needed UPDATE on these columns for EVERY astrologer — anyone holding the key from
+// the APK could take any astrologer offline, or switch a suspended one back on. The
+// astrologer now comes from the verified JWT, and only these five boolean columns can be
+// written here.
+//
+// Switching OFF is always allowed (an astrologer must never be stuck online). Switching
+// ON is refused for a suspended or not-yet-approved account, which is the same line the
+// admin draws when it suspends someone (it forces these off).
+const VENDOR_TOGGLE_FIELDS = ['is_online', 'is_available', 'is_chat_enabled', 'is_call_enabled', 'is_video_call_enabled'];
+
+app.post('/api/vendor/availability', async (req, res) => {
+  try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { field, enabled } = req.body || {};
+    if (!VENDOR_TOGGLE_FIELDS.includes(field) || typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'field and a boolean enabled are required' });
+    }
+    if (enabled) {
+      const { data: astro, error: readErr } = await supabaseService
+        .from('astrologers').select('approval_status, is_suspended').eq('id', astroId).maybeSingle();
+      if (readErr) throw readErr;
+      if (!astro) return res.status(404).json({ success: false, message: 'Account not found' });
+      if (astro.is_suspended || (astro.approval_status && astro.approval_status !== 'approved')) {
+        return res.status(403).json({ success: false, code: 'NOT_ALLOWED', message: 'Your account cannot go online right now.' });
+      }
+    }
+    const { error } = await supabaseService
+      .from('astrologers').update({ [field]: enabled }).eq('id', astroId);
+    if (error) throw error;
+    return res.status(200).json({ success: true, field, enabled });
+  } catch (e) {
+    console.error('[vendor] availability toggle error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not update availability' });
+  }
+});
+
 // The customer app's SupportScreen.js has always posted here for "Refund Request" /
 // technical/account/feedback tickets — this route never existed, so every submission
 // silently failed (generic Error alert, nothing reached anyone). Found during the
