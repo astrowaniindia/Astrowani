@@ -3395,13 +3395,16 @@ fore- and background).
    are in history.
 2. **`usesCleartextTraffic="true"`** in the release manifest with no `http://` left in
    `src/`.
-3. **i18n is half-done** — keys are in perfect parity, but only 25 of 53 screen/component
-   files consume `LanguageContext`. Dashboard, FreeCalls, both Earning screens,
+3. ~~**i18n is half-done** — keys are in perfect parity, but only 25 of 53 screen/component
+   files consume `LanguageContext`.~~ **DONE 2026-09-11 — see BR.** The "half" was inflated:
+   most untranslated files were the dead screens in item 5, now deleted. Original note: Dashboard, FreeCalls, both Earning screens,
    PendingApproval and the drawer labels "WhatsApp Customers" / "My Free Calls" /
    "Referrals & Commission" are hardcoded English next to translated ones.
-4. **No way to report or block an abusive customer.** Customers can report astrologers; the
-   reverse does not exist. Relevant under Play's UGC policy for an app with chat.
-5. **A cluster of dead screens is still registered and bundled** — `Chating/Chat.js`,
+4. ~~**No way to report or block an abusive customer.**~~ **DONE 2026-09-10 — see BO.**
+   Original note: customers can report astrologers; the
+   reverse did not exist. Relevant under Play's UGC policy for an app with chat.
+5. ~~**A cluster of dead screens is still registered and bundled**~~ **DONE 2026-09-11 — all 19
+   files deleted, see BR.** Original note: — `Chating/Chat.js`,
    `Drawer/ChatHistory.js`, `HIstory/CallHistory.tsx`, `VideoCallHistory`, `LiveCallHistory`,
    `ChatHiostory`, `AstrologersScreen`, plus `EnxConferenceScreen`/`EnxJoinScreen`/`JoinRoom`.
    Confirmed unreachable — nothing navigates to any of them (`SessionHistory` superseded
@@ -4244,3 +4247,59 @@ still `true`, and gemstone ordering still enabled.
 > check says something is absent, confirm the identifier against the source before
 > believing it** — `grep REVIEW_KEY src/appPromptRoutes.js` would have settled it in one
 > command.
+
+---
+
+## Session 2026-09-11: vendor app translated, dead screens deleted
+
+### BR. What was done, and the bug class worth remembering
+
+**Translation (`bde6b91`).** Every LIVE vendor screen now follows the language toggle —
+98 new keys in both languages, parity 433 = 433, and every key referenced in code exists.
+Covered: My Free Calls, WhatsApp Customers, Account Under Review, the thank-you page, the
+drawer labels, all live header titles, and leftover English across Edit Profile, Profile,
+Wallet, My Customers, Referrals, Home and Settings. StatusPopup's defaults and
+ReferralPopup's button use the standalone `translate()` (module scope, no hook). The
+rating prompt now reads "Rate on App Store" on iOS — it said "Play Store" everywhere.
+
+**The earlier "only 25 of 53 files translated" figure was inflated** — a large share of the
+untranslated files were unreachable screens. Translating dead code is wasted work; always
+establish reachability first.
+
+**Dead code deleted (19 files, ~4,300 lines).** 16 unreachable screens — `AboutUsScreen`,
+`FaqScreen`, `Drawer/ChatHistory`, `Drawer/DetailedChat`, `Drawer/Dashboard`,
+`HIstory/{CallHistory,ChatHiostory,LiveCallHistory,VideoCallHistory}`,
+`AstrologersScreen`, `Earning/{TodayEarning,TotalEarning}`,
+`Home/{Appointments,Consultation}`, `Chating/Chat`, `Bottom/Bottom` — plus the three unimported
+utils `EnxConferenceScreen`, `EnxJoinScreen`, `JoinRoom`. Their routes and imports were
+removed from `NavigationScreen.js`. Reachability was established four ways before deleting:
+no `navigate()`/`reset()` to any of them, no import from any live file, no deep-link config,
+and neither admin-driven path targets them (screen-type banners are all `app='customer'`;
+no notification has ever carried `data.screen`). **Note the drawer's "Dashboard" item opens
+`HomeScreen`, not the `Dashboard` route** — the label and the route name looked linked and
+were not. `Chat.js` held a latent `socketRef is not defined` crash and five of the files
+loaded avatars from the dead `via.placeholder.com`; both are gone with them.
+
+> **THE BUG CLASS, from a defect shipped in the 2026-09-10 OTA:** HomeScreen's
+> forced-sign-out hook listed `t` in its `useCallback` dependency array ~30 lines before
+> `const { t } = useContext(...)` was declared. A dependency array is evaluated
+> **synchronously during render**, so it read `t` before initialisation. Measured in the
+> compiled bundle, Babel emits `var`, so it silently read `undefined` instead of throwing —
+> no crash, but a stale-language popup. Under real TDZ semantics it would crash the
+> astrologer Home screen. **Lint did not catch it** — the project config does not enable
+> `no-use-before-define`. When adding a hook near the top of a component, check every
+> identifier in its deps array is declared ABOVE it. A reference inside a function BODY is
+> fine (it runs later); a reference in a deps array or at render time is not.
+
+> **A trap found fixing lint:** `EditProfile`/`Profile` started flagging
+> `react-hooks/exhaustive-deps` for `fetchData` after the edit, although the effect was
+> untouched — because `fetchData` now calls `t`, a non-stable context value. Adding
+> `fetchData` to the deps would REFETCH ON EVERY RENDER (it is recreated each render). The
+> mount-only intent is marked with a reasoned `eslint-disable-next-line` instead.
+
+Lint across all changed files is back to exactly the 4 pre-existing `exhaustive-deps` errors,
+confirmed by linting the HEAD versions of the same files side by side.
+
+**Still open, noticed but deliberately not changed:** `PendingApproval.js` and several
+HomeScreen messages use `ToastAndroid`, which is a silent no-op on iOS — those messages never
+appear on an iPhone. A small cross-platform fix, not yet done.

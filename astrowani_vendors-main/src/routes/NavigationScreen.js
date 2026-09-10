@@ -16,20 +16,13 @@ import PendingApproval from '../screens/PendingApproval';
 import { supabase } from '../api/SupabaseClient';
 import CustomDrawer from './CustomDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
-import Bottom from '../screens/Bottom/Bottom';
 import CustomHeader from './CustomHeader';
 import HomeScreen from '../screens/Home/HomeScreen';
-import Dashboard from '../screens/Drawer/Dashboard';
-import ChatHistory from '../screens/Drawer/ChatHistory';
-import LiveCallHistory from '../screens/HIstory/LiveCallHistory';
-import VideoCallHistory from '../screens/HIstory/VideoCallHistory';
 import MyCustomers from '../screens/Drawer/MyCustomers';
 import RemedyReferrals from '../screens/Drawer/RemedyReferrals';
 import FreeCalls from '../screens/Drawer/FreeCalls';
 import BlockedCustomers from '../screens/Drawer/BlockedCustomers';
 import WhatsAppChats from '../screens/Drawer/WhatsAppChats';
-import DetailedChat from '../screens/Drawer/DetailedChat';
-import AstrologersListScreen from '../screens/AstrologersScreen';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import VideoCall from '../screens/VideoCall';
@@ -38,24 +31,15 @@ import GoLiveScreen from '../screens/GoLive/GoLiveScreen';
 import Profile from '../screens/Profile/Profile';
 import EditProfile from '../screens/Profile/EditProfile';
 import Notification from '../screens/Notification/Notification';
-import Appointments from '../screens/Home/Appointments';
-import Consultation from '../screens/Home/Consultation';
 import Wallet from '../screens/Home/Report';
-import Chat from '../Chating/Chat';
 import EnxScreenVoice from '../utils/EnxScreenVoice';
 import Support from '../screens/Support';
-import CallHistory from '../screens/HIstory/CallHistory';
-import ChatHistorys from '../screens/HIstory/ChatHiostory';
 import SessionHistory from '../screens/HIstory/SessionHistory';
 import MissedSessions from '../screens/HIstory/MissedSessions';
-import TodayEarning from '../screens/Earning/TodayEarning';
-import TotalEarning from '../screens/Earning/TotalEarning';
 import RatingReview from '../screens/Review/RatingReview';
 import PerformanceDashboard from '../screens/Review/PerformanceDashboard';
 import VendorChatSession from '../screens/VendorChatSession';
 import Settings from '../screens/Settings';
-import AboutUsScreen from '../screens/AboutUsScreen';
-import FaqScreen from '../screens/FaqScreen';
 import ReferralPopupHost from '../components/ReferralPopupHost';
 import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
 import { RateAppPromptHost } from '../components/RateAppPrompt';
@@ -210,43 +194,6 @@ function NavigationScreen() {
           }}
         />
         <Stack.Screen
-          name="AboutUsScreen"
-          component={AboutUsScreen}
-          options={{
-            headerShown: true,
-            title: 'About Us',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
-          }}
-        />
-        <Stack.Screen
-          name="FaqScreen"
-          component={FaqScreen}
-          options={{
-            headerShown: true,
-            title: "FAQ's",
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
-          }}
-        />
-        {/* <Stack.Screen
-          options={{headerShown: false}}
-          name="ChatHistory"
-          component={ChatHistorys}
-        /> */}
-        <Stack.Screen
-          name="CallHistory"
-          component={CallHistory}
-          options={{
-            title: 'Call History',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          }}
-        />
-        <Stack.Screen
           name="SessionHistory"
           component={SessionHistory}
           options={{
@@ -286,48 +233,8 @@ function NavigationScreen() {
           name="Thankyou"
           component={Thankyou}
         />
-        <Stack.Screen
-          name="Dashboard"
-          component={Dashboard}
-          options={({ route }) => ({
-            title: 'Dashboard',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          })}
-        />
-        <Stack.Screen
-          name="ChatHistory"
-          component={ChatHistory}
-          options={({ route }) => ({
-            title: 'Chat History',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          })}
-        />
         
-        <Stack.Screen
-          name="LiveCallHistory"
-          component={LiveCallHistory}
-          options={({ route }) => ({
-            title: 'Live Call History',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          })}
-        />
 
-        <Stack.Screen
-          name="VideoCallHistory"
-          component={VideoCallHistory}
-          options={({ route }) => ({
-            title: 'Video Call History',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          })}
-        />
         
         <Stack.Screen
           name="MyCustomers"
@@ -377,26 +284,6 @@ function NavigationScreen() {
           })}
         />
         <Stack.Screen
-          name="DetailedChat"
-          component={DetailedChat}
-          options={({ route }) => ({
-            title: 'Chat Summary',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          })}
-        />
-        <Stack.Screen
-          name="AstrologerScreen"
-          component={AstrologersListScreen}
-          options={({ route }) => ({
-            title: 'Astrologer Details',
-            headerStyle: { backgroundColor: COLORS.AstroMaroon },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontSize: moderateScale(16) },
-          })}
-        />
-        <Stack.Screen
           name="VideoCall"
           component={VideoCall}
           options={({ route }) => ({ headerShown: false })}
@@ -411,11 +298,6 @@ function NavigationScreen() {
           component={Profile}
           options={({ route }) => ({ headerShown: true })}
         />
-          <Stack.Screen
-          name="TodayEarning"
-          component={TodayEarning}
-          options={({ route }) => ({ headerShown: true })}
-        />
               <Stack.Screen
           name="RatingReview"
           component={RatingReview}
@@ -425,11 +307,6 @@ function NavigationScreen() {
           name="PerformanceDashboard"
           component={PerformanceDashboard}
           options={{ headerShown: true, title: t('drawer.performance') }}
-        />
-           <Stack.Screen
-          name="TotalEarning"
-          component={TotalEarning}
-          options={({ route }) => ({ headerShown: true })}
         />
         <Stack.Screen
           name="EditProfile"
@@ -457,21 +334,6 @@ function NavigationScreen() {
           options={{ headerShown: false }}
         />
 
-        <Stack.Screen
-          name="Appointments"
-          component={Appointments}
-          options={({ route }) => ({ headerShown: true })}
-        />
-        <Stack.Screen
-          name="Chat"
-          component={Chat}
-          options={({ route }) => ({ headerShown: false })}
-        />
-        <Stack.Screen
-          name="Consultation"
-          component={Consultation}
-          options={({ route }) => ({ headerShown: true })}
-        />
         <Stack.Screen
           name="EnxScreenVoice"
           component={EnxScreenVoice}
