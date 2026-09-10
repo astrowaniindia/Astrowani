@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar, Platform,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
@@ -132,7 +133,11 @@ function CustomDrawerContent(props, navigation) {
     { trackKey: 'settings', iconName: 'settings', label: t('drawer.settings'), onPress: () => props.navigation.navigate('Settings') },
     { trackKey: 'support', iconName: 'support-agent', label: t('drawer.support'), onPress: () => props.navigation.navigate('SupportScreen') },
     { trackKey: 'share_app', iconName: 'share', label: t('drawer.shareApp'), onPress: handleShareApp },
-    { trackKey: 'whats_coming', iconName: 'auto-awesome', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
+    // Hidden on iOS for now — it only leads to "coming soon" demos, which App Store
+    // review rejects as incomplete content (Guideline 2.1). Android keeps it.
+    ...(Platform.OS === 'ios' ? [] : [
+      { trackKey: 'whats_coming', iconName: 'auto-awesome', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
+    ]),
   ];
 
   return (

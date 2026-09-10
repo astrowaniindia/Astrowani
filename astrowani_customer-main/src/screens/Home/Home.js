@@ -16,7 +16,7 @@ import {
   Alert,
   RefreshControl,
   Animated,
-  Easing
+  Easing, Platform,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
@@ -1596,11 +1596,17 @@ const Home = ({navigation}) => {
             own screen. Deliberately NOT live widgets: nothing here awards anything yet,
             and a working-looking control that pays out nothing is worse than no control.
             Renders nothing once the catalogue empties. */}
-        <View style={styles.separator} />
-        <ComingSoonStrip
-          navigation={navigation}
-          onEvent={id => captureEvent('home_screen_click', {section: `coming_soon_${id}`})}
-        />
+        {/* Hidden on iOS for now: App Store review rejects placeholder / "coming soon"
+            content (Guideline 2.1 — app completeness). Android keeps it. */}
+        {Platform.OS !== 'ios' && (
+          <>
+            <View style={styles.separator} />
+            <ComingSoonStrip
+              navigation={navigation}
+              onEvent={id => captureEvent('home_screen_click', {section: `coming_soon_${id}`})}
+            />
+          </>
+        )}
 
         {/* Live Aarti / Pooja — admin-set YouTube URL, embedded in-app. Renders
             nothing at all when unset, so this is invisible unless an admin has

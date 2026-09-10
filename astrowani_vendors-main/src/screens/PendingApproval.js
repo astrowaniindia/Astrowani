@@ -1,5 +1,5 @@
 import React, { useState, useContext } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ToastAndroid } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../api/SupabaseClient';
@@ -7,6 +7,7 @@ import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 
 import { LanguageContext } from '../context/LanguageContext';
+import showToast from '../utils/showToast';
 // Shown after signup (and on every app open) until the admin approves the account.
 const PendingApproval = ({ navigation }) => {
   const { t } = useContext(LanguageContext);
@@ -29,12 +30,12 @@ const PendingApproval = ({ navigation }) => {
       if (data?.approval_status === 'approved') {
         navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
       } else if (data?.approval_status === 'rejected') {
-        ToastAndroid.show(t('pending.rejected'), ToastAndroid.LONG);
+        showToast(t('pending.rejected'), { long: true });
       } else {
-        ToastAndroid.show(t('pending.stillReview'), ToastAndroid.SHORT);
+        showToast(t('pending.stillReview'));
       }
     } catch (e) {
-      ToastAndroid.show(t('pending.checkFailed'), ToastAndroid.SHORT);
+      showToast(t('pending.checkFailed'));
     } finally {
       setChecking(false);
     }

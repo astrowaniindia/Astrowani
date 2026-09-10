@@ -9,7 +9,6 @@ import {
   ActionSheetIOS,
   Platform,
   Alert,
-  ToastAndroid,
   ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -22,6 +21,7 @@ import { fetchAstrologerRow } from '../../utils/vendorProfile';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 
+import showToast from '../../utils/showToast';
 export default function EditProfile() {
   const Navigation=useNavigation()
   const { t } = useContext(LanguageContext);
@@ -210,16 +210,9 @@ export default function EditProfile() {
 
       if (res.data?.success) {
         if (res.data?.chargesLocked) {
-          Alert.alert(
-            'Profile Updated',
-            'Your other details were saved, but your chat/call/video charges are locked and can only be changed by the admin team now — contact them if you need a change.',
-          );
+          Alert.alert(t('editProfile.updatedTitle'), t('editProfile.chargesLockedBody'));
         } else {
-          ToastAndroid.showWithGravity(
-            'Profile updated successfully!',
-            ToastAndroid.SHORT,
-            ToastAndroid.CENTER,
-          );
+          showToast(t('editProfile.updatedToast'));
         }
         setChargesLocked(true);
         Navigation.goBack();

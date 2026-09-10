@@ -490,6 +490,13 @@ const translations = {
     'home.acceptFailed': "Could not accept request.",
     'settings.linkFailedTitle': "Unable to open link",
     'settings.linkFailedBody': "Please check your internet connection and try again.",
+    'home.nowOnline': "You're now Online",
+    'home.nowOffline': "You're now Offline — customers can't reach you",
+    'home.nowLive': "You are now live!",
+    'home.nowNotLive': "You are offline",
+    'editProfile.updatedToast': "Profile updated successfully!",
+    'editProfile.updatedTitle': "Profile Updated",
+    'editProfile.chargesLockedBody': "Your other details were saved, but your chat/call/video charges are locked and can only be changed by the admin team now — contact them if you need a change.",
   },
   Hindi: {
     'drawer.dashboard': 'डैशबोर्ड',
@@ -952,6 +959,13 @@ const translations = {
     'home.acceptFailed': "अनुरोध स्वीकार नहीं हो सका।",
     'settings.linkFailedTitle': "लिंक नहीं खुल सका",
     'settings.linkFailedBody': "कृपया अपना इंटरनेट कनेक्शन जांचें और दोबारा प्रयास करें।",
+    'home.nowOnline': "अब आप ऑनलाइन हैं",
+    'home.nowOffline': "अब आप ऑफ़लाइन हैं — ग्राहक आपसे संपर्क नहीं कर सकते",
+    'home.nowLive': "अब आप लाइव हैं!",
+    'home.nowNotLive': "आप ऑफ़लाइन हैं",
+    'editProfile.updatedToast': "प्रोफ़ाइल सफलतापूर्वक अपडेट हो गई!",
+    'editProfile.updatedTitle': "प्रोफ़ाइल अपडेट हो गई",
+    'editProfile.chargesLockedBody': "आपके अन्य विवरण सहेज लिए गए, लेकिन आपके चैट/कॉल/वीडियो शुल्क लॉक हैं और अब केवल एडमिन टीम ही इन्हें बदल सकती है — बदलाव चाहिए तो उनसे संपर्क करें।",
   },
 };
 

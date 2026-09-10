@@ -10,7 +10,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  ToastAndroid,
   BackHandler,
   Animated,
   Pressable,
@@ -253,7 +252,7 @@ const HomeScreen = () => {
         return !matches;
       });
       if (next.length !== prev.length) {
-        ToastAndroid.show(t('home.callerCancelled'), ToastAndroid.SHORT);
+        showToast(t('home.callerCancelled'));
       }
       return next;
     });
@@ -474,7 +473,7 @@ const HomeScreen = () => {
     try {
       const result = await acceptRequest(req);
       if (!result.ok) {
-        ToastAndroid.show(t('home.callerCancelled'), ToastAndroid.SHORT);
+        showToast(t('home.callerCancelled'));
         return;
       }
 
@@ -573,10 +572,7 @@ const HomeScreen = () => {
     if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
     setIsOnline(v);
     updateToggleStatus('is_online', v);
-    ToastAndroid.show(
-      v ? "You're now Online" : "You're now Offline — customers can't reach you",
-      ToastAndroid.SHORT
-    );
+    showToast(v ? t('home.nowOnline') : t('home.nowOffline'));
   };
 
   const toggleLiveStatus = async () => {
@@ -592,7 +588,7 @@ const HomeScreen = () => {
       // Separate from availability_toggled: GO LIVE gates the Live section only, and
       // is a different decision from being reachable for calls and chats.
       captureEvent('go_live_toggled', { live: newStatus });
-      ToastAndroid.show(newStatus ? 'You are now live!' : 'You are offline', ToastAndroid.SHORT);
+      showToast(newStatus ? t('home.nowLive') : t('home.nowNotLive'));
     }
   };
 
@@ -766,7 +762,7 @@ const HomeScreen = () => {
           if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
           const astroId = await AsyncStorage.getItem('astroId');
           if (!astroId) {
-            ToastAndroid.show(t('common.sessionMissing'), ToastAndroid.SHORT);
+            showToast(t('common.sessionMissing'));
             return;
           }
           navigation.navigate('GoLiveScreen', { astrologerId: astroId });

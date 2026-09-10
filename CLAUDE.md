@@ -3014,7 +3014,9 @@ Three call sites migrated: customer `ChatSessionScreen.js`, vendor `VendorChatSe
 messages over the Socket.io session room, not Supabase Realtime. That earlier migration is
 what makes this safe now.
 
-`sql/hardening_09_chat_messages_read.sql` (**written, NOT applied**) does the revoke, with a
+`sql/hardening_09_chat_messages_read.sql` (**⚠ CORRECTED 2026-09-11: APPLIED** — measured: the
+public app key now gets `42501 permission denied` on `chat_messages`, and `GET /api/chat/messages`
+answers 401 in production) does the revoke, with a
 self-verifying `DO $$` tail that raises if any anon/authenticated privilege survives.
 
 > **⚠️ DEPLOY ORDER MATTERS FOR THIS ONE**, unlike most files in `sql/`. Run it BEFORE the
@@ -3060,7 +3062,8 @@ clean boot proves nothing), and only then disable the old key.
 
 Still open:
 
-- **Nine unused permissions** in the merged release manifest (READ/WRITE_CONTACTS,
+- ~~**Nine unused permissions**~~ **STALE — corrected 2026-09-11: none of them is declared in
+  the app manifest any more** (measured). Original note: in the merged release manifest (READ/WRITE_CONTACTS,
   READ/WRITE_CALENDAR, SYSTEM_ALERT_WINDOW, WRITE_SETTINGS, USE_FINGERPRINT,
   READ_PHONE_STATE) from a template block still labelled "OPTIONAL PERMISSIONS, REMOVE
   WHATEVER YOU DO NOT NEED". Zero JS call sites; no dependency manifest pulls Contacts or
@@ -4303,3 +4306,35 @@ confirmed by linting the HEAD versions of the same files side by side.
 **Still open, noticed but deliberately not changed:** `PendingApproval.js` and several
 HomeScreen messages use `ToastAndroid`, which is a silent no-op on iOS — those messages never
 appear on an iPhone. A small cross-platform fix, not yet done.
+
+### BS. iPhone toasts, and "coming soon" hidden on iOS (2026-09-11)
+
+**Toasts (vendor app).** Every short confirmation — "You're now Online", "Caller cancelled
+the request", "Profile updated", the Account-Under-Review status messages — went through
+`ToastAndroid`, which is a **silent no-op on iOS**, so on an iPhone none of them ever
+appeared. `components/ToastHost.js` is an imperative, cross-platform toast mounted once at
+the navigation root (next to `StatusPopupHost`, so a toast raised just before a navigation
+survives it). **Android keeps the native `ToastAndroid`** — nothing changes there. On iOS it
+draws a small auto-hiding pill with `pointerEvents="none"`. `utils/showToast.js` now
+delegates to it, and no file outside `ToastHost.js` references `ToastAndroid`.
+
+> **Load-bearing detail:** the iOS path defers by one tick (`setTimeout 0`). HomeScreen raises
+> "Caller cancelled" from INSIDE a `setPopupQueue` updater, and setting another component's
+> state synchronously from an updater is React's "cannot update a component while rendering
+> a different component" error. Do not remove the defer.
+
+Four of those messages were still hardcoded English (missed by the translation pass because
+they span multiple lines) and are now translated. The customer app's only toast
+(`useGiftSender`) already fell back to an `Alert` on iOS, so it was left alone.
+
+**"Coming soon" hidden on iOS (customer app).** App Store review rejects placeholder /
+unfinished content (Guideline 2.1). On iOS only: the Home "Coming soon" strip, the drawer's
+"What's coming" item, and the locked "Cash on delivery — Coming soon" payment option are not
+rendered. With the strip and drawer item gone, `GamificationHub` and `FeatureIntro` are
+unreachable on iOS (their routes stay registered — nothing else navigates to them). Android is
+unchanged. **When a gamification feature ships for real, remove the iOS guard for that
+entry, not all of them.**
+
+**Still open (measured 2026-09-11):** `usesCleartextTraffic="true"` in BOTH apps' manifests,
+and BOTH apps' tracked `android/gradle.properties` still carry the upload keystore password
+keys.

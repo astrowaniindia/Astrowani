@@ -1,6 +1,6 @@
 import React, { useContext, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Platform,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -234,14 +234,18 @@ const PaymentScreen = ({ navigation, route }) => {
         {/* Deliberately visible and deliberately inert. The backend 400s 'cod' with
             COD_COMING_SOON, so showing it as a locked option is the honest thing — it tells
             customers it's planned without pretending it works. */}
-        <PaymentOption
-          active={false}
-          icon="payments"
-          title={t('checkout.cod')}
-          subtitle={t('checkout.codSub')}
-          badge={t('checkout.comingSoon')}
-          disabled
-        />
+        {/* Hidden on iOS: a locked "Coming soon" payment option reads as unfinished to
+            App Store review (Guideline 2.1). Android keeps showing it. */}
+        {Platform.OS !== 'ios' && (
+          <PaymentOption
+            active={false}
+            icon="payments"
+            title={t('checkout.cod')}
+            subtitle={t('checkout.codSub')}
+            badge={t('checkout.comingSoon')}
+            disabled
+          />
+        )}
 
         <BillSummary
           quote={quote}

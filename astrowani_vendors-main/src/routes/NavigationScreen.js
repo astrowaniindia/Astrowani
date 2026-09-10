@@ -45,6 +45,7 @@ import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
 import { RateAppPromptHost } from '../components/RateAppPrompt';
 import useAppPromptSync from '../utils/useAppPromptSync';
 import { StatusPopupHost } from '../components/StatusPopup';
+import { ToastHost } from '../components/ToastHost';
 import useReferralPopupSync from '../utils/useReferralPopupSync';
 import { LanguageContext } from '../context/LanguageContext';
 const Stack = createNativeStackNavigator();
@@ -348,6 +349,7 @@ function NavigationScreen() {
       <AppUpdatePromptHost />
       <RateAppPromptHost />
       <StatusPopupHost />
+      <ToastHost />
     </NavigationContainer>
   );
 }
