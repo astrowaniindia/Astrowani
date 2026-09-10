@@ -4365,6 +4365,8 @@ keys.
 | 14 | `analytics_environment` | **Done** → `production`. `SENTRY_AUTH_TOKEN` is yours |
 
 **6 + 10 are NATIVE (manifest) — they need a Play Store release, not an OTA.**
+Verified 2026-09-11 by `processReleaseMainManifest` in BOTH apps, reading the MERGED release
+manifest: `enableOnBackInvokedCallback="false"` present, `usesCleartextTraffic` absent.
 Item 10's cause: `targetSdk 36` makes predictive back default-on, and RN 0.77's
 `ReactActivity` intercepts back through the legacy `onBackPressed()`, which Android no
 longer calls under predictive back — so every `BackHandler` in both apps (chat/call
