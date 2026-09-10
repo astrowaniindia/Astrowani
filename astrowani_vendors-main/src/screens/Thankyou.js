@@ -1,9 +1,11 @@
 import {StyleSheet, Text, Image, View, TouchableOpacity} from 'react-native';
-import React, {version} from 'react';
+import React, { version, useContext } from 'react';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import {COLORS} from '../Theme/Colors';
 
+import { LanguageContext } from '../context/LanguageContext';
 const Thankyou = ({navigation}) => {
+  const { t } = useContext(LanguageContext);
   return (
     <View style={styles.main}>
       <Image
@@ -11,18 +13,14 @@ const Thankyou = ({navigation}) => {
         style={styles.img}
       />
 
-      <Text style={styles.note}>Thank You </Text>
-      <Text style={styles.note}>For Registering With Us</Text>
-      <Text style={styles.text}>
-        Our team will review your details and contact you soon. Have a nice day! 🙏
-      </Text>
-      <Text style={styles.text}>
-        Once your account is approved, log in and you'll go straight to your dashboard.
-      </Text>
+      <Text style={styles.note}>{t('thankyou.title')}</Text>
+      <Text style={styles.note}>{t('thankyou.subtitle')}</Text>
+      <Text style={styles.text}>{t('thankyou.body1')}</Text>
+      <Text style={styles.text}>{t('thankyou.body2')}</Text>
       <TouchableOpacity
         onPress={() => navigation.navigate('Login')}
         style={styles.loginBtn}>
-        <Text style={styles.btntxt}>Login</Text>
+        <Text style={styles.btntxt}>{t('thankyou.login')}</Text>
       </TouchableOpacity>
     </View>
   );

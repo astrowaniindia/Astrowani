@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { AppState, Dimensions} from 'react-native';
 import IntroSplash from '../screens/Splash/IntroSplash';
 import { NavigationContainer } from '@react-navigation/native';
@@ -62,10 +62,12 @@ import { RateAppPromptHost } from '../components/RateAppPrompt';
 import useAppPromptSync from '../utils/useAppPromptSync';
 import { StatusPopupHost } from '../components/StatusPopup';
 import useReferralPopupSync from '../utils/useReferralPopupSync';
+import { LanguageContext } from '../context/LanguageContext';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
 function NavigationScreen() {
+  const { t } = useContext(LanguageContext);
   const [isLoading, setIsLoading] = useState(true);
   // Gates on the intro animation's own onFinish, not a timer here, so the
   // animation always plays to completion even if the token check below
@@ -201,7 +203,7 @@ function NavigationScreen() {
           component={Settings}
           options={{
             headerShown: true,
-            title: 'Settings',
+            title: t('drawer.settings'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
@@ -248,7 +250,7 @@ function NavigationScreen() {
           name="SessionHistory"
           component={SessionHistory}
           options={{
-            title: 'Session History',
+            title: t('drawer.sessionHistory'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
@@ -258,7 +260,7 @@ function NavigationScreen() {
           name="MissedSessions"
           component={MissedSessions}
           options={{
-            title: 'Missed Sessions',
+            title: t('drawer.missedSessions'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
@@ -266,7 +268,7 @@ function NavigationScreen() {
         />
         <Stack.Screen
           options={{
-            title: 'Astrologer Registration',
+            title: t('nav.registration'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
@@ -276,7 +278,7 @@ function NavigationScreen() {
         />
         <Stack.Screen
           options={{
-            title: 'Thank you',
+            title: t('nav.thankYou'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16), fontWeight: 'bold' },
@@ -331,7 +333,7 @@ function NavigationScreen() {
           name="MyCustomers"
           component={MyCustomers}
           options={({ route }) => ({
-            title: 'My Customers',
+            title: t('drawer.myCustomers'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
@@ -341,7 +343,7 @@ function NavigationScreen() {
           name="WhatsAppChats"
           component={WhatsAppChats}
           options={() => ({
-            title: 'WhatsApp Customers',
+            title: t('drawer.whatsapp'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
@@ -358,7 +360,7 @@ function NavigationScreen() {
           name="FreeCalls"
           component={FreeCalls}
           options={() => ({
-            title: 'My Free Calls',
+            title: t('drawer.freeCalls'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
@@ -368,7 +370,7 @@ function NavigationScreen() {
           name="RemedyReferrals"
           component={RemedyReferrals}
           options={() => ({
-            title: 'Referrals & Commission',
+            title: t('drawer.referrals'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },
@@ -422,7 +424,7 @@ function NavigationScreen() {
         <Stack.Screen
           name="PerformanceDashboard"
           component={PerformanceDashboard}
-          options={{ headerShown: true, title: 'Performance' }}
+          options={{ headerShown: true, title: t('drawer.performance') }}
         />
            <Stack.Screen
           name="TotalEarning"
@@ -447,7 +449,7 @@ function NavigationScreen() {
         <Stack.Screen
           name="Wallet"
           component={Wallet}
-          options={{ headerShown: true, title: 'My Wallet', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }}
+          options={{ headerShown: true, title: t('nav.myWallet'), headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }}
         />
         <Stack.Screen
           name="VendorChatSession"
@@ -489,6 +491,7 @@ function NavigationScreen() {
 }
 
 function DrawerNavigator({ navigation }) {
+  const { t } = useContext(LanguageContext);
   return (
     <Drawer.Navigator
       drawerContent={props => (
@@ -512,13 +515,14 @@ function DrawerNavigator({ navigation }) {
       <Drawer.Screen
         name="Wallet"
         component={Wallet}
-        options={{ headerShown: true, title: 'Wallet' }}
+        options={{ headerShown: true, title: t('drawer.wallet') }}
       />
     </Drawer.Navigator>
   );
 }
 
 function HomeStack({ navigation }) {
+  const { t } = useContext(LanguageContext);
   return (
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
         <Stack.Screen
@@ -531,7 +535,7 @@ function HomeStack({ navigation }) {
         <Stack.Screen
           name="Wallet"
           component={Wallet}
-          options={{ headerShown: true, title: 'Wallet' }}
+          options={{ headerShown: true, title: t('drawer.wallet') }}
         />
       </Stack.Navigator>
   );

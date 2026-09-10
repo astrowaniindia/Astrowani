@@ -11,7 +11,7 @@
 // Replying takes the thread: the assistant stays silent until it is released.
 // That is deliberate — a customer mid-consultation must not have a bot talking
 // over the astrologer.
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,7 @@ import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 
+import { LanguageContext } from '../../context/LanguageContext';
 const timeFmt = new Intl.DateTimeFormat('en-IN', {
   hour: 'numeric', minute: '2-digit', hour12: true,
 });
@@ -45,6 +46,7 @@ const stamp = (iso) => {
 };
 
 const WhatsAppChats = () => {
+  const { t } = useContext(LanguageContext);
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(null);      // the conversation being read
   const [messages, setMessages] = useState([]);
@@ -78,9 +80,9 @@ const WhatsAppChats = () => {
         setMessages(res.data.messages || []);
       }
     } catch (e) {
-      Alert.alert('Could not open', e.response?.data?.message || e.message);
+      Alert.alert(t('whatsapp.openFailed'), e.response?.data?.message || e.message);
     }
-  }, []);
+  }, [t]);
 
   useFocusEffect(useCallback(() => { loadList(); }, [loadList]));
 
@@ -96,7 +98,7 @@ const WhatsAppChats = () => {
       await Instance.post(`/api/vendor/whatsapp/conversations/${open.id}/reply`, { text }, await auth());
       loadThread(open.id);
     } catch (e) {
-      Alert.alert('Not sent', e.response?.data?.message || e.message);
+      Alert.alert(t('whatsapp.notSent'), e.response?.data?.message || e.message);
       // Put it back in the box rather than losing what they typed.
       setDraft(text);
       loadThread(open.id);
@@ -108,19 +110,19 @@ const WhatsAppChats = () => {
   const release = () => {
     if (!open) return;
     Alert.alert(
-      'Hand back to the assistant?',
-      'The shop assistant will start answering this customer again.',
+      t('whatsapp.handBackTitle'),
+      t('whatsapp.handBackBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Hand back',
+          text: t('whatsapp.handBack'),
           onPress: async () => {
             try {
               await Instance.post(`/api/vendor/whatsapp/conversations/${open.id}/release`, {}, await auth());
               setOpen(null);
               loadList();
             } catch (e) {
-              Alert.alert('Could not hand back', e.response?.data?.message || e.message);
+              Alert.alert(t('whatsapp.handBackFailed'), e.response?.data?.message || e.message);
             }
           },
         },
@@ -143,7 +145,7 @@ const WhatsAppChats = () => {
             <Text style={styles.threadPhone}>{open.phone}</Text>
           </View>
           <TouchableOpacity onPress={release} style={styles.releaseBtn}>
-            <Text style={styles.releaseTxt}>Hand back</Text>
+            <Text style={styles.releaseTxt}>{t('whatsapp.handBack')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -160,7 +162,7 @@ const WhatsAppChats = () => {
             const mine = item.role === 'astrologer' || item.role === 'bot';
             return (
               <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                {item.role === 'bot' && <Text style={styles.botTag}>Assistant</Text>}
+                {item.role === 'bot' && <Text style={styles.botTag}>{t('whatsapp.assistant')}</Text>}
                 <Text style={[styles.bubbleTxt, mine && styles.bubbleTxtMine]}>{item.body}</Text>
                 <Text style={[styles.bubbleTime, mine && styles.bubbleTimeMine]}>{stamp(item.created_at)}</Text>
               </View>
@@ -173,7 +175,7 @@ const WhatsAppChats = () => {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder="Reply to the customer…"
+            placeholder={t('whatsapp.replyPlaceholder')}
             placeholderTextColor="#9a8b83"
             multiline
           />
@@ -209,9 +211,9 @@ const WhatsAppChats = () => {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Icon name="chat-bubble-outline" size={moderateScale(40)} color="#c9b8ae" />
-            <Text style={styles.emptyTitle}>No customers waiting</Text>
+            <Text style={styles.emptyTitle}>{t('whatsapp.emptyTitle')}</Text>
             <Text style={styles.emptyBody}>
-              When the shop assistant needs an astrologer, that customer appears here.
+              {t('whatsapp.emptyBody')}
             </Text>
           </View>
         }

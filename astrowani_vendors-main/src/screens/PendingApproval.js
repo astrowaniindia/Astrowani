@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ToastAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -6,8 +6,10 @@ import { supabase } from '../api/SupabaseClient';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 
+import { LanguageContext } from '../context/LanguageContext';
 // Shown after signup (and on every app open) until the admin approves the account.
 const PendingApproval = ({ navigation }) => {
+  const { t } = useContext(LanguageContext);
   const [checking, setChecking] = useState(false);
 
   const checkStatus = async () => {
@@ -27,12 +29,12 @@ const PendingApproval = ({ navigation }) => {
       if (data?.approval_status === 'approved') {
         navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
       } else if (data?.approval_status === 'rejected') {
-        ToastAndroid.show('Your application was not approved. Please contact support.', ToastAndroid.LONG);
+        ToastAndroid.show(t('pending.rejected'), ToastAndroid.LONG);
       } else {
-        ToastAndroid.show('Your account is still under review.', ToastAndroid.SHORT);
+        ToastAndroid.show(t('pending.stillReview'), ToastAndroid.SHORT);
       }
     } catch (e) {
-      ToastAndroid.show('Could not check status. Please try again.', ToastAndroid.SHORT);
+      ToastAndroid.show(t('pending.checkFailed'), ToastAndroid.SHORT);
     } finally {
       setChecking(false);
     }
@@ -48,25 +50,20 @@ const PendingApproval = ({ navigation }) => {
       <View style={styles.iconCircle}>
         <Ionicons name="hourglass-outline" size={moderateScale(56)} color={COLORS.AstroMaroon} />
       </View>
-      <Text style={styles.title}>Account Under Review</Text>
-      <Text style={styles.message}>
-        Thank you for registering with Astrowani. Our team will review your details and
-        contact you soon. Have a nice day! 🙏
-      </Text>
-      <Text style={styles.subMessage}>
-        Once your account is approved, you'll be taken to your dashboard automatically.
-      </Text>
+      <Text style={styles.title}>{t('pending.title')}</Text>
+      <Text style={styles.message}>{t('pending.message')}</Text>
+      <Text style={styles.subMessage}>{t('pending.subMessage')}</Text>
 
       <TouchableOpacity style={styles.checkBtn} activeOpacity={0.85} onPress={checkStatus} disabled={checking}>
         {checking ? (
           <ActivityIndicator color="#000" />
         ) : (
-          <Text style={styles.checkBtnText}>Check Approval Status</Text>
+          <Text style={styles.checkBtnText}>{t('pending.checkStatus')}</Text>
         )}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-        <Text style={styles.logoutText}>Log out</Text>
+        <Text style={styles.logoutText}>{t('pending.logout')}</Text>
       </TouchableOpacity>
     </View>
   );

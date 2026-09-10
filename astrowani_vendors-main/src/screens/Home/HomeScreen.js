@@ -91,6 +91,10 @@ const toggleStyles = StyleSheet.create({
 
 const HomeScreen = () => {
   const navigation = useNavigation();
+  // Declared FIRST: the forced-sign-out hook below lists `t` in its deps, and it
+  // used to be declared ~30 lines later. Release builds compile const to var, so
+  // that read `undefined` instead of throwing — no crash, but a stale language.
+  const { t } = useContext(LanguageContext);
 
   // Ends this session when another device has taken the account over. Shared by the
   // live socket event and the on-foreground re-check below, so both routes behave
@@ -123,7 +127,6 @@ const HomeScreen = () => {
     return () => sub.remove();
   }, [handleForcedSignOut]);
 
-  const { t } = useContext(LanguageContext);
   const socketRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -250,7 +253,7 @@ const HomeScreen = () => {
         return !matches;
       });
       if (next.length !== prev.length) {
-        ToastAndroid.show('Caller cancelled the request', ToastAndroid.SHORT);
+        ToastAndroid.show(t('home.callerCancelled'), ToastAndroid.SHORT);
       }
       return next;
     });
@@ -471,7 +474,7 @@ const HomeScreen = () => {
     try {
       const result = await acceptRequest(req);
       if (!result.ok) {
-        ToastAndroid.show('Caller cancelled the request', ToastAndroid.SHORT);
+        ToastAndroid.show(t('home.callerCancelled'), ToastAndroid.SHORT);
         return;
       }
 
@@ -494,7 +497,7 @@ const HomeScreen = () => {
       }
     } catch (e) {
       console.warn('handleAccept error:', e);
-      Alert.alert('Error', 'Could not accept request.');
+      Alert.alert(t('common.error'), t('home.acceptFailed'));
     }
   };
 
@@ -763,7 +766,7 @@ const HomeScreen = () => {
           if (!profileComplete) { ensureVendorProfileComplete(navigation); return; }
           const astroId = await AsyncStorage.getItem('astroId');
           if (!astroId) {
-            ToastAndroid.show('Session missing. Please log in again.', ToastAndroid.SHORT);
+            ToastAndroid.show(t('common.sessionMissing'), ToastAndroid.SHORT);
             return;
           }
           navigation.navigate('GoLiveScreen', { astrologerId: astroId });

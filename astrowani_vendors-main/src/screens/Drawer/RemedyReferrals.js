@@ -72,7 +72,7 @@ const RemedyReferrals = () => {
               it themselves, so seeing it appear needs an explanation. */}
           {item.source === 'admin' && (
             <View style={[styles.typePill, styles.adminPill]}>
-              <Text style={[styles.typePillTxt, styles.adminPillTxt]}>Added by Astrowani</Text>
+              <Text style={[styles.typePillTxt, styles.adminPillTxt]}>{t('referrals.addedByAstrowani')}</Text>
             </View>
           )}
           <Text style={styles.date}>
@@ -96,14 +96,14 @@ const RemedyReferrals = () => {
     <View style={styles.container}>
       <View style={styles.summaryRow}>
         <View style={styles.summaryBox}>
-          <Text style={styles.summaryLabel}>Paid to you</Text>
+          <Text style={styles.summaryLabel}>{t('referrals.paidToYou')}</Text>
           <Text style={styles.summaryValue}>₹{earnings.paid}</Text>
-          <Text style={styles.summaryHint}>Already in your wallet</Text>
+          <Text style={styles.summaryHint}>{t('referrals.inWallet')}</Text>
         </View>
         <View style={[styles.summaryBox, styles.summaryBoxAlt]}>
-          <Text style={styles.summaryLabel}>Pending</Text>
+          <Text style={styles.summaryLabel}>{t('referrals.pending')}</Text>
           <Text style={[styles.summaryValue, styles.pendingValue]}>₹{earnings.pending}</Text>
-          <Text style={styles.summaryHint}>Pays out once delivered</Text>
+          <Text style={styles.summaryHint}>{t('referrals.paysOnDelivery')}</Text>
         </View>
       </View>
 
@@ -114,12 +114,12 @@ const RemedyReferrals = () => {
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />}
         ListHeaderComponent={
-          referrals.length ? <Text style={styles.sectionHeader}>Your recommendations</Text> : null
+          referrals.length ? <Text style={styles.sectionHeader}>{t('referrals.yourRecommendations')}</Text> : null
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Icon name="sparkles-outline" size={moderateScale(46)} color="rgba(89,42,25,0.25)" />
-            <Text style={styles.emptyTitle}>No recommendations yet</Text>
+            <Text style={styles.emptyTitle}>{t('referrals.empty')}</Text>
             <Text style={styles.emptyBody}>
               Open “My Customers”, pick someone you’ve consulted, and tap “Recommend a remedy”.
               If they buy it, your commission appears here.

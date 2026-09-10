@@ -16,6 +16,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 
+import { translate } from '../context/LanguageContext';
 let listener = null;
 export const showReferralPopup = (title, body) => {
   if (listener) listener(title, body);
@@ -60,7 +61,7 @@ export function ReferralPopupHost() {
           {!!body && <Text style={styles.subtitle}>{body}</Text>}
 
           <TouchableOpacity style={styles.button} activeOpacity={0.85} onPress={close}>
-            <Text style={styles.buttonText}>Got it</Text>
+            <Text style={styles.buttonText}>{translate('popup.gotIt')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>

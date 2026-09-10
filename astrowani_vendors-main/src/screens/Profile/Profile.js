@@ -33,7 +33,7 @@ export default function Profile({ navigation }) {
     try {
       const astroId = await AsyncStorage.getItem('astroId');
       if (!astroId) {
-        Alert.alert('Error', 'Session missing. Please log in again.');
+        Alert.alert(t('common.error'), t('common.sessionMissing'));
         return;
       }
 
@@ -59,11 +59,11 @@ export default function Profile({ navigation }) {
           }
         });
       } else {
-        Alert.alert('Error', 'Profile not found.');
+        Alert.alert(t('common.error'), t('profile.notFound'));
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      Alert.alert('Error', 'An unexpected error occurred while fetching your profile.');
+      Alert.alert(t('common.error'), t('editProfile.fetchFailed'));
     } finally {
       setLoading(false);
     }
@@ -72,6 +72,9 @@ export default function Profile({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       fetchData();
+      // Refetch on focus only. fetchData is recreated every render, so listing it would
+      // re-subscribe the focus effect on every render; see EditProfile.js for the same case.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
   // Share my own profile: photo, a formal introduction and the CUSTOMER app's Play

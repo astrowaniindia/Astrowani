@@ -31,6 +31,7 @@ import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 
+import { LanguageContext } from '../../context/LanguageContext';
 // Slot instants are always shown in IST, the offer's business timezone — the same
 // clock time the customer was shown when they booked, regardless of the phone's
 // own timezone.
@@ -70,6 +71,7 @@ const fmtDayKey = (d) => {
 
 const FreeCalls = () => {
   const navigation = useNavigation();
+  const { t } = useContext(LanguageContext);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -105,13 +107,13 @@ const FreeCalls = () => {
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.data?.success || !res.data.sessionId) {
-        Alert.alert('Could not start the call', res.data?.message || 'Please try again.');
+        Alert.alert(t('freeCalls.startFailed'), res.data?.message || t('common.tryAgain'));
         return;
       }
       const minutes = res.data.durationMinutes || item.durationMinutes || 12;
       navigation.navigate('AudioCall', {
         sessionId: res.data.sessionId,
-        callerName: res.data.customerName || item.customerName || 'Customer',
+        callerName: res.data.customerName || item.customerName || t('common.customer'),
         perMinuteCharge: 0,
         freeCall: true,
         freeCallSeconds: minutes * 60,
@@ -121,8 +123,8 @@ const FreeCalls = () => {
       // already on another call, they themselves are mid-session), so show what it
       // said rather than a generic failure.
       Alert.alert(
-        'Could not start the call',
-        e.response?.data?.message || e.message || 'Please try again.',
+        t('freeCalls.startFailed'),
+        e.response?.data?.message || e.message || t('common.tryAgain'),
       );
     } finally {
       setBusyId(null);
@@ -130,14 +132,14 @@ const FreeCalls = () => {
   };
 
   const mark = (item, status) => {
-    const label = status === 'completed' ? 'done' : 'missed';
+    const isDone = status === 'completed';
     Alert.alert(
-      `Mark as ${label}?`,
-      `${item.customerName || 'This customer'} — ${fmtTime(new Date(item.slotStart))}`,
+      isDone ? t('freeCalls.markDoneTitle') : t('freeCalls.markMissedTitle'),
+      `${item.customerName || t('freeCalls.thisCustomer')} — ${fmtTime(new Date(item.slotStart))}`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: `Yes, ${label}`,
+          text: isDone ? t('freeCalls.yesDone') : t('freeCalls.yesMissed'),
           onPress: async () => {
             setBusyId(item.id);
             try {
@@ -149,7 +151,7 @@ const FreeCalls = () => {
               );
               setBookings((prev) => prev.map((b) => (b.id === item.id ? { ...b, status } : b)));
             } catch (e) {
-              Alert.alert('Could not update', e.response?.data?.message || e.message);
+              Alert.alert(t('freeCalls.updateFailed'), e.response?.data?.message || e.message);
             } finally {
               setBusyId(null);
             }
@@ -188,24 +190,24 @@ const FreeCalls = () => {
           <View style={styles.when}>
             <Text style={styles.time}>{fmtTime(start)}</Text>
             <Text style={styles.day}>
-              {isToday ? 'Today' : fmtDay(start)}
+              {isToday ? t('freeCalls.today') : fmtDay(start)}
             </Text>
           </View>
           <View style={styles.tags}>
             <View style={styles.freeTag}>
-              <Text style={styles.freeTagTxt}>{item.durationMinutes} MIN · FREE</Text>
+              <Text style={styles.freeTagTxt}>{t('freeCalls.minFree', { n: item.durationMinutes })}</Text>
             </View>
-            {done && <Text style={[styles.state, styles.stateDone]}>Done</Text>}
-            {missed && <Text style={[styles.state, styles.stateMissed]}>Missed</Text>}
-            {overdue && <Text style={[styles.state, styles.stateOverdue]}>Time passed</Text>}
+            {done && <Text style={[styles.state, styles.stateDone]}>{t('freeCalls.done')}</Text>}
+            {missed && <Text style={[styles.state, styles.stateMissed]}>{t('freeCalls.missed')}</Text>}
+            {overdue && <Text style={[styles.state, styles.stateOverdue]}>{t('freeCalls.timePassed')}</Text>}
           </View>
         </View>
 
-        <Text style={styles.name}>{item.customerName || 'Customer'}</Text>
+        <Text style={styles.name}>{item.customerName || t('common.customer')}</Text>
         <Text style={styles.phone}>
-          {item.customerPhone ? `${item.customerPhone} · rings in their app` : 'Rings in their app'}
+          {item.customerPhone ? t('freeCalls.ringsInAppWithPhone', { phone: item.customerPhone }) : t('freeCalls.ringsInApp')}
         </Text>
-        {!!item.adminNote && <Text style={styles.note}>Note: {item.adminNote}</Text>}
+        {!!item.adminNote && <Text style={styles.note}>{t('freeCalls.note')}: {item.adminNote}</Text>}
 
         {item.status === 'booked' && (
           <View style={styles.actions}>
@@ -216,7 +218,7 @@ const FreeCalls = () => {
               onPress={() => callNow(item)}>
               <Icon name="call" size={moderateScale(17)} color="#fff" />
               <Text style={styles.callTxt}>
-                {busyId === item.id ? 'Calling…' : 'Call now'}
+                {busyId === item.id ? t('freeCalls.calling') : t('freeCalls.callNow')}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -224,14 +226,14 @@ const FreeCalls = () => {
               activeOpacity={0.85}
               disabled={busyId === item.id}
               onPress={() => mark(item, 'completed')}>
-              <Text style={styles.secTxt}>Mark done</Text>
+              <Text style={styles.secTxt}>{t('freeCalls.markDone')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.secBtn}
               activeOpacity={0.85}
               disabled={busyId === item.id}
               onPress={() => mark(item, 'missed')}>
-              <Text style={styles.secTxt}>No answer</Text>
+              <Text style={styles.secTxt}>{t('freeCalls.noAnswer')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -248,8 +250,8 @@ const FreeCalls = () => {
   }
 
   const sections = [
-    { key: 'upcoming', title: 'Upcoming', data: upcoming },
-    { key: 'history', title: 'Earlier', data: history },
+    { key: 'upcoming', title: t('freeCalls.upcoming'), data: upcoming },
+    { key: 'history', title: t('freeCalls.earlier'), data: history },
   ].filter((s) => s.data.length > 0);
 
   return (
@@ -267,14 +269,13 @@ const FreeCalls = () => {
       }
       ListHeaderComponent={
         <Text style={styles.intro}>
-          Free introductory calls assigned to you. Ring the customer yourself at the time
-          shown — there is nothing for them to join.
+          {t('freeCalls.intro')}
         </Text>
       }
       ListEmptyComponent={
         <View style={styles.empty}>
           <Icon name="event-available" size={moderateScale(40)} color="#C9B2A2" />
-          <Text style={styles.emptyTxt}>No free calls assigned to you yet.</Text>
+          <Text style={styles.emptyTxt}>{t('freeCalls.empty')}</Text>
         </View>
       }
       renderItem={({ item: section }) => (

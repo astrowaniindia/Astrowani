@@ -20,6 +20,7 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing } fro
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 
+import { translate } from '../context/LanguageContext';
 let listener = null;
 export const showStatusPopup = (opts) => {
   if (listener) listener(opts || {});
@@ -40,14 +41,14 @@ export function StatusPopupHost() {
   useEffect(() => {
     listener = (opts) => {
       setState({
-        title: opts.title || 'Notice',
+        title: opts.title || translate('popup.notice'),
         message: opts.message || '',
         variant: opts.variant || 'info',
-        buttonText: opts.buttonText || 'OK',
+        buttonText: opts.buttonText || translate('common.ok'),
         onConfirm: typeof opts.onConfirm === 'function' ? opts.onConfirm : null,
         onCancel: typeof opts.onCancel === 'function' ? opts.onCancel : null,
-        confirmText: opts.confirmText || 'OK',
-        cancelText: opts.cancelText || 'Cancel',
+        confirmText: opts.confirmText || translate('common.ok'),
+        cancelText: opts.cancelText || translate('common.cancel'),
         onClose: typeof opts.onClose === 'function' ? opts.onClose : null,
       });
     };

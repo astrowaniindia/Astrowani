@@ -113,7 +113,7 @@ export default function EditProfile() {
     try {
       const astroId = await AsyncStorage.getItem('astroId');
       if (!astroId) {
-        Alert.alert('Error', 'Session missing. Please log in again.');
+        Alert.alert(t('common.error'), t('common.sessionMissing'));
         return;
       }
 
@@ -145,7 +145,7 @@ export default function EditProfile() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      Alert.alert('Error', 'An unexpected error occurred while fetching your profile.');
+      Alert.alert(t('common.error'), t('editProfile.fetchFailed'));
     } finally {
       setLoading(false);
     }
@@ -157,7 +157,7 @@ export default function EditProfile() {
     try {
       const astroId = await AsyncStorage.getItem('astroId');
       if (!astroId) {
-        Alert.alert('Error', 'Session is missing. Please log in again.');
+        Alert.alert(t('common.error'), t('common.sessionMissing'));
         return;
       }
 
@@ -228,7 +228,7 @@ export default function EditProfile() {
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Failed to update profile.');
+      Alert.alert(t('common.error'), t('editProfile.updateFailed'));
     } finally {
       setLoading(false);
     }
@@ -238,8 +238,12 @@ export default function EditProfile() {
     setProfileImage(null);
   };
 
+// Run once on mount, deliberately. fetchData is recreated every render, so listing it
+// here would refetch on every render; it reads `t` only for its error alert, which is
+// the language active at mount — correct for a one-shot fetch.
 useEffect(()=>{
 fetchData()
+// eslint-disable-next-line react-hooks/exhaustive-deps
 },[])
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -282,7 +286,7 @@ fetchData()
           style={styles.input}
           value={name}
           onChangeText={setName}
-          placeholder="Enter your full name"
+          placeholder={t('editProfile.phName')}
           placeholderTextColor={COLORS.lightGrey}
         />
 
@@ -292,7 +296,7 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={email}
           onChangeText={setEmail}
-          placeholder="Enter your email"
+          placeholder={t('editProfile.phEmail')}
           keyboardType="email-address"
         />
 
@@ -302,7 +306,7 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={phone}
           onChangeText={setPhone}
-          placeholder="Enter your phone number"
+          placeholder={t('editProfile.phPhone')}
           keyboardType="phone-pad"
         />
 
@@ -324,7 +328,7 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={bio}
           onChangeText={setBio}
-          placeholder="Tell customers about your expertise and experience..."
+          placeholder={t('editProfile.phAbout')}
           multiline
           numberOfLines={5}
           textAlignVertical="top"
@@ -406,7 +410,7 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={bankAccountHolder}
           onChangeText={setBankAccountHolder}
-          placeholder="As per bank records"
+          placeholder={t('editProfile.phHolder')}
         />
 
         <Text style={styles.label}>{t('editProfile.accountNumber')}</Text>
@@ -415,7 +419,7 @@ fetchData()
           placeholderTextColor={COLORS.lightGrey}
           value={bankAccountNumber}
           onChangeText={setBankAccountNumber}
-          placeholder="Bank account number"
+          placeholder={t('editProfile.phAccount')}
           keyboardType="number-pad"
         />
 

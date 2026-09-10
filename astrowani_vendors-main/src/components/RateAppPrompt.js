@@ -14,7 +14,7 @@
 // request in front of a live call queue is worse than no review.
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing,
+  Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Platform,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
@@ -40,7 +40,7 @@ export const showRateAppPrompt = (override, opts) => {
 };
 
 export function RateAppPromptHost() {
-  const { language } = useContext(LanguageContext);
+  const { language, t } = useContext(LanguageContext);
   const [visible, setVisible] = useState(false);
   const [cfg, setCfg] = useState(null);
   const [override, setOverride] = useState(null);
@@ -141,11 +141,11 @@ export function RateAppPromptHost() {
               color="#fff"
               style={{ marginRight: scale(8) }}
             />
-            <Text style={styles.buttonText}>Rate on Play Store</Text>
+            <Text style={styles.buttonText}>{t(Platform.OS === 'ios' ? 'prompt.rateAppStore' : 'prompt.ratePlayStore')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={later} style={styles.skipBtn}>
-            <Text style={styles.skipText}>Maybe later</Text>
+            <Text style={styles.skipText}>{t('prompt.maybeLater')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>

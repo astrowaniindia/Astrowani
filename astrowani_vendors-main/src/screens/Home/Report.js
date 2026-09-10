@@ -126,11 +126,11 @@ export default function Wallet() {
   const submitWithdrawal = async () => {
     const value = Number(amount);
     if (!value || value <= 0) {
-      Alert.alert('Enter a valid amount');
+      Alert.alert(t('wallet.invalidAmount'));
       return;
     }
     if (value > (balance ?? 0)) {
-      Alert.alert('Amount exceeds your wallet balance');
+      Alert.alert(t('wallet.exceedsBalance'));
       return;
     }
     setSubmitting(true);
@@ -143,13 +143,13 @@ export default function Wallet() {
       );
       if (res.data?.success) {
         setModalVisible(false);
-        Alert.alert('Withdrawal requested', 'Your request has been submitted and is pending admin approval.');
+        Alert.alert(t('wallet.withdrawRequestedTitle'), t('wallet.withdrawRequestedBody'));
         fetchWallet();
       } else {
-        Alert.alert('Unable to request withdrawal', res.data?.message || 'Please try again.');
+        Alert.alert(t('wallet.withdrawFailed'), res.data?.message || t('common.tryAgain'));
       }
     } catch (e) {
-      Alert.alert('Unable to request withdrawal', e.response?.data?.message || 'Please try again.');
+      Alert.alert(t('wallet.withdrawFailed'), e.response?.data?.message || t('common.tryAgain'));
     } finally {
       setSubmitting(false);
     }
@@ -268,7 +268,7 @@ export default function Wallet() {
             <Text style={styles.modalSubtitle}>{t('wallet.walletBalance')}: ₹{balance}</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Enter amount"
+              placeholder={t('wallet.enterAmount')}
               keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}

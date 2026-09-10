@@ -48,7 +48,7 @@ export default function Settings({navigation}) {
     try {
       await Linking.openURL(url);
     } catch (error) {
-      Alert.alert('Unable to open link', 'Please check your internet connection and try again.');
+      Alert.alert(t('settings.linkFailedTitle'), t('settings.linkFailedBody'));
     }
   };
 

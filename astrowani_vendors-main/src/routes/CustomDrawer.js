@@ -153,10 +153,10 @@ function CustomDrawer(props) {
           )}
           <View style={styles.nameContainer}>
             <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
-              {data?.name || 'Name not available'}
+              {data?.name || t('drawer.nameNotAvailable')}
             </Text>
             <Text style={styles.userEmail} numberOfLines={1} ellipsizeMode="tail">
-              {data?.email || 'Email not available'}
+              {data?.email || t('drawer.emailNotAvailable')}
             </Text>
           </View>
         </TouchableOpacity>
@@ -185,21 +185,21 @@ function CustomDrawer(props) {
           onPress={() => props.navigation.navigate('Profile')}
         />
         <DrawerItem
-          label="WhatsApp Customers"
+          label={t('drawer.whatsapp')}
           icon={() => (
             <Icon name="chat" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('WhatsAppChats')}
         />
         <DrawerItem
-          label="My Free Calls"
+          label={t('drawer.freeCalls')}
           icon={() => (
             <Icon name="event-available" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('FreeCalls')}
         />
         <DrawerItem
-          label="Referrals & Commission"
+          label={t('drawer.referrals')}
           icon={() => (
             <Icon name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
           )}
@@ -297,7 +297,7 @@ function CustomDrawer(props) {
 
       {/* Social Media Section */}
       <View style={styles.socialSection}>
-        <Text style={styles.socialHeading}>Follow Us</Text>
+        <Text style={styles.socialHeading}>{t('drawer.followUs')}</Text>
         <View style={styles.socialIcons}>
           <FontAwesome name="facebook-square" size={28} color="#3b5998" />
           <FontAwesome name="twitter-square" size={28} color="#00acee" />

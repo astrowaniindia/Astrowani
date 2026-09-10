@@ -35,7 +35,7 @@ export const showAppUpdatePrompt = (override) => {
 };
 
 export function AppUpdatePromptHost() {
-  const { language } = useContext(LanguageContext);
+  const { language, t } = useContext(LanguageContext);
   const [visible, setVisible] = useState(false);
   const [info, setInfo] = useState(null);
   const [override, setOverride] = useState(null);
@@ -145,7 +145,7 @@ export function AppUpdatePromptHost() {
           {forced && (
             <View style={styles.forcedRow}>
               <MaterialIcons name="info-outline" size={moderateScale(15)} color={COLORS.AstroMaroon} />
-              <Text style={styles.forcedText}>This update is required to keep using the app.</Text>
+              <Text style={styles.forcedText}>{t('prompt.updateRequired')}</Text>
             </View>
           )}
 
@@ -166,7 +166,7 @@ export function AppUpdatePromptHost() {
 
           {!forced && (
             <TouchableOpacity onPress={later} style={styles.skipBtn}>
-              <Text style={styles.skipText}>Later</Text>
+              <Text style={styles.skipText}>{t('prompt.later')}</Text>
             </TouchableOpacity>
           )}
         </Animated.View>

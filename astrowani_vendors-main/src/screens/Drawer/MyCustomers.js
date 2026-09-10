@@ -124,7 +124,7 @@ const MyCustomers = () => {
         setRecommendSentFor({ title: remedy.title, percent: res.data.commissionPercent, days: res.data.windowDays });
       }
     } catch (e) {
-      Alert.alert('Could not recommend', e.response?.data?.message || e.message);
+      Alert.alert(t('customers.recommendFailed'), e.response?.data?.message || e.message);
     } finally {
       setRecommendBusy(null);
     }
@@ -143,7 +143,7 @@ const MyCustomers = () => {
   const startRecording = async () => {
     const ok = await requestMicPermission();
     if (!ok) {
-      Alert.alert('Microphone permission required', 'Please allow microphone access to record a voice note.');
+      Alert.alert(t('customers.micRequiredTitle'), t('customers.micRequiredBody'));
       return;
     }
     setRecordedPath(null);
@@ -203,10 +203,10 @@ const MyCustomers = () => {
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      Alert.alert('Sent!', `Your voice note was sent to ${target.name}.`);
+      Alert.alert(t('customers.voiceSentTitle'), t('customers.voiceSentBody', { name: target.name }));
       closeRecorder();
     } catch (e) {
-      Alert.alert('Could not send', e.response?.data?.message || e.message || 'Please try again.');
+      Alert.alert(t('customers.sendFailed'), e.response?.data?.message || e.message || t('common.tryAgain'));
     } finally {
       setSending(false);
     }
@@ -239,7 +239,7 @@ const MyCustomers = () => {
             commission — see RemedyReferrals.js and the backend's remedyCommission.js. */}
         <TouchableOpacity style={[styles.recommendButton, styles.actionFlex]} onPress={() => openRecommend(item)}>
           <Icon name="sparkles-outline" size={18} color={COLORS.AstroMaroon} />
-          <Text style={styles.recommendButtonText}>Recommend</Text>
+          <Text style={styles.recommendButtonText}>{t('customers.recommend')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -290,7 +290,7 @@ const MyCustomers = () => {
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={closeRecorder}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.sendBtn, (!recordedPath || sending) && styles.sendBtnDisabled]}
@@ -344,7 +344,7 @@ const MyCustomers = () => {
                 data={remedyItems}
                 keyExtractor={(r) => r._id}
                 style={{ maxHeight: verticalScale(360) }}
-                ListEmptyComponent={<Text style={styles.recommendEmpty}>No remedies available right now.</Text>}
+                ListEmptyComponent={<Text style={styles.recommendEmpty}>{t('customers.noRemedies')}</Text>}
                 renderItem={({ item: r }) => (
                   <TouchableOpacity
                     style={styles.remedyRow}
