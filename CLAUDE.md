@@ -901,8 +901,9 @@ Seed admin: `node astrowani-backend/scripts/seedAdmin.js`.
   this ever needs hardening.
 
 ### O. "Notify me" waitlist (fire-once, not a live queue)
-- `sql/astrologer_waitlist_schema.sql` — **not yet run against Supabase**, run it before this
-  feature will work (the endpoint fails closed/silently without the table; core busy-gating
+- `sql/astrologer_waitlist_schema.sql` — **⚠ CORRECTED 2026-09-10: this IS applied.** The
+  table exists in production and holds rows. The text below said it was not run; measured,
+  it is. Notify-me works (the endpoint fails closed/silently without the table; core busy-gating
   above does NOT depend on it). `astrologer_waitlist` (astrologer_id, customer_id UNIQUE pair,
   request_type). RLS: service-role only, no client-direct access.
 - `POST /api/astrologer/:id/notify-me` (upsert, requires customer JWT) — the only write path.
@@ -1207,7 +1208,9 @@ matching what is already there.
   `sessionManager.checkActiveSessions` (which filters `next_billing_at <= now`) but still counts
   as busy in `busyStatus.js` — so the astrologer is locked out of all work, silently and
   indefinitely. Two such rows had been live since 2026-06-18. Any code that sets `is_active`
-  must set `next_billing_at` in the same write.
+  must set `next_billing_at` in the same write. **⚠ 2026-09-10: there are currently ZERO such
+  rows** — the two long-lived ones were cleaned up. The trap in the code is still real and the
+  rule still stands, but the file previously implied live rows exist; they do not.
 - No rate limiting, no `helmet`, no compression; `cors()` is fully open.
 
 ### V. Things that are now enforced — do not undo them
@@ -1242,8 +1245,9 @@ a coordinated app change first and say so explicitly.
   settable only from `astrowani-admin`'s Astrologers page. There is no vendor-app or
   customer-app write path; astrologers cannot assign this to themselves.
 - **DB**: `sql/astrologer_badge_schema.sql` adds `astrologers.badge text` (nullable) + a CHECK
-  constraint restricting it to the three values or `NULL`. Idempotent, not yet run against
-  production — run it before this feature works end-to-end.
+  constraint restricting it to the three values or `NULL`. **⚠ CORRECTED 2026-09-10: this IS
+  applied** — the column exists and 5 astrologers currently carry a badge. The text used to
+  say it had not been run.
 - **Backend**: `astrologers.badge` added to `ASTROLOGER_LIST_COLUMNS` and to `formatAstrologer`'s
   output as `badgeType` (`index.js`) — kept as a distinct field name from the pre-existing
   generic `item.badge` **text label** that `ReusableList.js`'s ribbon renders for unrelated static
@@ -2282,8 +2286,9 @@ guards money.)
 `VideoCallScreen.tsx:41`) are **pre-existing** — `git diff` shows those files gained only an
 import and a 3-line insert. Admin `npm run build` succeeds. Not exercised on-device.
 
-**To activate**: run `sql/session_intro_banner.sql`. Until then the hook fails to OFF and no
-banner appears, so it is safe to ship the app change first.
+**To activate**: run `sql/session_intro_banner.sql`. ⚠ CORRECTED 2026-09-10: **this IS
+applied and `session_intro_banner_enabled` is `true`** — the banner is LIVE in production, not
+dormant as this section implied.
 
 ---
 
@@ -2826,7 +2831,10 @@ Both RN apps bundle clean for Android. Admin `npm run build` succeeds. Lint clea
 file; the 3 customer + 1 vendor errors reported are pre-existing `exhaustive-deps` (confirmed by
 re-running lint against a stashed tree). i18n parity re-checked: **1034** keys, 0 one-sided.
 
-**Not exercised on a device**, and the SQL is not applied — so nothing is live yet.
+**Not exercised on a device.** ⚠ CORRECTED 2026-09-10: **the SQL IS applied** — both
+`app_update_config` and `app_review_prompt_config` exist in production and both endpoints
+answer 200. `app_update_config` is `enabled:false` with `minSupportedVersion:"0"`, so no
+prompt is being shown to anyone; that is a config choice, not an unapplied migration.
 
 ### ⚠️ This ships over OTA — but the version numbers do not come from it
 `react-native-device-info` was already installed in both apps, so there is no native change and
@@ -3058,9 +3066,9 @@ Still open:
   WHATEVER YOU DO NOT NEED". Zero JS call sites; no dependency manifest pulls Contacts or
   Calendar.
 - `usesCleartextTraffic="true"` in the production manifest with no `http://` left in `src/`.
-- `/api/app/update-check` and `/api/app/review-prompt` **404 in production** — registered in
-  `index.js` but only on this unmerged branch. The app fails closed, but there is currently
-  **no forced-update lever**.
+- ~~`/api/app/update-check` and `/api/app/review-prompt` **404 in production**~~ **STALE —
+  corrected 2026-09-10: both answer 200.** Measured directly. The vendor section further down
+  already recorded this; this line contradicted it and was the older of the two.
 - `android/gradle.properties` is tracked and carries the upload keystore passwords.
 - iOS: no `Podfile.lock`, Pods never installed, plus the open untappable-Home blocker.
 
@@ -4168,7 +4176,13 @@ inside a `try/catch` and wraps `App || StartupErrorScreen`, so a build whose
 `require('./App')` throws can still pull a fixed bundle and heal itself on the next
 launch. The customer imports at top level and wraps `App` directly — if its require
 ever threw, the update check would never run and only a new store build could fix it.
-Worth porting the vendor's shape to the customer app if that file is touched again.
+**PORTED to the customer app on 2026-09-10** — its `index.js` now requires the app graph
+inside a try/catch and wraps `App || StartupErrorScreen`, with push wiring in its own
+separate try so a push failure costs one feature rather than the app. That port also
+fixed a latent ordering bug: the TextEncoder/TextDecoder polyfill for Supabase Realtime
+sat below the imports, and ES imports are hoisted, so App's whole module graph evaluated
+BEFORE those globals were assigned. `require()` runs where it is written, so moving the
+graph into the try corrected the order as a side effect.
 
 **What is still genuinely missing for iOS OTA is a CONSUMER, not the wiring.** Neither
 app has an App Store or TestFlight build in the field, so an iOS bundle uploads and
@@ -4180,3 +4194,53 @@ is gated behind Apple Developer Program enrolment.
 Bundles shipped this session, both platforms, same bundle each time:
 `01a08876-9f68-72f8-9a0b-6ac79ba3a1bd` (device-session fixes) and
 `01a08896-396e-7cf4-aee2-ac54cd191e6e` (moderation UI).
+
+### BQ. Truth audit of this file, 2026-09-10 — six claims were wrong
+
+Prompted by two false claims found the same day (the "verified 24/24" note in BN, and
+the on/off state of the free bot chat corrected back in AJ). Every **measurable** claim
+in this file was re-checked against the live database and the production API. Read-only;
+nothing was written.
+
+**The pattern in all six: the file recorded the state at the moment a section was
+WRITTEN, and nobody updated it when the SQL was actually run.** Every error pointed the
+same way — claiming a feature was dormant when it had been live for weeks. That is the
+dangerous direction: it invites someone to "fix" a thing that is already working, or to
+re-run a migration against production believing it is a no-op.
+
+| Claim in this file | Reality, measured 2026-09-10 |
+|---|---|
+| `astrologer_waitlist_schema.sql` "not yet run" | **Applied.** Table exists, holds rows. Notify-me works. |
+| `astrologer_badge_schema.sql` "not yet run" | **Applied.** Column exists; 5 astrologers carry a badge. |
+| App-prompt SQL "is not applied — nothing is live" | **Applied.** Both keys present. |
+| `/api/app/update-check` + `/review-prompt` "404 in production" | **Both 200.** The vendor section already said so; the customer section contradicted it. |
+| `session_intro_banner.sql` "until then no banner appears" | **Applied AND enabled.** The banner is LIVE. |
+| Zombie sessions "two rows live since 2026-06-18" | **Zero rows now.** The code trap is still real; the rows are gone. |
+
+**Claims that were checked and DO hold**, so they can be trusted: `coin_schema.sql`,
+`vendor_devices.sql`, `remedy_commerce_schema.sql`, `remedy_referral_commission.sql`,
+`free_call_booking_schema.sql`, `customer_moderation_schema.sql`, `reviews`/`favorites`/
+`astrologer_reports`, `analytics_environment` still `'test'`, `free_bot_chat_persona`
+still `true`, and gemstone ordering still enabled.
+
+**Two things worth knowing that are not errors but are not written down anywhere either:**
+
+- `free_call_offer` is **enabled**, `assignmentMode: 'single'`. AM says the migration
+  seeds it disabled on purpose; it has since been switched on. The free-call offer is
+  live to eligible new customers.
+- `app_update_config` is present but `enabled:false` with `minSupportedVersion:"0"`, so
+  **no update prompt is being shown to anyone**. That is a deliberate config state, not
+  an unapplied migration — do not "fix" it by re-running the SQL.
+
+> **THE RULE THIS PRODUCES: a claim about production state has a shelf life, and this
+> file has no way to notice when it expires.** Anything here of the form "not yet
+> applied", "not live", "404s", "is disabled" is a snapshot of one afternoon. **Measure
+> before acting on it** — `select * from app_settings`, a `curl`, or a one-line
+> table probe costs seconds. The reverse ("this IS applied") is safer but not immune.
+>
+> **A mistake I made in this very audit, worth copying the lesson from:** my first pass
+> reported the app-review settings key as missing. The key is `app_review_prompt_config`;
+> I had probed `app_review_config`. The audit tool was wrong, not the file. **When a
+> check says something is absent, confirm the identifier against the source before
+> believing it** — `grep REVIEW_KEY src/appPromptRoutes.js` would have settled it in one
+> command.
