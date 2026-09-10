@@ -2,7 +2,8 @@
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
-import { supabase } from '../api/SupabaseClient';
+import Instance from '../api/ApiCall';
+import { getDeviceId } from './deviceId';
 import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displayGenericNotification } from './incomingRequestNotifications';
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
@@ -18,14 +19,24 @@ const CANCEL_REQUEST_TYPE = 'cancel_incoming_request';
 
 // Registration.js saves fcm_token once, at signup — but it's never refreshed after that,
 // so most vendor devices end up with a stale/missing token by the time push actually
-// matters. This keeps astrologers.fcm_token current on every login and token rotation.
+// matters. This keeps the token current on every login and token rotation.
+//
+// Goes through the backend (2026-09-11), never Supabase directly: a direct write needed
+// the public key to be able to UPDATE fcm_token on ANY astrologer, which let anyone
+// holding the key redirect someone else's incoming-call pushes. The backend takes the
+// astrologer from our JWT. Not signed in yet → skip; login sends the token itself.
 async function syncTokenWithBackend(token) {
   try {
-    const astroId = await AsyncStorage.getItem('astroId');
-    if (!astroId || !token) return;
-    await supabase.from('astrologers').update({ fcm_token: token }).eq('id', astroId);
+    const authToken = await AsyncStorage.getItem('token');
+    if (!authToken || !token) return;
+    const deviceId = await getDeviceId();
+    await Instance.post(
+      '/api/vendor/fcm-token',
+      { fcmToken: token, deviceId, platform: Platform.OS },
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    );
   } catch (e) {
-    console.log('Error syncing FCM token:', e);
+    console.log('Error syncing FCM token:', e?.message);
   }
 }
 

@@ -2923,6 +2923,41 @@ app.post('/api/vendor/voip-token', async (req, res) => {
   }
 });
 
+// Store/refresh the astrologer's FCM token (2026-09-11).
+//
+// WHY: the vendor app used to write astrologers.fcm_token straight through the public
+// Supabase key, which meant the anon role needed UPDATE on that column for EVERY row —
+// so anyone holding the key from the APK could overwrite any astrologer's token and
+// redirect their incoming-call pushes to a device of their choosing. The token is a
+// routing target for calls, so, exactly like /api/vendor/voip-token above, the
+// astrologer is taken from the verified JWT and never from the body.
+//
+// Writes the legacy account-level column (pushTargetFor still falls back to it) and,
+// when the app sends its deviceId, that device's vendor_devices row — which is what
+// actually targets the ring once more than one device has signed in.
+app.post('/api/vendor/fcm-token', async (req, res) => {
+  try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { fcmToken, deviceId, platform } = req.body || {};
+    if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.length > 4096) {
+      return res.status(400).json({ success: false, message: 'fcmToken is required' });
+    }
+    const { error } = await supabaseService
+      .from('astrologers').update({ fcm_token: fcmToken }).eq('id', astroId);
+    if (error) throw error;
+    // Best-effort: registerDevice never throws and returns false when the table or the
+    // deviceId is missing, in which case the account-level column above still routes.
+    const deviceUpdated = deviceId
+      ? await vendorDevices.registerDevice(astroId, { deviceId, fcmToken, platform })
+      : false;
+    return res.status(200).json({ success: true, deviceUpdated });
+  } catch (e) {
+    console.error('[push] vendor fcm-token save error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not save token' });
+  }
+});
+
 // The customer app's SupportScreen.js has always posted here for "Refund Request" /
 // technical/account/feedback tickets — this route never existed, so every submission
 // silently failed (generic Error alert, nothing reached anyone). Found during the

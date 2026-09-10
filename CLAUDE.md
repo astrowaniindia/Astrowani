@@ -4450,3 +4450,28 @@ extracts to `dist.new` then swaps, so a dropped upload never serves half a build
 200 check on `manu.astrowani.com`. `/api/remedies` was already gzipped by Cloudflare
 (258 KB → 43 KB), and uptime's last 60 runs were green, so the 522s remain unexplained;
 the VPS build was the leading suspect and it's now gone.
+
+### BU. `astrologers.fcm_token` moved server-side (2026-09-11)
+
+The worst residual from BT item 11: the public key could overwrite `astrologers.fcm_token`
+on **any** row, redirecting (or silencing) another astrologer's incoming-call pushes. The
+only direct writer was the vendor app's `utils/Firebase.js` `syncTokenWithBackend`
+(Registration and login already set the token through the backend).
+
+- **`POST /api/vendor/fcm-token`** (`index.js`, beside `/api/vendor/voip-token`): astrologer
+  from the verified JWT, never the body. Writes the legacy `astrologers.fcm_token`
+  (`pushTargetFor` still falls back to it) and, when a `deviceId` is sent, that device's
+  `vendor_devices` row via `registerDevice` (best-effort, never throws).
+- **Vendor app**: `syncTokenWithBackend` posts there with `{fcmToken, deviceId, platform}`;
+  skips when not signed in (login carries the token itself). The `supabase` import is gone
+  from `Firebase.js`.
+- **`sql/hardening_11_revoke_astrologer_fcm_token_update.sql` — written, NOT applied, and
+  must NOT be applied yet.** Old installed builds still write directly; revoking now would
+  make their refreshes fail and leave stale tokens. Apply once the vendor OTA has been
+  picked up (the app opened at least twice since — hot-updater applies on the next launch).
+  Column-scoped, because the app still writes `is_available`/toggles directly. Its tail
+  RAISES if anon still has the privilege (e.g. through a table-level grant).
+
+Still anon-writable on any row after this: `call_requests.status`, `chat_requests.status`,
+`notifications.is_read`, `chat_sessions.is_active/ended_at` (hardening_10 closes it) and
+the astrologer availability toggles. Each needs the same move before its revoke.
