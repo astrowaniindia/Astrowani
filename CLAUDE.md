@@ -4472,6 +4472,15 @@ only direct writer was the vendor app's `utils/Firebase.js` `syncTokenWithBacken
   Column-scoped, because the app still writes `is_available`/toggles directly. Its tail
   RAISES if anon still has the privilege (e.g. through a table-level grant).
 
+**Verified 2026-09-11 (partial, stated honestly):** deployed (run 34531186989); the route
+exists in production (a sibling path 404s) and refuses an unauthenticated call with 401;
+backend `node --check` and vendor lint clean; `Firebase.js`→`ApiCall.js` has no import
+cycle. **The signed-in success path was NOT exercised against production** — a vendor
+JWT minted from the local `.env` is rejected by production (the pre-existing
+`/api/vendor/voip-token` rejects it identically), i.e. the local `JWT_SECRET` is not the
+production one. Confirm on a real device after the OTA: sign in, then check the
+astrologer's `vendor_devices.fcm_token` updated and a customer call still rings.
+
 Still anon-writable on any row after this: `call_requests.status`, `chat_requests.status`,
 `notifications.is_read`, `chat_sessions.is_active/ended_at` (hardening_10 closes it) and
 the astrologer availability toggles. Each needs the same move before its revoke.
