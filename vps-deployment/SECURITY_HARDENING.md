@@ -40,6 +40,28 @@ Cloudflare edges.
 
 Check: `ssh -o PubkeyAuthentication=no root@<vps>` gives `Permission denied (publickey)`.
 
+## 4. Cloudflare zone settings for astrowani.com (applied 2026-09-12)
+
+Four hostnames are proxied: the apex, `backend`, `shop` and `manu`. Every other record,
+including `admin.astrowani.com` (a different project), is DNS-only, so zone settings do
+not reach it.
+
+- **Minimum TLS version: 1.2.** It was 1.0. The apps need Android 7+ (minSdk 24) or
+  iOS 15.1+, and both support TLS 1.2. Check: `curl --tlsv1.1 --tls-max 1.1 ...` is
+  refused.
+- **SSL/TLS encryption mode: Full (strict).** It was Automatic, which had picked Full, so
+  origin certificates were not validated. All four origins have valid certificates. The
+  three app hostnames use Certbot on the VPS, which renews them automatically.
+  **If a Certbot renewal ever fails, these sites return Cloudflare error 526.** Fix the
+  certificate; do not downgrade the mode.
+- Already on and left as they were: the Cloudflare managed ruleset (always active on
+  Free), Browser Integrity Check, Always Use HTTPS, Automatic HTTPS Rewrites.
+- **Deliberately left off:**
+  - *Bot Fight Mode.* On the Free plan it cannot be bypassed for API paths, and it can
+    challenge the mobile apps' non-browser requests.
+  - *HSTS.* Once browsers cache it, it is hard to undo, and `includeSubDomains` would
+    also bind the other project's subdomain.
+
 ## Not covered here (decisions for the owner)
 
 - **Database backups.** The Supabase project is on the Free plan, which has no backups
