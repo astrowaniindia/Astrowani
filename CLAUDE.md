@@ -4434,7 +4434,7 @@ wallet/bank/`fcm_token` SELECT is denied. Anon **can still UPDATE any row** of:
 
 - `sql/hardening_10_revoke_chat_sessions_update.sql` closes the `chat_sessions` one (it
   allows killing any live consultation or creating a zombie session). Safe now: neither app
-  writes `chat_sessions`. Self-verifying tail. **Not applied — yours to run.**
+  writes `chat_sessions`. Self-verifying tail. **Applied 2026-09-12 — see BY.**
 - The rest ARE used by the apps directly (cancel/reject writes, read-receipts, vendor
   toggles, FCM token), so revoking them needs a backend endpoint + app migration + OTA +
   wait for adoption + revoke. Worst residual: **`astrologers.fcm_token` can be overwritten
@@ -4554,3 +4554,89 @@ astrologer OTA android `01a08d51…` / ios `01a08d57…`. **The hardening_13 clo
 these.** The signed-in success paths were not exercised against production (the local
 `JWT_SECRET` is not production's — see BU); confirm on devices by cancelling a pending call
 and marking a notification read in each app.
+
+## Session 2026-09-12: production outage, then server / Cloudflare / database hardening
+
+### BX. The 2026-09-11 outage: nginx never came back after an OS update
+
+**Symptom.** Cloudflare 522 on every site on the VPS (backend, shop, admin, and the other
+projects) from about 06:32 UTC to about 19:30 UTC. The Node backend was healthy the whole
+time.
+
+**Cause.**
+1. unattended-upgrades (libc6) restarted nginx.
+2. The shop site proxied `/api/` to `https://backend.astrowani.com`. nginx resolves a
+   hostname in `proxy_pass` once, at startup, and DNS was briefly down mid-upgrade.
+3. The config test failed with `host not found in upstream`, and nginx refused to start.
+4. The stock unit has no `Restart=`, so nothing retried.
+
+**Fixed** (PR #14):
+- The shop proxy now goes to `http://127.0.0.1:4500/api/`.
+- A systemd drop-in gives nginx `Restart=on-failure`, retrying forever
+  (`vps-deployment/systemd/nginx-restart.conf`).
+- **Never put a public hostname in `proxy_pass` on this VPS.**
+
+The Aug 26 outage had a different cause (a bad Supabase key after a reboot) but the same
+trigger: an unattended OS event.
+
+### BY. Hardening applied 2026-09-12 (all verified; details in `vps-deployment/SECURITY_HARDENING.md`)
+
+**VPS.** A snapshot was taken before any change.
+- Closed ufw ports 4500, 8080 and 21; disabled vsftpd.
+- The three Astrowani nginx sites accept **Cloudflare IPs only** (PR #15). A direct hit on
+  the VPS IP gets no response.
+- The real visitor IP comes from `CF-Connecting-IP`, so the per-IP rate limits count
+  users. `TRUST_PROXY_HOPS=1` stays correct.
+- SSH is key-only; root logs in by key only. There had been 835 failed password guesses
+  in 7 days.
+- fail2ban runs on ports 22 and 2222, with the Hostinger web-console range whitelisted.
+- Rebooted to activate the kernel and libc updates. `certbot renew --dry-run` passed for
+  every cert first.
+
+**Cloudflare** (zone `astrowani.com`):
+- Minimum TLS is now 1.2 (was 1.0).
+- SSL mode is now Full (strict) (was Automatic, running Full).
+- Bot Fight Mode and HSTS were deliberately left off.
+- **A failed Certbot renewal now shows as a 526.** Fix the certificate; don't downgrade
+  the mode.
+
+**Database** (applied via the Supabase connector):
+- **`hardening_10`** (the `chat_sessions` UPDATE revoke from BT): applied.
+- **`hardening_14`**, new (PR #16), applied:
+  - **What was exposed:** `anon` could EXECUTE five SECURITY DEFINER money functions
+    through Postgres's default grant to PUBLIC. None of them checks the caller, so anyone
+    holding the publishable key could mint coins (`adjust_customer_coins`) or move any
+    customer's coins to any astrologer (`transfer_coins_to_vendor`).
+  - **The fix:** all five are now `service_role`-only. That is the same state
+    `adjust_customer_wallet`, `adjust_vendor_wallet` and `transfer_customer_to_vendor`
+    were already in.
+  - **No abuse found:** `coin_transactions` was empty.
+  - **Rule:** when adding any new SECURITY DEFINER function, `REVOKE EXECUTE … FROM
+    PUBLIC, anon, authenticated` in the same migration.
+- Verified afterwards: anon can't execute any SECURITY DEFINER function; the advisor's
+  execute warnings are gone; uptime is green.
+
+### BZ. Still open, with dates
+
+- **`hardening_11`, `12`, `13` — apply on or after 2026-09-18.** The OTAs shipped on
+  2026-09-11 (BU/BV/BW), and Hot Updater applies a bundle on the next launch after it
+  downloads. A week is an estimate for adoption. It can be applied sooner if the Supabase
+  API logs show no direct anon writes to those columns for a day or two. **Before
+  applying:**
+  1. On a real vendor phone, toggle online/offline, confirm a customer call still rings,
+     and mark a notification read.
+  2. On a customer phone, cancel a pending call.
+
+  **Order:**
+  - `13` can go first; its early-apply harm is bounded.
+  - Then `11` + `12` together; `12` is the one with real harm if applied early.
+  - Re-run the anon privilege check after each.
+- **Supabase is on the Free plan: no backups and no PITR,** and the project shows
+  "EXCEEDING USAGE LIMITS". Upgrading to Pro (daily backups) is an owner/billing
+  decision; it is the largest remaining risk.
+- **Still readable by anon:** `call_history`, `chat_requests` and `chat_sessions` (RLS
+  off). The apps read them directly, so closing this needs the same move-to-backend
+  pattern.
+- **The TURN credentials are hardcoded in both apps.** Rotating them needs short-lived
+  credentials from the backend and an app release.
+- **Hostinger VPS backups are weekly.** Daily backups are a paid upgrade.
