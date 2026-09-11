@@ -1,0 +1,14 @@
+# Install: apt-get install -y fail2ban, copy this to /etc/fail2ban/jail.d/sshd.local,
+# then `systemctl enable --now fail2ban`. Check with `fail2ban-client status sshd`.
+#
+# Bans an IP for an hour after 5 failed SSH logins within 10 minutes, on both SSH ports.
+# 169.254.0.0/16 is where the Hostinger web console connects from; it must never be
+# banned, since it is the way back in if SSH keys are ever lost.
+[sshd]
+enabled = true
+port = 22,2222
+backend = systemd
+maxretry = 5
+findtime = 10m
+bantime = 1h
+ignoreip = 127.0.0.1/8 ::1 169.254.0.0/16
