@@ -4631,12 +4631,69 @@ trigger: an unattended OS event.
   - `13` can go first; its early-apply harm is bounded.
   - Then `11` + `12` together; `12` is the one with real harm if applied early.
   - Re-run the anon privilege check after each.
-- **Supabase is on the Free plan: no backups and no PITR,** and the project shows
-  "EXCEEDING USAGE LIMITS". Upgrading to Pro (daily backups) is an owner/billing
-  decision; it is the largest remaining risk.
+- **Database backups: there are none.** Supabase is on the Free plan and the project
+  shows "EXCEEDING USAGE LIMITS". This is the largest remaining risk. See **CA** for what
+  to buy, and what to do until then.
 - **Still readable by anon:** `call_history`, `chat_requests` and `chat_sessions` (RLS
   off). The apps read them directly, so closing this needs the same move-to-backend
   pattern.
 - **The TURN credentials are hardcoded in both apps.** Rotating them needs short-lived
   credentials from the backend and an app release.
-- **Hostinger VPS backups are weekly.** Daily backups are a paid upgrade.
+- **VPS backups are weekly only.** See **CA**.
+
+### CA. Backups: what exists, what to buy, and in what order (as of 2026-09-12)
+
+Two separate things need backing up. Do the **database first**: losing it is unrecoverable,
+while losing the server is not.
+
+#### 1. Database (Supabase): no backups at all — upgrade to Pro
+
+- **Now:** the project (`astrowaniindia's Project`, org `astrowaniindia's Org`) is on the
+  **Free plan**. The dashboard's Database → Backups page says Free "does not include project
+  backups", and Point-in-Time Recovery is Pro-only.
+  - This database holds every customer, astrologer, wallet balance, wallet/vendor
+    transaction, order, chat and consultation record. A bad `DELETE`, a bug, a leaked key or
+    an account problem would lose it **permanently**.
+  - The project also shows **"EXCEEDING USAGE LIMITS"**. Supabase can restrict or pause a
+    Free project that stays over its limits, which would take the whole app down. Check
+    which limit it is under Organization → Usage.
+- **Buy: Supabase Pro, about $25/month per organization.**
+  - It includes **daily backups kept for 7 days**.
+  - It lifts the Free limits, so the usage warning goes away.
+  - Upgrade in Supabase → Organization → Billing → change plan to Pro.
+  - Afterwards, check that Database → Backups → Scheduled backups lists daily backups.
+- **Optional, later:** the **PITR add-on**, from about $100/month on top of Pro. It
+  restores to any second rather than to last midnight. Worth it once daily volume makes a
+  day of lost wallet transactions unacceptable.
+- **Until Pro is bought:** take a manual export with `pg_dump` (connection string in
+  Supabase → Connect) and keep it somewhere private and encrypted.
+  - **Never commit it to this repo, Drive-share it, or paste it anywhere.** It contains
+    customer PII and chat transcripts.
+  - Repeat it before any risky database change, such as the `hardening_11`–`13` rollout.
+
+#### 2. Server (Hostinger VPS): weekly backups only — daily is optional
+
+- **Now:** Hostinger takes **automatic weekly** full-VPS backups. Two are kept, stored in
+  Malaysia, and a restore takes about 30 minutes.
+  - The worst case is losing up to 7 days of server-side changes.
+  - What would be lost: nginx/SSH/fail2ban config, the untracked backend `.env`, and the
+    other projects' files on the VPS.
+  - The code itself is safe in GitHub, and the Astrowani server configs are also in
+    `vps-deployment/` (see `SECURITY_HARDENING.md`).
+- **Buy (optional): Hostinger daily backups.** Buy them from hPanel → VPS → Snapshots &
+  Backups → "Upgrade to automated daily backups".
+  - The listed price is ₹589/month, **but it bills the remaining VPS term upfront**.
+  - On 2026-09-12 that was **₹10,196.72 for 17 months 8 days**, to the plan's expiry on
+    2028-02-20.
+  - Not bought as of 2026-09-12.
+- **Free alternative for risky changes:** "Create snapshot" on the same page.
+  - It is a manual, single-slot, full-VPS snapshot, and creating one replaces the old one.
+  - The one taken before the 2026-09-12 hardening showed an expiry of the next day, so treat
+    snapshots as a short-lived undo point, not a backup.
+  - Take one before any risky server change.
+- **Whatever the plan:** keep a copy of the backend **`.env`** in a password manager. It
+  exists only on the VPS, and a server lost between weekly backups would mean recreating
+  every secret.
+
+**Order:** Supabase Pro now, then the `.env` copy, then Hostinger daily backups if the
+budget allows.
