@@ -54,7 +54,7 @@ export default function FreeBotChat() {
 
   return (
     <div>
-      <h1 className="page-title">Free Bot Chat</h1>
+      <h1 className="page-title">5 Minute Free Chat</h1>
       <p className="muted" style={{ marginTop: -8, marginBottom: 18 }}>
         The free 5-minute welcome chat shown once to brand-new customers on Home. No real
         astrologer is on the other end: replies come from the AI below when it is on, and
@@ -158,8 +158,8 @@ function AiReplies() {
       });
       const next = opening ? [] : history;
       setTestLog(data.reply
-        ? [...next, { sender: 'bot', message: data.reply }]
-        : [...next, { sender: 'error', message: `No AI reply (${data.reason}${data.detail ? `: ${data.detail}` : ''}). A customer would get the scripted chat here.` }]);
+        ? [...next, { sender: 'bot', message: data.reply, ms: data.ms }]
+        : [...next, { sender: 'error', message: `No AI reply (${data.reason}${data.detail ? `: ${data.detail}` : ''}). A customer would get the scripted chat here.`, ms: data.ms }]);
     } catch (e) {
       setTestLog((l) => [...l, { sender: 'error', message: e.response?.data?.message || e.message }]);
     } finally {
@@ -173,6 +173,9 @@ function AiReplies() {
   return (
     <div className="card" style={{ maxWidth: 720, marginTop: 20 }}>
       <h2 style={{ marginTop: 0 }}>AI replies (Gemini)</h2>
+      <p className="muted" style={{ marginTop: -6 }}>
+        Replies slower than 13 seconds count as failed, and the customer gets the scripted chat. Aim for 2–5 seconds in "Try it".
+      </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         <span className={`badge ${status?.apiKeyConfigured ? 'green' : 'red'}`}>
@@ -252,6 +255,7 @@ function AiReplies() {
               color: m.sender === 'me' ? '#fff' : m.sender === 'error' ? '#8a1c12' : '#222',
               border: m.sender === 'me' ? 'none' : '1px solid #e5e5e5',
             }}>{m.message}</span>
+            {m.ms != null && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{(m.ms / 1000).toFixed(1)}s</div>}
           </div>
         ))}
         {testBusy && <p className="muted" style={{ margin: '6px 0' }}>Typing…</p>}

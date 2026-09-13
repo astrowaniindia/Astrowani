@@ -31,9 +31,9 @@ const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const SETTINGS_KEY = 'free_bot_chat_ai';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// Shorter than the app's 20s axios timeout, so the app always hears "fall back"
-// from us instead of timing out itself and guessing.
-const GEMINI_TIMEOUT_MS = 10000;
+// Shorter than the app's AI request timeout (18s), so the app always hears
+// "fall back" from us instead of timing out itself and guessing.
+const GEMINI_TIMEOUT_MS = 13000;
 // The chat is 5 minutes, but mark-used is fired on screen mount; a little slack
 // covers slow networks. After this the customer is not in a free chat any more,
 // and the endpoint must not become a free general-purpose AI.
@@ -59,7 +59,9 @@ The last minute:
 const DEFAULTS = {
   enabled: false,
   instructions: DEFAULT_INSTRUCTIONS,
-  model: 'gemini-2.5-flash-lite',
+  // gemini-2.5-flash-lite was refused on 2026-09-13 as "no longer available to
+  // new users"; Google's error named this as the replacement.
+  model: 'gemini-3.5-flash-lite',
   sendProfile: true,
   temperature: 0.8,
 };
@@ -177,6 +179,17 @@ function profileBlock(customer) {
   return `\n\nWHAT THE CUSTOMER SAVED IN THEIR PROFILE (use it naturally; do not read it back as a list, and do not ask again for what is here):\n${lines.join('\n')}`;
 }
 
+// Newer Gemini models "think" before answering by default, which made the first
+// real test (gemini-3.5-flash-lite, 2026-09-13) blow the 10s timeout. A 1-3
+// sentence chat reply needs no reasoning, so ask for the least thinking the
+// model allows. Gemini 3+ takes a level; 2.x takes a token budget (0 = off).
+function thinkingConfigFor(model) {
+  if (/^gemini-[3-9]/i.test(model)) return { thinkingLevel: 'minimal' };
+  if (/^gemini-2\.5/i.test(model)) return { thinkingBudget: 0 };
+  return null;
+}
+const noThinkingConfigModels = new Set();
+
 /** App messages ({sender:'me'|'bot', message}) -> Gemini contents. */
 function toContents(history, opening) {
   const cleaned = (Array.isArray(history) ? history : [])
@@ -209,16 +222,36 @@ async function generate({ config, customer, history, opening, secondsLeft, langu
     + (config.sendProfile ? profileBlock(customer) : '')
     + fixedRules({ personaName, secondsLeft, language });
 
-  try {
-    const { data } = await axios.post(
-      `${GEMINI_BASE}/${encodeURIComponent(config.model)}:generateContent`,
-      {
-        systemInstruction: { parts: [{ text: system }] },
-        contents: toContents(history, opening),
-        generationConfig: { temperature: config.temperature, maxOutputTokens: 1024 },
+  const request = (withThinkingConfig) => axios.post(
+    `${GEMINI_BASE}/${encodeURIComponent(config.model)}:generateContent`,
+    {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: toContents(history, opening),
+      generationConfig: {
+        temperature: config.temperature,
+        maxOutputTokens: 1024,
+        ...(withThinkingConfig ? { thinkingConfig: thinkingConfigFor(config.model) } : {}),
       },
-      { headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, timeout: GEMINI_TIMEOUT_MS },
-    );
+    },
+    { headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, timeout: GEMINI_TIMEOUT_MS },
+  );
+
+  try {
+    let data;
+    const useThinkingConfig = !noThinkingConfigModels.has(config.model) && thinkingConfigFor(config.model);
+    try {
+      ({ data } = await request(!!useThinkingConfig));
+    } catch (err) {
+      // A model that does not know the thinking setting answers 400 naming it.
+      // Retry once without it, and never send it to that model again.
+      const msg = err.response?.data?.error?.message || '';
+      if (useThinkingConfig && err.response?.status === 400 && /thinking/i.test(msg)) {
+        noThinkingConfigModels.add(config.model);
+        ({ data } = await request(false));
+      } else {
+        throw err;
+      }
+    }
 
     if (data?.promptFeedback?.blockReason) {
       return { fallback: true, reason: 'blocked', detail: data.promptFeedback.blockReason };
@@ -368,6 +401,7 @@ module.exports = function registerFreeChatAiRoutes(app) {
     const sampleCustomer = {
       name: 'Rahul', gender: 'male', dob: '1995-08-14', time_of_birth: '06:30:00', place_of_birth: 'Jaipur, Rajasthan',
     };
+    const startedAt = Date.now();
     const result = await generate({
       config,
       customer: sampleCustomer,
@@ -378,6 +412,6 @@ module.exports = function registerFreeChatAiRoutes(app) {
       personaName: await loadPersonaName(),
       ignoreQuotaBlock: true,
     });
-    return res.json({ success: true, ...result });
+    return res.json({ success: true, ...result, ms: Date.now() - startedAt });
   }));
 };

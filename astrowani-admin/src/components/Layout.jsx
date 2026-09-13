@@ -82,7 +82,7 @@ const ALL_GROUPS = [
       { to: '/live', label: 'Live Video Streams' },
       { to: '/live-aarti', label: 'Live Aarti & Pooja' },
       { to: '/missed', label: 'Missed Calls' },
-      { to: '/free-bot-chat', label: 'Bot Chatbot' },
+      { to: '/free-bot-chat', label: '5 Minute Free Chat' },
       { to: '/guide-avatar', label: 'Guide Avatar AI' },
     ],
   },
