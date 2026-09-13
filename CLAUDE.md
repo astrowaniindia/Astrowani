@@ -4804,9 +4804,10 @@ R2 has free egress and 10 GB of free storage.
 - **Check the Supabase usage page on or after 2026-09-15.** Storage should read about 0.66 GB.
   If it still shows over 1 GB after 2–3 days, contact Supabase support with the
   `storage.objects` totals. The hard deadline is **2026-10-13**.
-- **Delete the leftover test function `update-server-r2test`** (Supabase → Edge Functions).
-  It was used to verify CB before the live swap. It is harmless, but it is a second public
-  update-check endpoint.
+- ~~**Delete the leftover test function `update-server-r2test`**~~ — **DONE 2026-09-13.**
+  It was deleted in the dashboard and now returns 404; `update-server` is the only edge
+  function. The name is still in `FUNCTION_NAMES` in `update-server/index.ts`. That entry is
+  harmless and can go at the function's next edit.
 - **Old OTA bundles in R2 will pile up the same way.** R2 is 10 GB free, not unlimited.
   Prune superseded bundles every few weeks (`npx hot-updater console`, or the same "newest 3
   per target" rule).
