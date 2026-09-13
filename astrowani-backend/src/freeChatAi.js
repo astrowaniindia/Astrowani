@@ -77,10 +77,10 @@ const DEFAULTS = {
   enabled: false,
   instructions: DEFAULT_INSTRUCTIONS,
   // Order measured from the VPS on 2026-09-13 (names from ListModels for this key):
-  // 3.5 Flash Lite 0.9s, 3.1 Flash Lite 2.3s, Gemma 4 26B 7.2s (empty text with a
-  // small token cap), Gemma 4 31B a 500 after 23s. gemini-2.5-flash(-lite) are
-  // refused as "no longer available to new users".
-  models: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemma-4-26b-a4b-it', 'gemma-4-31b-it'],
+  // 3.5 Flash Lite 0.9-1.7s, 3.1 Flash Lite 2.3s, Gemma 4 26B 2.3s once asked for
+  // minimal thinking. gemma-4-31b-it is left out: no reply within 15s even then.
+  // gemini-2.5-flash(-lite) are refused as "no longer available to new users".
+  models: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemma-4-26b-a4b-it'],
   sendProfile: true,
   temperature: 0.8,
   // A reply that lands the instant the customer hits send reads as a machine,
@@ -124,6 +124,8 @@ function fixedRules({ personaName, secondsLeft, language }) {
 
 FIXED RULES (these override anything above):
 - You are "${personaName}" in the Astrowani app's free 5-minute chat. About ${Math.max(0, Math.round(secondsLeft))} seconds of the chat remain.
+- Greet, say "Namaste", or introduce yourself only in your very first message of the chat. After that, never greet or introduce yourself again; just continue the conversation naturally.
+- Do not repeat something you already said earlier in this chat.
 - Keep every reply short: 1 to 3 sentences. Plain text only, no markdown, no bullet symbols, no headings.
 - Reply in the language and script the customer writes in (English, Hindi, or Hinglish). The app language is "${language === 'hi' ? 'Hindi' : 'English'}" if they have not written yet.
 - Never guarantee an outcome. Never predict death, serious illness, accidents, or dates of such events.
@@ -271,6 +273,8 @@ const noThinkingConfigModels = new Set();
 
 const isGemma = (model) => /^gemma/i.test(model);
 
+const CHAT_OPENED_TURN = '[The customer has just opened the free chat and has not typed yet. Greet them warmly in one or two sentences and invite them to share what is on their mind.]';
+
 /** App messages ({sender:'me'|'bot', message}) -> Gemini contents. */
 function toContents(history, opening) {
   const cleaned = (Array.isArray(history) ? history : [])
@@ -280,12 +284,26 @@ function toContents(history, opening) {
       role: m.sender === 'me' ? 'user' : 'model',
       parts: [{ text: m.message.slice(0, MAX_MESSAGE_CHARS) }],
     }));
-  // Gemini requires the conversation to start with a user turn.
-  while (cleaned.length && cleaned[0].role !== 'user') cleaned.shift();
-  if (opening || !cleaned.length) {
-    return [{ role: 'user', parts: [{ text: '[The customer has just opened the free chat and has not typed yet. Greet them warmly in one or two sentences and invite them to share what is on their mind.]' }] }];
+  if (opening || !cleaned.some((c) => c.role === 'user')) {
+    return [{ role: 'user', parts: [{ text: CHAT_OPENED_TURN }] }];
   }
-  return cleaned;
+  // Gemini requires the conversation to start with a user turn, and this chat
+  // starts with the astrologer's greeting. That greeting used to be dropped to
+  // satisfy the rule, so the model never saw it had already said "Namaste" and
+  // greeted again on the customer's first message (seen in admin, 2026-09-13).
+  // Keep it, behind the same synthetic "chat opened" turn that produced it.
+  if (cleaned[0].role !== 'user') {
+    cleaned.unshift({ role: 'user', parts: [{ text: CHAT_OPENED_TURN }] });
+  }
+  // Two consecutive same-role turns (e.g. the customer sent twice while a reply
+  // was typing) are merged, which every model accepts.
+  const merged = [];
+  for (const c of cleaned) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === c.role) prev.parts[0].text += `\n${c.parts[0].text}`;
+    else merged.push({ role: c.role, parts: [{ text: c.parts[0].text }] });
+  }
+  return merged;
 }
 
 /**
