@@ -1,7 +1,13 @@
-// FreeBotChatScreen.js — the free 5-minute scripted "bot chat" welcome offer.
+// FreeBotChatScreen.js — the free 5-minute "bot chat" welcome offer.
 // Visually mirrors ChatSessionScreen.js (real chat) closely so it feels like a
 // genuine session, but there is no real chat_sessions row, no socket, and no
-// astrologer on the other end — replies come from utils/freeChatBotEngine.js.
+// astrologer on the other end.
+//
+// Replies come from Gemini via POST /api/free-bot-chat/reply (backend
+// src/freeChatAi.js, instructions written in admin) while that works. The first
+// time it does not — AI switched off, daily limit reached, timeout, anything — the
+// rest of THIS chat switches to the scripted utils/freeChatBotEngine.js, so the
+// tone never flips back and forth mid-conversation. The next chat tries AI again.
 // No wallet reward anymore — the moment this screen mounts, POST
 // /api/free-bot-chat/mark-used marks the one-time free chat as used (so it
 // never offers itself again), regardless of how the customer leaves —
@@ -36,10 +42,40 @@ import { LanguageContext } from '../../context/LanguageContext';
 import {useModalPresence} from '../../utils/modalPresentation';
 
 const CHAT_DURATION_SECONDS = 300;
+// Longer than the backend's own 10s Gemini timeout, so normally the backend
+// answers "fall back" first; this only catches the backend itself being slow.
+const AI_REQUEST_TIMEOUT_MS = 14000;
+
+/**
+ * One AI reply, or null when this chat should switch to the scripted engine.
+ * Never throws.
+ */
+async function fetchAiReply({ history, opening, secondsLeft, language }) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const { data } = await Instance.post(
+      '/api/free-bot-chat/reply',
+      {
+        history: history.map((m) => ({ sender: m.sender, message: m.message })),
+        opening,
+        secondsLeft,
+        language: language === 'Hindi' ? 'hi' : 'en',
+      },
+      { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: AI_REQUEST_TIMEOUT_MS },
+    );
+    if (data?.reply && typeof data.reply === 'string') return { reply: data.reply };
+    return { reply: null, reason: data?.reason || 'no_reply' };
+  } catch (e) {
+    return { reply: null, reason: e?.response?.status ? `http_${e.response.status}` : 'network' };
+  }
+}
 
 const FreeBotChatScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
-  const { t } = useContext(LanguageContext);
+  const { t, language } = useContext(LanguageContext);
+  // True until the first AI failure in this chat; then scripted for the rest of it.
+  const useAiRef = useRef(true);
+  const secondsRef = useRef(0);
   // Admin-editable persona passed from Home.js's FreeChatOfferPopup — falls
   // back to the bundled default if navigated to without it.
   const persona = route?.params?.persona;
@@ -66,13 +102,33 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     setMessages((prev) => [...prev, { id: nextId(), sender, message, created_at: new Date().toISOString() }]);
   };
 
+  // Called once per chat, on the first AI failure.
+  const switchToScripted = (reason) => {
+    if (!useAiRef.current) return;
+    useAiRef.current = false;
+    captureEvent('free_bot_chat_ai_fallback', { reason });
+  };
+
   useEffect(() => {
     captureEvent('free_bot_chat_started');
     // The engine keeps per-conversation memory (which topics it has already
     // probed, which lines it has used). Clearing it here means a second chat
     // starts fresh instead of resuming halfway through the first one's script.
     resetChatSession();
-    const openingTimer = setTimeout(() => appendMessage('bot', getOpeningMessage()), 600);
+    let cancelled = false;
+    const openingTimer = setTimeout(async () => {
+      setBotTyping(true);
+      const ai = await fetchAiReply({
+        history: [],
+        opening: true,
+        secondsLeft: CHAT_DURATION_SECONDS,
+        language,
+      });
+      if (cancelled) return;
+      if (!ai.reply) switchToScripted(ai.reason);
+      setBotTyping(false);
+      if (!hasEndedRef.current) appendMessage('bot', ai.reply || getOpeningMessage());
+    }, 600);
     // Marks the free chat as used the instant the customer actually enters it —
     // not on completion — so it can't be re-offered no matter how they leave.
     (async () => {
@@ -87,7 +143,10 @@ const FreeBotChatScreen = ({ navigation, route }) => {
         console.warn('free-bot-chat mark-used error:', e.message);
       }
     })();
-    return () => clearTimeout(openingTimer);
+    return () => {
+      cancelled = true;
+      clearTimeout(openingTimer);
+    };
   }, []);
 
   const finishNaturally = () => {
@@ -99,6 +158,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   };
 
   useEffect(() => {
+    secondsRef.current = seconds;
     if (seconds >= CHAT_DURATION_SECONDS && !hasEndedRef.current) {
       finishNaturally();
     }
@@ -120,12 +180,24 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     setText('');
     appendMessage('me', msg);
     setBotTyping(true);
-    // The engine needs the clock: under a minute left it stops opening new
-    // threads and moves to its closing turn, which names that a remedy exists
-    // for what was discussed without giving it away.
-    const reply = await getBotReply(msg, messages, {
-      secondsLeft: Math.max(0, CHAT_DURATION_SECONDS - seconds),
-    });
+    // Both the AI and the engine need the clock: under a minute left they stop
+    // opening new threads and move to the closing turn, which names that a remedy
+    // exists for what was discussed without giving it away.
+    const secondsLeft = Math.max(0, CHAT_DURATION_SECONDS - secondsRef.current);
+
+    let reply = null;
+    if (useAiRef.current) {
+      const ai = await fetchAiReply({
+        history: [...messages, { sender: 'me', message: msg }],
+        opening: false,
+        secondsLeft,
+        language,
+      });
+      reply = ai.reply;
+      if (!reply) switchToScripted(ai.reason);
+    }
+    if (!reply) reply = await getBotReply(msg, messages, { secondsLeft });
+
     setBotTyping(false);
     if (!hasEndedRef.current) appendMessage('bot', reply);
   };
