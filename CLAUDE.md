@@ -4998,12 +4998,38 @@ to the switch. Moving to paid is billing on the same key in AI Studio, with no c
   repo** so a 52 MB file cannot be committed. **Uploading to Play Console is the owner's
   step.**
 
+**Vendor store build 27, same day** (`a530bbc`, asked for right after the customer build):
+- `versionCode` **26 → 27**; **`versionName` stays 6.6**, so vendor OTAs targeting `6.6.x`
+  keep reaching it.
+- **Native changes since 26:**
+  - `react-native-share` (photo in shared profiles);
+  - `android:enableOnBackInvokedCallback="false"`: without it, Android 16 never reaches JS
+    `BackHandler`;
+  - `usesCleartextTraffic` removed.
+- **Built** with `./gradlew.bat bundleRelease --no-daemon` in 10m 8s (~4 GB free, no Metro).
+- **Verified:**
+  - merged manifest `versionCode 27` / `versionName 6.6` / `com.astrowaniVendor`, and the
+    back-callback flag present;
+  - `jarsigner` verified, signed by **CN=Astrowani** (SHA-256 `76:FC:45:AF…`) from
+    `my-upload-key.keystore`, not the debug key;
+  - `cl/json/RNShare` and `com/hotupdater/*` in the dex;
+  - the embedded bundle is 5.4 MB.
+- **Artifact:** `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab`.
+
+> **Vendor `build.gradle` signing trap.** Its first `android {}` block sets
+> `release { signingConfig signingConfigs.debug }`, and only a SECOND `android {}` block at
+> the bottom of the file overrides it with `signingConfigs.release`. Build 26 was made this
+> way, so it was left alone, but **delete that bottom block and every release is silently
+> debug-signed**, which Play rejects. Always check the AAB's certificate owner after a vendor
+> build (`keytool -printcert -jarfile`). If Play Console reports "signed with the wrong key",
+> `my-upload-key.keystore` is not the key build 26 used.
+
 ### CF. Still open from CD/CE, with dates
 
 - **Upload build 37 to Play Console** (owner). Once installed, share an astrologer's profile
   and confirm the photo attaches.
-- **Vendor store build** still lacks `react-native-share`, so vendor shares stay text-only
-  until its next release (versionCode 27).
+- ~~**Vendor store build**~~ **BUILT 2026-09-13** (`a530bbc`), see **CE**. **Uploading it to
+  Play Console is the owner's step.** Until installed, vendor shares stay text-only.
 - **Watch the AI chat's first days** on the admin page: AI replies vs fallback reasons, and
   per-model failures.
   - If `gemini-3.5-flash-lite` is often slow, reorder the list.
