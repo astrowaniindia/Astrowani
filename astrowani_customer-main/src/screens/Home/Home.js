@@ -16,7 +16,7 @@ import {
   Alert,
   RefreshControl,
   Animated,
-  Easing, Platform,
+  Platform,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
@@ -74,6 +74,7 @@ import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import useBlogListSync from '../../hooks/useBlogListSync';
 import useChatRequest from '../../hooks/useChatRequest';
+import useDraggableMarquee from '../../hooks/useDraggableMarquee';
 import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import { astroServiceLabel } from '../../utils/astroServiceLabel';
 import RequestingPopup from '../../components/RequestingPopup';
@@ -429,8 +430,6 @@ const Home = ({navigation}) => {
   // onPress never did, which left every card and button in this row dead.
   // Moving pixels emits no scroll events, so the animation and working taps are
   // no longer in tension.
-  const marqueeX = React.useRef(new Animated.Value(0)).current;
-
   // The set is rendered twice, so translating by exactly one set's width wraps
   // seamlessly and can restart from 0 with nothing visibly jumping.
   // astrologerToShow starts as null and stays null until the fetch resolves, so both
@@ -447,23 +446,16 @@ const Home = ({navigation}) => {
   );
   const marqueeSetWidth = (astrologerToShow?.length || 0) * MARQUEE_ITEM_WIDTH;
 
-  React.useEffect(() => {
-    marqueeX.setValue(0);
-    if (!marqueeSetWidth) return undefined;
-    const animation = Animated.loop(
-      Animated.timing(marqueeX, {
-        toValue: -marqueeSetWidth,
-        // Constant speed however many astrologers are loaded.
-        duration: (marqueeSetWidth / MARQUEE_SPEED_PX_PER_SEC) * 1000,
-        easing: Easing.linear,
-        // UI thread: keeps moving smoothly even when JS is busy, and never
-        // rounds through a scroll offset.
-        useNativeDriver: true,
-      }),
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [marqueeSetWidth, marqueeX]);
+  // Auto-glides at a constant speed AND can be dragged left/right by the
+  // customer — still with no scroll events (see useDraggableMarquee).
+  const {offset: marqueeOffset, panHandlers: marqueePanHandlers} =
+    useDraggableMarquee(marqueeSetWidth, MARQUEE_SPEED_PX_PER_SEC);
+  // Memoized: a fresh Animated.multiply each render would mint a new native
+  // node attached to the same view on every Home re-render.
+  const marqueeX = React.useMemo(
+    () => Animated.multiply(marqueeOffset, -1),
+    [marqueeOffset],
+  );
 
   // Cancel the in-flight call request and tear down listeners/timeout.
   // Also marks the request 'cancelled' in Supabase + tells the vendor so their
@@ -1400,6 +1392,7 @@ const Home = ({navigation}) => {
           // scroll events, and so cannot cancel a touch. The set is rendered twice
           // so the wrap is seamless.
           <Animated.View
+            {...marqueePanHandlers}
             style={[
               styles.marqueeRow,
               {transform: [{translateX: marqueeX}]},

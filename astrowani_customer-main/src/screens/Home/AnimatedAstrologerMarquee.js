@@ -5,8 +5,9 @@
 // side. Every few seconds it auto-advances one card to the left (the next
 // card slides into center and grows/brightens) — still fully swipeable
 // manually at any time, which pauses the auto-advance until the swipe ends.
-import React, { useRef, useEffect, useMemo } from 'react';
-import { Animated, View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions, Easing } from 'react-native';
+import React, { useRef, useMemo } from 'react';
+import { Animated, View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
+import useDraggableMarquee from '../../hooks/useDraggableMarquee';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
@@ -169,8 +170,6 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, on
     return fresh;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [astrologers]);
-  const scrollX = useRef(new Animated.Value(0)).current;
-
   // Two copies of the set: translating by exactly one set's width wraps
   // seamlessly, so the loop can reset to 0 with nothing visibly jumping. The
   // previous version needed loopCount copies because it advanced through a real
@@ -178,22 +177,14 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, on
   const marqueeItems = useMemo(() => [...shuffled, ...shuffled], [shuffled]);
   const setWidth = shuffled.length * ITEM_WIDTH;
 
-  useEffect(() => {
-    scrollX.setValue(0);
-    if (!setWidth) return undefined;
-    const animation = Animated.loop(
-      Animated.timing(scrollX, {
-        toValue: setWidth,
-        // One card every ADVANCE_INTERVAL_MS, matching the old cadence — but
-        // gliding continuously rather than jumping card to card.
-        duration: (setWidth / ITEM_WIDTH) * ADVANCE_INTERVAL_MS,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [setWidth, scrollX]);
+  // One card every ADVANCE_INTERVAL_MS, gliding continuously — and draggable
+  // left/right by the customer, with no scroll events (see useDraggableMarquee).
+  const { offset: scrollX, panHandlers } = useDraggableMarquee(
+    setWidth,
+    (ITEM_WIDTH / ADVANCE_INTERVAL_MS) * 1000,
+  );
+  // Memoized so re-renders don't mint a new native node on the same view.
+  const translateX = useMemo(() => Animated.multiply(scrollX, -1), [scrollX]);
 
   if (!marqueeItems.length) return null;
 
@@ -216,9 +207,10 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, on
     // happen. Only two copies of the set are rendered, so this is also fewer
     // mounted cards than the looped list it replaces.
     <Animated.View
+      {...panHandlers}
       style={[
         styles.marqueeRow,
-        {transform: [{translateX: Animated.multiply(scrollX, -1)}]},
+        {transform: [{translateX}]},
       ]}>
       {marqueeItems.map((item, index) => (
         <MarqueeCard
