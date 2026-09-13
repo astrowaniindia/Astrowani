@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Animated,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
@@ -129,16 +130,34 @@ const UserProfileScreen = ({navigation, route}) => {
     fetchProfile();
   }, []);
 
-  // The guide avatar asks for birth details while any required one is missing.
-  // Waits for the profile fetch, because the form starts with an empty date of
-  // birth and would otherwise flash the message at customers who already have it.
-  const needsBirthDetails = profileLoaded && (
-    !String(userProfile.firstName || '').trim() ||
-    !userProfile.gender ||
-    !userProfile.maritalStatus ||
-    !userProfile.dateOfBirth ||
-    !String(userProfile.city || '').trim()
-  );
+  // Profile completion, shown as a bar under the guide avatar. Counts every detail
+  // the customer can fill in here — including the optional ones (email, time of
+  // birth, both photos), since the point is to encourage a fuller profile. The
+  // phone number is left out: every account already has it. Recomputed from the
+  // live form, so the bar moves as they fill fields in, before saving.
+  const COMPLETION_FIELDS = [
+    String(userProfile.firstName || '').trim(),
+    String(userProfile.email || '').trim(),
+    userProfile.gender,
+    userProfile.maritalStatus,
+    userProfile.dateOfBirth,
+    userProfile.timeOfBirth,
+    String(userProfile.city || '').trim(),
+    userProfile.profilePic,
+    userProfile.handPic,
+  ];
+  const filledCount = COMPLETION_FIELDS.filter(Boolean).length;
+  const completionPct = Math.round((filledCount / COMPLETION_FIELDS.length) * 100);
+  const completionAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    // Waits for the profile fetch so the bar doesn't jump from an empty form.
+    if (!profileLoaded) return;
+    Animated.timing(completionAnim, {
+      toValue: completionPct,
+      duration: 500,
+      useNativeDriver: false,
+    }).start();
+  }, [completionPct, profileLoaded, completionAnim]);
 
   const handleEditPic = (type = 'profilePic') => {
     const options = { title: t('userProfile.selectImage'), mediaType: 'photo', includeBase64: true, quality: 0.6, maxWidth: 1000, maxHeight: 1000 };
@@ -411,22 +430,45 @@ const UserProfileScreen = ({navigation, route}) => {
         
         {activeTab === 'Profile' && (
           <View>
-            {/* Guide avatar — shown whenever a required birth detail is missing,
-                however the customer got here (the chat/call/video/free-offer gate,
-                or Profile in the drawer). */}
-            {needsBirthDetails && (
-              <View style={styles.guideRow}>
-                <Image
-                  source={require('../../assets/images/guideAvatarLogin.png')}
-                  style={styles.guideAvatarImg}
-                  resizeMode="contain"
-                />
-                <View style={styles.guideBubble}>
-                  <View style={styles.guideTail} />
-                  <Text style={styles.guideText}>{t('profileGate.guide')}</Text>
-                </View>
+            {/* Guide avatar + profile completion bar. */}
+            <View style={styles.guideRow}>
+              <Image
+                source={require('../../assets/images/guideAvatarLogin.png')}
+                style={styles.guideAvatarImg}
+                resizeMode="contain"
+              />
+              <View style={styles.guideBubble}>
+                <View style={styles.guideTail} />
+                <Text style={styles.guideText}>
+                  {completionPct === 100 ? t('userProfile.completeDone') : t('userProfile.completeNudge')}
+                </Text>
               </View>
-            )}
+            </View>
+
+            <View style={styles.completionCard}>
+              <View style={styles.completionHeader}>
+                <Text style={styles.completionTitle}>{t('userProfile.completionTitle')}</Text>
+                <Text style={styles.completionPct}>{profileLoaded ? `${completionPct}%` : '…'}</Text>
+              </View>
+              <View style={styles.completionTrack}>
+                <Animated.View
+                  style={[
+                    styles.completionFill,
+                    completionPct === 100 && styles.completionFillDone,
+                    {
+                      width: completionAnim.interpolate({
+                        inputRange: [0, 100],
+                        outputRange: ['0%', '100%'],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.completionSub}>
+                {t('userProfile.completionCount', { done: filledCount, total: COMPLETION_FIELDS.length })}
+              </Text>
+            </View>
 
             {/* Avatar Section */}
             <View style={styles.avatarSection}>
@@ -630,6 +672,32 @@ const styles = StyleSheet.create({
     borderRightColor: '#fff',
   },
   guideText: { fontSize: moderateScale(13), color: '#4a3a32', lineHeight: moderateScale(19) },
+
+  completionCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: scale(15),
+    marginTop: verticalScale(14),
+    borderRadius: moderateScale(16),
+    padding: scale(14),
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  completionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  completionTitle: { fontSize: moderateScale(14), fontFamily: 'Lato-Bold', color: '#2b1a12' },
+  completionPct: { fontSize: moderateScale(16), fontFamily: 'Lato-Bold', color: COLORS.AstroMaroon },
+  completionTrack: {
+    height: verticalScale(10),
+    backgroundColor: '#efe4dd',
+    borderRadius: moderateScale(6),
+    overflow: 'hidden',
+    marginTop: verticalScale(10),
+  },
+  completionFill: { height: '100%', backgroundColor: COLORS.AstroMaroon, borderRadius: moderateScale(6) },
+  completionFillDone: { backgroundColor: '#1a8f4c' },
+  completionSub: { fontSize: moderateScale(12), color: '#8a7c76', marginTop: verticalScale(8) },
 
   avatarSection: { alignItems: 'center', marginTop: verticalScale(30), marginBottom: verticalScale(20) },
   avatarWrapper: {

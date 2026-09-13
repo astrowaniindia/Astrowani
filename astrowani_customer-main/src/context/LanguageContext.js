@@ -785,7 +785,6 @@ const translations = {
     'birthGate.saveFailed': 'Jaankari save nahi ho paayi. Kripya dobara koshish kariye.',
     'birthGate.savedTitle': 'Shukriya!',
     'birthGate.savedMsg': 'Aapki jaankari save ho gayi. Ab aap jyotishi ji se baat kar sakte hain.',
-    'profileGate.guide': 'Aapki kundli dekhne ke liye jyotishi ji ko aapki jaankari chahiye. Kripya apna gender, marital status, janm tithi aur janm sthaan bhariye. Janm ka samay pata ho toh woh bhi likhiye.',
 
     // Email OTP screen
     'emailOtp.sentToEmail': 'OTP sent to your Email',
@@ -826,6 +825,11 @@ const translations = {
     'userProfile.selectDob': 'Please select your Date of Birth.',
     'userProfile.enterCity': 'Please enter your City (Place of Birth).',
     'userProfile.selectMaritalStatus': 'Please select your Marital Status.',
+    // Profile completion card (avatar + bar) — Hinglish, like the other avatar lines.
+    'userProfile.completeNudge': 'Jo log apni profile poori karte hain, unka jyotishi ji se sabse achha connection banta hai. Bas thodi si jaankari aur bhariye!',
+    'userProfile.completeDone': 'Shabaash! Aapki profile poori ho gayi hai. Ab jyotishi ji aapko aur achhe se samajh paayenge.',
+    'userProfile.completionTitle': 'Profile poori hui',
+    'userProfile.completionCount': '{{total}} mein se {{done}} jaankari bhari hui',
     'userProfile.selectState': 'Please select your State.',
     'userProfile.success': 'Success',
     'userProfile.updatedSuccessfully': 'Profile updated successfully!',
@@ -1990,7 +1994,6 @@ const translations = {
     'birthGate.saveFailed': 'जानकारी सेव नहीं हो पाई। कृपया फिर से कोशिश करें।',
     'birthGate.savedTitle': 'धन्यवाद!',
     'birthGate.savedMsg': 'आपकी जानकारी सेव हो गई। अब आप ज्योतिषी जी से बात कर सकते हैं।',
-    'profileGate.guide': 'आपकी कुंडली देखने के लिए आपके ज्योतिषी को आपका विवरण चाहिए। कृपया अपना लिंग, वैवाहिक स्थिति, जन्म तिथि और जन्म स्थान भरें, और अगर पता हो तो जन्म समय भी।',
 
     // Email OTP screen
     'emailOtp.sentToEmail': 'आपके ईमेल पर OTP भेजा गया',
@@ -2031,6 +2034,10 @@ const translations = {
     'userProfile.selectDob': 'कृपया अपनी जन्म तिथि चुनें।',
     'userProfile.enterCity': 'कृपया अपना शहर (जन्म स्थान) दर्ज करें।',
     'userProfile.selectMaritalStatus': 'कृपया अपनी वैवाहिक स्थिति चुनें।',
+    'userProfile.completeNudge': 'जो लोग अपनी प्रोफ़ाइल पूरी करते हैं, उनका ज्योतिषी जी से सबसे अच्छा जुड़ाव बनता है। बस थोड़ी सी जानकारी और भरिए!',
+    'userProfile.completeDone': 'शाबाश! आपकी प्रोफ़ाइल पूरी हो गई है। अब ज्योतिषी जी आपको और अच्छे से समझ पाएंगे।',
+    'userProfile.completionTitle': 'प्रोफ़ाइल पूरी हुई',
+    'userProfile.completionCount': '{{total}} में से {{done}} जानकारी भरी हुई',
     'userProfile.selectState': 'कृपया अपना राज्य चुनें।',
     'userProfile.success': 'सफलता',
     'userProfile.updatedSuccessfully': 'प्रोफ़ाइल सफलतापूर्वक अपडेट हो गई!',
