@@ -730,13 +730,12 @@ function DrawerNavigator({ navigation }) {
       )}
       screenOptions={{
         headerShown: false,
-        // Default swipeEdgeWidth (32dp) requires starting the swipe almost
-        // exactly on the screen edge — easy to miss and reads as "swipe
-        // doesn't open the drawer" even though it technically works. Widened
-        // so a left-to-right swipe starting anywhere in the left third of the
-        // screen opens it, alongside the existing hamburger-icon tap.
-        swipeEnabled: true,
-        swipeEdgeWidth: scale(140),
+        // No swipe-to-open: the drawer opens from the hamburger icon only.
+        // Its swipe is a native gesture over the left third of the screen, and
+        // it beat the JS drag on Home's astrologer cards — dragging the cards
+        // rightwards opened the sidebar instead (found on-device, 2026-09-13).
+        // The cards are the more important gesture, so the swipe went.
+        swipeEnabled: false,
       }}>
       <Drawer.Screen
         name="BottomTabs"
