@@ -180,6 +180,7 @@ export default function Analytics() {
   const [homeFlow, setHomeFlow] = useState(null);
   const [authFunnel, setAuthFunnel] = useState(null);
   const [authFunnelType, setAuthFunnelType] = useState('signup');
+  const [signupConsult, setSignupConsult] = useState(null);
   const [freeCallFunnel, setFreeCallFunnel] = useState(null);
   const [servicesEngagement, setServicesEngagement] = useState(null);
   const [walletFunnel, setWalletFunnel] = useState(null);
@@ -357,6 +358,21 @@ export default function Analytics() {
   }, [authFunnelType, dateRange]);
 
   useEffect(() => { loadAuthFunnel(); }, [loadAuthFunnel]);
+
+  // Signup -> first consultation. Independent fetch so a failure here never
+  // blanks the rest of the page.
+  const loadSignupConsult = useCallback(async () => {
+    try {
+      const { data } = await client.get('/api/admin/analytics/signup-to-consult', {
+        params: { from: dateRange.from, to: dateRange.to },
+      });
+      setSignupConsult(data);
+    } catch (e) {
+      setSignupConsult({ error: true });
+    }
+  }, [dateRange]);
+
+  useEffect(() => { loadSignupConsult(); }, [loadSignupConsult]);
 
   // Independent fetch — Sentry not being configured yet is expected and shouldn't 503
   // the rest of the page the way a missing POSTHOG_* var does above.
@@ -792,6 +808,27 @@ export default function Analytics() {
             </div>
           );
         })()}
+      </div>
+
+      {/* ── Signup -> first consultation ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Signup to First Consultation</h3>
+        <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
+          The one number that shows whether the short signup worked: of the people who opened
+          signup, how many ended up talking to an astrologer. Birth details are now asked
+          before the first chat or call instead of during signup, so watch the bottom of this
+          funnel, not just signups. From <b>Account created</b> down, it follows the customers
+          who signed up in the selected dates, including anything they did afterwards.
+          Signups from before the short signup went live have no name, Namaste or birth-details
+          step, so those stages only count newer signups.
+        </p>
+        {signupConsult?.stages?.length ? (
+          <StepFunnel stages={signupConsult.stages} baseLabel="opened signup" />
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            {signupConsult?.error ? 'Could not load this funnel right now.' : 'Loading…'}
+          </p>
+        )}
       </div>
 
       {/* ── Free Introductory Call Funnel ── */}

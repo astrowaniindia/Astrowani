@@ -68,6 +68,18 @@ function resolveDateWhere(req, { defaultDays = 7, maxDays = 180 } = {}) {
   return `timestamp >= now() - INTERVAL ${days} DAY`;
 }
 
+// The START of the page's date range only, with no end. For "of the people who
+// signed up in this range, how many went on to do X" — X may happen after the
+// range ends and must still count.
+function resolveDateStart(req, { defaultDays = 7, maxDays = 180 } = {}) {
+  const { from, to } = req.query;
+  if (ISO_DATE.test(from || '') && ISO_DATE.test(to || '')) {
+    return `toDate(timestamp) >= toDate('${from}')`;
+  }
+  const days = clampDays(req.query.days, defaultDays, maxDays);
+  return `timestamp >= now() - INTERVAL ${days} DAY`;
+}
+
 function clampDays(raw, fallback, max) {
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -323,15 +335,20 @@ module.exports = function registerPostHogRoutes(app) {
   // sent, actually verified), matching the existing call_initiated/chat_initiated
   // convention above rather than inventing a new one.
   const AUTH_FUNNELS = {
+    // Short signup (2026-09-14): mobile -> OTP -> name -> welcome. The old
+    // "Tapped Upload Photo" stage was removed with the photo step — keeping a stage
+    // whose event the app no longer sends would read 0 and make every stage after
+    // it look larger than the one before (see the analytics correctness rules).
     signup: {
       label: 'Signup',
       stages: [
         { key: 'viewed', label: 'Viewed Signup Screen', screenName: 'Register' },
-        { key: 'photo_tapped', label: 'Tapped Upload Photo', event: 'signup_photo_tapped' },
-        { key: 'submitted', label: 'Tapped Submit', event: 'signup_submit_tapped' },
+        { key: 'submitted', label: 'Tapped Get OTP', event: 'signup_submit_tapped' },
         { key: 'otp_sent', label: 'OTP Sent', event: 'signup_otp_sent' },
         { key: 'otp_verified', label: 'OTP Verified', event: 'signup_otp_verified' },
         { key: 'completed', label: 'Account Created', event: 'signup_completed' },
+        { key: 'name_saved', label: 'Name Saved', event: 'signup_name_saved' },
+        { key: 'welcome', label: 'Tapped Namaste (reached Home)', event: 'signup_welcome_hi_tapped' },
       ],
     },
     login: {
@@ -370,6 +387,78 @@ module.exports = function registerPostHogRoutes(app) {
     const values = rows[0] || def.stages.map(() => 0);
     const stages = def.stages.map((s, i) => ({ key: s.key, label: s.label, count: Number(values[i]) || 0 }));
     return res.json({ success: true, type, label: def.label, stages });
+  }));
+
+  // ── Signup -> first consultation, end to end ──
+  //
+  // The question the short signup (2026-09-14) is judged by: not "did more people
+  // sign up" (they will — signup got shorter) but "did more people who opened
+  // signup end up talking to an astrologer". Birth details moved from signup to
+  // the first chat/call, so drop-off can move rather than disappear; only an
+  // end-to-end view shows the net effect.
+  //
+  // Two parts, because the stages count different people:
+  //  - Before an account exists (screen opened, OTP sent) there is no customer to
+  //    follow, so those are plain distinct-person counts inside the date range.
+  //  - From "Account created" on, it is a COHORT: customers whose signup_completed
+  //    fell in the range, followed forward with no end date, so a customer who
+  //    signed up on the last day and chatted two days later still counts. Without
+  //    the cohort, long-standing customers chatting in the range would inflate the
+  //    bottom of the funnel above its top.
+  //
+  // Stages are distinct people and do not enforce order, same as the other
+  // funnels on this page.
+  app.get('/api/admin/analytics/signup-to-consult', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 30 });
+    const dateStart = resolveDateStart(req, { defaultDays: 30 });
+    const scope = `properties.app = 'customer' AND ${ENV_FILTER}`;
+
+    const [preRows, cohortRows] = await Promise.all([
+      runHogQL(`
+        SELECT
+          count(DISTINCT if((event = '$screen' AND properties.$screen_name = 'Register') OR event = 'signup_screen_viewed', person_id, NULL)) AS viewed,
+          count(DISTINCT if(event = 'signup_otp_sent', person_id, NULL)) AS otp_sent
+        FROM events
+        WHERE ${scope} AND ${dateWhere}
+          AND event IN ('$screen', 'signup_screen_viewed', 'signup_otp_sent')
+      `),
+      runHogQL(`
+        SELECT
+          count(DISTINCT person_id) AS created,
+          count(DISTINCT if(event = 'signup_name_saved', person_id, NULL)) AS name_saved,
+          count(DISTINCT if(event = 'signup_welcome_hi_tapped', person_id, NULL)) AS reached_home,
+          count(DISTINCT if(event = 'birth_details_saved', person_id, NULL)) AS birth_saved,
+          count(DISTINCT if(event IN ('chat_initiated', 'call_initiated'), person_id, NULL)) AS requested,
+          count(DISTINCT if(event IN ('chat_started', 'call_connected'), person_id, NULL)) AS connected
+        FROM events
+        WHERE ${scope} AND ${dateStart}
+          AND event IN ('signup_completed', 'signup_name_saved', 'signup_welcome_hi_tapped',
+                        'birth_details_saved', 'chat_initiated', 'call_initiated',
+                        'chat_started', 'call_connected')
+          AND person_id IN (
+            SELECT person_id FROM events
+            WHERE event = 'signup_completed' AND ${scope} AND ${dateWhere}
+          )
+      `),
+    ]);
+
+    const [viewed, otpSent] = (preRows[0] || []).map((v) => Number(v) || 0);
+    const [created, nameSaved, reachedHome, birthSaved, requested, connected] =
+      (cohortRows[0] || []).map((v) => Number(v) || 0);
+
+    return res.json({
+      success: true,
+      stages: [
+        { key: 'viewed', label: 'Opened signup', count: viewed || 0 },
+        { key: 'otp_sent', label: 'OTP sent', count: otpSent || 0 },
+        { key: 'created', label: 'Account created', count: created || 0 },
+        { key: 'name_saved', label: 'Name saved', count: nameSaved || 0 },
+        { key: 'reached_home', label: 'Tapped Namaste (reached Home)', count: reachedHome || 0 },
+        { key: 'birth_saved', label: 'Birth details saved', count: birthSaved || 0 },
+        { key: 'requested', label: 'Requested a chat or call', count: requested || 0 },
+        { key: 'connected', label: 'Consultation connected', count: connected || 0 },
+      ],
+    });
   }));
 
   // ── Retention: D1 / D7 / D30, both blended and as a per-cohort curve ──
