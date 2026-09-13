@@ -5040,3 +5040,100 @@ to the switch. Moving to paid is billing on the same key in AI Studio, with no c
 - **Personal data on the free tier** (`sendProfile` on) goes against Google's free-tier
   guidance. Revisit when moving to paid or before scaling up.
 - **Sentry auth token** on the build machine, so the next store build uploads source maps.
+
+---
+
+## Session 2026-09-13 (later): Meta + Google Ads conversion tracking
+
+### CG. `react-native-fbsdk-next` + `@react-native-firebase/analytics` in the customer app, Android only
+
+**Why:** to run Meta and Google ads that optimise for customers who sign up, pay and
+actually consult an astrologer, not just for installs.
+
+**State:** committed, **not live**. It is native code, so it reaches phones only with customer
+**store build 38**, which has not been built. Meta also stays inert until real ids are filled in.
+
+**What each platform receives** — one file decides it, `src/utils/adTracking.js`:
+
+| Event (PostHog name → trigger) | Meta | Google (Firebase) |
+|---|---|---|
+| install / app open (sent by the SDKs themselves) | auto-logged app events | `first_open`, `session_start` |
+| `signup_completed` | CompletedRegistration | `sign_up` |
+| `wallet_recharged` (after backend verifies Razorpay) | Purchase, INR | `purchase`, INR |
+| `order_placed` **only when `payment_method === 'razorpay'`** | Purchase, INR | `purchase`, INR |
+| `call_connected` / `chat_started`, **once per `session_id`** | `ConsultationConnected` | `consultation_connected` |
+
+- **Deliberately NOT reported:** `login_completed` (not a new customer); wallet-paid shop
+  orders, reports and gifts (that money was already counted at recharge — counting again
+  double-counts revenue); `call_initiated` / `chat_initiated` (switched to *connected* at the
+  owner's request, because ~61% of requests are never answered).
+- **No PII:** params are built from scratch, never passed through — no phone, name, birth
+  details, astrologer/order/session id or chat content.
+- **How events arrive:** `captureEvent()` in `Analytics.js` forwards every PostHog event to
+  `forwardToAdPlatforms()`, **release builds only**. ⚠ Renaming one of the mapped PostHog
+  events silently breaks the ad conversion — update `AD_EVENT_MAP` in the same commit.
+- **Each platform in its own try**, so one SDK throwing never blocks the other.
+
+**Native setup**
+- `react-native-fbsdk-next` pinned **13.4.3**; `facebookSdkVersion = "18.3.0"` pinned in
+  `android/build.gradle` (the package defaults to the dynamic `18.+`).
+- `@react-native-firebase/analytics` pinned **22.2.1** — **must equal
+  `@react-native-firebase/app`**. Uses the existing `google-services.json`; no ids in code.
+- **Both excluded from iOS autolinking** (`react-native.config.js`): iOS needs Apple's App
+  Tracking Transparency prompt first. Verify with `npx react-native config`.
+- **Meta is inert until real ids exist.** `facebook_app_id` / `facebook_client_token` in
+  `android/app/src/main/res/values/strings.xml` and `META_APP_ID` / `META_CLIENT_TOKEN` in
+  `adTracking.js` are `REPLACE_WITH_...` placeholders — **all four must be filled, and match**.
+  The manifest sets `AutoInitEnabled=false`, so the Meta SDK sends nothing until
+  `initAdTracking()` (called from `index.js`) runs `initializeSDK()`, which it only does when
+  configured. Checked in the 18.3.0 bytecode: `FacebookInitProvider` catches its own
+  exceptions and `sdkInitialize` only throws for a NULL id/token, not a placeholder.
+- **Google is live from build 38 with no further code change.** Firebase's automatic
+  `first_open` is collected from every build including debug; our custom events are release-only.
+- **OTA-safe on build 37 and older:** each package is required only after its native module
+  (`FBAppEventsLogger`+`FBSettings`, `RNFBAnalyticsModule`) is confirmed present.
+- **Merged release manifest adds** `com.google.android.gms.permission.AD_ID`, four
+  `ACCESS_ADSERVICES_*` permissions, `FacebookActivity` / `CustomTabActivity`, and the Firebase
+  analytics meta-data. No billing permission.
+
+**Verified 2026-09-13:** autolinking android-only for both; eslint clean on changed files;
+`:app:processReleaseMainManifest :app:compileReleaseJavaWithJavac` succeeds; a harness driving
+the real `adTracking.js` with both SDKs stubbed passed **19/19** (placeholder Meta ids stay
+inert, wallet-paid orders skipped, invalid amounts skipped, each session once, no PII, one
+platform throwing doesn't block the other, old build = silent no-op). The harness lived in the
+session scratchpad, not the repo. **Not yet run on a device or against Meta/Google.**
+
+### CH. OWNER TO-DO for ads tracking (not code — Claude cannot do these)
+
+**Meta**
+1. developers.facebook.com → My Apps → **Create App** → use case **Other** → type **Business**,
+   linked to the Meta Business account.
+2. **App settings → Basic:** note the **App ID**; fill privacy policy URL, icon, category.
+   **Add platform → Android:** package `com.astrowanicustomer`, class
+   `com.astrowanicustomer.MainActivity`, key hash (send Claude the SHA-1 from Play Console →
+   App integrity → App signing; it converts it).
+3. **App settings → Advanced → Security:** copy the **Client Token**.
+4. **App settings → Advanced:** add the ad account under **Authorized ad account IDs**.
+5. Switch the app to **Live**; in **Events Manager**, connect the app as a data source.
+6. **Send Claude the App ID + Client Token** (not secret — they ship in the APK). Claude fills
+   the four placeholders and checks events arrive in Events Manager → **Test events**.
+
+**Google Ads**
+7. Firebase console → Project settings → **Integrations → Google Analytics**: enable if off.
+8. Same page → **Google Ads**: link the Google Ads account. In Google Ads, also link the Play
+   Console account.
+9. Google Analytics → Admin → Events: mark `sign_up`, `purchase`, `consultation_connected` as
+   **key events** (`consultation_connected` only appears after the first real one).
+10. Google Ads → Goals → Conversions → New → **App → Google Analytics (Firebase)**: import them.
+
+**Play Console (before build 38 is released)**
+11. **App content → Advertising ID:** declare use (for advertising/analytics). The release is
+    blocked without it, because the SDKs add the `AD_ID` permission.
+12. **Data safety:** declare app activity and device/advertising ID shared with Meta and
+    Google for advertising and analytics. Also mention Meta and Google in the privacy policy.
+
+**Then (Claude, when asked):** bump customer `versionCode` 37 → 38, build, verify the merged
+manifest + signing as in CE, owner uploads.
+
+**Campaign tip:** start Meta/Google campaigns on installs or sign-ups; switch to Purchase
+optimisation once ads bring roughly 50 recharges a week.

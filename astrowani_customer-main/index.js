@@ -42,6 +42,15 @@ try {
   // constructed before the app tree mounts.
   require('./src/utils/Analytics');
 
+  // Ad-conversion SDKs (Meta + Google via Firebase Analytics). No-ops on builds without
+  // the native SDKs; Meta also waits for its app id. Its own try, so a failure here can
+  // never stop the app loading.
+  try {
+    require('./src/utils/adTracking').initAdTracking();
+  } catch (e) {
+    console.log('[startup] ad tracking init failed:', e?.message);
+  }
+
   App = require('./App').default;
 } catch (e) {
   startupError = e;

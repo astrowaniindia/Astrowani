@@ -6,6 +6,7 @@
 import PostHog from 'posthog-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
+import { forwardToAdPlatforms } from './adTracking';
 
 // Real Project API Key — the PostHog project exists and is receiving events. Safe to
 // hardcode: it is write-only for ingestion (same trust level as the Sentry DSN). The
@@ -120,6 +121,8 @@ export function captureEvent(name, properties = {}) {
   try {
     posthog.capture(name, { app: 'customer', environment: currentEnvironment, ...properties });
   } catch (_) {}
+  // Ad conversions (Meta + Google). Debug builds never report, so testing can't pollute campaigns.
+  if (BUILD_ENVIRONMENT === 'production') forwardToAdPlatforms(name, properties);
 }
 
 // Session replay is OFF by default and controlled entirely from the admin dashboard's

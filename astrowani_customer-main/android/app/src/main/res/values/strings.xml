@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Astrowani</string>
+    <!-- Meta ad-conversion SDK. Public ids (they ship in every APK). Must match
+         META_APP_ID / META_CLIENT_TOKEN in src/utils/adTracking.js. -->
+    <string name="facebook_app_id" translatable="false">REPLACE_WITH_META_APP_ID</string>
+    <string name="facebook_client_token" translatable="false">REPLACE_WITH_META_CLIENT_TOKEN</string>
 </resources>

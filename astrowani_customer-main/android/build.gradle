@@ -6,6 +6,9 @@ buildscript {
         targetSdkVersion = 36
         ndkVersion = "27.0.12077973"
         kotlinVersion = "2.0.21"
+        // react-native-fbsdk-next defaults to the dynamic "18.+", which makes release
+        // builds non-reproducible. Pinned; bump deliberately.
+        facebookSdkVersion = "18.3.0"
     }
     repositories {
         google()

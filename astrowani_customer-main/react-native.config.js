@@ -23,6 +23,22 @@ module.exports = {
     //   cd android && ./gradlew processReleaseMainManifest
     //   grep -i billing app/build/intermediates/merged_manifests/release/AndroidManifest.xml
     // Expect zero hits.
+    // Meta ad-conversion SDK: Android only for now. On iOS it must wait for Apple's App
+    // Tracking Transparency prompt, and it needs FacebookAppID etc. in Info.plist — linking
+    // the pod without those is a startup risk on a build that is not live yet anyway.
+    // src/utils/adTracking.js already no-ops when the native module is absent.
+    'react-native-fbsdk-next': {
+      platforms: {
+        ios: null,
+      },
+    },
+    // Firebase Analytics, for Google Ads conversions. Android only for the same reason
+    // as the Meta SDK above: iOS ad measurement waits for the ATT prompt.
+    '@react-native-firebase/analytics': {
+      platforms: {
+        ios: null,
+      },
+    },
     'react-native-iap': {
       platforms: {
         android: null,
