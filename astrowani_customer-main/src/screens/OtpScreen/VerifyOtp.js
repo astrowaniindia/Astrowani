@@ -17,7 +17,7 @@ import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {OtpInput} from 'react-native-otp-entry';
-import Instance, {LONG_REQUEST_TIMEOUT_MS} from '../../api/ApiCall';
+import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
@@ -28,7 +28,11 @@ const RESEND_SECONDS = 60;
 
 const VerifyOtp = ({navigation, route}) => {
   const {t} = React.useContext(LanguageContext);
-  const {phoneNumber, role = 'customer', profileData, termsAccepted} = route?.params || {};
+  // `signup` is set by the Register screen. Signup now collects only the phone
+  // number before OTP; the name is asked on the next screen (SignupName) once the
+  // account exists, and birth details are asked later, when they are needed.
+  const {phoneNumber, role = 'customer', signup, termsAccepted} = route?.params || {};
+  const isSignup = !!signup;
 
   const [code, setCode] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -39,7 +43,7 @@ const VerifyOtp = ({navigation, route}) => {
 
   // `flow` splits every event on this shared screen into the signup and login funnels —
   // the screen is identical for both, and blending them hides which one is leaking.
-  const flow = profileData ? 'signup' : 'login';
+  const flow = isSignup ? 'signup' : 'login';
 
   useEffect(() => {
     captureEvent('otp_screen_viewed', { flow });
@@ -102,44 +106,24 @@ const VerifyOtp = ({navigation, route}) => {
           identifyCustomer(res.data.user.id);
         }
 
-        // Signup flow (Register screen) — apply the details collected before OTP verify
-        // now that we have a real auth token to call the profile endpoint with.
-        if (profileData) {
+        if (isSignup) {
+          // The account exists from this point, so this is where signup is
+          // "completed" (it also feeds the ad platforms' registration event).
+          // Name and welcome come next, but a customer who closes the app on the
+          // name screen is still a real, signed-in account.
           captureEvent('signup_otp_verified');
-          try {
-            let profilePic = profileData.profilePic;
-            if (profilePic && profilePic.startsWith('data:')) {
-              // A base64 photo is often 1-3 MB; the 20s client default is not
-              // enough on mobile data. See LONG_REQUEST_TIMEOUT_MS.
-              const uploadRes = await Instance.post(
-                '/api/upload-image',
-                {base64: profilePic, folder: 'customer-profiles'},
-                {headers: {Authorization: `Bearer ${res.data.token}`}, timeout: LONG_REQUEST_TIMEOUT_MS}
-              );
-              profilePic = uploadRes.data.url;
-            }
-            await Instance.put(
-              '/api/users/profile',
-              {...profileData, profilePic},
-              {headers: {Authorization: `Bearer ${res.data.token}`}}
-            );
-          } catch (profileErr) {
-            // Account is created and verified either way — a profile-save hiccup
-            // shouldn't strand the user on the OTP screen; they can fill it in later.
-            console.log('Failed to save registration details:', profileErr.message);
-          }
           captureEvent('signup_completed');
+          navigation.reset({index: 0, routes: [{name: 'SignupName'}]});
         } else {
           captureEvent('login_completed');
+          navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
         }
-
-        navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       } else {
-        captureEvent(profileData ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_rejected' });
+        captureEvent(isSignup ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_rejected' });
         showAlert(t('otp.verificationFailed'), res?.data?.message || t('otp.invalidTryAgain'), 'error');
       }
     } catch (error) {
-      captureEvent(profileData ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_error' });
+      captureEvent(isSignup ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_error' });
       const data = error?.response?.data;
       // Past the attempt cap the server burns the code, so no further guess can
       // ever succeed — the only way forward is a new OTP. Unlock Resend at once
@@ -243,7 +227,7 @@ const VerifyOtp = ({navigation, route}) => {
             />
           </View>
 
-          {!!profileData && (
+          {isSignup && (
             <TextInput
               style={styles.referralInput}
               placeholder="Referral code (optional)"

@@ -2076,11 +2076,12 @@ app.get('/health/live', (req, res) => {
 // ==========================================
 
 // Whether a customer row has the core profile fields filled (hand/palm photo excluded).
+// Same rule as the customer app's utils/profileGate.js: name, gender, marital
+// status, date and place of birth. Email, photo and time of birth are optional.
 function customerProfileComplete(row) {
   if (!row) return false;
   const s = (v) => (v == null ? '' : String(v)).trim();
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(row.email));
-  return !!(s(row.name) && emailOk && s(row.gender) && s(row.dob) && s(row.place_of_birth));
+  return !!(s(row.name) && s(row.gender) && s(row.marital_status) && s(row.dob) && s(row.place_of_birth));
 }
 
 // Whether an astrologer's core profile is complete: full name, valid email, gender,

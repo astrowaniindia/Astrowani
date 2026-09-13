@@ -80,7 +80,10 @@ export default function IntroSplash({ onFinish }) {
   return (
     <Animated.View style={[styles.container, screenStyle]}>
       <Animated.Image source={STAR_LOGO} style={[styles.logo, logoStyle]} resizeMode="contain" />
-      <Animated.Text style={[styles.brand, textStyle]}>ASTROWANI</Animated.Text>
+      <Animated.View style={[styles.textBlock, textStyle]}>
+        <Animated.Text style={styles.brand}>ASTROWANI</Animated.Text>
+        <Animated.Text style={styles.tagline}>Voice of Stars</Animated.Text>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -100,11 +103,23 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
   },
+  textBlock: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  // Gold and bolder: the old 13px, 70%-opacity cream was hard to read on the brown.
   brand: {
-    marginTop: 22,
-    fontSize: 13,
-    letterSpacing: 6,
-    color: 'rgba(245,236,221,0.7)',
+    fontSize: 20,
+    letterSpacing: 7,
+    color: '#FFD700',
     fontFamily: 'Lato-Bold',
+    fontWeight: '700',
+  },
+  tagline: {
+    marginTop: 8,
+    fontSize: 14,
+    letterSpacing: 2,
+    color: '#F4D8BC',
+    fontFamily: 'Lato-Regular',
   },
 });

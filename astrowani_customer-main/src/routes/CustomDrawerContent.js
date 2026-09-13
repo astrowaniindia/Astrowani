@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar, Platform,
+  Animated, Easing,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DrawerContentScrollView } from '@react-navigation/drawer';
+import { DrawerContentScrollView, useDrawerStatus } from '@react-navigation/drawer';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
@@ -17,6 +18,41 @@ import { LanguageContext } from '../context/LanguageContext';
 import { resetAnalyticsIdentity, captureEvent } from '../utils/Analytics';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
 import { PLAY_STORE_URL } from '../config/api';
+
+// The sidebar is full-screen, so the close button gently grows and shrinks to
+// show it is the way out. Only animates while the sidebar is open.
+function PulsingCloseButton({ onPress }) {
+  const isOpen = useDrawerStatus() === 'open';
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!isOpen) {
+      pulse.setValue(1);
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.14, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isOpen, pulse]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale: pulse }] }}>
+      <TouchableOpacity
+        onPress={onPress}
+        style={styles.closeBtn}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel="Close menu">
+        <Icon name="close" size={moderateScale(22)} color="#fff" />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 function CustomDrawerContent(props, navigation) {
   const { t } = React.useContext(LanguageContext);
@@ -159,9 +195,7 @@ function CustomDrawerContent(props, navigation) {
             <Image source={require('../assets/images/brandStarLogo.png')} style={styles.brandLogo} resizeMode="contain" />
             <Text style={styles.drawerTitle}>Astrowani</Text>
           </View>
-          <TouchableOpacity onPress={() => props.navigation.closeDrawer()} style={styles.closeBtn}>
-            <Icon name="close" size={moderateScale(22)} color="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
+          <PulsingCloseButton onPress={() => props.navigation.closeDrawer()} />
         </View>
 
         <TouchableOpacity
@@ -269,10 +303,14 @@ const styles = StyleSheet.create({
   brandRow: { flexDirection: 'row', alignItems: 'center' },
   brandLogo: { width: moderateScale(34), height: moderateScale(34), marginRight: scale(7) },
   drawerTitle: { color: COLORS.white, fontSize: moderateScale(22), fontFamily: 'Lato-Bold', letterSpacing: 0.3 },
+  // The sidebar is full-screen, so this button is the obvious way out — kept
+  // clearly visible against the darker end of the header gradient.
   closeBtn: {
-    padding: scale(6),
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: moderateScale(16),
+    padding: scale(7),
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.55)',
+    borderRadius: moderateScale(20),
   },
   profileSection: {
     flexDirection: 'row',

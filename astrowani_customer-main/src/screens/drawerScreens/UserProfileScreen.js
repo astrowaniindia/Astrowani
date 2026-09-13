@@ -45,6 +45,7 @@ const UserProfileScreen = ({navigation, route}) => {
   const [emailError, setEmailError] = useState(null);
   const [genderError, setGenderError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [customAlert, setCustomAlert] = useState({
     visible: false,
     title: '',
@@ -121,10 +122,23 @@ const UserProfileScreen = ({navigation, route}) => {
         }
       } catch (err) {
         console.log('Profile fetch error:', err?.message);
+      } finally {
+        setProfileLoaded(true);
       }
     };
     fetchProfile();
   }, []);
+
+  // The guide avatar asks for birth details while any required one is missing.
+  // Waits for the profile fetch, because the form starts with an empty date of
+  // birth and would otherwise flash the message at customers who already have it.
+  const needsBirthDetails = profileLoaded && (
+    !String(userProfile.firstName || '').trim() ||
+    !userProfile.gender ||
+    !userProfile.maritalStatus ||
+    !userProfile.dateOfBirth ||
+    !String(userProfile.city || '').trim()
+  );
 
   const handleEditPic = (type = 'profilePic') => {
     const options = { title: t('userProfile.selectImage'), mediaType: 'photo', includeBase64: true, quality: 0.6, maxWidth: 1000, maxHeight: 1000 };
@@ -148,17 +162,13 @@ const UserProfileScreen = ({navigation, route}) => {
   const handleUpdate = async () => {
     captureEvent('profile_save_tapped');
 
-    // 1. Profile Picture validation
-    if (!userProfile.profilePic) {
-      // The profile gate blocks chat/call/video until this screen is completed, so a
-      // validation rule that stops people here stops them spending money. Each one is
-      // reported separately so the worst offender is obvious.
-      captureEvent('profile_validation_failed', { field: 'profile_pic' });
-      showCustomAlert(t('userProfile.validationError'), t('userProfile.uploadProfilePhoto'));
-      return;
-    }
+    // Required here is exactly what utils/profileGate.js requires: name, gender,
+    // marital status, date of birth and place of birth. The gate sends customers
+    // to this screen before chat/call/video, so any extra required field would
+    // block them from a consultation. Photo, email and time of birth are optional.
+    // Each rule is reported separately so the worst offender is obvious.
 
-    // 2. Name validation
+    // Name validation
     if (!userProfile.firstName || !userProfile.firstName.trim()) {
       captureEvent('profile_validation_failed', { field: 'name' });
       showCustomAlert(t('userProfile.validationError'), t('userProfile.enterFullName'));
@@ -171,14 +181,11 @@ const UserProfileScreen = ({navigation, route}) => {
     // an error the customer has no way to fix — there is no longer a field for
     // them to type into. It comes from the authenticated account instead.
 
-    // 4. Email validation
+    // Email is optional. Only a value the customer actually typed is checked, so a
+    // typo is caught but an empty field never blocks the save.
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!userProfile.email || !userProfile.email.trim()) {
-      captureEvent('profile_validation_failed', { field: 'email', reason: 'empty' });
-      setEmailError(t('userProfile.emailEmpty'));
-      showCustomAlert(t('userProfile.validationError'), t('userProfile.emailEmpty'));
-      return;
-    } else if (!emailRegex.test(userProfile.email)) {
+    const typedEmail = (userProfile.email || '').trim();
+    if (typedEmail && !emailRegex.test(typedEmail)) {
       captureEvent('profile_validation_failed', { field: 'email', reason: 'invalid' });
       setEmailError(t('userProfile.emailInvalid'));
       showCustomAlert(t('userProfile.validationError'), t('userProfile.emailInvalid'));
@@ -187,8 +194,9 @@ const UserProfileScreen = ({navigation, route}) => {
       setEmailError(null);
     }
 
-    // 5. Gender validation
+    // Gender validation
     if (!userProfile.gender) {
+      captureEvent('profile_validation_failed', { field: 'gender' });
       setGenderError(t('userProfile.selectGender'));
       showCustomAlert(t('userProfile.validationError'), t('userProfile.selectGender'));
       return;
@@ -196,28 +204,25 @@ const UserProfileScreen = ({navigation, route}) => {
       setGenderError(null);
     }
 
-    // 6. Marital Status validation
+    // Marital Status validation
     if (!userProfile.maritalStatus) {
+      captureEvent('profile_validation_failed', { field: 'marital_status' });
       showCustomAlert(t('userProfile.validationError'), t('userProfile.selectMaritalStatus'));
       return;
     }
 
-    // 7. Date of Birth validation
+    // Date of Birth validation
     if (!userProfile.dateOfBirth) {
+      captureEvent('profile_validation_failed', { field: 'dob' });
       showCustomAlert(t('userProfile.validationError'), t('userProfile.selectDob'));
       return;
     }
 
-    // 8. Time of Birth validation
-    if (!userProfile.timeOfBirth) {
-      showCustomAlert(t('userProfile.validationError'), t('userProfile.selectTob'));
-      return;
-    }
-
-    // 9. City validation. State is no longer entered separately — it comes
+    // City validation. State is no longer entered separately — it comes
     // from the same place lookup as City, so a valid City implies State was
     // resolved too (or the place genuinely has none, e.g. a city-state).
     if (!userProfile.city || !userProfile.city.trim()) {
+      captureEvent('profile_validation_failed', { field: 'place_of_birth' });
       showCustomAlert(t('userProfile.validationError'), t('userProfile.enterCity'));
       return;
     }
@@ -250,8 +255,8 @@ const UserProfileScreen = ({navigation, route}) => {
       ]);
 
       const payload = {
-        name: userProfile.firstName,
-        email: userProfile.email,
+        name: userProfile.firstName.trim(),
+        email: typedEmail,
         gender: userProfile.gender,
         maritalStatus: userProfile.maritalStatus || null,
         dob: userProfile.dateOfBirth ? new Date(userProfile.dateOfBirth).toISOString() : null,
@@ -406,6 +411,23 @@ const UserProfileScreen = ({navigation, route}) => {
         
         {activeTab === 'Profile' && (
           <View>
+            {/* Guide avatar — shown whenever a required birth detail is missing,
+                however the customer got here (the chat/call/video/free-offer gate,
+                or Profile in the drawer). */}
+            {needsBirthDetails && (
+              <View style={styles.guideRow}>
+                <Image
+                  source={require('../../assets/images/guideAvatarLogin.png')}
+                  style={styles.guideAvatarImg}
+                  resizeMode="contain"
+                />
+                <View style={styles.guideBubble}>
+                  <View style={styles.guideTail} />
+                  <Text style={styles.guideText}>{t('profileGate.guide')}</Text>
+                </View>
+              </View>
+            )}
+
             {/* Avatar Section */}
             <View style={styles.avatarSection}>
               <View style={styles.avatarWrapper}>
@@ -576,6 +598,39 @@ const styles = StyleSheet.create({
   tabTextInactive: { color: '#888', fontFamily: 'Lato-Bold', fontSize: moderateScale(15) },
   scrollContainer: { paddingBottom: verticalScale(100) },
   
+  guideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: scale(15),
+    marginTop: verticalScale(18),
+  },
+  // Sized by the artwork's real aspect (145 x 281), so there is no dead space
+  // between the character and its bubble.
+  guideAvatarImg: { width: scale(46), aspectRatio: 145 / 281 },
+  guideBubble: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: moderateScale(14),
+    padding: scale(12),
+    marginLeft: scale(10),
+    borderWidth: 1,
+    borderColor: '#ecd9cf',
+  },
+  guideTail: {
+    position: 'absolute',
+    left: -scale(6),
+    top: '45%',
+    width: 0,
+    height: 0,
+    borderTopWidth: scale(6),
+    borderBottomWidth: scale(6),
+    borderRightWidth: scale(7),
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#fff',
+  },
+  guideText: { fontSize: moderateScale(13), color: '#4a3a32', lineHeight: moderateScale(19) },
+
   avatarSection: { alignItems: 'center', marginTop: verticalScale(30), marginBottom: verticalScale(20) },
   avatarWrapper: {
     width: scale(110), height: scale(110), borderRadius: moderateScale(55),

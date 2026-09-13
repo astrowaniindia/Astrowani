@@ -92,7 +92,7 @@ const AstrologerCluster = ({ list, t }) => {
   );
 };
 
-const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = 'auto' }) => {
+const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook, t, source = 'auto' }) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
   const [dates, setDates] = useState([]);
@@ -132,7 +132,10 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, t, source = '
     }
   }, []);
 
-  const goToSlots = () => {
+  const goToSlots = async () => {
+    // Lets the parent ask for birth details before any slot is shown. Returning
+    // false stops here; the parent is responsible for closing the sheet.
+    if (onBeforeBook && !(await onBeforeBook())) return;
     captureEvent('free_call_slots_opened', { source });
     setStep('slots');
     loadSlots(null);

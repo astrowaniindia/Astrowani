@@ -35,7 +35,9 @@ const CATEGORIES = [
   {id: 'reports', icon: 'file-document-outline', labelKey: 'home.shopReports', screen: 'AstroReportsScreen'},
 ];
 
-export default function ShopCategoryCircles({navigation}) {
+// `onDark` is for the strip sitting on Home's brown header: cream circles, larger
+// icons and light labels, instead of white circles and brown labels.
+export default function ShopCategoryCircles({navigation, onDark = false}) {
   const {t} = React.useContext(LanguageContext);
 
   const open = (category) => {
@@ -48,21 +50,21 @@ export default function ShopCategoryCircles({navigation}) {
   };
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, onDark && styles.rowOnDark]}>
       {CATEGORIES.map((c) => (
         <TouchableOpacity
           key={c.id}
           style={styles.item}
           activeOpacity={0.7}
           onPress={() => open(c)}>
-          <View style={styles.circle}>
+          <View style={[styles.circle, onDark && styles.circleOnDark]}>
             <MaterialCommunityIcons
               name={c.icon}
-              size={moderateScale(18)}
+              size={moderateScale(onDark ? 23 : 18)}
               color={COLORS.AstroMaroon}
             />
           </View>
-          <Text style={styles.label} numberOfLines={1}>
+          <Text style={[styles.label, onDark && styles.labelOnDark]} numberOfLines={1}>
             {t(c.labelKey)}
           </Text>
         </TouchableOpacity>
@@ -107,4 +109,12 @@ const styles = StyleSheet.create({
     color: COLORS.AstroMaroon,
     textAlign: 'center',
   },
+
+  rowOnDark: {marginBottom: 0},
+  circleOnDark: {
+    backgroundColor: '#FFF8EE',
+    borderWidth: 0,
+    shadowOpacity: 0.25,
+  },
+  labelOnDark: {color: COLORS.AstroSoftOrange},
 });

@@ -97,6 +97,9 @@ import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScr
 import VoiceCallScreen from '../screens/Video/VoiceCallScreen';
 import VideoCallScreen from '../screens/Video/VideoCallScreen';
 import Register from '../screens/Register/Register';
+import SignupName from '../screens/Register/SignupName';
+import SignupWelcome from '../screens/Register/SignupWelcome';
+import CompleteBirthDetails from '../screens/Register/CompleteBirthDetails';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
@@ -178,6 +181,11 @@ export default function Navigation({ initialRoute }) {
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
         <Stack.Screen options={{ headerShown: false }} name="Login" component={Login} />
         <Stack.Screen options={{ headerShown: false }} name="Register" component={Register} />
+        {/* Signup after OTP: name, then the avatar welcome, then Home. */}
+        <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} name="SignupName" component={SignupName} />
+        <Stack.Screen options={{ headerShown: false, gestureEnabled: false, animation: 'fade' }} name="SignupWelcome" component={SignupWelcome} />
+        {/* Birth details, asked when chat/call/video/free offers need them (utils/profileGate.js). */}
+        <Stack.Screen options={{ headerShown: false }} name="CompleteBirthDetails" component={CompleteBirthDetails} />
 
         <Stack.Screen options={{ headerShown: false }} name="VerifyOtp" component={VerifyOtp} />
         <Stack.Screen options={{ title: 'Verify Phone', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="OtpScreen" component={OtpScreen} />
@@ -730,12 +738,21 @@ function DrawerNavigator({ navigation }) {
       )}
       screenOptions={{
         headerShown: false,
-        // No swipe-to-open: the drawer opens from the hamburger icon only.
-        // Its swipe is a native gesture over the left third of the screen, and
+        // Swipe to CLOSE, but not to OPEN. The drawer opens from the hamburger
+        // icon only: its open-swipe is a native gesture from the left edge, and
         // it beat the JS drag on Home's astrologer cards — dragging the cards
         // rightwards opened the sidebar instead (found on-device, 2026-09-13).
-        // The cards are the more important gesture, so the swipe went.
-        swipeEnabled: false,
+        //
+        // swipeEdgeWidth: 0 gives that open gesture no area to start in, while
+        // the library widens the gesture area to the whole drawer once it is
+        // open — so a right-to-left swipe still closes it. swipeEnabled must be
+        // true for that close swipe to work at all.
+        swipeEnabled: true,
+        swipeEdgeWidth: 0,
+        // Full-screen sidebar: with the default width the menu labels and the
+        // profile line were cut off ("Update your pr…", "Chat With Astrol…").
+        // The header's close button is the way back.
+        drawerStyle: { width: '100%' },
       }}>
       <Drawer.Screen
         name="BottomTabs"

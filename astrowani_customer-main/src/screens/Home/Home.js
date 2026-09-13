@@ -1315,9 +1315,9 @@ const Home = ({navigation}) => {
             paddingTop: 5,
             paddingHorizontal: '5%',
           }}>
-          <Text style={[styles.topAstrologerTxt, {color: 'white', textAlign: 'center'}]}>
-            {(language === 'Hindi' ? thought?.hindi?.thoughtText : thought?.thoughtText) || t('home.welcome')}
-          </Text>
+          {/* Shop entry points on the brown header; the thought of the day opens the
+              cream section below instead. */}
+          <ShopCategoryCircles navigation={navigation} onDark />
         </View>
 
         <View style={{
@@ -1339,7 +1339,13 @@ const Home = ({navigation}) => {
               Reports — that row opened the NATIVE RemedyShop while the bottom tab
               called "Wani Shop" opened the web storefront, so the app had two
               differently-named shops. Everything now points at the one shop. */}
-          <ShopCategoryCircles navigation={navigation} />
+          {/* Thought of the day as a bold heading — plain regular text at the old
+              size was hard to read on the cream. */}
+          <View style={styles.thoughtRow}>
+            <Text style={styles.thoughtOnCream}>
+              {(language === 'Hindi' ? thought?.hindi?.thoughtText : thought?.thoughtText) || t('home.welcome')}
+            </Text>
+          </View>
 
           {/* Both Home banners are the way into the free 5-minute chat while the
               customer can still claim it: tapping one opens the offer instead of
@@ -1763,8 +1769,12 @@ const Home = ({navigation}) => {
           if (user?.id) markFreeBotChatOfferSeen(user.id);
           showReferralPrompt();
         }}
-        onStart={() => {
+        onStart={async () => {
           setFreeChatOfferVisible(false);
+          // The free chat reads the customer's birth details, so ask for them
+          // first. Checked BEFORE the offer is marked seen/spent below, so a
+          // customer sent to Profile can tap the banner again and still get it.
+          if (!(await ensureProfileComplete(navigation, 'free_chat'))) return;
           setFreeChatOfferDismissed(true);
           if (user?.id) markFreeBotChatOfferSeen(user.id);
           // The offer is spent the moment they enter, however they leave -- ending
@@ -1785,6 +1795,14 @@ const Home = ({navigation}) => {
         phone={user?.phone || ''}
         t={t}
         source={freeCallSource}
+        // Birth details before a slot is picked. The sheet is closed first so it
+        // does not sit over the Profile screen. The offer is NOT marked seen, so
+        // it is still offered (and the gift bubble still shows) when they return.
+        onBeforeBook={async () => {
+          const ok = await ensureProfileComplete(navigation, 'free_call');
+          if (!ok) setFreeCallVisible(false);
+          return ok;
+        }}
         onClose={() => {
           setFreeCallVisible(false);
           // Suppresses only the automatic popup. The gift bubble below keeps
@@ -1872,7 +1890,23 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Bold',
     fontSize: moderateScale(16),
   },
-  boxedHeader: {
+  // Thought of the day at the top of the cream section.
+  thoughtRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: scale(20),
+    marginBottom: verticalScale(14),
+  },
+  thoughtOnCream: {
+    flexShrink: 1,
+    color: COLORS.AstroMaroon,
+    textAlign: 'center',
+    fontFamily: 'Lato-Bold',
+    fontWeight: '700',
+    fontSize: moderateScale(19),
+    letterSpacing: 0.3,
+  },  boxedHeader: {
     borderWidth: 1.5,
     borderColor: COLORS.AstroMaroon,
     borderRadius: moderateScale(16),
