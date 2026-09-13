@@ -70,6 +70,7 @@
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
+    "@hot-updater/aws": "0.35.10",
     "@hot-updater/bare": "^0.35.10",
     "@hot-updater/supabase": "^0.35.10",
     "@react-native-community/cli": "15.0.1",
