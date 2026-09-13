@@ -63,11 +63,22 @@ async function fetchAiReply({ history, opening, secondsLeft, language }) {
       },
       { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: AI_REQUEST_TIMEOUT_MS },
     );
-    if (data?.reply && typeof data.reply === 'string') return { reply: data.reply };
+    if (data?.reply && typeof data.reply === 'string') {
+      return { reply: data.reply, typingMs: Number(data.typingMs) || 0 };
+    }
     return { reply: null, reason: data?.reason || 'no_reply' };
   } catch (e) {
     return { reply: null, reason: e?.response?.status ? `http_${e.response.status}` : 'network' };
   }
+}
+
+// An instant reply reads as a machine, not a pandit typing. The backend says how
+// long this reply "takes to type" (admin-set, scaled by length); whatever the AI
+// call already took counts toward it, and it never runs past the chat's end.
+async function waitForTyping(typingMs, startedAt, secondsLeft) {
+  const ceiling = Math.max(0, (secondsLeft - 2) * 1000);
+  const wait = Math.min(typingMs - (Date.now() - startedAt), ceiling, 30000);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 }
 
 const FreeBotChatScreen = ({ navigation, route }) => {
@@ -118,6 +129,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     let cancelled = false;
     const openingTimer = setTimeout(async () => {
       setBotTyping(true);
+      const startedAt = Date.now();
       const ai = await fetchAiReply({
         history: [],
         opening: true,
@@ -125,7 +137,9 @@ const FreeBotChatScreen = ({ navigation, route }) => {
         language,
       });
       if (cancelled) return;
-      if (!ai.reply) switchToScripted(ai.reason);
+      if (ai.reply) await waitForTyping(ai.typingMs, startedAt, CHAT_DURATION_SECONDS);
+      else switchToScripted(ai.reason);
+      if (cancelled) return;
       setBotTyping(false);
       if (!hasEndedRef.current) appendMessage('bot', ai.reply || getOpeningMessage());
     }, 600);
@@ -147,6 +161,8 @@ const FreeBotChatScreen = ({ navigation, route }) => {
       cancelled = true;
       clearTimeout(openingTimer);
     };
+    // Mount-only: one greeting per chat, in the language the chat opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const finishNaturally = () => {
@@ -187,6 +203,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
 
     let reply = null;
     if (useAiRef.current) {
+      const startedAt = Date.now();
       const ai = await fetchAiReply({
         history: [...messages, { sender: 'me', message: msg }],
         opening: false,
@@ -194,7 +211,8 @@ const FreeBotChatScreen = ({ navigation, route }) => {
         language,
       });
       reply = ai.reply;
-      if (!reply) switchToScripted(ai.reason);
+      if (reply) await waitForTyping(ai.typingMs, startedAt, secondsLeft);
+      else switchToScripted(ai.reason);
     }
     if (!reply) reply = await getBotReply(msg, messages, { secondsLeft });
 

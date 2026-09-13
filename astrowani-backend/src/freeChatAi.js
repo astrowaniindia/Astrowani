@@ -83,7 +83,32 @@ const DEFAULTS = {
   models: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemma-4-26b-a4b-it', 'gemma-4-31b-it'],
   sendProfile: true,
   temperature: 0.8,
+  // A reply that lands the instant the customer hits send reads as a machine,
+  // not a pandit typing. The app keeps "typing…" up until this much time has
+  // passed since the customer's message (AI time included): the reply's length
+  // at `charsPerSecond`, kept between the min and max.
+  typing: { minSeconds: 3, maxSeconds: 9, charsPerSecond: 15 },
 };
+
+function cleanTyping(t) {
+  const n = (v, d, lo, hi) => {
+    const x = Number(v);
+    return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
+  };
+  const d = DEFAULTS.typing;
+  const minSeconds = n(t?.minSeconds, d.minSeconds, 0, 20);
+  return {
+    minSeconds,
+    maxSeconds: Math.max(minSeconds, n(t?.maxSeconds, d.maxSeconds, 0, 30)),
+    charsPerSecond: n(t?.charsPerSecond, d.charsPerSecond, 1, 100),
+  };
+}
+
+/** How long the app should show "typing…" for this reply, in ms. */
+function typingMsFor(reply, typing) {
+  const seconds = String(reply || '').length / typing.charsPerSecond;
+  return Math.round(Math.min(typing.maxSeconds, Math.max(typing.minSeconds, seconds)) * 1000);
+}
 
 function cleanModels(list) {
   const seen = new Set();
@@ -186,6 +211,7 @@ async function loadConfig() {
   if (!models.length && typeof parsed.model === 'string') models = cleanModels([parsed.model]);
   merged.models = models.length ? models : [...DEFAULTS.models];
   delete merged.model;
+  merged.typing = cleanTyping(parsed.typing);
   return merged;
 }
 
@@ -234,7 +260,10 @@ function profileBlock(customer) {
 // sentence chat reply needs no reasoning, so ask for the least thinking the
 // model allows. Gemini 3+ takes a level; 2.x takes a token budget (0 = off).
 function thinkingConfigFor(model) {
-  if (/^gemini-[3-9]/i.test(model)) return { thinkingLevel: 'minimal' };
+  // Gemma 4 also thinks by default: on 2026-09-13 gemma-4-26b-a4b-it spent a
+  // 300-token cap without producing text, and gemma-4-31b-it ran past 6.5s on a
+  // two-letter message. If it rejects the field, tryModel retries without it.
+  if (/^gemini-[3-9]/i.test(model) || /^gemma-[4-9]/i.test(model)) return { thinkingLevel: 'minimal' };
   if (/^gemini-2\.5/i.test(model)) return { thinkingBudget: 0 };
   return null;
 }
@@ -372,7 +401,8 @@ async function generate({ config, customer, history, opening, secondsLeft, langu
   const attempts = [];
   let last = null;
 
-  for (const model of models || config.models) {
+  const list = models || config.models;
+  for (const [index, model] of list.entries()) {
     if (!ignoreBlocks && isBlocked(model)) {
       attempts.push({ model, skipped: state.modelBlocks.get(model).reason });
       continue;
@@ -383,9 +413,13 @@ async function generate({ config, customer, history, opening, secondsLeft, langu
       break;
     }
     const startedAt = Date.now();
+    // The last model is the final chance before the scripted chat, so it gets
+    // whatever budget is left rather than the short per-model turn. That also
+    // gives a one-model admin test the whole budget, so it shows real speed.
+    const isLast = index === list.length - 1;
     const result = await tryModel({
       key, model, system, contents, temperature: config.temperature,
-      timeoutMs: Math.min(PER_MODEL_TIMEOUT_MS, remaining),
+      timeoutMs: isLast ? remaining : Math.min(PER_MODEL_TIMEOUT_MS, remaining),
     });
     const ms = Date.now() - startedAt;
 
@@ -468,7 +502,8 @@ module.exports = function registerFreeChatAiRoutes(app) {
       return fallback(result.reason);
     }
     stats().aiReplies++;
-    return res.status(200).json({ success: true, reply: result.reply });
+    // typingMs is a timing hint the app waits on; it is never shown to the customer.
+    return res.status(200).json({ success: true, reply: result.reply, typingMs: typingMsFor(result.reply, config.typing) });
   }));
 
   // Admin: current config + live status.
@@ -484,7 +519,7 @@ module.exports = function registerFreeChatAiRoutes(app) {
     return res.json({
       success: true,
       config,
-      defaults: { instructions: DEFAULT_INSTRUCTIONS, models: DEFAULTS.models },
+      defaults: { instructions: DEFAULT_INSTRUCTIONS, models: DEFAULTS.models, typing: DEFAULTS.typing },
       status: {
         apiKeyConfigured: !!process.env.GEMINI_API_KEY,
         today: { day: stats() && state.statsDay, ...state.stats },
@@ -518,6 +553,7 @@ module.exports = function registerFreeChatAiRoutes(app) {
       models,
       sendProfile: b.sendProfile === true,
       temperature: Math.min(1.5, Math.max(0, Number(b.temperature) || DEFAULTS.temperature)),
+      typing: cleanTyping(b.typing),
     };
     const { error } = await db
       .from('app_settings')
@@ -556,7 +592,13 @@ module.exports = function registerFreeChatAiRoutes(app) {
       models: single ? [single] : config.models,
       ignoreBlocks: !!single,
     });
-    return res.json({ success: true, ...result, ms: Date.now() - startedAt });
+    const typing = cleanTyping(b.typing || saved.typing);
+    return res.json({
+      success: true,
+      ...result,
+      ms: Date.now() - startedAt,
+      ...(result.reply ? { typingMs: typingMsFor(result.reply, typing) } : {}),
+    });
   }));
 
   // Admin: which models this key can actually call, straight from Google, so

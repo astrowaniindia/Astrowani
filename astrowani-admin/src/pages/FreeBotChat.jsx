@@ -189,11 +189,16 @@ function AiReplies() {
       const { data } = await client.post('/api/admin/free-bot-chat/ai/test', {
         instructions: form.instructions,
         models,
+        typing: form.typing,
         ...(testModel ? { model: testModel } : {}),
         sendProfile: form.sendProfile,
         history,
         opening,
       });
+      // Wait like the app does, so "Try it" feels like the real chat.
+      if (data.reply && data.typingMs > data.ms) {
+        await new Promise((r) => setTimeout(r, data.typingMs - data.ms));
+      }
       const next = opening ? [] : history;
       const tried = (data.attempts || [])
         .map((a) => (a.ok ? `${a.model} ✓ ${(a.ms / 1000).toFixed(1)}s`
@@ -201,7 +206,7 @@ function AiReplies() {
             : `${a.model} ✗ ${a.reason}${a.ms != null ? ` ${(a.ms / 1000).toFixed(1)}s` : ''}`))
         .join(' → ');
       setTestLog(data.reply
-        ? [...next, { sender: 'bot', message: data.reply, ms: data.ms, meta: tried }]
+        ? [...next, { sender: 'bot', message: data.reply, ms: data.ms, meta: `shown after ${(Math.max(data.ms, data.typingMs || 0) / 1000).toFixed(1)}s · ${tried}` }]
         : [...next, { sender: 'error', message: `No AI reply (${data.reason}${data.detail ? `: ${data.detail}` : ''}). A customer would get the scripted chat here.`, ms: data.ms, meta: tried }]);
     } catch (e) {
       setTestLog((l) => [...l, { sender: 'error', message: e.response?.data?.message || e.message }]);
@@ -316,6 +321,39 @@ function AiReplies() {
         )}
       </div>
 
+      <div className="field">
+        <label>Typing feel</label>
+        <p className="muted" style={{ marginTop: 0 }}>
+          So replies don't appear instantly, the chat shows "typing…" first — longer for longer replies. The time the AI
+          itself took counts toward it.
+        </p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {[
+            ['minSeconds', 'Shortest wait (seconds)', 0, 20, 0.5],
+            ['maxSeconds', 'Longest wait (seconds)', 0, 30, 0.5],
+            ['charsPerSecond', 'Typing speed (characters per second)', 1, 100, 1],
+          ].map(([k, label, min, max, step]) => (
+            <div key={k} style={{ flex: '1 1 180px' }}>
+              <label style={{ fontWeight: 400 }}>{label}</label>
+              <input
+                type="number"
+                min={min}
+                max={max}
+                step={step}
+                value={form.typing?.[k] ?? ''}
+                onChange={(e) => set('typing', { ...form.typing, [k]: e.target.value === '' ? '' : Number(e.target.value) })}
+              />
+            </div>
+          ))}
+        </div>
+        {form.typing && (
+          <p className="muted" style={{ marginTop: 6 }}>
+            A 40-character reply waits {Math.min(form.typing.maxSeconds, Math.max(form.typing.minSeconds, 40 / (form.typing.charsPerSecond || 1))).toFixed(1)}s;
+            a 150-character reply waits {Math.min(form.typing.maxSeconds, Math.max(form.typing.minSeconds, 150 / (form.typing.charsPerSecond || 1))).toFixed(1)}s.
+          </p>
+        )}
+      </div>
+
       <div className="actions">
         <button className="btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : dirty ? 'Save AI settings' : 'Saved'}</button>
       </div>
@@ -346,7 +384,7 @@ function AiReplies() {
             }}>{m.message}</span>
             {m.ms != null && (
               <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                {(m.ms / 1000).toFixed(1)}s total{m.meta ? ` · ${m.meta}` : ''}
+                AI took {(m.ms / 1000).toFixed(1)}s{m.meta ? ` · ${m.meta}` : ''}
               </div>
             )}
           </div>
