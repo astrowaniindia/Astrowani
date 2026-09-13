@@ -795,6 +795,11 @@ require('./src/appleNotificationRoutes')(app);
 require('./src/freeCallRoutes')(app);
 require('./src/whatsappRoutes')(app);
 
+// Gemini replies for the free 5-minute welcome chat, falling back to the app's
+// scripted engine on any failure or when the daily limit is hit. Needs
+// adminRoutes' requireAdmin for its settings/test endpoints. See src/freeChatAi.js.
+require('./src/freeChatAi')(app);
+
 // In-app support: the AI agent, escalation to a real person with an SLA, and the
 // admin console that replies into the same thread. Replaces the fire-and-forget
 // POST /api/support/create-support form, which is kept below for older installed
