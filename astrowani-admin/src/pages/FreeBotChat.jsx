@@ -107,6 +107,24 @@ function AiReplies() {
   const [testInput, setTestInput] = useState('');
   const [testLog, setTestLog] = useState([]);
   const [testBusy, setTestBusy] = useState(false);
+  // '' = walk the whole list exactly like a customer; otherwise one model only.
+  const [testModel, setTestModel] = useState('');
+
+  const [available, setAvailable] = useState(null);
+  const [availableBusy, setAvailableBusy] = useState(false);
+  const [newModel, setNewModel] = useState('');
+
+  const checkAvailable = async () => {
+    setAvailableBusy(true);
+    try {
+      const { data } = await client.get('/api/admin/free-bot-chat/ai/models');
+      setAvailable(data.models);
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setAvailableBusy(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -127,6 +145,25 @@ function AiReplies() {
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const dirty = JSON.stringify(form) !== savedJson;
+
+  const models = form.models || [];
+  const setModels = (next) => set('models', next);
+  const moveModel = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= models.length) return;
+    const next = [...models];
+    [next[i], next[j]] = [next[j], next[i]];
+    setModels(next);
+  };
+  const addModel = (name) => {
+    const n = String(name || '').trim();
+    if (!n) return;
+    if (!/^[a-z0-9.\-]+$/i.test(n)) { alert('Model names only contain letters, numbers, dots and dashes.'); return; }
+    if (models.includes(n)) return;
+    if (models.length >= 8) { alert('At most 8 models.'); return; }
+    setModels([...models, n]);
+    setNewModel('');
+  };
 
   const save = async () => {
     if (form.enabled && !status?.apiKeyConfigured && !window.confirm('No GEMINI_API_KEY is set on the server, so customers will keep getting the scripted chat. Save anyway?')) return;
@@ -151,15 +188,21 @@ function AiReplies() {
     try {
       const { data } = await client.post('/api/admin/free-bot-chat/ai/test', {
         instructions: form.instructions,
-        model: form.model,
+        models,
+        ...(testModel ? { model: testModel } : {}),
         sendProfile: form.sendProfile,
         history,
         opening,
       });
       const next = opening ? [] : history;
+      const tried = (data.attempts || [])
+        .map((a) => (a.ok ? `${a.model} ✓ ${(a.ms / 1000).toFixed(1)}s`
+          : a.skipped ? `${a.model} skipped (${a.skipped})`
+            : `${a.model} ✗ ${a.reason}${a.ms != null ? ` ${(a.ms / 1000).toFixed(1)}s` : ''}`))
+        .join(' → ');
       setTestLog(data.reply
-        ? [...next, { sender: 'bot', message: data.reply, ms: data.ms }]
-        : [...next, { sender: 'error', message: `No AI reply (${data.reason}${data.detail ? `: ${data.detail}` : ''}). A customer would get the scripted chat here.`, ms: data.ms }]);
+        ? [...next, { sender: 'bot', message: data.reply, ms: data.ms, meta: tried }]
+        : [...next, { sender: 'error', message: `No AI reply (${data.reason}${data.detail ? `: ${data.detail}` : ''}). A customer would get the scripted chat here.`, ms: data.ms, meta: tried }]);
     } catch (e) {
       setTestLog((l) => [...l, { sender: 'error', message: e.response?.data?.message || e.message }]);
     } finally {
@@ -174,7 +217,8 @@ function AiReplies() {
     <div className="card" style={{ maxWidth: 720, marginTop: 20 }}>
       <h2 style={{ marginTop: 0 }}>AI replies (Gemini)</h2>
       <p className="muted" style={{ marginTop: -6 }}>
-        Replies slower than 13 seconds count as failed, and the customer gets the scripted chat. Aim for 2–5 seconds in "Try it".
+        Models are tried in order. Each gets about 6 seconds; if it is slow, busy, retired or out of its free limit,
+        the next one answers instead. Only when every model fails does the customer get the scripted chat.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
@@ -183,16 +227,11 @@ function AiReplies() {
         </span>
         <span className="badge blue"><span className="badge-dot" />Today: {today.aiReplies || 0} AI replies</span>
         <span className="badge gray"><span className="badge-dot" />{fallbackTotal} scripted fallbacks</span>
-        {status?.quotaBlockedUntil && (
-          <span className="badge amber">
-            <span className="badge-dot" />Gemini {status.quotaBlockReason} reached — scripted chat until {new Date(status.quotaBlockedUntil).toLocaleString('en-IN')}
-          </span>
-        )}
       </div>
       {fallbackTotal > 0 && (
         <p className="muted" style={{ marginTop: -6 }}>
           Fallback reasons today: {Object.entries(today.fallbacks).map(([k, v]) => `${k} ${v}`).join(', ')}
-          {status?.lastError ? ` · last error: ${status.lastError.detail}` : ''}
+          {status?.lastError?.detail ? ` · last error: ${status.lastError.detail}` : ''}
         </p>
       )}
 
@@ -230,8 +269,51 @@ function AiReplies() {
       )}
 
       <div className="field">
-        <label>Gemini model</label>
-        <input type="text" value={form.model} onChange={(e) => set('model', e.target.value)} placeholder={defaults?.model} />
+        <label>Models, in the order they are tried</label>
+        <div style={{ border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden' }}>
+          {models.map((m, i) => {
+            const usage = today.byModel?.[m];
+            const blocked = (status?.modelBlocks || []).find((b) => b.model === m);
+            const failures = usage ? Object.entries(usage.failures).map(([k, v]) => `${k} ${v}`).join(', ') : '';
+            return (
+              <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderTop: i ? '1px solid #eee' : 'none' }}>
+                <strong style={{ width: 20 }}>{i + 1}.</strong>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: 'monospace' }}>{m}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    Today: {usage?.replies || 0} replies{failures ? ` · failed: ${failures}` : ''}
+                    {blocked ? ` · skipped (${blocked.reason}) until ${new Date(blocked.until).toLocaleTimeString('en-IN')}` : ''}
+                  </div>
+                </div>
+                <button type="button" className="btn ghost sm" onClick={() => moveModel(i, -1)} disabled={i === 0} title="Move up">↑</button>
+                <button type="button" className="btn ghost sm" onClick={() => moveModel(i, 1)} disabled={i === models.length - 1} title="Move down">↓</button>
+                <button type="button" className="btn ghost sm" onClick={() => setModels(models.filter((x) => x !== m))} disabled={models.length === 1} title="Remove">✕</button>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input type="text" style={{ flex: 1 }} value={newModel} onChange={(e) => setNewModel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addModel(newModel); }} placeholder="Add a model name, e.g. gemma-4-31b-it" />
+          <button type="button" className="btn secondary" onClick={() => addModel(newModel)} disabled={!newModel.trim()}>Add</button>
+          <button type="button" className="btn ghost" onClick={checkAvailable} disabled={availableBusy}>{availableBusy ? 'Checking…' : 'Check available models'}</button>
+          {defaults?.models && JSON.stringify(models) !== JSON.stringify(defaults.models) && (
+            <button type="button" className="btn ghost" onClick={() => window.confirm('Replace the list with the default order?') && setModels(defaults.models)}>Default list</button>
+          )}
+        </div>
+        {available && (
+          <div style={{ marginTop: 10, border: '1px dashed #ddd', borderRadius: 10, padding: 10 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Chat models this API key can call ({available.length}). Each has its own free limit — see aistudio.google.com/rate-limit.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {available.map((m) => (
+                <button key={m.name} type="button" className="btn ghost sm" disabled={models.includes(m.name)} onClick={() => addModel(m.name)} title={m.displayName}>
+                  {models.includes(m.name) ? '✓ ' : '+ '}{m.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="actions">
@@ -242,9 +324,16 @@ function AiReplies() {
 
       <h3 style={{ marginTop: 0 }}>Try it</h3>
       <p className="muted" style={{ marginTop: -6 }}>
-        Uses the instructions and model above even before you save, with a sample customer (Rahul, born
-        14 Aug 1995, 6:30 am, Jaipur). Test messages count against the same Gemini daily limit.
+        Uses the instructions and models above even before you save, with a sample customer (Rahul, born
+        14 Aug 1995, 6:30 am, Jaipur). Test messages count against the same Gemini daily limits.
       </p>
+      <div className="field" style={{ maxWidth: 420 }}>
+        <label>Test with</label>
+        <select value={testModel} onChange={(e) => setTestModel(e.target.value)}>
+          <option value="">The whole list, in order (what customers get)</option>
+          {models.map((m) => <option key={m} value={m}>Only {m}</option>)}
+        </select>
+      </div>
       <div style={{ border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, minHeight: 80, maxHeight: 360, overflowY: 'auto', marginBottom: 10, background: '#fafafa' }}>
         {testLog.length === 0 && <p className="muted" style={{ margin: 0 }}>Start with the AI's greeting, or type a message as the customer.</p>}
         {testLog.map((m, i) => (
@@ -255,7 +344,11 @@ function AiReplies() {
               color: m.sender === 'me' ? '#fff' : m.sender === 'error' ? '#8a1c12' : '#222',
               border: m.sender === 'me' ? 'none' : '1px solid #e5e5e5',
             }}>{m.message}</span>
-            {m.ms != null && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{(m.ms / 1000).toFixed(1)}s</div>}
+            {m.ms != null && (
+              <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                {(m.ms / 1000).toFixed(1)}s total{m.meta ? ` · ${m.meta}` : ''}
+              </div>
+            )}
           </div>
         ))}
         {testBusy && <p className="muted" style={{ margin: '6px 0' }}>Typing…</p>}

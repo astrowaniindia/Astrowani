@@ -42,8 +42,8 @@ import { LanguageContext } from '../../context/LanguageContext';
 import {useModalPresence} from '../../utils/modalPresentation';
 
 const CHAT_DURATION_SECONDS = 300;
-// Longer than the backend's own 13s Gemini timeout, so normally the backend
-// answers "fall back" first; this only catches the backend itself being slow.
+// Longer than the backend's own 15s budget across its model list, so normally the
+// backend answers "fall back" first; this only catches the backend being slow.
 const AI_REQUEST_TIMEOUT_MS = 18000;
 
 /**
