@@ -172,7 +172,7 @@ function CustomDrawerContent(props, navigation) {
     // Hidden on iOS for now — it only leads to "coming soon" demos, which App Store
     // review rejects as incomplete content (Guideline 2.1). Android keeps it.
     ...(Platform.OS === 'ios' ? [] : [
-      { trackKey: 'whats_coming', iconName: 'auto-awesome', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
+      { trackKey: 'whats_coming', iconName: 'rocket-launch', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
     ]),
   ];
 

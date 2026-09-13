@@ -219,6 +219,11 @@ const BlogItem = ({blog, navigation, language}) => {
 const MARQUEE_ITEM_WIDTH = scale(178) + scale(15); // AstrologerCard width + marginRight
 const MARQUEE_SPEED_PX_PER_SEC = 26; // roughly the old 1px-per-16ms drift
 
+// Scroll offsets (px) for the floating Chat/Talk bar: fully hidden until
+// HIDDEN_UNTIL, slides in between the two, fully shown (and tappable) past SHOW_AT.
+const CONSULT_BAR_HIDDEN_UNTIL = 30;
+const CONSULT_BAR_SHOW_AT = 110;
+
 const Home = ({navigation}) => {
   const { t, language } = React.useContext(LanguageContext);
   const [modalVisible, setModalVisible] = useState(false);
@@ -283,6 +288,48 @@ const Home = ({navigation}) => {
   // How the offer was opened, threaded into every free-call event so the funnel can
   // separate the auto-popup from a customer who came back via the gift bubble.
   const [freeCallSource, setFreeCallSource] = useState('auto');
+
+  // The floating "Chat with Astrologer" / "Talk To Astrologer" bar follows the
+  // scroll position: hidden at the top of Home, slides up from the bottom as the
+  // customer scrolls down, and slides back out of sight when they return to the top.
+  //
+  // WHY IT IS DRIVEN NATIVELY. The first version toggled a spring from JS in
+  // onScroll. Home's JS thread is busy (marquees, banners, many cards), so scroll
+  // events were coalesced and dropped — measured on-device: one event delivered for
+  // two full swipes, and the bar appeared ~2s late or not at all. Here the position
+  // is mapped straight from the native scroll offset (Animated.event with
+  // useNativeDriver), so the slide cannot lag. JS only decides whether the bar is
+  // TAPPABLE, and also re-checks on drag/momentum end, which are always delivered.
+  const homeScrollY = useRef(new Animated.Value(0)).current;
+  const consultBarShownRef = useRef(false);
+  const [consultBarShown, setConsultBarShown] = useState(false);
+  const syncConsultBarTappable = useCallback((e) => {
+    const shouldShow = (e?.nativeEvent?.contentOffset?.y || 0) > CONSULT_BAR_SHOW_AT;
+    if (shouldShow === consultBarShownRef.current) return;
+    consultBarShownRef.current = shouldShow;
+    setConsultBarShown(shouldShow);
+  }, []);
+  const handleHomeScroll = React.useMemo(
+    () => Animated.event(
+      [{ nativeEvent: { contentOffset: { y: homeScrollY } } }],
+      { useNativeDriver: true, listener: syncConsultBarTappable },
+    ),
+    [homeScrollY, syncConsultBarTappable],
+  );
+  const consultBarStyle = {
+    opacity: homeScrollY.interpolate({
+      inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    }),
+    transform: [{
+      translateY: homeScrollY.interpolate({
+        inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
+        outputRange: [140, 0],
+        extrapolate: 'clamp',
+      }),
+    }],
+  };
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -855,10 +902,29 @@ const Home = ({navigation}) => {
     }
   };
 
+  // Home greeting ("Jai Shree Ram" etc.), managed in the admin's Home Greeting page.
+  // Each time Home loads it shows the NEXT active line after the one shown last
+  // time, so the greeting changes on every app open. Keyed on the last line's id
+  // rather than a position, so adding or removing lines in the admin never skips
+  // or repeats oddly. Falls back to /latest if the list endpoint is unavailable.
   const getThoutsOfTheDay = async () => {
+    try {
+      const { data } = await Instance(`/api/thoughts/active`);
+      const lines = Array.isArray(data?.thoughts) ? data.thoughts : [];
+      if (lines.length) {
+        const lastId = await AsyncStorage.getItem('homeGreetingLastId');
+        const lastIndex = lines.findIndex((l) => l.id === lastId);
+        const next = lines[(lastIndex + 1) % lines.length];
+        setThought({ thoughtText: next.text, hindi: { thoughtText: next.textHi } });
+        AsyncStorage.setItem('homeGreetingLastId', String(next.id)).catch(() => {});
+        setLoading(false);
+        return;
+      }
+    } catch (_) {
+      // Fall through to the single latest line.
+    }
     return await Instance(`/api/thoughts/latest`)
       .then(response => {
-        // console.log("response: ", response?.data);
         setThought(response?.data);
         setLoading(false);
       })
@@ -1281,7 +1347,7 @@ const Home = ({navigation}) => {
 
   return (
     <View style={{flex: 1, backgroundColor: COLORS.AstroMaroon}}>
-      <ScrollView
+      <Animated.ScrollView
         style={{flex: 1}}
         // flexGrow: 1 is load-bearing, not cosmetic. The cream section below has
         // flex: 1, and inside a content container of auto height that resolves to
@@ -1293,6 +1359,10 @@ const Home = ({navigation}) => {
         // iOS. Giving the content container flexGrow: 1 gives it a definite height
         // to distribute, so flex: 1 means what it looks like it means.
         contentContainerStyle={{flexGrow: 1}}
+        onScroll={handleHomeScroll}
+        onScrollEndDrag={syncConsultBarTappable}
+        onMomentumScrollEnd={syncConsultBarTappable}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
         }
@@ -1698,8 +1768,15 @@ const Home = ({navigation}) => {
           </Modal>
         )}
         </View>
-      </ScrollView>
-      <View style={styles.fixedBtnView}>
+      </Animated.ScrollView>
+      {/* Slides in and out with the scroll position (see consultBarStyle).
+          pointerEvents keeps the hidden bar from catching taps. */}
+      <Animated.View
+        pointerEvents={consultBarShown ? 'box-none' : 'none'}
+        style={[
+          styles.fixedBtnView,
+          consultBarStyle,
+        ]}>
         <TouchableOpacity
           onPress={() => {
             captureEvent('home_screen_click', {section: 'fixed_bar_chat'});
@@ -1719,7 +1796,7 @@ const Home = ({navigation}) => {
           <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
           <Text style={styles.fixedBtnTxt}>{t('home.talkToAstrologer')}</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={() => cancelCall()}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
