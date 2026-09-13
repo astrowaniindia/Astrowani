@@ -105,7 +105,7 @@ const ALL_GROUPS = [
     items: [
       { to: '/banners', label: 'App Home Banners' },
       { to: '/blogs', label: 'Astrology Articles' },
-      { to: '/thoughts', label: 'Daily Thoughts' },
+      { to: '/thoughts', label: 'Home Greeting' },
       { to: '/categories', label: 'Specialty Categories' },
       { to: '/notifications', label: 'Push Notifications' },
       { to: '/app-prompts', label: 'In-App Prompts' },

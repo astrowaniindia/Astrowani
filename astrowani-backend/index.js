@@ -2422,6 +2422,32 @@ app.get('/api/thoughts/latest', async (req, res) => {
   }
 });
 
+// Home greeting lines — every ACTIVE row of `thoughts`, oldest first, so the
+// customer app can show the next one each time it opens (admin: Home Greeting).
+// /api/thoughts/latest above stays for installed builds that predate rotation.
+app.get('/api/thoughts/active', async (req, res) => {
+  try {
+    const payload = await contentCache.get('thoughts:active', async () => {
+      const { data, error } = await supabase
+        .from('thoughts')
+        .select('id, text, text_hi')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (error) throw error;
+      return {
+        thoughts: (data || [])
+          .filter((r) => (r.text || '').trim())
+          .map((r) => ({ id: r.id, text: r.text, textHi: r.text_hi || r.text })),
+      };
+    });
+    return res.status(200).json(payload);
+  } catch (err) {
+    noteReadFailure('thoughts-active', err);
+    return res.status(200).json({ thoughts: [] });
+  }
+});
+
 // Categories — admin-authored (table `categories`), shape preserved.
 app.get('/api/categories', async (req, res) => {
   try {
