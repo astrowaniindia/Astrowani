@@ -1,6 +1,6 @@
 import React, {useState, useEffect, useRef, act, useTransition, useCallback} from 'react';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import {useFocusEffect} from '@react-navigation/native';
+import {useFocusEffect, useIsFocused} from '@react-navigation/native';
 import {
   ImageBackground,
   ScrollView,
@@ -51,13 +51,18 @@ import { LanguageContext } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
 import { readCache } from '../../utils/cacheFetch';
 import { getHomeMemory, saveHomeData, pickNextGreeting, HOME_KEYS } from '../../utils/homePreload';
+import MascotTip from '../../components/MascotTip';
+import {
+  canShowTip, tipText, trackTipShown, trackTipAction, dismissTip, turnOffTips, markTipSeen, TIP_IDS,
+  syncMascotTipsCustomer,
+} from '../../utils/mascotTips';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import { showAppUpdatePrompt } from '../../components/AppUpdatePrompt';
 import { showRateAppPrompt } from '../../components/RateAppPrompt';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
-import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
+import { isProfileComplete as checkProfileComplete, ensureProfileComplete, getStoredUser } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen, hasSeenFreeCallOffer, markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
@@ -333,6 +338,12 @@ const Home = ({navigation}) => {
   // How the offer was opened, threaded into every free-call event so the funnel can
   // separate the auto-popup from a customer who came back via the gift bubble.
   const [freeCallSource, setFreeCallSource] = useState('auto');
+  // True once the free call popup is out of the way for this visit: it was never
+  // auto-opened, or the customer closed it or booked. The Home mascot tip waits for it.
+  const [freeCallHandled, setFreeCallHandled] = useState(false);
+  // True when the sheet is reopened after the customer filled in their birth details,
+  // so it opens on the time slots instead of the intro they already went past.
+  const [freeCallStartAtSlots, setFreeCallStartAtSlots] = useState(false);
 
   // The floating "Chat with Astrologer" / "Talk To Astrologer" bar follows the
   // scroll position: hidden at the top of Home, slides up from the bottom as the
@@ -345,6 +356,12 @@ const Home = ({navigation}) => {
   // is mapped straight from the native scroll offset (Animated.event with
   // useNativeDriver), so the slide cannot lag. JS only decides whether the bar is
   // TAPPABLE, and also re-checks on drag/momentum end, which are always delivered.
+  // Guide mascot tip on Home (utils/mascotTips.js): which variant is showing, or null.
+  // homeTipDecidedRef stops it being re-decided after it was shown or skipped once.
+  const [homeTip, setHomeTip] = useState(null);
+  const homeTipDecidedRef = useRef(false);
+  const homeTipVisibleRef = useRef(false);
+
   const homeScrollY = useRef(new Animated.Value(0)).current;
   const consultBarRef = useRef(null);
   const consultBarShownRef = useRef(false);
@@ -354,6 +371,11 @@ const Home = ({navigation}) => {
     consultBarShownRef.current = shouldShow;
     // Only the bar re-renders — see ConsultBar.
     consultBarRef.current?.setTappable(shouldShow);
+    // The Home mascot tip sits where the bar slides in, so scrolling down closes it.
+    if (shouldShow && homeTipVisibleRef.current) {
+      homeTipVisibleRef.current = false;
+      setHomeTip(null);
+    }
   }, []);
   const openChatFromBar = useCallback(() => {
     captureEvent('home_screen_click', {section: 'fixed_bar_chat'});
@@ -406,6 +428,41 @@ const Home = ({navigation}) => {
   // SearchScreen.js) all use this hook; Home's card button now matches them.
   const { requesting, requestAstro, sendChatRequest, cancelRequest, submitting: chatSubmitting } = useChatRequest(navigation);
   const { purchase: purchaseFreeService } = useFreeServicePurchase();
+
+  // ── Guide mascot: first visit to Home ────────────────────────────────────────
+  // One tip, once per customer, pointing at the free chat. Shown only while the
+  // customer has NOT used their free chat yet, and only AFTER the free call popup
+  // is done with (closed or booked), so the two offers never compete. Never while
+  // one of Home's own popups is open, and never while Home is not on screen.
+  const homeFocused = useIsFocused();
+  useEffect(() => {
+    if (homeTipDecidedRef.current || !user || !freeCallHandled) return undefined;
+    if (!homeFocused || freeCallVisible || freeChatOfferVisible || isWaiting || requesting) return undefined;
+    const timer = setTimeout(async () => {
+      if (homeTipDecidedRef.current) return;
+      homeTipDecidedRef.current = true;
+      const id = TIP_IDS.homeFreeChat;
+      if (!freeChatEligible || !freeChatPersona) return;
+      // Make sure THIS customer's "already seen" flags are the ones loaded.
+      await syncMascotTipsCustomer();
+      if (!canShowTip(id)) return;
+      markTipSeen(id);
+      trackTipShown(id);
+      homeTipVisibleRef.current = true;
+      setHomeTip(id);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [user, freeCallHandled, homeFocused, freeCallVisible, freeChatOfferVisible, isWaiting, requesting, freeChatEligible, freeChatPersona]);
+
+  const closeHomeTip = () => {
+    homeTipVisibleRef.current = false;
+    setHomeTip(null);
+  };
+  const homeTipActions = () => [{ label: t('mascot.action.startFreeChat'), onPress: () => {
+    trackTipAction(homeTip, 'start_free_chat');
+    closeHomeTip();
+    openFreeChatFromBanner();
+  } }];
 
   React.useEffect(() => {
     getAstroServices()
@@ -924,16 +981,22 @@ const Home = ({navigation}) => {
       try {
         const fc = await getFreeCallOffer();
         setFreeCall(fc);
+        let autoOpened = false;
         if (fc.enabled && fc.eligible) {
           const seen = await hasSeenFreeCallOffer(userData.id);
           if (!seen) {
+            autoOpened = true;
             setFreeCallSource('auto');
             setFreeCallVisible(true);
           }
         }
+        // The Home mascot tip waits for this popup: nothing to wait for if it was
+        // not opened, otherwise it becomes true when the customer closes or books.
+        if (!autoOpened) setFreeCallHandled(true);
       } catch (_) {
         // getFreeCallOffer already resolves to "off" on failure; this is belt
         // and braces so a surprise here can never skip setLoading(false) below.
+        setFreeCallHandled(true);
       }
       }
       setLoading(false);
@@ -1811,6 +1874,32 @@ const Home = ({navigation}) => {
         )}
         </View>
       </Animated.ScrollView>
+      {/* Guide mascot's first-visit tip. Floats above the tab bar; box-none keeps the
+          empty space around it from blocking the page. */}
+      {homeTip && (
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.homeTipWrap,
+            // Sit above the free call gift bubble when it is showing, not on top of it.
+            freeCall?.enabled && freeCall?.eligible && { bottom: verticalScale(180) },
+          ]}>
+          <MascotTip
+            text={tipText(homeTip)}
+            actions={homeTipActions()}
+            onClose={() => {
+              dismissTip(homeTip);
+              closeHomeTip();
+            }}
+            onTurnOff={() => {
+              turnOffTips(homeTip);
+              closeHomeTip();
+            }}
+            turnOffLabel={t('mascot.turnOff')}
+          />
+        </View>
+      )}
+
       {/* Slides in and out with the scroll position (see ConsultBar). */}
       <ConsultBar
         ref={consultBarRef}
@@ -1894,16 +1983,28 @@ const Home = ({navigation}) => {
         phone={user?.phone || ''}
         t={t}
         source={freeCallSource}
+        startAtSlots={freeCallStartAtSlots}
         // Birth details before a slot is picked. The sheet is closed first so it
-        // does not sit over the Profile screen. The offer is NOT marked seen, so
-        // it is still offered (and the gift bubble still shows) when they return.
+        // does not sit over the birth details screen, and reopened straight on the
+        // time slots once they are saved — no second "Book free call" tap. The offer
+        // is NOT marked seen, so if they back out the gift bubble still offers it.
         onBeforeBook={async () => {
-          const ok = await ensureProfileComplete(navigation, 'free_call');
-          if (!ok) setFreeCallVisible(false);
-          return ok;
+          if (checkProfileComplete(await getStoredUser())) return true;
+          setFreeCallVisible(false);
+          ensureProfileComplete(navigation, 'free_call').then((ok) => {
+            if (ok) {
+              setFreeCallStartAtSlots(true);
+              setFreeCallVisible(true);
+            } else {
+              setFreeCallHandled(true);
+            }
+          });
+          return false;
         }}
         onClose={() => {
           setFreeCallVisible(false);
+          setFreeCallStartAtSlots(false);
+          setFreeCallHandled(true);
           // Suppresses only the automatic popup. The gift bubble below keeps
           // the offer reachable until they actually book.
           if (user?.id) markFreeCallOfferSeen(user.id);
@@ -1912,6 +2013,8 @@ const Home = ({navigation}) => {
           // Locally mark the offer as taken so the bubble disappears at once,
           // without waiting for a refetch.
           setFreeCall((prev) => (prev ? { ...prev, eligible: false, booking } : prev));
+          setFreeCallStartAtSlots(false);
+          setFreeCallHandled(true);
           if (user?.id) markFreeCallOfferSeen(user.id);
         }}
       />
@@ -1921,6 +2024,7 @@ const Home = ({navigation}) => {
         label={t('freeCall.giftHint')}
         onPress={() => {
           captureEvent('free_call_gift_bubble_tapped');
+          setFreeCallStartAtSlots(false);
           setFreeCallSource('gift_bubble');
           setFreeCallVisible(true);
         }}
@@ -2554,6 +2658,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'Lato-Bold',
     marginTop: verticalScale(8),
+  },
+  homeTipWrap: {
+    position: 'absolute',
+    left: scale(12),
+    right: scale(12),
+    bottom: verticalScale(95),
+    zIndex: 20,
+    elevation: 20,
   },
   // Roughly one "India's Best Astrologers" card tall (photo overhang included).
   bestRowPlaceholder: {

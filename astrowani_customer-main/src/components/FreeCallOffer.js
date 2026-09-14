@@ -92,7 +92,7 @@ const AstrologerCluster = ({ list, t }) => {
   );
 };
 
-const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook, t, source = 'auto' }) => {
+const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook, t, source = 'auto', startAtSlots = false }) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
   const [dates, setDates] = useState([]);
@@ -110,11 +110,19 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
   // doesn't come back to a stale selection.
   useEffect(() => {
     if (visible) {
-      setStep('intro');
       setPicked(null);
       setError('');
       setConfirmed(null);
-      if (offer) captureEvent('free_call_offer_shown', { source });
+      if (startAtSlots) {
+        // Reopened right after the customer filled in their birth details: they
+        // already chose to book, so go straight to the times.
+        captureEvent('free_call_slots_opened', { source, after_birth_details: true });
+        setStep('slots');
+        loadSlots(null);
+      } else {
+        setStep('intro');
+        if (offer) captureEvent('free_call_offer_shown', { source });
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);

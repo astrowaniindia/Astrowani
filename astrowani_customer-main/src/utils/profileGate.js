@@ -44,8 +44,24 @@ const missingProfileFields = (u) => {
   return out;
 };
 
-// Gate an action. Returns true if allowed; otherwise opens the guided birth-details
-// flow and returns false.
+// The one birth-details flow currently open, waiting for its answer.
+let pendingGate = null;
+
+// Called by CompleteBirthDetails when it closes: true after the details were saved,
+// false if the customer backed out. Safe to call more than once.
+export const finishProfileGate = (completed) => {
+  const gate = pendingGate;
+  if (!gate) return;
+  pendingGate = null;
+  // After a save, let the screen finish sliding away before the original action
+  // carries on, so a popup it opens (e.g. "request sent") is not raised mid-transition.
+  if (completed) setTimeout(() => gate.resolve(true), 400);
+  else gate.resolve(false);
+};
+
+// Gate an action. Resolves true if allowed. Otherwise opens the guided birth-details
+// flow and WAITS for it: resolves true once the customer has saved their details
+// (so the action they tapped simply continues — no second tap), false if they left.
 //   if (!(await ensureProfileComplete(navigation, 'chat'))) return;
 //
 // `intent` names the action that was blocked ('chat', 'audio_call', 'video_call',
@@ -59,8 +75,19 @@ export const ensureProfileComplete = async (navigation, intent = 'unknown') => {
     missing_fields: missingProfileFields(user),
     is_new_user: !user,
   });
-  try { navigation.navigate('CompleteBirthDetails', { intent }); } catch (_) {}
-  return false;
+  // A newer tap replaces an older, still-open gate; the older action does not run.
+  if (pendingGate) {
+    pendingGate.resolve(false);
+    pendingGate = null;
+  }
+  return new Promise((resolve) => {
+    pendingGate = { resolve };
+    try {
+      navigation.navigate('CompleteBirthDetails', { intent });
+    } catch (_) {
+      finishProfileGate(false);
+    }
+  });
 };
 
 export default ensureProfileComplete;

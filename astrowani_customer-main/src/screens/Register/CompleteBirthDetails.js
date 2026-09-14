@@ -31,12 +31,12 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import DateTimePicker from '../../components/ThemedDateTimePicker';
 import PlaceAutocomplete from '../../components/PlaceAutocomplete';
 import { showAlert } from '../../Component/CustomAlert';
-import { showStatusPopup } from '../../components/StatusPopup';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import { finishProfileGate } from '../../utils/profileGate';
 
 const TOTAL_STEPS = 2;
 // Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281).
@@ -75,6 +75,13 @@ export default function CompleteBirthDetails({ navigation, route }) {
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [showTobPicker, setShowTobPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Set once the details are saved, so leaving the screen tells the gate to carry on
+  // with the action the customer tapped instead of cancelling it.
+  const savedRef = useRef(false);
+
+  // However the screen closes — saved, back button, swipe — the waiting action gets
+  // its answer exactly once.
+  useEffect(() => () => finishProfileGate(savedRef.current), []);
 
   const slide = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(1)).current;
@@ -176,12 +183,11 @@ export default function CompleteBirthDetails({ navigation, route }) {
       // The gate reads this cache, so the customer's next tap goes straight through.
       await AsyncStorage.setItem('userData', JSON.stringify(updated));
       captureEvent('birth_details_saved', { intent, has_time_of_birth: !!tob });
+      // No "saved, now tap again" popup: going back lets the action the customer
+      // originally tapped continue on its own (utils/profileGate.js).
+      savedRef.current = true;
+      finishProfileGate(true);
       navigation.goBack();
-      showStatusPopup({
-        variant: 'success',
-        title: t('birthGate.savedTitle'),
-        message: t('birthGate.savedMsg'),
-      });
     } catch (err) {
       captureEvent('birth_details_save_failed', { intent, reason: err?.response?.data?.code || 'other' });
       showAlert(t('birthGate.errorTitle'), t('birthGate.saveFailed'), 'error');

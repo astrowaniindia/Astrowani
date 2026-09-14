@@ -752,6 +752,17 @@ const translations = {
     'welcome.hint': 'Shuru karne ke liye Namaste boliye',
     'welcome.hi': 'Namaste',
     // Guided birth-details flow (CompleteBirthDetails) — Hinglish on purpose.
+    // Guide mascot tips (utils/mascotTips.js) — Hinglish on purpose. Admin text overrides.
+    'mascot.home_free_chat': 'Pehli baar aaye hain? Shuruaat 5 minute ki free chat se kariye, bilkul muft!',
+    'mascot.low_balance': 'Baat shuru karne ke liye wallet mein kam se kam ₹{{amount}} chahiye, abhi ₹{{balance}} hai. Bas ₹{{shortfall}} ka recharge kariye aur turant baat shuru!',
+    'mascot.waiting_1': 'Jyotishi ji ko aapki request bhej di hai. Bas kuch hi second...',
+    'mascot.waiting_2': 'Jyotishi ji jaldi hi jawab denge, thoda sa intezaar kariye.',
+    'mascot.waiting_astrologer': 'Lagta hai jyotishi ji abhi vyast hain. Chahein to doosre online jyotishi ji se turant baat kar sakte hain.',
+    'mascot.recharge_help': 'UPI, card ya net banking se paise turant wallet mein aa jayenge, aur puri tarah safe hain.',
+    'mascot.recharge_prefilled': 'Maine ₹{{amount}} bhar diya hai. Bas neeche slide karke pay kariye, paise turant wallet mein aa jayenge.',
+    'mascot.action.startFreeChat': 'Free chat shuru karein',
+    'mascot.action.seeOthers': 'Doosre jyotishi dekhein',
+    'mascot.turnOff': 'Tips band karein',
     'birthGate.title': 'Aapki jaankari',
     'birthGate.stepOf': 'Step {{n}} / {{total}}',
     'birthGate.step1Title': 'Aapke baare mein',
@@ -783,8 +794,6 @@ const translations = {
     'birthGate.needDob': 'Kripya apni janm tithi chuniye.',
     'birthGate.needPlace': 'Kripya apna janm sthaan chuniye.',
     'birthGate.saveFailed': 'Jaankari save nahi ho paayi. Kripya dobara koshish kariye.',
-    'birthGate.savedTitle': 'Shukriya!',
-    'birthGate.savedMsg': 'Aapki jaankari save ho gayi. Ab aap jyotishi ji se baat kar sakte hain.',
 
     // Email OTP screen
     'emailOtp.sentToEmail': 'OTP sent to your Email',
@@ -1961,6 +1970,16 @@ const translations = {
     'welcome.chipReports': 'कुंडली\nऔर रिपोर्ट',
     'welcome.hint': 'शुरू करने के लिए नमस्ते बोलिए',
     'welcome.hi': 'नमस्ते',
+    'mascot.home_free_chat': 'पहली बार आए हैं? शुरुआत 5 मिनट की फ्री चैट से कीजिए, बिल्कुल मुफ़्त!',
+    'mascot.low_balance': 'बात शुरू करने के लिए वॉलेट में कम से कम ₹{{amount}} चाहिए, अभी ₹{{balance}} है। बस ₹{{shortfall}} का रिचार्ज कीजिए और तुरंत बात शुरू!',
+    'mascot.waiting_1': 'ज्योतिषी जी को आपका अनुरोध भेज दिया है। बस कुछ ही सेकंड...',
+    'mascot.waiting_2': 'ज्योतिषी जी जल्दी ही जवाब देंगे, थोड़ा सा इंतज़ार कीजिए।',
+    'mascot.waiting_astrologer': 'लगता है ज्योतिषी जी अभी व्यस्त हैं। चाहें तो दूसरे ऑनलाइन ज्योतिषी जी से तुरंत बात कर सकते हैं।',
+    'mascot.recharge_help': 'UPI, कार्ड या नेट बैंकिंग से पैसे तुरंत वॉलेट में आ जाएंगे, और पूरी तरह सुरक्षित हैं।',
+    'mascot.recharge_prefilled': 'मैंने ₹{{amount}} भर दिया है। बस नीचे स्लाइड करके भुगतान कीजिए, पैसे तुरंत वॉलेट में आ जाएंगे।',
+    'mascot.action.startFreeChat': 'फ्री चैट शुरू करें',
+    'mascot.action.seeOthers': 'दूसरे ज्योतिषी देखें',
+    'mascot.turnOff': 'टिप्स बंद करें',
     'birthGate.title': 'आपकी जानकारी',
     'birthGate.stepOf': 'चरण {{n}} / {{total}}',
     'birthGate.step1Title': 'आपके बारे में',
@@ -1992,8 +2011,6 @@ const translations = {
     'birthGate.needDob': 'कृपया अपनी जन्म तिथि चुनें।',
     'birthGate.needPlace': 'कृपया अपना जन्म स्थान चुनें।',
     'birthGate.saveFailed': 'जानकारी सेव नहीं हो पाई। कृपया फिर से कोशिश करें।',
-    'birthGate.savedTitle': 'धन्यवाद!',
-    'birthGate.savedMsg': 'आपकी जानकारी सेव हो गई। अब आप ज्योतिषी जी से बात कर सकते हैं।',
 
     // Email OTP screen
     'emailOtp.sentToEmail': 'आपके ईमेल पर OTP भेजा गया',
@@ -2474,6 +2491,9 @@ let currentLanguage = 'English';
  * Prefer `useContext(LanguageContext).t` inside components; this exists only for
  * module-level code that has no context available.
  */
+// The language translate() is currently using, for non-React callers.
+export const getCurrentLanguage = () => currentLanguage;
+
 export const translate = (key, params) => {
   let str = translations[currentLanguage]?.[key] ?? translations.English[key] ?? key;
   if (params) {

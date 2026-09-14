@@ -7,6 +7,14 @@
 // Themed via the app's own StatusPopup (brown-card style) instead of the default OS
 // Alert — see StatusPopup.js's three-button stacked mode.
 import { showStatusPopup } from '../components/StatusPopup';
+import { canShowTip, tipText, trackTipShown, trackTipAction, TIP_IDS } from './mascotTips';
+
+// Wallet preset amounts (screens/Home/Wallet/Wallet.js). The suggested top-up is
+// the smallest preset that covers the shortfall, so Recharge opens with a sensible
+// round number already filled in rather than an odd amount like ₹37.
+const WALLET_PRESETS = [50, 100, 200, 500, 1000, 2000];
+const suggestTopUp = (shortfall) =>
+  WALLET_PRESETS.find((p) => p >= shortfall) || Math.ceil(shortfall / 100) * 100;
 
 /**
  * @param {object} opts
@@ -38,25 +46,49 @@ export function showInsufficientBalanceAlert({ navigation, minRequired, balance,
     : `You need at least ₹${minRequired} to connect. Current balance: ₹${balance}. ` +
       `Recharge your wallet, or refer a friend using your referral code to get ₹50 free.`;
 
+  const shortfall = Math.max(0, (Number(minRequired) || 0) - (Number(balance) || 0));
+
+  // Rupee path only: the guide mascot explains the shortfall, and Recharge opens the
+  // Wallet with a top-up that covers it already filled in.
+  const useMascot = !spendsCoins && canShowTip(TIP_IDS.lowBalance);
+  const suggestedAmount = suggestTopUp(shortfall || Number(minRequired) || 0);
+  if (useMascot) trackTipShown(TIP_IDS.lowBalance, { intent: intent || 'unknown' });
+
   showStatusPopup({
     variant: 'insufficient',
     title,
     message,
+    mascotText: useMascot
+      ? tipText(TIP_IDS.lowBalance, {
+          amount: Number(minRequired) || 0,
+          balance: Number(balance) || 0,
+          shortfall,
+        })
+      : '',
     intent,
     // How far short they were — tells you whether these are near-misses worth a
     // targeted top-up nudge, or customers nowhere near able to afford a session.
     blockedMeta: {
       min_required: Number(minRequired) || 0,
       balance: Number(balance) || 0,
-      shortfall: Math.max(0, (Number(minRequired) || 0) - (Number(balance) || 0)),
+      shortfall,
     },
     confirmText: spendsCoins ? (t ? t('coins.topUp') : 'Get coins') : 'Recharge',
-    onConfirm: () => navigation?.navigate?.(spendsCoins ? 'CoinStore' : 'Wallet'),
+    onConfirm: () => {
+      if (spendsCoins) {
+        navigation?.navigate?.('CoinStore');
+        return;
+      }
+      if (useMascot) trackTipAction(TIP_IDS.lowBalance, 'recharge');
+      navigation?.navigate?.('Wallet', { suggestedAmount });
+    },
     // The referral reward is rupees, so it is only offered on the rupee path.
     ...(spendsCoins
       ? {}
       : {
-          extraText: 'Refer & Earn ₹50',
+          extraText: 'Invite a friend',
+          extraSubtitle: 'Earn ₹50 for every friend you bring',
+          extraIcon: 'card-giftcard',
           onExtra: () => navigation?.navigate?.('ReferFriend'),
         }),
     cancelText: 'Cancel',

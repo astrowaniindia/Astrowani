@@ -4632,15 +4632,32 @@ const GUIDE_AVATAR_CONFIG_DEFAULT = {
     textEn: '',
     textHi: '',
   },
+  // Guide mascot tips in the customer app (utils/mascotTips.js), keyed by tip id:
+  // { enabled, textEn, textHi }. Same "empty text = the app's own copy" rule as above.
+  // A tip missing here is ON with the bundled text.
+  tips: {},
 };
+const GUIDE_TIP_IDS = ['home_free_chat', 'low_balance', 'waiting_astrologer', 'recharge_help'];
 app.get('/api/guide-avatar/config', async (req, res) => {
   try {
     const raw = await getSetting('guide_avatar_config', null);
     if (!raw) return res.status(200).json(GUIDE_AVATAR_CONFIG_DEFAULT);
     const parsed = JSON.parse(raw);
+    const tips = {};
+    for (const id of GUIDE_TIP_IDS) {
+      const t = parsed?.tips?.[id];
+      if (t && typeof t === 'object') {
+        tips[id] = {
+          enabled: t.enabled !== false,
+          textEn: typeof t.textEn === 'string' ? t.textEn : '',
+          textHi: typeof t.textHi === 'string' ? t.textHi : '',
+        };
+      }
+    }
     return res.status(200).json({
       login: { ...GUIDE_AVATAR_CONFIG_DEFAULT.login, ...parsed.login },
       register: { ...GUIDE_AVATAR_CONFIG_DEFAULT.register, ...parsed.register },
+      tips,
     });
   } catch (err) {
     noteReadFailure('guide-avatar', err);

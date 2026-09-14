@@ -20,7 +20,9 @@
 //   showStatusPopup({
 //     variant: 'insufficient', title: 'Insufficient Balance', message: '…',
 //     confirmText: 'Recharge', onConfirm: () => { … },
-//     extraText: 'Refer & Earn ₹50', onExtra: () => { … },
+//     extraText: 'Invite a friend', extraSubtitle: 'Earn ₹50 for every friend you bring',
+//     extraIcon: 'card-giftcard',
+//     onExtra: () => { … },
 //     cancelText: 'Cancel', onCancel: () => { … },
 //   });
 //
@@ -33,6 +35,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
+import MascotTip from './MascotTip';
 
 let listener = null;
 // Reasons a consult never became a request row at all. These attempts leave NO trace
@@ -71,6 +74,24 @@ const VARIANTS = {
   endCall:      { icon: 'call-end', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
 };
 
+// The secondary action in the three-button layout (e.g. "Invite a friend").
+// A quiet offer strip: cream card, maroon icon, title + one-line subtitle,
+// chevron. One colour family on purpose, so it never competes with the primary.
+function ExtraButton({ text, subtitle, icon, onPress }) {
+  return (
+    <TouchableOpacity style={styles.extraButton} activeOpacity={0.8} onPress={onPress}>
+      {icon ? (
+        <MaterialIcons name={icon} size={moderateScale(24)} color={COLORS.AstroMaroon} style={styles.extraIcon} />
+      ) : null}
+      <View style={styles.extraTextWrap}>
+        <Text style={styles.extraText} numberOfLines={1}>{text}</Text>
+        {subtitle ? <Text style={styles.extraSubtitle} numberOfLines={2}>{subtitle}</Text> : null}
+      </View>
+      <MaterialIcons name="chevron-right" size={moderateScale(22)} color={COLORS.AstroMaroon} />
+    </TouchableOpacity>
+  );
+}
+
 export function StatusPopupHost() {
   const { t } = React.useContext(LanguageContext);
   const [state, setState] = useState(null); // { title, message, variant, buttonText }
@@ -92,7 +113,13 @@ export function StatusPopupHost() {
         // onExtra (on top of onConfirm above), e.g. "Recharge" / "Refer & Earn" / "Cancel".
         onExtra: typeof opts.onExtra === 'function' ? opts.onExtra : null,
         extraText: opts.extraText || '',
+        // Optional icon (MaterialIcons name) and one-line subtitle for the extra button.
+        extraIcon: opts.extraIcon || '',
+        extraSubtitle: opts.extraSubtitle || '',
         onClose: typeof opts.onClose === 'function' ? opts.onClose : null,
+        // Guide mascot line (utils/mascotTips.js). When set, the mascot says it in a
+        // speech bubble in place of the plain icon + message.
+        mascotText: opts.mascotText || '',
       });
     };
     return () => { listener = null; };
@@ -142,19 +169,31 @@ export function StatusPopupHost() {
     <Modal transparent visible={ready} animationType="fade" onRequestClose={isConfirm ? handleCancel : close}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
-          <View style={[styles.iconCircle, { backgroundColor: v.tint }]}>
-            <MaterialIcons name={v.icon} size={moderateScale(34)} color={v.color} />
-          </View>
-          <Text style={styles.title}>{state.title}</Text>
-          <Text style={styles.message}>{state.message}</Text>
+          {state.mascotText ? (
+            <>
+              <Text style={styles.title}>{state.title}</Text>
+              <MascotTip text={state.mascotText} style={styles.mascot} />
+            </>
+          ) : (
+            <>
+              <View style={[styles.iconCircle, { backgroundColor: v.tint }]}>
+                <MaterialIcons name={v.icon} size={moderateScale(34)} color={v.color} />
+              </View>
+              <Text style={styles.title}>{state.title}</Text>
+              <Text style={styles.message}>{state.message}</Text>
+            </>
+          )}
           {isThreeButton ? (
             <View style={styles.stackedButtons}>
               <TouchableOpacity style={styles.button} activeOpacity={0.85} onPress={handleConfirm}>
                 <Text style={styles.buttonText}>{state.confirmText}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.secondaryButton]} activeOpacity={0.85} onPress={handleExtra}>
-                <Text style={[styles.buttonText, styles.secondaryButtonText]}>{state.extraText}</Text>
-              </TouchableOpacity>
+              <ExtraButton
+                text={state.extraText}
+                icon={state.extraIcon}
+                subtitle={state.extraSubtitle}
+                onPress={handleExtra}
+              />
               <TouchableOpacity style={styles.ghostButton} activeOpacity={0.7} onPress={handleCancel}>
                 <Text style={styles.ghostButtonText}>{state.cancelText}</Text>
               </TouchableOpacity>
@@ -216,6 +255,11 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(6),
     textAlign: 'center',
   },
+  mascot: {
+    alignSelf: 'stretch',
+    marginTop: verticalScale(6),
+    marginBottom: verticalScale(12),
+  },
   message: {
     fontSize: moderateScale(14),
     color: '#555',
@@ -256,14 +300,34 @@ const styles = StyleSheet.create({
   stackedButtons: {
     width: '100%',
   },
-  secondaryButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1.5,
-    borderColor: COLORS.AstroGold,
-    marginTop: verticalScale(10),
+  extraButton: {
+    marginTop: verticalScale(12),
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FBF3E6',
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(12),
   },
-  secondaryButtonText: {
-    color: COLORS.AstroGold,
+  extraIcon: {
+    marginRight: scale(10),
+  },
+  extraTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  extraText: {
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+    fontWeight: 'bold',
+    fontSize: moderateScale(15),
+  },
+  extraSubtitle: {
+    color: '#8A6A55',
+    fontFamily: 'Lato-Regular',
+    fontSize: moderateScale(12),
+    marginTop: verticalScale(1),
   },
   ghostButton: {
     alignItems: 'center',
