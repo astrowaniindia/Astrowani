@@ -2152,7 +2152,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(20),
-    marginBottom: verticalScale(14),
+    marginBottom: verticalScale(10),
   },
   thoughtOnCream: {
     flexShrink: 1,
@@ -2160,7 +2160,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'Lato-Bold',
     fontWeight: '700',
-    fontSize: moderateScale(19),
+    fontSize: moderateScale(15),
     letterSpacing: 0.3,
   },  boxedHeader: {
     borderWidth: 1.5,
