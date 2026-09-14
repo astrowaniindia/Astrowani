@@ -25,8 +25,15 @@
 // overloaded, retired or out of quota is skipped (and remembered as blocked) and
 // the next is tried, until the whole request's time budget runs out.
 // Using several models of ONE key is ordinary use. Rotating several accounts' keys
-// to multiply one model's quota is not: Google's API terms forbid circumventing
-// limits, which is why this file supports exactly one GEMINI_API_KEY.
+// to multiply one model's FREE quota is not: Google's API terms forbid circumventing
+// limits, which is why there is exactly one free key.
+//
+// TWO KEYS, 2026-09-14 (owner's decision): GEMINI_API_KEY is the free-tier key and is
+// always tried first. GEMINI_API_KEY_PAID is a billed project with prepaid credit —
+// paying for capacity, not dodging a limit. The paid key is used only once the free
+// key's quota is used up (every model on it is out of quota), with the same model list
+// in the same order. When the paid key is out of credit too, the chat falls back to
+// the scripted engine as before.
 
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
@@ -147,6 +154,19 @@ const state = {
   lastError: null,
   perCustomer: new Map(), // customerId -> count, reset daily with stats
 };
+
+// Blocks and stats are kept per key: the same model can be out of quota on the free
+// key and fine on the paid one. The paid key's entries are labelled "<model> (paid key)".
+const PAID_SUFFIX = ' (paid key)';
+const slot = (model, tier) => (tier === 'paid' ? `${model}${PAID_SUFFIX}` : model);
+
+// The keys to try, in order: free first, then paid.
+function geminiKeys() {
+  const keys = [];
+  if (process.env.GEMINI_API_KEY) keys.push({ tier: 'free', key: process.env.GEMINI_API_KEY });
+  if (process.env.GEMINI_API_KEY_PAID) keys.push({ tier: 'paid', key: process.env.GEMINI_API_KEY_PAID });
+  return keys;
+}
 
 function isBlocked(model) {
   const b = state.modelBlocks.get(model);
@@ -336,7 +356,8 @@ function buildBody(model, system, contents, temperature, withThinkingConfig) {
  * `final` means trying another model would not help (the prompt itself was
  * blocked). Never throws. Updates that model's block state.
  */
-async function tryModel({ key, model, system, contents, temperature, timeoutMs }) {
+async function tryModel({ key, tier = 'free', model, system, contents, temperature, timeoutMs }) {
+  const blockKey = slot(model, tier);
   const request = (withThinkingConfig) => axios.post(
     `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent`,
     buildBody(model, system, contents, temperature, withThinkingConfig),
@@ -378,21 +399,29 @@ async function tryModel({ key, model, system, contents, temperature, timeoutMs }
     const status = err.response?.status;
     const apiError = err.response?.data?.error;
     const detail = apiError?.message || err.message;
+    // The PAID key has run out of prepaid credit, or its billing is off. Not a passing
+    // limit: checked again in 30 minutes rather than on every message. Paid key only —
+    // the free tier's ordinary 429s also say "check your plan and billing details".
+    if (tier === 'paid' && (status === 429 || status === 403 || status === 400)
+      && /billing|credit|prepa(id|yment)|payment|check your plan/i.test(detail || '')) {
+      block(blockKey, 30 * 60 * 1000, 'out of credit / billing');
+      return { fail: true, reason: 'quota', detail };
+    }
     if (status === 429) {
       // Per-minute limits clear in a minute; per-day limits clear at midnight Pacific.
       const quotaIds = JSON.stringify(apiError?.details || []);
       const perDay = /PerDay/i.test(quotaIds) || /per day|daily/i.test(detail || '');
-      block(model, perDay ? msUntilPacificMidnight() : 60 * 1000, perDay ? 'daily limit' : 'per-minute limit');
+      block(blockKey, perDay ? msUntilPacificMidnight() : 60 * 1000, perDay ? 'daily limit' : 'per-minute limit');
       return { fail: true, reason: 'quota', detail };
     }
     if (status === 404 || (status === 400 && /not (found|supported)|no longer available/i.test(detail || ''))) {
       // Retired or misspelled. Checked again in an hour in case it was a blip.
-      block(model, 60 * 60 * 1000, 'unavailable');
+      block(blockKey, 60 * 60 * 1000, 'unavailable');
       return { fail: true, reason: `http_${status}`, detail };
     }
     if (status === 500 || status === 503) {
       // "High demand" / internal error: give it a couple of minutes.
-      block(model, 2 * 60 * 1000, 'overloaded');
+      block(blockKey, 2 * 60 * 1000, 'overloaded');
       return { fail: true, reason: `http_${status}`, detail };
     }
     if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message)) {
@@ -407,8 +436,8 @@ async function tryModel({ key, model, system, contents, temperature, timeoutMs }
  * { fallback, reason, detail, attempts }. Never throws.
  */
 async function generate({ config, customer, history, opening, secondsLeft, language, personaName, models, ignoreBlocks }) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return { fallback: true, reason: 'no_api_key', attempts: [] };
+  const keys = geminiKeys();
+  if (!keys.length) return { fallback: true, reason: 'no_api_key', attempts: [] };
 
   const system = config.instructions
     + (config.sendProfile ? profileBlock(customer) : '')
@@ -420,36 +449,56 @@ async function generate({ config, customer, history, opening, secondsLeft, langu
   let last = null;
 
   const list = models || config.models;
-  for (const [index, model] of list.entries()) {
-    if (!ignoreBlocks && isBlocked(model)) {
-      attempts.push({ model, skipped: state.modelBlocks.get(model).reason });
-      continue;
-    }
-    const remaining = deadline - Date.now();
-    if (remaining < MIN_ATTEMPT_MS) {
-      attempts.push({ model, skipped: 'out of time' });
-      break;
-    }
-    const startedAt = Date.now();
-    // The last model is the final chance before the scripted chat, so it gets
-    // whatever budget is left rather than the short per-model turn. That also
-    // gives a one-model admin test the whole budget, so it shows real speed.
-    const isLast = index === list.length - 1;
-    const result = await tryModel({
-      key, model, system, contents, temperature: config.temperature,
-      timeoutMs: isLast ? remaining : Math.min(PER_MODEL_TIMEOUT_MS, remaining),
-    });
-    const ms = Date.now() - startedAt;
+  const QUOTA_BLOCK = /limit|credit|billing/;
 
-    if (result.reply) {
-      countModel(model, 'reply');
-      attempts.push({ model, ms, ok: true });
-      return { reply: result.reply, model, attempts };
+  for (const [keyIndex, { tier, key }] of keys.entries()) {
+    // Move on to the paid key only when the free key is USED UP: every model on it
+    // was out of quota (now, or already known). A slow or overloaded model is not
+    // a reason to start paying — that falls back to the scripted chat as before.
+    if (keyIndex > 0) {
+      const freeTried = attempts.filter((a) => a.tier === keys[keyIndex - 1].tier);
+      const usedUp = freeTried.length > 0 && freeTried.every((a) => (
+        a.reason === 'quota' || (a.skipped && QUOTA_BLOCK.test(a.skipped))
+      ));
+      if (!usedUp) break;
     }
-    countModel(model, result.reason);
-    attempts.push({ model, ms, reason: result.reason, detail: String(result.detail || '').slice(0, 200) });
-    last = result;
-    if (result.final) break;
+    const isFinalKey = keyIndex === keys.length - 1;
+
+    let stop = false;
+    for (const [index, model] of list.entries()) {
+      const name = slot(model, tier);
+      if (!ignoreBlocks && isBlocked(name)) {
+        attempts.push({ model: name, tier, skipped: state.modelBlocks.get(name).reason });
+        continue;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining < MIN_ATTEMPT_MS) {
+        attempts.push({ model: name, tier, skipped: 'out of time' });
+        stop = true;
+        break;
+      }
+      const startedAt = Date.now();
+      // The very last model on the last key is the final chance before the scripted
+      // chat, so it gets whatever budget is left rather than the short per-model turn.
+      // That also gives a one-model admin test the whole budget, so it shows real speed.
+      const isLast = isFinalKey && index === list.length - 1;
+      const result = await tryModel({
+        key, tier, model, system, contents, temperature: config.temperature,
+        timeoutMs: isLast ? remaining : Math.min(PER_MODEL_TIMEOUT_MS, remaining),
+      });
+      const ms = Date.now() - startedAt;
+
+      if (result.reply) {
+        countModel(name, 'reply');
+        attempts.push({ model: name, tier, ms, ok: true });
+        return { reply: result.reply, model: name, attempts };
+      }
+      countModel(name, result.reason);
+      attempts.push({ model: name, tier, ms, reason: result.reason, detail: String(result.detail || '').slice(0, 200) });
+      last = result;
+      if (result.final) { stop = true; break; }
+    }
+    if (stop) break;
   }
 
   if (!last) {
@@ -539,7 +588,9 @@ module.exports = function registerFreeChatAiRoutes(app) {
       config,
       defaults: { instructions: DEFAULT_INSTRUCTIONS, models: DEFAULTS.models, typing: DEFAULTS.typing },
       status: {
-        apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_PAID),
+        freeKeyConfigured: !!process.env.GEMINI_API_KEY,
+        paidKeyConfigured: !!process.env.GEMINI_API_KEY_PAID,
         today: { day: stats() && state.statsDay, ...state.stats },
         modelBlocks: blocks,
         lastError: state.lastError,
@@ -622,8 +673,8 @@ module.exports = function registerFreeChatAiRoutes(app) {
   // Admin: which models this key can actually call, straight from Google, so
   // the list is not built from guessed names.
   app.get('/api/admin/free-bot-chat/ai/models', requireAdmin, h(async (req, res) => {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) return res.status(400).json({ success: false, message: 'GEMINI_API_KEY is not set on the server.' });
+    const key = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_PAID;
+    if (!key) return res.status(400).json({ success: false, message: 'Neither GEMINI_API_KEY nor GEMINI_API_KEY_PAID is set on the server.' });
     const found = [];
     let pageToken;
     for (let page = 0; page < 10; page++) {

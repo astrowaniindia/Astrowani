@@ -227,8 +227,14 @@ function AiReplies() {
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        <span className={`badge ${status?.apiKeyConfigured ? 'green' : 'red'}`}>
-          <span className="badge-dot" />API key {status?.apiKeyConfigured ? 'set on server' : 'NOT set on server'}
+        <span className={`badge ${status?.freeKeyConfigured ?? status?.apiKeyConfigured ? 'green' : 'red'}`}>
+          <span className="badge-dot" />Free key {(status?.freeKeyConfigured ?? status?.apiKeyConfigured) ? 'set on server' : 'NOT set on server'}
+        </span>
+        <span
+          className={`badge ${status?.paidKeyConfigured ? 'green' : 'gray'}`}
+          title="Used only after the free key's quota is used up, with the same models in the same order."
+        >
+          <span className="badge-dot" />Paid backup key {status?.paidKeyConfigured ? 'set on server' : 'not set'}
         </span>
         <span className="badge blue"><span className="badge-dot" />Today: {today.aiReplies || 0} AI replies</span>
         <span className="badge gray"><span className="badge-dot" />{fallbackTotal} scripted fallbacks</span>
