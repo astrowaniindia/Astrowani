@@ -28,12 +28,11 @@
 // to multiply one model's FREE quota is not: Google's API terms forbid circumventing
 // limits, which is why there is exactly one free key.
 //
-// TWO KEYS, 2026-09-14 (owner's decision): GEMINI_API_KEY is the free-tier key and is
-// always tried first. GEMINI_API_KEY_PAID is a billed project with prepaid credit —
-// paying for capacity, not dodging a limit. The paid key is used only once the free
-// key's quota is used up (every model on it is out of quota), with the same model list
-// in the same order. When the paid key is out of credit too, the chat falls back to
-// the scripted engine as before.
+// TWO KEYS, 2026-09-14 (owner's decision): GEMINI_API_KEY is tried first.
+// GEMINI_API_KEY_CONSULT (the "consult" key, a card-linked account with credit added) is
+// used only once the first key's quota is used up (every model on it is out of quota),
+// with the same model list, in the same order, under exactly the same limit and skipping
+// rules. When the consult key runs out too, the chat falls back to the scripted engine.
 
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
@@ -156,15 +155,19 @@ const state = {
 };
 
 // Blocks and stats are kept per key: the same model can be out of quota on the free
-// key and fine on the paid one. The paid key's entries are labelled "<model> (paid key)".
-const PAID_SUFFIX = ' (paid key)';
-const slot = (model, tier) => (tier === 'paid' ? `${model}${PAID_SUFFIX}` : model);
+// key and fine on the consult one. The consult key's entries are labelled "<model> (consult key)".
+const CONSULT_SUFFIX = ' (consult key)';
+const slot = (model, tier) => (tier === 'consult' ? `${model}${CONSULT_SUFFIX}` : model);
 
-// The keys to try, in order: free first, then paid.
+// The consult key. GEMINI_API_KEY_PAID was its first name (2026-09-14) and is still
+// accepted, so a VPS .env written with it keeps working.
+const CONSULT_KEY = () => process.env.GEMINI_API_KEY_CONSULT || process.env.GEMINI_API_KEY_PAID || '';
+
+// The keys to try, in order: free first, then consult.
 function geminiKeys() {
   const keys = [];
   if (process.env.GEMINI_API_KEY) keys.push({ tier: 'free', key: process.env.GEMINI_API_KEY });
-  if (process.env.GEMINI_API_KEY_PAID) keys.push({ tier: 'paid', key: process.env.GEMINI_API_KEY_PAID });
+  if (CONSULT_KEY()) keys.push({ tier: 'consult', key: CONSULT_KEY() });
   return keys;
 }
 
@@ -399,14 +402,7 @@ async function tryModel({ key, tier = 'free', model, system, contents, temperatu
     const status = err.response?.status;
     const apiError = err.response?.data?.error;
     const detail = apiError?.message || err.message;
-    // The PAID key has run out of prepaid credit, or its billing is off. Not a passing
-    // limit: checked again in 30 minutes rather than on every message. Paid key only —
-    // the free tier's ordinary 429s also say "check your plan and billing details".
-    if (tier === 'paid' && (status === 429 || status === 403 || status === 400)
-      && /billing|credit|prepa(id|yment)|payment|check your plan/i.test(detail || '')) {
-      block(blockKey, 30 * 60 * 1000, 'out of credit / billing');
-      return { fail: true, reason: 'quota', detail };
-    }
+    // Both keys are handled by exactly the same rules below (owner's decision 2026-09-14).
     if (status === 429) {
       // Per-minute limits clear in a minute; per-day limits clear at midnight Pacific.
       const quotaIds = JSON.stringify(apiError?.details || []);
@@ -452,7 +448,7 @@ async function generate({ config, customer, history, opening, secondsLeft, langu
   const QUOTA_BLOCK = /limit|credit|billing/;
 
   for (const [keyIndex, { tier, key }] of keys.entries()) {
-    // Move on to the paid key only when the free key is USED UP: every model on it
+    // Move on to the consult key only when the free key is USED UP: every model on it
     // was out of quota (now, or already known). A slow or overloaded model is not
     // a reason to start paying — that falls back to the scripted chat as before.
     if (keyIndex > 0) {
@@ -588,9 +584,9 @@ module.exports = function registerFreeChatAiRoutes(app) {
       config,
       defaults: { instructions: DEFAULT_INSTRUCTIONS, models: DEFAULTS.models, typing: DEFAULTS.typing },
       status: {
-        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_PAID),
+        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || CONSULT_KEY()),
         freeKeyConfigured: !!process.env.GEMINI_API_KEY,
-        paidKeyConfigured: !!process.env.GEMINI_API_KEY_PAID,
+        consultKeyConfigured: !!CONSULT_KEY(),
         today: { day: stats() && state.statsDay, ...state.stats },
         modelBlocks: blocks,
         lastError: state.lastError,
@@ -673,8 +669,8 @@ module.exports = function registerFreeChatAiRoutes(app) {
   // Admin: which models this key can actually call, straight from Google, so
   // the list is not built from guessed names.
   app.get('/api/admin/free-bot-chat/ai/models', requireAdmin, h(async (req, res) => {
-    const key = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_PAID;
-    if (!key) return res.status(400).json({ success: false, message: 'Neither GEMINI_API_KEY nor GEMINI_API_KEY_PAID is set on the server.' });
+    const key = process.env.GEMINI_API_KEY || CONSULT_KEY();
+    if (!key) return res.status(400).json({ success: false, message: 'Neither GEMINI_API_KEY nor GEMINI_API_KEY_CONSULT is set on the server.' });
     const found = [];
     let pageToken;
     for (let page = 0; page < 10; page++) {
