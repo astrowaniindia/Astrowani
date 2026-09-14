@@ -9,6 +9,11 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
+const {
+  ANALYTICS_SINCE_KEY,
+  clampSince: clampAnalyticsSince,
+  refreshAnalyticsSince,
+} = require('./analyticsSince');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
@@ -1531,6 +1536,9 @@ module.exports = function registerAdminRoutes(app) {
     if (key === APP_PROMPT_UPDATE_KEY || key === APP_PROMPT_REVIEW_KEY) {
       invalidateAppPromptCache(key);
     }
+    // The Analytics page's "count from" date is held in memory; reload it now so
+    // the next refresh of the page already uses the new date.
+    if (key === ANALYTICS_SINCE_KEY) await refreshAnalyticsSince();
     return res.json({ success: true });
   }));
 
@@ -1539,13 +1547,15 @@ module.exports = function registerAdminRoutes(app) {
   // `from`/`to` (YYYY-MM-DD, inclusive) take priority; `days` (a rolling window ending
   // now) stays as a fallback for any caller that hasn't been updated.
   const ANALYTICS_ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  // The start is never earlier than the admin's "count analytics from" date
+  // (src/analyticsSince.js), so pre-launch test data drops out of every card.
   function resolveDateBounds(req, { defaultDays = 30, maxDays = 180 } = {}) {
     const { from, to } = req.query;
     if (ANALYTICS_ISO_DATE.test(from || '') && ANALYTICS_ISO_DATE.test(to || '')) {
-      return { since: `${from}T00:00:00.000Z`, until: `${to}T23:59:59.999Z` };
+      return { since: clampAnalyticsSince(`${from}T00:00:00.000Z`), until: `${to}T23:59:59.999Z` };
     }
     const days = Math.min(parseInt(req.query.days, 10) || defaultDays, maxDays);
-    return { since: new Date(Date.now() - days * 86400000).toISOString(), until: null };
+    return { since: clampAnalyticsSince(new Date(Date.now() - days * 86400000).toISOString()), until: null };
   }
 
   // ── Analytics: revenue + session volume ─────────────────────────────────────

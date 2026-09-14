@@ -24,6 +24,7 @@
 const axios = require('axios');
 const { requireAdmin } = require('./adminRoutes');
 const { TtlCache } = require('./ttlCache');
+const { hogqlSinceClause } = require('./analyticsSince');
 
 const POSTHOG_HOST = process.env.POSTHOG_HOST; // e.g. https://us.i.posthog.com
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
@@ -86,7 +87,17 @@ function clampDays(raw, fallback, max) {
   return Math.min(n, max);
 }
 
-const ENV_FILTER = `properties.environment = 'production'`;
+// Production events only, and only from the admin's "count analytics from" start date
+// (src/analyticsSince.js). A getter rather than a plain string so every query picks up
+// the current start date — every query below interpolates ${ENV_FILTER}.
+const PRODUCTION_ONLY = `properties.environment = 'production'`;
+const ENV_FILTER_HOLDER = {
+  toString() {
+    const since = hogqlSinceClause();
+    return since ? `${PRODUCTION_ONLY} AND ${since}` : PRODUCTION_ONLY;
+  },
+};
+const ENV_FILTER = ENV_FILTER_HOLDER;
 
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   console.error(`[postHogRoutes] ${req.method} ${req.path} error:`, err.response?.data || err.message);

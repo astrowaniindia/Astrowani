@@ -25,6 +25,15 @@ const DATE_PRESETS = [
 // Local calendar date as YYYY-MM-DD — NOT d.toISOString().slice(0,10), which shifts to
 // UTC first and can land on the wrong day depending on the admin's timezone (e.g. IST
 // midnight is still the previous day in UTC).
+// ISO timestamp -> the "YYYY-MM-DDTHH:mm" local value a datetime-local input needs.
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function toLocalISODate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -219,6 +228,13 @@ export default function Analytics() {
   const [envBusy, setEnvBusy] = useState(false);
   const [envLoaded, setEnvLoaded] = useState(false);
 
+  // "Count analytics from" — every card ignores anything before this moment
+  // (app_settings.analytics_since, applied server-side by src/analyticsSince.js).
+  // Nothing is deleted; it only hides pre-launch test data from the numbers.
+  const [analyticsSince, setAnalyticsSince] = useState('');
+  const [sinceInput, setSinceInput] = useState('');
+  const [sinceBusy, setSinceBusy] = useState(false);
+
   // Session replay — controlled entirely from here. Both RN apps read these two
   // app_settings keys directly (public-read table) at launch; toggling here changes
   // behavior on the *next* app launch/session, same eventual-consistency model as the
@@ -235,6 +251,8 @@ export default function Analytics() {
       setReplayEnabled(s.session_replay_enabled === 'true');
       setReplaySampleRate(s.session_replay_sample_rate ?? '0.1');
       setAnalyticsEnv(s.analytics_environment === 'production' ? 'production' : 'test');
+      setAnalyticsSince(s.analytics_since || '');
+      setSinceInput(toLocalInput(s.analytics_since));
     } catch (e) {
       console.error('load settings failed (run app_settings_schema.sql):', e.message);
     } finally {
@@ -269,6 +287,20 @@ export default function Analytics() {
       alert(e.response?.data?.message || e.message);
     } finally {
       setEnvBusy(false);
+    }
+  };
+
+  const saveAnalyticsSince = async (iso) => {
+    setSinceBusy(true);
+    try {
+      await client.patch('/api/admin/settings', { key: 'analytics_since', value: iso });
+      setAnalyticsSince(iso);
+      setSinceInput(toLocalInput(iso));
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setSinceBusy(false);
     }
   };
 
@@ -420,6 +452,34 @@ export default function Analytics() {
         >
           {envBusy ? 'Saving…' : analyticsEnv === 'production' ? 'Switch to Test' : 'Go Live (Switch to Production)'}
         </button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+        <div className="field" style={{ margin: 0, minWidth: 230 }}>
+          <label>Count analytics from</label>
+          <input type="datetime-local" value={sinceInput} onChange={(e) => setSinceInput(e.target.value)} />
+        </div>
+        <button
+          className="btn secondary"
+          disabled={sinceBusy || !sinceInput}
+          onClick={() => saveAnalyticsSince(new Date(sinceInput).toISOString())}
+        >
+          {sinceBusy ? 'Saving…' : 'Save date'}
+        </button>
+        <button
+          className="btn secondary"
+          disabled={sinceBusy}
+          onClick={() => {
+            if (!window.confirm('Start counting from right now? Everything before this moment will be left out of every card on this page (nothing is deleted).')) return;
+            saveAnalyticsSince(new Date().toISOString());
+          }}
+        >
+          Start from now
+        </button>
+        <span className="muted" style={{ alignSelf: 'center' }}>
+          {analyticsSince
+            ? `Every card below counts only data from ${new Date(analyticsSince).toLocaleString('en-IN')}. Older test data is hidden, not deleted.`
+            : 'No start date set — cards include all data, including testing.'}
+        </span>
       </div>
     </div>
   );
