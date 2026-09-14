@@ -431,9 +431,10 @@ async function tryModel({ key, tier = 'free', model, system, contents, temperatu
  * Walks the model list. Resolves { reply, model, attempts } or
  * { fallback, reason, detail, attempts }. Never throws.
  */
-async function generate({ config, customer, history, opening, secondsLeft, language, personaName, models, ignoreBlocks }) {
-  const keys = geminiKeys();
-  if (!keys.length) return { fallback: true, reason: 'no_api_key', attempts: [] };
+async function generate({ config, customer, history, opening, secondsLeft, language, personaName, models, ignoreBlocks, onlyTier }) {
+  // onlyTier: admin "Test consult key" — use just that key, straight away.
+  const keys = geminiKeys().filter((k) => !onlyTier || k.tier === onlyTier);
+  if (!keys.length) return { fallback: true, reason: onlyTier ? `no_${onlyTier}_key` : 'no_api_key', attempts: [] };
 
   const system = config.instructions
     + (config.sendProfile ? profileBlock(customer) : '')
@@ -636,6 +637,9 @@ module.exports = function registerFreeChatAiRoutes(app) {
     const saved = await loadConfig();
     const listed = cleanModels(b.models);
     const single = typeof b.model === 'string' && MODEL_NAME_RE.test(b.model.trim()) ? b.model.trim() : null;
+    // "Test consult key": only that key, ignoring its current blocks so the admin
+    // sees Google's real answer for it.
+    const onlyTier = b.keyTier === 'consult' ? 'consult' : null;
     const config = {
       ...saved,
       instructions: typeof b.instructions === 'string' && b.instructions.trim() ? b.instructions.slice(0, MAX_INSTRUCTIONS_CHARS) : saved.instructions,
@@ -655,7 +659,8 @@ module.exports = function registerFreeChatAiRoutes(app) {
       language: b.language === 'hi' ? 'hi' : 'en',
       personaName: await loadPersonaName(),
       models: single ? [single] : config.models,
-      ignoreBlocks: !!single,
+      ignoreBlocks: !!single || !!onlyTier,
+      onlyTier,
     });
     const typing = cleanTyping(b.typing || saved.typing);
     return res.json({

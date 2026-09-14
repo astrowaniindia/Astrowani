@@ -109,6 +109,8 @@ function AiReplies() {
   const [testBusy, setTestBusy] = useState(false);
   // '' = walk the whole list exactly like a customer; otherwise one model only.
   const [testModel, setTestModel] = useState('');
+  // '' = keys in order (what customers get); 'consult' = only the consult key.
+  const [testKey, setTestKey] = useState('');
 
   const [available, setAvailable] = useState(null);
   const [availableBusy, setAvailableBusy] = useState(false);
@@ -191,6 +193,7 @@ function AiReplies() {
         models,
         typing: form.typing,
         ...(testModel ? { model: testModel } : {}),
+        ...(testKey === 'consult' ? { keyTier: 'consult' } : {}),
         sendProfile: form.sendProfile,
         history,
         opening,
@@ -371,12 +374,23 @@ function AiReplies() {
         Uses the instructions and models above even before you save, with a sample customer (Rahul, born
         14 Aug 1995, 6:30 am, Jaipur). Test messages count against the same Gemini daily limits.
       </p>
-      <div className="field" style={{ maxWidth: 420 }}>
-        <label>Test with</label>
-        <select value={testModel} onChange={(e) => setTestModel(e.target.value)}>
-          <option value="">The whole list, in order (what customers get)</option>
-          {models.map((m) => <option key={m} value={m}>Only {m}</option>)}
-        </select>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div className="field" style={{ maxWidth: 420, flex: '1 1 260px' }}>
+          <label>Test with</label>
+          <select value={testModel} onChange={(e) => setTestModel(e.target.value)}>
+            <option value="">The whole list, in order (what customers get)</option>
+            {models.map((m) => <option key={m} value={m}>Only {m}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ maxWidth: 320, flex: '1 1 220px' }}>
+          <label>Key</label>
+          <select value={testKey} onChange={(e) => setTestKey(e.target.value)}>
+            <option value="">Keys in order (what customers get)</option>
+            <option value="consult" disabled={!status?.consultKeyConfigured}>
+              Consult key only{status?.consultKeyConfigured ? '' : ' (not set on server)'}
+            </option>
+          </select>
+        </div>
       </div>
       <div style={{ border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, minHeight: 80, maxHeight: 360, overflowY: 'auto', marginBottom: 10, background: '#fafafa' }}>
         {testLog.length === 0 && <p className="muted" style={{ margin: 0 }}>Start with the AI's greeting, or type a message as the customer.</p>}
