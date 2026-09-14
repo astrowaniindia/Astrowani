@@ -23,20 +23,28 @@ module.exports = {
     //   cd android && ./gradlew processReleaseMainManifest
     //   grep -i billing app/build/intermediates/merged_manifests/release/AndroidManifest.xml
     // Expect zero hits.
-    // Meta ad-conversion SDK: Android only for now. On iOS it must wait for Apple's App
-    // Tracking Transparency prompt, and it needs FacebookAppID etc. in Info.plist — linking
-    // the pod without those is a startup risk on a build that is not live yet anyway.
-    // src/utils/adTracking.js already no-ops when the native module is absent.
+    // Meta + Google Ads conversion SDKs — currently OFF on BOTH platforms (2026-09-14).
+    //
+    // Android: held back from store build 38 at the owner's request, until the Meta App
+    // ID / Client Token exist and Play Console's Advertising ID + Data safety declarations
+    // are done (CLAUDE.md CH). Linked, they merge com.google.android.gms.permission.AD_ID
+    // into the manifest, and Play blocks a release that uses it undeclared. To switch them
+    // on: delete the `android: null` lines, fill the ids (strings.xml + adTracking.js),
+    // then a new STORE build — the ids are a native resource, so not OTA-able.
+    // iOS: must wait for Apple's App Tracking Transparency prompt (and Info.plist ids).
+    //
+    // src/utils/adTracking.js no-ops when these native modules are absent, and the
+    // Facebook <meta-data> left in AndroidManifest.xml is inert without the SDK.
     'react-native-fbsdk-next': {
       platforms: {
         ios: null,
+        android: null,
       },
     },
-    // Firebase Analytics, for Google Ads conversions. Android only for the same reason
-    // as the Meta SDK above: iOS ad measurement waits for the ATT prompt.
     '@react-native-firebase/analytics': {
       platforms: {
         ios: null,
+        android: null,
       },
     },
     'react-native-iap': {

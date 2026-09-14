@@ -5132,8 +5132,11 @@ session scratchpad, not the repo. **Not yet run on a device or against Meta/Goog
 12. **Data safety:** declare app activity and device/advertising ID shared with Meta and
     Google for advertising and analytics. Also mention Meta and Google in the privacy policy.
 
-**Then (Claude, when asked):** bump customer `versionCode` 37 → 38, build, verify the merged
-manifest + signing as in CE, owner uploads.
+**Then (Claude, when asked):** remove the `android: null` exclusions for
+`react-native-fbsdk-next` and `@react-native-firebase/analytics` in
+`react-native.config.js`, fill the Meta ids, bump customer `versionCode` 38 → **39**, build,
+verify the merged manifest + signing as in CE, owner uploads.
+(Build 38 was deliberately built WITHOUT the ad SDKs — see **CK**.)
 
 **Campaign tip:** start Meta/Google campaigns on installs or sign-ups; switch to Purchase
 optimisation once ads bring roughly 50 recharges a week.
@@ -5214,3 +5217,30 @@ not by the number of customers. The image disk cache is size-capped by FastImage
 
 **Signals to watch:** VPS request rate and CPU (`pm2 monit`), Supabase egress on the usage
 page, and `/api/astrologers` response size as astrologers are added.
+
+### CK. Customer store build 38 (2026-09-14) — WITHOUT the ad SDKs
+
+- `versionCode` 37 → **38**; `versionName` stays **24.1**, so OTA bundles targeting `24.1.x`
+  still reach it.
+- Contains everything up to `703f5b5`: short signup, guided birth details, welcome screen,
+  profile completion bar, rotating Home greeting, banner slider, Home preload, and the
+  smoother scrolling.
+- **The Meta and Google Ads SDKs are NOT in it**, at the owner's request. Both are excluded
+  from Android autolinking in `react-native.config.js` (`android: null`), so no
+  Advertising ID declaration is needed for this release. `adTracking.js` stays in the code
+  and no-ops without the native modules. The inert Facebook `<meta-data>` stays in
+  `AndroidManifest.xml`. Turning them on needs a **store** build (39), not an OTA; see CH.
+- Built with `./gradlew.bat bundleRelease --no-daemon` in 8m 39s, emulator and Metro stopped
+  first to free memory. Sentry source maps are still not uploaded (no auth token).
+- **Verified** from the bundle manifest (`bundle_manifest/release`):
+  - `versionCode 38` / `versionName 24.1` / `com.astrowanicustomer`;
+  - NO `com.google.android.gms.permission.AD_ID`, NO `ACCESS_ADSERVICES_*`, no
+    `FacebookActivity`, no billing.
+- **Verified** in the AAB:
+  - signed by **CN=Astrowani Customer** (SHA-256 `55:01:0B:59…`, same key as build 37);
+  - `assets/index.android.bundle` present;
+  - `cl/json/RNShare` and `com/hotupdater` in the dex;
+  - no `AppEventsLogger` and no `RNFBAnalyticsModule`.
+- **Artifact:** `D:\Astrowani-Releases\astrowani-customer-24.1-38.aab` (52 MB), outside the
+  repo. **Uploading to Play Console is the owner's step.** Play Console: Advertising ID can
+  stay "No"; Data safety unchanged by this release.
