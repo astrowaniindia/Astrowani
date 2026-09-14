@@ -543,6 +543,9 @@ const translations = {
     'freeBotChat.completeTitle': 'Chat Complete!',
     'freeBotChat.completeMsg': "Thanks for chatting with us! Start a real chat with any astrologer whenever you're ready.",
     'freeBotChat.greatThanks': 'Great, thanks!',
+    'freeBotChat.endTitle': 'End your free chat?',
+    'freeBotChat.endMsg': 'Your free chat can be used only once. If you leave now, you cannot come back to it.',
+    'freeBotChat.keepChatting': 'Keep chatting',
 
     'splash.tagline': 'Consult Online Astrologers',
 
@@ -584,6 +587,8 @@ const translations = {
     'chatSession.messagePlaceholder': 'Type a message…',
     'chatSession.inProgress': 'Chat in progress',
     'chatSession.stillActive': 'Your chat with {{name}} is still active. Tap to return.',
+    'chatSession.sendFailedTitle': 'Message not sent',
+    'chatSession.sendFailedMsg': 'Please check your internet connection and tap send again.',
     'chatSession.astrologerEnded': 'The astrologer has ended the session.',
 
     // ReusableList shared card
@@ -1767,6 +1772,9 @@ const translations = {
     'freeBotChat.completeTitle': 'चैट पूर्ण!',
     'freeBotChat.completeMsg': 'हमसे चैट करने के लिए धन्यवाद! जब भी तैयार हों, किसी भी ज्योतिषी से असली चैट शुरू करें।',
     'freeBotChat.greatThanks': 'बढ़िया, धन्यवाद!',
+    'freeBotChat.endTitle': 'मुफ्त चैट खत्म करें?',
+    'freeBotChat.endMsg': 'आपकी मुफ्त चैट सिर्फ एक बार मिलती है। अभी छोड़ने पर आप इसमें वापस नहीं आ पाएंगे।',
+    'freeBotChat.keepChatting': 'चैट जारी रखें',
 
     'splash.tagline': 'ऑनलाइन ज्योतिषियों से परामर्श करें',
 
@@ -1808,6 +1816,8 @@ const translations = {
     'chatSession.messagePlaceholder': 'संदेश लिखें…',
     'chatSession.inProgress': 'चैट चल रही है',
     'chatSession.stillActive': '{{name}} के साथ आपकी चैट अभी भी सक्रिय है। वापस जाने के लिए टैप करें।',
+    'chatSession.sendFailedTitle': 'संदेश नहीं भेजा गया',
+    'chatSession.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और फिर से भेजें दबाएं।',
     'chatSession.astrologerEnded': 'ज्योतिषी ने सत्र समाप्त कर दिया है।',
 
     // ReusableList shared card

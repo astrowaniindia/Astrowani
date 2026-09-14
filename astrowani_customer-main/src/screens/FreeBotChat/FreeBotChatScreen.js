@@ -38,6 +38,7 @@ import { FREE_CHAT_PERSONA } from '../../data/freeBotChatPersona';
 import { getOpeningMessage, getBotReply, resetChatSession } from '../../utils/freeChatBotEngine';
 import { captureEvent } from '../../utils/Analytics';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
+import { showStatusPopup } from '../../components/StatusPopup';
 import { LanguageContext } from '../../context/LanguageContext';
 import {useModalPresence} from '../../utils/modalPresentation';
 
@@ -190,6 +191,43 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     showReferralPrompt();
   };
 
+  // Ask before ending the free chat early. It is marked used the moment this screen
+  // opens, so leaving now loses it for good — worth one confirmation, in the app's own
+  // popup style (not the OS Alert). `onConfirm` is what happens on "End chat".
+  const askToEnd = (onConfirm) => {
+    showStatusPopup({
+      variant: 'endCall',
+      title: t('freeBotChat.endTitle'),
+      message: t('freeBotChat.endMsg'),
+      confirmText: t('chatSession.end'),
+      cancelText: t('freeBotChat.keepChatting'),
+      onConfirm,
+    });
+  };
+
+  // The phone's back button, the swipe-back gesture and the header arrow all arrive
+  // here as a GO_BACK/POP. `beforeRemove` covers all three with one listener (same
+  // approach as hooks/useConfirmLeaveReport). Once the chat has ended — naturally, or
+  // after the customer confirmed — navigation passes straight through. A reset or
+  // replace (logout, session expired, deep link) is never blocked.
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      if (hasEndedRef.current) return;
+      const type = e.data?.action?.type;
+      if (type !== 'GO_BACK' && type !== 'POP') return;
+      e.preventDefault();
+      askToEnd(() => {
+        if (hasEndedRef.current) return;
+        hasEndedRef.current = true;
+        captureEvent('free_bot_chat_ended', { completed: false });
+        navigation.dispatch(e.data.action);
+        showReferralPrompt();
+      });
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation]);
+
   const sendMessage = async () => {
     if (!text.trim() || hasEndedRef.current) return;
     const msg = text.trim();
@@ -250,7 +288,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
       style={[styles.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={manualEnd} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => askToEnd(manualEnd)} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
 
@@ -267,7 +305,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
 
         <View style={styles.headerRight}>
           <Text style={styles.timer}>{pad(mm)}:{pad(ss)}</Text>
-          <TouchableOpacity style={styles.endBtn} onPress={manualEnd}>
+          <TouchableOpacity style={styles.endBtn} onPress={() => askToEnd(manualEnd)}>
             <Ionicons name="call" size={16} color="#fff" />
             <Text style={styles.endText}>{t('chatSession.end')}</Text>
           </TouchableOpacity>

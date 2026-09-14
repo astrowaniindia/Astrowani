@@ -106,6 +106,8 @@ const VendorChatSession = ({ route, navigation }) => {
           sessionId: sessionIdRef.current,
           state: AppState.currentState === 'active' ? 'active' : 'background',
         });
+        // Pick up anything the customer sent while we were disconnected.
+        refetchMessages();
       });
 
       let finalSessionId = initialSessionId;
@@ -224,6 +226,37 @@ const VendorChatSession = ({ route, navigation }) => {
     }
   };
 
+  // ─── Message list helpers ─────────────────────────────────────────────────
+  // Adds messages without duplicates, in time order. The send response, the live
+  // socket event and the re-fetch after a reconnect can all deliver the same row.
+  const mergeMessages = (incoming) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    setMessages((prev) => {
+      const byId = new Map();
+      [...prev, ...incoming].forEach((m) => { if (m && m.id != null) byId.set(String(m.id), m); });
+      return [...byId.values()].sort(
+        (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+      );
+    });
+  };
+
+  // Messages sent while the socket was disconnected are saved server-side but were
+  // never pushed here — the socket only delivers while connected. Run on reconnect.
+  const refetchMessages = async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.get('/api/chat/messages', {
+        params: { sessionId: sid },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (Array.isArray(res.data?.data)) mergeMessages(res.data.data);
+    } catch (err) {
+      console.log('Chat re-fetch after reconnect failed:', err?.message);
+    }
+  };
+
   // ─── Send message ─────────────────────────────────────────────────────────
   const lastSentRef = useRef({ text: null, time: 0 });
 
@@ -251,15 +284,33 @@ const VendorChatSession = ({ route, navigation }) => {
     // Row is created server-side now, not by the client — see
     // DATABASE_HARDENING_HANDOFF.md STEP 3. Realtime (unchanged) still delivers it to
     // both sides once inserted.
+    //
+    // A failed send used to be only a console.warn: the box was already cleared, so the
+    // astrologer's message vanished with no sign it never reached the customer. Now a
+    // failure puts typed text back and says so. A success adds the saved row straight
+    // from the response, so it shows even if the socket is mid-reconnect (deduped by id).
     const msgToken = await AsyncStorage.getItem('token');
-    await Instance.post('/api/chat/message', {
-      roomId: requestId,
-      sessionId: sessionIdRef.current,
-      receiverId: callerId,
-      message: msg,
-    }, {
-      headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
-    }).catch((e) => console.warn('chat message send error:', e?.message));
+    try {
+      const res = await Instance.post('/api/chat/message', {
+        roomId: requestId,
+        sessionId: sessionIdRef.current,
+        receiverId: callerId,
+        message: msg,
+      }, {
+        headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
+      });
+      if (!res.data?.success || !res.data?.data) throw new Error(res.data?.message || 'send failed');
+      mergeMessages([res.data.data]);
+    } catch (e) {
+      console.warn('chat message send error:', e?.message);
+      // Let the same text be sent again straight away (the double-tap guard above
+      // would otherwise swallow the retry for 2s).
+      lastSentRef.current = { text: null, time: 0 };
+      // Typed text goes back in the box; a scripted chip can simply be tapped again.
+      if (typeof overrideText !== 'string') setNewMessage((current) => (current ? current : msg));
+      showStatusPopup({ variant: 'error', title: t('call.sendFailedTitle'), message: t('call.sendFailedMsg') });
+      return; // no push for a message that was never saved
+    }
 
     // Fire-and-forget push notification for when the customer's app is backgrounded/killed.
     Instance.post('/api/push/notify-chat-message', {

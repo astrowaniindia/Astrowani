@@ -217,29 +217,74 @@ const ChatSessionScreen = ({ route, navigation }) => {
     if (!text.trim() || !sessionRef.current || !myId) return;
     const msg = text.trim();
     setText('');
-    
+
     // Reset typing status on send
     if (socketRef.current && sessionRef.current) {
       socketRef.current.emit('chat_typing', { sessionId: sessionRef.current.id, isTyping: false });
     }
 
     // Row is created server-side now, not by the client — see
-    // DATABASE_HARDENING_HANDOFF.md STEP 3. Realtime (unchanged) still delivers it to
-    // both sides once inserted.
-    const msgToken = await AsyncStorage.getItem('token');
-    await fetch(`${Instance.defaults.baseURL}/api/chat/message`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(msgToken ? { Authorization: `Bearer ${msgToken}` } : {}),
-      },
-      body: JSON.stringify({
+    // DATABASE_HARDENING_HANDOFF.md STEP 3. The socket delivers it to both sides.
+    //
+    // A failed send used to be silent: the box was already cleared, fetch() does not
+    // reject on an HTTP error, and nothing was caught — so the message simply vanished.
+    // Now a failure puts the text back and says so. A success also adds the saved row
+    // straight from the response, so the sender sees their own message even if the
+    // socket happens to be mid-reconnect (the socket copy is deduped by id).
+    try {
+      const msgToken = await AsyncStorage.getItem('token');
+      const res = await Instance.post('/api/chat/message', {
         roomId: requestId,
         sessionId: sessionRef.current.id,
         receiverId: person?._id || person?.id || person?.userId,
         message: msg,
-      }),
+      }, {
+        headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
+      });
+      if (!res.data?.success || !res.data?.data) throw new Error(res.data?.message || 'send failed');
+      mergeMessages([res.data.data]);
+    } catch (e) {
+      console.warn('chat message send error:', e?.message);
+      // Don't overwrite anything typed since.
+      setText((current) => (current ? current : msg));
+      showStatusPopup({
+        variant: 'error',
+        title: t('chatSession.sendFailedTitle'),
+        message: t('chatSession.sendFailedMsg'),
+      });
+    }
+  };
+
+  // Adds messages to the list without duplicates, in time order. Used by the send
+  // response, the live socket event, and the re-fetch after a reconnect — any of
+  // which can deliver a message another one already did.
+  const mergeMessages = (incoming) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    setMessages((prev) => {
+      const byId = new Map();
+      [...prev, ...incoming].forEach((m) => { if (m && m.id != null) byId.set(String(m.id), m); });
+      return [...byId.values()].sort(
+        (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+      );
     });
+  };
+
+  // Messages that arrived while the socket was disconnected are saved server-side but
+  // were never pushed to this screen — the socket only delivers while connected.
+  // Called on every reconnect to fill that gap.
+  const refetchMessages = async () => {
+    const sid = sessionRef.current?.id;
+    if (!sid) return;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.get('/api/chat/messages', {
+        params: { sessionId: sid },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (Array.isArray(res.data?.data)) mergeMessages(res.data.data);
+    } catch (err) {
+      console.log('Chat re-fetch after reconnect failed:', err?.message);
+    }
   };
 
   // ─── Hardware/gesture back button ────────────────────────────────────────
@@ -276,7 +321,10 @@ const ChatSessionScreen = ({ route, navigation }) => {
       // timer (index.js) only cancels once this fires, so without it a real reconnect
       // would still get treated as an abandoned session and end a perfectly live chat.
       socketRef.current.on('connect', () => {
-        if (sessionRef.current) socketRef.current.emit('join_session', sessionRef.current.id);
+        if (!sessionRef.current) return;
+        socketRef.current.emit('join_session', sessionRef.current.id);
+        // Pick up anything sent while we were disconnected.
+        refetchMessages();
       });
 
       // Poll until session is created by vendor

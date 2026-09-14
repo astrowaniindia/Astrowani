@@ -5218,6 +5218,122 @@ not by the number of customers. The image disk cache is size-capped by FastImage
 **Signals to watch:** VPS request rate and CPU (`pm2 monit`), Supabase egress on the usage
 page, and `/api/astrologers` response size as astrologers are added.
 
+### CL. MSG91 SMS fallback is LIVE (2026-09-14)
+
+Before this, EnableX was the only OTP provider: `MSG91_*` was unset on the VPS, so
+`smsProviders.sendOtpSms` logged "no fallback provider configured".
+
+**Now set in the VPS backend `.env`:**
+- `MSG91_AUTH_KEY`
+- `MSG91_TEMPLATE_ID=676e59acd6fc0579ba751412` (the MSG91 template named "manu", Verified by DLT)
+- `MSG91_OTP_VAR=var`
+
+**`MSG91_OTP_VAR=var` is load-bearing.** The template's variable is `##var##`, but the code
+defaults to `otp`. Without it, MSG91 sends "your OTP is  for Login" with no code in it.
+
+**Don't use the other MSG91 templates:**
+- The three named "OTP for Login" show "Failed by DLT" / "Invalid DLT entity ID".
+- `New_voice_call` / `New_Video_call` belong to shaadiwali.com, not Astrowani.
+
+**Verified 2026-09-14:** `sendViaMsg91` from the VPS delivered "your OTP is 123456" to the owner's
+real phone. Wallet was ₹581.
+
+> **Test trap:** a test with a placeholder number (`+91XXXXXXXXXX`) still returns
+> `{ok:true}`. MSG91 reports success on acceptance, not delivery. Only an SMS actually
+> arriving on a phone proves it works. That placeholder test later appeared in MSG91 →
+> **API Failed Logs** as error **202** "No numbers to process / Invalid mobile number", and
+> MSG91 emailed a "Failed SMS API" alert. It was the only entry, and its request id matched
+> the test's returned id. If that alert arrives, match the request id there before assuming
+> real customers are affected.
+
+**When MSG91 is used:** only when EnableX demonstrably did not send the OTP:
+- EnableX rejected it or threw;
+- EnableX accepted it, but its job summary ~1.5s later shows every counter zero (credits
+  exhausted, the 2026-08-20 outage).
+
+**When it is NOT used:**
+- EnableX dispatched it but carrier delivery is slow or fails; a resend goes through EnableX
+  again;
+- the dispatch check was inconclusive.
+
+Covering those would need code, e.g. routing resends to MSG91.
+
+Keep balance in **both** wallets. Rate limits for OTP are per phone number, not per IP
+(`httpHardening.js`), with a global cap of 20,000/hour, so a marketing spike is not throttled.
+
+### CM. TODO — backups for chat, audio and video calls (audited 2026-09-14, NOT started)
+
+**What exists today** (measured from the code, 2026-09-14):
+- **Calls** are WebRTC peer-to-peer. Signalling (ringing, accept, offer/answer, ICE) goes over
+  Socket.io on the VPS only. Accept and cancel also have a Supabase Realtime backup path.
+- **STUN:** Google, 2 servers.
+- **TURN:** our coturn on the **same VPS** (`76.13.243.165:3478`, udp+tcp) plus
+  `openrelay.metered.ca` (free public relay, no SLA). Both were TCP-reachable on 2026-09-14.
+- **ICE lists are hardcoded** in 6 files: customer `VoiceCallScreen.tsx`, `VideoCallScreen.tsx`
+  and `LiveViewerScreen.tsx`; vendor `EnxScreenVoice.tsx`, `EnxScreenVideo.tsx` and
+  `GoLiveScreen.tsx`.
+- **Mid-call network drops** are recovered by ICE restart (`utils/iceRecovery.js`), not by
+  ending the call.
+- **Chat:** `POST /api/chat/message` saves the row, then the backend pushes it over the
+  socket's session room. Socket.io reconnects and re-joins the session.
+
+**Single point of failure:** the backend, Socket.io, our TURN relay, OTP sending and billing all
+run on ONE Hostinger VPS. If it is down (2026-09-11: ~13h), chat, calls, login and payments all
+stop together. The free public relay cannot help, because calls cannot be set up without
+signalling.
+
+**TODO, in priority order:**
+
+1. [ ] **Supabase Pro** (~$25/month): daily database backups. The Free plan has none (see **CA**).
+   *Owner action.*
+2. [x] **DONE in code 2026-09-14 (not yet OTA'd) — see "Fixed" note below.**
+   **Chat: messages are lost silently when sending fails.** `sendMessage` in
+   customer `ChatSessionScreen.js` (~line 216) clears the text box before the POST, and never
+   checks the response or catches the error. On a failure the message vanishes with no
+   feedback. Fix:
+   - keep the text, or show the bubble as "failed — tap to retry";
+   - check `res.ok` / `success`.
+
+   Check vendor `VendorChatSession.js` for the same pattern. *JS only, ships by OTA.*
+3. [x] **DONE in code 2026-09-14 (not yet OTA'd).**
+   **Chat: re-fetch history after a socket reconnect.** Messages delivered while the socket
+   was disconnected are saved in the DB but not shown until the screen is reopened. On the
+   `connect` handler (after re-`join_session`), call `GET /api/chat/messages` and merge by `id`.
+   Do it in both apps. *OTA.*
+4. [ ] **Replace the free TURN backup with a paid one** (e.g. Metered paid, Cloudflare TURN,
+   Twilio).
+   - Serve the ICE server list from the backend (e.g. `GET /api/call/ice-servers`, with
+     short-lived credentials) instead of hardcoding it in 6 files.
+   - That also lets the hardcoded coturn password be rotated (open item in **BZ**).
+   - Needs a store release of both apps once; after that, relays change with no app update.
+5. [ ] **Second server / failover.** Only once volume justifies it. It is a large job: Socket.io
+   needs a shared adapter (e.g. Redis), a load balancer, and sessionManager's billing worker
+   must run exactly once.
+6. [ ] **Hostinger daily VPS backups** (optional; currently weekly, see **CA**). *Owner action.*
+
+**Fixed (items 2 + 3), customer `ChatSessionScreen.js` and vendor `VendorChatSession.js`:**
+- **Send:** the POST goes through `Instance` (axios). The customer used bare `fetch`, which
+  never rejects on an HTTP error.
+  - **Success** (`success && data`): the saved row is merged into the list at once, so the
+    sender sees their message even while the socket reconnects.
+  - **Failure:** the text goes back in the box (only if the box is still empty) and an
+    `error` StatusPopup appears (`chatSession.sendFailed*` / `call.sendFailed*`, EN + HI).
+  - Vendor only: a failed send resets the 2s double-tap guard so a retry isn't swallowed,
+    and skips the chat push for a message that was never saved.
+- **Reconnect:** the socket `connect` handler (after re-`join_session`) calls
+  `refetchMessages()` → `GET /api/chat/messages`.
+- `mergeMessages()` dedupes by `id` and sorts by `created_at`, so the send response, the socket
+  event and the re-fetch can all deliver the same row.
+- Customer `StatusPopup` gained an `error` variant (the vendor one already had it).
+
+**Verified:** lint equals HEAD (the same pre-existing `exhaustive-deps` errors, plus
+`refetchMessages` in a mount-only deps list); both files parse with the RN babel preset; i18n
+parity is customer 1118 / vendor 443, every key exactly twice.
+
+**Not exercised on a device.** To test: turn airplane mode on and send (the popup should appear
+and the text come back), then turn it off. Also: keep one side offline while the other sends,
+then reconnect; the missed messages should appear without reopening the screen.
+
 ### CK. Customer store build 38 (2026-09-14) — WITHOUT the ad SDKs
 
 - `versionCode` 37 → **38**; `versionName` stays **24.1**, so OTA bundles targeting `24.1.x`

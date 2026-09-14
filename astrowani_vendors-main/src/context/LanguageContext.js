@@ -313,6 +313,8 @@ const translations = {
     'call.setupFailedMsg': 'We could not start the call on this device. Please check your microphone is not in use by another app and try again.',
     'call.typing': 'typing...',
     'call.messagePlaceholder': 'Message...',
+    'call.sendFailedTitle': 'Message not sent',
+    'call.sendFailedMsg': 'Please check your internet connection and send it again.',
     'call.sessionEnded': 'Session Ended',
 
     'editProfile.requiredNotice': 'Fields marked with',
@@ -783,6 +785,8 @@ const translations = {
     'call.setupFailedMsg': 'हम इस डिवाइस पर कॉल शुरू नहीं कर सके। कृपया जाँचें कि आपका माइक्रोफ़ोन किसी अन्य ऐप द्वारा उपयोग में नहीं है और पुनः प्रयास करें।',
     'call.typing': 'टाइप कर रहे हैं...',
     'call.messagePlaceholder': 'संदेश...',
+    'call.sendFailedTitle': 'संदेश नहीं भेजा गया',
+    'call.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और इसे फिर से भेजें।',
     'call.sessionEnded': 'सत्र समाप्त',
 
     'editProfile.requiredNotice': 'जिन फ़ील्ड पर',

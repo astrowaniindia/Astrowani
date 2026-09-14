@@ -72,6 +72,7 @@ const VARIANTS = {
   insufficient: { icon: 'account-balance-wallet', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
   confirmPay:   { icon: 'payments', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
   endCall:      { icon: 'call-end', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
+  error:        { icon: 'error-outline', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
 };
 
 // The secondary action in the three-button layout (e.g. "Invite a friend").
