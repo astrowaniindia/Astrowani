@@ -10,6 +10,8 @@ import ImageField from '../components/ImageField';
 const DEFAULTS = {
   enabled: true,
   name: 'Acharya Priya',
+  // Decides how the AI talks about itself in Hindi/Hinglish ("dekhti hoon" vs "dekhta hoon").
+  gender: 'female',
   image: '',
   experience: '12 years',
   specialities: 'Love & Relationship, Career, Vedic Astrology',
@@ -74,6 +76,12 @@ export default function FreeBotChat() {
 
         <div className="field"><label>Persona name</label>
           <input type="text" value={form.name} onChange={(e) => set('name', e.target.value)} /></div>
+
+        <div className="field"><label>Persona gender</label>
+          <select value={form.gender === 'male' ? 'male' : 'female'} onChange={(e) => set('gender', e.target.value)}>
+            <option value="female">Female (AI says "dekhti hoon", "bataungi")</option>
+            <option value="male">Male (AI says "dekhta hoon", "bataunga")</option>
+          </select></div>
 
         <div className="field"><label>Experience text</label>
           <input type="text" value={form.experience} onChange={(e) => set('experience', e.target.value)} placeholder="e.g. 12 years" /></div>

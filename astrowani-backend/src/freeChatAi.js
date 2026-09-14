@@ -125,15 +125,23 @@ function cleanModels(list) {
 }
 
 // Appended after the admin's instructions. Not editable from admin on purpose.
-function fixedRules({ personaName, secondsLeft, language }) {
+function fixedRules({ personaName, personaGender = 'female', secondsLeft, language }) {
+  const female = personaGender !== 'male';
+  const shortExamples = female
+    ? '"Achha ji.", "Theek hai, samajh gayi.", "Hmm, dekhti hoon."'
+    : '"Achha ji.", "Theek hai, samajh gaya.", "Hmm, dekhta hoon."';
+  const genderRule = female
+    ? `- You are a WOMAN. Whenever you refer to yourself in Hindi or Hinglish, always use feminine verb forms: "dekhti hoon", "batati hoon", "bataungi", "samajh gayi", "sochti hoon", "kar sakti hoon", "rahi hoon", "chahti hoon". Never use masculine forms like "dekhta", "bataunga", "samajh gaya", "sakta", "raha".`
+    : `- You are a MAN. Whenever you refer to yourself in Hindi or Hinglish, always use masculine verb forms: "dekhta hoon", "batata hoon", "bataunga", "samajh gaya", "kar sakta hoon".`;
   return `
 
 FIXED RULES (these override anything above):
 - You are "${personaName}" in the Astrowani app's free 5-minute chat. About ${Math.max(0, Math.round(secondsLeft))} seconds of the chat remain.
+${genderRule}
 - Greet, say "Namaste", or introduce yourself only in your very first message of the chat. After that, never greet or introduce yourself again; just continue the conversation naturally.
 - Do not repeat something you already said earlier in this chat.
 - Write like a real astrologer typing on a phone chat, NOT like an essay. Your replies must VARY in length the way a person's do:
-  • If the customer sends something short ("ha", "ok", "ji", "hmm", a date, a name), reply short too: a few words to one sentence ("Achha ji.", "Theek hai, samajh gaya.", "Hmm, dekhta hoon.").
+  • If the customer sends something short ("ha", "ok", "ji", "hmm", a date, a name), reply short too: a few words to one sentence (${shortExamples}).
   • A simple question gets a simple, direct answer in one or two sentences.
   • Only when you are actually giving a reading or explaining something important, use up to 4 sentences.
   • Never fall into a pattern. Two replies in a row should not have the same length or the same shape.
@@ -247,13 +255,25 @@ async function loadConfig() {
   return merged;
 }
 
-async function loadPersonaName() {
+// The persona the AI speaks as: name and gender from the admin's persona card
+// (app_settings free_bot_chat_persona). Gender decides Hindi verb forms — a woman
+// says "dekhti hoon", a man "dekhta hoon". Defaults to the current persona, a woman.
+async function personaArgs() {
+  const p = await loadPersona();
+  return { personaName: p.name, personaGender: p.gender };
+}
+
+async function loadPersona() {
+  const fallback = { name: 'Acharya Priya', gender: 'female' };
   try {
     const { data } = await db.from('app_settings').select('value').eq('key', 'free_bot_chat_persona').limit(1);
-    const name = data && data.length && data[0].value ? JSON.parse(data[0].value)?.name : null;
-    return (typeof name === 'string' && name.trim()) || 'Acharya Priya';
+    const p = data && data.length && data[0].value ? JSON.parse(data[0].value) : null;
+    return {
+      name: (typeof p?.name === 'string' && p.name.trim()) || fallback.name,
+      gender: p?.gender === 'male' ? 'male' : 'female',
+    };
   } catch (_) {
-    return 'Acharya Priya';
+    return fallback;
   }
 }
 
@@ -438,14 +458,14 @@ async function tryModel({ key, tier = 'free', model, system, contents, temperatu
  * Walks the model list. Resolves { reply, model, attempts } or
  * { fallback, reason, detail, attempts }. Never throws.
  */
-async function generate({ config, customer, history, opening, secondsLeft, language, personaName, models, ignoreBlocks, onlyTier }) {
+async function generate({ config, customer, history, opening, secondsLeft, language, personaName, personaGender, models, ignoreBlocks, onlyTier }) {
   // onlyTier: admin "Test consult key" — use just that key, straight away.
   const keys = geminiKeys().filter((k) => !onlyTier || k.tier === onlyTier);
   if (!keys.length) return { fallback: true, reason: onlyTier ? `no_${onlyTier}_key` : 'no_api_key', attempts: [] };
 
   const system = config.instructions
     + (config.sendProfile ? profileBlock(customer) : '')
-    + fixedRules({ personaName, secondsLeft, language });
+    + fixedRules({ personaName, personaGender, secondsLeft, language });
   const contents = toContents(history, opening);
 
   const deadline = Date.now() + REQUEST_BUDGET_MS;
@@ -560,7 +580,7 @@ module.exports = function registerFreeChatAiRoutes(app) {
       opening: body.opening === true,
       secondsLeft: Number(body.secondsLeft) || 0,
       language: body.language === 'hi' ? 'hi' : 'en',
-      personaName: await loadPersonaName(),
+      ...(await personaArgs()),
     });
 
     if (result.fallback) {
@@ -664,7 +684,7 @@ module.exports = function registerFreeChatAiRoutes(app) {
       opening: b.opening === true,
       secondsLeft: Number(b.secondsLeft) || 240,
       language: b.language === 'hi' ? 'hi' : 'en',
-      personaName: await loadPersonaName(),
+      ...(await personaArgs()),
       models: single ? [single] : config.models,
       ignoreBlocks: !!single || !!onlyTier,
       onlyTier,
