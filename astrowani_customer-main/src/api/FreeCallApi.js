@@ -22,13 +22,34 @@ const OFFER_OFF = { enabled: false, eligible: false, booking: null, offer: null 
  * { enabled, eligible, booking, offer } — whether to show the offer at all,
  * whether THIS customer can take it, and their existing booking if they already did.
  */
-export async function getFreeCallOffer() {
+async function fetchFreeCallOffer() {
   try {
     const res = await Instance.get('/api/free-call/offer', await authHeader());
     return res.data?.success ? res.data : OFFER_OFF;
   } catch (_) {
     return OFFER_OFF;
   }
+}
+
+// A request started before Home opened (from the signup welcome screen), so the
+// popup can appear the moment Home is on screen instead of after another round trip.
+let offerPrefetch = null; // { promise, at }
+const PREFETCH_FRESH_MS = 60 * 1000;
+
+export function prefetchFreeCallOffer() {
+  offerPrefetch = { promise: fetchFreeCallOffer(), at: Date.now() };
+  return offerPrefetch.promise;
+}
+
+// `usePrefetched` takes the answer already on its way (if recent) instead of asking
+// again. Used once, by Home's first load; later refreshes always ask the server.
+export async function getFreeCallOffer({ usePrefetched = false } = {}) {
+  if (usePrefetched && offerPrefetch && Date.now() - offerPrefetch.at < PREFETCH_FRESH_MS) {
+    const { promise } = offerPrefetch;
+    offerPrefetch = null;
+    return promise;
+  }
+  return fetchFreeCallOffer();
 }
 
 /**

@@ -25,6 +25,7 @@ import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import { prefetchFreeCallOffer } from '../../api/FreeCallApi';
 
 // Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281).
 const GUIDE_AVATAR_ASPECT = 145 / 281;
@@ -113,6 +114,16 @@ export default function SignupWelcome({ navigation, route }) {
 
   useEffect(() => {
     captureEvent('signup_welcome_viewed');
+    // Ask for the free call offer now, while the customer reads this screen, so
+    // Home can show its popup the moment it opens.
+    prefetchFreeCallOffer().then((fc) => {
+      // Warm the astrologer photos the popup shows, so it opens complete.
+      (fc?.offer?.astrologers || []).forEach((a) => {
+        if (typeof a?.image === 'string' && /^https?:/.test(a.image)) {
+          Image.prefetch(a.image).catch(() => {});
+        }
+      });
+    });
     Animated.sequence([
       Animated.timing(enter, { toValue: 1, duration: 550, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.spring(bubbleIn, { toValue: 1, friction: 6, tension: 60, useNativeDriver: true }),

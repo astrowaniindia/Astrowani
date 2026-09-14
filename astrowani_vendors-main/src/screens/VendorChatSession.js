@@ -12,6 +12,7 @@ import {
   StatusBar,
   ImageBackground,
   ScrollView,
+  AppState,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,6 +67,21 @@ const VendorChatSession = ({ route, navigation }) => {
   const minutes = Math.floor(seconds / 60);
   const secs = seconds % 60;
 
+  // ─── App in background / foreground ──────────────────────────────────────
+  // Pressing Home or switching apps mid-chat tells the server, which then keeps the
+  // chat open (billing as normal) for up to 5 minutes even if the phone puts the app
+  // to sleep, instead of ending it 45s after the connection drops. Coming back clears
+  // it. If the socket is disconnected meanwhile, socket.io sends the event on reconnect.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (!sessionIdRef.current || !socketRef.current) return;
+      if (next === 'background' || next === 'active') {
+        socketRef.current.emit('session_app_state', { sessionId: sessionIdRef.current, state: next });
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   // ─── Init ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
@@ -82,7 +98,14 @@ const VendorChatSession = ({ route, navigation }) => {
       // timer (index.js) only cancels once this fires, so without it a real reconnect
       // would still get treated as an abandoned session and end a perfectly live chat.
       socketRef.current.on('connect', () => {
-        if (sessionIdRef.current) socketRef.current.emit('join_session', sessionIdRef.current);
+        if (!sessionIdRef.current) return;
+        socketRef.current.emit('join_session', sessionIdRef.current);
+        // Tell the server which state we are in after every (re)connect, so the
+        // background window started while we were asleep is cleared once back.
+        socketRef.current.emit('session_app_state', {
+          sessionId: sessionIdRef.current,
+          state: AppState.currentState === 'active' ? 'active' : 'background',
+        });
       });
 
       let finalSessionId = initialSessionId;

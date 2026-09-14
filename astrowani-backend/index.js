@@ -404,6 +404,11 @@ function cancelPendingSessionTermination(sessionId, participantId) {
 function scheduleSessionAbandonCheck(sessionId, participantId) {
   const key = `${sessionId}:${participantId}`;
   if (pendingSessionTerminations.has(key)) return; // already scheduled — e.g. duplicate disconnect events
+  // An astrologer whose app was sent to the background (not closed) gets the longer
+  // background window (sessionManager keeps billing during it).
+  const graceMs = sessionManager.isVendorBackground(sessionId, participantId)
+    ? sessionManager.constructor.VENDOR_BACKGROUND_GRACE_MS
+    : SESSION_ABANDON_GRACE_MS;
   const timer = setTimeout(async () => {
     pendingSessionTerminations.delete(key);
     try {
@@ -413,12 +418,12 @@ function scheduleSessionAbandonCheck(sessionId, participantId) {
         .eq('id', sessionId)
         .maybeSingle();
       if (!session || !session.is_active) return; // already ended some other way — nothing to do
-      console.warn(`[socket] Participant ${participantId} did not reconnect to session ${sessionId} within ${SESSION_ABANDON_GRACE_MS}ms — force-ending session (money-leak guard).`);
+      console.warn(`[socket] Participant ${participantId} did not reconnect to session ${sessionId} within ${graceMs}ms — force-ending session (money-leak guard).`);
       await sessionManager.terminateSession(sessionId, 'Participant disconnected (app closed or lost connection)');
     } catch (e) {
       console.error('[socket] abandon-check error:', e.message);
     }
-  }, SESSION_ABANDON_GRACE_MS);
+  }, graceMs);
   pendingSessionTerminations.set(key, timer);
 }
 
@@ -482,6 +487,31 @@ io.on('connection', (socket) => {
     socket.data.sessionId = sessionId;
     socket.data.participantId = realId;
     cancelPendingSessionTermination(sessionId, realId);
+  });
+
+  // The ASTROLOGER app reports going to the background (pressed Home / switched apps)
+  // and coming back mid-session. While in the background the session stays open (and
+  // keeps billing) for SessionManager.VENDOR_BACKGROUND_GRACE_MS, instead of being ended
+  // 45s after the phone drops the app's connection. Only the session's own astrologer
+  // is accepted.
+  socket.on('session_app_state', async (data) => {
+    const sessionId = data && data.sessionId;
+    const state = data && data.state;
+    if (!sessionId || (state !== 'background' && state !== 'active')) return;
+    try {
+      // Identity from the verified token, not socket.data: this event can arrive before
+      // an async join_session on the same socket has finished (e.g. right after a
+      // reconnect), and a dropped 'active' would leave billing paused and end the chat.
+      const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
+      if (!realId) return;
+      const { data: row } = await supabaseService
+        .from('chat_sessions').select('vendor_id, is_active').eq('id', sessionId).maybeSingle();
+      if (!row || !row.is_active) return;
+      if (String(row.vendor_id) !== String(realId)) return;
+      sessionManager.setVendorBackground(sessionId, row.vendor_id, state === 'background');
+    } catch (e) {
+      console.error('[socket] session_app_state error:', e.message);
+    }
   });
 
   const getSocketActor = async () => {

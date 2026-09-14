@@ -14,6 +14,7 @@ import { LanguageProvider } from './src/context/LanguageContext';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { hydrateHomeCache, prefetchHomeData } from './src/utils/homePreload';
 import { loadMascotTips } from './src/utils/mascotTips';
+import { prefetchFreeCallOffer } from './src/api/FreeCallApi';
 
 // Override global Alert.alert to render our CustomAlert component globally
 const originalAlert = Alert.alert;
@@ -47,6 +48,11 @@ const App = () => {
     prefetchHomeData({ force: true });
     // Guide mascot tips: admin config + "already seen" memory, ready before any screen.
     loadMascotTips();
+    // Free call offer for a signed-in customer, so Home can open its popup the moment
+    // it appears (the welcome screen does the same right after signup).
+    AsyncStorage.getItem('token')
+      .then((token) => { if (token) prefetchFreeCallOffer(); })
+      .catch(() => {});
 
     const bootstrapAsync = async () => {
       // Last time's Home data into memory before the first screen renders, so Home

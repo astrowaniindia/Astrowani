@@ -230,6 +230,10 @@ const MARQUEE_SPEED_PX_PER_SEC = 26; // roughly the old 1px-per-16ms drift
 const CONSULT_BAR_HIDDEN_UNTIL = 30;
 const CONSULT_BAR_SHOW_AT = 110;
 
+// Once per app launch, Home checks whether the customer has a chat that is still
+// running (their app was closed or restarted mid-chat) and takes them back into it.
+let resumeChatChecked = false;
+
 // The floating Chat/Talk bar, as its own component so that showing or hiding it
 // never re-renders all of Home. The slide is driven natively by `scrollY`; Home
 // flips only whether it is tappable, through the ref, when the scroll crosses
@@ -973,31 +977,8 @@ const Home = ({navigation}) => {
         }
       }
 
-      // Free 12-minute intro call — the offer that replaced the bot chat above.
-      // ONE call answers "is it on", "is this customer eligible" and "have they
-      // already booked", all decided server-side. The popup auto-opens once;
-      // after that the floating gift bubble is the way back to it (see the
-      // render), which is why the "seen" flag gates only the popup.
-      try {
-        const fc = await getFreeCallOffer();
-        setFreeCall(fc);
-        let autoOpened = false;
-        if (fc.enabled && fc.eligible) {
-          const seen = await hasSeenFreeCallOffer(userData.id);
-          if (!seen) {
-            autoOpened = true;
-            setFreeCallSource('auto');
-            setFreeCallVisible(true);
-          }
-        }
-        // The Home mascot tip waits for this popup: nothing to wait for if it was
-        // not opened, otherwise it becomes true when the customer closes or books.
-        if (!autoOpened) setFreeCallHandled(true);
-      } catch (_) {
-        // getFreeCallOffer already resolves to "off" on failure; this is belt
-        // and braces so a surprise here can never skip setLoading(false) below.
-        setFreeCallHandled(true);
-      }
+      // The free call offer is checked separately (checkFreeCallOffer), in parallel
+      // with this, so its popup doesn't wait for the profile and free chat calls.
       }
       setLoading(false);
     } catch (error) {
@@ -1157,7 +1138,79 @@ const Home = ({navigation}) => {
       }
     };
 
+  // Free 12-minute intro call — the offer that replaced the bot chat. ONE call
+  // answers "is it on", "is this customer eligible" and "have they already
+  // booked", all decided server-side. The popup auto-opens once; after that the
+  // floating gift bubble is the way back to it (see the render), which is why the
+  // "seen" flag gates only the popup.
+  //
+  // Runs on its own as soon as Home mounts — not after the profile and free chat
+  // calls — and reuses the request the welcome screen already started, so a new
+  // customer sees the popup right away instead of several seconds later.
+  const checkFreeCallOffer = async () => {
+    try {
+      const [fc, customerId] = await Promise.all([
+        getFreeCallOffer({ usePrefetched: true }),
+        AsyncStorage.getItem('customerId'),
+      ]);
+      setFreeCall(fc);
+      let autoOpened = false;
+      if (fc.enabled && fc.eligible && customerId) {
+        const seen = await hasSeenFreeCallOffer(customerId);
+        if (!seen) {
+          autoOpened = true;
+          setFreeCallSource('auto');
+          setFreeCallVisible(true);
+        }
+      }
+      // The Home mascot tip waits for this popup: nothing to wait for if it was
+      // not opened, otherwise it becomes true when the customer closes or books.
+      if (!autoOpened) setFreeCallHandled(true);
+    } catch (_) {
+      // getFreeCallOffer resolves to "off" on failure; this only guards surprises.
+      setFreeCallHandled(true);
+    }
+  };
+
+  // A chat that is still active on the server but no longer open in the app — the app
+  // was killed, crashed or restarted mid-chat. Take the customer straight back into it,
+  // so they can carry on (the backend stops billing and ends the chat if nobody returns;
+  // see astrowani-backend/src/sessionManager.js bothParticipantsPresent).
+  const resumeActiveChat = async () => {
+    if (resumeChatChecked) return;
+    resumeChatChecked = true;
+    try {
+      const customerId = await AsyncStorage.getItem('customerId');
+      if (!customerId) return;
+      const { data: rows } = await supabase
+        .from('chat_sessions')
+        .select('id, request_id, vendor_id, call_type')
+        .eq('caller_id', customerId)
+        .eq('is_active', true)
+        .order('started_at', { ascending: false })
+        .limit(1);
+      const s = rows && rows[0];
+      if (!s || s.call_type !== 'chat' || !s.request_id) return;
+      const { data: astro } = await supabase
+        .from('astrologers')
+        .select('id, first_name, last_name, profile_pic_url')
+        .eq('id', s.vendor_id)
+        .maybeSingle();
+      const name = [astro?.first_name, astro?.last_name].filter(Boolean).join(' ') || t('common.astrologer');
+      captureEvent('chat_resumed_after_relaunch', { session_id: s.id });
+      navigation.navigate('ChatSessionScreen', {
+        requestId: s.request_id,
+        sessionId: s.id,
+        person: { id: s.vendor_id, userId: s.vendor_id, name, profileImage: astro?.profile_pic_url || '' },
+      });
+    } catch (_) {
+      // Nothing to resume, or it couldn't be checked — Home carries on as normal.
+    }
+  };
+
   const loadAllData = () => {
+    resumeActiveChat();
+    checkFreeCallOffer();
     getThoutsOfTheDay();
     fetchUserProfile();
     fetchAstrologer();

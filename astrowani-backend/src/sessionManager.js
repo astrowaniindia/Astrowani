@@ -33,6 +33,16 @@ class SessionManager {
   // customer. See endStaleBilledSessions().
   static MAX_BILLED_SESSION_MS = 2 * 60 * 60 * 1000;
 
+  // How long a customer or astrologer may be disconnected from a billed session before
+  // it is ended. Covers a brief network drop or a backend restart (clients rejoin on
+  // reconnect); nothing is billed during it. See bothParticipantsPresent().
+  static SESSION_PRESENCE_GRACE_MS = 45 * 1000;
+
+  // How long an ASTROLOGER may keep a billed session open while their app is in the
+  // background (pressed Home / switched apps) before it is ended. Billing continues
+  // as normal during it.
+  static VENDOR_BACKGROUND_GRACE_MS = 5 * 60 * 1000;
+
   constructor() {
     this.pollingInterval = 30 * 1000; // Poll every 30 seconds
     this.resetInterval = 60 * 60 * 1000; // Check resets every hour
@@ -52,8 +62,16 @@ class SessionManager {
     this.earningsResetStateLoaded = false;
     // Re-entrancy guard for the 30s billing poll — see checkActiveSessions().
     this.isCheckingSessions = false;
-    // Map tracking when a session room was first observed with 0 connected sockets: sessionId -> timestampMs
-    this.emptyRoomSince = new Map();
+    // When a participant of an active session was first seen NOT connected to its
+    // socket room: "sessionId:caller" / "sessionId:vendor" -> timestampMs.
+    // See checkActiveSessions().
+    this.absentSince = new Map();
+    // Astrologer app sent to the background mid-session: "sessionId:vendorId" -> ms.
+    // Set/cleared by the vendor app's session_app_state socket event (index.js).
+    this.vendorBackgroundSince = new Map();
+    // When billing for a session was paused because someone was away: sessionId -> ms.
+    // On resume the next charge is pushed back by the pause, so away time is never billed.
+    this.pausedSince = new Map();
     console.log('SessionManager Instance Created.');
   }
 
@@ -494,22 +512,22 @@ class SessionManager {
     this.isCheckingSessions = true;
     const now = new Date();
     try {
-      // Narrowed to the columns processBilling/this loop actually reads — this
-      // runs every 30s for as long as any session is active, so full-row
-      // fetch cost scales with active-session count on every tick.
+      // ALL active billed sessions, not only the ones due: presence is checked on
+      // every tick (see below), so a participant who left is caught within a tick
+      // instead of only when their next minute comes due.
       // is_free excludes the free 12-minute introductory calls (see
       // sql/free_call_in_app.sql). Those run on a real chat_sessions row so the
       // WebRTC screens' membership checks work, but they must never be billed —
       // this filter is the single place that guarantees it.
+      const COLUMNS = 'id, caller_id, vendor_id, next_billing_at';
       let sessions;
       let error;
       if (freeColumnAvailable) {
         ({ data: sessions, error } = await supabase
           .from('chat_sessions')
-          .select('id')
+          .select(COLUMNS)
           .eq('is_active', true)
-          .eq('is_free', false)
-          .lte('next_billing_at', now.toISOString()));
+          .eq('is_free', false));
         // 42703 / PGRST204: the migration has not been applied on this database yet.
         // Latch it off and carry on unfiltered rather than letting the whole billing
         // loop die — a backend that bills nobody is far worse than one that briefly
@@ -528,17 +546,36 @@ class SessionManager {
       if (!freeColumnAvailable) {
         ({ data: sessions, error } = await supabase
           .from('chat_sessions')
-          .select('id')
-          .eq('is_active', true)
-          .lte('next_billing_at', now.toISOString()));
+          .select(COLUMNS)
+          .eq('is_active', true));
       }
 
       if (error) throw error;
-      if (!sessions || sessions.length === 0) return;
+      const active = sessions || [];
+      // Forget absence/pause timers for sessions that are no longer active.
+      const activeIds = new Set(active.map((s) => s.id));
+      for (const map of [this.absentSince, this.vendorBackgroundSince]) {
+        for (const key of map.keys()) {
+          if (!activeIds.has(key.split(':')[0])) map.delete(key);
+        }
+      }
+      for (const id of this.pausedSince.keys()) {
+        if (!activeIds.has(id)) this.pausedSince.delete(id);
+      }
+      if (active.length === 0) return;
 
-      console.log(`[SessionManager] Found ${sessions.length} sessions due for billing.`);
-
-      await Promise.all(sessions.map((session) => this.processBilling(session)));
+      await Promise.all(active.map(async (session) => {
+        // Never charge a customer for a minute unless BOTH people are actually
+        // connected to the session. Ended after a short grace if either stays away.
+        const present = await this.bothParticipantsPresent(session);
+        if (!present) {
+          if (!this.pausedSince.has(session.id)) this.pausedSince.set(session.id, Date.now());
+          return;
+        }
+        await this.resumeAfterPause(session);
+        const due = session.next_billing_at && new Date(session.next_billing_at) <= now;
+        if (due) await this.processBilling(session);
+      }));
     } catch (err) {
       console.error('[SessionManager] Error in checkActiveSessions:', err.message);
     } finally {
@@ -549,38 +586,118 @@ class SessionManager {
   /**
    * Processes a single billing cycle (1 minute)
    */
-  async processBilling(session) {
-    // Zero-occupant empty room guard:
-    // If socket.io is available, check whether any sockets are connected in the session room.
-    // If both parties have disconnected/left (e.g. app closed/swiped mid-call), pause billing.
-    // If 0 participants remain for >30 seconds, auto-terminate the session to prevent money leaks.
-    if (this.io && this.io.sockets && this.io.sockets.adapter) {
-      const room = this.io.sockets.adapter.rooms.get(session.id);
-      const occupantCount = room ? room.size : 0;
-      if (occupantCount === 0) {
-        const firstEmpty = this.emptyRoomSince.get(session.id);
-        const nowMs = Date.now();
-        if (!firstEmpty) {
-          this.emptyRoomSince.set(session.id, nowMs);
-          console.warn(`[SessionManager] Session ${session.id} has 0 connected participants. Pausing billing tick.`);
-          return;
-        } else if (nowMs - firstEmpty >= 30000) {
-          console.warn(`[SessionManager] Session ${session.id} empty for ${Math.round((nowMs - firstEmpty) / 1000)}s — force terminating abandoned session.`);
-          this.emptyRoomSince.delete(session.id);
-          await this.terminateSession(session.id, 'Session abandoned: zero connected participants');
-          return;
-        } else {
-          console.warn(`[SessionManager] Session ${session.id} still empty (${Math.round((nowMs - firstEmpty) / 1000)}s). Pausing billing tick.`);
-          return;
-        }
-      } else {
-        // Room has active participants, clear any empty room timer
-        if (this.emptyRoomSince.has(session.id)) {
-          this.emptyRoomSince.delete(session.id);
+  /**
+   * MONEY-LEAK GUARD (2026-09-14). Is the customer AND the astrologer connected to this
+   * session's socket room right now? Returns true only if both are.
+   *
+   * The previous guard paused billing only when the room was completely EMPTY. So when
+   * just the customer's app died (killed, crashed, restarted) while the astrologer stayed
+   * in the chat, the room still had one occupant and every minute kept being charged to
+   * a customer who was no longer there. Seen on 2026-09-14 in a real test chat.
+   *
+   * Presence is identified by socket.data.participantId, which index.js sets on a verified
+   * join_session — every chat/call screen in both apps emits it on mount and on every
+   * reconnect. A participant missing for SESSION_PRESENCE_GRACE_MS ends the session through
+   * terminateSession(), which notifies both sides. No minute is billed while anyone is
+   * missing. Without socket.io (scripts, tests) it answers true, the old behaviour.
+   */
+  async bothParticipantsPresent(session) {
+    if (!this.io || typeof this.io.in !== 'function') return true;
+    let sockets;
+    try {
+      sockets = await this.io.in(session.id).fetchSockets();
+    } catch (err) {
+      // Can't tell — don't end a session over our own error, but don't bill it either.
+      console.error(`[SessionManager] presence check failed for ${session.id}:`, err.message);
+      return false;
+    }
+    const ids = new Set(sockets.map((s) => String(s.data?.participantId || '')));
+    const nowMs = Date.now();
+    let allPresent = true;
+    for (const [role, id] of [['caller', session.caller_id], ['vendor', session.vendor_id]]) {
+      const key = `${session.id}:${role}`;
+      // Astrologer's app is in the background (pressed Home / switched apps, not closed):
+      // the session carries on and keeps BILLING as normal, even if the phone has put the
+      // app to sleep and its socket dropped, for up to VENDOR_BACKGROUND_GRACE_MS. After
+      // that the session is ended. Product decision 2026-09-14.
+      if (role === 'vendor') {
+        const bgSince = this.vendorBackgroundSince.get(`${session.id}:${id}`);
+        if (bgSince) {
+          this.absentSince.delete(key);
+          if (nowMs - bgSince >= SessionManager.VENDOR_BACKGROUND_GRACE_MS) {
+            console.warn(`[SessionManager] Session ${session.id}: astrologer in background ${Math.round((nowMs - bgSince) / 1000)}s — ending session.`);
+            this.absentSince.delete(`${session.id}:caller`);
+            this.vendorBackgroundSince.delete(`${session.id}:${id}`);
+            await this.terminateSession(session.id, 'Astrologer left the app during the session');
+            return false;
+          }
+          continue;
         }
       }
+      if (id && ids.has(String(id))) {
+        this.absentSince.delete(key);
+        continue;
+      }
+      allPresent = false;
+      const since = this.absentSince.get(key);
+      if (!since) {
+        this.absentSince.set(key, nowMs);
+        console.warn(`[SessionManager] Session ${session.id}: ${role} not connected — billing paused.`);
+      } else if (nowMs - since >= SessionManager.SESSION_PRESENCE_GRACE_MS) {
+        const who = role === 'caller' ? 'Customer' : 'Astrologer';
+        console.warn(`[SessionManager] Session ${session.id}: ${role} away ${Math.round((nowMs - since) / 1000)}s — ending session.`);
+        this.absentSince.delete(`${session.id}:caller`);
+        this.absentSince.delete(`${session.id}:vendor`);
+        await this.terminateSession(session.id, `${who} left the session (app closed or lost connection)`);
+        return false;
+      }
     }
+    return allPresent;
+  }
 
+  // Astrologer app went to the background (true) or came back (false). Only the
+  // session's own astrologer is accepted — index.js verifies that before calling.
+  setVendorBackground(sessionId, vendorId, isBackground) {
+    const key = `${sessionId}:${vendorId}`;
+    if (isBackground) {
+      if (!this.vendorBackgroundSince.has(key)) {
+        this.vendorBackgroundSince.set(key, Date.now());
+        console.log(`[SessionManager] Session ${sessionId}: astrologer app in background — session kept open.`);
+      }
+    } else if (this.vendorBackgroundSince.delete(key)) {
+      console.log(`[SessionManager] Session ${sessionId}: astrologer app back in foreground.`);
+    }
+  }
+
+  isVendorBackground(sessionId, vendorId) {
+    return this.vendorBackgroundSince.has(`${sessionId}:${vendorId}`);
+  }
+
+  // Both participants are back after a pause: push the next charge back by the length
+  // of the pause, so the minute that was running when someone left is not charged for
+  // the time they were away. (process_session_billing only ever bills one minute per
+  // call, but without this the overdue minute would be charged the moment they return.)
+  async resumeAfterPause(session) {
+    const since = this.pausedSince.get(session.id);
+    if (!since) return;
+    this.pausedSince.delete(session.id);
+    const pauseMs = Date.now() - since;
+    if (pauseMs <= 0 || !session.next_billing_at) return;
+    const next = new Date(new Date(session.next_billing_at).getTime() + pauseMs).toISOString();
+    const { error } = await supabase
+      .from('chat_sessions')
+      .update({ next_billing_at: next })
+      .eq('id', session.id)
+      .eq('is_active', true);
+    if (error) {
+      console.error(`[SessionManager] could not shift billing after pause for ${session.id}:`, error.message);
+      return;
+    }
+    session.next_billing_at = next;
+    console.log(`[SessionManager] Session ${session.id}: resumed after ${Math.round(pauseMs / 1000)}s pause — next charge moved to ${next}.`);
+  }
+
+  async processBilling(session) {
     console.log(`[SessionManager] Billing session ${session.id} via RPC`);
 
     try {
@@ -660,8 +777,13 @@ class SessionManager {
    */
   async terminateSession(sessionId, reason = 'Normal termination') {
     console.log(`[SessionManager] Terminating session ${sessionId}. Reason: ${reason}`);
-    this.emptyRoomSince.delete(sessionId);
-    
+    this.absentSince.delete(`${sessionId}:caller`);
+    this.absentSince.delete(`${sessionId}:vendor`);
+    this.pausedSince.delete(sessionId);
+    for (const key of this.vendorBackgroundSince.keys()) {
+      if (key.startsWith(`${sessionId}:`)) this.vendorBackgroundSince.delete(key);
+    }
+
     // Fetch session first to get caller_id and vendor_id
     const { data: session } = await supabase
       .from('chat_sessions')
