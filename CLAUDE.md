@@ -5137,3 +5137,80 @@ manifest + signing as in CE, owner uploads.
 
 **Campaign tip:** start Meta/Google campaigns on installs or sign-ups; switch to Purchase
 optimisation once ads bring roughly 50 recharges a week.
+
+---
+
+## Session 2026-09-14: Home prepared before it opens, and smoother scrolling
+
+### CI. Home preload + persistent cache (customer app)
+
+**Why:** on a cold start Home fetched each section itself, so cards, banners and report
+tiles popped in one by one and images faded in while the customer was scrolling.
+
+**How it works** (`src/utils/homePreload.js`):
+- `App.js` starts `prefetchHomeData({force:true})` at launch, so it runs during the splash
+  and on Login/Signup. It fetches astrologers, categories, blogs, top reviews, live, astro
+  services, greeting lines and the two Home banner slots in **both** languages, then
+  `FastImage.preload`s every image.
+- `App.js` also awaits `hydrateHomeCache()` (capped at 1.5 s) before the first screen.
+  That loads last time's saved data into an in-memory store.
+- Home's `useState` initialisers and `PlacementBanner` read that store synchronously, so
+  Home's first frame already has everything. Home still refreshes in the background and
+  writes back through `saveHomeData`.
+- Saved in AsyncStorage (`cache_v1_*`, the same keys `utils/cacheFetch` already used) plus
+  FastImage's disk cache. Survives app kill and removal from recents.
+- **Every endpoint involved is public.** Verified 2026-09-14: all answer 200 with no token,
+  which is why this can run before login.
+
+**Same pass:**
+- Home avatars, blog, live and review images → FastImage.
+- `FreeServicesScreen` got `animateIn` (Home passes `false`; the full Free Services screen
+  keeps its staggered fade).
+- Video Call marquee cards use `renderToHardwareTextureAndroid`. **Do not** add it to the
+  "India's Best Astrologers" cards: their photo overhangs the card and a texture clips to
+  bounds.
+- The floating Chat/Talk bar is its own `ConsultBar` component (scroll-driven, native).
+- Banners became a swipeable, auto-advancing slider with dots (`PlacementBanner`).
+
+**Measured** on the emulator with the same scripted scroll (`dumpsys gfxinfo`, starting
+away from the top so pull-to-refresh can't pollute it):
+
+| | Janky frames | p50 | p90 |
+|---|---|---|---|
+| Original | 33.7% | 42 ms | 61 ms |
+| Hardware texture + ConsultBar split | 23.8% | 36 ms | 57 ms |
+| + preload / FastImage | 5.6% | 26 ms | 40 ms |
+
+### CJ. OPEN — revisit the preload's cost as customers grow (not urgent, noted 2026-09-14)
+
+The owner asked for this to be recorded to deal with later.
+
+**What does NOT grow with customers:** storage on each phone. Each device saves one copy of
+Home's data (tens of KB), sized by catalogue size (astrologers, banners, blogs, reports),
+not by the number of customers. The image disk cache is size-capped by FastImage itself
+(Glide LRU on Android, SDWebImage expiry on iOS).
+
+**What DOES grow with customers — the thing to revisit:**
+1. **Backend requests.** Every app open (throttled to once per 60 s per process) makes about
+   11 background requests: 7 sections + 4 banner calls (2 slots × 2 languages). That
+   happens even before login, on top of Home's own refresh when it opens. At about 1,000
+   customers opening a few times a day, that is tens of thousands of extra requests. The
+   backend's `contentCache` absorbs most DB cost, but each request still hits the VPS.
+2. **Image egress.** `FastImage.preload` downloads every astrologer, banner, blog and report
+   image on every device, including ones the customer never scrolls to. Once Supabase
+   storage egress is metered (Free plan limit, see **CA**/**CB**), this scales with
+   installs × catalogue size.
+3. **Catalogue size.** `/api/astrologers` and blogs are fetched and preloaded in full. Fine
+   at about 13 astrologers; not at hundreds.
+
+**Options when it matters (none built):**
+- One combined `GET /api/home/bootstrap` endpoint (one request instead of about 11) with an
+  ETag/`If-None-Match`, so an unchanged Home costs a 304.
+- Preload only the current language's banners.
+- Preload only images above the fold (first N astrologers, both banners); lazy-load the rest.
+- Skip the prefetch when the saved copy is younger than a few minutes (today only an
+  in-process 60 s throttle exists, so every cold start refetches).
+- Serve images through a CDN/R2 with thumbnails, as already done for OTA bundles in **CB**.
+
+**Signals to watch:** VPS request rate and CPU (`pm2 monit`), Supabase egress on the usage
+page, and `/api/astrologers` response size as astrologers are added.

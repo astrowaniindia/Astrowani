@@ -49,7 +49,8 @@ import { markRequestStatus } from '../../api/RequestsApi';
 import io from 'socket.io-client';
 import { LanguageContext } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
-import { readCache, writeCache } from '../../utils/cacheFetch';
+import { readCache } from '../../utils/cacheFetch';
+import { getHomeMemory, saveHomeData, pickNextGreeting, HOME_KEYS } from '../../utils/homePreload';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import { showAppUpdatePrompt } from '../../components/AppUpdatePrompt';
@@ -130,10 +131,10 @@ const AstrologerItem = ({astrologer, navigation, t}) => {
           astrologer,
         });
       }}>
-      <Image
+      <FastImage
         source={{uri: astrologer.profileImage || astrologer.image}}
         style={styles.liveCardImage}
-        resizeMode="cover"
+        resizeMode={FastImage.resizeMode.cover}
       />
       {/* Bottom scrim so the name/topic stay readable over any photo — a real
           gradient (react-native-svg is already a linked dependency, so this
@@ -204,7 +205,7 @@ const BlogItem = ({blog, navigation, language}) => {
         navigation.navigate('BlogScreen', {data: blog});
       }}
       style={styles.blogCard}>
-      <Image style={styles.blogImg} source={{uri: blog.thumbnail}} />
+      <FastImage style={styles.blogImg} source={{uri: blog.thumbnail}} resizeMode={FastImage.resizeMode.cover} />
       <Text style={styles.blogTitle}>{title}</Text>
       <Text style={styles.blogContent} numberOfLines={2} ellipsizeMode="tail">
         {metaDescription}
@@ -224,28 +225,72 @@ const MARQUEE_SPEED_PX_PER_SEC = 26; // roughly the old 1px-per-16ms drift
 const CONSULT_BAR_HIDDEN_UNTIL = 30;
 const CONSULT_BAR_SHOW_AT = 110;
 
+// The floating Chat/Talk bar, as its own component so that showing or hiding it
+// never re-renders all of Home. The slide is driven natively by `scrollY`; Home
+// flips only whether it is tappable, through the ref, when the scroll crosses
+// CONSULT_BAR_SHOW_AT.
+const ConsultBar = React.memo(React.forwardRef(function ConsultBar({ scrollY, onChat, onCall, t }, ref) {
+  const [tappable, setTappable] = useState(false);
+  React.useImperativeHandle(ref, () => ({ setTappable }), []);
+  const slideStyle = React.useMemo(() => ({
+    opacity: scrollY.interpolate({
+      inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    }),
+    transform: [{
+      translateY: scrollY.interpolate({
+        inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
+        outputRange: [140, 0],
+        extrapolate: 'clamp',
+      }),
+    }],
+  }), [scrollY]);
+  return (
+    // pointerEvents keeps the hidden bar from catching taps.
+    <Animated.View
+      pointerEvents={tappable ? 'box-none' : 'none'}
+      style={[styles.fixedBtnView, slideStyle]}>
+      <TouchableOpacity onPress={onChat} style={styles.fixedBtn}>
+        <MaterialIcons name="wechat" size={22} color={COLORS.AstroMaroon} />
+        <Text style={styles.fixedBtnTxt}>{t('home.chatWithAstrologer')}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onCall} style={styles.fixedBtn}>
+        <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
+        <Text style={styles.fixedBtnTxt}>{t('home.talkToAstrologer')}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}));
+
 const Home = ({navigation}) => {
   const { t, language } = React.useContext(LanguageContext);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedReview, setSelectedReview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingBlogs, setLoadingBlogs] = useState(true);
-  const [loadingAstrologer, setLoadingAstrologer] = useState(true);
-  const [topRatedReviews, setTopRatedReviews] = useState([]);
+  // Every section starts from the data prepared before Home opened (see
+  // utils/homePreload.js — loaded into memory during the splash). With it, the
+  // first frame already shows cards, banners and tiles, and each section's
+  // loading spinner is skipped. The fetches below still run and update in place.
+  const [loading, setLoading] = useState(() => !getHomeMemory(HOME_KEYS.categories));
+  const [loadingBlogs, setLoadingBlogs] = useState(() => !getHomeMemory(HOME_KEYS.blogs));
+  const [loadingAstrologer, setLoadingAstrologer] = useState(() => !getHomeMemory(HOME_KEYS.astrologers));
+  const [topRatedReviews, setTopRatedReviews] = useState(() => getHomeMemory(HOME_KEYS.reviews) || []);
   const [error, setError] = useState(null);
   const [errroBlogs, setErrorBlogs] = useState(null);
   const [errorAstrologer, setErrorAstrologer] = useState(null);
-  const [categories, setCategories] = useState(null);
-  const [blogs, setBlogs] = useState(null);
-  const [blogsToshow, setBlogsToShow] = useState(null);
-  const [astrologer, setAstrologer] = useState(null);
-  const [astrologerToShow, setAstrologerToShow] = useState(null);
+  const [categories, setCategories] = useState(() => getHomeMemory(HOME_KEYS.categories) || null);
+  const [blogs, setBlogs] = useState(() => getHomeMemory(HOME_KEYS.blogs)?.blogs || null);
+  const [blogsToshow, setBlogsToShow] = useState(() => getHomeMemory(HOME_KEYS.blogs)?.blogsToShow || null);
+  const [astrologer, setAstrologer] = useState(() => getHomeMemory(HOME_KEYS.astrologers) || null);
+  const [astrologerToShow, setAstrologerToShow] = useState(() => getHomeMemory(HOME_KEYS.astrologers) || null);
   const [errorReview, setErrorReview] = useState(null);
-  const [loadingReview, setLoadingReview] = useState(true);
-  const [liveAstro, setLiveAstro] = useState([]);
-  const [thought, setThought] = useState();
+  const [loadingReview, setLoadingReview] = useState(() => !getHomeMemory(HOME_KEYS.reviews));
+  const [liveAstro, setLiveAstro] = useState(() => getHomeMemory(HOME_KEYS.live) || []);
+  // The greeting is chosen once per Home mount from the prepared list, so it is on
+  // screen from the first frame and doesn't swap a moment later.
+  const [thought, setThought] = useState(() => pickNextGreeting(getHomeMemory(HOME_KEYS.thoughts)));
   const [user, setUser] = useState(null);
-  const [astroServices, setAstroServices] = useState([]);
+  const [astroServices, setAstroServices] = useState(() => getHomeMemory(HOME_KEYS.astroServices) || []);
   const [freeChatOfferVisible, setFreeChatOfferVisible] = useState(false);
   // True only while the customer can still claim the free chat AND the admin has it
   // switched on. Drives which banners show and what tapping one does.
@@ -301,14 +346,23 @@ const Home = ({navigation}) => {
   // useNativeDriver), so the slide cannot lag. JS only decides whether the bar is
   // TAPPABLE, and also re-checks on drag/momentum end, which are always delivered.
   const homeScrollY = useRef(new Animated.Value(0)).current;
+  const consultBarRef = useRef(null);
   const consultBarShownRef = useRef(false);
-  const [consultBarShown, setConsultBarShown] = useState(false);
   const syncConsultBarTappable = useCallback((e) => {
     const shouldShow = (e?.nativeEvent?.contentOffset?.y || 0) > CONSULT_BAR_SHOW_AT;
     if (shouldShow === consultBarShownRef.current) return;
     consultBarShownRef.current = shouldShow;
-    setConsultBarShown(shouldShow);
+    // Only the bar re-renders — see ConsultBar.
+    consultBarRef.current?.setTappable(shouldShow);
   }, []);
+  const openChatFromBar = useCallback(() => {
+    captureEvent('home_screen_click', {section: 'fixed_bar_chat'});
+    navigation.navigate('Chat');
+  }, [navigation]);
+  const openCallFromBar = useCallback(() => {
+    captureEvent('home_screen_click', {section: 'fixed_bar_call'});
+    navigation.navigate('Call');
+  }, [navigation]);
   const handleHomeScroll = React.useMemo(
     () => Animated.event(
       [{ nativeEvent: { contentOffset: { y: homeScrollY } } }],
@@ -316,20 +370,6 @@ const Home = ({navigation}) => {
     ),
     [homeScrollY, syncConsultBarTappable],
   );
-  const consultBarStyle = {
-    opacity: homeScrollY.interpolate({
-      inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    }),
-    transform: [{
-      translateY: homeScrollY.interpolate({
-        inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
-        outputRange: [140, 0],
-        extrapolate: 'clamp',
-      }),
-    }],
-  };
 
   // const [categories, setCategories] = useState([])
   // const [topReviews, setTopReviews] = useState(null);
@@ -369,7 +409,10 @@ const Home = ({navigation}) => {
 
   React.useEffect(() => {
     getAstroServices()
-      .then(list => setAstroServices(list))
+      .then(list => {
+        setAstroServices(list);
+        saveHomeData(HOME_KEYS.astroServices, list);
+      })
       .catch(err => console.log('Failed to load astro services:', err.message));
   }, []);
 
@@ -835,7 +878,6 @@ const Home = ({navigation}) => {
       setUser(userData);
       // Store user data in AsyncStorage for chat screens
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
-      console.log(userData, 'this is user data++++++++++++++');
 
       // Free 5-min bot chat. It no longer opens itself: the customer reaches it by
       // TAPPING one of the two Home banners (see bannerAudience / openFreeChatFromBanner
@@ -912,12 +954,10 @@ const Home = ({navigation}) => {
       const { data } = await Instance(`/api/thoughts/active`);
       const lines = Array.isArray(data?.thoughts) ? data.thoughts : [];
       if (lines.length) {
-        const lastId = await AsyncStorage.getItem('homeGreetingLastId');
-        const lastIndex = lines.findIndex((l) => l.id === lastId);
-        const next = lines[(lastIndex + 1) % lines.length];
-        setThought({ thoughtText: next.text, hindi: { thoughtText: next.textHi } });
-        AsyncStorage.setItem('homeGreetingLastId', String(next.id)).catch(() => {});
-        setLoading(false);
+        saveHomeData(HOME_KEYS.thoughts, lines);
+        // Already on screen from the prepared list: keep it, rather than swapping
+        // the greeting a moment after Home appears. Only pick one if none showed.
+        setThought((current) => current || pickNextGreeting(lines));
         return;
       }
     } catch (_) {
@@ -925,12 +965,10 @@ const Home = ({navigation}) => {
     }
     return await Instance(`/api/thoughts/latest`)
       .then(response => {
-        setThought(response?.data);
-        setLoading(false);
+        setThought((current) => current || response?.data);
       })
       .catch(error => {
         console.log('error on getThoutsOfTheDay: ', error);
-        setLoading(false);
       });
   };
     // Stale-while-revalidate: hydrate each section from its last-fetched cache
@@ -939,7 +977,7 @@ const Home = ({navigation}) => {
     // the loading flag true through the cache hit so callers that gate on it
     // (pull-to-refresh, etc.) still see a real in-flight fetch.
     const fetchCategories = async () => {
-      const cached = await readCache('home_categories');
+      const cached = getHomeMemory(HOME_KEYS.categories) ?? await readCache('home_categories');
       if (cached) {
         setCategories(cached);
         setLoading(false);
@@ -954,7 +992,7 @@ const Home = ({navigation}) => {
         });
 
         setCategories(response?.data?.categories);
-        writeCache('home_categories', response?.data?.categories);
+        saveHomeData(HOME_KEYS.categories, response?.data?.categories);
       } catch (err) {
         if (!cached) setError(err.message);
       } finally {
@@ -962,7 +1000,7 @@ const Home = ({navigation}) => {
       }
     };
     const fetchBlogs = async () => {
-      const cached = await readCache('home_blogs');
+      const cached = getHomeMemory(HOME_KEYS.blogs) ?? await readCache('home_blogs');
       if (cached) {
         setBlogsToShow(cached.blogsToShow);
         setBlogs(cached.blogs);
@@ -978,7 +1016,7 @@ const Home = ({navigation}) => {
           response.data.length >= 6 ? response.data.slice(0, 6) : response.data;
         setBlogsToShow(sliceData);
         setBlogs(response.data);
-        writeCache('home_blogs', {blogsToShow: sliceData, blogs: response.data});
+        saveHomeData(HOME_KEYS.blogs, {blogsToShow: sliceData, blogs: response.data});
       } catch (err) {
         if (!cached) setErrorBlogs(err.message);
       } finally {
@@ -986,7 +1024,7 @@ const Home = ({navigation}) => {
       }
     };
     const fetchAstrologer = async () => {
-      const cached = await readCache('home_astrologers');
+      const cached = getHomeMemory(HOME_KEYS.astrologers) ?? await readCache('home_astrologers');
       if (cached) {
         setAstrologerToShow(cached);
         setAstrologer(cached);
@@ -1004,7 +1042,7 @@ const Home = ({navigation}) => {
         setAstrologerToShow(astroResponse);
         setAstrologer(astroResponse);
         setErrorAstrologer(null); // clear any stale error from a prior failed attempt
-        writeCache('home_astrologers', astroResponse);
+        saveHomeData(HOME_KEYS.astrologers, astroResponse);
       } catch (err) {
         if (!cached) setErrorAstrologer(err.message);
       } finally {
@@ -1016,17 +1054,17 @@ const Home = ({navigation}) => {
       // Only astrologers actually broadcasting (real lives, not fake "Scheduled").
       return await Instance.get(`/api/live/active`)
         .then(response => {
-          setLiveAstro(response.data.data || []);
-          setLoading(false);
+          const list = response.data.data || [];
+          setLiveAstro(list);
+          saveHomeData(HOME_KEYS.live, list);
         })
         .catch(error => {
           console.log('getLiveAstro: ', error);
-          setLoading(false);
         });
     };
 
     const fetchTopReviews = async () => {
-      const cached = await readCache('home_top_reviews');
+      const cached = getHomeMemory(HOME_KEYS.reviews) ?? await readCache('home_top_reviews');
       if (cached) {
         setTopRatedReviews(cached);
         setLoadingReview(false);
@@ -1048,7 +1086,7 @@ const Home = ({navigation}) => {
           sortedReviews.length >= 5 ? sortedReviews.slice(0, 5) : sortedReviews;
 
         setTopRatedReviews(topReviews);
-        writeCache('home_top_reviews', topReviews);
+        saveHomeData(HOME_KEYS.reviews, topReviews);
       } catch (err) {
         if (!cached) setErrorReview(err.message);
       } finally {
@@ -1155,8 +1193,8 @@ const Home = ({navigation}) => {
         hitSlop={{top: verticalScale(40), bottom: 0, left: 0, right: 0}}
         style={styles.AstrologerCard}>
         <View style={styles.AstroImageWrap} pointerEvents="none">
-          <Image
-            resizeMode="contain"
+          <FastImage
+            resizeMode={FastImage.resizeMode.contain}
             source={{
               uri:
                 item.profileImage ||
@@ -1318,7 +1356,7 @@ const Home = ({navigation}) => {
         onPress={() => handleMorePress(item)}
         style={styles.ReviewCard}>
         <View style={styles.reviewImageView}>
-          <Image
+          <FastImage
             source={{
               uri:
                 item.user?.profilePic ||
@@ -1454,7 +1492,9 @@ const Home = ({navigation}) => {
             </TouchableOpacity>
           </View>
         {loadingAstrologer ? (
-          <View style={styles.indicator}>
+          // Holds the row's height while it loads, so everything below doesn't
+          // jump down when the cards arrive.
+          <View style={[styles.indicator, styles.bestRowPlaceholder]}>
             <ActivityIndicator size="small" color={COLORS.primary} />
           </View>
         ) : errorAstrologer ? (
@@ -1557,6 +1597,7 @@ const Home = ({navigation}) => {
           services={services.map(s => ({...s, displayTitle: t(s.titleKey)}))}
           onServiceSelect={handleServiceSelect}
           showPrice
+          animateIn={false}
         />
 
         <View style={styles.separator} />
@@ -1615,6 +1656,7 @@ const Home = ({navigation}) => {
           }))}
           onServiceSelect={handleAstroServiceSelect}
           showPrice
+          animateIn={false}
           variant="image"
         />
 
@@ -1769,34 +1811,14 @@ const Home = ({navigation}) => {
         )}
         </View>
       </Animated.ScrollView>
-      {/* Slides in and out with the scroll position (see consultBarStyle).
-          pointerEvents keeps the hidden bar from catching taps. */}
-      <Animated.View
-        pointerEvents={consultBarShown ? 'box-none' : 'none'}
-        style={[
-          styles.fixedBtnView,
-          consultBarStyle,
-        ]}>
-        <TouchableOpacity
-          onPress={() => {
-            captureEvent('home_screen_click', {section: 'fixed_bar_chat'});
-            navigation.navigate('Chat');
-          }}
-          style={styles.fixedBtn}>
-          <MaterialIcons name="wechat" size={22} color={COLORS.AstroMaroon} />
-          <Text style={styles.fixedBtnTxt}>{t('home.chatWithAstrologer')}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => {
-            captureEvent('home_screen_click', {section: 'fixed_bar_call'});
-            navigation.navigate('Call');
-          }}
-          style={styles.fixedBtn}>
-          <MaterialIcons name="add-call" size={22} color={COLORS.AstroMaroon} />
-          <Text style={styles.fixedBtnTxt}>{t('home.talkToAstrologer')}</Text>
-        </TouchableOpacity>
-      </Animated.View>
+      {/* Slides in and out with the scroll position (see ConsultBar). */}
+      <ConsultBar
+        ref={consultBarRef}
+        scrollY={homeScrollY}
+        onChat={openChatFromBar}
+        onCall={openCallFromBar}
+        t={t}
+      />
 
       <Modal transparent={true} visible={isWaiting} animationType="fade" onRequestClose={() => cancelCall()}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
@@ -2532,6 +2554,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'Lato-Bold',
     marginTop: verticalScale(8),
+  },
+  // Roughly one "India's Best Astrologers" card tall (photo overhang included).
+  bestRowPlaceholder: {
+    minHeight: 280,
+    justifyContent: 'center',
   },
   fixedBtnView: {
     position: 'absolute',

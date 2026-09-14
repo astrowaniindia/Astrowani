@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   StyleSheet,
   SafeAreaView,
   FlatList,
@@ -12,6 +11,9 @@ import {
 import { moderateScale, scale, verticalScale } from '../../../utils/Scaling';
 import { COLORS } from '../../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+// FastImage reads from its disk cache (filled ahead of time by utils/homePreload),
+// so tile pictures appear immediately instead of fading in.
+import FastImage from 'react-native-fast-image';
 // @ts-ignore — AstroUI is plain JS; Babel strips types at bundle time.
 import { Reveal } from '../../../components/astro/AstroUI';
 // @ts-ignore
@@ -43,7 +45,15 @@ type FreeServicesScreenProps = {
   // 'image': full-width top image like a blog card — for admin-managed content
   // (Astro Reports) where the image and title are edited from the admin dashboard.
   variant?: 'badge' | 'image';
+  // Staggered fade-in as the row appears. On by default; Home turns it off so its
+  // prepared sections are simply there, not assembling themselves as you scroll.
+  animateIn?: boolean;
 };
+
+// At file level, not inside the component: a wrapper component defined in render
+// would get a new identity every render and remount every tile.
+const MaybeReveal = ({ animate, index, children }: { animate: boolean; index: number; children: React.ReactNode }) =>
+  animate ? <Reveal index={index}>{children}</Reveal> : <>{children}</>;
 
 const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   services,
@@ -51,6 +61,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   loading = false,
   showPrice = false,
   variant = 'badge',
+  animateIn = true,
 }) => {
   const handlePress = (item: ServiceItem) => {
     captureEvent('free_service_tile_tapped', {
@@ -64,10 +75,9 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
   const renderService = ({ item, index }: { item: ServiceItem; index: number }) => {
     if (variant === 'image') {
       return (
-        // Staggered entrance so the row assembles itself rather than appearing
-        // fully-formed — same Reveal the report cards use, so the free services
-        // feel like part of the same product.
-        <Reveal index={index}>
+        // Optional staggered entrance (animateIn) — the same Reveal the report
+        // cards use. Home turns it off.
+        <MaybeReveal animate={animateIn} index={index}>
         <TouchableOpacity
           onPress={() => handlePress(item)}
           style={styles.imageCard}
@@ -75,11 +85,10 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
         >
           <View style={styles.imageCardImageWrap}>
             {item.icon ? (
-              <Image
+              <FastImage
                 source={typeof item.icon === 'number' ? item.icon : { uri: item.icon }}
                 style={styles.imageCardImage}
-                resizeMode="cover"
-                onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
+                resizeMode={FastImage.resizeMode.cover}
               />
             ) : (
               <View style={[styles.imageCardImage, styles.imageCardImageFallback]}>
@@ -96,11 +105,11 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
             {item.displayTitle ?? item.title}
           </Text>
         </TouchableOpacity>
-        </Reveal>
+        </MaybeReveal>
       );
     }
     return (
-      <Reveal index={index}>
+      <MaybeReveal animate={animateIn} index={index}>
       <TouchableOpacity
         onPress={() => handlePress(item)}
         style={styles.serviceBox}
@@ -113,11 +122,10 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
         )}
         <View style={styles.iconBadge}>
           {item.icon ? (
-            <Image
+            <FastImage
               source={typeof item.icon === 'number' ? item.icon : { uri: item.icon }}
               style={styles.icon}
-              resizeMode="contain"
-              onError={(e) => console.log('Error loading image:', e.nativeEvent.error)}
+              resizeMode={FastImage.resizeMode.contain}
             />
           ) : (
             <MaterialIcons name="image-not-supported" size={scale(26)} color={COLORS.lightGrey} />
@@ -127,7 +135,7 @@ const FreeServicesScreen: React.FC<FreeServicesScreenProps> = ({
           {item.displayTitle ?? item.title}
         </Text>
       </TouchableOpacity>
-      </Reveal>
+      </MaybeReveal>
     );
   };
 

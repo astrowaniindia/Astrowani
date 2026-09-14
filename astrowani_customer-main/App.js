@@ -12,6 +12,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { LanguageProvider } from './src/context/LanguageContext';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import { hydrateHomeCache, prefetchHomeData } from './src/utils/homePreload';
 
 // Override global Alert.alert to render our CustomAlert component globally
 const originalAlert = Alert.alert;
@@ -40,7 +41,19 @@ const App = () => {
   const [introDone, setIntroDone] = useState(false);
 
   useEffect(() => {
+    // Get Home ready while the splash (and then login/signup) is on screen: fresh
+    // data and images start downloading now, in the background.
+    prefetchHomeData({ force: true });
+
     const bootstrapAsync = async () => {
+      // Last time's Home data into memory before the first screen renders, so Home
+      // draws it on its very first frame. Capped, so a slow storage read can never
+      // hold the app on the splash.
+      await Promise.race([
+        hydrateHomeCache(),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+
       let token;
       try {
         token = await AsyncStorage.getItem('token');

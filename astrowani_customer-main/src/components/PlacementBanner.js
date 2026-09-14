@@ -1,14 +1,20 @@
 // PlacementBanner — fetches admin-authored banners for a given placement
 // (home_primary, home_secondary, chat_top, video_top, call_top, ...) and renders
-// a fading, tappable carousel. Tapping navigates per the admin's configured action
-// (a screen name, or an external URL) — no-ops if the banner has no action set.
+// a sliding, swipeable carousel with page dots. It advances on its own every
+// admin-set interval, and the customer can swipe left/right at any time (auto-
+// advance pauses while they are touching it). Tapping navigates per the admin's
+// configured action (a screen name, or an external URL) — no-op if none is set.
+//
+// Was a fade-in/fade-out of one image. Replaced 2026-09-14: a slide with dots
+// tells the customer there is more than one banner and lets them look at it.
 import React from 'react';
-import { View, Animated, TouchableOpacity, Linking, StyleSheet, Dimensions } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Linking, StyleSheet, Dimensions } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
-import { readCache, writeCache } from '../utils/cacheFetch';
+import { readCache } from '../utils/cacheFetch';
+import { getHomeMemory, saveHomeData } from '../utils/homePreload';
 
 // The shape of each banner slot, matching the exact pixel size the admin's upload
 // tool crops to (astrowani-admin/src/pages/Banners.jsx PLACEMENTS). KEEP THE TWO IN
@@ -65,10 +71,20 @@ const PlacementBanner = ({
   // null = "haven't heard back from the fetch yet" — distinct from [] ("fetch
   // confirmed there are zero banners"). Without this distinction the fallback
   // images render for a moment on every launch before the real fetch resolves.
-  const [banners, setBanners] = React.useState(null);
-  const [intervalMs, setIntervalMs] = React.useState(4000);
+  const cacheKey = `banners_${app}_${placement}_${apiLanguage}`;
+  // Starts from banners prepared before this screen opened (utils/homePreload.js),
+  // so the slot shows real banners on the first frame instead of popping in.
+  const [banners, setBanners] = React.useState(() => getHomeMemory(cacheKey)?.banners ?? null);
+  const [intervalMs, setIntervalMs] = React.useState(() => getHomeMemory(cacheKey)?.intervalMs || 4000);
   const [currentIndex, setCurrentIndex] = React.useState(0);
-  const fadeAnim = React.useRef(new Animated.Value(1)).current;
+  const scrollRef = React.useRef(null);
+  const indexRef = React.useRef(0);
+  // True while the customer's finger is on the banner (or it is still settling
+  // from their swipe), so the auto-advance never fights a manual swipe.
+  const userScrollingRef = React.useRef(false);
+  // Bumped after each manual swipe so the auto-advance countdown restarts from
+  // zero, instead of firing a moment after the customer chose a slide.
+  const [autoKey, setAutoKey] = React.useState(0);
   // Which slides have already been counted as seen during THIS mount. A rotating
   // carousel would otherwise fire an impression every few seconds for as long as the
   // screen is open — tens of thousands of near-worthless events a day, and a CTR
@@ -79,19 +95,24 @@ const PlacementBanner = ({
     seenSlidesRef.current = new Set();
   }, [placement, app, apiLanguage]);
 
-  const cacheKey = `banners_${app}_${placement}_${apiLanguage}`;
-
   React.useEffect(() => {
     let mounted = true;
 
     // Stale-while-revalidate: paint last time's banners immediately (no blank
-    // gap), then silently replace them once the network call comes back.
-    readCache(cacheKey).then(cached => {
-      if (mounted && cached) {
-        setBanners(cached.banners);
-        if (cached.intervalMs > 0) setIntervalMs(cached.intervalMs);
-      }
-    });
+    // gap), then silently replace them once the network call comes back. Skipped
+    // when prepared banners were already in memory (they are at least as fresh).
+    const prepared = getHomeMemory(cacheKey);
+    if (prepared) {
+      setBanners(prepared.banners);
+      if (prepared.intervalMs > 0) setIntervalMs(prepared.intervalMs);
+    } else {
+      readCache(cacheKey).then(cached => {
+        if (mounted && cached) {
+          setBanners(cached.banners);
+          if (cached.intervalMs > 0) setIntervalMs(cached.intervalMs);
+        }
+      });
+    }
 
     Instance(`/api/banners/all?app=${app}&placement=${placement}&language=${apiLanguage}`)
       .then((res) => {
@@ -101,7 +122,7 @@ const PlacementBanner = ({
         const freshIntervalMs = secs > 0 ? secs * 1000 : intervalMs;
         setBanners(freshBanners);
         if (secs > 0) setIntervalMs(freshIntervalMs);
-        writeCache(cacheKey, { banners: freshBanners, intervalMs: freshIntervalMs });
+        saveHomeData(cacheKey, { banners: freshBanners, intervalMs: freshIntervalMs });
       })
       .catch(() => {
         // A failed fetch (network hiccup, backend blip) must not leave this
@@ -147,54 +168,85 @@ const PlacementBanner = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [impressionIndex, slides.length, placement]);
 
+  // Sizing is needed by the auto-advance below, so it is computed before any early
+  // return. See the long note further down for why both dimensions are explicit.
+  const aspectRatio = PLACEMENT_ASPECT[placement];
+  const flatStyle = StyleSheet.flatten(style) || {};
+  const hMargin =
+    flatStyle.marginHorizontal ?? Math.max(flatStyle.marginLeft || 0, flatStyle.marginRight || 0);
+  const boxWidth = Dimensions.get('window').width - 2 * (hMargin || 0);
+
+  // Keep the index valid when the slide list changes (fresh fetch, language,
+  // audience switch) — otherwise the dots could point past the last slide.
+  React.useEffect(() => {
+    if (slides.length && indexRef.current >= slides.length) {
+      indexRef.current = 0;
+      setCurrentIndex(0);
+      scrollRef.current?.scrollTo({ x: 0, animated: false });
+    }
+  }, [slides.length]);
+
   React.useEffect(() => {
     if (slides.length <= 1) return;
     const interval = setInterval(() => {
-      Animated.timing(fadeAnim, { toValue: 0.2, duration: 500, useNativeDriver: true }).start(() => {
-        setCurrentIndex((prev) => (prev + 1) % slides.length);
-        Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-      });
-    }, Math.max(1000, intervalMs));
+      if (userScrollingRef.current) return;
+      const next = (indexRef.current + 1) % slides.length;
+      indexRef.current = next;
+      setCurrentIndex(next);
+      scrollRef.current?.scrollTo({ x: next * boxWidth, animated: true });
+    }, Math.max(1500, intervalMs));
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slides.length, intervalMs]);
+  }, [slides.length, intervalMs, boxWidth, autoKey]);
 
   if (slides.length === 0) return null;
   const safeIndex = currentIndex % slides.length;
-  const active = slides[safeIndex];
 
-  const handlePress = () => {
+  const handleMomentumEnd = (e) => {
+    const x = e?.nativeEvent?.contentOffset?.x || 0;
+    const index = Math.max(0, Math.min(slides.length - 1, Math.round(x / boxWidth)));
+    if (userScrollingRef.current) {
+      userScrollingRef.current = false;
+      // A manual swipe: restart the auto-advance countdown from zero.
+      setAutoKey((k) => k + 1);
+    }
+    if (index !== indexRef.current) {
+      indexRef.current = index;
+      setCurrentIndex(index);
+    }
+  };
+
+  const handlePress = (slide, slideIndex) => {
     // Fired for every placement this component renders (home_primary/home_secondary/
     // chat_top/video_top/call_top) — the admin Analytics home-screen query filters
     // this down to the two home_* placements rather than this component only firing
     // on Home, since the same component is reused across multiple screens.
     captureEvent('banner_click', {
       placement,
-      banner_index: safeIndex,
-      action_type: active?.actionType || 'none',
-      action_value: active?.actionValue || null,
-      is_fallback: !active?.uri,
+      banner_index: slideIndex,
+      action_type: slide?.actionType || 'none',
+      action_value: slide?.actionValue || null,
+      is_fallback: !slide?.uri,
     });
     // The screen gets first refusal on the tap. Checked BEFORE the action-type
     // guard below, so a banner with no action configured can still be used purely
     // as a trigger — which is how the free-chat banner works.
     if (onPressIntercept && onPressIntercept(placement) === true) return;
-    if (!active?.actionType || active.actionType === 'none' || !active.actionValue) return;
-    if (active.actionType === 'url') {
-      Linking.openURL(active.actionValue).catch(() => {});
-    } else if (active.actionType === 'screen' && navigation) {
-      navigation.navigate(active.actionValue);
+    if (!slide?.actionType || slide.actionType === 'none' || !slide.actionValue) return;
+    if (slide.actionType === 'url') {
+      Linking.openURL(slide.actionValue).catch(() => {});
+    } else if (slide.actionType === 'screen' && navigation) {
+      navigation.navigate(slide.actionValue);
     }
   };
 
-  const isTappable =
+  const isSlideTappable = (slide) =>
     !!onPressIntercept ||
-    (active?.actionType && active.actionType !== 'none' && active.actionValue);
+    !!(slide?.actionType && slide.actionType !== 'none' && slide.actionValue);
 
   // aspectRatio wins over height when we know the slot's shape: the box then matches
   // the uploaded image exactly and cover crops nothing.
-  const aspectRatio = PLACEMENT_ASPECT[placement];
-  // Both dimensions are computed here, explicitly. Everything softer than this was
+  //
+  // Both dimensions are computed explicitly (see aspectRatio/boxWidth above). Everything softer than this was
   // tried on a device and measured, and each failed in its own way:
   //
   //   - a fixed pixel height is a different shape from the uploaded image, so cover
@@ -212,29 +264,77 @@ const PlacementBanner = ({
   // So: read the horizontal margin out of the caller's own style and subtract it
   // from the window width. No layout ambiguity, correct on the first frame, and
   // correct on any screen size.
-  const flatStyle = StyleSheet.flatten(style) || {};
-  const hMargin =
-    flatStyle.marginHorizontal ?? Math.max(flatStyle.marginLeft || 0, flatStyle.marginRight || 0);
-  const boxWidth = Dimensions.get('window').width - 2 * (hMargin || 0);
-  const sizing = aspectRatio
-    ? { width: boxWidth, height: boxWidth / aspectRatio }
-    : { height };
+  const boxHeight = aspectRatio ? boxWidth / aspectRatio : height;
+  const sizing = { width: boxWidth, height: boxHeight };
 
   return (
-    <TouchableOpacity
-      activeOpacity={isTappable ? 0.85 : 1}
-      onPress={handlePress}
-      disabled={!isTappable}
-      style={[sizing, { borderRadius, overflow: 'hidden' }, style]}>
-      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <FastImage
-          source={active.uri ? { uri: active.uri, priority: FastImage.priority.high } : active.source}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode={FastImage.resizeMode.cover}
-        />
-      </Animated.View>
-    </TouchableOpacity>
+    <View style={[sizing, { borderRadius, overflow: 'hidden' }, style]}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        // Only when there is something to swipe to — a single banner stays still.
+        scrollEnabled={slides.length > 1}
+        onScrollBeginDrag={() => { userScrollingRef.current = true; }}
+        onMomentumScrollEnd={handleMomentumEnd}
+        style={sizing}>
+        {slides.map((slide, i) => {
+          const tappable = isSlideTappable(slide);
+          return (
+            <TouchableOpacity
+              key={`${slide.uri || 'local'}-${i}`}
+              activeOpacity={tappable ? 0.85 : 1}
+              onPress={() => handlePress(slide, i)}
+              disabled={!tappable}
+              style={sizing}>
+              <FastImage
+                source={slide.uri ? { uri: slide.uri, priority: FastImage.priority.high } : slide.source}
+                style={styles.image}
+                resizeMode={FastImage.resizeMode.cover}
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {slides.length > 1 && (
+        <View style={styles.dots} pointerEvents="none">
+          {slides.map((_, i) => (
+            <View key={i} style={[styles.dot, i === safeIndex && styles.dotActive]} />
+          ))}
+        </View>
+      )}
+    </View>
   );
 };
+
+const styles = StyleSheet.create({
+  image: { width: '100%', height: '100%' },
+  dots: {
+    position: 'absolute',
+    bottom: 7,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginHorizontal: 3,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(0,0,0,0.25)',
+  },
+  // The current slide's dot is a wider gold pill.
+  dotActive: {
+    width: 18,
+    backgroundColor: '#FFD700',
+  },
+});
 
 export default PlacementBanner;

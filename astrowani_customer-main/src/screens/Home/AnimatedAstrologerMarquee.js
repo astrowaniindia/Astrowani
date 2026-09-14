@@ -6,7 +6,9 @@
 // card slides into center and grows/brightens) — still fully swipeable
 // manually at any time, which pauses the auto-advance until the swipe ends.
 import React, { useRef, useMemo } from 'react';
-import { Animated, View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
+import { Animated, View, Text, TouchableOpacity, TouchableWithoutFeedback, StyleSheet, Dimensions } from 'react-native';
+// Disk-cached (pre-filled by utils/homePreload), so photos appear without fading in.
+import FastImage from 'react-native-fast-image';
 import useDraggableMarquee from '../../hooks/useDraggableMarquee';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
@@ -104,7 +106,16 @@ const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCa
 
 
     return (
-      <Animated.View style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
+      // renderToHardwareTextureAndroid: this card's scale AND opacity change on
+      // every frame while the row glides. On Android, fading a view with a shadow
+      // and overlapping children forces an offscreen re-render of the whole card
+      // each frame — measured as the bulk of Home's slow draw frames. As a hardware
+      // texture it is drawn once and then only composited. Safe here because the
+      // card's content never changes while it moves, and nothing overflows its
+      // bounds (a texture clips to them).
+      <Animated.View
+        renderToHardwareTextureAndroid
+        style={[styles.card, { transform: [{ scale: cardScale }], opacity }]}>
         {/* Opens the astrologer's profile, matching the cards in "India's Best
             Astrologers". Until 2026-09-03 this fired analytics and nothing else,
             so the card read as broken — tapping it genuinely did nothing. Still
@@ -117,8 +128,8 @@ const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCa
           }}>
           <View style={styles.infoBlock}>
             <View style={styles.avatarWrap}>
-              <Image
-                resizeMode="cover"
+              <FastImage
+                resizeMode={FastImage.resizeMode.cover}
                 source={{ uri: item.profileImage || 'https://cdn-icons-png.flaticon.com/128/3135/3135715.png' }}
                 style={styles.avatar}
               />
