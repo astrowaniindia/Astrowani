@@ -79,6 +79,8 @@ export default function Customers() {
   const [timeFilter, setTimeFilter] = useState('all');
   const [topup, setTopup] = useState(null); // customer being topped up
   const [amount, setAmount] = useState('');
+  const [walletMode, setWalletMode] = useState('add'); // 'add' | 'remove'
+  const [walletReason, setWalletReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deletedCount, setDeletedCount] = useState(0);
@@ -146,14 +148,31 @@ export default function Customers() {
     });
   }, [rows, timeFilter, search]);
 
+  const closeTopup = () => {
+    setTopup(null);
+    setAmount('');
+    setWalletMode('add');
+    setWalletReason('');
+  };
+
   const submitTopup = async () => {
-    const amt = Number(amount);
+    const amt = Math.abs(Number(amount));
     if (!amt) return;
+    const removing = walletMode === 'remove';
+    const balance = Number(topup.wallet_balance || 0);
+    if (removing && amt > balance) {
+      alert(`You can remove at most ₹${balance.toLocaleString('en-IN')} — that is this customer's whole balance.`);
+      return;
+    }
+    const label = topup.name || topup.mobile || 'this customer';
+    if (removing && !window.confirm(`Remove ₹${amt.toLocaleString('en-IN')} from ${label}'s wallet?`)) return;
     setBusy(true);
     try {
-      await client.post(`/api/admin/customers/${topup.id}/wallet`, { amount: amt });
-      setTopup(null);
-      setAmount('');
+      await client.post(`/api/admin/customers/${topup.id}/wallet`, {
+        amount: removing ? -amt : amt,
+        description: walletReason.trim() || (removing ? 'Admin wallet deduction' : 'Admin wallet credit'),
+      });
+      closeTopup();
       await load();
     } catch (e) {
       alert(e.response?.data?.message || e.message);
@@ -538,7 +557,7 @@ export default function Customers() {
 
       {/* ── Wallet Top-up / Adjustment Modal ── */}
       {topup && (
-        <Modal title={`Adjust Wallet — ${topup.name || topup.mobile || 'Customer'}`} onClose={() => setTopup(null)}>
+        <Modal title={`Adjust Wallet — ${topup.name || topup.mobile || 'Customer'}`} onClose={closeTopup}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Current Balance:</div>
             <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--maroon)' }}>
@@ -546,39 +565,77 @@ export default function Customers() {
             </div>
           </div>
 
+          <div className="btn-group" style={{ marginBottom: 14 }}>
+            <button
+              type="button"
+              className={`btn sm ${walletMode === 'add' ? '' : 'secondary'}`}
+              onClick={() => setWalletMode('add')}
+            >
+              Add money
+            </button>
+            <button
+              type="button"
+              className={`btn sm ${walletMode === 'remove' ? 'danger' : 'secondary'}`}
+              onClick={() => setWalletMode('remove')}
+            >
+              Remove money
+            </button>
+          </div>
+
           <div className="field">
-            <label>Amount to Add (₹)</label>
+            <label>{walletMode === 'remove' ? 'Amount to Remove (₹)' : 'Amount to Add (₹)'}</label>
             <input
               type="number"
+              min="0"
               placeholder="e.g. 500"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(e.target.value.replace('-', ''))}
               autoFocus
             />
             <span className="muted" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-              Amount will be credited directly to the customer's wallet balance.
+              {walletMode === 'remove'
+                ? `Will be deducted from the wallet. Up to ₹${Number(topup.wallet_balance || 0).toLocaleString('en-IN')}.`
+                : "Amount will be credited directly to the customer's wallet balance."}
             </span>
           </div>
 
-          <div className="btn-group" style={{ margin: '14px 0' }}>
-            {[100, 250, 500, 1000].map((quick) => (
-              <button
-                key={quick}
-                type="button"
-                className="btn ghost sm"
-                onClick={() => setAmount(String(quick))}
-              >
-                +₹{quick}
-              </button>
-            ))}
+          <div className="field">
+            <label>Reason (shown in the wallet history)</label>
+            <input
+              type="text"
+              placeholder={walletMode === 'remove' ? 'e.g. Test recharge reversed' : 'e.g. Refund for disconnected call'}
+              value={walletReason}
+              onChange={(e) => setWalletReason(e.target.value)}
+            />
           </div>
 
+          {walletMode === 'add' && (
+            <div className="btn-group" style={{ margin: '14px 0' }}>
+              {[100, 250, 500, 1000].map((quick) => (
+                <button
+                  key={quick}
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setAmount(String(quick))}
+                >
+                  +₹{quick}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="actions">
-            <button className="btn secondary" onClick={() => setTopup(null)}>
+            <button className="btn secondary" onClick={closeTopup}>
               Cancel
             </button>
-            <button className="btn" disabled={busy || !amount || Number(amount) <= 0} onClick={submitTopup}>
-              {busy ? 'Crediting…' : `Credit ₹${amount || 0}`}
+            <button
+              className={`btn ${walletMode === 'remove' ? 'danger' : ''}`}
+              disabled={busy || !amount || Number(amount) <= 0}
+              onClick={submitTopup}
+            >
+              {busy
+                ? (walletMode === 'remove' ? 'Removing…' : 'Crediting…')
+                : (walletMode === 'remove' ? `Remove ₹${amount || 0}` : `Credit ₹${amount || 0}`)}
             </button>
           </div>
         </Modal>
