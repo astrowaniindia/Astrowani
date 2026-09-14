@@ -311,7 +311,8 @@ export default function Analytics() {
       const dateParams = { from: dateRange.from, to: dateRange.to };
       const [summaryRes, trendRes, screensRes, funnelRes, remediesFunnelRes, revenueRes, sessionsRes, retentionRes,
         revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes,
-        outcomesRes, astroPerfRes, authFailuresRes, blockedRes] = await Promise.all([
+        outcomesRes, astroPerfRes, authFailuresRes, blockedRes,
+        freeCallRes, servicesRes, walletRes] = await Promise.all([
         // Summary is app-scoped now — DAU/WAU/MAU used to silently blend customer and
         // vendor users, and astrologers keep their app open all day.
         client.get('/api/admin/analytics/summary', { params: { ...dateParams, app: appTab } }),
