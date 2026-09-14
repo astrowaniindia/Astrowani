@@ -5330,6 +5330,13 @@ signalling.
 `refetchMessages` in a mount-only deps list); both files parse with the RN babel preset; i18n
 parity is customer 1118 / vendor 443, every key exactly twice.
 
+**Shipped 2026-09-14 by OTA from R2** (commit `b201c79`), together with the free-chat leave
+confirm (`FreeBotChatScreen.js`, `beforeRemove` + themed popup):
+- customer: android `01a09fff-e054…`, ios `01a0a003-b7b2…`
+- vendor: android `01a0a007-7a73…`, ios `01a0a00c-79cc…`
+
+Roll back with `npx hot-updater bundle disable <id>`.
+
 **Not exercised on a device.** To test: turn airplane mode on and send (the popup should appear
 and the text come back), then turn it off. Also: keep one side offline while the other sends,
 then reconnect; the missed messages should appear without reopening the screen.
