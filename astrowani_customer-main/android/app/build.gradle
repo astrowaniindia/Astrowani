@@ -121,7 +121,7 @@ android {
         applicationId "com.astrowanicustomer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 39
+        versionCode 40
         versionName "24.1"
     }
     signingConfigs {
