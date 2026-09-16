@@ -19,6 +19,8 @@
 > home missed-sessions widget, UI polish), see **"Subsystems added 2026-06-22 (session 2)"**.
 > For product analytics (PostHog screen-view tracking + admin Analytics page), see
 > **"Subsystem added 2026-08-06: Product analytics (PostHog)"** near the end of this file.
+> **Store submissions:** the owner's step-by-step Apple enrolment → App Store and Play Store
+> upload checklists are **CO** and **CP** in "Session 2026-09-16" at the very end of this file.
 > Per-feature deep notes also live in the auto-memory index (`memory/MEMORY.md`).
 
 ### Backend (`astrowani-backend/`)
@@ -5367,3 +5369,207 @@ then reconnect; the missed messages should appear without reopening the screen.
 - **Artifact:** `D:\Astrowani-Releases\astrowani-customer-24.1-38.aab` (52 MB), outside the
   repo. **Uploading to Play Console is the owner's step.** Play Console: Advertising ID can
   stay "No"; Data safety unchanged by this release.
+
+
+---
+
+## Session 2026-09-16: first App Store submission prep + store checklists
+
+> **READ CO and CP BEFORE doing anything with Apple or the Play Store.** They are the owner's
+> step-by-step checklists. Tick items off in this file as they are done (change `[ ]` to
+> `[x]` and add the date), so the next session knows where things stand.
+
+### CN. What changed today (record)
+
+**Nothing from today has been sent by OTA.** The owner is testing on an iPhone via a new
+Sideloadly build first. Backend and database changes ARE live in production. Installed
+apps only get today's app changes through the next OTA or store build.
+
+| Commit | What | Where it lives |
+|---|---|---|
+| `b09986d` | **Account deletion purges all personal data**, not only profile columns: name ("Deleted user"), addresses, favourites, reviews (ratings recomputed), voice notes, free-call bookings, notifications, support tickets/conversations, WhatsApp conversations, chat messages, and the photo/voice-note FILES in the public `app-images` bucket. Astrologers: bank/UPI, photo, reviews about them, devices; upcoming free calls go back to the unassigned queue. KEPT (tax law): sessions, wallet/vendor/coin/gift ledgers, orders (+invoice name/phone/address), withdrawals, referrals, safety reports. 30/30 verified on live DB. | `astrowani-backend/src/accountRoutes.js` (purge runs BEFORE the row delete, throws on failure so a retry finishes it) |
+| `279aecf` | **iOS hides every digital purchase** for the first App Store build: Astro Reports (Home section + Reports circle), ₹1 Free Services section, gifts (profile + live), StoreKit init; purchase hooks refuse too. Android unchanged. Also fixed the **profile Video button doing nothing on all platforms** (`isVideoWaiting` was undefined). | switch: `DIGITAL_PURCHASES_ENABLED` in customer `src/utils/payments.js` |
+| `f2d12e1` | **iPhones never get a Play Store link or the custom "rate us" popup** (App Store 2.3.10 / 5.6.1). The admin-saved store URL used to be served to iOS too. | `astrowani-backend/src/appPromptRoutes.js`, both apps' `src/utils/appPrompts.js` |
+| `6a9e629` | **Live comment moderation (both platforms)**: backend verifies sender, name from DB, word filter (EN + Hindi), 1/sec, 200 chars, admin ban, host block; customer can report a comment / block the person / report the stream; astrologer can report / report+block / block (reuses `customer_blocks`, also clears their comments from every viewer via `live_hide_sender`). New admin **Moderation (Reports)** page (live comment reports + the astrologer-filed customer reports, which had no page before). **Free 5-minute AI chat hidden on iOS** (Gemini under a persona with no AI disclosure/consent — 5.1.2(i)). 30/30 verified. | `src/liveModeration.js`, `sql/live_comment_moderation.sql` (APPLIED), `components/LiveReportSheet.js`, vendor `ReportCustomerSheet.js`, admin `pages/Moderation.jsx`; iOS switch `FREE_BOT_CHAT_ENABLED` in customer `src/utils/featureFlags.js` |
+| `fc964c0` | **Wani Shop health claims reworded** (7 items, e.g. "will revoke death if critical condition in hospital", "cure severe illnesses", fertility/pregnancy promises, "Medicine Charging", "Cure" titles). APPLIED to production. Original text kept for rollback. | `sql/remedy_copy_health_claims_20260916.sql` |
+| `38a8ce3` | **Store reviewer astrologer approved but hidden from customers.** New column `astrologers.hidden_from_customers` (APPLIED), checked by `astrologerVisibleToCustomers` + the `/api/astrologers` query. The reviewer astrologer (9999999999) had been stuck on `pending` since 2026-08-14. | `index.js`, `sql/astrologer_hidden_from_customers.sql`; memory `store_reviewer_accounts` |
+
+**Owner documents written today** (in `MD files/`):
+- `Astrowani-Policy-Page-Fixes.docx`: exact find/replace for Privacy Policy (4), Terms (3), Refund (4), Child Safety (2). Safety Guidelines needs nothing.
+- `Astrowani-Delete-Account-Page.docx`: full text for `astrowani.com/delete-account/`, which currently returns **404**.
+
+**Work from ANOTHER session, seen but not made here:** customer `versionCode` 40 → **41**, Meta SDK switched ON for Android (`react-native.config.js` android exclusion removed, ids in `strings.xml` + `adTracking.js`), and `D:\Astrowani-Releases\astrowani-customer-24.1-41.aab` built **2026-09-16 22:10**. At the time of writing, `build.gradle`, `strings.xml` and `react-native.config.js` were **uncommitted** (`adTracking.js` was swept into `279aecf` by mistake). Build 41's merged manifest was checked: it DOES contain `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_*` and `FacebookActivity`. Firebase Analytics is still `android: null`. **Build 41 was built BEFORE `279aecf`…`38a8ce3`**, so it does NOT contain today's live-report UI (checked: the bundle has no `liveReport` strings).
+
+**Reviewer logins (both apps, both stores):** mobile **9999999999**, OTP **123456** (no SMS sent). Customer = "Test User"; astrologer = "Play Store Reviewer" (approved, `hidden_from_customers = true`).
+
+**Review notes to paste** (App Store Connect → App Review Information → Notes):
+
+- Customer app:
+  > Astrowani connects users with human astrologers for live, real-time one-to-one chat, voice and video consultations (App Store Review Guideline 3.1.3(d), Person-to-Person Services). The in-app wallet is used only to pay for these live consultations and for physical products (gemstones, puja items) shipped to the user (3.1.3(e)). No digital content is sold in the iOS app.
+  >
+  > Demo login: mobile 9999999999, OTP 123456.
+- Astrologer app:
+  > Astrowani Astrologer is the app used by verified astrology experts to take live one-to-one chat, voice and video consultations booked through the Astrowani customer app, and to track their earnings. New astrologer sign-ups are reviewed by our team before they can take consultations, so please use the approved demo account below.
+  >
+  > Demo login: mobile 9999999999, OTP 123456.
+  >
+  > The demo account is kept out of public listings, so it will not receive real customer requests during review.
+
+**Positioning, decided by the owner:** Astrowani is a **lifestyle** app (live guidance from experts, pujas, gemstones), NOT a fortune-telling app. App Store primary category **Lifestyle**. In the name, subtitle, description, keywords and screenshots avoid "fortune telling", "predict your future", "horoscope predictions" and "lucky numbers". Screenshots should show live consultations, experts and the shop, not reports or horoscopes (those are hidden on iOS anyway).
+
+### CO. OWNER CHECKLIST: Apple Developer enrolment → first App Store submission
+
+Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrowani Astrologer** (`com.astrowaniVendor`, version 6.6). Both are iPhone-only (no `TARGETED_DEVICE_FAMILY`). Steps marked **(Claude)** are for Claude, and only need the owner to send the values asked for.
+
+#### Phase 1: website (can be done today, before Apple)
+- [ ] **Publish `astrowani.com/delete-account/`**, using `MD files/Astrowani-Delete-Account-Page.docx` (copy everything below the yellow box). The slug must be exactly `delete-account`. It is **404 right now** and both apps link to it.
+- [ ] **Apply the policy fixes** in `MD files/Astrowani-Policy-Page-Fixes.docx`: Privacy Policy (4), Terms & Conditions (3), Refund & Cancellation (4), Child Safety (2).
+- [ ] If the owner will run Meta ads (build 41 already has the Meta SDK), add **Meta** to the Privacy Policy's third-party list (Change 4 in the doc).
+- [ ] Confirm the **8-year retention** figure with the accountant (delete-account page, "What we keep, and why").
+- [ ] Send a test email to **support@astrowani.com** and **security@astrowani.com** and confirm both arrive. If the Contact Us page has no "Security / Vulnerability Report" option, delete that line on the Report Vulnerability page.
+- [ ] Fix the website title typo **"Exprienced"** → "Experienced" (WordPress → Settings → General → Site Title/Tagline). It shows in every browser tab, including to reviewers.
+- [ ] **(Claude)** Re-read all 7 pages in a real browser and confirm every change landed. Note: curl gets **429** from Hostinger on these pages, so use the Browser pane.
+
+#### Phase 2: test the current build on an iPhone (Sideloadly, no Apple account needed)
+- [ ] Build a new unsigned IPA from `main` (GitHub Actions → "iOS unsigned IPA" → target `device`) and sideload it.
+- [ ] Log in with 9999999999 / 123456.
+- [ ] Confirm these are **NOT visible**: Astro Reports section, Reports circle, Free Services section, gift buttons (profile + live), the free-chat banner/popup, the "Coming soon" strip, and any "Rate on Play Store" text.
+- [ ] Start a chat and send messages.
+- [ ] Place an audio call and a video call to a real astrologer.
+- [ ] Recharge the wallet: once with UPI (should jump to PhonePe/GPay and back), once with a card, and once closing the sheet without paying (nothing charged, no error shown).
+- [ ] Place one Wani Shop order.
+- [ ] Watch a live stream: see the ⋮ on other people's comments, report one, block one, and use the flag to report the stream.
+- [ ] Open Menu → Settings → Delete Account → cancel. Do **not** delete the reviewer account.
+- [ ] Tap every legal link in the app and check each page opens.
+- [ ] If an iPad is available, sideload there too. The old "Home cards can't be tapped on iPad" bug (memory `ios_home_touch_investigation`) is still unexplained, and Apple sometimes reviews iPhone apps on iPad.
+- [ ] Report anything broken to Claude **before** enrolling. Fixes then go into the first real build.
+
+#### Phase 3: Apple Developer Program enrolment
+- [ ] **Decide the account type.**
+  - **Organization** if Astrowani is a registered Pvt Ltd/LLP: the App Store shows the company as seller. Needs a D-U-N-S number, a company website and a company-domain email.
+  - **Individual** otherwise: shows the owner's legal name. Faster.
+  - Note: the Privacy Policy currently says "astrowani.com is not a registered firm" while also calling it "the firm Astrowaniindia". Make the policy match whichever you choose.
+- [ ] Apple Account (account.apple.com): company email, **two-factor authentication ON**, legal name exactly as on your ID/company papers.
+- [ ] A card with **international payments enabled**. The fee is US$99/year, charged in INR.
+- [ ] **Organization only:** check or request a **D-U-N-S number** at developer.apple.com/enroll/duns-lookup (free). Use the company name exactly as registered with the MCA. It takes ~5 working days, then ~2 more days for Apple to see it.
+- [ ] Enrol through the **Apple Developer app** on an iPhone (Account → Enroll Now) or at developer.apple.com/programs/enroll. Pay.
+- [ ] **Organization:** answer Apple's verification phone call.
+- [ ] Wait for the **"Welcome to the Apple Developer Program"** email.
+- [ ] developer.apple.com/account → Membership details → note the **Team ID** (10 characters) → **send it to Claude**.
+- [ ] If enrolment is still pending after 7 days (Individual) or 14 days after D-U-N-S (Organization), contact Apple: developer.apple.com/contact → Membership and Account.
+
+#### Phase 4: agreements (App Store Connect → Business)
+- [ ] Accept the latest **Apple Developer Program License Agreement**. Nothing can be submitted until it is accepted, and Apple re-asks when it changes.
+- [ ] The **Free Apps agreement** is automatic. The first build sells nothing through Apple, so the **Paid Apps agreement, bank details and tax forms (PAN/GST)** are NOT needed yet. They become required only when coins/In-App Purchase are turned on (Phase 9).
+
+#### Phase 5: identifiers, push keys, server config
+- [ ] Certificates, Identifiers & Profiles → **Identifiers**: confirm (or create) App IDs `com.astrowanicustomer` and `com.astrowaniVendor` with the **Push Notifications** capability enabled. EAS/Xcode may create these automatically on the first signed build. **(Claude** can do this via EAS with the owner signed in.)
+- [ ] **Keys → + → Apple Push Notifications service (APNs)** → download the **`.p8` file**. It can be downloaded **only once**, so store it in a password manager. Note the **Key ID**. One key works for both apps.
+- [ ] Firebase console → Project settings → **Cloud Messaging** → iOS app `com.astrowanicustomer` → upload the `.p8` (Key ID + Team ID).
+- [ ] Repeat for the iOS app `com.astrowaniVendor`. Without this, no push notification reaches any iPhone, including astrologers' incoming chat/call alerts.
+- [ ] **VoIP push for the astrologer app** (rings the phone when the app is killed). Set in the VPS backend `.env`, then run `pm2 restart astrowani-backend --update-env`:
+  - [ ] `APNS_KEY_ID`
+  - [ ] `APNS_TEAM_ID`
+  - [ ] `APNS_PRIVATE_KEY` (contents of the `.p8`; `\n` newlines accepted) or `APNS_PRIVATE_KEY_PATH`
+  - [ ] `APNS_VOIP_TOPIC=com.astrowaniVendor.voip` (**the `.voip` suffix is required**; without it you get `TopicDisallowed`, which reads like a credential problem)
+  - [ ] **`APNS_PRODUCTION=true`**, but only once TestFlight/App Store builds are in use. It defaults to sandbox. **This flag is the #1 cause of VoIP push silently doing nothing.** Sideloaded/dev builds need `false`, TestFlight/App Store builds need `true`.
+  - Details: `astrowani_vendors-main/ios/README-iOS-SETUP.md`.
+
+#### Phase 6: App Store Connect records (both apps)
+- [ ] appstoreconnect.apple.com → **My Apps → + → New App**, for each app: platform iOS; name (must be unique on the App Store, e.g. "Astrowani" / "Astrowani Astrologer", with a fallback ready); primary language English; bundle ID; SKU (e.g. `astrowani-customer-ios`, `astrowani-astrologer-ios`).
+- [ ] **Category:** primary **Lifestyle** for both (see CN positioning).
+- [ ] **Age rating questionnaire → 18+.** The Terms and Child Safety pages say 18+. Answer honestly: users can chat and interact (yes); user-generated content (yes, live comments); web access limited to our own shop.
+- [ ] **Privacy Policy URL:** `https://astrowani.com/privacy-policy/`. **Support URL:** e.g. `https://astrowani.com/` or a contact page. **Copyright:** "2026 <legal name>".
+- [ ] **App Privacy (nutrition labels)** must match the Privacy Policy and the app:
+  - **Contact info:** name, email, phone.
+  - **User content:** photos (profile, palm), other user content (chat messages, reviews, live comments, birth details), customer support.
+  - **Location:** precise, only when "use my current location" is used for an address.
+  - **Purchases:** purchase history.
+  - **Identifiers:** user ID.
+  - **Usage data:** product interaction (PostHog).
+  - **Diagnostics:** crash data, performance (Sentry).
+  - All **linked to the user**.
+  - **Tracking: No.** The iOS build has no ad SDKs: Meta and Firebase Analytics are `ios: null`. If that ever changes, the App Tracking Transparency prompt and a "Yes" are required.
+  - Payment details are handled by Razorpay and not collected by us.
+- [ ] **Pricing:** Free. **Availability:** your choice, but **untick China for Astrowani Astrologer** (it uses CallKit, and Apple rejects CallKit apps on the China storefront).
+- [ ] **Screenshots:** iPhone **6.9" (1320×2868)** is required; 6.5" is optional. No iPad screenshots (the apps are iPhone-only). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
+- [ ] **Description, subtitle, keywords:** lifestyle wording (CN). Don't mention Android, Google Play, or prices that differ by platform.
+- [ ] **App Review Information:** contact name/phone/email, **sign-in required: Yes**, demo account **9999999999 / 123456**, and the Notes text from CN (a different note for each app).
+- [ ] **Version release:** "Manually release this version", so the owner controls launch day.
+- [ ] Export compliance: `ITSAppUsesNonExemptEncryption=false` is already in both Info.plists, so there are no encryption questions per build.
+
+#### Phase 7: signed builds + TestFlight
+- [ ] **(Claude)** With the Team ID: set up signing (EAS `credentialsSource: remote` is already in both `eas.json`), build `production` for both apps, and submit to App Store Connect (`eas submit` or Transporter).
+  - `CURRENT_PROJECT_VERSION` is 1 in both projects and must go up on every upload.
+  - Check that iOS OTA targets the same `24.1` / `6.6` versions.
+- [ ] Wait for processing (~15–30 min), then add the owner and testers under **TestFlight → Internal Testing**.
+- [ ] **Two real iPhones**, one with each app:
+  - [ ] **Push:** a customer chat request reaches the astrologer iPhone.
+  - [ ] **VoIP:** with the astrologer app **fully killed**, a customer call rings full-screen (CallKit), answering lands in the call, and hanging up ends it on both phones. If it doesn't ring, check `APNS_PRODUCTION=true` first.
+  - [ ] Audio and video both ways, mute/speaker/camera, and a call with the astrologer app backgrounded.
+  - [ ] Everything from Phase 2 again, on the signed build.
+  - [ ] Astrologer app: log in with 9999999999, toggle online/offline, go live, and report/block a comment.
+
+#### Phase 8: submit for review
+- [ ] Attach the TestFlight build to the version in App Store Connect, check the review notes and demo login again, then **Submit for Review**, for each app.
+- [ ] Review usually takes 24–48 h. **If rejected, paste Apple's full message to Claude** before changing anything. Most fixes are JS and can ship in a new build quickly.
+- [ ] After approval: **Release** manually.
+
+#### Phase 9: after the first approval
+- [ ] **(Claude)** Once the App Store IDs exist:
+  - [ ] set `APP_STORE_URL` in customer `src/config/api.js` and `CUSTOMER_APP_STORE_URL` in vendor `src/config/api.js` to `https://apps.apple.com/app/id<ID>` (adds the iPhone line to share messages);
+  - [ ] fill `APP_STORE_URLS` in `astrowani-backend/src/appPromptRoutes.js`;
+  - [ ] add the App Store link on astrowani.com;
+  - [ ] OTA both platforms.
+- [ ] **Later builds, not the first:**
+  - **Coins / In-App Purchase:**
+    - Paid Apps agreement + bank + tax forms.
+    - Create the 5 products in App Store Connect; ids must equal `coin_packs.product_id`.
+    - Apple root certificates in `astrowani-backend/certs/apple/`.
+    - `APPLE_IAP_APP_APPLE_ID` in the VPS `.env`.
+    - App Store Server Notifications V2 URL `https://backend.astrowani.com/api/apple/notifications` (Production + Sandbox).
+    - Set `DIGITAL_PURCHASES_ENABLED` to `true` (see subsystem BA).
+  - **Free AI chat on iOS:** first add a clear "AI assistant" label and a consent screen before any birth details go to Gemini, then set `FREE_BOT_CHAT_ENABLED` to `true`.
+  - **Review prompt on iOS:** only via Apple's own `SKStoreReviewController`, never the custom popup.
+  - **iPad support:** only after the iPad touch bug is solved.
+
+### CP. OWNER CHECKLIST: Play Store uploads
+
+#### Customer app: build 41
+Artifact: `D:\Astrowani-Releases\astrowani-customer-24.1-41.aab` (versionCode 41, versionName 24.1). Contains the **Meta SDK** → `AD_ID` permission.
+- [ ] **(Claude)** Commit the other session's uncommitted files (`build.gradle` versionCode 41, `strings.xml` Meta ids, `react-native.config.js`), so git matches build 41.
+- [ ] **Play Console → App content → Advertising ID:** change to **"Yes"**, with purposes **Analytics** and **Advertising or marketing**. **The release is rejected without this**, because build 41 declares `AD_ID`. Builds 37–40 did not, which is why the earlier answer was "No".
+- [ ] **App content → Data safety:** update and resubmit.
+  - [ ] Device or other IDs: **collected and shared** (Meta) for advertising/analytics.
+  - [ ] App activity / app interactions: collected (PostHog, Meta).
+  - [ ] Keep: personal info (name, email, phone), photos, messages, location (approximate/precise, optional), financial info (purchase history), crash logs.
+  - [ ] Data encrypted in transit: Yes.
+  - [ ] **Users can request deletion: Yes**, with the URL `https://astrowani.com/delete-account/`. **Publish that page first** (CO Phase 1).
+  - [ ] If the free AI chat stays on for Android: name, gender and birth details are shared with Google (Gemini). Declare it.
+- [ ] **App content → Child safety standards:** URL `https://astrowani.com/child-safety/` + contact email `support@astrowani.com` (after applying the Child Safety fixes).
+- [ ] **App content → Target audience:** 18+ (matches Terms). **Content rating** questionnaire: users interact/communicate; shares location (optional); digital purchases.
+- [ ] Meta developer app: confirm Android platform settings are complete (package `com.astrowanicustomer`, class `com.astrowanicustomer.MainActivity`, key hash from Play Console → App integrity → App signing SHA-1, which Claude can convert), app is **Live**, and events show in Events Manager → Test events after install (see CH).
+- [ ] Upload: Play Console → **Test and release → Internal testing** (recommended first) → Create new release → upload the AAB → release notes.
+  - Install from the internal track on a real phone: login, chat, call, recharge, live stream.
+  - Then **Production** → Create release → **staged rollout** (e.g. 20%) → review → roll out.
+- [ ] **Build 41 lacks today's app changes** (the live comment report/block UI; the deletion purge and comment filtering are server-side and already live). Deliver them to Android by **OTA after build 41 is live** (`node scripts/deployOta.js -p android -m '"live comment reporting"'` from each app folder; see the traps in CB), or build 42. **Ask the owner before any OTA.**
+
+#### Astrologer app: build 27
+Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, versionName 6.6, built 2026-09-13). No native changes since, so later vendor JS changes (live report/block sheet, iOS guards) go by OTA.
+- [ ] If not already uploaded: Internal testing → check on a phone → Production (staged).
+- [ ] **Data safety:** users can request deletion → `https://astrowani.com/delete-account/`; bank/UPI details (financial info) collected for payouts; photos; messages; crash logs; app activity.
+- [ ] **App content → Child safety standards** URL + contact, same as the customer app.
+- [ ] **App access** (reviewer login): phone 9999999999, OTP 123456. The astrologer account is now approved (it was stuck on pending until 2026-09-16, so earlier Play reviews could only ever see "pending approval").
+- [ ] Advertising ID: **No** (the vendor app has no ad SDKs).
+
+#### Both apps, whenever uploading
+- [ ] The signing key must be the upload key: customer CN=Astrowani Customer (SHA-256 `55:01:0B:59…`), vendor CN=Astrowani (`76:FC:45:AF…`). Check with `keytool -printcert -jarfile <aab>`. See the vendor `build.gradle` signing trap in CE.
+- [ ] `versionName` stays **24.1** (customer) / **6.6** (vendor), so OTA bundles keep reaching the new build. Only `versionCode` goes up.
+- [ ] Sentry source maps are not uploaded (no auth token on the build machine), so crash stack traces from these builds are minified.
+
+#### Not store steps, but still open and related
+- [ ] **Rotate the Razorpay live key** (still in git history): `MD files/razorpay-key-rotation-runbook.md`.
+- [ ] Set `RAZORPAY_WEBHOOK_SECRET` + add the webhook in the Razorpay dashboard (BT item 7).
+- [ ] Apply `hardening_13`, then `11` + `12`, **on or after 2026-09-18** (BZ).
+- [ ] **Supabase Pro** for database backups (CA). A store launch will bring more users onto a database with no backups.
+- [ ] Moderation: check admin → **Moderation (Reports)** at least daily once live. Both stores expect reported content to be handled promptly (aim for within 24 h).
