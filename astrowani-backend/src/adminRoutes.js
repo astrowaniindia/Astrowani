@@ -791,7 +791,8 @@ module.exports = function registerAdminRoutes(app) {
     const allowed = ['approval_status', 'is_suspended', 'is_available', 'is_chat_enabled',
       'is_call_enabled', 'is_video_call_enabled', 'chat_charge_per_minute',
       'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes',
-      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages', 'badge'];
+      'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages', 'badge',
+      'hidden_from_customers'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
     if ('badge' in body && body.badge !== null && !['verified', 'celebrity', 'top_rated'].includes(body.badge)) {

@@ -118,6 +118,9 @@ const ASTROLOGER_LIST_COLUMNS = [
   'is_available', 'is_online', 'is_live',
   'average_rating', 'total_reviews',
   'approval_status', 'is_suspended', 'badge',
+  // Test / App Review accounts (sql/astrologer_hidden_from_customers.sql). Must be
+  // selected: astrologerVisibleToCustomers treats a missing value as visible.
+  'hidden_from_customers',
 ].join(', ');
 
 // `logged_out_at` is kept OUT of the list above and probed for instead.
@@ -2160,6 +2163,9 @@ function astrologerVisibleToCustomers(row) {
     row &&
     row.approval_status === 'approved' &&
     row.is_suspended !== true &&
+    // App Store / Play Store reviewer and other test accounts can use the astrologer
+    // app but must never be offered to real, paying customers.
+    row.hidden_from_customers !== true &&
     astrologerProfileComplete(row)
   );
 }
@@ -2816,6 +2822,7 @@ app.get('/api/astrologers', async (req, res) => {
         .select(await astrologerListColumns())
         .eq('approval_status', 'approved')
         .not('is_suspended', 'is', true)
+        .not('hidden_from_customers', 'is', true)
         .gt('experience', 0);
 
       // Optional service filter — section screens pass ?service=chat|audio|video
