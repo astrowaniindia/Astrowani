@@ -84,6 +84,146 @@ async function hasActiveSession(customerId) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Personal-data purge, shared by both delete routes.
+//
+// Added 2026-09-16. Before this, the soft path (any account with session or wallet
+// history — i.e. nearly every real customer) only blanked columns on the customers /
+// astrologers row. The account's saved addresses, favourites, reviews, voice notes,
+// free-call bookings, support and WhatsApp conversations all stayed, the name stayed
+// as "X (deleted)", and every uploaded photo stayed reachable in the PUBLIC
+// app-images bucket, because nulling a URL does not delete the file it points to.
+// That made astrowani.com/delete-account/ untrue.
+//
+// What is deliberately NOT purged, because Indian tax/accounting law requires it:
+// chat_sessions, wallet_transactions, vendor_wallet_transactions, coin_transactions,
+// gift_transactions, wallet_recharges, orders (+ order_items, which carry the
+// invoice name/phone/delivery address), withdrawal_requests, referrals (ids + reward
+// amount only). Also kept: customer_reports / astrologer_reports — safety records,
+// which after the purge point only at an anonymised row.
+//
+// Every step is idempotent and THROWS on failure. It runs BEFORE the account row is
+// deleted or anonymised, so a failure returns 500 while the account can still be
+// resolved from the same token, and a retry finishes the job.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PHOTO_BUCKET = 'app-images';
+// Only files under these folders are ever removed, so a URL that somehow points at
+// shared content (a banner, a product image) can never be deleted by a user.
+const PERSONAL_FOLDERS = ['customer-profiles/', 'customer-hands/', 'astrologer-profiles/', 'voice-notes/'];
+
+function personalStoragePath(url) {
+  if (!url || typeof url !== 'string') return null;
+  const marker = `/storage/v1/object/public/${PHOTO_BUCKET}/`;
+  const at = url.indexOf(marker);
+  if (at === -1) return null;
+  const path = decodeURIComponent(url.slice(at + marker.length).split('?')[0]);
+  if (path.includes('..')) return null;
+  return PERSONAL_FOLDERS.some((f) => path.startsWith(f)) ? path : null;
+}
+
+async function removeStorageFiles(urls) {
+  const paths = [...new Set(urls.map(personalStoragePath).filter(Boolean))];
+  if (!paths.length) return;
+  const { error } = await db.storage.from(PHOTO_BUCKET).remove(paths);
+  if (error) throw new Error(`storage remove: ${error.message}`);
+}
+
+// An unapplied migration reports PGRST205 (not 42P01) — a table that does not exist
+// holds nothing to delete, so that is not a failure.
+async function step(label, query) {
+  const { error } = await query;
+  if (error && error.code !== 'PGRST205' && error.code !== '42P01') {
+    throw new Error(`${label}: ${error.message}`);
+  }
+}
+
+// Mirrors index.js recomputeAstrologerRating (not exported from there).
+async function recomputeRating(astrologerId) {
+  let avg = 0;
+  let total = 0;
+  const { data: rpcRows, error: rpcError } = await db
+    .rpc('astrologer_review_stats', { p_astrologer_id: astrologerId });
+  if (!rpcError && rpcRows && rpcRows.length) {
+    avg = Math.round((Number(rpcRows[0].avg_rating) || 0) * 10) / 10;
+    total = Number(rpcRows[0].review_count) || 0;
+  } else {
+    const { data: rows } = await db
+      .from('reviews').select('rating').eq('astrologer_id', astrologerId).eq('is_hidden', false);
+    const list = rows || [];
+    total = list.length;
+    avg = total
+      ? Math.round((list.reduce((s, r) => s + (Number(r.rating) || 0), 0) / total) * 10) / 10
+      : 0;
+  }
+  await step('recompute rating',
+    db.from('astrologers').update({ average_rating: avg, total_reviews: total }).eq('id', astrologerId));
+}
+
+async function purgeCustomerPersonalData(id) {
+  const { data: row } = await db
+    .from('customers').select('profile_image, hand_image').eq('id', id).maybeSingle();
+  const { data: notes } = await db.from('voice_notes').select('audio_url').eq('customer_id', id);
+  const { data: reviewed } = await db.from('reviews').select('astrologer_id').eq('customer_id', id);
+
+  await removeStorageFiles([
+    row?.profile_image, row?.hand_image, ...(notes || []).map((n) => n.audio_url),
+  ]);
+
+  await step('reviews', db.from('reviews').delete().eq('customer_id', id));
+  for (const astrologerId of new Set((reviewed || []).map((r) => r.astrologer_id))) {
+    await recomputeRating(astrologerId);
+  }
+  // orders.address_id is ON DELETE SET NULL, and each order keeps its own
+  // delivery_address snapshot, so past invoices are unaffected.
+  await step('addresses', db.from('customer_addresses').delete().eq('customer_id', id));
+  await step('favorites', db.from('favorites').delete().eq('customer_id', id));
+  await step('voice notes', db.from('voice_notes').delete().eq('customer_id', id));
+  await step('waitlist', db.from('astrologer_waitlist').delete().eq('customer_id', id));
+  await step('remedy referrals', db.from('remedy_referrals').delete().eq('customer_id', id));
+  await step('notifications', db.from('notifications').delete().eq('customer_id', id));
+  await step('free-call bookings', db.from('free_call_bookings').delete().eq('customer_id', id));
+  await step('blocks', db.from('customer_blocks').delete().eq('customer_id', id));
+  // support_messages / whatsapp_messages cascade from their conversations.
+  await step('support conversations', db.from('support_conversations').delete().eq('customer_id', id));
+  await step('support tickets', db.from('support_tickets').delete().eq('customer_id', id));
+  await step('whatsapp conversations', db.from('whatsapp_conversations').delete().eq('customer_id', id));
+  // chat_sessions.request_id references chat_requests (NO ACTION), so the rows stay
+  // for session history; the name snapshot does not need to.
+  await step('chat request names', db.from('chat_requests').update({ caller_name: null }).eq('caller_id', id));
+  await step('call history names',
+    db.from('call_history').update({ client_name: null, client_avatar: null }).eq('client_id', id));
+}
+
+async function purgeAstrologerPersonalData(id) {
+  const { data: row } = await db.from('astrologers').select('profile_pic_url').eq('id', id).maybeSingle();
+  const { data: notes } = await db.from('voice_notes').select('audio_url').eq('astrologer_id', id);
+
+  await removeStorageFiles([row?.profile_pic_url, ...(notes || []).map((n) => n.audio_url)]);
+
+  await step('reviews', db.from('reviews').delete().eq('astrologer_id', id));
+  await step('favorites', db.from('favorites').delete().eq('astrologer_id', id));
+  await step('voice notes', db.from('voice_notes').delete().eq('astrologer_id', id));
+  await step('waitlist', db.from('astrologer_waitlist').delete().eq('astrologer_id', id));
+  // Commission already owed is snapshotted onto order_items, so this only stops
+  // FUTURE orders being attributed to a deleted account.
+  await step('remedy referrals', db.from('remedy_referrals').delete().eq('astrologer_id', id));
+  await step('notifications', db.from('notifications').delete().eq('astrologer_id', id));
+  await step('devices', db.from('vendor_devices').delete().eq('astrologer_id', id));
+  await step('blocks', db.from('customer_blocks').delete().eq('astrologer_id', id));
+  // Upcoming free calls go back to the admin's unassigned queue so the customer is
+  // still called by someone.
+  await step('free-call bookings',
+    db.from('free_call_bookings').update({ astrologer_id: null }).eq('astrologer_id', id).eq('status', 'booked'));
+  // Support conversations the astrologer opened themselves (not customer threads
+  // that merely involve them).
+  await step('support conversations',
+    db.from('support_conversations').delete().eq('astrologer_id', id).is('customer_id', null));
+  await step('whatsapp handler', db.from('whatsapp_conversations').update({ astrologer_id: null }).eq('astrologer_id', id));
+  await step('call history names',
+    db.from('call_history').update({ astrologer_name: null, astrologer_avatar: null }).eq('astrologer_id', id));
+}
+
 module.exports = (app) => {
   /**
    * What deleting this account will actually cost the customer, so the confirmation
@@ -142,6 +282,8 @@ module.exports = (app) => {
       // references a customer (favorites, reviews, referrals, wallet_recharges,
       // voice_notes, astrologer_waitlist, astrologer_reports, support_tickets) is
       // ON DELETE CASCADE/SET NULL and goes automatically with the row below.
+      await purgeCustomerPersonalData(id);
+
       await db.from('call_requests').delete().eq('customer_id', id);
       await db.from('chat_messages').delete().eq('sender_id', id);
       await db.from('chat_messages').delete().eq('receiver_id', id);
@@ -169,7 +311,8 @@ module.exports = (app) => {
       const deletedTag = `deleted:${id}:${Date.now()}`;
       const { error: softErr } = await db.from('customers').update({
         mobile: deletedTag,
-        name: customer.name ? `${customer.name} (deleted)` : 'Deleted user',
+        name: 'Deleted user',
+        referral_code: null,
         fcm_token: null, // stop every future push to a device whose owner has left
         email: null,
         // Birth details: date + time + place is strongly identifying on its own, and
@@ -381,6 +524,8 @@ module.exports.registerVendorAccountRoutes = (app) => {
       // that references an astrologer (favorites, reviews, live_sessions,
       // astrologer_waitlist, astrologer_reports, voice_notes, withdrawal_requests,
       // remedy_referrals, free_call_bookings) is ON DELETE CASCADE/SET NULL.
+      await purgeAstrologerPersonalData(id);
+
       await db.from('call_requests').delete().eq('astrologer_id', id);
       await db.from('chat_messages').delete().eq('receiver_id', id);
       await db.from('chat_messages').delete().eq('sender_id', id);
