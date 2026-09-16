@@ -35,10 +35,10 @@ module.exports = {
     //
     // src/utils/adTracking.js no-ops when these native modules are absent, and the
     // Facebook <meta-data> left in AndroidManifest.xml is inert without the SDK.
+    // Meta: Android switched ON 2026-09-16 (build 41) — ids filled in.
     'react-native-fbsdk-next': {
       platforms: {
         ios: null,
-        android: null,
       },
     },
     '@react-native-firebase/analytics': {
