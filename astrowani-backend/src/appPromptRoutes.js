@@ -146,9 +146,17 @@ function normalizeApp(which) {
 }
 
 function resolveStoreUrl(configured, which, platform) {
-  if (configured && /^https?:\/\//i.test(String(configured))) return String(configured);
-  if (platform === 'ios') return APP_STORE_URLS[which] || null;
-  return PLAY_STORE_URLS[which];
+  const url = configured && /^https?:\/\//i.test(String(configured)) ? String(configured) : null;
+  if (platform === 'ios') {
+    // The admin form holds ONE url per app, and today it is the Play Store listing.
+    // Before 2026-09-16 that url was served to iPhones too, so an iOS build would
+    // have offered "Update / Rate on Play Store" — an App Review rejection
+    // (Guideline 2.3.10, references to another platform). Only an App Store url
+    // is ever returned to iOS.
+    if (url && /(^|\.)apple\.com\//i.test(url.replace(/^https?:\/\//i, ''))) return url;
+    return APP_STORE_URLS[which] || null;
+  }
+  return url || PLAY_STORE_URLS[which];
 }
 
 module.exports = function registerAppPromptRoutes(app) {
@@ -221,6 +229,11 @@ module.exports = function registerAppPromptRoutes(app) {
   app.get('/api/app/review-prompt', h(async (req, res) => {
     const which = normalizeApp(String(req.query.app || '').toLowerCase());
     const platform = String(req.query.platform || 'android').toLowerCase();
+
+    // Never on iOS. Guideline 5.6.1 forbids custom review prompts there — only
+    // Apple's own SKStoreReviewController may ask — and this prompt is also chained
+    // to a 4-5 star session rating, which Apple treats as review gating.
+    if (platform === 'ios') return res.json({ success: true, enabled: false });
 
     const cfg = await readJsonSetting(REVIEW_KEY);
     if (!cfg || cfg.enabled === false) {

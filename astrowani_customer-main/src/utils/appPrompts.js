@@ -55,6 +55,9 @@ export async function fetchUpdateStatus() {
 
 /** Admin-configured review-prompt copy + thresholds, or null when off/unreachable. */
 export async function fetchReviewConfig() {
+  // Never on iOS: App Store Guideline 5.6.1 allows only Apple's own review prompt.
+  // The backend also refuses iOS; this keeps the build safe on its own.
+  if (Platform.OS === 'ios') return null;
   try {
     const res = await Instance.get('/api/app/review-prompt', {
       params: { app: APP_KIND, platform: Platform.OS },
