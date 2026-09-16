@@ -5398,7 +5398,7 @@ apps only get today's app changes through the next OTA or store build.
 - `Astrowani-Policy-Page-Fixes.docx`: exact find/replace for Privacy Policy (4), Terms (3), Refund (4), Child Safety (2). Safety Guidelines needs nothing.
 - `Astrowani-Delete-Account-Page.docx`: full text for `astrowani.com/delete-account/`, which currently returns **404**.
 
-**Work from ANOTHER session, seen but not made here:** customer `versionCode` 40 → **41**, Meta SDK switched ON for Android (`react-native.config.js` android exclusion removed, ids in `strings.xml` + `adTracking.js`), and `D:\Astrowani-Releases\astrowani-customer-24.1-41.aab` built **2026-09-16 22:10**. At the time of writing, `build.gradle`, `strings.xml` and `react-native.config.js` were **uncommitted** (`adTracking.js` was swept into `279aecf` by mistake). Build 41's merged manifest was checked: it DOES contain `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_*` and `FacebookActivity`. Firebase Analytics is still `android: null`. **Build 41 was built BEFORE `279aecf`…`38a8ce3`**, so it does NOT contain today's live-report UI (checked: the bundle has no `liveReport` strings).
+**Work from ANOTHER session, seen but not made here:** customer `versionCode` 40 → **41**, Meta SDK switched ON for Android (`react-native.config.js` android exclusion removed, ids in `strings.xml` + `adTracking.js`), and `D:\Astrowani-Releases\astrowani-customer-24.1-41.aab` built **2026-09-16 22:10**. Those files were committed by that session in `a4687e5` (`adTracking.js` had already been swept into `279aecf` by mistake). Build 41's merged manifest was checked: it DOES contain `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_*` and `FacebookActivity`. Firebase Analytics is still `android: null`. **Build 41 was built BEFORE `279aecf`…`38a8ce3`**, so it does NOT contain today's live-report UI (checked: the bundle has no `liveReport` strings).
 
 **Reviewer logins (both apps, both stores):** mobile **9999999999**, OTP **123456** (no SMS sent). Customer = "Test User"; astrologer = "Play Store Reviewer" (approved, `hidden_from_customers = true`).
 
@@ -5537,7 +5537,7 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
 
 #### Customer app: build 41
 Artifact: `D:\Astrowani-Releases\astrowani-customer-24.1-41.aab` (versionCode 41, versionName 24.1). Contains the **Meta SDK** → `AD_ID` permission.
-- [ ] **(Claude)** Commit the other session's uncommitted files (`build.gradle` versionCode 41, `strings.xml` Meta ids, `react-native.config.js`), so git matches build 41.
+- [x] **(Claude)** Commit the other session's files (`build.gradle` versionCode 41, `strings.xml` Meta ids, `react-native.config.js`), so git matches build 41. Done 2026-09-16 in `a4687e5`.
 - [ ] **Play Console → App content → Advertising ID:** change to **"Yes"**, with purposes **Analytics** and **Advertising or marketing**. **The release is rejected without this**, because build 41 declares `AD_ID`. Builds 37–40 did not, which is why the earlier answer was "No".
 - [ ] **App content → Data safety:** update and resubmit.
   - [ ] Device or other IDs: **collected and shared** (Meta) for advertising/analytics.
