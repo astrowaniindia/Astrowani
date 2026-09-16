@@ -85,6 +85,7 @@ import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import { astroServiceLabel } from '../../utils/astroServiceLabel';
 import RequestingPopup from '../../components/RequestingPopup';
 import {useModalPresence} from '../../utils/modalPresentation';
+import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -1706,17 +1707,22 @@ const Home = ({navigation}) => {
 
         <View style={styles.separator} />
 
-        <View style={styles.topAstrologers}>
-          <Text style={styles.topAstrologerTxt}>{t('home.freeServices')}</Text>
-        </View>
-        <FreeServicesScreen
-          services={services.map(s => ({...s, displayTitle: t(s.titleKey)}))}
-          onServiceSelect={handleServiceSelect}
-          showPrice
-          animateIn={false}
-        />
+        {/* Hidden on iOS for the first App Store build — see DIGITAL_PURCHASES_ENABLED. */}
+        {DIGITAL_PURCHASES_ENABLED && (
+          <>
+            <View style={styles.topAstrologers}>
+              <Text style={styles.topAstrologerTxt}>{t('home.freeServices')}</Text>
+            </View>
+            <FreeServicesScreen
+              services={services.map(s => ({...s, displayTitle: t(s.titleKey)}))}
+              onServiceSelect={handleServiceSelect}
+              showPrice
+              animateIn={false}
+            />
 
-        <View style={styles.separator} />
+            <View style={styles.separator} />
+          </>
+        )}
 
         {/* Live Astrologers — moved here (between Free Services / "₹1 service" and
             Astro Reports) at the user's request, 2026-08-14. */}
@@ -1751,6 +1757,8 @@ const Home = ({navigation}) => {
 
         <View style={styles.separator} />
 
+        {DIGITAL_PURCHASES_ENABLED && (
+        <>
         <View style={styles.topAstrologers}>
           <Text style={styles.topAstrologerTxt}>{t('home.astroReports')}</Text>
         </View>
@@ -1777,6 +1785,8 @@ const Home = ({navigation}) => {
         />
 
         <View style={styles.separator} />
+        </>
+        )}
 
         {/* The "Astrowani Remedies" category row used to sit here (added 2026-08-20).
             Removed 2026-09-05: it opened the native RemedyShop, while the bottom tab

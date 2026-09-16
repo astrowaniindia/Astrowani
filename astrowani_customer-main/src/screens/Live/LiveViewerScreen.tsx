@@ -28,6 +28,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import GiftModal from '../../Component/Modal';
 import {LanguageContext} from '../../context/LanguageContext';
 import {captureEvent} from '../../utils/Analytics';
+import {DIGITAL_PURCHASES_ENABLED} from '../../utils/payments';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -235,9 +236,11 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           <TouchableOpacity style={styles.sendBtn} onPress={sendComment}>
             <MaterialIcons name="send" size={22} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.giftBtn} onPress={() => { captureEvent('live_gift_opened', {session_id: sessionId}); setGiftVisible(true); }}>
-            <MaterialIcons name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
-          </TouchableOpacity>
+          {DIGITAL_PURCHASES_ENABLED && (
+            <TouchableOpacity style={styles.giftBtn} onPress={() => { captureEvent('live_gift_opened', {session_id: sessionId}); setGiftVisible(true); }}>
+              <MaterialIcons name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
 

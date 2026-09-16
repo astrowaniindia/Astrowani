@@ -32,8 +32,8 @@ import { NativeModules, Platform } from 'react-native';
 // Public identifiers (they ship inside every APK, same trust level as the PostHog key).
 // Must match android/app/src/main/res/values/strings.xml. While either is still a
 // placeholder the Meta SDK is never initialised and nothing is sent to Meta.
-const META_APP_ID = 'REPLACE_WITH_META_APP_ID';
-const META_CLIENT_TOKEN = 'REPLACE_WITH_META_CLIENT_TOKEN';
+const META_APP_ID = '28499438753050213';
+const META_CLIENT_TOKEN = '5424bb793f70c681a2b4f956a7dc6bd9';
 
 const metaConfigured =
   !META_APP_ID.startsWith('REPLACE_WITH_') && !META_CLIENT_TOKEN.startsWith('REPLACE_WITH_');

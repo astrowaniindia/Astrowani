@@ -50,6 +50,7 @@ import {
   unreachableReason,
 } from '../../utils/astrologerAvailability';
 import {useModalPresence} from '../../utils/modalPresentation';
+import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 
 const { width } = Dimensions.get('window');
 
@@ -363,7 +364,7 @@ const AstrologerInfo = ({route, navigation}) => {
   };
 
   const initiateVideoCall = async () => {
-    if (isVideoWaiting || isCallInitiatingRef.current) return;
+    if (isCallWaiting || isCallInitiatingRef.current) return;
     isCallInitiatingRef.current = true;
     try {
       if (!(await ensureProfileComplete(navigation, 'video_call'))) return;
@@ -774,11 +775,15 @@ const AstrologerInfo = ({route, navigation}) => {
               <MaterialIcons name="work-outline" size={moderateScale(18)} color="#666" />
               <Text style={styles.statText}>{person.experience || '1'} {t('profile.yrs')}</Text>
             </View>
-            <View style={styles.statDivider} />
-            <TouchableOpacity style={styles.statItem} onPress={() => setModalVisible(true)}>
-              <MaterialIcons name="card-giftcard" size={moderateScale(18)} color={COLORS.AstroMaroon} />
-              <Text style={[styles.statText, { color: COLORS.AstroMaroon }]}>{t('profile.gift')}</Text>
-            </TouchableOpacity>
+            {DIGITAL_PURCHASES_ENABLED && (
+              <>
+                <View style={styles.statDivider} />
+                <TouchableOpacity style={styles.statItem} onPress={() => setModalVisible(true)}>
+                  <MaterialIcons name="card-giftcard" size={moderateScale(18)} color={COLORS.AstroMaroon} />
+                  <Text style={[styles.statText, { color: COLORS.AstroMaroon }]}>{t('profile.gift')}</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem} onPress={onShare}>
               <AntDesign name="sharealt" size={moderateScale(18)} color="#666" />
@@ -838,7 +843,7 @@ const AstrologerInfo = ({route, navigation}) => {
           </View>
 
           {/* Gifts Card — always shown open (no button/modal gate), one tap sends */}
-          {gifts.length > 0 && (
+          {DIGITAL_PURCHASES_ENABLED && gifts.length > 0 && (
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <MaterialIcons name="card-giftcard" size={moderateScale(20)} color={COLORS.AstroMaroon} />

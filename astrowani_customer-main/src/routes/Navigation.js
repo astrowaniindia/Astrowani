@@ -48,6 +48,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
 import CoinStore from '../screens/Coins/CoinStore';
 import { initIap } from '../utils/iap';
+import { DIGITAL_PURCHASES_ENABLED } from '../utils/payments';
 import History from '../screens/Home/Wallet/History';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
@@ -115,7 +116,9 @@ export default function Navigation({ initialRoute }) {
     // landed, or an "Ask to Buy" approved later) is redelivered as soon as the
     // listener attaches, and must be credited whether or not the customer happens
     // to visit the store again. initIap never throws.
-    initIap();
+    // Skipped while coins are off on iOS (first App Store build) — see
+    // DIGITAL_PURCHASES_ENABLED. On Android initIap is a no-op either way.
+    if (DIGITAL_PURCHASES_ENABLED) initIap();
   }, []);
 
   // Written by PushNotification.js's handleActiveSessionTap when the persistent

@@ -5,6 +5,7 @@ import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {LanguageContext} from '../../context/LanguageContext';
 import {captureEvent} from '../../utils/Analytics';
+import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 
 /**
  * The three Wani Shop entry points, as a circular icon strip above the Home banner.
@@ -51,7 +52,7 @@ export default function ShopCategoryCircles({navigation, onDark = false}) {
 
   return (
     <View style={[styles.row, onDark && styles.rowOnDark]}>
-      {CATEGORIES.map((c) => (
+      {CATEGORIES.filter((c) => DIGITAL_PURCHASES_ENABLED || c.id !== 'reports').map((c) => (
         <TouchableOpacity
           key={c.id}
           style={styles.item}

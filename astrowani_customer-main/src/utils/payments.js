@@ -38,6 +38,19 @@ import {getCoinBalance} from '../api/CoinsApi';
 export const PAYS_WITH_COINS = Platform.OS === 'ios';
 
 /**
+ * False on iOS for the FIRST App Store build (decided 2026-09-16): the coin /
+ * In-App Purchase setup is deferred to a later build, so every digital purchase —
+ * Astro Reports, gifts, the ₹1 Free Services, and the coin store — is HIDDEN on
+ * iPhone rather than shown empty (App Review rejects placeholder / "no items"
+ * sections, Guideline 2.1). Consultations (wallet, rupees) and the Wani Shop
+ * (physical goods) are unaffected. Android is unaffected.
+ *
+ * To turn coins back on: set this to `true` (a JS-only change, ships over OTA once
+ * the App Store Connect coin products and backend Apple certs are in place).
+ */
+export const DIGITAL_PURCHASES_ENABLED = Platform.OS !== 'ios';
+
+/**
  * The value sent as `payWith` on the three purchase requests.
  *
  * The backend defaults to 'wallet' when this is absent, so an older build — and

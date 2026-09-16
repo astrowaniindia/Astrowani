@@ -6,7 +6,7 @@
 // cancellation/failure (screen just checks truthiness before navigating).
 import {useContext, useEffect, useRef, useState} from 'react';
 import {getAstroServices, runAstroReport} from '../../../api/astroApi';
-import {getSpendableBalance, PAYS_WITH_COINS} from '../../../utils/payments';
+import {getSpendableBalance, PAYS_WITH_COINS, DIGITAL_PURCHASES_ENABLED} from '../../../utils/payments';
 import {LanguageContext} from '../../../context/LanguageContext';
 import {showStatusPopup} from '../../../components/StatusPopup';
 import {showInsufficientBalanceAlert} from '../../../utils/insufficientBalanceAlert';
@@ -35,7 +35,9 @@ export default function useAstroPurchase(serviceKey) {
   }, [serviceKey]);
 
   async function submit(payload) {
-    if (!service) {
+    // Off on iOS for the first App Store build; entry points are hidden, this only
+    // catches a stale deep link / banner that opens a report screen directly.
+    if (!service || !DIGITAL_PURCHASES_ENABLED) {
       showStatusPopup({variant: 'info', title: t('astro.notAvailable'), message: t('astro.notAvailableMsg')});
       return null;
     }

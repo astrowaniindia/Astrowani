@@ -6,7 +6,7 @@
 // purchase(serviceKey, serviceName) that resolves true (go ahead and navigate) or false
 // (insufficient balance / user cancelled / charge failed — all already surfaced via popup).
 import {useContext, useState} from 'react';
-import {getSpendableBalance, formatSpendable} from '../utils/payments';
+import {getSpendableBalance, formatSpendable, DIGITAL_PURCHASES_ENABLED} from '../utils/payments';
 import {chargeFreeService} from '../api/freeServicesApi';
 import {LanguageContext} from '../context/LanguageContext';
 import {showStatusPopup} from '../components/StatusPopup';
@@ -20,6 +20,10 @@ export default function useFreeServicePurchase() {
 
   async function purchase(serviceKey, serviceName) {
     captureEvent('free_service_tapped', {service_key: serviceKey});
+    if (!DIGITAL_PURCHASES_ENABLED) {
+      showStatusPopup({variant: 'info', title: t('astro.notAvailable'), message: t('astro.notAvailableMsg')});
+      return false;
+    }
     setCharging(true);
     try {
       const balance = await getSpendableBalance();

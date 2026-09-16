@@ -11,7 +11,7 @@ import { Platform, ToastAndroid, Alert } from 'react-native';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
 import { captureEvent } from '../utils/Analytics';
-import { PAY_WITH, PAYS_WITH_COINS, formatSpendable, getSpendableBalance } from '../utils/payments';
+import { PAY_WITH, PAYS_WITH_COINS, DIGITAL_PURCHASES_ENABLED, formatSpendable, getSpendableBalance } from '../utils/payments';
 // Standalone t() — this hook has no LanguageContext consumer of its own.
 import { translate } from '../context/LanguageContext';
 
@@ -90,7 +90,7 @@ export default function useGiftSender() {
   // trusts a balance fetched earlier (e.g. when a modal/screen first opened), so both
   // the insufficient-balance gate and the amount the user confirms are always current.
   const sendGift = async ({ astrologerId, gift, context = 'profile', sessionId, onSent, onBalanceChange }) => {
-    if (!gift || !astrologerId) return;
+    if (!gift || !astrologerId || !DIGITAL_PURCHASES_ENABLED) return;
     // null (not 0) when the fetch itself fails — 0 would wrongly look like "insufficient"
     // for every gift regardless of the real balance. On a failed fetch, skip this
     // client-side gate entirely rather than block on missing information; the backend's
