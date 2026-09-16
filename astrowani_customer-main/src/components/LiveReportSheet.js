@@ -1,123 +1,123 @@
-// "Report this customer" bottom sheet — reason list, optional note, and an
-// optional block in the same action.
+// Report a live stream comment, or the live stream itself.
 //
-// One shared component because the same sheet has to be reachable from two places:
-// the live chat screen (where abuse actually happens) and My Customers (afterwards,
-// once the session is over). Store review looks for the mechanism to be reachable
-// from the place the content is, so the in-chat entry point is the important one.
+// Live comments are written by other customers and shown to everyone watching, so
+// App Store Guideline 1.2 and Google Play's UGC policy require a way to report them
+// and to block the person who wrote them. Both are offered here, independently:
+// someone may want to report without blocking, or block without filing a report.
 //
-// Reporting and blocking are offered TOGETHER but sent as separate intents: an
-// astrologer may want to flag someone without losing a paying customer, or cut
-// contact without filing a complaint. The checkbox is opt-in, not the default.
+// target:
+//   { kind: 'comment', sessionId, senderId, name, message }
+//   { kind: 'stream',  astrologerId, name }
 import React, { useContext, useState } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, ScrollView, Pressable,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Instance from '../api/ApiCall';
 import { COLORS } from '../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../utils/Scaling';
 import { LanguageContext } from '../context/LanguageContext';
-import { reportCustomer, reportLiveComment, blockCustomer, REPORT_REASONS } from '../api/ModerationApi';
 import { showStatusPopup } from './StatusPopup';
+import { useModalPresence } from '../utils/modalPresentation';
+import { captureEvent } from '../utils/Analytics';
 
-// `liveComment` ({ sessionId, message }) switches the sheet to reporting one comment
-// from a live stream: the report goes to the live-comment queue, and blocking also
-// stops that customer commenting on this astrologer's streams.
-export default function ReportCustomerSheet({ visible, customer, liveComment, onClose, onBlocked }) {
+const COMMENT_REASONS = ['abusive', 'harassment', 'sexual', 'hate', 'spam', 'other'];
+const STREAM_REASONS = ['abusive', 'sexual', 'hate', 'fraud', 'other'];
+
+// astrologer_reports.reason is free text read by an admin, so the stream report sends
+// the English label rather than a key.
+const STREAM_REASON_LABELS = {
+  abusive: 'Live stream: abusive or offensive language',
+  sexual: 'Live stream: sexual content',
+  hate: 'Live stream: hate speech',
+  fraud: 'Live stream: fraud or misleading claims',
+  other: 'Live stream: other',
+};
+
+export default function LiveReportSheet({ visible, target, onClose, onBlock }) {
   const { t } = useContext(LanguageContext);
   const [reason, setReason] = useState(null);
   const [note, setNote] = useState('');
   const [alsoBlock, setAlsoBlock] = useState(false);
   const [busy, setBusy] = useState(false);
+  useModalPresence(!!visible);
+
+  const isComment = target?.kind === 'comment';
+  const reasons = isComment ? COMMENT_REASONS : STREAM_REASONS;
 
   const reset = () => { setReason(null); setNote(''); setAlsoBlock(false); setBusy(false); };
   const close = () => { if (!busy) { reset(); onClose?.(); } };
 
+  const blockOnly = () => {
+    if (!isComment || busy) return;
+    captureEvent('live_comment_blocked', { session_id: target.sessionId, with_report: false });
+    onBlock?.(target.senderId);
+    reset();
+    onClose?.();
+    showStatusPopup({ variant: 'success', title: t('liveReport.blockedTitle'), message: t('liveReport.blockedBody') });
+  };
+
   const submit = async () => {
-    if (!reason || busy) return;
+    if (!reason || busy || !target) return;
     setBusy(true);
     try {
-      let blocked = false;
-      if (liveComment) {
-        await reportLiveComment({
-          sessionId: liveComment.sessionId,
-          customerId: customer?.id,
-          message: liveComment.message,
-          reason,
-          note: note.trim(),
-        });
-        if (alsoBlock) {
-          await blockCustomer({ customerId: customer?.id, reason: 'live_comment' });
-          blocked = true;
-        }
-      } else {
-        ({ blocked } = await reportCustomer({
-          customerId: customer?.id,
-          reason,
-          note: note.trim(),
-          alsoBlock,
-        }));
-      }
+      const token = await AsyncStorage.getItem('token');
+      const headers = { headers: { Authorization: `Bearer ${token}` } };
+      const res = isComment
+        ? await Instance.post('/api/live/comments/report', {
+            sessionId: target.sessionId,
+            senderId: target.senderId,
+            message: target.message,
+            reason,
+            note: note.trim() || undefined,
+          }, headers)
+        : await Instance.post('/api/reports', {
+            astrologerId: target.astrologerId,
+            reason: STREAM_REASON_LABELS[reason],
+            note: note.trim() || null,
+          }, headers);
+      if (!res?.data?.success) throw new Error(res?.data?.message);
+
+      const blocked = isComment && alsoBlock;
+      if (blocked) onBlock?.(target.senderId);
+      captureEvent(isComment ? 'live_comment_reported' : 'live_stream_reported', { reason, blocked });
       reset();
       onClose?.();
-      if (blocked) onBlocked?.(customer);
       showStatusPopup({
         variant: 'success',
-        title: t('moderation.reportSentTitle'),
-        // Deliberately does NOT promise an outcome or a timeline — it confirms
-        // receipt only. Anything more would be a commitment nobody can keep.
-        message: blocked ? t('moderation.reportSentAndBlocked') : t('moderation.reportSentBody'),
+        title: t('liveReport.sentTitle'),
+        message: blocked ? t('liveReport.sentBlocked') : t('liveReport.sentBody'),
       });
     } catch (e) {
       setBusy(false);
       showStatusPopup({
         variant: 'error',
-        title: t('moderation.reportFailedTitle'),
-        message: e?.message || t('moderation.reportFailedBody'),
+        title: t('liveReport.failedTitle'),
+        message: e?.response?.data?.message || t('liveReport.failedBody'),
       });
     }
   };
 
-  const blockOnly = async () => {
-    if (busy || !customer?.id) return;
-    setBusy(true);
-    try {
-      await blockCustomer({ customerId: customer.id, reason: liveComment ? 'live_comment' : undefined });
-      reset();
-      onClose?.();
-      onBlocked?.(customer);
-      showStatusPopup({
-        variant: 'success',
-        title: t('moderation.blockedDoneTitle'),
-        message: t('moderation.blockedDoneBody'),
-      });
-    } catch (e) {
-      setBusy(false);
-      showStatusPopup({
-        variant: 'error',
-        title: t('moderation.reportFailedTitle'),
-        message: e?.message || t('moderation.reportFailedBody'),
-      });
-    }
-  };
+  const name = target?.name || t('live.guest');
 
   return (
     <Modal visible={!!visible} transparent animationType="slide" onRequestClose={close}>
       <Pressable style={styles.backdrop} onPress={close} />
       <View style={styles.sheet}>
         <View style={styles.grabber} />
-        <Text style={styles.title}>{t('moderation.reportTitle')}</Text>
-        <Text style={styles.subtitle} numberOfLines={2}>
-          {liveComment
-            ? `${customer?.name || t('goLive.guest')}: "${liveComment.message || ''}"`
-            : customer?.name
-              ? t('moderation.reportSubtitleNamed', { name: customer.name })
-              : t('moderation.reportSubtitle')}
+        <Text style={styles.title}>
+          {isComment ? t('liveReport.titleComment') : t('liveReport.titleStream')}
+        </Text>
+        <Text style={styles.subtitle} numberOfLines={3}>
+          {isComment
+            ? t('liveReport.subtitleComment', { name, message: target?.message || '' })
+            : t('liveReport.subtitleStream', { name })}
         </Text>
 
         <ScrollView style={styles.reasonScroll} keyboardShouldPersistTaps="handled">
-          {REPORT_REASONS.map((r) => {
+          {reasons.map((r) => {
             const active = reason === r;
             return (
               <TouchableOpacity
@@ -131,7 +131,7 @@ export default function ReportCustomerSheet({ visible, customer, liveComment, on
                   color={active ? COLORS.AstroMaroon : '#9b8a80'}
                 />
                 <Text style={[styles.reasonText, active && styles.reasonTextActive]}>
-                  {t(`moderation.reason.${r}`)}
+                  {t(`liveReport.reason.${r}`)}
                 </Text>
               </TouchableOpacity>
             );
@@ -141,33 +141,33 @@ export default function ReportCustomerSheet({ visible, customer, liveComment, on
             style={styles.note}
             value={note}
             onChangeText={setNote}
-            placeholder={t('moderation.notePlaceholder')}
+            placeholder={t('liveReport.notePlaceholder')}
             placeholderTextColor="#a89890"
             multiline
             maxLength={500}
           />
 
-          <TouchableOpacity
-            style={styles.blockRow}
-            activeOpacity={0.85}
-            onPress={() => setAlsoBlock((v) => !v)}>
-            <MaterialIcons
-              name={alsoBlock ? 'check-box' : 'check-box-outline-blank'}
-              size={moderateScale(22)}
-              color={alsoBlock ? COLORS.AstroMaroon : '#9b8a80'}
-            />
-            <View style={{ flex: 1, marginLeft: scale(8) }}>
-              <Text style={styles.blockLabel}>{t('moderation.alsoBlock')}</Text>
-              <Text style={styles.blockHint}>
-                {t(liveComment ? 'moderation.alsoBlockHintLive' : 'moderation.alsoBlockHint')}
-              </Text>
-            </View>
-          </TouchableOpacity>
+          {isComment && (
+            <TouchableOpacity
+              style={styles.blockRow}
+              activeOpacity={0.85}
+              onPress={() => setAlsoBlock((v) => !v)}>
+              <MaterialIcons
+                name={alsoBlock ? 'check-box' : 'check-box-outline-blank'}
+                size={moderateScale(22)}
+                color={alsoBlock ? COLORS.AstroMaroon : '#9b8a80'}
+              />
+              <View style={{ flex: 1, marginLeft: scale(8) }}>
+                <Text style={styles.blockLabel}>{t('liveReport.alsoBlock')}</Text>
+                <Text style={styles.blockHint}>{t('liveReport.alsoBlockHint')}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </ScrollView>
 
         <View style={styles.actions}>
           <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={close} disabled={busy}>
-            <Text style={styles.cancelText}>{t('moderation.cancel')}</Text>
+            <Text style={styles.cancelText}>{t('liveReport.cancel')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.btn, styles.submitBtn, (!reason || busy) && styles.btnDisabled]}
@@ -175,14 +175,14 @@ export default function ReportCustomerSheet({ visible, customer, liveComment, on
             disabled={!reason || busy}>
             {busy
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.submitText}>{t('moderation.submit')}</Text>}
+              : <Text style={styles.submitText}>{t('liveReport.submit')}</Text>}
           </TouchableOpacity>
         </View>
 
-        {!!liveComment && (
+        {isComment && (
           <TouchableOpacity style={styles.justBlock} onPress={blockOnly} disabled={busy}>
             <MaterialIcons name="block" size={moderateScale(16)} color="#b03a2e" />
-            <Text style={styles.justBlockText}>{t('moderation.blockWithoutReport')}</Text>
+            <Text style={styles.justBlockText}>{t('liveReport.justBlock')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -197,8 +197,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: moderateScale(18),
     borderTopRightRadius: moderateScale(18),
     paddingHorizontal: scale(18),
-    paddingBottom: verticalScale(18),
-    maxHeight: '82%',
+    paddingBottom: verticalScale(28),
+    maxHeight: '85%',
   },
   grabber: {
     width: scale(44), height: verticalScale(4), borderRadius: 4,

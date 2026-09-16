@@ -29,6 +29,8 @@ import GiftModal from '../../Component/Modal';
 import {LanguageContext} from '../../context/LanguageContext';
 import {captureEvent} from '../../utils/Analytics';
 import {DIGITAL_PURCHASES_ENABLED} from '../../utils/payments';
+import LiveReportSheet from '../../components/LiveReportSheet';
+import {getLiveBlocked, addLiveBlocked} from '../../utils/liveBlockList';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -56,6 +58,10 @@ const LiveViewerScreen = ({route, navigation}: any) => {
   const [comment, setComment] = useState('');
   const [giftVisible, setGiftVisible] = useState(false);
   const [connecting, setConnecting] = useState(true);
+  // Report / block (App Store 1.2, Play UGC policy). reportTarget opens the sheet.
+  const [reportTarget, setReportTarget] = useState<any>(null);
+  const [blocked, setBlocked] = useState<Set<string>>(new Set());
+  const customerIdRef = useRef<string>('');
 
   const viewerIdRef = useRef<string>('');
   const viewerNameRef = useRef<string>(t('live.guest'));
@@ -87,6 +93,8 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       const user = userStr ? JSON.parse(userStr) : null;
       viewerIdRef.current = user?.id || user?._id || `guest_${Date.now()}`;
       viewerNameRef.current = user?.name || user?.firstName || t('live.guest');
+      customerIdRef.current = user?.id || user?._id || '';
+      getLiveBlocked(customerIdRef.current).then(set => { if (!cancelled) setBlocked(set); });
       if (cancelled) return;
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -139,7 +147,13 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           try { await pc.addIceCandidate(new RTCIceCandidate(d.candidate)); } catch (_) {}
         }
       });
-      socket.on('live_comment', (d: any) => pushFeed({type: 'comment', name: d.name, message: d.message}));
+      socket.on('live_comment', (d: any) => pushFeed({
+        type: 'comment', name: d.name, message: d.message, senderId: d.senderId, isHost: !!d.isHost,
+      }));
+      // The host removed everything this person said (they blocked or reported them).
+      socket.on('live_comment_hidden', (d: any) => {
+        if (d?.senderId) setFeed(prev => prev.filter(i => i.senderId !== d.senderId));
+      });
       socket.on('live_gift', (d: any) => pushFeed({type: 'gift', name: d.name, giftName: d.giftName, amount: d.amount}));
       socket.on('live_ended', () => {
         if (leftRef.current) return;
@@ -168,7 +182,8 @@ const LiveViewerScreen = ({route, navigation}: any) => {
     if (!msg) return;
     // No optimistic add — the backend echoes live_comment to everyone in the room
     // (including us, since we joined live_<sessionId>), so adding here would duplicate it.
-    socketRef.current?.emit('live_comment', {sessionId, name: viewerNameRef.current, message: msg});
+    // The backend takes the name from the signed-in account, not from here.
+    socketRef.current?.emit('live_comment', {sessionId, message: msg});
     setComment('');
   };
 
@@ -194,6 +209,12 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           <Text style={styles.name} numberOfLines={1}>{astrologer?.name || t('common.astrologer')}</Text>
           <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{t('common.live')}</Text></View>
         </View>
+        <TouchableOpacity
+          style={[styles.closeBtn, {marginRight: 8}]}
+          accessibilityLabel={t('live.reportStream')}
+          onPress={() => setReportTarget({kind: 'stream', astrologerId, name: astrologer?.name})}>
+          <MaterialIcons name="outlined-flag" size={20} color="#fff" />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.closeBtn} onPress={() => { captureEvent('live_left', {session_id: sessionId}); cleanup(true); navigation.goBack(); }}>
           <MaterialIcons name="close" size={22} color="#fff" />
         </TouchableOpacity>
@@ -202,7 +223,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       {/* Feed */}
       <FlatList
         style={styles.feed}
-        data={feed}
+        data={feed.filter(i => !(i.senderId && blocked.has(i.senderId)))}
         keyExtractor={i => i.key}
         renderItem={({item}) =>
           item.type === 'gift' ? (
@@ -211,10 +232,21 @@ const LiveViewerScreen = ({route, navigation}: any) => {
               <Text style={styles.giftText}>{item.name || t('live.someone')} {t('live.sent')} {item.giftName} (₹{item.amount})</Text>
             </View>
           ) : (
-            <View style={styles.commentRow}>
+            <TouchableOpacity
+              style={styles.commentRow}
+              activeOpacity={0.7}
+              // Other viewers' comments can be reported or blocked. Not your own, and
+              // not the astrologer's (the stream itself is reported from the flag above).
+              disabled={!item.senderId || item.isHost || item.senderId === customerIdRef.current || item.senderId === viewerIdRef.current}
+              onPress={() => setReportTarget({
+                kind: 'comment', sessionId, senderId: item.senderId, name: item.name, message: item.message,
+              })}>
               <Text style={styles.commentName}>{item.name || t('live.guest')}: </Text>
               <Text style={styles.commentText}>{item.message}</Text>
-            </View>
+              {!!item.senderId && !item.isHost && item.senderId !== customerIdRef.current && item.senderId !== viewerIdRef.current && (
+                <MaterialIcons name="more-vert" size={14} color="rgba(255,255,255,0.7)" style={styles.commentMore} />
+              )}
+            </TouchableOpacity>
           )
         }
       />
@@ -243,6 +275,16 @@ const LiveViewerScreen = ({route, navigation}: any) => {
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <LiveReportSheet
+        visible={!!reportTarget}
+        target={reportTarget}
+        onClose={() => setReportTarget(null)}
+        onBlock={async (senderId: string) => {
+          const next = await addLiveBlocked(customerIdRef.current, senderId);
+          setBlocked(new Set(next));
+        }}
+      />
 
       <GiftModal
         visible={giftVisible}
@@ -274,6 +316,7 @@ const styles = StyleSheet.create({
   commentRow: {flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, marginTop: 6, alignSelf: 'flex-start', maxWidth: '90%'},
   commentName: {color: COLORS.AstroGold, fontWeight: 'bold', fontSize: 13},
   commentText: {color: '#fff', fontSize: 13, flexShrink: 1},
+  commentMore: {marginLeft: 4, alignSelf: 'center'},
   giftRow: {flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(107,31,42,0.85)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginTop: 6, alignSelf: 'flex-start'},
   giftText: {color: '#fff', fontSize: 13, marginLeft: 6, fontWeight: '600'},
   bottomWrap: {position: 'absolute', left: 0, right: 0, bottom: 0},

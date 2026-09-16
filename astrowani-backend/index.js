@@ -29,6 +29,7 @@ const walletRecharge = require('./src/walletRecharge');
 // the astrologer out on another — see sql/vendor_devices.sql.
 const vendorDevices = require('./src/vendorDevices');
 const customerModeration = require('./src/customerModeration');
+const liveModeration = require('./src/liveModeration');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -683,8 +684,26 @@ io.on('connection', (socket) => {
     if (data?.astrologerId) io.to(data.astrologerId).emit('live_viewer_left', data);
   });
   // Comments + gift toasts broadcast to everyone watching the stream.
-  socket.on('live_comment', (data) => {
-    if (data?.sessionId) io.to('live_' + data.sessionId).emit('live_comment', data);
+  // Live comments are user-generated content (App Store 1.2 / Play UGC policy): the
+  // sender is verified, the name comes from their account, the text is filtered, and
+  // banned or astrologer-blocked customers are dropped. See src/liveModeration.js.
+  socket.on('live_comment', async (data) => {
+    const comment = await liveModeration.prepareLiveComment({
+      token: socket.handshake.auth && socket.handshake.auth.token,
+      socketKey: socket.id,
+      data,
+    });
+    if (comment) io.to('live_' + comment.sessionId).emit('live_comment', comment);
+  });
+  // The host removes everything a commenter has said from every viewer's screen
+  // (after blocking or reporting them). Only the session's own astrologer may.
+  socket.on('live_hide_sender', async (data) => {
+    if (!data?.sessionId || !data?.senderId) return;
+    const token = socket.handshake.auth && socket.handshake.auth.token;
+    if (!(await liveModeration.isSessionHost(token, data.sessionId))) return;
+    io.to('live_' + data.sessionId).emit('live_comment_hidden', {
+      sessionId: String(data.sessionId), senderId: String(data.senderId),
+    });
   });
   socket.on('live_gift', (data) => {
     if (data?.sessionId) io.to('live_' + data.sessionId).emit('live_gift', data);
@@ -790,6 +809,7 @@ require('./src/appPromptRoutes')(app);
 require('./src/accountRoutes')(app);
 require('./src/accountRoutes').registerVendorAccountRoutes(app);
 require('./src/moderationRoutes')(app);
+liveModeration.registerLiveModerationRoutes(app);
 
 // Paid astrology reports (JyotishamAstroAPI) — /api/astro/* + public /api/astro-services
 require('./src/astroRoutes')(app);

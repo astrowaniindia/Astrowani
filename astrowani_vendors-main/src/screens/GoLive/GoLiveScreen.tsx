@@ -26,6 +26,7 @@ import {COLORS} from '../../Theme/Colors';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {LanguageContext} from '../../context/LanguageContext';
 import LanguageToggle from '../../components/LanguageToggle';
+import ReportCustomerSheet from '../../components/ReportCustomerSheet';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -50,6 +51,9 @@ const GoLiveScreen = ({route, navigation}: any) => {
   const [feed, setFeed] = useState<any[]>([]); // comments + gift toasts
   const [muted, setMuted] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  // Tapped comment -> report / block sheet (App Store 1.2, Play UGC policy).
+  const [reportComment, setReportComment] = useState<any>(null);
+  const [hiddenSenders, setHiddenSenders] = useState<Set<string>>(new Set());
 
   const astroIdRef = useRef<string>(route?.params?.astrologerId || '');
   const sessionIdRef = useRef<string>('');
@@ -224,7 +228,9 @@ const GoLiveScreen = ({route, navigation}: any) => {
         }
       });
       socket.on('live_viewer_left', (d: any) => d?.viewerId && removeViewer(d.viewerId));
-      socket.on('live_comment', (d: any) => pushFeed({type: 'comment', name: d.name, message: d.message}));
+      socket.on('live_comment', (d: any) => pushFeed({
+        type: 'comment', name: d.name, message: d.message, senderId: d.senderId, isHost: !!d.isHost,
+      }));
       socket.on('live_gift', (d: any) => pushFeed({type: 'gift', name: d.name, giftName: d.giftName, amount: d.amount}));
     };
 
@@ -295,7 +301,7 @@ const GoLiveScreen = ({route, navigation}: any) => {
       {/* Comment / gift feed */}
       <FlatList
         style={styles.feed}
-        data={feed}
+        data={feed.filter(i => !(i.senderId && hiddenSenders.has(i.senderId)))}
         keyExtractor={i => i.key}
         renderItem={({item}) =>
           item.type === 'gift' ? (
@@ -304,10 +310,17 @@ const GoLiveScreen = ({route, navigation}: any) => {
               <Text style={styles.giftText}>{item.name || t('goLive.someone')} {t('goLive.sent')} {item.giftName} (₹{item.amount})</Text>
             </View>
           ) : (
-            <View style={styles.commentRow}>
+            <TouchableOpacity
+              style={styles.commentRow}
+              activeOpacity={0.7}
+              disabled={!item.senderId || item.isHost}
+              onPress={() => setReportComment(item)}>
               <Text style={styles.commentName}>{item.name || t('goLive.guest')}: </Text>
               <Text style={styles.commentText}>{item.message}</Text>
-            </View>
+              {!!item.senderId && !item.isHost && (
+                <MaterialIcons name="more-vert" size={14} color="rgba(255,255,255,0.7)" style={{marginLeft: 4, alignSelf: 'center'}} />
+              )}
+            </TouchableOpacity>
           )
         }
       />
@@ -321,6 +334,19 @@ const GoLiveScreen = ({route, navigation}: any) => {
           <MaterialIcons name="flip-camera-android" size={26} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      <ReportCustomerSheet
+        visible={!!reportComment}
+        customer={reportComment ? {id: reportComment.senderId, name: reportComment.name} : null}
+        liveComment={reportComment ? {sessionId: sessionIdRef.current, message: reportComment.message} : null}
+        onClose={() => setReportComment(null)}
+        onBlocked={(c: any) => {
+          if (!c?.id) return;
+          setHiddenSenders(prev => new Set(prev).add(c.id));
+          // Also clears this person's comments from every viewer's screen.
+          socketRef.current?.emit('live_hide_sender', {sessionId: sessionIdRef.current, senderId: c.id});
+        }}
+      />
     </View>
   );
 };

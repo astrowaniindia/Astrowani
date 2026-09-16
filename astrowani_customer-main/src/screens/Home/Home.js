@@ -72,6 +72,7 @@ import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAle
 import ComingSoonStrip from '../../components/gamification/ComingSoonStrip';
 import PlacementBanner from '../../components/PlacementBanner';
 import FreeChatOfferPopup from '../../components/FreeChatOfferPopup';
+import { FREE_BOT_CHAT_ENABLED } from '../../utils/featureFlags';
 import FreeCallOffer from '../../components/FreeCallOffer';
 import FreeCallGiftBubble from '../../components/FreeCallGiftBubble';
 import { getFreeCallOffer } from '../../api/FreeCallApi';
@@ -950,7 +951,9 @@ const Home = ({navigation}) => {
       // to stop a self-opening popup nagging on every Home mount; a popup the customer
       // opened on purpose should open every time they ask for it, right up until they
       // have actually used the offer.
-      if (!userData.freeBotChatCredited) {
+      // Never eligible on iOS (first App Store build) -- see utils/featureFlags.js.
+      // With eligibility off, the banners, the mascot tip and the popup all stay away.
+      if (FREE_BOT_CHAT_ENABLED && !userData.freeBotChatCredited) {
         const eligible = await isEligibleForFreeConsultation(userData.id);
         if (eligible) {
           // Card content (name/photo/experience/text) is admin-editable —

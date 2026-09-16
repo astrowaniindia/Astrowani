@@ -49,6 +49,7 @@ import Wallet from '../screens/Home/Wallet/Wallet';
 import CoinStore from '../screens/Coins/CoinStore';
 import { initIap } from '../utils/iap';
 import { DIGITAL_PURCHASES_ENABLED } from '../utils/payments';
+import { FREE_BOT_CHAT_ENABLED } from '../utils/featureFlags';
 import History from '../screens/Home/Wallet/History';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
@@ -702,11 +703,15 @@ export default function Navigation({ initialRoute }) {
           component={ChatSessionScreen}
           options={{ headerShown: false }}
         />
-        <Stack.Screen
-          name="FreeBotChatScreen"
-          component={FreeBotChatScreen}
-          options={{ headerShown: false }}
-        />
+        {/* Not registered on iOS for the first App Store build (utils/featureFlags.js),
+            so no banner, notification or deep link can open it there. */}
+        {FREE_BOT_CHAT_ENABLED && (
+          <Stack.Screen
+            name="FreeBotChatScreen"
+            component={FreeBotChatScreen}
+            options={{ headerShown: false }}
+          />
+        )}
       </Stack.Navigator>
       </PostHogProvider>
     </NavigationContainer>

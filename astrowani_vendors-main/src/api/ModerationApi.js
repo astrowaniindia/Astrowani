@@ -34,6 +34,20 @@ export async function reportCustomer({ customerId, reason, note, alsoBlock }) {
   return { blocked: !!res.data.blocked };
 }
 
+/**
+ * Report one comment from a live stream. Goes to the admin's Moderation page
+ * (live_comment_reports), separate from reports about a customer in general.
+ */
+export async function reportLiveComment({ sessionId, customerId, message, reason, note }) {
+  const res = await Instance.post(
+    '/api/live/comments/report',
+    { sessionId, senderId: customerId, message, reason, note: note || undefined },
+    await authHeaders(),
+  );
+  if (!res?.data?.success) throw new Error(res?.data?.message || 'Could not submit the report');
+  return true;
+}
+
 export async function blockCustomer({ customerId, reason }) {
   const res = await Instance.post(
     '/api/vendor/customers/block',
