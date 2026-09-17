@@ -5603,3 +5603,6 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
   (`/delete-account/`, now live) URLs set; App domains left EMPTY (adding astrowani.com demands a Website platform).
   Business verification not done (not needed for app events). Still to do: Events Manager data source, check events
   after build 42 installs, Meta ad account (INR + GSTIN), campaign.
+- **Meta ad account "Astrowani Ads" 2075297189792991** (INR, inside the Astrowani business portfolio 1799253787875184),
+  created 2026-09-17 — USE THIS ONE. The older personal ad account 768984796279174 could not be claimed into the portfolio
+  (Meta requires a past payment first) and is unused. Add 2075297189792991 under the Meta app's Authorized ad account IDs.
