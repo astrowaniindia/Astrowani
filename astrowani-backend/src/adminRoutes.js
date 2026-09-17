@@ -1005,6 +1005,19 @@ module.exports = function registerAdminRoutes(app) {
   // astrologer_waitlist, astrologer_reports, support_tickets) is ON DELETE CASCADE/SET
   // NULL and is handled automatically the moment the customer row itself is deleted.
   // Mirrors DELETE /api/admin/astrologers/:id.
+  // Everything the customer has (or hasn't) filled in, for the admin's details popup.
+  // Separate from the list route so the list never carries photos for every row.
+  app.get('/api/admin/customers/:id/profile', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('customers')
+      .select('id, name, gender, dob, time_of_birth, place_of_birth, state, marital_status, email, profile_image, hand_image, referral_code, coin_balance, terms_accepted_at, terms_version, free_bot_chat_credited_at')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ success: false, message: 'Customer not found' });
+    return res.json({ success: true, data });
+  }));
+
   app.delete('/api/admin/customers/:id', requireAdmin, h(async (req, res) => {
     const id = req.params.id;
 

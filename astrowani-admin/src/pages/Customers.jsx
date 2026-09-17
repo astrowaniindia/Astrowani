@@ -72,6 +72,91 @@ function getInitials(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+function formatDob(d) {
+  if (!d) return null;
+  const [y, m, day] = String(d).split('-').map(Number);
+  if (!y || !m || !day) return String(d);
+  return new Date(y, m - 1, day).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function formatTob(t) {
+  if (!t) return null;
+  const [h, min] = String(t).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(min)) return String(t);
+  const d = new Date(2000, 0, 1, h, min);
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// "Profile details" block of the customer popup: every field the customer can fill,
+// showing the value or a dash, plus a filled-count so gaps are obvious at a glance.
+function ProfileDetails({ profile }) {
+  const box = { marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border-light)' };
+  const heading = <h4 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 800 }}>Profile details</h4>;
+
+  if (!profile || profile.loading) {
+    return <div style={box}>{heading}<div className="muted">Loading…</div></div>;
+  }
+  if (profile.error) {
+    return <div style={box}>{heading}<div style={{ color: 'var(--red, #c0392b)' }}>{profile.error}</div></div>;
+  }
+
+  const p = profile.data || {};
+  const photo = (src, alt) => (src
+    ? <a href={src} target="_blank" rel="noreferrer"><img src={src} alt={alt} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border-light)' }} /></a>
+    : null);
+
+  const fields = [
+    ['Name', p.name],
+    ['Gender', p.gender],
+    ['Date of Birth', formatDob(p.dob)],
+    ['Time of Birth', formatTob(p.time_of_birth)],
+    ['Place of Birth', p.place_of_birth],
+    ['State', p.state],
+    ['Marital Status', p.marital_status],
+    ['Email', p.email],
+    ['Profile Photo', photo(p.profile_image, 'Profile')],
+    ['Palm Photo', photo(p.hand_image, 'Palm')],
+  ];
+  const filled = fields.filter(([, v]) => v != null && v !== '').length;
+
+  const extras = [
+    ['Referral Code', p.referral_code],
+    ['Coin Balance', p.coin_balance != null ? String(p.coin_balance) : null],
+    ['Terms Accepted', p.terms_accepted_at ? `${new Date(p.terms_accepted_at).toLocaleString('en-IN')}${p.terms_version ? ` (v${p.terms_version})` : ''}` : null],
+    ['Free Chat Used', p.free_bot_chat_credited_at ? new Date(p.free_bot_chat_credited_at).toLocaleString('en-IN') : null],
+  ];
+
+  const cell = ([label, value]) => (
+    <div className="field" key={label} style={{ marginBottom: 10 }}>
+      <label>
+        {label}{' '}
+        {fields.some(([l]) => l === label) && (
+          <span className={`pill-badge ${value ? 'green' : ''}`} style={{ fontSize: 10, marginLeft: 4, ...(value ? {} : { background: 'var(--border-light)', color: 'var(--text-light)' }) }}>
+            {value ? 'Filled' : 'Not filled'}
+          </span>
+        )}
+      </label>
+      <div>{value || '—'}</div>
+    </div>
+  );
+
+  return (
+    <div style={box}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        {heading}
+        <span className="muted" style={{ fontSize: 12 }}>{filled} of {fields.length} filled</span>
+      </div>
+      <div className="two-col">{fields.slice(0, 2).map(cell)}</div>
+      <div className="two-col">{fields.slice(2, 4).map(cell)}</div>
+      <div className="two-col">{fields.slice(4, 6).map(cell)}</div>
+      <div className="two-col">{fields.slice(6, 8).map(cell)}</div>
+      <div className="two-col">{fields.slice(8, 10).map(cell)}</div>
+      <div className="two-col">{extras.slice(0, 2).map(cell)}</div>
+      <div className="two-col">{extras.slice(2, 4).map(cell)}</div>
+    </div>
+  );
+}
+
 export default function Customers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +171,18 @@ export default function Customers() {
   const [deletedCount, setDeletedCount] = useState(0);
   const [inspecting, setInspecting] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [profile, setProfile] = useState(null); // { loading } | { error } | { data }
+
+  // Load everything the customer has filled in whenever the details popup opens.
+  useEffect(() => {
+    if (!inspecting?.id) { setProfile(null); return; }
+    let cancelled = false;
+    setProfile({ loading: true });
+    client.get(`/api/admin/customers/${inspecting.id}/profile`)
+      .then(({ data }) => { if (!cancelled) setProfile({ data: data?.data || {} }); })
+      .catch((e) => { if (!cancelled) setProfile({ error: e?.response?.data?.message || 'Could not load profile details' }); });
+    return () => { cancelled = true; };
+  }, [inspecting?.id]);
 
   const load = async (withDeleted = showDeleted) => {
     setLoading(true);
@@ -698,6 +795,8 @@ export default function Customers() {
               {inspecting.fcm_token ? 'Active on Android / iOS Device' : 'No push token registered'}
             </div>
           </div>
+
+          <ProfileDetails profile={profile} />
 
           <div className="actions" style={{ marginTop: 20 }}>
             <button className="btn secondary" onClick={() => setInspecting(null)}>
