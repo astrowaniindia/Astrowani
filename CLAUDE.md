@@ -5638,3 +5638,6 @@ An admin sends a push + in-app notification; tapping it opens the same booking f
   in memory, Test User 9999999999). Teardown left 0 invites / bookings / broadcasts.
   **Not tested on a device.** Installed apps need the customer OTA before a tap opens the
   booking; until then the tap only opens the app.
+- **Shipped 2026-09-17:** backend + admin deployed (commit `80a9a9a`); customer OTA from R2,
+  android `01a0affc-09dd…`, ios `01a0b004-83ef…`. The first iOS build attempt failed with no
+  error shown and succeeded on a plain re-run of `deployOta.js -p ios`.
