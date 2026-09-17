@@ -5591,3 +5591,15 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
   hotupdater in the dex; JS bundle includes the 2026-09-16 live-report UI. Built in 7m 58s after closing Notion.
   Artifact `D:\Astrowani-Releases\astrowani-customer-24.1-42.aab`. **Supersedes build 41** — upload 42, not 41.
   Play Console: Advertising ID "Yes"; Data safety must list Google as well as Meta.
+- **Build 42 sent for Play review 2026-09-17** (production, replaces 39). Play blocked it at first with "an active artifact
+  lacks AD_ID": the cause was OLD TEST TRACKS, not build 42 — Internal testing (build 2) and Closed testing Alpha (build 5)
+  were still active. Both were **paused**; Open testing was already inactive. Any future "active artifact" manifest error:
+  check every testing track, not just the release being edited.
+- **Meta developer app 28499438753050213** (matches strings.xml/adTracking.js): switched **Live** 2026-09-17 (the header
+  label kept saying "Development"; the Alerts inbox confirmed Live). Android platform: package `com.astrowanicustomer`,
+  class `com.astrowanicustomer.MainActivity`, key hashes `JbM/6HQK1e+qnlMpzAK3AHybl9k=` (Play app-signing key) and
+  `bpklq6iV+jKXLIXVzb8WDV4gOaY=` (upload key); auto-log in-app purchases OFF (no Play Billing). Privacy / terms
+  (`https://astrowani.com/term_conditions/` — NOT terms-and-conditions, that 404s) / data-deletion
+  (`/delete-account/`, now live) URLs set; App domains left EMPTY (adding astrowani.com demands a Website platform).
+  Business verification not done (not needed for app events). Still to do: Events Manager data source, check events
+  after build 42 installs, Meta ad account (INR + GSTIN), campaign.
