@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import Modal from '../components/Modal';
+import FreeCallInviteCard from '../components/FreeCallInviteCard';
 
 // The free introductory call: list and management of bookings.
 // Offer configuration has been separated into its own section at /free-call-settings.
@@ -332,6 +333,8 @@ export default function FreeCallBookings() {
           </button>
         </div>
       </div>
+
+      <FreeCallInviteCard />
 
       {tableMissing && (
         <div className="card" style={{ marginBottom: 18, borderLeft: '4px solid #c0392b' }}>

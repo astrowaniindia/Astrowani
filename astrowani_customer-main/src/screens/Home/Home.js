@@ -47,7 +47,7 @@ import { showAlert } from '../../Component/CustomAlert';
 import { supabase } from '../../api/SupabaseClient';
 import { markRequestStatus } from '../../api/RequestsApi';
 import io from 'socket.io-client';
-import { LanguageContext } from '../../context/LanguageContext';
+import { LanguageContext, translate } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
 import { readCache } from '../../utils/cacheFetch';
 import { getHomeMemory, saveHomeData, pickNextGreeting, HOME_KEYS } from '../../utils/homePreload';
@@ -76,6 +76,7 @@ import { FREE_BOT_CHAT_ENABLED } from '../../utils/featureFlags';
 import FreeCallOffer from '../../components/FreeCallOffer';
 import FreeCallGiftBubble from '../../components/FreeCallGiftBubble';
 import { getFreeCallOffer } from '../../api/FreeCallApi';
+import { onFreeCallInviteOpen } from '../../utils/freeCallInvite';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
@@ -1211,6 +1212,31 @@ const Home = ({navigation}) => {
       // Nothing to resume, or it couldn't be checked — Home carries on as normal.
     }
   };
+
+  // A tapped free-call invite (push or notification list). Always asks the server
+  // again: the invite may have expired or the customer may have booked since.
+  useEffect(() => onFreeCallInviteOpen(async () => {
+    captureEvent('free_call_invite_opened');
+    const fc = await getFreeCallOffer();
+    setFreeCall(fc);
+    if (fc.enabled && fc.eligible) {
+      setFreeCallStartAtSlots(false);
+      setFreeCallSource('invite');
+      setFreeCallVisible(true);
+    } else if (fc.booking) {
+      showStatusPopup({
+        variant: 'info',
+        title: translate('freeCall.inviteAlreadyBookedTitle'),
+        message: translate('freeCall.inviteAlreadyBookedMsg', { time: fc.booking.label || '' }),
+      });
+    } else {
+      showStatusPopup({
+        variant: 'info',
+        title: translate('freeCall.inviteExpiredTitle'),
+        message: translate('freeCall.inviteExpiredMsg'),
+      });
+    }
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadAllData = () => {
     resumeActiveChat();

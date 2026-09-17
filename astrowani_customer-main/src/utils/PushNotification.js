@@ -7,6 +7,7 @@ import Instance from '../api/ApiCall';
 import { navigate, navigationRef } from './NavigationService';
 import { showAppUpdatePrompt } from '../components/AppUpdatePrompt';
 import { showRateAppPrompt } from '../components/RateAppPrompt';
+import { openFreeCallFromInvite } from './freeCallInvite';
 
 const CHANNEL_ID = 'astrowani-default';
 
@@ -179,6 +180,9 @@ function handleNotificationTap(remoteMessage) {
   const type = remoteMessage?.data?.type;
   if (type === 'admin_broadcast' || type === 'admin_personal') {
     navigate('NotificationScreen');
+  } else if (type === 'free_call_invite') {
+    // Admin invite to the free 12-minute call: open the booking on Home.
+    openFreeCallFromInvite();
   } else if (type === 'voice_note') {
     navigate('VoiceNotes');
   } else if (type === 'report_delivered' || type === 'order_update') {

@@ -5606,3 +5606,35 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
 - **Meta ad account "Astrowani Ads" 2075297189792991** (INR, inside the Astrowani business portfolio 1799253787875184),
   created 2026-09-17 — USE THIS ONE. The older personal ad account 768984796279174 could not be claimed into the portfolio
   (Meta requires a past payment first) and is unused. Add 2075297189792991 under the Meta app's Authorized ad account IDs.
+
+---
+
+## Feature added 2026-09-17: free-call invites by push (works while the offer is off)
+
+### CR. Invite customers to the free 12-minute call
+
+An admin sends a push + in-app notification; tapping it opens the same booking flow
+(birth details, then time slot). **It works whether `free_call_offer.enabled` is on or off.**
+
+- **Who can be invited:** anyone without a live (non-cancelled) free-call booking. For an
+  invited customer the "brand-new customers only" rule is dropped. Once-per-customer is still
+  the `free_call_bookings_customer_live_uniq` index.
+- **DB:** `sql/free_call_invites.sql` — **APPLIED 2026-09-17.** One row per customer
+  (unique `customer_id`, upsert refreshes `expires_at`), RLS on, service-role only.
+- **Backend** (`src/freeCallRoutes.js`): `findActiveInvite()` (fails to null) is checked by
+  `/api/free-call/offer` (adds `invited`), `/slots` and `/book`. Admin:
+  `POST /api/admin/free-call-invites/preview`, `POST .../send`
+  (`audience: all_not_booked | customers`, `validDays` 1-60, default 7), `GET .../summary`.
+  Send writes invites FIRST, then `notifications` rows (`type: free_call_invite`), socket
+  `new_notification`, data-only FCM, and a `notification_broadcasts` row with audience
+  `free_call_invite:<audience>`. Soft-deleted customers and already-booked ones are skipped.
+- **Customer app:** `utils/freeCallInvite.js` (`openFreeCallFromInvite` navigates to Home and
+  queues the request if Home isn't mounted yet). Wired from `PushNotification.js` and
+  `NotificationScreen.js`. Home re-fetches the offer and opens the sheet (source `invite`), or
+  shows "already booked" / "offer ended". 4 new i18n keys, EN + HI.
+- **Admin:** "Invite customers to a free call" card at the top of Free Call Bookings
+  (`components/FreeCallInviteCard.jsx`) with a live recipient count.
+- **Verified 25/25** against the live DB (bare Express harness, push stubbed, offer-off faked
+  in memory, Test User 9999999999). Teardown left 0 invites / bookings / broadcasts.
+  **Not tested on a device.** Installed apps need the customer OTA before a tap opens the
+  booking; until then the tap only opens the app.

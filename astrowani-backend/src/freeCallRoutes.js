@@ -20,6 +20,7 @@ const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { requireAdmin } = require('./adminRoutes');
 const { sendPush } = require('./push');
 const { checkAstrologerBusy, checkCustomerBusy } = require('./busyStatus');
+const { pagedSelect, chunkIds } = require('./pagedSelect');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -353,6 +354,28 @@ async function findLiveBooking(customerId) {
 }
 
 /**
+ * The customer's unexpired admin invite, or null. An invite (sent from the admin
+ * Free Call Bookings page with a push) opens the offer to this one customer even
+ * while the public offer is switched off, and drops the brand-new-customer rule
+ * for them. Fails to null: a missing table or a read error means "not invited",
+ * which only withholds an offer, never hands one out.
+ */
+async function findActiveInvite(customerId) {
+  try {
+    const { data, error } = await db
+      .from('free_call_invites')
+      .select('id, expires_at')
+      .eq('customer_id', customerId)
+      .gt('expires_at', new Date().toISOString())
+      .limit(1);
+    if (error) return null;
+    return data && data.length ? data[0] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Eligibility: brand-new customers only — nobody who has ever had a session.
  * Fails CLOSED. If the sessions table can't be read we do not know whether this
  * customer is new, and wrongly handing out a free astrologer call is worse than
@@ -502,27 +525,31 @@ module.exports = function registerFreeCallRoutes(app) {
   /* ── Customer: is the offer on, am I eligible, have I already booked? ────── */
   app.get('/api/free-call/offer', h(async (req, res) => {
     const offer = await loadOffer();
-    if (!offer.enabled) {
+    const customer = await resolveCustomer(req);
+    // An invited customer sees the offer even while it is switched off for everyone else.
+    const invite = customer ? await findActiveInvite(customer.id) : null;
+    if (!offer.enabled && !invite) {
       // A disabled offer is not an error — the app just shows nothing.
       return res.status(200).json({ success: true, enabled: false, eligible: false, booking: null });
     }
     // The face cluster is built per request so its order (and therefore where the
     // highlight lands) differs each time the card is opened.
     const roster = await buildDisplayRoster(offer);
-    const shown = { ...publicOffer(offer), ...roster };
+    const shown = { ...publicOffer(offer), enabled: true, ...roster };
 
-    const customer = await resolveCustomer(req);
     if (!customer) {
       return res.status(200).json({
         success: true, enabled: true, eligible: false, booking: null, offer: shown,
       });
     }
     const booking = await findLiveBooking(customer.id);
-    const eligible = !booking && (await isNewCustomer(customer.id));
+    // Invited: anyone without a live free-call booking. Otherwise brand-new only.
+    const eligible = !booking && (!!invite || (await isNewCustomer(customer.id)));
     return res.status(200).json({
       success: true,
       enabled: true,
       eligible,
+      invited: !!invite,
       booking: publicBooking(booking),
       offer: shown,
     });
@@ -536,9 +563,10 @@ module.exports = function registerFreeCallRoutes(app) {
    */
   app.get('/api/free-call/slots', h(async (req, res) => {
     const offer = await loadOffer();
-    if (!offer.enabled) return res.status(200).json({ success: true, enabled: false, dates: [], slots: [] });
-
     const customer = await resolveCustomer(req);
+    if (!offer.enabled && !(customer && (await findActiveInvite(customer.id)))) {
+      return res.status(200).json({ success: true, enabled: false, dates: [], slots: [] });
+    }
     if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const now = new Date();
@@ -574,10 +602,11 @@ module.exports = function registerFreeCallRoutes(app) {
    */
   app.post('/api/free-call/book', h(async (req, res) => {
     const offer = await loadOffer();
-    if (!offer.enabled) {
+    const customer = await resolveCustomer(req);
+    const invite = customer ? await findActiveInvite(customer.id) : null;
+    if (!offer.enabled && !invite) {
       return res.status(403).json({ success: false, code: 'OFFER_CLOSED', message: 'This offer is no longer available.' });
     }
-    const customer = await resolveCustomer(req);
     if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const existing = await findLiveBooking(customer.id);
@@ -588,7 +617,7 @@ module.exports = function registerFreeCallRoutes(app) {
         booking: publicBooking(existing),
       });
     }
-    if (!(await isNewCustomer(customer.id))) {
+    if (!invite && !(await isNewCustomer(customer.id))) {
       return res.status(403).json({
         success: false, code: 'NOT_ELIGIBLE',
         message: 'This offer is for first-time customers only.',
@@ -686,6 +715,179 @@ module.exports = function registerFreeCallRoutes(app) {
     }
 
     return res.status(201).json({ success: true, booking: publicBooking(data), message: offer.successText });
+  }));
+
+  /* ── Admin: free-call invites ─────────────────────────────────────────────
+   * Offer the free call to customers by push, whether or not the public offer is
+   * switched on. Who can be invited: anyone without a live (non-cancelled)
+   * free-call booking — that is also the only rule the invite applies at booking
+   * time, so a customer who is sent one can always use it until it expires.
+   *
+   * audience: 'all_not_booked' (every such customer) | 'customers' (targetIds).
+   * Customers who already have a booking are skipped and counted, not errored.
+   */
+  async function inviteRecipients(audience, targetIds) {
+    const { rows: booked } = await pagedSelect(() => db
+      .from('free_call_bookings')
+      .select('customer_id')
+      .neq('status', 'cancelled')
+      .order('id'));
+    const bookedIds = new Set(booked.map((r) => r.customer_id));
+
+    let candidates;
+    if (audience === 'customers') {
+      candidates = [];
+      for (const ids of chunkIds([...new Set(targetIds.map(String))])) {
+        const { data, error } = await db
+          .from('customers')
+          .select('id, name, mobile, fcm_token')
+          .in('id', ids);
+        if (error) throw error;
+        candidates.push(...(data || []));
+      }
+    } else {
+      const { rows } = await pagedSelect(() => db
+        .from('customers')
+        .select('id, name, mobile, fcm_token')
+        .order('id'));
+      candidates = rows;
+    }
+    // Soft-deleted accounts carry a 'deleted:' phone tag and must never be contacted.
+    candidates = candidates.filter((c) => !String(c.mobile || '').startsWith('deleted:'));
+    const recipients = candidates.filter((c) => !bookedIds.has(c.id));
+    return { recipients, skippedBooked: candidates.length - recipients.length };
+  }
+
+  const INVITE_AUDIENCES = ['all_not_booked', 'customers'];
+
+  app.post('/api/admin/free-call-invites/preview', requireAdmin, h(async (req, res) => {
+    const { audience, targetIds } = req.body || {};
+    if (!INVITE_AUDIENCES.includes(audience)) {
+      return res.status(400).json({ success: false, message: 'Invalid audience' });
+    }
+    if (audience === 'customers' && (!Array.isArray(targetIds) || !targetIds.length)) {
+      return res.status(400).json({ success: false, message: 'Pick at least one customer' });
+    }
+    const { recipients, skippedBooked } = await inviteRecipients(audience, targetIds);
+    return res.json({
+      success: true,
+      recipientCount: recipients.length,
+      withPushToken: recipients.filter((r) => r.fcm_token).length,
+      skippedBooked,
+    });
+  }));
+
+  app.post('/api/admin/free-call-invites/send', requireAdmin, h(async (req, res) => {
+    const { audience, targetIds } = req.body || {};
+    const title = String(req.body?.title || '').trim();
+    const body = String(req.body?.body || '').trim();
+    const validDays = clampInt(req.body?.validDays, 1, 60, 7);
+
+    if (!INVITE_AUDIENCES.includes(audience)) {
+      return res.status(400).json({ success: false, message: 'Invalid audience' });
+    }
+    if (audience === 'customers' && (!Array.isArray(targetIds) || !targetIds.length)) {
+      return res.status(400).json({ success: false, message: 'Pick at least one customer' });
+    }
+    if (!title || !body || title.length > 120 || body.length > 500) {
+      return res.status(400).json({ success: false, message: 'Title (max 120) and message (max 500) are required' });
+    }
+
+    const { recipients, skippedBooked } = await inviteRecipients(audience, targetIds);
+    if (!recipients.length) {
+      return res.status(404).json({
+        success: false,
+        message: skippedBooked ? 'Everyone selected already has a free call booked.' : 'No matching customers found.',
+        skippedBooked,
+      });
+    }
+
+    const expiresAt = new Date(Date.now() + validDays * 86400000).toISOString();
+    const invitedBy = req.admin?.email || req.admin?.id || 'admin';
+
+    // 1. The invite rows first: a push that lands before its invite exists would
+    // open an offer the server then refuses.
+    for (const ids of chunkIds(recipients.map((r) => r.id), 500)) {
+      const { error } = await db.from('free_call_invites').upsert(
+        ids.map((id) => ({ customer_id: id, invited_at: new Date().toISOString(), expires_at: expiresAt, invited_by: String(invitedBy) })),
+        { onConflict: 'customer_id' },
+      );
+      if (error) {
+        if (isMissingTable(error)) {
+          return res.status(503).json({ success: false, message: 'Run sql/free_call_invites.sql first.' });
+        }
+        throw error;
+      }
+    }
+
+    // 2. In-app notification list (tapping it opens the booking in the app).
+    const type = 'free_call_invite';
+    for (let i = 0; i < recipients.length; i += 500) {
+      const rows = recipients.slice(i, i + 500).map((r) => ({ customer_id: r.id, astrologer_id: null, title, body, type }));
+      const { error } = await db.from('notifications').insert(rows);
+      if (error) console.warn('[freeCallRoutes] invite notifications insert failed:', error.message);
+    }
+
+    // 3. Foregrounded apps, then FCM (data-only, same as notificationRoutes.js).
+    const io = app.locals.io;
+    if (io) recipients.forEach((r) => io.to(String(r.id)).emit('new_notification', { title, body, type, recipient_type: 'customer' }));
+
+    const tokens = recipients.map((r) => r.fcm_token).filter(Boolean);
+    let pushSuccess = 0;
+    let pushFailure = 0;
+    for (let i = 0; i < tokens.length; i += 500) {
+      const result = await sendPush(tokens.slice(i, i + 500), { data: { type, title, body } });
+      pushSuccess += result.successCount || 0;
+      pushFailure += result.failureCount || 0;
+    }
+
+    await db.from('notification_broadcasts').insert([{
+      audience: `free_call_invite:${audience}`,
+      target_id: recipients.length === 1 ? recipients[0].id : null,
+      target_name: audience === 'customers' ? recipients.map((r) => r.name || 'Customer').join(', ').slice(0, 1000) : null,
+      title,
+      body,
+      recipient_count: recipients.length,
+      push_success: pushSuccess,
+      push_failure: pushFailure,
+    }]);
+
+    return res.json({
+      success: true,
+      recipientCount: recipients.length,
+      skippedBooked,
+      pushSuccess,
+      pushFailure,
+      noPushToken: recipients.length - tokens.length,
+      expiresAt,
+    });
+  }));
+
+  app.get('/api/admin/free-call-invites/summary', requireAdmin, h(async (req, res) => {
+    const nowIso = new Date().toISOString();
+    const { count: active, error } = await db
+      .from('free_call_invites')
+      .select('id', { count: 'exact', head: true })
+      .gt('expires_at', nowIso);
+    if (error) {
+      if (isMissingTable(error)) return res.json({ success: true, tableMissing: true, active: 0, bookedFromInvites: 0 });
+      throw error;
+    }
+    // Invited customers who went on to book (booking made after the invite).
+    const { rows: invites } = await pagedSelect(() => db.from('free_call_invites').select('customer_id, invited_at').order('customer_id'));
+    let bookedFromInvites = 0;
+    const invitedAt = new Map(invites.map((i) => [i.customer_id, i.invited_at]));
+    for (const ids of chunkIds(invites.map((i) => i.customer_id))) {
+      const { data } = await db
+        .from('free_call_bookings')
+        .select('customer_id, created_at')
+        .in('customer_id', ids)
+        .neq('status', 'cancelled');
+      (data || []).forEach((b) => {
+        if (new Date(b.created_at) >= new Date(invitedAt.get(b.customer_id))) bookedFromInvites += 1;
+      });
+    }
+    return res.json({ success: true, active: active || 0, bookedFromInvites });
   }));
 
   /* ── Admin: list, with search + filters + real-calendar sorting ──────────── */

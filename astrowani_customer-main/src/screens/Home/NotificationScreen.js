@@ -9,6 +9,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import useNotificationBadgeSync from '../../hooks/useNotificationBadgeSync';
 import { captureEvent } from '../../utils/Analytics';
+import { openFreeCallFromInvite } from '../../utils/freeCallInvite';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -110,6 +111,7 @@ const NotificationScreen = () => {
       onPress={() => {
         captureEvent('notification_opened', { was_unread: !item.is_read });
         markAsRead(item);
+        if (item.type === 'free_call_invite') openFreeCallFromInvite();
       }}>
       <View style={[styles.iconBadgeRing, item.is_read ? styles.iconBadgeRingRead : styles.iconBadgeRingUnread]}>
         <View style={[styles.iconBadge, item.is_read ? styles.iconBadgeRead : styles.iconBadgeUnread]}>
