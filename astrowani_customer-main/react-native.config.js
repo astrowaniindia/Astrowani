@@ -41,10 +41,11 @@ module.exports = {
         ios: null,
       },
     },
+    // Google (Firebase Analytics → Google Ads): Android switched ON 2026-09-17 (build 42),
+    // after Google Ads 819-134-9882 was linked to the Analytics property.
     '@react-native-firebase/analytics': {
       platforms: {
         ios: null,
-        android: null,
       },
     },
     'react-native-iap': {
