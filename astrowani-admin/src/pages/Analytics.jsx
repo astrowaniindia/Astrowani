@@ -4,6 +4,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import client from '../api/client';
+import AnalyticsExclusionsCard from '../components/AnalyticsExclusionsCard';
 
 const APP_TABS = [
   { key: 'customer', label: 'Customer App' },
@@ -584,6 +585,7 @@ export default function Analytics() {
       />
 
       {envCard}
+      <AnalyticsExclusionsCard onChanged={load} />
       {replayCard}
 
       <div className="stat-grid">

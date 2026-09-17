@@ -14,6 +14,12 @@ const {
   clampSince: clampAnalyticsSince,
   refreshAnalyticsSince,
 } = require('./analyticsSince');
+const {
+  ANALYTICS_EXCLUDED_KEY,
+  parseIds: parseExcludedIds,
+  refreshAnalyticsExclusions,
+  withoutExcluded,
+} = require('./analyticsExclusions');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
 const { contentCache } = require('./contentCache');
@@ -1530,9 +1536,10 @@ module.exports = function registerAdminRoutes(app) {
   app.patch('/api/admin/settings', requireAdmin, h(async (req, res) => {
     const { key, value } = req.body || {};
     if (!key) return res.status(400).json({ success: false, message: 'key required' });
+    const stored = key === ANALYTICS_EXCLUDED_KEY ? JSON.stringify(parseExcludedIds(value)) : String(value);
     const { error } = await db
       .from('app_settings')
-      .upsert({ key, value: String(value), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      .upsert({ key, value: stored, updated_at: new Date().toISOString() }, { onConflict: 'key' });
     if (error) throw error;
     // Settings read through contentCache (e.g. live_aarti_youtube_url via
     // GET /api/live-aarti) would otherwise only pick up an edit after the TTL
@@ -1553,6 +1560,7 @@ module.exports = function registerAdminRoutes(app) {
     // The Analytics page's "count from" date is held in memory; reload it now so
     // the next refresh of the page already uses the new date.
     if (key === ANALYTICS_SINCE_KEY) await refreshAnalyticsSince();
+    if (key === ANALYTICS_EXCLUDED_KEY) await refreshAnalyticsExclusions();
     return res.json({ success: true });
   }));
 
@@ -1586,13 +1594,13 @@ module.exports = function registerAdminRoutes(app) {
     // Paged — a plain .select() stops at 1000 rows and silently under-reports revenue.
     // See src/pagedSelect.js for why that failure mode is worse than an error.
     const { rows: data, truncated } = await pagedSelect(() => {
-      let q = db.from('wallet_recharges').select('amount, paid_at').eq('status', 'paid').gte('paid_at', since).order('paid_at', { ascending: true });
+      let q = db.from('wallet_recharges').select('amount, paid_at, customer_id').eq('status', 'paid').gte('paid_at', since).order('paid_at', { ascending: true });
       if (until) q = q.lte('paid_at', until);
       return q;
     });
 
     const byDay = new Map();
-    for (const row of data || []) {
+    for (const row of withoutExcluded(data, 'customer_id')) {
       const day = (row.paid_at || '').slice(0, 10);
       if (!day) continue;
       byDay.set(day, (byDay.get(day) || 0) + Number(row.amount || 0));
@@ -1611,7 +1619,7 @@ module.exports = function registerAdminRoutes(app) {
     // ended_at - started_at (still-active sessions with no ended_at yet count toward
     // the session total for their day, just contribute 0 minutes until they finish).
     const { rows: data, truncated } = await pagedSelect(() => {
-      let q = db.from('chat_sessions').select('call_type, started_at, ended_at').not('started_at', 'is', null).gte('started_at', since).order('started_at', { ascending: true });
+      let q = db.from('chat_sessions').select('call_type, started_at, ended_at, caller_id').not('started_at', 'is', null).gte('started_at', since).order('started_at', { ascending: true });
       if (until) q = q.lte('started_at', until);
       return q;
     });
@@ -1634,7 +1642,7 @@ module.exports = function registerAdminRoutes(app) {
     let implausibleMinutes = 0;
 
     const byDay = new Map();
-    for (const row of data || []) {
+    for (const row of withoutExcluded(data, 'caller_id')) {
       const day = (row.started_at || '').slice(0, 10);
       if (!day) continue;
       if (!byDay.has(day)) byDay.set(day, { day, sessions: 0, minutes: 0 });
@@ -1684,13 +1692,14 @@ module.exports = function registerAdminRoutes(app) {
 
     // This is the route the 1000-row cap bites first — wallet_transactions gets one
     // row per billed minute, so ~4 rows per session.
-    const { rows: txns, truncated } = await pagedSelect(() => {
-      let q = db.from('wallet_transactions').select('amount, session_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since).order('created_at', { ascending: true });
+    const { rows: txnRows, truncated } = await pagedSelect(() => {
+      let q = db.from('wallet_transactions').select('amount, session_id, user_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since).order('created_at', { ascending: true });
       if (until) q = q.lte('created_at', until);
       return q;
     });
 
-    const sessionIds = [...new Set((txns || []).map((t) => t.session_id))];
+    const txns = withoutExcluded(txnRows, 'user_id');
+    const sessionIds = [...new Set(txns.map((t) => t.session_id))];
     if (sessionIds.length === 0) return res.json({ success: true, chat: 0, call: 0, video: 0, total: 0, truncated });
 
     // Chunked: a single .in() with thousands of UUIDs builds a query string large
@@ -1721,16 +1730,17 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/analytics/payment-funnel', requireAdmin, h(async (req, res) => {
     const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
     const { rows: data, truncated } = await pagedSelect(() => {
-      let q = db.from('wallet_recharges').select('status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+      let q = db.from('wallet_recharges').select('status, created_at, customer_id').gte('created_at', since).order('created_at', { ascending: true });
       if (until) q = q.lte('created_at', until);
       return q;
     });
 
     const counts = { created: 0, paid: 0, failed: 0 };
-    for (const row of data || []) {
+    const kept = withoutExcluded(data, 'customer_id');
+    for (const row of kept) {
       if (row.status in counts) counts[row.status] += 1;
     }
-    return res.json({ success: true, ...counts, total: (data || []).length, truncated });
+    return res.json({ success: true, ...counts, total: kept.length, truncated });
   }));
 
   // ── New vs. returning customer revenue split ────────────────────────────────
@@ -1749,12 +1759,13 @@ module.exports = function registerAdminRoutes(app) {
     // it has no date filter by design, so it grows with the business forever. Without
     // paging, every customer past the first ~1000 paid recharges would be classified
     // "new" on a repeat purchase, inverting the exact signal this card exists to show.
-    const { rows: data, truncated } = await pagedSelect(() => db
+    const { rows: splitRows, truncated } = await pagedSelect(() => db
       .from('wallet_recharges')
       .select('customer_id, amount, paid_at')
       .eq('status', 'paid')
       .not('paid_at', 'is', null)
       .order('paid_at', { ascending: true }));
+    const data = withoutExcluded(splitRows, 'customer_id');
 
     const firstPaidAt = new Map();
     for (const row of data || []) {
@@ -1806,18 +1817,21 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/analytics/request-outcomes', requireAdmin, h(async (req, res) => {
     const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
 
-    const [{ rows: calls }, { rows: chats }] = await Promise.all([
+    const [{ rows: callRows }, { rows: chatRows }] = await Promise.all([
       pagedSelect(() => {
-        let q = db.from('call_requests').select('status, call_type, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        let q = db.from('call_requests').select('status, call_type, created_at, customer_id').gte('created_at', since).order('created_at', { ascending: true });
         if (until) q = q.lte('created_at', until);
         return q;
       }),
       pagedSelect(() => {
-        let q = db.from('chat_requests').select('status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        let q = db.from('chat_requests').select('status, created_at, caller_id').gte('created_at', since).order('created_at', { ascending: true });
         if (until) q = q.lte('created_at', until);
         return q;
       }),
     ]);
+
+    const calls = withoutExcluded(callRows, 'customer_id');
+    const chats = withoutExcluded(chatRows, 'caller_id');
 
     const audio = blankOutcomes();
     const video = blankOutcomes();
@@ -1849,14 +1863,14 @@ module.exports = function registerAdminRoutes(app) {
     const { since, until } = resolveDateBounds(req, { defaultDays: 30 });
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
 
-    const [{ rows: calls }, { rows: chats }, { rows: sessions }] = await Promise.all([
+    const [{ rows: callRows }, { rows: chatRows }, { rows: sessionRows }] = await Promise.all([
       pagedSelect(() => {
-        let q = db.from('call_requests').select('astrologer_id, status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        let q = db.from('call_requests').select('astrologer_id, status, created_at, customer_id').gte('created_at', since).order('created_at', { ascending: true });
         if (until) q = q.lte('created_at', until);
         return q;
       }),
       pagedSelect(() => {
-        let q = db.from('chat_requests').select('receiver_id, status, created_at').gte('created_at', since).order('created_at', { ascending: true });
+        let q = db.from('chat_requests').select('receiver_id, status, created_at, caller_id').gte('created_at', since).order('created_at', { ascending: true });
         if (until) q = q.lte('created_at', until);
         return q;
       }),
@@ -1867,7 +1881,12 @@ module.exports = function registerAdminRoutes(app) {
       }),
     ]);
 
+    const calls = withoutExcluded(callRows, 'customer_id');
+    const chats = withoutExcluded(chatRows, 'caller_id');
+    const sessions = withoutExcluded(sessionRows, 'caller_id');
+
     // Revenue per astrologer: billing rows carry no vendor_id, so map session → vendor.
+    // A session dropped above maps to no vendor, so its billing rows drop out too.
     const vendorBySession = new Map(sessions.map((s) => [s.id, s.vendor_id]));
     const { rows: txns } = await pagedSelect(() => {
       let q = db.from('wallet_transactions').select('amount, session_id').eq('type', 'debit').not('session_id', 'is', null).gte('created_at', since).order('created_at', { ascending: true });

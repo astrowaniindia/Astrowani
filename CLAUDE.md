@@ -5641,3 +5641,24 @@ An admin sends a push + in-app notification; tapping it opens the same booking f
 - **Shipped 2026-09-17:** backend + admin deployed (commit `80a9a9a`); customer OTA from R2,
   android `01a0affc-09dd…`, ios `01a0b004-83ef…`. The first iOS build attempt failed with no
   error shown and succeeded on a plain re-run of `deployOta.js -p ios`.
+
+### CR. Excluding customers from analytics (2026-09-17)
+
+Admin → Analytics → **"Excluded from analytics"** card (`astrowani-admin/src/components/AnalyticsExclusionsCard.jsx`):
+search a customer by name/mobile, add or remove them. Stored as a JSON list of customer ids in
+`app_settings.analytics_excluded_customers`, applied server-side by `astrowani-backend/src/analyticsExclusions.js`
+(same in-memory + refresh-on-save pattern as `analyticsSince.js`).
+
+- **A filter, not a delete.** Covers past data too; removing someone brings their numbers back.
+- **PostHog cards:** `ENV_FILTER` in `postHogRoutes.js` adds
+  `person_id NOT IN (SELECT person_id FROM person_distinct_ids WHERE distinct_id IN (...))`. Excluding by PERSON also
+  drops events from before they logged in on that phone (PostHog merges them on identify). Anonymous visitors who never
+  logged in can't be excluded. Any new HogQL query must include `${ENV_FILTER}` or it will count excluded customers.
+- **Database cards** (`adminRoutes.js` analytics routes): rows filtered with `withoutExcluded(rows, <customer column>)`
+  on `wallet_recharges.customer_id`, `chat_sessions.caller_id`, `wallet_transactions.user_id`,
+  `call_requests.customer_id`, `chat_requests.caller_id`. A new analytics route must do the same.
+- `parseIds` keeps only well-formed UUIDs — that is also the HogQL injection guard. The settings PATCH normalises the value.
+- Does NOT stop the apps sending events, and does not affect Meta/Google Ads conversions (option 2, not built).
+
+Verified 2026-09-17: 10/10 module checks; against real PostHog, excluding one customer removed exactly their 135 screen
+views and 1 unique user; all 15 PostHog routes and all 7 database routes answer 200 with the filter in place.

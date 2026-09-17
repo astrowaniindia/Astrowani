@@ -25,6 +25,7 @@ const axios = require('axios');
 const { requireAdmin } = require('./adminRoutes');
 const { TtlCache } = require('./ttlCache');
 const { hogqlSinceClause } = require('./analyticsSince');
+const { hogqlExclusionClause } = require('./analyticsExclusions');
 
 const POSTHOG_HOST = process.env.POSTHOG_HOST; // e.g. https://us.i.posthog.com
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
@@ -93,8 +94,8 @@ function clampDays(raw, fallback, max) {
 const PRODUCTION_ONLY = `properties.environment = 'production'`;
 const ENV_FILTER_HOLDER = {
   toString() {
-    const since = hogqlSinceClause();
-    return since ? `${PRODUCTION_ONLY} AND ${since}` : PRODUCTION_ONLY;
+    // Also drops customers the admin excluded from analytics (src/analyticsExclusions.js).
+    return [PRODUCTION_ONLY, hogqlSinceClause(), hogqlExclusionClause()].filter(Boolean).join(' AND ');
   },
 };
 const ENV_FILTER = ENV_FILTER_HOLDER;
