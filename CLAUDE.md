@@ -5573,3 +5573,21 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
 - [ ] Apply `hardening_13`, then `11` + `12`, **on or after 2026-09-18** (BZ).
 - [ ] **Supabase Pro** for database backups (CA). A store launch will bring more users onto a database with no backups.
 - [ ] Moderation: check admin → **Moderation (Reports)** at least daily once live. Both stores expect reported content to be handled promptly (aim for within 24 h).
+
+### CQ. Google Ads live + customer build 42 (2026-09-17)
+
+- **Google Ads account 819-134-9882** ("Astrowani", astrowaniindia@gmail.com) created. Payments profile is
+  **Organization "ASTROWANIINDIA"**, tax info **Accepted** (GSTIN, Rajasthan), Postpay, no backup card yet.
+- **Promotion 4DNF3-V3XPT-RMGW**: spend ₹20,000 (ex-GST) **by 2026-11-16** → ₹40,000 credit, which must be used
+  within 60 days of being granted (~₹670/day). When the credit appears, raise the budget.
+- **Campaign App-1**: App → App installs, Android `com.astrowanicustomer`, India, English + Hindi, All users,
+  Maximize conversions, no target CPI, ₹400/day. Went Eligible (Learning) the same day.
+- **Linked** to Analytics property `astrowani-b1845` (Personalized Advertising ON). Key events
+  (`sign_up`, `purchase`, `consultation_connected`) still to be marked and imported **after build 42 has data**
+  (CH steps 9–10). Then consider an in-app-action campaign.
+- **Build 42** (`4274696`): `@react-native-firebase/analytics` Android exclusion removed (iOS still null), versionCode 42,
+  versionName 24.1. Verified: signed CN=Astrowani Customer (SHA-256 55:01:0B:59…), merged manifest has AD_ID,
+  FacebookActivity and `google_analytics_*` meta-data, no BILLING; invertase analytics, AppEventsLogger, RNShare and
+  hotupdater in the dex; JS bundle includes the 2026-09-16 live-report UI. Built in 7m 58s after closing Notion.
+  Artifact `D:\Astrowani-Releases\astrowani-customer-24.1-42.aab`. **Supersedes build 41** — upload 42, not 41.
+  Play Console: Advertising ID "Yes"; Data safety must list Google as well as Meta.
