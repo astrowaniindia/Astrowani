@@ -22,6 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
 import {identifyCustomer, captureEvent} from '../../utils/Analytics';
+import {apiFailureReason} from '../../utils/apiFailureReason';
 import {LanguageContext} from '../../context/LanguageContext';
 
 const RESEND_SECONDS = 60;
@@ -31,14 +32,22 @@ const VerifyOtp = ({navigation, route}) => {
   // `signup` is set by the Register screen. Signup now collects only the phone
   // number before OTP; the name is asked on the next screen (SignupName) once the
   // account exists, and birth details are asked later, when they are needed.
-  const {phoneNumber, role = 'customer', signup, termsAccepted} = route?.params || {};
+  const {phoneNumber, role = 'customer', signup, termsAccepted, resendIn} =
+    route?.params || {};
   const isSignup = !!signup;
 
   const [code, setCode] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
-  const [timer, setTimer] = useState(RESEND_SECONDS);
+  // Normally a fresh 60s. When we arrived here because the server refused to
+  // send ANOTHER code (the live one is still good), start from its remaining
+  // cooldown instead — clamped, since it is attacker-influenced input and a
+  // silly value would strand the customer behind a countdown.
+  const [timer, setTimer] = useState(() => {
+    const n = Number(resendIn);
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.ceil(n), RESEND_SECONDS) : RESEND_SECONDS;
+  });
   const otpRef = useRef(null);
 
   // `flow` splits every event on this shared screen into the signup and login funnels —
@@ -123,8 +132,15 @@ const VerifyOtp = ({navigation, route}) => {
         showAlert(t('otp.verificationFailed'), res?.data?.message || t('otp.invalidTryAgain'), 'error');
       }
     } catch (error) {
-      captureEvent(isSignup ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_error' });
       const data = error?.response?.data;
+      // A wrong code is an HTTP 400, which axios throws on, so it lands here —
+      // reporting a flat 'otp_verify_error' put "wrong code", "expired",
+      // "attempts used up" and "network died" into one analytics bucket, which
+      // is what made the failure-reasons card unreadable. Prefer the server's
+      // own code; keep the old value only when there is no response at all.
+      captureEvent(isSignup ? 'signup_failed' : 'login_failed', {
+        reason: apiFailureReason(error),
+      });
       // Past the attempt cap the server burns the code, so no further guess can
       // ever succeed — the only way forward is a new OTP. Unlock Resend at once
       // rather than leaving the customer waiting out a countdown for a code

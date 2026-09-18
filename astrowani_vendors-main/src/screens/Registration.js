@@ -121,6 +121,9 @@ const Registration = ({ navigation }) => {
       Alert.alert(t('settings.termsConditions'), t('registration.acceptRequired'));
       return;
     }
+    // Declared outside the try so the catch can reuse the SAME payload for the
+    // OTP-throttled path, rather than rebuilding (and drifting from) it.
+    let verifyParams = null;
     setLoading(true);
     try {
       // If fcmToken is missing (e.g. on emulator), log a warning but continue registration
@@ -133,19 +136,8 @@ const Registration = ({ navigation }) => {
       const [firstName, ...rest] = trimmedName.split(/\s+/);
       const lastName = rest.join(' ');
 
-      // The actual astrologers row is only created after the phone number is OTP-verified
-      // (see VerifyOtp.js's finishRegistration) — this just requests the OTP.
-      const res = await Instance.post('/api/users/mobile-otp-request', {
-        phoneNumber: user.phoneNumber,
-        role: 'astrologer',
-        intent: 'signup',
-      });
-      if (!res?.data?.success) {
-        Alert.alert(t('registration.failedTitle'), res?.data?.message || t('registration.otpSendFailed'));
-        return;
-      }
 
-      navigation.navigate('VerifyOtp', {
+      const verifyParams = {
         phoneNumber: user.phoneNumber,
         role: 'astrologer',
         registrationData: {
@@ -173,9 +165,32 @@ const Registration = ({ navigation }) => {
           call_charge_per_minute: 0,
           video_charge_per_minute: 0,
         },
+      };
+
+      // The actual astrologers row is only created after the phone number is OTP-verified
+      // (see VerifyOtp.js's finishRegistration) — this just requests the OTP.
+      const res = await Instance.post('/api/users/mobile-otp-request', {
+        phoneNumber: user.phoneNumber,
+        role: 'astrologer',
+        intent: 'signup',
       });
+      if (!res?.data?.success) {
+        Alert.alert(t('registration.failedTitle'), res?.data?.message || t('registration.otpSendFailed'));
+        return;
+      }
+
+      navigation.navigate('VerifyOtp', verifyParams);
     } catch (error) {
-      if (error?.response?.data?.code === 'ACCOUNT_EXISTS') {
+      const data = error?.response?.data;
+      if (data?.code === 'OTP_THROTTLED' && data?.codeStillValid && verifyParams) {
+        // See Login.js: a live code exists for this number, so carry on to the
+        // OTP screen instead of dead-ending the signup here.
+        Alert.alert(t('otp.alreadySentTitle'), t('otp.alreadySentMsg'));
+        navigation.navigate('VerifyOtp', {
+          ...verifyParams,
+          resendIn: data?.retryAfterSeconds,
+        });
+      } else if (data?.code === 'ACCOUNT_EXISTS') {
         Alert.alert(
           'Account Already Exists',
           'An account already exists for this number. Please log in instead.'
@@ -188,10 +203,10 @@ const Registration = ({ navigation }) => {
         // The backend already sends a human-readable reason (e.g. the OTP SMS
         // could not be sent); surface that instead and keep the status code
         // out of the user's face.
-        console.error('Registration error:', error?.response?.status, error?.response?.data || error.message);
+        console.error('Registration error:', error?.response?.status, data || error.message);
         Alert.alert(
           'Registration Failed',
-          error?.response?.data?.message || 'Something went wrong. Please try again.',
+          data?.message || 'Something went wrong. Please try again.',
         );
       }
     } finally {

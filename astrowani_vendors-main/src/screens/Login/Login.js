@@ -52,16 +52,28 @@ const Login = ({navigation}) => {
         Alert.alert(t('login.error'), res?.data?.message || t('login.otpSendFailed'));
       }
     } catch (error) {
-      if (error?.response?.data?.code === 'NO_ACCOUNT') {
+      const data = error?.response?.data;
+      if (data?.code === 'NO_ACCOUNT') {
         Alert.alert(t('login.notFound'), t('login.noAccountFound'));
+      } else if (data?.code === 'OTP_THROTTLED' && data?.codeStillValid) {
+        // A code for this number is already live. Refusing to send another is
+        // correct, but stopping here left the astrologer on this screen with a
+        // valid OTP in their inbox and nowhere to type it. Continue to the OTP
+        // screen, seeding its resend countdown with the server's remaining time.
+        Alert.alert(t('otp.alreadySentTitle'), t('otp.alreadySentMsg'));
+        navigation.navigate('VerifyOtp', {
+          phoneNumber,
+          role: 'astrologer',
+          resendIn: data?.retryAfterSeconds,
+        });
       } else {
         // Surface the backend's own reason when it sent one (e.g. the OTP SMS
         // could not be sent) — the generic fallback hid actionable failures
         // behind "something went wrong". See Registration.js for the same fix.
-        console.log('Login error:', error?.response?.status, error?.response?.data || error.message);
+        console.log('Login error:', error?.response?.status, data || error.message);
         Alert.alert(
           t('login.loginError'),
-          error?.response?.data?.message || t('login.somethingWrong'),
+          data?.message || t('login.somethingWrong'),
         );
       }
     } finally {

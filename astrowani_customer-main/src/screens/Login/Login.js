@@ -21,6 +21,7 @@ import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import {apiFailureReason} from '../../utils/apiFailureReason';
 import GuideAvatar from '../../components/GuideAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sanitizePhoneInput } from '../../utils/phoneInput';
@@ -86,17 +87,35 @@ const Login = ({navigation}) => {
           showAlert(t('common.error'), res?.data?.message || t('login.otpFailed'), 'error');
         }
       } catch (error) {
-        if (error?.response?.data?.code === 'NO_ACCOUNT') {
+        const data = error?.response?.data;
+        if (data?.code === 'NO_ACCOUNT') {
           captureEvent('login_failed', { reason: 'no_account' });
           showAlert(
             t('login.noAccountTitle'),
             t('login.noAccountMsg'),
             'error'
           );
+        } else if (data?.code === 'OTP_THROTTLED' && data?.codeStillValid) {
+          // A code for this number is already live. Refusing to SEND another is
+          // correct (it costs an SMS and kills the code they may already have),
+          // but stopping here was a dead end: the customer sat on this screen
+          // with a valid OTP in their inbox and no field to type it into, and
+          // the only way on was to guess when the cooldown had passed. Go to the
+          // OTP screen and seed its resend countdown with the server's own
+          // remaining time, so Resend unlocks exactly when it is allowed.
+          captureEvent('login_otp_already_sent', {
+            retryAfterSeconds: data?.retryAfterSeconds ?? null,
+          });
+          showAlert(t('otp.alreadySentTitle'), t('otp.alreadySentMsg'), 'success');
+          navigation.navigate('VerifyOtp', {
+            phoneNumber,
+            role: 'customer',
+            resendIn: data?.retryAfterSeconds,
+          });
         } else {
           console.log('Login error:', error);
-          captureEvent('login_failed', { reason: error?.response?.data?.code || 'other' });
-          showAlert(t('common.error'), error?.response?.data?.message || t('login.somethingWrong'), 'error');
+          captureEvent('login_failed', { reason: apiFailureReason(error) });
+          showAlert(t('common.error'), data?.message || t('login.somethingWrong'), 'error');
         }
       } finally {
         SetLoading(false);

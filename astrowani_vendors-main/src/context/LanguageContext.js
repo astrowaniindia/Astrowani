@@ -385,6 +385,8 @@ const translations = {
     'otp.invalidTryAgain': 'Invalid OTP. Please try again.',
     'otp.otpSent': 'OTP Sent',
     'otp.newCodeSent': 'A new code has been sent to your number.',
+    'otp.alreadySentTitle': 'Code Already Sent',
+    'otp.alreadySentMsg': 'We already sent a code to this number. Please enter it below — it is still valid.',
     'otp.resendFailed': 'Could not resend OTP.',
 
     'goLive.live': 'LIVE',
@@ -861,6 +863,8 @@ const translations = {
     'otp.invalidTryAgain': 'अमान्य OTP। कृपया पुनः प्रयास करें।',
     'otp.otpSent': 'OTP भेजा गया',
     'otp.newCodeSent': 'आपके नंबर पर एक नया कोड भेजा गया है।',
+    'otp.alreadySentTitle': 'कोड पहले ही भेजा गया',
+    'otp.alreadySentMsg': 'हमने इस नंबर पर पहले ही एक कोड भेज दिया है। कृपया उसे नीचे दर्ज करें — वह अभी भी मान्य है।',
     'otp.resendFailed': 'OTP दोबारा नहीं भेजा जा सका।',
 
     'goLive.live': 'लाइव',

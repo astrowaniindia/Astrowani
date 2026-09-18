@@ -32,13 +32,20 @@ const RESEND_SECONDS = 60;
 const isRealId = (id) => typeof id === 'string' && id.includes('-');
 
 const VerifyOtp = ({navigation, route}) => {
-  const {phoneNumber, role = 'astrologer', registrationData} = route?.params || {};
+  const {phoneNumber, role = 'astrologer', registrationData, resendIn} =
+    route?.params || {};
   const {t} = useContext(LanguageContext);
 
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
-  const [timer, setTimer] = useState(RESEND_SECONDS);
+  // Normally a fresh 60s. When we arrived here because the server refused to
+  // send ANOTHER code (the live one is still good), start from its remaining
+  // cooldown instead — clamped, since it is attacker-influenced input.
+  const [timer, setTimer] = useState(() => {
+    const n = Number(resendIn);
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.ceil(n), RESEND_SECONDS) : RESEND_SECONDS;
+  });
   const otpRef = useRef(null);
 
   useEffect(() => {

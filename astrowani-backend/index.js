@@ -1052,6 +1052,28 @@ const otpStore = {
     return !error;
   },
 
+  /**
+   * Give a code more life, for the one case that needs it: the original SMS was
+   * never delivered and we are re-sending the SAME code through the fallback
+   * provider up to 150s later. Without this the rescued SMS lands with barely a
+   * minute of validity left, which is not long enough to be worth sending.
+   *
+   * Compare-and-set on `last_sent_at` for the same reason refundSend does it —
+   * if the user has since requested a NEW code, that row is not ours to touch.
+   *
+   * Safe: the guess budget (OTP_MAX_ATTEMPTS) is what makes a 6-digit code hard
+   * to brute force, and this does not touch it. Five guesses out of a million
+   * stays five guesses however long the window is.
+   */
+  async extendExpiry(phoneNumber, expectedLastSentAt, expiresAt) {
+    const { error } = await supabaseService
+      .from('otp_codes')
+      .update({ expires_at: new Date(expiresAt).toISOString() })
+      .eq('phone_number', phoneNumber)
+      .eq('last_sent_at', expectedLastSentAt);
+    return !error;
+  },
+
   async get(phoneNumber) {
     const { data } = await supabaseService
       .from('otp_codes')
@@ -1163,12 +1185,23 @@ async function checkOtpSendThrottle(existing) {
 
   const now = Date.now();
 
+  // Is the code we already sent still usable? A refusal to send ANOTHER one is
+  // only a dead end if there is nothing live to type in; when there is, the
+  // caller can be sent straight to the OTP screen instead of being stopped with
+  // an error. Both conditions matter: an expired code is unusable, and so is one
+  // whose guess budget is spent (the verify endpoint burns it).
+  const codeStillValid =
+    existing.expiresAt > now && (existing.attempts ?? 0) < OTP_MAX_ATTEMPTS;
+
   const sinceLast = now - existing.lastSentAt;
   if (existing.lastSentAt && sinceLast < OTP_RESEND_COOLDOWN_MS) {
     return {
       allowed: false,
+      codeStillValid,
       retryAfterSeconds: Math.ceil((OTP_RESEND_COOLDOWN_MS - sinceLast) / 1000),
-      message: 'An OTP was just sent. Please wait a few seconds before requesting another.',
+      message: codeStillValid
+        ? 'We already sent a code to this number. Please enter it — it is still valid.'
+        : 'An OTP was just sent. Please wait a few seconds before requesting another.',
     };
   }
 
@@ -1183,8 +1216,11 @@ async function checkOtpSendThrottle(existing) {
     const resetInSec = Math.ceil((windowStartedMs + OTP_SEND_WINDOW_MS - now) / 1000);
     return {
       allowed: false,
+      codeStillValid,
       retryAfterSeconds: resetInSec,
-      message: 'Too many OTP requests for this number. Please try again later.',
+      message: codeStillValid
+        ? 'We already sent a code to this number. Please enter it — it is still valid.'
+        : 'Too many OTP requests for this number. Please try again later.',
     };
   }
 
@@ -1411,7 +1447,7 @@ function normalizePhone(phoneNumber) {
 // undelivered by the time it is too stale to be worth typing.
 const ENX_DELIVERY_POLLS_MS = [20000, 60000, 150000]; // last poll is still inside OTP_TTL_MS
 
-function verifyEnxDelivery(jobId, e164, authHeader, refund, schedule = ENX_DELIVERY_POLLS_MS) {
+function verifyEnxDelivery(jobId, e164, authHeader, refund, rescue, schedule = ENX_DELIVERY_POLLS_MS) {
   const settle = async (reason, detail, summary) => {
     logError('enablex-sms', new Error(`SMS not delivered: ${reason}`), {
       phone: e164,
@@ -1427,6 +1463,24 @@ function verifyEnxDelivery(jobId, e164, authHeader, refund, schedule = ENX_DELIV
     if (refund) {
       const refunded = await refund();
       console.log(`[enablex-sms] send-budget refund for ${e164}: ${refunded ? 'applied' : 'skipped (row changed or gone)'}`);
+    }
+
+    // Refunding a send the user never received was only ever half a fix: it made
+    // sure the failure did not ALSO cost them their send budget, but it left them
+    // with no code at all. Failover used to happen only inside the request, on a
+    // provable non-dispatch within ~1.5s; a message that the provider accepted
+    // and DISPATCHED and the carrier then dropped got no second route, ever. That
+    // is the shape of the signup losses on 2026-09-14 and 2026-09-17 — people
+    // sitting on the OTP screen re-requesting a code that was never coming.
+    // So: now that we know it failed, actually try the other provider.
+    if (rescue) {
+      try {
+        await rescue(reason);
+      } catch (err) {
+        // Diagnostics-and-recovery only. It must never escalate: we are already
+        // in the failure path of a fire-and-forget timer with no request to fail.
+        console.log(`[enablex-sms] rescue attempt threw for ${e164}: ${err.message}`);
+      }
     }
   };
 
@@ -1613,6 +1667,11 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
     return res.status(429).json({
       success: false,
       code: 'OTP_THROTTLED',
+      // Lets the caller tell "wait, then retry" from "stop typing in the number
+      // field, the code is already in your inbox". Without it both apps treated
+      // every throttle as a hard failure and left the user on the phone-number
+      // screen with a live OTP they had nowhere to enter.
+      codeStillValid: !!throttle.codeStillValid,
       retryAfterSeconds: throttle.retryAfterSeconds,
       message: throttle.message,
     });
@@ -1670,8 +1729,11 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
     return res.status(429).json({
       success: false,
       code: 'OTP_THROTTLED',
+      // A concurrent request is sending a code for this number as we speak, so
+      // there is always something live to type in.
+      codeStillValid: true,
       retryAfterSeconds,
-      message: 'An OTP was just sent. Please wait a few seconds before requesting another.',
+      message: 'We already sent a code to this number. Please enter it — it is still valid.',
     });
   }
 
@@ -1739,6 +1801,59 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
         toE164Strict(phoneNumber),
         Buffer.from(`${ENABLEX_APP_ID}:${ENABLEX_APP_KEY}`).toString('base64'),
         () => otpStore.refundSend(phoneNumber, sentAt),
+        // RESCUE: the carrier did not deliver this code. Re-send the SAME code
+        // through the fallback provider so the customer finally gets something,
+        // instead of being left to re-request a code that keeps not arriving.
+        //
+        // The SAME code, never a fresh one: only one code is stored (as a hash),
+        // so a new one would make whichever SMS arrives first the dead one —
+        // exactly the bug otpStore.claimAndSet exists to prevent.
+        async (reason) => {
+          if (!smsProviders.msg91Configured()) {
+            console.log(`[sms-rescue] no fallback provider configured; ${toE164Strict(phoneNumber)} gets no second route`);
+            return;
+          }
+
+          // Only rescue if THIS send is still the one that matters. Re-read the
+          // row rather than trusting the closure: up to 150s have passed, and in
+          // that time the customer may have requested a new code (which replaced
+          // this one), verified successfully (row deleted), or burned the guess
+          // budget. Sending a superseded code would actively confuse them.
+          const row = await otpStore.get(phoneNumber);
+          if (!row) {
+            console.log(`[sms-rescue] skipped for ${toE164Strict(phoneNumber)}: code already used or gone`);
+            return;
+          }
+          // Compare by INSTANT, never by string. Postgres hands this back as
+          // `...+00:00` while claimAndSet produced `...Z` from toISOString() —
+          // the same moment in two spellings, so `!==` is true for every single
+          // send and would silently disable this rescue entirely.
+          const sameSend = row.lastSentAt === new Date(sentAt).getTime();
+          if (!sameSend) {
+            console.log(`[sms-rescue] skipped for ${toE164Strict(phoneNumber)}: a newer code has replaced this one`);
+            return;
+          }
+          if ((row.attempts ?? 0) >= OTP_MAX_ATTEMPTS) {
+            console.log(`[sms-rescue] skipped for ${toE164Strict(phoneNumber)}: guess budget already spent`);
+            return;
+          }
+
+          // Give the rescued code a full TTL from now. It is ~150s old, so what
+          // remains is too little to type by the time the SMS lands.
+          await otpStore.extendExpiry(phoneNumber, sentAt, Date.now() + OTP_TTL_MS);
+
+          const fb = await smsProviders.sendViaMsg91(toE164Strict(phoneNumber), otp);
+          if (fb.ok) {
+            console.log(`[sms-rescue] re-sent via msg91 for ${toE164Strict(phoneNumber)} (id: ${fb.id})`);
+            logError('sms-rescue', new Error('Primary SMS was not delivered; same code re-sent via fallback'), {
+              phone: toE164Strict(phoneNumber), enablexReason: reason, msg91Id: fb.id,
+            });
+          } else {
+            logError('sms-rescue', new Error('Primary SMS was not delivered AND the fallback re-send also failed'), {
+              phone: toE164Strict(phoneNumber), enablexReason: reason, msg91Reason: fb.reason,
+            });
+          }
+        },
       );
     }
   } else {
@@ -1790,12 +1905,20 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   const storedData = await otpStore.get(phoneNumber);
 
   if (!storedData) {
-    return res.status(400).json({ success: false, message: 'No OTP requested for this number' });
+    return res.status(400).json({
+      success: false,
+      code: 'OTP_NOT_REQUESTED',
+      message: 'No OTP requested for this number. Please request a new code.',
+    });
   }
 
   if (Date.now() > storedData.expiresAt) {
     await otpStore.delete(otpKey);
-    return res.status(400).json({ success: false, message: 'OTP has expired' });
+    return res.status(400).json({
+      success: false,
+      code: 'OTP_EXPIRED',
+      message: 'That code has expired. Please request a new one.',
+    });
   }
 
   // Burn the code once the guess budget is spent. Without this the endpoint

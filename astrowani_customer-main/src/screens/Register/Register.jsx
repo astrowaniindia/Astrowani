@@ -35,6 +35,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import {apiFailureReason} from '../../utils/apiFailureReason';
 import { sanitizePhoneInput } from '../../utils/phoneInput';
 import TermsAcceptance from '../../components/TermsAcceptance';
 
@@ -64,17 +65,22 @@ export default function Register({ navigation }) {
     return () => { cancelled = true; };
   }, []);
 
+  // Returns [userFacingMessage, analyticsReason]. The message is translated, so
+  // it cannot double as the analytics value — it would split one bucket across
+  // languages and could never be compared. `signup_step_blocked` used to carry
+  // no reason at all, which made "28 people were blocked here" unactionable:
+  // there was no way to tell an unticked terms box from a short phone number.
   const validate = () => {
-    if (!mobile.trim()) return t('register.enterMobile');
-    if (mobile.length < 10) return t('register.validMobile');
-    if (!acceptedTerms) return t('register.acceptRequired');
-    return null;
+    if (!mobile.trim()) return [t('register.enterMobile'), 'phone_empty'];
+    if (mobile.length < 10) return [t('register.validMobile'), 'phone_too_short'];
+    if (!acceptedTerms) return [t('register.acceptRequired'), 'terms_not_accepted'];
+    return [null, null];
   };
 
   const handleSubmit = async () => {
-    const err = validate();
+    const [err, blockReason] = validate();
     if (err) {
-      captureEvent('signup_step_blocked', { step: 1 });
+      captureEvent('signup_step_blocked', { step: 1, reason: blockReason });
       showAlert(t('register.errorTitle'), err, 'error');
       return;
     }
@@ -100,7 +106,22 @@ export default function Register({ navigation }) {
         showAlert(t('register.errorTitle'), res?.data?.message || t('register.otpFailed'), 'error');
       }
     } catch (error) {
-      if (error?.response?.data?.code === 'ACCOUNT_EXISTS') {
+      const data = error?.response?.data;
+      if (data?.code === 'OTP_THROTTLED' && data?.codeStillValid) {
+        // See Login.js: a live code exists, so carry on to the OTP screen rather
+        // than dead-ending on the phone-number step.
+        captureEvent('signup_otp_already_sent', {
+          retryAfterSeconds: data?.retryAfterSeconds ?? null,
+        });
+        showAlert(t('otp.alreadySentTitle'), t('otp.alreadySentMsg'), 'success');
+        navigation.navigate('VerifyOtp', {
+          phoneNumber: mobile,
+          role: 'customer',
+          signup: true,
+          termsAccepted: true,
+          resendIn: data?.retryAfterSeconds,
+        });
+      } else if (data?.code === 'ACCOUNT_EXISTS') {
         captureEvent('signup_failed', { reason: 'account_exists' });
         showAlert(
           t('register.accountExists'),
@@ -110,10 +131,10 @@ export default function Register({ navigation }) {
         );
       } else {
         console.error(error);
-        captureEvent('signup_failed', { reason: error?.response?.data?.code || 'other' });
+        captureEvent('signup_failed', { reason: apiFailureReason(error) });
         // The server's message is kept when present: it can carry specifics a
         // generic line would lose (e.g. how long to wait before another OTP).
-        showAlert(t('register.errorTitle'), error?.response?.data?.message || t('register.somethingWrong'), 'error');
+        showAlert(t('register.errorTitle'), data?.message || t('register.somethingWrong'), 'error');
       }
     } finally {
       setSubmitting(false);

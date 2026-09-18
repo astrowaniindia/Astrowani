@@ -693,6 +693,8 @@ const translations = {
     'otp.verificationFailed': 'Verification Failed',
     'otp.otpSentTitle': 'OTP Sent',
     'otp.newCodeSent': 'A new code has been sent to your number.',
+    'otp.alreadySentTitle': 'Code Already Sent',
+    'otp.alreadySentMsg': 'We already sent a code to this number. Please enter it below — it is still valid.',
     'otp.couldNotResend': 'Could not resend OTP.',
     'otp.couldNotResendRetry': 'Could not resend OTP. Please try again.',
 
@@ -1951,6 +1953,8 @@ const translations = {
     'otp.verificationFailed': 'सत्यापन विफल',
     'otp.otpSentTitle': 'OTP भेजा गया',
     'otp.newCodeSent': 'आपके नंबर पर एक नया कोड भेजा गया है।',
+    'otp.alreadySentTitle': 'कोड पहले ही भेजा गया',
+    'otp.alreadySentMsg': 'हमने इस नंबर पर पहले ही एक कोड भेज दिया है। कृपया उसे नीचे दर्ज करें — वह अभी भी मान्य है।',
     'otp.couldNotResend': 'OTP पुनः नहीं भेजा जा सका।',
     'otp.couldNotResendRetry': 'OTP पुनः नहीं भेजा जा सका। कृपया पुनः प्रयास करें।',
 
