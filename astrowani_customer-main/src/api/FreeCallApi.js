@@ -25,10 +25,34 @@ const OFFER_OFF = { enabled: false, eligible: false, booking: null, offer: null 
 async function fetchFreeCallOffer() {
   try {
     const res = await Instance.get('/api/free-call/offer', await authHeader());
-    return res.data?.success ? res.data : OFFER_OFF;
+    if (res.data?.success) {
+      lastOffer = { data: res.data, at: Date.now() };
+      return res.data;
+    }
+    return OFFER_OFF;
   } catch (_) {
     return OFFER_OFF;
   }
+}
+
+// The last successful answer, so the low-balance popup can decide at once whether to
+// offer the free call (Home fetches the offer on every load) instead of waiting on a
+// round trip while the customer stares at nothing.
+let lastOffer = null; // { data, at }
+const LAST_OFFER_FRESH_MS = 5 * 60 * 1000;
+
+/**
+ * Can this customer book the free call right now? Uses the recent answer when there
+ * is one, else asks the server but gives up after `timeoutMs`. Resolves false on any
+ * doubt — the caller then shows the ordinary recharge prompt, which is always correct.
+ * Home asks the server again before opening the sheet, so a stale "true" here costs
+ * nothing worse than landing on the Wallet.
+ */
+export async function isFreeCallAvailable({ timeoutMs = 1500 } = {}) {
+  const ok = (d) => !!(d && d.enabled && d.eligible);
+  if (lastOffer && Date.now() - lastOffer.at < LAST_OFFER_FRESH_MS) return ok(lastOffer.data);
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(OFFER_OFF), timeoutMs));
+  return ok(await Promise.race([fetchFreeCallOffer(), timeout]));
 }
 
 // A request started before Home opened (from the signup welcome screen), so the
@@ -78,6 +102,7 @@ export async function getFreeCallSlots(date) {
  * BAD_SLOT | OFFER_CLOSED.
  */
 export async function bookFreeCall(slotStart) {
+  lastOffer = null; // eligibility is about to change either way
   try {
     const res = await Instance.post('/api/free-call/book', { slotStart }, await authHeader());
     return res.data;

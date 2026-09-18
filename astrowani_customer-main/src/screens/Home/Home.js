@@ -1213,16 +1213,21 @@ const Home = ({navigation}) => {
     }
   };
 
-  // A tapped free-call invite (push or notification list). Always asks the server
-  // again: the invite may have expired or the customer may have booked since.
-  useEffect(() => onFreeCallInviteOpen(async () => {
-    captureEvent('free_call_invite_opened');
+  // A request to open the free-call sheet from outside Home: a tapped invite (push or
+  // notification list), or the low-balance popup. Always asks the server again: the
+  // invite may have expired or the customer may have booked since.
+  useEffect(() => onFreeCallInviteOpen(async (source = 'invite') => {
+    if (source === 'invite') captureEvent('free_call_invite_opened');
     const fc = await getFreeCallOffer();
     setFreeCall(fc);
     if (fc.enabled && fc.eligible) {
       setFreeCallStartAtSlots(false);
-      setFreeCallSource('invite');
+      setFreeCallSource(source);
       setFreeCallVisible(true);
+    } else if (source !== 'invite') {
+      // Offered because the wallet was short, but the offer is gone by now (booked on
+      // another device, or switched off). Recharging is the remaining way forward.
+      navigation.navigate('Wallet');
     } else if (fc.booking) {
       showStatusPopup({
         variant: 'info',

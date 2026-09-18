@@ -24,6 +24,7 @@
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
+const { recordDeletedCustomer } = require('./analyticsExclusions');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -283,6 +284,8 @@ module.exports = (app) => {
       // voice_notes, astrologer_waitlist, astrologer_reports, support_tickets) is
       // ON DELETE CASCADE/SET NULL and goes automatically with the row below.
       await purgeCustomerPersonalData(id);
+      // Keeps their past events out of the admin's Analytics once the row is gone.
+      await recordDeletedCustomer(id);
 
       await db.from('call_requests').delete().eq('customer_id', id);
       await db.from('chat_messages').delete().eq('sender_id', id);

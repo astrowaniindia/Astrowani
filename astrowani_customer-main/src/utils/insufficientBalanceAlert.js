@@ -8,6 +8,14 @@
 // Alert — see StatusPopup.js's three-button stacked mode.
 import { showStatusPopup } from '../components/StatusPopup';
 import { canShowTip, tipText, trackTipShown, trackTipAction, TIP_IDS } from './mascotTips';
+import { isFreeCallAvailable } from '../api/FreeCallApi';
+import { openFreeCallSheet } from './freeCallInvite';
+import { captureEvent } from './Analytics';
+import { translate } from '../context/LanguageContext';
+
+// Consultation intents. A customer blocked on one of these who can still book the free
+// introductory call is offered that first (see showFreeCallInstead below).
+const CONSULT_INTENTS = ['chat', 'call', 'video'];
 
 // Wallet preset amounts (screens/Home/Wallet/Wallet.js). The suggested top-up is
 // the smallest preset that covers the shortfall, so Recharge opens with a sensible
@@ -34,7 +42,57 @@ const suggestTopUp = (shortfall) =>
  *   Switching on the platform alone would send someone blocked on a ₹ consultation to the
  *   coin store, where nothing they buy would help.
  */
-export function showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent, spendsCoins = false }) {
+export async function showInsufficientBalanceAlert(opts) {
+  const { spendsCoins = false, intent } = opts;
+  // New customers arrive with ₹0, try to chat, and used to meet only "Recharge" — most
+  // left there. If they can still book the free call, offer that first. Rupee
+  // consultations only: coins can't buy a consultation and reports aren't one.
+  if (!spendsCoins && CONSULT_INTENTS.includes(intent)) {
+    let available = false;
+    try { available = await isFreeCallAvailable(); } catch (_) { available = false; }
+    if (available) {
+      showFreeCallInstead(opts);
+      return;
+    }
+  }
+  showRechargePrompt(opts);
+}
+
+function showFreeCallInstead({ navigation, minRequired, balance, intent }) {
+  const shortfall = Math.max(0, (Number(minRequired) || 0) - (Number(balance) || 0));
+  const suggestedAmount = suggestTopUp(shortfall || Number(minRequired) || 0);
+
+  showStatusPopup({
+    variant: 'insufficient',
+    title: translate('freeCall.lowBalanceTitle'),
+    message: translate('freeCall.lowBalanceMsg', {
+      amount: Number(minRequired) || 0,
+      balance: Number(balance) || 0,
+    }),
+    intent,
+    blockedMeta: {
+      min_required: Number(minRequired) || 0,
+      balance: Number(balance) || 0,
+      shortfall,
+      free_call_offered: true,
+    },
+    confirmText: translate('freeCall.lowBalanceBook'),
+    onConfirm: () => {
+      captureEvent('low_balance_free_call_tapped', { intent: intent || 'unknown' });
+      openFreeCallSheet('low_balance');
+    },
+    extraText: translate('freeCall.lowBalanceRecharge'),
+    extraSubtitle: translate('freeCall.lowBalanceRechargeSub'),
+    extraIcon: 'account-balance-wallet',
+    onExtra: () => {
+      captureEvent('low_balance_recharge_tapped', { intent: intent || 'unknown', free_call_offered: true });
+      navigation?.navigate?.('Wallet', { suggestedAmount });
+    },
+    cancelText: translate('common.cancel'),
+  });
+}
+
+function showRechargePrompt({ navigation, minRequired, balance, t, intent, spendsCoins = false }) {
   const title = spendsCoins
     ? (t ? t('coins.notEnough') : 'Not enough coins')
     : (t ? t('alerts.insufficientBalance') : 'Insufficient Balance');

@@ -192,6 +192,7 @@ export default function Analytics() {
   const [authFunnelType, setAuthFunnelType] = useState('signup');
   const [signupConsult, setSignupConsult] = useState(null);
   const [freeCallFunnel, setFreeCallFunnel] = useState(null);
+  const [freeChatFunnel, setFreeChatFunnel] = useState(null);
   const [servicesEngagement, setServicesEngagement] = useState(null);
   const [walletFunnel, setWalletFunnel] = useState(null);
 
@@ -313,7 +314,7 @@ export default function Analytics() {
       const [summaryRes, trendRes, screensRes, funnelRes, remediesFunnelRes, revenueRes, sessionsRes, retentionRes,
         revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes,
         outcomesRes, astroPerfRes, authFailuresRes, blockedRes,
-        freeCallRes, servicesRes, walletRes] = await Promise.all([
+        freeCallRes, servicesRes, walletRes, freeChatRes] = await Promise.all([
         // Summary is app-scoped now — DAU/WAU/MAU used to silently blend customer and
         // vendor users, and astrologers keep their app open all day.
         client.get('/api/admin/analytics/summary', { params: { ...dateParams, app: appTab } }),
@@ -343,6 +344,7 @@ export default function Analytics() {
         client.get('/api/admin/analytics/free-call-funnel', { params: dateParams }).catch(() => ({ data: null })),
         client.get('/api/admin/analytics/services-engagement', { params: dateParams }).catch(() => ({ data: null })),
         client.get('/api/admin/analytics/wallet-funnel', { params: dateParams }).catch(() => ({ data: null })),
+        client.get('/api/admin/analytics/free-chat-funnel', { params: dateParams }).catch(() => ({ data: null })),
       ]);
       setSummary(summaryRes.data);
       setTrend(pivotTrend(trendRes.data.points || []));
@@ -362,6 +364,7 @@ export default function Analytics() {
       setAuthFailures(authFailuresRes.data);
       setBlockedAttempts(blockedRes.data);
       setFreeCallFunnel(freeCallRes?.data || null);
+      setFreeChatFunnel(freeChatRes?.data || null);
       setServicesEngagement(servicesRes?.data || null);
       setWalletFunnel(walletRes?.data || null);
       setNotConfigured(false);
@@ -932,6 +935,45 @@ export default function Analytics() {
             </span>
             <span className="muted">
               Customer Declined Ring: <strong style={{ color: (freeCallFunnel?.declined ?? 0) > 0 ? 'var(--amber)' : 'inherit' }}>{freeCallFunnel?.declined ?? 0}</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Free 5-Minute Chat Funnel ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Free 5-Minute Chat Funnel (customer app)</h3>
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
+              New customers from seeing the free chat offer to recharging their wallet. Counted as people.
+              "Recharged Wallet" includes recharges made after the selected dates.
+              {freeChatFunnel && !freeChatFunnel.messageTracked && ' "Sent a Message" appears once the next app update is live.'}
+            </p>
+          </div>
+          <div className="btn-group">
+            <Link to="/free-bot-chat" className="btn ghost sm">Settings</Link>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {freeChatFunnel?.stages?.some((s) => s.count > 0) ? (
+            <StepFunnel stages={freeChatFunnel.stages} baseLabel="offer shown" />
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>No free chat activity in this range.</p>
+          )}
+        </div>
+
+        <div className="row-between" style={{ marginTop: 16, flexWrap: 'wrap', gap: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+            <span className="muted">
+              Dismissed Offer: <strong style={{ color: 'var(--text-primary)' }}>{freeChatFunnel?.dismissed ?? 0}</strong>
+            </span>
+            <span className="muted">
+              Left Early: <strong style={{ color: (freeChatFunnel?.endedEarly ?? 0) > 0 ? 'var(--amber)' : 'inherit' }}>{freeChatFunnel?.endedEarly ?? 0}</strong>
+            </span>
+            <span className="muted">
+              AI Fell Back to Scripted Replies: <strong style={{ color: (freeChatFunnel?.aiFallback ?? 0) > 0 ? 'var(--red)' : 'inherit' }}>{freeChatFunnel?.aiFallback ?? 0}</strong>
             </span>
           </div>
         </div>

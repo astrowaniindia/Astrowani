@@ -676,6 +676,74 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Free 5-Minute Chat Funnel: Offer Shown → Accepted → Chat Started → Sent a
+  // Message → Stayed All 5 Minutes → Recharged Wallet ──
+  // "Sent a message" comes from free_bot_chat_message_sent, which older app bundles
+  // don't send; the stage is left out until the range contains any of it, so older
+  // ranges don't show a fake 100% drop there.
+  // "Recharged wallet" = people who started the free chat and have a wallet_recharged
+  // event from the start of the range onward (not bounded by the range end — a recharge
+  // the day after the chat still counts).
+  app.get('/api/admin/analytics/free-chat-funnel', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
+    const dateStart = resolveDateStart(req, { defaultDays: 7 });
+    const startedInRange = `SELECT person_id FROM events
+      WHERE event = 'free_bot_chat_started' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}`;
+    const [counts, recharged, messageEver] = await Promise.all([
+      runHogQL(`
+        SELECT
+          count(DISTINCT if(event = 'free_chat_offer_shown', person_id, NULL)) AS shown,
+          count(DISTINCT if(event = 'free_chat_offer_accepted', person_id, NULL)) AS accepted,
+          count(DISTINCT if(event = 'free_bot_chat_started', person_id, NULL)) AS started,
+          count(DISTINCT if(event = 'free_bot_chat_message_sent', person_id, NULL)) AS messaged,
+          count(DISTINCT if(event = 'free_bot_chat_ended' AND properties.completed = true, person_id, NULL)) AS completed,
+          count(DISTINCT if(event = 'free_chat_offer_dismissed', person_id, NULL)) AS dismissed,
+          count(DISTINCT if(event = 'free_bot_chat_ended' AND properties.completed = false, person_id, NULL)) AS endedEarly,
+          count(DISTINCT if(event = 'free_bot_chat_ai_fallback', person_id, NULL)) AS aiFallback
+        FROM events
+        WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+          AND event IN ('free_chat_offer_shown', 'free_chat_offer_accepted', 'free_bot_chat_started',
+                        'free_bot_chat_message_sent', 'free_bot_chat_ended', 'free_chat_offer_dismissed',
+                        'free_bot_chat_ai_fallback')
+      `),
+      runHogQL(`
+        SELECT count(DISTINCT person_id)
+        FROM events
+        WHERE event = 'wallet_recharged' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateStart}
+          AND person_id IN (${startedInRange})
+      `),
+      runHogQL(`
+        SELECT count(DISTINCT person_id)
+        FROM events
+        WHERE event = 'free_bot_chat_message_sent' AND properties.app = 'customer' AND ${ENV_FILTER}
+      `),
+    ]);
+    const [shown, accepted, started, messaged, completed, dismissed, endedEarly, aiFallback] =
+      (counts[0] || [0, 0, 0, 0, 0, 0, 0, 0]).map((n) => Number(n) || 0);
+    const rechargedCount = Number(recharged[0]?.[0]) || 0;
+    // Message tracking exists at all (any date) → the stage is meaningful for this range.
+    const messageTracked = (Number(messageEver[0]?.[0]) || 0) > 0;
+
+    const stages = [
+      { key: 'shown', label: 'Offer Shown', count: shown },
+      { key: 'accepted', label: 'Accepted Offer', count: accepted },
+      { key: 'started', label: 'Chat Started', count: started },
+      ...(messageTracked ? [{ key: 'messaged', label: 'Sent a Message', count: messaged }] : []),
+      { key: 'completed', label: 'Stayed All 5 Minutes', count: completed },
+      { key: 'recharged', label: 'Recharged Wallet', count: rechargedCount },
+    ];
+
+    return res.json({
+      success: true,
+      basis: 'persons',
+      stages,
+      messageTracked,
+      dismissed,
+      endedEarly,
+      aiFallback,
+    });
+  }));
+
   // ── Astrology Services & Free Tools Engagement Breakdown ──
   app.get('/api/admin/analytics/services-engagement', requireAdmin, requireConfigured, h(async (req, res) => {
     const dateWhere = resolveDateWhere(req, { defaultDays: 7 });

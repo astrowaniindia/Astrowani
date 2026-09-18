@@ -19,6 +19,7 @@ const {
   parseIds: parseExcludedIds,
   refreshAnalyticsExclusions,
   withoutExcluded,
+  recordDeletedCustomer,
 } = require('./analyticsExclusions');
 const { computeAstrologerMetrics } = require('./astrologerMetrics');
 const wallet = require('./wallet');
@@ -1029,6 +1030,9 @@ module.exports = function registerAdminRoutes(app) {
 
     const { data: customer } = await db.from('customers').select('id, name, mobile').eq('id', id).single();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    // Keeps their past events out of Analytics once the row is gone.
+    await recordDeletedCustomer(id);
 
     await db.from('call_requests').delete().eq('customer_id', id);
     await db.from('chat_messages').delete().eq('sender_id', id);

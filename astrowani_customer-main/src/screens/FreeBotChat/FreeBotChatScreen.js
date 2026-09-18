@@ -106,6 +106,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   const hasEndedRef = useRef(false);
   const flatListRef = useRef(null);
   const msgIdRef = useRef(0);
+  const sentCountRef = useRef(0); // customer messages sent, for the admin's free chat funnel
 
   const pad = (n) => n.toString().padStart(2, '0');
   const nextId = () => `local-${++msgIdRef.current}`;
@@ -170,7 +171,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
     setChatActive(false);
-    captureEvent('free_bot_chat_ended', { completed: true });
+    captureEvent('free_bot_chat_ended', { completed: true, messages_sent: sentCountRef.current });
     setCompletedVisible(true);
   };
 
@@ -185,7 +186,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
   const manualEnd = () => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
-    captureEvent('free_bot_chat_ended', { completed: false });
+    captureEvent('free_bot_chat_ended', { completed: false, messages_sent: sentCountRef.current });
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.replace('Home');
     showReferralPrompt();
@@ -219,7 +220,7 @@ const FreeBotChatScreen = ({ navigation, route }) => {
       askToEnd(() => {
         if (hasEndedRef.current) return;
         hasEndedRef.current = true;
-        captureEvent('free_bot_chat_ended', { completed: false });
+        captureEvent('free_bot_chat_ended', { completed: false, messages_sent: sentCountRef.current });
         navigation.dispatch(e.data.action);
         showReferralPrompt();
       });
@@ -233,6 +234,9 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     const msg = text.trim();
     setText('');
     appendMessage('me', msg);
+    sentCountRef.current += 1;
+    // Once per chat: enough for the "Sent a message" funnel stage without an event per message.
+    if (sentCountRef.current === 1) captureEvent('free_bot_chat_message_sent');
     setBotTyping(true);
     // Both the AI and the engine need the clock: under a minute left they stop
     // opening new threads and move to the closing turn, which names that a remedy
