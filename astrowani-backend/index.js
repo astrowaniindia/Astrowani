@@ -1844,10 +1844,12 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
 
           const fb = await smsProviders.sendViaMsg91(toE164Strict(phoneNumber), otp);
           if (fb.ok) {
-            console.log(`[sms-rescue] re-sent via msg91 for ${toE164Strict(phoneNumber)} (id: ${fb.id})`);
-            logError('sms-rescue', new Error('Primary SMS was not delivered; same code re-sent via fallback'), {
-              phone: toE164Strict(phoneNumber), enablexReason: reason, msg91Id: fb.id,
-            });
+            // A log line only — NOT logError. logError reports to Sentry as an
+            // error, and a successful rescue is the system working: routing it
+            // there paged the owner with a "high priority" alert for the first
+            // real rescue (2026-09-18). The failed-delivery that led here is
+            // already recorded by settle() above.
+            console.log(`[sms-rescue] re-sent via msg91 for ${toE164Strict(phoneNumber)} (id: ${fb.id}; enablex: ${reason})`);
           } else {
             logError('sms-rescue', new Error('Primary SMS was not delivered AND the fallback re-send also failed'), {
               phone: toE164Strict(phoneNumber), enablexReason: reason, msg91Reason: fb.reason,
