@@ -90,6 +90,14 @@ export default function FreeCallSettings() {
         minLeadMinutes: num(next.minLeadMinutes, 60),
       };
 
+      // Whole hours only. The server ignores anything out of range and silently uses
+      // 10 AM–8 PM instead (1130 for "11:30" once did exactly that), so refuse it here.
+      if (!Number.isInteger(payload.openHour) || payload.openHour < 0 || payload.openHour > 23
+        || !Number.isInteger(payload.closeHour) || payload.closeHour < 1 || payload.closeHour > 24) {
+        alert('Opening hours are whole hours: open 0–23, close 1–24 (e.g. 11 and 23 for 11 AM to 11 PM).');
+        setSavingOffer(false);
+        return;
+      }
       if (payload.closeHour <= payload.openHour) {
         alert('Closing hour must be later than opening hour.');
         setSavingOffer(false);
