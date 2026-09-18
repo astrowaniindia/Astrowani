@@ -10,7 +10,7 @@
 global.WebSocket = require('ws');
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'x'.repeat(40);
 const { _internals } = require('../src/freeCallRoutes');
-const { buildSlots, offerDateKeys, businessDateKey, formatSlotLabel, DEFAULTS } = _internals;
+const { buildSlots, offerDateKeys, businessDateKey, formatSlotLabel, describeWhen, DEFAULTS } = _internals;
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; } else { fail++; console.log('  FAIL:', m); } };
@@ -28,6 +28,17 @@ ok(dates[6] === '2026-09-07', 'last date is +6 days: ' + dates[6]);
 const slots = buildSlots(offer, '2026-09-01', now);
 ok(slots.length === 20, '10:00->20:00 at 30min = 20 slots, got ' + slots.length);
 ok(slots[0].label === '10:00 AM', 'first slot label: ' + slots[0].label);
+// Bookable slots within the next hour read "In N min"; later ones keep the clock time.
+{
+  const soonOffer = { ...offer, minLeadMinutes: 15 };
+  const soon = buildSlots(soonOffer, '2026-09-01', now).filter((x) => !x.past);
+  ok(/^In \d+ min$/.test(soon[0].label), 'first bookable slot within the hour reads "In N min": ' + soon[0].label);
+  ok(/(AM|PM)$/.test(soon[soon.length - 1].label), 'later slot keeps clock label: ' + soon[soon.length - 1].label);
+}
+// Astrologer notification wording, in business time.
+ok(describeWhen(new Date('2026-09-01T09:45:00Z'), now) === 'today at 3:15 PM', 'today: ' + describeWhen(new Date('2026-09-01T09:45:00Z'), now));
+ok(describeWhen(new Date('2026-09-02T03:30:00Z'), now) === 'tomorrow at 9:00 AM', 'tomorrow: ' + describeWhen(new Date('2026-09-02T03:30:00Z'), now));
+ok(describeWhen(new Date('2026-09-05T13:00:00Z'), now) === 'on 5 Sep at 6:30 PM', 'later: ' + describeWhen(new Date('2026-09-05T13:00:00Z'), now));
 ok(slots[slots.length - 1].label === '7:30 PM', 'last slot label: ' + slots[slots.length - 1].label);
 
 // 10:00 IST == 04:30 UTC. This is the assertion that catches a timezone slip.

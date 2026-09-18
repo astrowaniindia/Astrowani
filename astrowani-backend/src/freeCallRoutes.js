@@ -19,6 +19,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { requireAdmin } = require('./adminRoutes');
 const { sendPush } = require('./push');
+const vendorDevices = require('./vendorDevices');
 const { checkAstrologerBusy, checkCustomerBusy } = require('./busyStatus');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
 
@@ -221,16 +222,95 @@ function buildSlots(offer, dateKey, now = new Date()) {
     const start = businessInstant(dateKey, Math.floor(mins / 60), mins % 60);
     const end = new Date(start.getTime() + offer.durationMinutes * 60000);
     if (end.getTime() > windowEnd) continue;
+    const past = start.getTime() < earliest;
     out.push({
       start,
       end,
       startIso: start.toISOString(),
       endIso: end.toISOString(),
-      label: formatSlotLabel(start),
-      past: start.getTime() < earliest,
+      label: (!past && soonLabel(start, now)) || formatSlotLabel(start),
+      past,
     });
   }
   return out;
+}
+
+// Slots starting within the next hour read as "In 15 min" instead of a clock time,
+// so a customer who wants to talk now can see that now is on offer.
+const SOON_LABEL_MINUTES = 60;
+function soonLabel(start, now) {
+  const mins = Math.round((start.getTime() - now.getTime()) / 60000);
+  if (mins <= 0 || mins > SOON_LABEL_MINUTES) return null;
+  return `In ${mins} min`;
+}
+
+// "today at 3:15 PM", "tomorrow at 9:00 AM", "on 22 Sep at 6:30 PM" — business time.
+function describeWhen(instant, now = new Date()) {
+  const time = formatSlotLabel(instant);
+  const day = businessDateKey(instant);
+  if (day === businessDateKey(now)) return `today at ${time}`;
+  if (day === businessDateKey(new Date(now.getTime() + 86400000))) return `tomorrow at ${time}`;
+  const shifted = new Date(instant.getTime() + FREE_CALL_TZ_OFFSET_MIN * 60000);
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][shifted.getUTCMonth()];
+  return `on ${shifted.getUTCDate()} ${mon} at ${time}`;
+}
+
+/**
+ * Tell the assigned astrologer about a free-call booking: a row in their
+ * notification list, a socket event if their app is open, and a push. Sent as
+ * 'admin_personal' because that is a type every installed astrologer app already
+ * displays. Never throws — the booking has already succeeded.
+ */
+async function notifyAstrologerOfBooking(app, booking, kind) {
+  try {
+    if (!booking?.astrologer_id) return;
+    const who = booking.customer_name || 'A new customer';
+    const when = describeWhen(new Date(booking.slot_start));
+    const title = kind === 'reminder' ? 'Free call starting soon' : 'New free call booked';
+    const body = kind === 'reminder'
+      ? `Please call ${who} ${when}. Open My Free Calls to ring them.`
+      : `${who} booked a free call ${when}. Open My Free Calls to ring them on time.`;
+    const type = 'admin_personal';
+
+    const { error } = await db.from('notifications').insert([{ astrologer_id: booking.astrologer_id, customer_id: null, title, body, type }]);
+    if (error) console.warn('[freeCallRoutes] astrologer notification insert failed:', error.message);
+
+    const io = app.locals.io;
+    if (io) io.to(String(booking.astrologer_id)).emit('new_notification', { title, body, type, recipient_type: 'astrologer' });
+
+    const target = await vendorDevices.pushTargetFor(booking.astrologer_id);
+    if (target?.fcm_token) await sendPush(target.fcm_token, { data: { type, title, body } });
+  } catch (e) {
+    console.warn('[freeCallRoutes] astrologer booking notification failed:', e.message);
+  }
+}
+
+// Reminds the astrologer a few minutes before each booked call. Remembered in memory,
+// so a backend restart inside the window can send one reminder twice — harmless.
+const REMINDER_LEAD_MINUTES = 10;
+const remindedBookingIds = new Set();
+async function sendDueReminders(app) {
+  try {
+    const now = Date.now();
+    const { data, error } = await db
+      .from('free_call_bookings')
+      .select('id, astrologer_id, customer_name, slot_start, created_at')
+      .eq('status', 'booked')
+      .not('astrologer_id', 'is', null)
+      .gte('slot_start', new Date(now).toISOString())
+      .lte('slot_start', new Date(now + REMINDER_LEAD_MINUTES * 60000).toISOString());
+    if (error || !data) return;
+    for (const b of data) {
+      if (remindedBookingIds.has(b.id)) continue;
+      remindedBookingIds.add(b.id);
+      // Booked within the reminder window: the "new booking" notice just went out.
+      if (new Date(b.slot_start).getTime() - new Date(b.created_at).getTime() <= REMINDER_LEAD_MINUTES * 60000) continue;
+      await notifyAstrologerOfBooking(app, b, 'reminder');
+    }
+    if (remindedBookingIds.size > 5000) remindedBookingIds.clear();
+  } catch (_) {
+    // next tick tries again
+  }
 }
 
 function formatSlotLabel(instant) {
@@ -522,6 +602,7 @@ const publicBooking = (b) => b && ({
 });
 
 module.exports = function registerFreeCallRoutes(app) {
+  setInterval(() => sendDueReminders(app), 60 * 1000).unref();
   /* ── Customer: is the offer on, am I eligible, have I already booked? ────── */
   app.get('/api/free-call/offer', h(async (req, res) => {
     const offer = await loadOffer();
@@ -714,6 +795,7 @@ module.exports = function registerFreeCallRoutes(app) {
       throw new Error(error ? error.message : 'Booking failed');
     }
 
+    notifyAstrologerOfBooking(app, data, 'booked'); // not awaited: the customer is done
     return res.status(201).json({ success: true, booking: publicBooking(data), message: offer.successText });
   }));
 
@@ -1539,6 +1621,6 @@ module.exports.FREE_CALL_TZ_OFFSET_MIN = FREE_CALL_TZ_OFFSET_MIN;
 // Exported for tests only. The slot arithmetic is the part of this file most
 // likely to be wrong in a way nobody notices (it must not follow the server's
 // own timezone), so it is testable without a database.
-module.exports._internals = { buildSlots, offerDateKeys, businessDateKey, businessInstant, formatSlotLabel, DEFAULTS };
+module.exports._internals = { buildSlots, offerDateKeys, businessDateKey, businessInstant, formatSlotLabel, describeWhen, DEFAULTS };
 module.exports.assigneeCandidates = assigneeCandidates;
 module.exports.slotCapacity = slotCapacity;
