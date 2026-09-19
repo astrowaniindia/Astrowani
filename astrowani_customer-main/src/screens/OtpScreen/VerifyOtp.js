@@ -40,6 +40,12 @@ const VerifyOtp = ({navigation, route}) => {
   const [referralCode, setReferralCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
+  // Set synchronously on the first tap. The `resending` state can't do this on its
+  // own: state only updates on the next render, so two taps in the same frame both
+  // read resending=false and both reached the server. The server still sent only
+  // one SMS, but the loser's 429 appeared as an error popup right after
+  // "New code sent". The ref makes the second tap a no-op.
+  const resendInFlight = useRef(false);
   // Normally a fresh 60s. When we arrived here because the server refused to
   // send ANOTHER code (the live one is still good), start from its remaining
   // cooldown instead — clamped, since it is attacker-influenced input and a
@@ -159,12 +165,13 @@ const VerifyOtp = ({navigation, route}) => {
   };
 
   const handleResend = async () => {
-    if (timer > 0 || resending) return;
+    if (timer > 0 || resending || resendInFlight.current) return;
     // A high resend rate is the classic signature of OTP SMS not arriving — the exact
     // failure this project has hit before (see the OTP non-delivery memory). Worth
     // being able to watch as a rate, not just as support tickets.
     captureEvent('otp_resend_tapped', { flow });
     setResending(true);
+    resendInFlight.current = true;
     try {
       const res = await Instance.post('/api/users/mobile-otp-request', {
         phoneNumber,
@@ -192,6 +199,7 @@ const VerifyOtp = ({navigation, route}) => {
       if (data?.retryAfterSeconds) setTimer(data.retryAfterSeconds);
       showAlert(t('common.error'), data?.message || t('otp.couldNotResendRetry'), 'error');
     } finally {
+      resendInFlight.current = false;
       setResending(false);
     }
   };
