@@ -5698,11 +5698,14 @@ Sentry issue created / regressed (production, error|fatal)
 
 ### Setup state (2026-09-19)
 - [x] routine created, `sentry-alert` label created, relay + workflow committed
-- [ ] VPS `.env`: `SENTRY_WEBHOOK_SECRET`, `GITHUB_ALERT_TOKEN` (fine-grained, this repo,
-      Issues read+write only), `SENTRY_AUTH_TOKEN` (read-only; also fixes admin App Health)
-- [ ] Sentry → Settings → Custom Integrations → Internal Integration, Webhook URL
+- [x] VPS `.env`: `SENTRY_WEBHOOK_SECRET`, `SENTRY_AUTH_TOKEN` (read-only), `GITHUB_ALERT_TOKEN`
+      (fine-grained, this repo, Issues read+write only; GitHub secret name `ALERT_GITHUB_TOKEN`
+      because secret names can't start with GITHUB_). Written by **`set-backend-env.yml`**
+      (manual): it copies an allowlist of keys from GitHub secrets into the root-owned VPS
+      `.env`, backs it up and restarts. The local `deploy` SSH user CANNOT write that file.
+- [x] Sentry → Settings → Custom Integrations → Internal Integration, Webhook URL
       `https://backend.astrowani.com/api/sentry/webhook`, "issue" webhook on; its Client
       Secret = `SENTRY_WEBHOOK_SECRET`
-- [ ] GitHub secrets `HOTUPDATER_ENV_CUSTOMER` / `HOTUPDATER_ENV_VENDOR` (= each app's
+- [x] GitHub secrets `HOTUPDATER_ENV_CUSTOMER` / `HOTUPDATER_ENV_VENDOR` (= each app's
       `.env.hotupdater`), then one `workflow_dispatch` dry run per app
 - [ ] Owner: GitHub mobile app with notifications on for this repo

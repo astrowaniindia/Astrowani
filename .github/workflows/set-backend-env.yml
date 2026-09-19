@@ -1,0 +1,48 @@
+# Copies a FIXED allowlist of keys from GitHub secrets into the VPS backend .env and
+# restarts the backend. Manual only. The backend .env is root-owned and only the
+# deploy workflows' SSH key can write it, so this is how new keys reach the server
+# without anyone pasting them into a chat or a terminal.
+#
+# To add a key: add its GitHub secret, then add it to KEYS below and to `env:`.
+# Secret names cannot start with GITHUB_, so GITHUB_ALERT_TOKEN is stored as
+# ALERT_GITHUB_TOKEN and renamed on the way in.
+name: Set backend env keys
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  set-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write keys and restart
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SENTRY_WEBHOOK_SECRET: ${{ secrets.SENTRY_WEBHOOK_SECRET }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          GITHUB_ALERT_TOKEN: ${{ secrets.ALERT_GITHUB_TOKEN }}
+        run: |
+          set -e
+          KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN"
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/k && chmod 600 ~/.ssh/k
+          : > /tmp/newkeys
+          for k in $KEYS; do
+            v="${!k}"
+            [ -n "$v" ] || { echo "::error::secret for $k is empty"; exit 1; }
+            printf '%s=%s\n' "$k" "$v" >> /tmp/newkeys
+          done
+          ssh -i ~/.ssh/k -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$VPS_USER@$VPS_HOST" "
+            set -e
+            cd /var/www/astrowani-monorepo/astrowani-backend
+            cp .env .env.bak-\$(date +%Y%m%d%H%M%S)
+            grep -vE '^($(echo $KEYS | tr ' ' '|'))=' .env > .env.tmp || true
+            [ -z \"\$(tail -c1 .env.tmp)\" ] || echo >> .env.tmp
+            cat >> .env.tmp
+            chmod --reference=.env .env.tmp && mv .env.tmp .env
+            grep -oE '^($(echo $KEYS | tr ' ' '|'))=' .env
+            pm2 restart astrowani-backend --update-env > /dev/null && echo restarted
+          " < /tmp/newkeys
+          rm -f /tmp/newkeys ~/.ssh/k
