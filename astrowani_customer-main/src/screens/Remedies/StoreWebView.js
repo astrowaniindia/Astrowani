@@ -1,3 +1,4 @@
+import openExternalUrl from '../../utils/openExternalUrl';
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -207,14 +208,14 @@ export default function StoreWebView({route}) {
           style={styles.primaryBtn}
           onPress={() => {
             captureEvent('store_webview_fallback_tapped', { action: WebView ? 'retry' : 'open_external' });
-            return WebView ? retry() : Linking.openURL(STORE_URL);
+            return WebView ? retry() : openExternalUrl(STORE_URL);
           }}>
           <Text style={styles.primaryBtnTxt}>
             {WebView ? t('store.retry') : t('store.openInBrowser')}
           </Text>
         </TouchableOpacity>
         {!!WebView && (
-          <TouchableOpacity style={styles.linkBtn} onPress={() => { captureEvent('store_webview_fallback_tapped', { action: 'open_external' }); Linking.openURL(STORE_URL); }}>
+          <TouchableOpacity style={styles.linkBtn} onPress={() => { captureEvent('store_webview_fallback_tapped', { action: 'open_external' }); openExternalUrl(STORE_URL); }}>
             <Text style={styles.linkBtnTxt}>{t('store.openInBrowser')}</Text>
           </TouchableOpacity>
         )}

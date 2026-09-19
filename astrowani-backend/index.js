@@ -2315,6 +2315,19 @@ function toProfile(row, decoded = {}) {
   };
 }
 
+// jwt.verify throws these for a token that is expired, tampered with, or signed with
+// an old secret. That is the customer's session ending, not a server fault: answer
+// 401 so the app's session interceptor sends them back to Login. These used to fall
+// into the generic catch and come back as 500 -- which the app does not treat as
+// "log in again", so the profile screen just broke -- and every one was reported to
+// Sentry as a backend error (ASTROWANI-BACKEND-6 / -8).
+function isAuthTokenError(err) {
+  return !!err && (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError' || err.name === 'NotBeforeError');
+}
+function sendSessionExpired(res) {
+  return res.status(401).json({ success: false, code: 'SESSION_EXPIRED', message: 'Your session has expired. Please log in again.' });
+}
+
 // Resolves the customer row for the request's JWT (by phone, then UUID).
 async function getCustomerRowFromReq(req) {
   const authHeader = req.headers.authorization;
@@ -2367,6 +2380,7 @@ app.get('/api/users/profile', async (req, res) => {
 
     return res.status(200).json({ success: true, data: toProfile(row, decoded) });
   } catch (err) {
+    if (isAuthTokenError(err)) return sendSessionExpired(res);
     noteReadFailure('profile-get', err);
     return res.status(500).json({ success: false, message: 'Failed to fetch profile' });
   }
@@ -2412,6 +2426,7 @@ app.put('/api/users/profile', async (req, res) => {
     if (error) throw error;
     return res.status(200).json({ success: true, data: toProfile(data, decoded) });
   } catch (err) {
+    if (isAuthTokenError(err)) return sendSessionExpired(res);
     console.error('PUT /api/users/profile error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update profile' });
   }

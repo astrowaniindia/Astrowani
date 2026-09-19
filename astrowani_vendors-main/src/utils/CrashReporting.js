@@ -10,5 +10,10 @@ export function initCrashReporting() {
   Sentry.init({
     dsn: 'https://9b8ce1cc55ee633fee9640c5a8323bf9@o4511853415301120.ingest.us.sentry.io/4511853433323520',
     tracesSampleRate: 0,
+    // Debug builds (the emulator over Metro) do not report. They were ~75% of all
+    // issues in the customer project -- ReferenceErrors from half-saved files during
+    // editing, tagged environment=development -- which buried the handful of real
+    // customer crashes. Release builds, including every OTA bundle, still report.
+    enabled: !__DEV__,
   });
 }

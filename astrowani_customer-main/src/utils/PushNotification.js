@@ -1,7 +1,7 @@
 
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, PermissionsAndroid } from 'react-native';
+import { Platform, PermissionsAndroid, AppState } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import Instance from '../api/ApiCall';
 import { navigate, navigationRef } from './NavigationService';
@@ -75,7 +75,38 @@ async function syncTokenWithBackend(token) {
   }
 }
 
-export async function requestUserPermission() {
+// Called from App.js's startup, which AWAITS it before leaving the splash screen --
+// so this must never throw. It used to: PermissionsAndroid.request rejects with
+// "Tried to use permissions API while not attached to an Activity" when it runs
+// before MainActivity is attached, or while the app is in the background (a cold
+// start from a push, or the customer switching away during the splash). Sentry
+// REACT-NATIVE-W, build 42, two customers. That rejection propagated into App.js's
+// bootstrap, so setIsLoading(false) never ran and the app could sit on the splash.
+//
+// Now: never throws, and if Android refused because there was no Activity, it asks
+// once more the next time the app is in the foreground.
+let permissionRetryArmed = false;
+
+function retryPermissionWhenActive() {
+  if (permissionRetryArmed) return;
+  permissionRetryArmed = true;
+  const retry = () => {
+    permissionRetryArmed = false;
+    askNotificationPermission().catch(() => {});
+  };
+  if (AppState.currentState === 'active') {
+    // Already foregrounded: the Activity was simply not attached yet.
+    setTimeout(retry, 1500);
+    return;
+  }
+  const sub = AppState.addEventListener('change', (state) => {
+    if (state !== 'active') return;
+    sub.remove();
+    retry();
+  });
+}
+
+async function askNotificationPermission() {
   if (Platform.OS == 'android' && Platform.Version >= 33) {
     const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
     if (granted == PermissionsAndroid.RESULTS.GRANTED) {
@@ -86,12 +117,26 @@ export async function requestUserPermission() {
   } else {
     const authStatus = await messaging().requestPermission();
     const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-    // await messaging().registerDeviceForRemoteMessages();
     if (enabled) {
       console.log('Authorization status:', authStatus);
-      // await messaging().registerDeviceForRemoteMessages();
       getFCMToken()
     }
+  }
+}
+
+export async function requestUserPermission() {
+  const isAndroidPrompt = Platform.OS == 'android' && Platform.Version >= 33;
+  // A permission dialog needs a foreground Activity. Don't even try from the
+  // background -- wait for the customer to come back.
+  if (isAndroidPrompt && (AppState.currentState === 'background' || AppState.currentState === 'inactive')) {
+    retryPermissionWhenActive();
+    return;
+  }
+  try {
+    await askNotificationPermission();
+  } catch (e) {
+    console.log('Notification permission request failed; will retry when active:', e?.message);
+    if (isAndroidPrompt) retryPermissionWhenActive();
   }
 }
 const getFCMToken = async () => {

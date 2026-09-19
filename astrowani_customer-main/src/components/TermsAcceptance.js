@@ -5,8 +5,9 @@
 // on the row toggles acceptance. Wrapping the whole row in one Touchable would
 // make it impossible to read the terms without also accepting them, which is the
 // one thing a consent control must not do.
+import openExternalUrl from '../utils/openExternalUrl';
 import React from 'react';
-import {View, Text, StyleSheet, TouchableOpacity, Linking} from 'react-native';
+import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
@@ -20,7 +21,7 @@ export default function TermsAcceptance({accepted, onChange, style}) {
   const open = (url, which) => {
     captureEvent('legal_link_opened', {link: which, screen: 'signup'});
     // Never let a dead or malformed URL crash the sign-up screen.
-    Linking.openURL(url).catch(() => {});
+    openExternalUrl(url);
   };
 
   return (

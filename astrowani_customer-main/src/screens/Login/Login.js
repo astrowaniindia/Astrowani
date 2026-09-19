@@ -1,3 +1,4 @@
+import openExternalUrl from '../../utils/openExternalUrl';
 import React, {useState, useEffect} from 'react';
 import {
   StyleSheet,
@@ -12,7 +13,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Linking,
 } from 'react-native';
 import {LEGAL_LINKS} from '../../config/legal';
 import {COLORS} from '../../Theme/Colors';
@@ -212,7 +212,7 @@ const Login = ({navigation}) => {
               style={styles.termsLink}
               onPress={() => {
                 captureEvent('legal_link_opened', { link: 'terms', screen: 'login' });
-                Linking.openURL(LEGAL_LINKS.termsOfUse).catch(() => {});
+                openExternalUrl(LEGAL_LINKS.termsOfUse);
               }}>
               <Text style={styles.linktext}>{t('settings.termsOfUse')}</Text>
             </TouchableOpacity>
@@ -221,7 +221,7 @@ const Login = ({navigation}) => {
               style={styles.termsLink}
               onPress={() => {
                 captureEvent('legal_link_opened', { link: 'privacy', screen: 'login' });
-                Linking.openURL(LEGAL_LINKS.privacyPolicy).catch(() => {});
+                openExternalUrl(LEGAL_LINKS.privacyPolicy);
               }}>
               <Text style={styles.linktext}>{t('settings.privacyPolicy')}</Text>
             </TouchableOpacity>

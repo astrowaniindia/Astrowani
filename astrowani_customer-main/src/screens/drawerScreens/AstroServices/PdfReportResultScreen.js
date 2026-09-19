@@ -1,5 +1,6 @@
+import openExternalUrl from '../../../utils/openExternalUrl';
 import React from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, Linking} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import {COLORS} from '../../../Theme/Colors';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -23,7 +24,7 @@ export default function PdfReportResultScreen({route, navigation}) {
         <TouchableOpacity
           style={styles.button}
           disabled={!data?.pdfUrl}
-          onPress={() => data?.pdfUrl && Linking.openURL(data.pdfUrl)}>
+          onPress={() => data?.pdfUrl && openExternalUrl(data.pdfUrl)}>
           <Text style={styles.buttonText}>{t('result.viewReport')}</Text>
         </TouchableOpacity>
       </View>

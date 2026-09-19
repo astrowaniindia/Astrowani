@@ -1,3 +1,4 @@
+import openExternalUrl from '../../utils/openExternalUrl';
 import React, {useState} from 'react';
 import {
   View,
@@ -7,7 +8,6 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Linking,
   ActivityIndicator,
 } from 'react-native';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -160,7 +160,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity> */}
 
         <TouchableOpacity
-          onPress={() => { captureEvent('legal_link_opened', {link: 'refund_cancellation', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.refundCancellation); }}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'refund_cancellation', screen: 'settings'}); openExternalUrl(LEGAL_LINKS.refundCancellation); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -175,7 +175,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => { captureEvent('legal_link_opened', {link: 'privacy', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.privacyPolicy); }}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'privacy', screen: 'settings'}); openExternalUrl(LEGAL_LINKS.privacyPolicy); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -190,7 +190,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => { captureEvent('legal_link_opened', {link: 'terms', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.termsOfUse); }}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'terms', screen: 'settings'}); openExternalUrl(LEGAL_LINKS.termsOfUse); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -205,7 +205,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => { captureEvent('legal_link_opened', {link: 'child_safety', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.childSafety); }}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'child_safety', screen: 'settings'}); openExternalUrl(LEGAL_LINKS.childSafety); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -220,7 +220,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => { captureEvent('legal_link_opened', {link: 'safety_guidelines', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.safetyGuidelines); }}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'safety_guidelines', screen: 'settings'}); openExternalUrl(LEGAL_LINKS.safetyGuidelines); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
@@ -235,7 +235,7 @@ export default function Settings({navigation}) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => { captureEvent('legal_link_opened', {link: 'report_vulnerability', screen: 'settings'}); Linking.openURL(LEGAL_LINKS.reportVulnerability); }}
+          onPress={() => { captureEvent('legal_link_opened', {link: 'report_vulnerability', screen: 'settings'}); openExternalUrl(LEGAL_LINKS.reportVulnerability); }}
           style={styles.item}>
           <View style={styles.itemContent}>
             <Icon
