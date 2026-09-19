@@ -11,6 +11,7 @@ import { useCart } from '../../context/CartContext';
 import { checkout, verifyOrderPayment } from '../../api/OrdersApi';
 import useWalletBalance, { refreshWalletBalance } from '../../hooks/useWalletBalance';
 import BillSummary from '../../components/shop/BillSummary';
+import { describeRazorpayError } from '../../utils/razorpayError';
 import { showStatusPopup } from '../../components/StatusPopup';
 import { captureEvent } from '../../utils/Analytics';
 import { razorpayPrefill } from '../../utils/customerIdentity';
@@ -182,21 +183,23 @@ const PaymentScreen = ({ navigation, route }) => {
         // Both mean the cart changed under us between quote and pay. Send them back so
         // the cart can re-quote and show which line is the problem.
         showStatusPopup({
-          variant: 'missed',
+          variant: 'error',
           title: t('checkout.cannotComplete'),
           message: err.message,
           confirmText: t('cart.backToCart'),
           onConfirm: () => navigation.goBack(),
         });
       } else if (err.code === 'COD_COMING_SOON') {
-        showStatusPopup({ variant: 'missed', title: t('checkout.comingSoon'), message: err.message });
-      } else if (err?.code === 'Razorpay' || /cancel/i.test(err?.message || '')) {
-        // RazorpayCheckout.open rejects when the customer closes the sheet. That's not an
-        // error worth a scary popup — the order stays 'pending_payment' and is never shown
-        // in their history.
+        showStatusPopup({ variant: 'info', title: t('checkout.comingSoon'), message: err.message });
+      } else if (err?.code === 'Razorpay' || describeRazorpayError(err).cancelled) {
+        // Razorpay rejects with {code: 2, description} when the sheet is closed — there is
+        // no .message, which is why the old /cancel/ test on err.message never matched and
+        // a back-press showed "Payment Failed". Nothing was charged; the order stays
+        // 'pending_payment' and never appears in their history.
+        showStatusPopup({ variant: 'cancelled', title: t('payment.cancelledTitle'), message: t('payment.cancelledMsg') });
       } else {
         showStatusPopup({
-          variant: 'missed',
+          variant: 'error',
           title: t('checkout.paymentFailed'),
           message: err.message || t('checkout.failed'),
         });

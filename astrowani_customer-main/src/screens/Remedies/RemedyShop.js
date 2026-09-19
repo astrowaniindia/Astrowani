@@ -97,7 +97,7 @@ const RemedyShop = ({ route, navigation }) => {
 
   const showNotDeliveringYet = useCallback((item) => {
     showStatusPopup({
-      variant: 'missed',
+      variant: 'delivery',
       title: gate.popupTitle,
       message: gate.messageFor(localized(item, 'title') || item?.title),
     });

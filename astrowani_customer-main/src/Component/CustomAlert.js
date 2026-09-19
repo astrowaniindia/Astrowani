@@ -3,6 +3,20 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, Dimensions, DeviceEven
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../Theme/Colors';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
+import { isGenericTitle, alertTone } from '../utils/alertTone';
+import { translate } from '../context/LanguageContext';
+
+// One look per tone. Nothing is bright red: a real failure is a soft amber
+// warning, and a cancellation is a neutral "closed" mark — see utils/alertTone.
+const TONES = {
+  success:     { icon: 'checkmark-circle',          color: '#2E8B57', tint: '#e8f5ec' },
+  cancelled:   { icon: 'close-circle-outline',      color: '#7d6b64', tint: '#f3eeec' },
+  network:     { icon: 'cloud-offline-outline',     color: '#6B1F2A', tint: '#f6ecec' },
+  permission:  { icon: 'lock-closed-outline',       color: '#6B1F2A', tint: '#f6ecec' },
+  unavailable: { icon: 'time-outline',              color: '#B8860B', tint: '#fbf3dc' },
+  warning:     { icon: 'alert-circle-outline',      color: '#D9822B', tint: '#fdf1e5' },
+  info:        { icon: 'information-circle-outline', color: '#6B1F2A', tint: '#f6ecec' },
+};
 
 const { width } = Dimensions.get('window');
 
@@ -11,7 +25,7 @@ const CustomAlert = () => {
   const [config, setConfig] = useState({
     title: '',
     message: '',
-    type: 'success', // 'success' or 'error'
+    type: 'info', // see TONES / utils/alertTone
     buttonText: 'OK',
     onClose: null,
   });
@@ -21,7 +35,11 @@ const CustomAlert = () => {
       setConfig({
         title: params.title || '',
         message: params.message || '',
-        type: params.type || 'success',
+        // Callers that pass 'error' mean "not a success" — let the words decide how
+        // it looks, so "please enter your number" is a notice, not a failure.
+        type: params.type === 'error'
+          ? (t => (t === 'success' ? 'warning' : t))(alertTone(params.title, params.message))
+          : (params.type || 'info'),
         buttonText: params.buttonText || 'OK',
         onClose: params.onClose || null,
       });
@@ -46,7 +64,11 @@ const CustomAlert = () => {
   const ready = useDeferredPresent(visible);
   useModalPresence(ready);
 
-  const isSuccess = config.type === 'success';
+  const tone = TONES[config.type] || TONES[config.type === 'error' ? 'warning' : 'info'];
+  // "Error" as a title tells the customer nothing and reads like a crash.
+  const title = isGenericTitle(config.title)
+    ? translate(config.type === 'warning' || config.type === 'error' ? 'common.somethingWrongTitle' : 'common.pleaseNoteTitle')
+    : config.title;
 
   return (
     <Modal
@@ -57,15 +79,11 @@ const CustomAlert = () => {
     >
       <View style={styles.overlay}>
         <View style={styles.alertContainer}>
-          <View style={[styles.iconContainer, { backgroundColor: isSuccess ? '#e8f5e9' : '#ffebee' }]}>
-            <Icon 
-              name={isSuccess ? 'checkmark-circle' : 'alert-circle'} 
-              size={50} 
-              color={isSuccess ? '#4CAF50' : '#f44336'} 
-            />
+          <View style={[styles.iconContainer, { backgroundColor: tone.tint }]}>
+            <Icon name={tone.icon} size={50} color={tone.color} />
           </View>
-          
-          <Text style={styles.title}>{config.title}</Text>
+
+          <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{config.message}</Text>
           
           <TouchableOpacity 

@@ -56,13 +56,13 @@ const AddReview = ({ route, navigation }) => {
       if (err?.response?.status === 403) {
         // Not an error — they just haven't consulted this astrologer yet.
         showStatusPopup({
-          variant: 'info',
+          variant: 'review',
           title: t('addReview.notEligibleTitle'),
           message: t('addReview.notEligibleMsg', { name: person?.name || '' }),
         });
         return;
       }
-      showStatusPopup({ variant: 'info', title: t('addReview.couldNotSubmitTitle'), message: t('addReview.failedSubmit') });
+      showStatusPopup({ variant: 'error', title: t('addReview.couldNotSubmitTitle'), message: t('addReview.failedSubmit') });
     } finally {
       setLoading(false);
     }

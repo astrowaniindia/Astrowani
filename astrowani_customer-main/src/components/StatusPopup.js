@@ -69,10 +69,16 @@ const VARIANTS = {
   busy:   { icon: 'schedule',     color: COLORS.AstroGold, tint: 'rgba(212,160,23,0.15)' },
   info:   { icon: 'info-outline', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
   success:{ icon: 'check-circle', color: '#1a8f4c', tint: 'rgba(26,143,76,0.12)' },
-  insufficient: { icon: 'account-balance-wallet', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
+  insufficient: { icon: 'account-balance-wallet', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
   confirmPay:   { icon: 'payments', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
   endCall:      { icon: 'call-end', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
-  error:        { icon: 'error-outline', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
+  // Soft amber, not red: a failed action is something to retry, not an alarm.
+  error:        { icon: 'error-outline', color: '#D9822B', tint: 'rgba(217,130,43,0.14)' },
+  // Customer backed out of a payment. Neutral — nothing went wrong.
+  cancelled:    { icon: 'cancel', color: '#7d6b64', tint: 'rgba(125,107,100,0.14)' },
+  // A review that can't be posted yet.
+  delivery:     { icon: 'local-shipping', color: COLORS.AstroMaroon, tint: 'rgba(107,31,42,0.12)' },
+  review:       { icon: 'rate-review', color: COLORS.AstroGold, tint: 'rgba(212,160,23,0.15)' },
 };
 
 // The secondary action in the three-button layout (e.g. "Invite a friend").

@@ -88,14 +88,14 @@ export function ReviewPromptHost() {
         // Not eligible yet is not a failure — say so kindly and close.
         close();
         showStatusPopup({
-          variant: 'info',
+          variant: 'review',
           title: translate('addReview.notEligibleTitle'),
           message: translate('addReview.notEligibleMsg', { name: target?.name || '' }),
         });
         return;
       }
       showStatusPopup({
-        variant: 'info',
+        variant: 'error',
         title: translate('addReview.couldNotSubmitTitle'),
         message: translate('addReview.failedSubmit'),
       });

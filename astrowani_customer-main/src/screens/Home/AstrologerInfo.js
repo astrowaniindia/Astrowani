@@ -578,7 +578,7 @@ const AstrologerInfo = ({route, navigation}) => {
       if (res?.data && res.data.eligible === false) {
         captureEvent('review_not_eligible', {astrologer_id: person._id, source: 'profile'});
         showStatusPopup({
-          variant: 'info',
+          variant: 'review',
           title: t('addReview.notEligibleTitle'),
           message: t('addReview.notEligibleMsg', {name: person?.name || ''}),
         });

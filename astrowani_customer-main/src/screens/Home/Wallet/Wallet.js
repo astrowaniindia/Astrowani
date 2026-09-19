@@ -16,6 +16,7 @@ import {
 import RazorpayCheckout from 'react-native-razorpay';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
 import { describeRazorpayError } from '../../../utils/razorpayError';
+import { showStatusPopup } from '../../../components/StatusPopup';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -159,11 +160,15 @@ const Wallet = ({navigation, route}) => {
       // nothing is correct: nothing was charged, and the customer knows they
       // pressed back. A red "Payment Failed" there reads as though their money is
       // in limbo.
-      if (!rzp.cancelled) {
-        Alert.alert(
-          t('wallet.paymentFailed'),
-          apiMessage || rzp.message || (rzp.network ? t('wallet.networkError') : t('wallet.tryAgain')),
-        );
+      if (rzp.cancelled && !apiMessage) {
+        // Backed out of the checkout — a calm "cancelled" note, never a failure.
+        showStatusPopup({ variant: 'cancelled', title: t('payment.cancelledTitle'), message: t('payment.cancelledMsg') });
+      } else {
+        showStatusPopup({
+          variant: 'error',
+          title: t('wallet.paymentFailed'),
+          message: apiMessage || rzp.message || (rzp.network ? t('wallet.networkError') : t('wallet.tryAgain')),
+        });
       }
     } finally {
       setProcessing(false);

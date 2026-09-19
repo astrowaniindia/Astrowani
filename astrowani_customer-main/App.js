@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import IntroSplash from './src/screens/Splash/IntroSplash';
 import { requestUserPermission } from './src/utils/PushNotification';
 import CustomAlert, { showAlert } from './src/Component/CustomAlert';
+import { alertTone } from './src/utils/alertTone';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { LanguageProvider } from './src/context/LanguageContext';
@@ -20,11 +21,7 @@ import { prefetchFreeCallOffer } from './src/api/FreeCallApi';
 const originalAlert = Alert.alert;
 Alert.alert = (title, message, buttons, options) => {
   if (!buttons || buttons.length === 0 || (buttons.length === 1 && buttons[0].style !== 'cancel')) {
-    const type = (title && (
-      title.toLowerCase().includes('success') || 
-      title.toLowerCase().includes('copied') || 
-      title.toLowerCase().includes('booking')
-    )) ? 'success' : 'error';
+    const type = alertTone(title, message);
     const onClose = (buttons && buttons[0]?.onPress) ? buttons[0].onPress : undefined;
     const buttonText = (buttons && buttons[0]?.text) ? buttons[0].text : 'OK';
     

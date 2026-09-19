@@ -47,9 +47,13 @@ function readableReason(raw) {
  */
 export function describeRazorpayError(error) {
   const code = error?.code;
+  // The words can hide inside Razorpay's JSON envelope — e.g. a UPI app backed out of
+  // arrives as reason "payment_cancelled" or "declined by the user", not as code 2.
+  const blob = [error?.description, error?.reason, error?.message, error?.error?.reason]
+    .filter(Boolean).map(String).join(' ');
   const cancelled =
     CANCEL_CODES.has(code) ||
-    /cancel/i.test(String(error?.description || error?.reason || error?.message || ''));
+    /cancel|declined by (the )?user|user (closed|dismissed|aborted)/i.test(blob);
   const network = NETWORK_CODES.has(code);
 
   return {

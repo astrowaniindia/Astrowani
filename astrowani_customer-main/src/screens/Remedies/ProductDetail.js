@@ -79,7 +79,7 @@ const ProductDetail = ({ route, navigation }) => {
     if (!gate.enabled) {
       captureEvent('remedy_blocked_category_tapped', { item_id: item._id, remedy_type: type });
       showStatusPopup({
-        variant: 'missed',
+        variant: 'delivery',
         title: gate.popupTitle,
         message: gate.messageFor(title || item.title),
       });
