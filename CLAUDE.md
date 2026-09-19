@@ -5709,3 +5709,20 @@ Sentry issue created / regressed (production, error|fatal)
 - [x] GitHub secrets `HOTUPDATER_ENV_CUSTOMER` / `HOTUPDATER_ENV_VENDOR` (= each app's
       `.env.hotupdater`), then one `workflow_dispatch` dry run per app
 - [ ] Owner: GitHub mobile app with notifications on for this repo
+
+### Two things to know before touching this pipeline
+
+- **THE REPO IS PUBLIC** (checked 2026-09-19). Every `sentry-alert` issue, routine comment
+  and PR is world-readable, so the relay writes only the error title, culprit, counts,
+  release and a Sentry link (login needed); the routine prompt forbids posting breadcrumbs,
+  ids, phone numbers, URLs with ids or tokens. Do not "improve" the issue body with stack
+  traces or breadcrumbs. Same reason: `android/gradle.properties` in both apps is tracked
+  and holds the upload-keystore passwords, so they are public (the .keystore files are not).
+- **The routine's Sentry token lives in its prompt** (claude.ai routine settings, not the
+  repo). The first one (`f925…`, from the 08-04 bug-scan setup) is dead since the new
+  "sentry bug fix agent cloud" integration was created; if the routine starts getting 401
+  from Sentry, update the prompt with the integration's current token. Local copies of all
+  three keys: `D:secretssentry.env` (outside the repo).
+- Verified 2026-09-19: unsigned POST -> 401 "Bad signature"; signed test for REACT-NATIVE-Y
+  created issue #19 and started the routine within seconds; OTA dry run (customer) built
+  both bundles on the runner (7.7 MB each).
