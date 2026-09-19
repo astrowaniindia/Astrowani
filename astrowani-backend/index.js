@@ -5415,6 +5415,17 @@ app.put('/api/vendor/profile', async (req, res) => {
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
 
+    if ('email' in body) {
+      if (!isValidEmail(body.email)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_EMAIL',
+          message: 'Please enter a valid email address, like name@example.com',
+        });
+      }
+      body.email = body.email.trim().toLowerCase();
+    }
+
     // Charges can only be self-set ONCE — after that, only the admin dashboard
     // (PATCH /api/admin/astrologers/:id, unaffected by this lock) or an explicit
     // admin unlock (POST /api/admin/astrologers/:id/unlock-charges) can change
@@ -5522,6 +5533,14 @@ app.get('/api/vendor/wallet', async (req, res) => {
 // Deliberately the exact set the Registration form collects and nothing more —
 // every other column is either server-owned (see buildVendorRegistrationRow) or
 // admin-owned.
+// One email rule for every astrologer write path. Same regex as
+// astrologerProfileComplete(): if a value passes here it counts as complete there,
+// so an email the server accepted can never silently hide an approved astrologer.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(v) {
+  return typeof v === 'string' && EMAIL_RE.test(v.trim());
+}
+
 const VENDOR_REG_TEXT_FIELDS = ['first_name', 'last_name', 'email', 'gender', 'fcm_token'];
 const VENDOR_REG_ARRAY_FIELDS = ['languages', 'specialties'];
 
@@ -5549,6 +5568,10 @@ function buildVendorRegistrationRow(body, verifiedPhone) {
     if (typeof value !== 'string') continue;
     const trimmed = value.trim();
     if (trimmed) row[key] = trimmed.slice(0, 300);
+  }
+  if (row.email !== undefined) {
+    if (isValidEmail(row.email)) row.email = row.email.toLowerCase();
+    else delete row.email;
   }
 
   for (const key of VENDOR_REG_ARRAY_FIELDS) {

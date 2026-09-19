@@ -153,6 +153,10 @@ export default function EditProfile() {
 
   //update
   const updateData = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || '').trim())) {
+      Alert.alert(t('common.error'), t('common.invalidEmail'));
+      return;
+    }
     setLoading(true);
     try {
       const astroId = await AsyncStorage.getItem('astroId');
@@ -189,7 +193,7 @@ export default function EditProfile() {
         {
           first_name: firstName,
           last_name: lastName,
-          email: email,
+          email: email.trim().toLowerCase(),
           phone_number: phone,
           gender: gender,
           experience: parseInt(experience) || 0,
@@ -221,7 +225,10 @@ export default function EditProfile() {
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert(t('common.error'), t('editProfile.updateFailed'));
+      Alert.alert(
+        t('common.error'),
+        error?.response?.data?.code === 'INVALID_EMAIL' ? t('common.invalidEmail') : t('editProfile.updateFailed'),
+      );
     } finally {
       setLoading(false);
     }

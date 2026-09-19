@@ -781,8 +781,8 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/astrologers', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('astrologers')
-      .select('id, first_name, last_name, email, phone_number, experience, specialties, ' +
-        'languages, profile_pic_url, bio, ' +
+      .select('id, first_name, last_name, email, phone_number, gender, experience, specialties, ' +
+        'languages, profile_pic_url, bio, created_at, hidden_from_customers, ' +
         'approval_status, is_suspended, is_available, is_chat_enabled, is_call_enabled, ' +
         'is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, ' +
         'video_charge_per_minute, charges_locked_at, wallet_balance, today_earnings, total_earnings, admin_notes, badge, allow_reviews_without_session')
@@ -799,9 +799,16 @@ module.exports = function registerAdminRoutes(app) {
       'is_call_enabled', 'is_video_call_enabled', 'chat_charge_per_minute',
       'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes',
       'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages', 'badge',
-      'hidden_from_customers', 'allow_reviews_without_session'];
+      'hidden_from_customers', 'allow_reviews_without_session', 'email', 'gender'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+    if ('email' in body) {
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ success: false, message: 'That email address is not valid (it must look like name@example.com)' });
+      }
+      body.email = email;
+    }
     if ('badge' in body && body.badge !== null && !['verified', 'celebrity', 'top_rated'].includes(body.badge)) {
       return res.status(400).json({ success: false, message: 'badge must be verified, celebrity, top_rated, or null' });
     }

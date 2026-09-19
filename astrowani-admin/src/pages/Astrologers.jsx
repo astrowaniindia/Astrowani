@@ -20,6 +20,33 @@ function AstroBadge({ badge }) {
 
 const PAGE_SIZE = 18;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Mirrors astrologerVisibleToCustomers() + astrologerProfileComplete() in the
+// backend's index.js. An approved astrologer missing any of these is still hidden
+// from customers, so the admin must be able to see WHY before approving.
+function missingForCustomers(r) {
+  const s = (v) => (v == null ? '' : String(v)).trim();
+  const missing = [];
+  if (!s(r.first_name)) missing.push('name');
+  if (!EMAIL_RE.test(s(r.email))) missing.push(s(r.email) ? 'valid email' : 'email');
+  if (!s(r.gender)) missing.push('gender');
+  if (!(Number(r.experience) > 0)) missing.push('experience');
+  if (!s(r.profile_pic_url)) missing.push('profile photo');
+  const langs = Array.isArray(r.languages) ? r.languages : (s(r.languages) ? [r.languages] : []);
+  if (langs.length === 0) missing.push('language');
+  if (!(Number(r.chat_charge_per_minute) > 0 || Number(r.call_charge_per_minute) > 0 || Number(r.video_charge_per_minute) > 0)) {
+    missing.push('per-minute rates');
+  }
+  return missing;
+}
+
+function fmtDate(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 const BLANK_ASTROLOGER = {
   first_name: '', last_name: '', phone_number: '', email: '', gender: '',
   experience: '', languages: '', bio: '', profile_pic_url: '', specialties: [],
@@ -41,6 +68,7 @@ export default function Astrologers() {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [viewing, setViewing] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -107,6 +135,8 @@ export default function Astrologers() {
         admin_notes: editing.admin_notes,
         first_name: editing.first_name,
         last_name: editing.last_name,
+        email: (editing.email || '').trim(),
+        ...(editing.gender ? { gender: editing.gender } : {}),
         experience: Number(editing.experience) || 0,
         languages: (editing.languages || '').split(',').map((s) => s.trim()).filter(Boolean),
         bio: editing.bio || '',
@@ -175,6 +205,15 @@ export default function Astrologers() {
   };
 
   const name = (r) => `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Astrologer';
+  // specialties are stored as category ids; show their names.
+  const catName = useMemo(() => {
+    const m = {};
+    categories.forEach((c) => { m[c.id] = c.name; });
+    return m;
+  }, [categories]);
+  const specialtyNames = (r) => (Array.isArray(r.specialties) ? r.specialties : [])
+    .map((id) => catName[id])
+    .filter(Boolean);
   const set = (k, v) => setEditing((p) => ({ ...p, [k]: v }));
   const setNew = (k, v) => setCreating((p) => ({ ...p, [k]: v }));
   const openEdit = (r) => setEditing({
@@ -301,11 +340,14 @@ export default function Astrologers() {
                   </div>
                   <div className="astro-card-info">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                      <div className="astro-card-name">{name(r)}</div>
+                      <div className="astro-card-name" style={{ cursor: 'pointer' }} onClick={() => setViewing(r)}>{name(r)}</div>
                       <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                       {r.phone_number || 'No phone'} • {r.experience ? `${r.experience} yrs` : 'New'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, wordBreak: 'break-all' }}>
+                      {r.email || 'No email'}
                     </div>
                     {r.badge && (
                       <div style={{ marginTop: 4 }}>
@@ -317,14 +359,25 @@ export default function Astrologers() {
 
                 {/* Specialties */}
                 <div className="astro-card-specialties">
-                  {Array.isArray(r.specialties) && r.specialties.length > 0 ? (
-                    r.specialties.slice(0, 3).map((sp, i) => (
-                      <span key={i} className="specialty-tag">{sp}</span>
-                    ))
+                  {specialtyNames(r).length > 0 ? (
+                    <>
+                      {specialtyNames(r).slice(0, 3).map((sp, i) => (
+                        <span key={i} className="specialty-tag">{sp}</span>
+                      ))}
+                      {specialtyNames(r).length > 3 && (
+                        <span className="specialty-tag">+{specialtyNames(r).length - 3} more</span>
+                      )}
+                    </>
                   ) : (
-                    <span className="specialty-tag">Vedic Astrology</span>
+                    <span className="specialty-tag">No specialties</span>
                   )}
                 </div>
+
+                {!r.is_suspended && r.approval_status !== 'rejected' && missingForCustomers(r).length > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--crimson)', margin: '8px 0', lineHeight: 1.4 }}>
+                    Customers won't see this astrologer until they add: {missingForCustomers(r).join(', ')}
+                  </div>
+                )}
 
                 {/* Rates Box */}
                 <div className="astro-card-rates">
@@ -370,6 +423,13 @@ export default function Astrologers() {
                       ✓ Approve
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="btn sm secondary"
+                    onClick={() => setViewing(r)}
+                  >
+                    Details
+                  </button>
                   <button
                     type="button"
                     className="btn sm secondary"
@@ -499,6 +559,39 @@ export default function Astrologers() {
               <input type="text" value={editing.last_name || ''} onChange={(e) => set('last_name', e.target.value)} />
             </div>
           </div>
+          <div className="field">
+            <label>Email</label>
+            <input type="email" value={editing.email || ''} placeholder="name@example.com" onChange={(e) => set('email', e.target.value)} />
+            {editing.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editing.email.trim()) && (
+              <div style={{ color: 'var(--danger, #c0392b)', fontSize: 12, marginTop: 4 }}>
+                Not a valid email. Customers will not see this astrologer until it is fixed.
+              </div>
+            )}
+          </div>
+          <div className="two-col">
+            <div className="field">
+              <label>Gender</label>
+              <select value={editing.gender || ''} onChange={(e) => set('gender', e.target.value)}>
+                <option value="">Not set</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Experience (years)</label>
+              <input type="number" value={editing.experience || ''} onChange={(e) => set('experience', e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Languages (comma separated)</label>
+            <input type="text" value={editing.languages || ''} placeholder="Hindi, English" onChange={(e) => set('languages', e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Bio</label>
+            <textarea rows={4} value={editing.bio || ''} onChange={(e) => set('bio', e.target.value)} />
+          </div>
+          <ImageField label="Profile photo" value={editing.profile_pic_url || ''} onChange={(v) => set('profile_pic_url', v)} recommendedWidth={500} recommendedHeight={500} />
           <div className="two-col">
             <div className="field">
               <label>Approval Status</label>
@@ -560,6 +653,62 @@ export default function Astrologers() {
           <div className="modal-actions actions">
             <button className="btn secondary" onClick={() => setEditing(null)}>Cancel</button>
             <button className="btn" disabled={busy} onClick={saveEdit}>Save Changes</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Details Modal: everything the astrologer submitted */}
+      {viewing && (
+        <Modal title={name(viewing)} onClose={() => setViewing(null)}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
+            <div className="astro-card-avatar" style={{ width: 72, height: 72, fontSize: 28 }}>
+              {viewing.profile_pic_url ? (
+                <img src={viewing.profile_pic_url} alt="" style={{ width: '100%', height: '100%', borderRadius: 12, objectFit: 'cover' }} />
+              ) : (
+                (viewing.first_name || 'A').charAt(0).toUpperCase()
+              )}
+            </div>
+            <div>
+              <StatusBadge s={viewing.approval_status} isSuspended={viewing.is_suspended} />
+              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Signed up {fmtDate(viewing.created_at)}</div>
+            </div>
+          </div>
+          {missingForCustomers(viewing).length > 0 ? (
+            <div style={{ background: 'rgba(192,57,43,0.08)', color: 'var(--crimson)', borderRadius: 8, padding: '10px 12px', fontSize: 13, marginBottom: 16 }}>
+              <strong>Hidden from customers</strong> even if approved. Missing: {missingForCustomers(viewing).join(', ')}.
+            </div>
+          ) : (
+            <div style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--emerald)', borderRadius: 8, padding: '10px 12px', fontSize: 13, marginBottom: 16 }}>
+              Profile complete. {viewing.approval_status === 'approved' ? 'Customers can see this astrologer.' : 'Will show to customers once approved.'}
+            </div>
+          )}
+          <table className="table" style={{ width: '100%' }}>
+            <tbody>
+              {[
+                ['Phone', viewing.phone_number || '—'],
+                ['Email', viewing.email || '—'],
+                ['Gender', viewing.gender || '—'],
+                ['Experience', viewing.experience ? `${viewing.experience} years` : '—'],
+                ['Languages', (Array.isArray(viewing.languages) ? viewing.languages.join(', ') : viewing.languages) || '—'],
+                ['Specialties', specialtyNames(viewing).join(', ') || '—'],
+                ['Rates', `Chat ₹${viewing.chat_charge_per_minute || 0}/m · Call ₹${viewing.call_charge_per_minute || 0}/m · Video ₹${viewing.video_charge_per_minute || 0}/m`],
+                ['Rates set', viewing.charges_locked_at ? fmtDate(viewing.charges_locked_at) : 'Not set by astrologer yet'],
+                ['Admin notes', viewing.admin_notes || '—'],
+              ].map(([k, v]) => (
+                <tr key={k}>
+                  <td style={{ fontWeight: 600, width: 130, verticalAlign: 'top' }}>{k}</td>
+                  <td style={{ wordBreak: 'break-word' }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>Bio</label>
+            <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{viewing.bio || 'Not written yet.'}</div>
+          </div>
+          <div className="modal-actions actions">
+            <button className="btn secondary" onClick={() => setViewing(null)}>Close</button>
+            <button className="btn" onClick={() => { const r = viewing; setViewing(null); openEdit(r); }}>Edit</button>
           </div>
         </Modal>
       )}

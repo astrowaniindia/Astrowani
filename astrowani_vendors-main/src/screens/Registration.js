@@ -114,6 +114,12 @@ const Registration = ({ navigation }) => {
       Alert.alert(t('registration.missingInfoTitle'), t('registration.invalidPhone'));
       return;
     }
+    // Must match the backend's rule (index.js isValidEmail): an email that fails it
+    // leaves an approved astrologer invisible to customers.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((user.email || '').trim())) {
+      Alert.alert(t('registration.missingInfoTitle'), t('common.invalidEmail'));
+      return;
+    }
     // Checked here rather than by disabling the button: a dead button tells the
     // user nothing about why they are stuck. The button is dimmed as a hint and
     // still explains itself on tap.
@@ -141,7 +147,7 @@ const Registration = ({ navigation }) => {
         phoneNumber: user.phoneNumber,
         role: 'astrologer',
         registrationData: {
-          email: user.email,
+          email: (user.email || '').trim().toLowerCase(),
           first_name: firstName,
           last_name: lastName,
           phone_number: user.phoneNumber,
