@@ -506,6 +506,9 @@ const translations = {
     'addReview.commentRequired': 'Please write a review comment.',
     'addReview.submittedMsg': 'Your review has been submitted successfully!',
     'addReview.failedSubmit': 'Failed to submit review.',
+    'addReview.notEligibleTitle': 'Reviews open after your consultation',
+    'addReview.notEligibleMsg': 'You can rate {{name}} once you have had a consultation with them. We would love to hear how it went!',
+    'addReview.couldNotSubmitTitle': 'Review not sent',
     'addReview.placeholder': 'Write your experience...',
     'addReview.submit': 'Submit Review',
 
@@ -1771,6 +1774,9 @@ const translations = {
     'addReview.commentRequired': 'कृपया एक समीक्षा टिप्पणी लिखें।',
     'addReview.submittedMsg': 'आपकी समीक्षा सफलतापूर्वक सबमिट कर दी गई है!',
     'addReview.failedSubmit': 'समीक्षा सबमिट करने में विफल।',
+    'addReview.notEligibleTitle': 'परामर्श के बाद समीक्षा लिखें',
+    'addReview.notEligibleMsg': '{{name}} से परामर्श के बाद आप उन्हें रेटिंग दे सकते हैं। हमें आपका अनुभव जानकर खुशी होगी!',
+    'addReview.couldNotSubmitTitle': 'समीक्षा नहीं भेजी गई',
     'addReview.placeholder': 'अपना अनुभव लिखें...',
     'addReview.submit': 'समीक्षा सबमिट करें',
 

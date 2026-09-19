@@ -3579,19 +3579,45 @@ app.get('/api/reviews/astrologer/:id/average-rating', async (req, res) => {
   }
 });
 
-// Whether the current customer is allowed to review this astrologer (completed session).
+// Who may review an astrologer. Any ONE of:
+//   1. the admin opened reviews for this astrologer (astrologers.allow_reviews_without_session);
+//   2. a completed paid session (chat_sessions, ended);
+//   3. a free 12-minute call that is completed, or still 'booked' with its time passed — the
+//      free call is a real phone call with no chat_sessions row, so it needs its own check.
+// Fails CLOSED (false) on a read error; the app treats "not eligible" as an info
+// message, never an error, so a false here costs nothing but a missed review.
+async function canCustomerReview(customerId, astrologerId) {
+  try {
+    const [astro, sessions, freeCalls] = await Promise.all([
+      supabaseService.from('astrologers').select('allow_reviews_without_session')
+        .eq('id', astrologerId).maybeSingle(),
+      supabaseService.from('chat_sessions').select('id')
+        .eq('caller_id', customerId).eq('vendor_id', astrologerId)
+        .not('ended_at', 'is', null).limit(1),
+      // 'booked' with the slot already over counts too: astrologers rarely tap
+      // "done", and a customer whose call time has passed should be able to rate it.
+      // 'missed' / 'cancelled' never count.
+      supabaseService.from('free_call_bookings').select('id')
+        .eq('customer_id', customerId).eq('astrologer_id', astrologerId)
+        .or(`status.eq.completed,and(status.eq.booked,slot_end.lt.${new Date().toISOString()})`)
+        .limit(1),
+    ]);
+    if (astro.data?.allow_reviews_without_session === true) return true;
+    if (sessions.data && sessions.data.length) return true;
+    if (freeCalls.data && freeCalls.data.length) return true;
+    return false;
+  } catch (e) {
+    console.error('[reviews] eligibility error:', e.message);
+    return false;
+  }
+}
+
+// Whether the current customer is allowed to review this astrologer.
 app.get('/api/reviews/eligibility/:id', async (req, res) => {
   try {
     const customer = await resolveCustomerFromReq(req);
     if (!customer || !customer.id) return res.status(200).json({ eligible: false });
-    const { data } = await supabaseService
-      .from('chat_sessions')
-      .select('id')
-      .eq('caller_id', customer.id)
-      .eq('vendor_id', req.params.id)
-      .not('ended_at', 'is', null)
-      .limit(1);
-    return res.status(200).json({ eligible: !!(data && data.length) });
+    return res.status(200).json({ eligible: await canCustomerReview(customer.id, req.params.id) });
   } catch (e) {
     return res.status(200).json({ eligible: false });
   }
@@ -3611,16 +3637,13 @@ app.post('/api/reviews/astrologer/:id/review', async (req, res) => {
     if (!customer || !customer.id) {
       return res.status(401).json({ error: 'Please log in to submit a review.' });
     }
-    // Eligibility: a completed session must exist.
-    const { data: sessions } = await supabaseService
-      .from('chat_sessions')
-      .select('id')
-      .eq('caller_id', customer.id)
-      .eq('vendor_id', astrologerId)
-      .not('ended_at', 'is', null)
-      .limit(1);
-    if (!sessions || !sessions.length) {
-      return res.status(403).json({ error: 'You can review an astrologer only after a session with them.' });
+    if (!(await canCustomerReview(customer.id, astrologerId))) {
+      // Not an error from the customer's point of view — the app shows this as a
+      // friendly info note, keyed on `code`.
+      return res.status(403).json({
+        code: 'REVIEW_NOT_ELIGIBLE',
+        error: 'You can review this astrologer after your first consultation with them.',
+      });
     }
     // Upsert on (astrologer_id, customer_id) — re-submission updates the existing review.
     const { error } = await supabaseService

@@ -785,7 +785,7 @@ module.exports = function registerAdminRoutes(app) {
         'languages, profile_pic_url, bio, ' +
         'approval_status, is_suspended, is_available, is_chat_enabled, is_call_enabled, ' +
         'is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, ' +
-        'video_charge_per_minute, charges_locked_at, wallet_balance, today_earnings, total_earnings, admin_notes, badge')
+        'video_charge_per_minute, charges_locked_at, wallet_balance, today_earnings, total_earnings, admin_notes, badge, allow_reviews_without_session')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return res.json({ success: true, data: data || [] });
@@ -799,7 +799,7 @@ module.exports = function registerAdminRoutes(app) {
       'is_call_enabled', 'is_video_call_enabled', 'chat_charge_per_minute',
       'call_charge_per_minute', 'video_charge_per_minute', 'admin_notes',
       'first_name', 'last_name', 'profile_pic_url', 'bio', 'experience', 'languages', 'badge',
-      'hidden_from_customers'];
+      'hidden_from_customers', 'allow_reviews_without_session'];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
     if ('badge' in body && body.badge !== null && !['verified', 'celebrity', 'top_rated'].includes(body.badge)) {

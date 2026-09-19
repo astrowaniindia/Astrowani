@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import { showStatusPopup } from '../../components/StatusPopup';
 
 const AddReview = ({ route, navigation }) => {
   const { t } = useContext(LanguageContext);
@@ -52,7 +53,16 @@ const AddReview = ({ route, navigation }) => {
       // a 403 here is a real product signal, not noise.
       captureEvent('review_submit_failed', { astrologer_id: person?.userId || person?._id, status: err?.response?.status || null });
       console.log('Error adding review:', err?.response?.data || err.message);
-      Alert.alert(t('common.error'), err?.response?.data?.error || t('addReview.failedSubmit'));
+      if (err?.response?.status === 403) {
+        // Not an error — they just haven't consulted this astrologer yet.
+        showStatusPopup({
+          variant: 'info',
+          title: t('addReview.notEligibleTitle'),
+          message: t('addReview.notEligibleMsg', { name: person?.name || '' }),
+        });
+        return;
+      }
+      showStatusPopup({ variant: 'info', title: t('addReview.couldNotSubmitTitle'), message: t('addReview.failedSubmit') });
     } finally {
       setLoading(false);
     }

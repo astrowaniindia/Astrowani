@@ -18,6 +18,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from './StatusPopup';
 import { captureEvent } from '../utils/Analytics';
+import { translate } from '../context/LanguageContext';
 import { markReviewGoodMoment } from '../utils/appPrompts';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 
@@ -83,10 +84,20 @@ export function ReviewPromptHost() {
     } catch (err) {
       captureEvent('review_submit_failed', { astrologer_id: target.astrologerId, status: err?.response?.status || null });
       setSubmitting(false);
+      if (err?.response?.status === 403) {
+        // Not eligible yet is not a failure — say so kindly and close.
+        close();
+        showStatusPopup({
+          variant: 'info',
+          title: translate('addReview.notEligibleTitle'),
+          message: translate('addReview.notEligibleMsg', { name: target?.name || '' }),
+        });
+        return;
+      }
       showStatusPopup({
         variant: 'info',
-        title: 'Could not submit',
-        message: err?.response?.data?.error || 'Failed to submit your review. Please try again.',
+        title: translate('addReview.couldNotSubmitTitle'),
+        message: translate('addReview.failedSubmit'),
       });
     }
   };

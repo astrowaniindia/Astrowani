@@ -566,6 +566,28 @@ const AstrologerInfo = ({route, navigation}) => {
     return () => clearTimeout(timer);
   }, []);
 
+  // Ask the server first, so nobody writes a review only to be told they can't post
+  // it. "Not yet" is shown as a friendly note, never an error. If the check itself
+  // fails, open the form anyway — the submit re-checks server-side.
+  const openAddReview = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await Instance.get(`/api/reviews/eligibility/${person._id}`, {
+        headers: {Authorization: `Bearer ${token}`},
+      });
+      if (res?.data && res.data.eligible === false) {
+        captureEvent('review_not_eligible', {astrologer_id: person._id, source: 'profile'});
+        showStatusPopup({
+          variant: 'info',
+          title: t('addReview.notEligibleTitle'),
+          message: t('addReview.notEligibleMsg', {name: person?.name || ''}),
+        });
+        return;
+      }
+    } catch (_) {}
+    navigation.navigate('AddReview', {person});
+  };
+
   const handleShowAllReviews = () => {
     setShowAllReviews(true);
   };
@@ -926,7 +948,7 @@ const AstrologerInfo = ({route, navigation}) => {
                 </TouchableOpacity>
               )}
               <View style={{ flex: 1 }} />
-              <TouchableOpacity onPress={() => navigation.navigate('AddReview', { person })} style={styles.addReviewBtn}>
+              <TouchableOpacity onPress={openAddReview} style={styles.addReviewBtn}>
                 <Text style={styles.addReviewTxt}>{t('profile.writeReview')}</Text>
               </TouchableOpacity>
             </View>

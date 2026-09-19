@@ -112,6 +112,7 @@ export default function Astrologers() {
         bio: editing.bio || '',
         profile_pic_url: editing.profile_pic_url || '',
         badge: editing.badge || null,
+        allow_reviews_without_session: !!editing.allow_reviews_without_session,
       });
       setEditing(null);
     } catch (e) { alert(e.response?.data?.message || e.message); }
@@ -383,6 +384,7 @@ export default function Astrologers() {
                       { label: 'Reject Profile', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
                     { label: r.is_suspended ? 'Unsuspend Account' : 'Suspend Account', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
                     { label: 'Adjust Wallet', onClick: () => { setTopup(r); setAmount(''); } },
+                    { label: r.allow_reviews_without_session ? 'Limit reviews to consulted customers' : 'Let anyone review (before first paid call)', onClick: () => patch(r.id, { allow_reviews_without_session: !r.allow_reviews_without_session }) },
                     { label: 'Delete Profile', danger: true, onClick: () => remove(r) },
                   ]} />
                 </div>
@@ -463,6 +465,7 @@ export default function Astrologers() {
                         r.approval_status !== 'rejected' && { label: 'Reject Profile', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
                         { label: r.is_suspended ? 'Unsuspend Account' : 'Suspend Account', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
                         { label: 'Adjust Wallet', onClick: () => { setTopup(r); setAmount(''); } },
+                    { label: r.allow_reviews_without_session ? 'Limit reviews to consulted customers' : 'Let anyone review (before first paid call)', onClick: () => patch(r.id, { allow_reviews_without_session: !r.allow_reviews_without_session }) },
                         { label: 'Delete', danger: true, onClick: () => remove(r) },
                       ]} />
                     </div>
@@ -528,6 +531,16 @@ export default function Astrologers() {
               <option value="verified">Verified</option>
               <option value="top_rated">Top Rated</option>
               <option value="celebrity">Celebrity</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Reviews</label>
+            <select
+              value={editing.allow_reviews_without_session ? 'open' : 'session'}
+              onChange={(e) => set('allow_reviews_without_session', e.target.value === 'open')}
+            >
+              <option value="session">After a consultation only (paid session or completed free call)</option>
+              <option value="open">Anyone can review, even before their first paid call</option>
             </select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
