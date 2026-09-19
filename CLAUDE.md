@@ -5662,3 +5662,47 @@ search a customer by name/mobile, add or remove them. Stored as a JSON list of c
 
 Verified 2026-09-17: 10/10 module checks; against real PostHog, excluding one customer removed exactly their 135 screen
 views and 1 unique user; all 15 PostHog routes and all 7 database routes answer 200 with the filter in place.
+
+---
+
+## Subsystem added 2026-09-19: Sentry → Claude auto-fixer → one-tap merge → deploy
+
+### CS. The pipeline (replaces the paused 8-hourly `/bug-scan` routine)
+
+```
+Sentry issue created / regressed (production, error|fatal)
+  -> POST /api/sentry/webhook      (src/sentryWebhookRoutes.js: HMAC verify, drop development
+                                    + warnings, 24h dedupe, cap 6/hour 20/day)
+  -> GitHub issue "Sentry <SHORT-ID>: …" labelled `sentry-alert`
+  -> routine "Astrowani Sentry auto-fixer (webhook)" trig_01QMpuUSurEHBU7vnpKNHhQ4
+     (GitHub issues.labeled trigger, Opus 5, env_01Cfa57DfbVUBXfUxyVQWJf8)
+  -> either a `sentry-fix/<short-id>` PR ("Fixes #n", RISK line, "Ships as") or findings
+     as a comment on the issue, or closes it as not worth fixing
+  -> OWNER merges on the GitHub mobile app (the only human step)
+  -> backend: deploy-backend.yml (existing) | apps: .github/workflows/ota-on-merge.yml
+```
+
+- **The routine's label filter was silently dropped at creation**, so the routine fires on
+  EVERY `issues.labeled` event in the repo; its prompt's STEP 0 exits unless the label is
+  `sentry-alert` and the title starts `Sentry `. Don't use labels heavily on this repo, or
+  each one costs a (short) run.
+- Routine connectors: the create call attached Supabase + Claude_Code_Remote by default.
+  They were removed (only Claude_Docs left, with no permitted tools). **Never give this
+  routine Supabase** (production write access) or Claude_Code_Remote (lets it schedule
+  self-rearming check-ins, which is how the old bug-scan spammed).
+- `ota-on-merge.yml` runs ONLY for merged `sentry-fix/*` PRs, OTAs only the app whose
+  `src/` changed, and **refuses** a PR touching `package.json`/`android/`/`ios/`.
+  `workflow_dispatch` = dry run (checks + both bundles, no upload).
+- Both apps: `Sentry.init({enabled: !__DEV__})` — emulator errors no longer reach Sentry
+  (they were 20 of 27 customer issues on 2026-09-19).
+
+### Setup state (2026-09-19)
+- [x] routine created, `sentry-alert` label created, relay + workflow committed
+- [ ] VPS `.env`: `SENTRY_WEBHOOK_SECRET`, `GITHUB_ALERT_TOKEN` (fine-grained, this repo,
+      Issues read+write only), `SENTRY_AUTH_TOKEN` (read-only; also fixes admin App Health)
+- [ ] Sentry → Settings → Custom Integrations → Internal Integration, Webhook URL
+      `https://backend.astrowani.com/api/sentry/webhook`, "issue" webhook on; its Client
+      Secret = `SENTRY_WEBHOOK_SECRET`
+- [ ] GitHub secrets `HOTUPDATER_ENV_CUSTOMER` / `HOTUPDATER_ENV_VENDOR` (= each app's
+      `.env.hotupdater`), then one `workflow_dispatch` dry run per app
+- [ ] Owner: GitHub mobile app with notifications on for this repo

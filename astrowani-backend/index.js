@@ -758,7 +758,8 @@ app.use(express.json({
   verify: (req, _res, buf) => {
     // Razorpay signs its webhook the same way, over the exact bytes it sent.
     if (req.originalUrl && (req.originalUrl.startsWith('/api/whatsapp/webhook')
-        || req.originalUrl.startsWith('/api/razorpay/webhook'))) {
+        || req.originalUrl.startsWith('/api/razorpay/webhook')
+        || req.originalUrl.startsWith('/api/sentry/webhook'))) {
       req.rawBody = buf;
     }
   },
@@ -830,6 +831,7 @@ require('./src/uploadRoutes')(app);
 require('./src/orderRoutes')(app);
 // Razorpay -> us, for payments whose app died before verify-payment landed.
 require('./src/razorpayWebhookRoutes')(app);
+require('./src/sentryWebhookRoutes')(app);
 // Astrologer referral commission on remedy orders. Registered after orderRoutes
 // because it requires adminRoutes' requireAdmin, which is exported there.
 require('./src/remedyReferralRoutes')(app);

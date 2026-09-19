@@ -1,0 +1,120 @@
+# Ships an approved Sentry auto-fix to phones as an OTA.
+#
+# The Claude "Sentry auto-fixer" routine opens PRs on `sentry-fix/*` branches. The
+# owner reviews on their phone and merges; this workflow then OTAs the app(s) the PR
+# touched, to both Android and iOS. Backend fixes need nothing here -- deploy-backend.yml
+# already deploys any merge that touches astrowani-backend/.
+#
+# Deliberately NARROW: only merged `sentry-fix/*` PRs. Everyday pushes to main never
+# OTA by themselves; those still go out by hand with `npm run deploy:ota`.
+#
+# A PR that touched native code (package.json, android/, ios/) is REFUSED: an OTA ships
+# JS only, and JS expecting a native change that installed apps lack can break them.
+#
+# Secrets (one per app): HOTUPDATER_ENV_CUSTOMER / HOTUPDATER_ENV_VENDOR -- the full
+# contents of that app's .env.hotupdater.
+name: OTA on merged Sentry fix
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which app to check (dry run only -- builds the bundles, deploys nothing)
+        required: true
+        default: customer
+        type: choice
+        options: [customer, vendor]
+
+concurrency:
+  group: ota-on-merge
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'sentry-fix/'))
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.plan.outputs.apps }}
+      dry: ${{ steps.plan.outputs.dry }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          INPUT_APP: ${{ inputs.app }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "apps=[\"$INPUT_APP\"]" >> "$GITHUB_OUTPUT"; echo "dry=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[].filename')
+          echo "$files"
+          if echo "$files" | grep -Eq '^astrowani_(customer-main|vendors-main)/(package(-lock)?\.json|android/|ios/)'; then
+            echo "::error::This PR changed native code or dependencies. That needs a store build, not an OTA. Nothing was deployed."
+            exit 1
+          fi
+          apps=()
+          echo "$files" | grep -q '^astrowani_customer-main/src/' && apps+=('"customer"')
+          echo "$files" | grep -q '^astrowani_vendors-main/src/' && apps+=('"vendor"')
+          echo "apps=[$(IFS=,; echo "${apps[*]}")]" >> "$GITHUB_OUTPUT"
+          echo "dry=false" >> "$GITHUB_OUTPUT"
+
+  ota:
+    needs: plan
+    if: needs.plan.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 50
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: ${{ matrix.app == 'customer' && 'astrowani_customer-main' || 'astrowani_vendors-main' }}
+        run: npm ci --no-audit --no-fund
+
+      - name: Write hot-updater credentials
+        working-directory: ${{ matrix.app == 'customer' && 'astrowani_customer-main' || 'astrowani_vendors-main' }}
+        env:
+          ENV_FILE: ${{ matrix.app == 'customer' && secrets.HOTUPDATER_ENV_CUSTOMER || secrets.HOTUPDATER_ENV_VENDOR }}
+        run: |
+          if [ -z "$ENV_FILE" ]; then echo "::error::Missing HOTUPDATER_ENV_* secret for ${{ matrix.app }}"; exit 1; fi
+          printf '%s\n' "$ENV_FILE" > .env.hotupdater
+
+      - name: Dry run (checks + bundle build, no upload)
+        if: needs.plan.outputs.dry == 'true'
+        working-directory: ${{ matrix.app == 'customer' && 'astrowani_customer-main' || 'astrowani_vendors-main' }}
+        run: |
+          node scripts/deployOta.js --dry-run
+          mkdir -p /tmp/b
+          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output /tmp/b/android.js
+          npx react-native bundle --platform ios --dev false --entry-file index.js --bundle-output /tmp/b/ios.js
+          ls -la /tmp/b
+
+      - name: Deploy OTA (android + ios)
+        if: needs.plan.outputs.dry != 'true'
+        working-directory: ${{ matrix.app == 'customer' && 'astrowani_customer-main' || 'astrowani_vendors-main' }}
+        env:
+          # No spaces: deployOta spawns hot-updater through a shell, which splits them.
+          MSG: sentry-fix-pr-${{ github.event.pull_request.number }}
+        run: node scripts/deployOta.js -m "$MSG"
+
+      - name: Remove credentials
+        if: always()
+        working-directory: ${{ matrix.app == 'customer' && 'astrowani_customer-main' || 'astrowani_vendors-main' }}
+        run: rm -f .env.hotupdater
