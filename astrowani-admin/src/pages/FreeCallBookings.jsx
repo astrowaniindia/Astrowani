@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import Modal from '../components/Modal';
 import FreeCallInviteCard from '../components/FreeCallInviteCard';
+import { prettyClock } from '../utils/freeCallClock';
 
 // The free introductory call: list and management of bookings.
 // Offer configuration has been separated into its own section at /free-call-settings.
@@ -357,7 +358,7 @@ export default function FreeCallBookings() {
                 <span className="pill-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>○ Offer Disabled</span>
               )}
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                <strong>{offer.durationMinutes || 12} min</strong> calls · Slots {String(offer.openHour || 10).padStart(2, '0')}:00–{String(offer.closeHour || 20).padStart(2, '0')}:00 IST ·
+                <strong>{offer.durationMinutes || 12} min</strong> calls · Slots {prettyClock(offer.openTime ?? offer.openHour ?? 10)}–{prettyClock(offer.closeTime ?? offer.closeHour ?? 20)} IST ·
                 {' '}{offer.assignmentMode === 'pool' ? `Smart Pool (${(offer.poolAstrologerIds || []).length} astrologers)` : offer.assignmentMode === 'single' ? 'Single Astrologer' : 'Manual Assignment'}
               </span>
             </div>

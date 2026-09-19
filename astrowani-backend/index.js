@@ -1972,6 +1972,10 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
 
   const isVendor = role === 'astrologer' || role === 'vendor';
   let supabaseCustomerId = null;
+  // True only when this verify created the customer row. The app uses it to send
+  // an existing customer who came in through the signup screen (the first screen
+  // since 2026-09-20) straight to Home instead of the name step.
+  let isNewAccount = false;
   try {
     if (isVendor) {
       // Vendors are never auto-created here — an astrologer account needs the full
@@ -2065,6 +2069,7 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         );
         if (insertError) throw insertError;
         supabaseCustomerId = newCustomer?.id;
+        isNewAccount = !!newCustomer?.id;
 
         if (referrerId && supabaseCustomerId && referrerId !== supabaseCustomerId) {
           await supabaseService.from('referrals').insert([{
@@ -2112,6 +2117,7 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     message: 'OTP verified successfully',
     token: token,
     user: { id: supabaseCustomerId || `user_${Date.now()}`, phoneNumber, role },
+    isNewAccount,
     otherDevices,
   });
 });
@@ -4605,6 +4611,75 @@ app.get('/api/wallet', async (req, res) => {
 // Real referral program — replaces the customer app's old ReferAndEarnScreen.js mock
 // (identical hardcoded code for every user, dead reward button). Lazily generates a code
 // for customers who signed up before this feature existed.
+/**
+ * Apply a friend's referral code to THIS customer, moments after signup.
+ *
+ * The code used to be typed on the OTP screen and passed to verify; it is asked on
+ * the name screen now (2026-09-20), which is after the account exists, so it needs
+ * its own endpoint. Deliberately narrow:
+ *   - only within REFERRAL_APPLY_WINDOW_MS of the account being created, so this can
+ *     never become "enter a code any time and someone gets paid",
+ *   - never your own code, never twice, never when a row already exists,
+ *   - the reward itself is unchanged: the referrer is paid by sessionManager once
+ *     this customer completes their first session.
+ */
+const REFERRAL_APPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+app.post('/api/customer/referral/apply', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    let decoded;
+    try {
+      decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const code = String(req.body?.referralCode || '').trim().toUpperCase();
+    if (!code) return res.status(400).json({ success: false, code: 'CODE_REQUIRED' });
+
+    const userId = decoded.userId || decoded.id;
+    let me = null;
+    if (decoded.phone) me = await findCustomerByPhone(supabaseService, decoded.phone, 'id, referral_code, created_at');
+    if (!me && userId && String(userId).includes('-')) {
+      const { data } = await supabaseService
+        .from('customers').select('id, referral_code, created_at').eq('id', userId).maybeSingle();
+      me = data || null;
+    }
+    if (!me) return res.status(404).json({ success: false, code: 'NO_ACCOUNT' });
+
+    if (Date.now() - new Date(me.created_at).getTime() > REFERRAL_APPLY_WINDOW_MS) {
+      return res.status(409).json({ success: false, code: 'TOO_LATE' });
+    }
+    if (String(me.referral_code || '').toUpperCase() === code) {
+      return res.status(400).json({ success: false, code: 'OWN_CODE' });
+    }
+
+    const { data: existing } = await supabaseService
+      .from('referrals').select('id').eq('referred_customer_id', me.id).limit(1);
+    if (existing && existing.length) {
+      return res.status(409).json({ success: false, code: 'ALREADY_REFERRED' });
+    }
+
+    const { data: referrer } = await supabaseService
+      .from('customers').select('id').eq('referral_code', code).limit(1).maybeSingle();
+    if (!referrer?.id || referrer.id === me.id) {
+      return res.status(404).json({ success: false, code: 'INVALID_CODE' });
+    }
+
+    const { error: insertError } = await supabaseService.from('referrals').insert([{
+      referrer_customer_id: referrer.id,
+      referred_customer_id: me.id,
+      referral_code: code,
+      status: 'pending',
+    }]);
+    if (insertError) throw insertError;
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('POST /api/customer/referral/apply error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not apply the referral code' });
+  }
+});
+
 app.get('/api/customer/referral-info', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;

@@ -62,7 +62,7 @@ import { showAppUpdatePrompt } from '../../components/AppUpdatePrompt';
 import { showRateAppPrompt } from '../../components/RateAppPrompt';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
-import { isProfileComplete as checkProfileComplete, ensureProfileComplete, getStoredUser } from '../../utils/profileGate';
+import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
 import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen, hasSeenFreeCallOffer, markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
@@ -2081,22 +2081,15 @@ const Home = ({navigation}) => {
         t={t}
         source={freeCallSource}
         startAtSlots={freeCallStartAtSlots}
-        // Birth details before a slot is picked. The sheet is closed first so it
-        // does not sit over the birth details screen, and reopened straight on the
-        // time slots once they are saved — no second "Book free call" tap. The offer
-        // is NOT marked seen, so if they back out the gift bubble still offers it.
-        onBeforeBook={async () => {
-          if (checkProfileComplete(await getStoredUser())) return true;
+        // Birth details come AFTER booking now, as an optional step on the
+        // confirmation screen (2026-09-19). Asking first lost ~1 in 4 people.
+        needsBirthDetails={!isProfileComplete()}
+        onAddBirthDetails={() => {
           setFreeCallVisible(false);
-          ensureProfileComplete(navigation, 'free_call').then((ok) => {
-            if (ok) {
-              setFreeCallStartAtSlots(true);
-              setFreeCallVisible(true);
-            } else {
-              setFreeCallHandled(true);
-            }
-          });
-          return false;
+          setFreeCallStartAtSlots(false);
+          setFreeCallHandled(true);
+          if (user?.id) markFreeCallOfferSeen(user.id);
+          ensureProfileComplete(navigation, 'free_call_after_booking');
         }}
         onClose={() => {
           setFreeCallVisible(false);

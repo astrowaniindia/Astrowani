@@ -28,6 +28,7 @@ const CustomAlert = () => {
     type: 'info', // see TONES / utils/alertTone
     buttonText: 'OK',
     onClose: null,
+    autoHideMs: 0,
   });
 
   useEffect(() => {
@@ -42,6 +43,7 @@ const CustomAlert = () => {
           : (params.type || 'info'),
         buttonText: params.buttonText || 'OK',
         onClose: params.onClose || null,
+        autoHideMs: params.autoHideMs || 0,
       });
       setVisible(true);
     });
@@ -64,6 +66,15 @@ const CustomAlert = () => {
   const ready = useDeferredPresent(visible);
   useModalPresence(ready);
 
+  // Auto-closing notice (showAutoAlert): no button, closes itself. The clock starts
+  // when the popup is actually on screen, not when it was requested.
+  useEffect(() => {
+    if (!ready || !config.autoHideMs) return undefined;
+    const timer = setTimeout(handleClose, config.autoHideMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, config]);
+
   const tone = TONES[config.type] || TONES[config.type === 'error' ? 'warning' : 'info'];
   // "Error" as a title tells the customer nothing and reads like a crash.
   const title = isGenericTitle(config.title)
@@ -77,7 +88,11 @@ const CustomAlert = () => {
       visible={ready}
       onRequestClose={handleClose}
     >
-      <View style={styles.overlay}>
+      <TouchableOpacity
+        style={styles.overlay}
+        activeOpacity={1}
+        disabled={!config.autoHideMs}
+        onPress={handleClose}>
         <View style={styles.alertContainer}>
           <View style={[styles.iconContainer, { backgroundColor: tone.tint }]}>
             <Icon name={tone.icon} size={50} color={tone.color} />
@@ -86,20 +101,28 @@ const CustomAlert = () => {
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{config.message}</Text>
           
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: COLORS.AstroGold || '#FFD700' }]} 
-            onPress={handleClose}
-          >
-            <Text style={[styles.buttonText, { color: COLORS.AstroMaroon || '#000' }]}>{config.buttonText}</Text>
-          </TouchableOpacity>
+          {!config.autoHideMs && (
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: COLORS.AstroGold || '#FFD700' }]}
+              onPress={handleClose}
+            >
+              <Text style={[styles.buttonText, { color: COLORS.AstroMaroon || '#000' }]}>{config.buttonText}</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      </View>
+      </TouchableOpacity>
     </Modal>
   );
 };
 
 export const showAlert = (title, message, type = 'success', onClose = null, buttonText = 'OK') => {
   DeviceEventEmitter.emit('SHOW_ALERT', { title, message, type, onClose, buttonText });
+};
+
+// Same popup with no button: it closes by itself after `ms` (a tap anywhere closes
+// it sooner). For notices that need no decision, e.g. "no account, taking you to signup".
+export const showAutoAlert = (title, message, type = 'info', ms = 3000) => {
+  DeviceEventEmitter.emit('SHOW_ALERT', { title, message, type, autoHideMs: ms });
 };
 
 const styles = StyleSheet.create({

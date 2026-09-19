@@ -12,6 +12,7 @@ import {
   Platform,
   TextInput,
   BackHandler,
+  NativeModules,
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -25,6 +26,9 @@ import {identifyCustomer, captureEvent} from '../../utils/Analytics';
 import {apiFailureReason} from '../../utils/apiFailureReason';
 import {LanguageContext} from '../../context/LanguageContext';
 
+// True only on Android builds that include the SMS User Consent native module.
+const SMS_AUTOFILL_AVAILABLE = Platform.OS === 'android' && !!NativeModules.ReactNativeSmsUserConsent;
+
 const RESEND_SECONDS = 60;
 
 const VerifyOtp = ({navigation, route}) => {
@@ -37,8 +41,12 @@ const VerifyOtp = ({navigation, route}) => {
   const isSignup = !!signup;
 
   const [code, setCode] = useState('');
-  const [referralCode, setReferralCode] = useState('');
   const [verifying, setVerifying] = useState(false);
+  // Blocks a second verify while one is in flight (auto-verify on the 6th digit
+  // plus a quick tap on the button would otherwise send two).
+  const verifyingRef = useRef(false);
+  const handleVerifyRef = useRef(null);
+  const [smsListenKey, setSmsListenKey] = useState(0);
   const [resending, setResending] = useState(false);
   // Set synchronously on the first tap. The `resending` state can't do this on its
   // own: state only updates on the next render, so two taps in the same frame both
@@ -93,22 +101,29 @@ const VerifyOtp = ({navigation, route}) => {
     }
   };
 
-  const handleVerify = async () => {
-    if (code.length !== 6) {
-      captureEvent('otp_verify_blocked', { flow, reason: 'incomplete_code', length: code.length });
+  // `filled` is the code handed over by the OTP box itself when the 6th digit lands
+  // (typed, pasted, or autofilled from the SMS): verification then starts on its
+  // own, with no "Verify" tap. The button still works, and passes an event instead.
+  const handleVerify = async (filled) => {
+    const auto = typeof filled === 'string';
+    const otpCode = auto ? filled : code;
+    if (verifyingRef.current) return;
+    if (otpCode.length !== 6) {
+      if (auto) return;
+      captureEvent('otp_verify_blocked', { flow, reason: 'incomplete_code', length: otpCode.length });
       showAlert(t('otp.invalidOtpTitle'), t('otp.enterComplete'), 'error');
       return;
     }
-    captureEvent('otp_verify_tapped', { flow, has_referral_code: !!referralCode.trim() });
+    captureEvent('otp_verify_tapped', { flow, auto });
+    verifyingRef.current = true;
     setVerifying(true);
     try {
       const fcmToken = await getFcmToken();
       const res = await Instance.post('/api/users/mobile-otp-verify', {
         phoneNumber,
-        otp: code,
+        otp: otpCode,
         fcmToken,
         role,
-        referralCode: referralCode.trim() || undefined,
         // Labels the acceptance as having come from the Register screen's
         // checkbox rather than the Login screen's notice. The backend stamps the
         // actual timestamp itself — this flag only picks which source to record.
@@ -121,7 +136,12 @@ const VerifyOtp = ({navigation, route}) => {
           identifyCustomer(res.data.user.id);
         }
 
-        if (isSignup) {
+        // An EXISTING account that came in through the signup screen (the store
+        // reviewer number, or a returning customer the server let through) is a
+        // login: straight to Home, no name step overwriting their name. Only an
+        // explicit false counts, so an older backend without the flag behaves as before.
+        const existingViaSignup = isSignup && res.data.isNewAccount === false;
+        if (isSignup && !existingViaSignup) {
           // The account exists from this point, so this is where signup is
           // "completed" (it also feeds the ad platforms' registration event).
           // Name and welcome come next, but a customer who closes the app on the
@@ -160,9 +180,41 @@ const VerifyOtp = ({navigation, route}) => {
       const message = data?.message || t('otp.failedVerify');
       showAlert(t('otp.verificationFailed'), message, 'error');
     } finally {
+      verifyingRef.current = false;
       setVerifying(false);
     }
   };
+
+  handleVerifyRef.current = handleVerify;
+
+  // Android: read the OTP straight from the SMS (Google's SMS User Consent API).
+  // When the code arrives Android shows its own "Allow Astrowani to read this
+  // message?" prompt; one tap fills the boxes and verification starts by itself.
+  // Needs no SMS permission and works with the DLT-registered SMS text as it is.
+  // The native module only exists from the store build that added it, so older
+  // installs (reached by OTA) skip this and keep manual entry. `smsListenKey`
+  // restarts the listener after a resend, since each listen covers one message.
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !NativeModules.ReactNativeSmsUserConsent) return undefined;
+    let stop = null;
+    try {
+      const { startSmsHandling, retrieveVerificationCode } = require('@eabdullazyanov/react-native-sms-user-consent');
+      stop = startSmsHandling((event) => {
+        const found = retrieveVerificationCode(event?.sms, 6);
+        if (!found) return;
+        captureEvent('otp_autofilled_from_sms', { flow });
+        otpRef.current?.setValue?.(found);
+        setCode(found);
+        handleVerifyRef.current?.(found);
+      });
+    } catch (_) {
+      stop = null;
+    }
+    return () => {
+      try { if (stop) stop(); } catch (_) {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [smsListenKey]);
 
   const handleResend = async () => {
     if (timer > 0 || resending || resendInFlight.current) return;
@@ -181,6 +233,7 @@ const VerifyOtp = ({navigation, route}) => {
         captureEvent('otp_resent', { flow });
         setCode('');
         otpRef.current?.clear?.();
+        setSmsListenKey((k) => k + 1);
         setTimer(RESEND_SECONDS);
         showAlert(t('otp.otpSentTitle'), t('otp.newCodeSent'), 'success');
       } else {
@@ -207,7 +260,10 @@ const VerifyOtp = ({navigation, route}) => {
   return (
     <KeyboardAvoidingView
       style={styles.main}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      // Android: undefined. The manifest's adjustResize already moves the screen for the
+      // keyboard; 'height' here fought it and the layout flickered up and down,
+      // often leaving a grey gap at the bottom after the keyboard closed.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -236,11 +292,13 @@ const VerifyOtp = ({navigation, route}) => {
             <Text style={styles.tagline}>{t('otp.almostThere')}</Text>
           </View>
 
+
           <View style={styles.otpWrapper}>
             <OtpInput
               ref={otpRef}
               numberOfDigits={6}
               onTextChange={setCode}
+              onFilled={handleVerify}
               focusColor={COLORS.AstroMaroon}
               theme={{
                 containerStyle: styles.otpContainer,
@@ -249,19 +307,15 @@ const VerifyOtp = ({navigation, route}) => {
                 pinCodeTextStyle: styles.otpText,
               }}
             />
+            {/* Only where the SMS auto-fill exists (Android, build 43+), so no phone
+                is promised something it cannot do. Prepares the customer for
+                Android's own "Allow ... to read this message?" prompt, whose
+                wording apps cannot change. */}
+            {SMS_AUTOFILL_AVAILABLE && (
+              <Text style={styles.smsHint}>{t('otp.smsAutofillHint')}</Text>
+            )}
           </View>
 
-          {isSignup && (
-            <TextInput
-              style={styles.referralInput}
-              placeholder="Referral code (optional)"
-              placeholderTextColor="#999"
-              value={referralCode}
-              onChangeText={(t) => setReferralCode(t.toUpperCase())}
-              autoCapitalize="characters"
-              maxLength={10}
-            />
-          )}
 
           <TouchableOpacity
             style={[styles.verifyBtn, verifying && styles.disabledBtn]}
@@ -364,6 +418,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: moderateScale(14),
   },
+  smsHint: {
+    marginTop: verticalScale(12),
+    fontSize: moderateScale(13),
+    color: '#2E7D4F',
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: moderateScale(19),
+  },
   otpWrapper: {
     width: '100%',
     marginBottom: verticalScale(30),
@@ -387,18 +449,6 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(20),
     fontWeight: '700',
     color: COLORS.textDark,
-  },
-  referralInput: {
-    width: '100%',
-    height: verticalScale(48),
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: moderateScale(14),
-    paddingHorizontal: scale(16),
-    marginBottom: verticalScale(16),
-    fontSize: moderateScale(14),
-    color: COLORS.textDark,
-    backgroundColor: '#FAFAFA',
   },
   verifyBtn: {
     width: '100%',

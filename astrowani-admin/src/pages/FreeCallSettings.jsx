@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import client from '../api/client';
 import ImageField from '../components/ImageField';
 
+import { clockToMinutes, minutesToClock, prettyClock } from '../utils/freeCallClock';
+
 const OFFER_DEFAULTS = {
   enabled: false,
   durationMinutes: 12,
   slotMinutes: 30,
-  openHour: 10,
-  closeHour: 20,
+  openTime: '10:00',
+  closeTime: '20:00',
   daysAhead: 7,
   minLeadMinutes: 60,
   assignmentMode: 'manual', // 'manual' | 'single' | 'pool'
@@ -47,7 +49,15 @@ export default function FreeCallSettings() {
       const { data } = await client.get('/api/admin/settings');
       const raw = data.settings?.free_call_offer;
       if (raw) {
-        setOffer({ ...OFFER_DEFAULTS, ...JSON.parse(raw) });
+        const saved = JSON.parse(raw);
+        // Older configs stored whole hours (or "1130"); show them as HH:MM.
+        const toClock = (v, d) => { const t = clockToMinutes(v); return t === null ? d : minutesToClock(t); };
+        setOffer({
+          ...OFFER_DEFAULTS,
+          ...saved,
+          openTime: toClock(saved.openTime ?? saved.openHour, OFFER_DEFAULTS.openTime),
+          closeTime: toClock(saved.closeTime ?? saved.closeHour, OFFER_DEFAULTS.closeTime),
+        });
       }
     } catch (e) {
       console.error('load free_call_offer failed:', e.message);
@@ -84,25 +94,28 @@ export default function FreeCallSettings() {
         ...next,
         durationMinutes: num(next.durationMinutes, 12),
         slotMinutes: num(next.slotMinutes, 30),
-        openHour: num(next.openHour, 10),
-        closeHour: num(next.closeHour, 20),
         daysAhead: num(next.daysAhead, 7),
         minLeadMinutes: num(next.minLeadMinutes, 60),
       };
 
-      // Whole hours only. The server ignores anything out of range and silently uses
-      // 10 AM–8 PM instead (1130 for "11:30" once did exactly that), so refuse it here.
-      if (!Number.isInteger(payload.openHour) || payload.openHour < 0 || payload.openHour > 23
-        || !Number.isInteger(payload.closeHour) || payload.closeHour < 1 || payload.closeHour > 24) {
-        alert('Opening hours are whole hours: open 0–23, close 1–24 (e.g. 11 and 23 for 11 AM to 11 PM).');
+      // Times with minutes ("11:30", "24:00" for midnight). The old whole-hour
+      // fields are dropped so the server reads these.
+      const openMin = clockToMinutes(next.openTime);
+      const closeMin = clockToMinutes(next.closeTime);
+      if (openMin === null || openMin >= 1440 || closeMin === null || closeMin < 1) {
+        alert('Enter times as HH:MM in 24-hour IST, e.g. 11:30 to open and 24:00 to close at midnight.');
         setSavingOffer(false);
         return;
       }
-      if (payload.closeHour <= payload.openHour) {
-        alert('Closing hour must be later than opening hour.');
+      if (closeMin <= openMin) {
+        alert('Closing time must be later than opening time.');
         setSavingOffer(false);
         return;
       }
+      payload.openTime = minutesToClock(openMin);
+      payload.closeTime = minutesToClock(closeMin);
+      delete payload.openHour;
+      delete payload.closeHour;
       if (payload.durationMinutes <= 0 || payload.slotMinutes <= 0) {
         alert('Duration and slot spacing must be greater than 0.');
         setSavingOffer(false);
@@ -586,30 +599,30 @@ export default function FreeCallSettings() {
 
         <div className="two-col">
           <div className="field">
-            <label>Operating Hours Open (Hour, 0–23 IST)</label>
+            <label>First call at (HH:MM, 24-hour IST)</label>
             <input
-              type="number"
-              min="0"
-              max="23"
-              value={offer.openHour}
-              onChange={(e) => setOffer((p) => ({ ...p, openHour: e.target.value }))}
+              type="text"
+              inputMode="numeric"
+              placeholder="11:30"
+              value={offer.openTime}
+              onChange={(e) => setOffer((p) => ({ ...p, openTime: e.target.value }))}
             />
             <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-              First slots start at {String(offer.openHour || 10).padStart(2, '0')}:00 IST.
+              First slot: {prettyClock(offer.openTime)} IST.
             </span>
           </div>
 
           <div className="field">
-            <label>Operating Hours Close (Hour, 1–24 IST)</label>
+            <label>Calls end by (HH:MM, 24-hour IST, 24:00 = midnight)</label>
             <input
-              type="number"
-              min="1"
-              max="24"
-              value={offer.closeHour}
-              onChange={(e) => setOffer((p) => ({ ...p, closeHour: e.target.value }))}
+              type="text"
+              inputMode="numeric"
+              placeholder="24:00"
+              value={offer.closeTime}
+              onChange={(e) => setOffer((p) => ({ ...p, closeTime: e.target.value }))}
             />
             <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-              Last slots end by {String(offer.closeHour || 20).padStart(2, '0')}:00 IST.
+              Every call finishes by {prettyClock(offer.closeTime)} IST.
             </span>
           </div>
         </div>

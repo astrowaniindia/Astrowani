@@ -188,7 +188,10 @@ const Wallet = ({navigation, route}) => {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // Android: undefined. The manifest's adjustResize already moves the screen for the
+      // keyboard; 'height' here fought it and the layout flickered up and down,
+      // often leaving a grey gap at the bottom after the keyboard closed.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
       {/* Tap anywhere outside the field to dismiss. accessible={false} keeps this

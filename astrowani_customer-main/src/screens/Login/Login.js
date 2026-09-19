@@ -1,5 +1,5 @@
 import openExternalUrl from '../../utils/openExternalUrl';
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   StyleSheet,
   Image,
@@ -26,12 +26,14 @@ import GuideAvatar from '../../components/GuideAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sanitizePhoneInput } from '../../utils/phoneInput';
 
-const Login = ({navigation}) => {
+const Login = ({navigation, route}) => {
   const { t, language, changeLanguage } = React.useContext(LanguageContext);
   const insets = useSafeAreaInsets();
   const toggleLanguage = () => changeLanguage(language === 'Hindi' ? 'English' : 'Hindi');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  // Prefilled when signup sends a returning customer here.
+  const [phoneNumber, setPhoneNumber] = useState(sanitizePhoneInput(route?.params?.phoneNumber || ''));
   const [loading, SetLoading] = useState(false);
+  const phoneRef = useRef(null);
   // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config) —
   // null while loading, so the hint stays hidden rather than flashing the bundled
   // default text before the real config arrives.
@@ -69,6 +71,39 @@ const Login = ({navigation}) => {
     return true;
   };
 
+  const startSignup = async () => {
+    const goOtp = (extra) => navigation.navigate('VerifyOtp', {
+      phoneNumber,
+      role: 'customer',
+      signup: true,
+      termsAccepted: true,
+      ...extra,
+    });
+    try {
+      const res = await Instance.post('/api/users/mobile-otp-request', {
+        phoneNumber,
+        role: 'customer',
+        intent: 'signup',
+      });
+      if (res?.data?.success) {
+        captureEvent('signup_otp_sent', { via: 'login_screen' });
+        goOtp();
+        return;
+      }
+      captureEvent('signup_failed', { reason: res?.data?.code || 'otp_send_failed', via: 'login_screen' });
+      showAlert(t('common.error'), res?.data?.message || t('login.otpFailed'), 'error');
+    } catch (error) {
+      const data = error?.response?.data;
+      if (data?.code === 'OTP_THROTTLED' && data?.codeStillValid) {
+        captureEvent('signup_otp_already_sent', { via: 'login_screen' });
+        goOtp({ resendIn: data?.retryAfterSeconds });
+        return;
+      }
+      captureEvent('signup_failed', { reason: apiFailureReason(error), via: 'login_screen' });
+      showAlert(t('common.error'), data?.message || t('login.somethingWrong'), 'error');
+    }
+  };
+
   const handleGetOtp = async () => {
     if (validateFields()) {
       captureEvent('login_submit_tapped');
@@ -89,12 +124,13 @@ const Login = ({navigation}) => {
       } catch (error) {
         const data = error?.response?.data;
         if (data?.code === 'NO_ACCOUNT') {
+          // A new number: this one screen signs them up too (2026-09-20). Nothing
+          // was sent yet (the server refuses a login OTP before any SMS), so send
+          // the SIGNUP code and carry on to the OTP screen: no redirect, no popup,
+          // no second screen. The notice under Continue ("By signing up, you agree
+          // to our Terms of Use & Privacy Policy") is the terms acceptance.
           captureEvent('login_failed', { reason: 'no_account' });
-          showAlert(
-            t('login.noAccountTitle'),
-            t('login.noAccountMsg'),
-            'error'
-          );
+          await startSignup();
         } else if (data?.code === 'OTP_THROTTLED' && data?.codeStillValid) {
           // A code for this number is already live. Refusing to SEND another is
           // correct (it costs an SMS and kills the code they may already have),
@@ -126,7 +162,10 @@ const Login = ({navigation}) => {
   return (
     <KeyboardAvoidingView
       style={styles.main}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      // Android: undefined. The manifest's adjustResize already moves the screen for the
+      // keyboard; 'height' here fought it and the layout flickered up and down,
+      // often leaving a grey gap at the bottom after the keyboard closed.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar
         translucent
         backgroundColor="transparent"
@@ -177,6 +216,7 @@ const Login = ({navigation}) => {
               <Text style={styles.callingCode}>+91</Text>
             </View>
             <TextInput
+              ref={phoneRef}
               style={[styles.input, styles.phoneInput]}
               maxLength={12}
               placeholder={t('login.phoneNumber')}
@@ -227,14 +267,9 @@ const Login = ({navigation}) => {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.footerContainer}>
-            <TouchableOpacity onPress={() => {
-              captureEvent('auth_mode_switched', { to: 'signup', from: 'login', via: 'inline_link' });
-              navigation.navigate('Register');
-            }}>
-              <Text style={styles.registerText}>{t('login.register')}</Text>
-            </TouchableOpacity>
-          </View>
+          {/* No separate Register link: this screen signs up a new number itself.
+              The empty footer keeps the space the guide avatar sits in. */}
+          <View style={styles.footerContainer} />
         </View>
 
       </ScrollView>
@@ -255,8 +290,9 @@ const Login = ({navigation}) => {
           avatarOffsetY={verticalScale(53)}
           boxOffsetY={verticalScale(18)}
           onPress={() => {
-            captureEvent('auth_mode_switched', { to: 'signup', from: 'login', via: 'button' });
-            navigation.navigate('Register');
+            // "Already have an account? Sign in here": the number box is right here.
+            captureEvent('guide_avatar_tapped', { screen: 'login' });
+            phoneRef.current?.focus();
           }}
         />
       )}

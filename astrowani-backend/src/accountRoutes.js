@@ -233,6 +233,51 @@ module.exports = (app) => {
    * The wallet balance is the important field: it is forfeited on deletion and there
    * is no refund path, so the app must say so in words before the customer confirms.
    */
+  /* ── Does the account behind this token still exist? ─────────────────────
+   * The app keeps a customer signed in on nothing but the token saved on the
+   * phone, so an account deleted from the admin (or another device) left that
+   * phone on a broken Home for the rest of the token's 30 days. The app asks this
+   * at startup and signs out on 410.
+   *
+   * 410 ACCOUNT_GONE ONLY when the database answered cleanly and no live row
+   * exists. Any query error is a 503: during the 2026-08-26 credential outage every
+   * lookup came back empty, and "empty because broken" must never sign anyone out.
+   * Astrologer tokens are not this endpoint's business and always pass. */
+  app.get('/api/account/status', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, code: 'NO_TOKEN' });
+    let decoded;
+    try {
+      decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, code: 'TOKEN_INVALID' });
+    }
+    if (decoded.role === 'astrologer' || decoded.astroId) return res.status(200).json({ success: true });
+
+    const live = (r) => r && !String(r.mobile || '').startsWith('deleted:');
+    const userId = decoded.userId || decoded._id || decoded.id;
+    const phone = decoded.phone ? String(decoded.phone).replace(/\D/g, '').slice(-10) : '';
+    try {
+      if (userId && String(userId).includes('-')) {
+        const { data, error } = await db.from('customers').select('id, mobile').eq('id', userId).limit(1);
+        if (error) throw error;
+        if ((data || []).some(live)) return res.status(200).json({ success: true });
+      }
+      if (phone.length === 10) {
+        const { data, error } = await db.from('customers').select('id, mobile').ilike('mobile', `%${phone}`).limit(5);
+        if (error) throw error;
+        if ((data || []).some(live)) return res.status(200).json({ success: true });
+      }
+      if (!userId && phone.length !== 10) {
+        // Nothing to look up by: cannot prove the account is gone.
+        return res.status(200).json({ success: true });
+      }
+      return res.status(410).json({ success: false, code: 'ACCOUNT_GONE' });
+    } catch (_) {
+      return res.status(503).json({ success: false, code: 'UNAVAILABLE' });
+    }
+  });
+
   app.get('/api/account/delete-preview', async (req, res) => {
     try {
       const customer = await resolveCustomer(req);

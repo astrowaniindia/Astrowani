@@ -420,6 +420,95 @@ module.exports = function registerPostHogRoutes(app) {
   //
   // Stages are distinct people and do not enforce order, same as the other
   // funnels on this page.
+  /* ── The whole first journey, click by click ─────────────────────────────
+   * Opening the app -> signing up -> the free call -> the free 5-minute chat ->
+   * sharing. Every tap the customer makes is its own stage, so a drop can be
+   * pinned to the exact screen it happens on rather than to "signup" or "the
+   * offer" as a whole.
+   *
+   * Two parts, for the same reason as signup-to-consult: before an account exists
+   * there is no customer to follow, so those stages are plain distinct-person
+   * counts inside the date range. From "Account created" on it is a COHORT —
+   * customers whose signup_completed falls in the range, followed forward with no
+   * end date — so someone who signed up on the last day and chatted the next day
+   * still counts, and long-standing customers never inflate the bottom.
+   *
+   * Stages are distinct people and do not enforce order, same as every other
+   * funnel on this page. Every event named here is one the app actually sends;
+   * when an event is renamed in the app, it must be renamed here in the same
+   * commit, or this card silently reads zero (audit 2026-08-21).
+   */
+  const JOURNEY_PRE = [
+    { key: 'opened', label: 'Opened the app (sign-in screen)', events: ['login_screen_viewed', 'signup_screen_viewed'] },
+    { key: 'tapped_continue', label: 'Tapped Continue / Get OTP', events: ['login_submit_tapped', 'signup_submit_tapped'] },
+    { key: 'otp_sent', label: 'OTP sent', events: ['login_otp_sent', 'signup_otp_sent'] },
+  ];
+  const JOURNEY_COHORT = [
+    { key: 'created', label: 'OTP verified — account created', events: ['signup_completed'] },
+    { key: 'name_saved', label: 'Name saved', events: ['signup_name_saved'] },
+    { key: 'welcome', label: 'Welcome gift screen seen', events: ['signup_welcome_viewed'] },
+    { key: 'call_offer', label: 'Free-call offer shown', events: ['free_call_offer_shown'] },
+    { key: 'call_claim', label: 'Tapped Claim my FREE call', events: ['free_call_claim_tapped', 'free_call_quick_book_tapped'] },
+    { key: 'call_slots', label: 'Time slots opened', events: ['free_call_slots_opened'] },
+    { key: 'call_slot_picked', label: 'Tapped a time', events: ['free_call_slot_selected'] },
+    { key: 'call_booked', label: 'Free call booked', events: ['free_call_booked'] },
+    { key: 'birth_opened', label: 'Birth details opened', events: ['birth_details_screen_viewed'] },
+    { key: 'birth_saved', label: 'Birth details saved', events: ['birth_details_saved'] },
+    { key: 'chat_offer', label: 'Free 5-minute chat offered', events: ['free_chat_offer_shown'] },
+    { key: 'chat_accepted', label: 'Tapped start free chat', events: ['free_chat_offer_accepted'] },
+    { key: 'chat_opened', label: 'Chat screen opened', events: ['free_bot_chat_started'] },
+    { key: 'chat_message', label: 'Sent a message in the chat', events: ['free_bot_chat_message_sent'] },
+    { key: 'chat_completed', label: 'Finished the full 5 minutes', events: ['free_bot_chat_ended'], filter: "properties.completed = true" },
+    { key: 'share_shown', label: 'Refer & earn offered after chat', events: ['referral_prompt_shown'] },
+    { key: 'shared', label: 'Shared the referral', events: ['referral_shared'] },
+  ];
+
+  const journeyCase = (stage) => {
+    const list = stage.events.map((e) => `'${e}'`).join(', ');
+    const cond = stage.filter ? `event IN (${list}) AND ${stage.filter}` : `event IN (${list})`;
+    return `count(DISTINCT if(${cond}, person_id, NULL)) AS ${stage.key}`;
+  };
+  const journeyEventList = (stages) => {
+    const all = new Set();
+    stages.forEach((s) => s.events.forEach((e) => all.add(e)));
+    return [...all].map((e) => `'${e}'`).join(', ');
+  };
+
+  app.get('/api/admin/analytics/onboarding-journey', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 30 });
+    const dateStart = resolveDateStart(req, { defaultDays: 30 });
+    const scope = `properties.app = 'customer' AND ${ENV_FILTER}`;
+
+    const [preRows, cohortRows] = await Promise.all([
+      runHogQL(`
+        SELECT ${JOURNEY_PRE.map(journeyCase).join(',\n          ')}
+        FROM events
+        WHERE ${scope} AND ${dateWhere}
+          AND event IN (${journeyEventList(JOURNEY_PRE)})
+      `),
+      runHogQL(`
+        SELECT ${JOURNEY_COHORT.map(journeyCase).join(',\n          ')}
+        FROM events
+        WHERE ${scope} AND ${dateStart}
+          AND event IN (${journeyEventList(JOURNEY_COHORT)})
+          AND person_id IN (
+            SELECT person_id FROM events
+            WHERE event = 'signup_completed' AND ${scope} AND ${dateWhere}
+          )
+      `),
+    ]);
+
+    const pre = (preRows[0] || []).map((v) => Number(v) || 0);
+    const cohort = (cohortRows[0] || []).map((v) => Number(v) || 0);
+    return res.json({
+      success: true,
+      stages: [
+        ...JOURNEY_PRE.map((s, i) => ({ key: s.key, label: s.label, count: pre[i] || 0 })),
+        ...JOURNEY_COHORT.map((s, i) => ({ key: s.key, label: s.label, count: cohort[i] || 0 })),
+      ],
+    });
+  }));
+
   app.get('/api/admin/analytics/signup-to-consult', requireAdmin, requireConfigured, h(async (req, res) => {
     const dateWhere = resolveDateWhere(req, { defaultDays: 30 });
     const dateStart = resolveDateStart(req, { defaultDays: 30 });

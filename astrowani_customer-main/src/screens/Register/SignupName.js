@@ -6,7 +6,7 @@
 //
 // A customer who closes the app on this screen is still a signed-in account; the
 // next launch goes to Home, and Profile still has the name field.
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StatusBar,
   StyleSheet,
@@ -29,6 +29,7 @@ import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import { prefetchFreeCallOffer } from '../../api/FreeCallApi';
 
 // Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281).
 const GUIDE_AVATAR_ASPECT = 145 / 281;
@@ -37,11 +38,20 @@ const MAX_NAME_LENGTH = 60;
 export default function SignupName({ navigation }) {
   const { t } = React.useContext(LanguageContext);
   const insets = useSafeAreaInsets();
+  const referralRef = useRef(null);
   const [name, setName] = useState('');
+  // Moved off the OTP screen (2026-09-20): a code typed between the six OTP boxes
+  // and the keyboard was easy to miss, and the OTP now verifies itself the moment
+  // the sixth digit lands, leaving no time to type one. Applied right after the
+  // name is saved, through /api/customer/referral/apply.
+  const [referralCode, setReferralCode] = useState('');
   const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
     captureEvent('signup_name_screen_viewed');
+    // Ask for the free-call offer now, so the Welcome screen that follows already
+    // knows whether to show the gift. The answer is kept by FreeCallApi.
+    prefetchFreeCallOffer().catch(() => {});
   }, []);
 
   const handleContinue = async () => {
@@ -64,6 +74,26 @@ export default function SignupName({ navigation }) {
       // Keep the cached user in step, as the profile screen does.
       await AsyncStorage.setItem('userData', JSON.stringify(updated));
       captureEvent('signup_name_saved');
+
+      // Best effort, and deliberately never blocking: a wrong or expired code must
+      // not stop a new customer from reaching the app. Nothing is shown on failure
+      // beyond the analytics event; the reward is the referrer's, not theirs.
+      const code = referralCode.trim().toUpperCase();
+      if (code) {
+        try {
+          await Instance.post(
+            '/api/customer/referral/apply',
+            { referralCode: code },
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          captureEvent('referral_code_applied', { at: 'signup_name' });
+        } catch (e) {
+          captureEvent('referral_code_rejected', {
+            at: 'signup_name',
+            reason: e?.response?.data?.code || 'other',
+          });
+        }
+      }
       navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { name: trimmed } }] });
     } catch (err) {
       captureEvent('signup_name_save_failed', { reason: err?.response?.data?.code || 'other' });
@@ -112,6 +142,21 @@ export default function SignupName({ navigation }) {
             autoCapitalize="words"
             autoFocus
             maxLength={MAX_NAME_LENGTH}
+            returnKeyType="next"
+            onSubmitEditing={() => referralRef.current?.focus()}
+          />
+
+          <Text style={styles.referralLabel}>{t('signupName.referralLabel')}</Text>
+          <TextInput
+            ref={referralRef}
+            style={[styles.input, styles.referralInput]}
+            placeholder={t('signupName.referralPlaceholder')}
+            placeholderTextColor="#9b8f8a"
+            value={referralCode}
+            onChangeText={(v) => setReferralCode(v.toUpperCase())}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={10}
             returnKeyType="done"
             onSubmitEditing={handleContinue}
           />
@@ -182,6 +227,14 @@ const styles = StyleSheet.create({
     borderColor: '#ecdfd8',
   },
 
+  referralLabel: {
+    fontSize: moderateScale(12.5),
+    color: '#7a6b64',
+    marginTop: verticalScale(18),
+    marginBottom: verticalScale(6),
+    fontWeight: '600',
+  },
+  referralInput: { marginTop: 0 },
   footer: {
     paddingHorizontal: scale(18),
     paddingTop: verticalScale(10),

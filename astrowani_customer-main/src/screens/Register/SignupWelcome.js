@@ -1,12 +1,20 @@
 // Sign-up, step 3 of 3: the guide avatar welcomes the customer by name, and a
 // single "Hi" button takes them to Home.
 //
+// GIFT MODE (2026-09-19): when the free 12-minute call is on and this customer is
+// eligible, the screen instead shows "Namaste <name> ji" and the free-call card
+// itself (inline, not a popup), with the guide avatar greeting them. Nobody drops
+// between the OTP and Home, so this is the moment the offer is most likely to land;
+// on Home the same offer was a popup that 59% closed. The Namaste tap is replaced by
+// the one Claim button. There is no on-screen skip (owner's call, 2026-09-19);
+// Android back still goes Home, and the gift box on Home keeps the offer reachable.
+//
 // Deliberately asks for nothing. Birth details are asked when the customer first
 // tries something that needs them (see utils/profileGate.js).
 //
 // Copy is Hinglish in the English setting (it reads warmer than formal English
 // for this audience) and Devanagari in the Hindi setting.
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StatusBar,
   StyleSheet,
@@ -17,7 +25,10 @@ import {
   Animated,
   Easing,
   BackHandler,
+  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Defs, Line, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,7 +36,12 @@ import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
-import { prefetchFreeCallOffer } from '../../api/FreeCallApi';
+import { getFreeCallOffer } from '../../api/FreeCallApi';
+import FreeCallOffer from '../../components/FreeCallOffer';
+import { markFreeCallOfferSeen } from '../../utils/onboardingFlags';
+
+// How long to wait for the offer before falling back to the plain welcome.
+const GIFT_WAIT_MS = 5000;
 
 // Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281).
 const GUIDE_AVATAR_ASPECT = 145 / 281;
@@ -111,18 +127,38 @@ export default function SignupWelcome({ navigation, route }) {
   const bounce = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const leftRef = useRef(false);
+  // null = still asking, false = no offer for this customer, object = show the gift.
+  const [gift, setGift] = useState(null);
 
   useEffect(() => {
     captureEvent('signup_welcome_viewed');
     // Ask for the free call offer now, while the customer reads this screen, so
     // Home can show its popup the moment it opens.
-    prefetchFreeCallOffer().then((fc) => {
-      // Warm the astrologer photos the popup shows, so it opens complete.
+    let settled = false;
+    const giveUp = setTimeout(() => {
+      if (!settled) { settled = true; setGift(false); }
+    }, GIFT_WAIT_MS);
+    // Usually already on its way from the name screen (SignupName prefetches it).
+    getFreeCallOffer({ usePrefetched: true }).then((fc) => {
+      // Warm the astrologer photos the card shows, so it opens complete.
       (fc?.offer?.astrologers || []).forEach((a) => {
         if (typeof a?.image === 'string' && /^https?:/.test(a.image)) {
           Image.prefetch(a.image).catch(() => {});
         }
       });
+      if (settled) return;
+      settled = true;
+      const show = !!(fc?.enabled && fc?.eligible && fc?.offer);
+      setGift(show ? fc : false);
+      if (show) {
+        // Seen here, so Home does not raise the same offer again as a popup.
+        // The gift box on Home still offers it until they book.
+        AsyncStorage.getItem('customerId')
+          .then((id) => { if (id) markFreeCallOfferSeen(id); })
+          .catch(() => {});
+      }
+    }).catch(() => {
+      if (!settled) { settled = true; setGift(false); }
     });
     Animated.sequence([
       Animated.timing(enter, { toValue: 1, duration: 550, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
@@ -142,7 +178,7 @@ export default function SignupWelcome({ navigation, route }) {
     );
     float.start();
     beat.start();
-    return () => { float.stop(); beat.stop(); };
+    return () => { float.stop(); beat.stop(); clearTimeout(giveUp); };
   }, [enter, bubbleIn, bounce, pulse]);
 
   const goHome = (via) => {
@@ -162,6 +198,63 @@ export default function SignupWelcome({ navigation, route }) {
     return () => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Birth details right after booking: open the form on top of Home, so saving (or
+  // backing out of) it lands the customer on Home.
+  const addBirthDetails = () => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    captureEvent('signup_welcome_hi_tapped', { via: 'free_call_birth_details' });
+    navigation.reset({
+      index: 1,
+      routes: [
+        { name: 'DrawerNavigator' },
+        { name: 'CompleteBirthDetails', params: { intent: 'free_call_after_booking' } },
+      ],
+    });
+  };
+
+  if (gift) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.AstroMaroon} />
+        <ScrollView
+          contentContainerStyle={[styles.giftScroll, { paddingBottom: insets.bottom + verticalScale(16) }]}
+          showsVerticalScrollIndicator={false}>
+          {/* The guide avatar, gently floating, says the greeting in a speech bubble. */}
+          <View style={styles.giftHero}>
+            <Animated.Image
+              source={require('../../assets/images/guideAvatarLogin.png')}
+              style={[styles.giftAvatar, { transform: [{ translateY: bounce }] }]}
+              resizeMode="contain"
+            />
+            <View style={styles.giftBubble}>
+              <View style={styles.giftTailWrap} pointerEvents="none">
+                <View style={styles.giftTailBorder} />
+                <View style={styles.giftTail} />
+              </View>
+              <Text style={styles.giftTitle}>
+                {firstName ? t('welcome.giftTitle', { name: firstName }) : t('welcome.giftTitleNoName')}
+              </Text>
+              <Text style={styles.giftSub}>{t('welcome.giftBlessing')}</Text>
+            </View>
+          </View>
+
+          <FreeCallOffer
+            inline
+            visible
+            offer={gift.offer}
+            t={t}
+            source="welcome"
+            needsBirthDetails
+            onAddBirthDetails={addBirthDetails}
+            onClose={() => goHome('free_call_done')}
+          />
+
+        </ScrollView>
+      </View>
+    );
+  }
 
   const rise = enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
   const bubbleScale = bubbleIn.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
@@ -237,8 +330,14 @@ export default function SignupWelcome({ navigation, route }) {
       <View style={[styles.footer, { paddingBottom: insets.bottom + verticalScale(18) }]}>
         <Text style={styles.hint}>{t('welcome.hint')}</Text>
         <Animated.View style={{ transform: [{ scale: pulse }] }}>
-          <TouchableOpacity style={styles.hiBtn} activeOpacity={0.85} onPress={() => goHome('button')}>
-            <Text style={styles.hiBtnText}>{t('welcome.hi')}</Text>
+          <TouchableOpacity
+            style={styles.hiBtn}
+            activeOpacity={0.85}
+            disabled={gift === null}
+            onPress={() => goHome('button')}>
+            {gift === null
+              ? <ActivityIndicator color={COLORS.AstroMaroon} />
+              : <Text style={styles.hiBtnText}>{t('welcome.hi')}</Text>}
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -383,6 +482,76 @@ const styles = StyleSheet.create({
   },
 
   footer: { paddingHorizontal: scale(24), alignItems: 'stretch' },
+
+  giftScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(16),
+  },
+  giftHero: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    alignSelf: 'stretch',
+    marginBottom: verticalScale(14),
+  },
+  giftAvatar: { height: verticalScale(150), aspectRatio: GUIDE_AVATAR_ASPECT },
+  giftBubble: {
+    flex: 1,
+    marginLeft: scale(12),
+    marginBottom: verticalScale(40),
+    backgroundColor: CREAM,
+    borderRadius: moderateScale(18),
+    borderWidth: 1.5,
+    borderColor: GOLD,
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(14),
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  // Tail pointing left at the avatar: a gold triangle under a cream one, so the
+  // tail carries the bubble's gold border.
+  giftTailWrap: {
+    position: 'absolute',
+    left: -scale(11),
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  giftTailBorder: {
+    width: 0,
+    height: 0,
+    borderTopWidth: scale(9),
+    borderBottomWidth: scale(9),
+    borderRightWidth: scale(11),
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: GOLD,
+  },
+  giftTail: {
+    position: 'absolute',
+    left: scale(2),
+    width: 0,
+    height: 0,
+    borderTopWidth: scale(7),
+    borderBottomWidth: scale(7),
+    borderRightWidth: scale(9),
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: CREAM,
+  },
+  giftTitle: { color: COLORS.AstroMaroon, fontSize: moderateScale(16), fontWeight: '800', lineHeight: moderateScale(22) },
+  giftSub: {
+    color: '#5a4034',
+    fontSize: moderateScale(13.5),
+    fontWeight: '600',
+    lineHeight: moderateScale(19),
+    marginTop: verticalScale(5),
+  },
   hint: {
     color: COLORS.AstroSoftOrange,
     fontSize: moderateScale(13),

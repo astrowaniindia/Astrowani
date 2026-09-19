@@ -92,6 +92,36 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
 const isMissingTable = (error) =>
   !!error && (error.code === '42P01' || error.code === 'PGRST205');
 
+/**
+ * A clock time as minutes after midnight, or null if it is not a valid one.
+ * Accepts "11:30", "24:00", 11.5, a whole hour (11 -> 11:00) and the "1130" /
+ * "2330" form an admin once typed into the hour fields. Hours alone could not say
+ * 11:30, which is why the window moved to minutes (2026-09-19).
+ */
+function parseClock(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const str = String(v).trim();
+  let h;
+  let m;
+  const colon = /^(\d{1,2}):(\d{2})$/.exec(str);
+  if (colon) {
+    h = Number(colon[1]);
+    m = Number(colon[2]);
+  } else if (/^\d{3,4}$/.test(str)) {
+    // "1130" -> 11:30, "930" -> 9:30
+    h = Math.floor(Number(str) / 100);
+    m = Number(str) % 100;
+  } else {
+    const n = Number(str);
+    if (!Number.isFinite(n)) return null;
+    h = Math.floor(n);
+    m = Math.round((n - h) * 60);
+  }
+  if (!Number.isInteger(h) || !Number.isInteger(m) || m < 0 || m > 59 || h < 0) return null;
+  const total = h * 60 + m;
+  return total <= 24 * 60 ? total : null;
+}
+
 const clampInt = (v, lo, hi, fallback) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n >= lo && n <= hi ? n : fallback;
@@ -118,8 +148,12 @@ async function loadOffer() {
   merged.enabled = merged.enabled === true || merged.enabled === 'true';
   merged.durationMinutes = clampInt(merged.durationMinutes, 1, 180, DEFAULTS.durationMinutes);
   merged.slotMinutes = clampInt(merged.slotMinutes, 5, 240, DEFAULTS.slotMinutes);
-  merged.openHour = clampInt(merged.openHour, 0, 23, DEFAULTS.openHour);
-  merged.closeHour = clampInt(merged.closeHour, 1, 24, DEFAULTS.closeHour);
+  // The window in minutes after midnight. openTime/closeTime ("11:30", "24:00")
+  // win; the older whole-hour openHour/closeHour fields are still read.
+  let openMin = parseClock(merged.openTime ?? merged.openHour);
+  let closeMin = parseClock(merged.closeTime ?? merged.closeHour);
+  if (openMin === null || openMin > 23 * 60 + 59) openMin = DEFAULTS.openHour * 60;
+  if (closeMin === null || closeMin < 1) closeMin = DEFAULTS.closeHour * 60;
   merged.daysAhead = clampInt(merged.daysAhead, 1, 60, DEFAULTS.daysAhead);
   merged.minLeadMinutes = clampInt(merged.minLeadMinutes, 0, 10080, DEFAULTS.minLeadMinutes);
   if (!['single', 'pool'].includes(merged.assignmentMode)) merged.assignmentMode = 'manual';
@@ -136,10 +170,18 @@ async function loadOffer() {
   if (merged.assignmentMode === 'pool' && merged.poolAstrologerIds.length === 0) {
     merged.assignmentMode = 'manual';
   }
-  if (merged.closeHour <= merged.openHour) {
-    merged.openHour = DEFAULTS.openHour;
-    merged.closeHour = DEFAULTS.closeHour;
+  if (closeMin <= openMin) {
+    openMin = DEFAULTS.openHour * 60;
+    closeMin = DEFAULTS.closeHour * 60;
   }
+  merged.openMin = openMin;
+  merged.closeMin = closeMin;
+  const hhmm = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  merged.openTime = hhmm(openMin);
+  merged.closeTime = hhmm(closeMin);
+  // Kept for anything still reading whole hours.
+  merged.openHour = Math.floor(openMin / 60);
+  merged.closeHour = Math.ceil(closeMin / 60);
   return merged;
 }
 
@@ -216,9 +258,13 @@ function offerDateKeys(offer, now = new Date()) {
 function buildSlots(offer, dateKey, now = new Date()) {
   const out = [];
   const earliest = now.getTime() + offer.minLeadMinutes * 60000;
-  const windowEnd = businessInstant(dateKey, offer.closeHour, 0).getTime();
+  // openMin/closeMin come from loadOffer; a bare { openHour, closeHour } offer
+  // (the slot check script) still works.
+  const openMin = Number.isFinite(offer.openMin) ? offer.openMin : offer.openHour * 60;
+  const closeMin = Number.isFinite(offer.closeMin) ? offer.closeMin : offer.closeHour * 60;
+  const windowEnd = businessInstant(dateKey, 0, closeMin).getTime();
 
-  for (let mins = offer.openHour * 60; mins < offer.closeHour * 60; mins += offer.slotMinutes) {
+  for (let mins = openMin; mins < closeMin; mins += offer.slotMinutes) {
     const start = businessInstant(dateKey, Math.floor(mins / 60), mins % 60);
     const end = new Date(start.getTime() + offer.durationMinutes * 60000);
     if (end.getTime() > windowEnd) continue;
@@ -1621,6 +1667,6 @@ module.exports.FREE_CALL_TZ_OFFSET_MIN = FREE_CALL_TZ_OFFSET_MIN;
 // Exported for tests only. The slot arithmetic is the part of this file most
 // likely to be wrong in a way nobody notices (it must not follow the server's
 // own timezone), so it is testable without a database.
-module.exports._internals = { buildSlots, offerDateKeys, businessDateKey, businessInstant, formatSlotLabel, describeWhen, DEFAULTS };
+module.exports._internals = { buildSlots, offerDateKeys, businessDateKey, businessInstant, formatSlotLabel, describeWhen, DEFAULTS, parseClock };
 module.exports.assigneeCandidates = assigneeCandidates;
 module.exports.slotCapacity = slotCapacity;

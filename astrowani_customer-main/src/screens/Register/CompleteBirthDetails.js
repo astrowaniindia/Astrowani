@@ -212,7 +212,12 @@ export default function CompleteBirthDetails({ navigation, route }) {
 
   const STEP_TITLES = [t('birthGate.step1Title'), t('birthGate.step2Title')];
   const STEP_SUBS = [t('birthGate.step1Sub'), t('birthGate.step2Sub')];
-  const GUIDE = [t('birthGate.guideStep1'), t('birthGate.guideStep2')];
+  // Straight after booking the free call this is the last step, and says so.
+  const afterBooking = intent === 'free_call_after_booking';
+  const GUIDE = [
+    afterBooking ? t('birthGate.guideAfterBooking') : t('birthGate.guideStep1'),
+    t('birthGate.guideStep2'),
+  ];
 
   const GENDERS = [
     { value: 'male', label: t('birthGate.male') },
@@ -233,7 +238,7 @@ export default function CompleteBirthDetails({ navigation, route }) {
           <Icon name="arrow-back" size={moderateScale(26)} color={COLORS.AstroMaroon} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{t('birthGate.title')}</Text>
+          <Text style={styles.title}>{afterBooking ? t('birthGate.lastStepTitle') : t('birthGate.title')}</Text>
           <Text style={styles.stepCounter}>{t('birthGate.stepOf', { n: step + 1, total: TOTAL_STEPS })}</Text>
         </View>
       </View>

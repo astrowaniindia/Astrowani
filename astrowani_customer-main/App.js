@@ -16,6 +16,25 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import { hydrateHomeCache, prefetchHomeData } from './src/utils/homePreload';
 import { loadMascotTips } from './src/utils/mascotTips';
 import { prefetchFreeCallOffer } from './src/api/FreeCallApi';
+import Instance from './src/api/ApiCall';
+import { resetAnalyticsIdentity } from './src/utils/Analytics';
+
+// Signed in with a saved token: does that account still exist? Resolves true only
+// on the server's explicit 410 ACCOUNT_GONE (deleted from the admin or another
+// phone). Anything else, including no network or a slow answer, counts as "still
+// there": signing a real customer out by mistake is far worse than a stale screen.
+const ACCOUNT_CHECK_MS = 2500;
+async function accountIsGone(token) {
+  try {
+    await Instance.get('/api/account/status', {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: ACCOUNT_CHECK_MS,
+    });
+    return false;
+  } catch (e) {
+    return e?.response?.status === 410;
+  }
+}
 
 // Override global Alert.alert to render our CustomAlert component globally
 const originalAlert = Alert.alert;
@@ -67,9 +86,25 @@ const App = () => {
         console.log('Failed to get token from AsyncStorage', e);
       }
 
-      const fcmToken = await requestUserPermission();
-      if (fcmToken) {
-        await AsyncStorage.setItem('fcmToken', fcmToken);
+      // A deleted account must not keep opening onto its old Home. Same cleanup as
+      // logout, then the app starts on signup like any signed-out visitor.
+      if (token && (await accountIsGone(token))) {
+        try {
+          resetAnalyticsIdentity();
+          await AsyncStorage.clear();
+        } catch (_) {}
+        token = null;
+      }
+
+      // Notification permission: only for a signed-in customer here. A first-time
+      // visitor is asked right after booking the free call instead (FreeCallOffer),
+      // where "we'll remind you before your call" gives the prompt a reason, rather
+      // than during the splash where it gets a reflex "Don't allow" (2026-09-20).
+      if (token) {
+        const fcmToken = await requestUserPermission();
+        if (fcmToken) {
+          await AsyncStorage.setItem('fcmToken', fcmToken);
+        }
       }
 
       setUserToken(token);
@@ -99,6 +134,8 @@ const App = () => {
               no navigator left to send anyone "home" with — the fallback offers only
               Retry. Screen-level boundaries mounted lower down should NOT pass it. */}
           <ErrorBoundary name="AppRoot" isRoot>
+            {/* Signed out: the Login screen, which also signs up a new number
+                (Login.js handleGetOtp), so one screen serves everyone (2026-09-20). */}
             <Navigation initialRoute={userToken ? 'DrawerNavigator' : 'Login'} />
           </ErrorBoundary>
           <CustomAlert />

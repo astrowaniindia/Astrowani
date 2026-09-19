@@ -191,6 +191,7 @@ export default function Analytics() {
   const [authFunnel, setAuthFunnel] = useState(null);
   const [authFunnelType, setAuthFunnelType] = useState('signup');
   const [signupConsult, setSignupConsult] = useState(null);
+  const [journey, setJourney] = useState(null);
   const [freeCallFunnel, setFreeCallFunnel] = useState(null);
   const [freeChatFunnel, setFreeChatFunnel] = useState(null);
   const [servicesEngagement, setServicesEngagement] = useState(null);
@@ -410,6 +411,21 @@ export default function Analytics() {
   }, [dateRange]);
 
   useEffect(() => { loadSignupConsult(); }, [loadSignupConsult]);
+
+  // The full first journey, click by click. Own fetch, so a failure here leaves the
+  // rest of the page intact.
+  const loadJourney = useCallback(async () => {
+    try {
+      const { data } = await client.get('/api/admin/analytics/onboarding-journey', {
+        params: { from: dateRange.from, to: dateRange.to },
+      });
+      setJourney(data);
+    } catch (e) {
+      setJourney({ error: true });
+    }
+  }, [dateRange]);
+
+  useEffect(() => { loadJourney(); }, [loadJourney]);
 
   // Independent fetch — Sentry not being configured yet is expected and shouldn't 503
   // the rest of the page the way a missing POSTHOG_* var does above.
@@ -877,6 +893,26 @@ export default function Analytics() {
       </div>
 
       {/* ── Signup -> first consultation ── */}
+      {/* Every tap of the first journey, so a drop can be pinned to one screen. */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>First Journey — every step</h3>
+        <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
+          From opening the app to finishing the free 5-minute chat and sharing the
+          referral, one row per tap. The first three rows count everyone who reached
+          the sign-in screen in these dates; from <b>OTP verified</b> down it follows
+          the customers who signed up in these dates, including what they did later.
+          Steps that only exist in newer app versions read low until that version is
+          on enough phones.
+        </p>
+        {journey?.stages?.length ? (
+          <StepFunnel stages={journey.stages} baseLabel="opened the app" />
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            {journey?.error ? 'Could not load this journey right now.' : 'Loading…'}
+          </p>
+        )}
+      </div>
+
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Signup to First Consultation</h3>
         <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>

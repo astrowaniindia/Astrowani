@@ -14,9 +14,10 @@
 //
 // Copy (heading, body, button, confirmation) is admin-authored and arrives in
 // `offer`; only structural labels are translated here.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
+  Pressable,
   View,
   Text,
   Image,
@@ -31,6 +32,8 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { getFreeCallSlots, bookFreeCall } from '../api/FreeCallApi';
 import {useModalPresence} from '../utils/modalPresentation';
 import { captureEvent } from '../utils/Analytics';
+import ShineButton from './ShineButton';
+import { requestUserPermission } from '../utils/PushNotification';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -88,11 +91,20 @@ const AstrologerCluster = ({ list, t }) => {
       <Text style={styles.clusterLabel} numberOfLines={2}>
         {tr('freeCall.byVerifiedAstrologers')}
       </Text>
+      <Text style={styles.clusterDetail}>{tr('freeCall.callsOnYourNumber')}</Text>
     </View>
   );
 };
 
-const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook, t, source = 'auto', startAtSlots = false }) => {
+const FreeCallOffer = ({
+  visible, offer, phone, onClose, onBooked, t, source = 'auto', startAtSlots = false,
+  // Birth details are asked AFTER booking now (2026-09-19), as an optional step on
+  // the confirmation screen. Asking before the slots lost about 1 in 4 people.
+  needsBirthDetails = false, onAddBirthDetails,
+  // inline: render just the card, in the page (the signup Welcome screen), with no
+  // Modal and no dimmed backdrop. The host screen provides its own way out.
+  inline = false,
+}) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
   const [dates, setDates] = useState([]);
@@ -103,6 +115,10 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(null);
+  // After a booking: the pending hop to the birth-details form (see afterBooked).
+  const autoNextRef = useRef(null);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const tr = (k, p) => (typeof t === 'function' ? t(k, p) : k);
 
@@ -123,6 +139,10 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
         setStep('intro');
         if (offer) captureEvent('free_call_offer_shown', { source });
       }
+    } else if (autoNextRef.current) {
+      // Closed before the automatic hop to birth details: do not open it anyway.
+      clearTimeout(autoNextRef.current);
+      autoNextRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -140,10 +160,27 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
     }
   }, []);
 
+  useEffect(() => () => { if (autoNextRef.current) clearTimeout(autoNextRef.current); }, []);
+
+  // After booking (2026-09-20): "Slot booked!" shows, the notification prompt is
+  // asked (right after booking, where "we will remind you" gives it a reason),
+  // and once it is answered and at least 2 seconds have passed, the birth-details
+  // form opens by itself as the last step for the astrologer.
+  const afterBooked = async () => {
+    const bookedAt = Date.now();
+    await new Promise((r) => setTimeout(r, 900));
+    try { await requestUserPermission(); } catch (_) {}
+    if (!needsBirthDetails || !onAddBirthDetails || !visibleRef.current) return;
+    const wait = Math.max(0, 2000 - (Date.now() - bookedAt));
+    autoNextRef.current = setTimeout(() => {
+      autoNextRef.current = null;
+      if (!visibleRef.current) return;
+      captureEvent('free_call_birth_details_auto_opened', { source });
+      onAddBirthDetails();
+    }, wait);
+  };
+
   const goToSlots = async () => {
-    // Lets the parent ask for birth details before any slot is shown. Returning
-    // false stops here; the parent is responsible for closing the sheet.
-    if (onBeforeBook && !(await onBeforeBook())) return;
     captureEvent('free_call_slots_opened', { source });
     setStep('slots');
     loadSlots(null);
@@ -157,15 +194,16 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
     if (onClose) onClose();
   };
 
-  const confirm = async () => {
-    if (!picked || booking) return;
+  // Tapping a time books it at once; there is no separate Confirm step.
+  const confirm = async (slotStart = picked) => {
+    if (!slotStart || booking) return;
     setBooking(true);
     setError('');
     try {
-      const res = await bookFreeCall(picked);
+      const res = await bookFreeCall(slotStart);
       captureEvent('free_call_booked', {
         source,
-        slot_start: picked,
+        slot_start: slotStart,
         // Whoever the backend actually assigned, or null in manual mode where
         // nobody is assigned yet. No longer falls back to a display persona.
         astrologer_name: res.booking?.astrologerName || null,
@@ -173,6 +211,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
       setConfirmed(res.booking);
       setStep('done');
       if (onBooked) onBooked(res.booking);
+      afterBooked();
     } catch (e) {
       // ALREADY_BOOKED is deliberately NOT counted as a failure — it ends on the same
       // confirmation screen as a successful booking, so counting it here would inflate
@@ -180,7 +219,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
       // code is a real failure: SLOT_TAKEN is a capacity signal (add astrologers or
       // slots), anything else is an error worth seeing.
       if (e.code !== 'ALREADY_BOOKED') {
-        captureEvent('free_call_booking_failed', { source, slot_start: picked, reason: e.code || 'other' });
+        captureEvent('free_call_booking_failed', { source, slot_start: slotStart, reason: e.code || 'other' });
       }
       if (e.code === 'SLOT_TAKEN' || e.code === 'SLOT_PAST') {
         // Someone else won the slot. Re-read the grid so the customer is choosing
@@ -203,7 +242,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
 
   // Declares this modal to the presentation registry so root-level popups wait
   // for it instead of colliding with it on iOS (utils/modalPresentation).
-  useModalPresence(visible && !!offer);
+  useModalPresence(visible && !!offer && !inline);
 
   if (!visible || !offer) return null;
 
@@ -214,40 +253,46 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
   // cluster at all rather than a placeholder, which AstrologerCluster handles.
   const cluster = Array.isArray(offer.astrologers) ? offer.astrologers : [];
 
-  return (
-    <Modal transparent visible animationType="fade" onRequestClose={step === 'done' ? onClose : dismiss}>
-      <View style={styles.overlay}>
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.closeBtn}
-            onPress={step === 'done' ? onClose : dismiss}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <MaterialIcons name="close" size={moderateScale(20)} color="#fff" />
-          </TouchableOpacity>
+  const card = (
+        <View style={[styles.card, inline && styles.cardInline]}>
 
           {/* ── Intro ─────────────────────────────────────────────────── */}
           {step === 'intro' && (
             <>
-              <View style={styles.header}>
-                <View style={styles.giftRow}>
-                  <MaterialIcons name="card-giftcard" size={moderateScale(20)} color={COLORS.AstroGold} />
-                  <Text style={styles.minutes}>
-                    {tr('freeCall.minutes', { count: offer.durationMinutes })}
-                  </Text>
+              {/* Reading order (2026-09-19): a large limited-offer tag, what the offer
+                  is, then the button, whose "Claim my FREE call" is the one place FREE
+                  appears. The faces and the admin's body text come last and smaller.
+                  The admin headerText ("Your first 12-minute call is on us") is not
+                  shown: it repeated the headline. */}
+              <View style={[styles.header, styles.headerCentered]}>
+                <View style={styles.limitedTag}>
+                  <MaterialIcons name="card-giftcard" size={moderateScale(19)} color={COLORS.AstroMaroon} />
+                  <Text style={styles.limitedTagText}>{tr('freeCall.limitedOffer')}</Text>
                 </View>
-                <Text style={styles.headerText}>{offer.headerText}</Text>
+                <Text style={styles.freeSub}>
+                  {tr('freeCall.minutesCall', { count: offer.durationMinutes })}
+                </Text>
               </View>
 
               <View style={styles.introBody}>
+                {/* Kept deliberately sparse: faces, the button, one trust line, one link.
+                    The divider and the admin bodyText were dropped (2026-09-19); the
+                    button's own small line already says when the call comes. */}
                 {cluster.length > 0 && <AstrologerCluster list={cluster} t={t} />}
-                {!!offer.bodyText && <Text style={styles.bodyText}>{offer.bodyText}</Text>}
 
-                <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={goToSlots}>
-                  <Text style={styles.ctaText}>{offer.ctaText}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={dismiss} style={styles.later}>
-                  <Text style={styles.laterText}>{tr('freeCall.notNow')}</Text>
-                </TouchableOpacity>
+                {/* Claim opens the time slots inside this same card; nothing is booked
+                    until a time is tapped (2026-09-20). */}
+                <ShineButton
+                  style={[styles.cta, styles.ctaBig]}
+                  onPress={() => {
+                    captureEvent('free_call_claim_tapped', { source });
+                    goToSlots();
+                  }}>
+                  <Text style={[styles.ctaText, styles.ctaBigText]}>{tr('freeCall.claimFree')}</Text>
+                </ShineButton>
+                <Text style={styles.trustLine}>{tr('freeCall.trustLine')}</Text>
+                {!!error && <Text style={styles.error}>{error}</Text>}
+
               </View>
             </>
           )}
@@ -299,7 +344,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
                           <TouchableOpacity
                             key={s.start}
                             activeOpacity={s.taken ? 1 : 0.85}
-                            disabled={s.taken}
+                            disabled={s.taken || booking}
                             style={[
                               styles.slot,
                               s.taken && styles.slotTaken,
@@ -309,6 +354,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
                               captureEvent('free_call_slot_selected', { source, slot_start: s.start });
                               setPicked(s.start);
                               setError('');
+                              confirm(s.start);
                             }}>
                             <Text style={[
                               styles.slotTxt,
@@ -328,16 +374,13 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
 
               {!!error && <Text style={styles.error}>{error}</Text>}
 
-              <View style={styles.footer}>
-                <TouchableOpacity
-                  style={[styles.cta, styles.ctaFooter, !picked && styles.ctaDisabled]}
-                  activeOpacity={picked ? 0.85 : 1}
-                  disabled={!picked || booking}
-                  onPress={confirm}>
-                  <Text style={styles.ctaText}>
-                    {booking ? tr('freeCall.booking') : tr('freeCall.confirm')}
-                  </Text>
-                </TouchableOpacity>
+              {/* No Confirm button: tapping a time books it. This line says so, and
+                  shows progress while the booking goes through. */}
+              <View style={[styles.footer, styles.bookingStatus]}>
+                {booking && <ActivityIndicator color={COLORS.AstroMaroon} />}
+                <Text style={styles.bookingStatusText}>
+                  {booking ? tr('freeCall.booking') : tr('freeCall.tapToBook')}
+                </Text>
               </View>
             </>
           )}
@@ -346,7 +389,7 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
           {step === 'done' && confirmed && (
             <>
               <View style={styles.header}>
-                <Text style={styles.headerSmall}>{tr('freeCall.yourCall')}</Text>
+                <Text style={styles.headerSmall}>{tr('freeCall.slotBooked')}</Text>
               </View>
               <View style={styles.doneBody}>
                 <View style={styles.tick}>
@@ -374,19 +417,45 @@ const FreeCallOffer = ({ visible, offer, phone, onClose, onBooked, onBeforeBook,
                       : tr('freeCall.callingYouNoPhone');
                   })()}
                 </Text>
-                <TouchableOpacity
-                  style={[styles.cta, styles.ctaFooter]}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    captureEvent('free_call_confirmed_done');
-                    if (onClose) onClose();
-                  }}>
-                  <Text style={styles.ctaText}>{tr('freeCall.done')}</Text>
-                </TouchableOpacity>
+                {needsBirthDetails ? (
+                  // Opens by itself about 2 seconds after booking (afterBooked).
+                  <View style={styles.lastStepRow}>
+                    <ActivityIndicator color={COLORS.AstroMaroon} size="small" />
+                    <Text style={styles.lastStepText}>{tr('freeCall.lastStep')}</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.cta, styles.ctaFooter]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      captureEvent('free_call_confirmed_done');
+                      if (onClose) onClose();
+                    }}>
+                    <Text style={styles.ctaText}>{tr('freeCall.done')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </>
           )}
         </View>
+  );
+
+  if (inline) return card;
+
+  return (
+    <Modal transparent visible animationType="fade" onRequestClose={step === 'done' ? onClose : dismiss}>
+      <View style={styles.overlay}>
+        {/* No close button and no "Maybe later" (2026-09-19): the offer is closed only
+            by tapping the dimmed area around the card. The backdrop sits BEHIND the
+            card as a sibling, so taps on the card (and its scrolling date/slot lists)
+            never reach it. Android back still closes it via onRequestClose. */}
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={step === 'done' ? onClose : dismiss}
+          accessibilityRole="button"
+          accessibilityLabel={tr('freeCall.notNow')}
+        />
+        {card}
       </View>
     </Modal>
   );
@@ -413,6 +482,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: scale(20),
   },
+  // On the signup Welcome screen the card sits on the same brown as its own header,
+  // so a gold edge is what separates the two.
+  cardInline: { borderWidth: 1.5, borderColor: COLORS.AstroGold },
   card: {
     width: '100%',
     maxWidth: scale(360),
@@ -425,13 +497,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 18,
   },
-  closeBtn: {
-    position: 'absolute',
-    top: verticalScale(12),
-    right: scale(12),
-    zIndex: 2,
-    padding: scale(2),
-  },
   header: {
     backgroundColor: COLORS.AstroMaroon,
     paddingHorizontal: scale(20),
@@ -439,6 +504,33 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(16),
   },
   giftRow: { flexDirection: 'row', alignItems: 'center', gap: scale(6) },
+  headerCentered: { alignItems: 'center', paddingTop: verticalScale(20), paddingBottom: verticalScale(18) },
+  limitedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(7),
+    backgroundColor: COLORS.AstroGold,
+    borderRadius: moderateScale(24),
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(7),
+  },
+  limitedTagText: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(15),
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  freeSub: {
+    color: '#fff',
+    fontSize: moderateScale(22),
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: moderateScale(29),
+    marginTop: verticalScale(12),
+  },
+  ctaBig: { paddingVertical: verticalScale(16), marginTop: verticalScale(16), borderRadius: moderateScale(16) },
+  ctaBigText: { fontSize: moderateScale(18), fontWeight: '800' },
+  trustLine: { color: '#2E7D4F', fontSize: moderateScale(12.5), fontWeight: '700', marginTop: verticalScale(10), textAlign: 'center' },
   minutes: {
     color: COLORS.AstroGold,
     fontSize: moderateScale(11),
@@ -460,6 +552,16 @@ const styles = StyleSheet.create({
     paddingRight: scale(24),
   },
 
+  bookingStatus: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8) },
+  bookingStatusText: { color: '#6f5a4c', fontSize: moderateScale(13.5), fontWeight: '600', textAlign: 'center' },
+  lastStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(8),
+    marginTop: verticalScale(16),
+    paddingHorizontal: scale(6),
+  },
+  lastStepText: { flexShrink: 1, color: COLORS.AstroMaroon, fontSize: moderateScale(14), fontWeight: '700' },
   introBody: { alignItems: 'center', paddingHorizontal: scale(20), paddingVertical: verticalScale(18) },
 
   clusterWrap: { alignItems: 'center' },
@@ -474,20 +576,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
-  clusterLabel: {
-    fontSize: moderateScale(13.5),
-    fontWeight: '700',
-    color: '#2E1A10',
-    marginTop: verticalScale(12),
+  clusterDetail: {
+    fontSize: moderateScale(12.5),
+    color: '#6f5a4c',
+    marginTop: verticalScale(3),
     textAlign: 'center',
     paddingHorizontal: scale(10),
   },
-  bodyText: {
-    fontSize: moderateScale(13.5),
-    color: '#4A3325',
+  clusterLabel: {
+    fontSize: moderateScale(14),
+    fontWeight: '700',
+    color: '#2E1A10',
+    marginTop: verticalScale(10),
     textAlign: 'center',
-    lineHeight: moderateScale(20),
-    marginTop: verticalScale(12),
+    paddingHorizontal: scale(10),
   },
 
   cta: {
@@ -501,8 +603,6 @@ const styles = StyleSheet.create({
   ctaFooter: { marginTop: verticalScale(4) },
   ctaDisabled: { backgroundColor: '#B99C8A' },
   ctaText: { color: '#fff', fontWeight: '700', fontSize: moderateScale(14.5) },
-  later: { marginTop: verticalScale(10), padding: scale(6) },
-  laterText: { color: '#8A6A55', fontSize: moderateScale(13), fontWeight: '600' },
 
   dateStrip: { paddingHorizontal: scale(14), paddingVertical: verticalScale(12), gap: scale(8) },
   dateChip: {

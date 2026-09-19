@@ -26,9 +26,11 @@ import {
   Image,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { showAlert } from '../../Component/CustomAlert';
+import { useNavigationState } from '@react-navigation/native';
+import { showAlert, showAutoAlert } from '../../Component/CustomAlert';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -37,25 +39,41 @@ import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import {apiFailureReason} from '../../utils/apiFailureReason';
 import { sanitizePhoneInput } from '../../utils/phoneInput';
-import TermsAcceptance from '../../components/TermsAcceptance';
+import openExternalUrl from '../../utils/openExternalUrl';
+import { LEGAL_LINKS } from '../../config/legal';
+import ShineButton from '../../components/ShineButton';
 
 // Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281).
 const GUIDE_AVATAR_ASPECT = 145 / 281;
 
-export default function Register({ navigation }) {
+export default function Register({ navigation, route }) {
   const { t, language } = React.useContext(LanguageContext);
   const insets = useSafeAreaInsets();
+  // Signup is the app's first screen when signed out, so often there is nothing
+  // to go back to. Read from navigation state (not navigation.canGoBack() at
+  // render) so the arrow also disappears after returning from the OTP screen.
+  const canGoBack = useNavigationState((st) => (st?.index ?? 0) > 0);
 
   // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config).
   const [guideAvatarConfig, setGuideAvatarConfig] = useState(null);
-  const [mobile, setMobile] = useState('');
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Arriving from Login after "no account on this number": the number they already
+  // typed is carried over, so the only thing left to do here is tap Get OTP.
+  const prefilledPhone = sanitizePhoneInput(route?.params?.phoneNumber || '');
+  const [mobile, setMobile] = useState(prefilledPhone);
   const [submitting, setSubmitting] = useState(false);
 
   // Top of the signup funnel.
   useEffect(() => {
-    captureEvent('signup_screen_viewed');
+    captureEvent('signup_screen_viewed', { from_login: !!route?.params?.fromLogin, prefilled: !!prefilledPhone });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Register can already be in the stack when Login sends someone here again with
+  // a different number; the initial useState would not see the new param.
+  useEffect(() => {
+    const p = route?.params?.phoneNumber;
+    if (p) setMobile(sanitizePhoneInput(p));
+  }, [route?.params?.phoneNumber]);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +91,6 @@ export default function Register({ navigation }) {
   const validate = () => {
     if (!mobile.trim()) return [t('register.enterMobile'), 'phone_empty'];
     if (mobile.length < 10) return [t('register.validMobile'), 'phone_too_short'];
-    if (!acceptedTerms) return [t('register.acceptRequired'), 'terms_not_accepted'];
     return [null, null];
   };
 
@@ -122,13 +139,18 @@ export default function Register({ navigation }) {
           resendIn: data?.retryAfterSeconds,
         });
       } else if (data?.code === 'ACCOUNT_EXISTS') {
+        // A returning customer typed their number here (signup is the first screen
+        // since 2026-09-20). Nothing was sent: the server refuses before any SMS.
+        // Send their LOGIN code instead, so they carry on with no extra step.
         captureEvent('signup_failed', { reason: 'account_exists' });
-        showAlert(
-          t('register.accountExists'),
-          t('register.accountExistsMsg'),
-          'error',
-          () => navigation.navigate('Login'),
-        );
+        if (!(await switchToLogin())) {
+          showAlert(
+            t('register.accountExists'),
+            t('register.accountExistsMsg'),
+            'error',
+            () => navigation.navigate('Login', { phoneNumber: mobile }),
+          );
+        }
       } else {
         console.error(error);
         captureEvent('signup_failed', { reason: apiFailureReason(error) });
@@ -141,7 +163,49 @@ export default function Register({ navigation }) {
     }
   };
 
+  const openLegal = (url, which) => {
+    captureEvent('legal_link_opened', { link: which, screen: 'signup' });
+    openExternalUrl(url);
+  };
+
+  // Returning customer on the signup screen: request a login OTP for the same
+  // number and go to the OTP screen. Resolves false if that failed, so the caller
+  // can fall back to pointing them at Login.
+  const switchToLogin = async () => {
+    try {
+      const r = await Instance.post('/api/users/mobile-otp-request', {
+        phoneNumber: mobile,
+        role: 'customer',
+        intent: 'login',
+      });
+      if (r?.data?.success) {
+        captureEvent('login_otp_sent', { via: 'signup_screen' });
+        navigation.navigate('VerifyOtp', { phoneNumber: mobile, role: 'customer' });
+        showAutoAlert(t('register.welcomeBackTitle'), t('register.welcomeBackMsg'), 'info', 3000);
+        return true;
+      }
+    } catch (e) {
+      const d = e?.response?.data;
+      if (d?.code === 'OTP_THROTTLED' && d?.codeStillValid) {
+        captureEvent('login_otp_already_sent', { via: 'signup_screen' });
+        navigation.navigate('VerifyOtp', {
+          phoneNumber: mobile,
+          role: 'customer',
+          resendIn: d?.retryAfterSeconds,
+        });
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const goToLogin = () => {
+    captureEvent('auth_mode_switched', { to: 'login', from: 'signup', via: 'inline_link' });
+    navigation.navigate('Login');
+  };
+
   const handleBack = () => {
+    if (!navigation.canGoBack()) return;
     captureEvent('signup_abandoned', { step: 1 });
     navigation.goBack();
   };
@@ -159,9 +223,11 @@ export default function Register({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#f7f3f1" />
 
       <View style={[styles.header, { paddingTop: insets.top + verticalScale(10) }]}>
+        {canGoBack && (
         <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Icon name="arrow-back" size={moderateScale(26)} color={COLORS.AstroMaroon} />
         </TouchableOpacity>
+        )}
         <Text style={styles.title}>{t('register.title')}</Text>
       </View>
 
@@ -193,6 +259,15 @@ export default function Register({ navigation }) {
             </View>
           )}
 
+          {/* The whole line is the tap target: a pressable word nested inside a
+              sentence misses taps on Android. */}
+          <TouchableOpacity onPress={goToLogin} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8 }}>
+            <Text style={styles.haveAccount}>
+              {t('register.haveAccount')}
+              <Text style={styles.haveAccountLink}>{t('register.loginLink')}</Text>
+            </Text>
+          </TouchableOpacity>
+
           <Text style={styles.fieldLabel}>{t('register.mobileLabel')}</Text>
           <View style={styles.phoneRow}>
             <Text style={styles.phonePrefix}>+91</Text>
@@ -204,37 +279,60 @@ export default function Register({ navigation }) {
               keyboardType="phone-pad"
               onChangeText={(text) => setMobile(sanitizePhoneInput(text))}
               maxLength={12}
-              autoFocus
+              // Prefilled: keep the keyboard closed so the Get OTP button stays in view.
+              autoFocus={!prefilledPhone}
               returnKeyType="done"
               onSubmitEditing={handleSubmit}
             />
           </View>
 
-          <TermsAcceptance
-            accepted={acceptedTerms}
-            onChange={setAcceptedTerms}
-            style={styles.terms}
-          />
+          {/* No tick box: tapping Get OTP is the acceptance (the same as Login), so a
+              new customer gets from here to an OTP in one tap. The links still open
+              the full pages without accepting anything. */}
+          <Text style={styles.terms}>
+            {t('register.agreePrefix', { button: t('register.getOtp') })}
+            <Text style={styles.termsLink} onPress={() => openLegal(LEGAL_LINKS.termsOfUse, 'terms')}>
+              {t('register.termsAndConditions')}
+            </Text>
+            {t('register.acceptAnd')}
+            <Text style={styles.termsLink} onPress={() => openLegal(LEGAL_LINKS.privacyPolicy, 'privacy')}>
+              {t('settings.privacyPolicy')}
+            </Text>
+            {t('register.agreeSuffix')}
+          </Text>
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + verticalScale(10) }]}>
-          <TouchableOpacity
-            style={[styles.nextBtn, submitting && { opacity: 0.6 }]}
+          <AnimatedOtpButton
+            label={t('register.getOtp')}
             onPress={handleSubmit}
-            activeOpacity={0.85}
-            disabled={submitting}>
-            {submitting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Text style={styles.nextBtnText}>{t('register.getOtp')}</Text>
-                <Icon name="arrow-forward" size={moderateScale(18)} color="#fff" />
-              </>
-            )}
-          </TouchableOpacity>
+            submitting={submitting}
+          />
         </View>
       </KeyboardAvoidingView>
     </View>
+  );
+}
+
+// The Get OTP button is the only thing standing between a visitor and an account,
+// so it moves to draw the eye (components/ShineButton), with the arrow nudging forward.
+function AnimatedOtpButton({ label, onPress, submitting }) {
+  return (
+    <ShineButton
+      style={[styles.nextBtn, submitting && { opacity: 0.6 }]}
+      onPress={onPress}
+      busy={submitting}>
+      {({ nudgeX }) => (submitting ? (
+        <ActivityIndicator color="#fff" />
+      ) : (
+        <>
+          <Text style={styles.nextBtnText}>{label}</Text>
+          <Animated.View style={{ transform: [{ translateX: nudgeX }] }}>
+            <Icon name="arrow-forward" size={moderateScale(18)} color="#fff" />
+          </Animated.View>
+        </>
+      ))}
+    </ShineButton>
   );
 }
 
@@ -285,6 +383,13 @@ const styles = StyleSheet.create({
   },
   guideText: { fontSize: moderateScale(13), color: '#4a3a32', lineHeight: moderateScale(19) },
 
+  haveAccount: {
+    fontSize: moderateScale(13),
+    color: '#6f625c',
+    textAlign: 'center',
+    marginTop: verticalScale(6),
+  },
+  haveAccountLink: { color: COLORS.AstroMaroon, fontWeight: '700', textDecorationLine: 'underline' },
   fieldLabel: {
     fontSize: moderateScale(12.5),
     color: '#5c4a42',
@@ -313,7 +418,13 @@ const styles = StyleSheet.create({
   },
   phoneInput: { flex: 1, fontSize: moderateScale(15), color: '#2b1a12', paddingVertical: verticalScale(13) },
 
-  terms: { marginTop: verticalScale(20) },
+  terms: {
+    marginTop: verticalScale(20),
+    fontSize: moderateScale(12.5),
+    color: '#6f625c',
+    lineHeight: moderateScale(19),
+  },
+  termsLink: { color: COLORS.AstroMaroon, fontWeight: '700', textDecorationLine: 'underline' },
 
   footer: {
     paddingHorizontal: scale(18),
@@ -330,6 +441,7 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(14),
     borderRadius: moderateScale(12),
     minHeight: verticalScale(50),
+    overflow: 'hidden',
   },
   nextBtnText: {
     color: '#fff',
