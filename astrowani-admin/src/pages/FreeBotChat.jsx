@@ -117,7 +117,7 @@ function AiReplies() {
   const [testBusy, setTestBusy] = useState(false);
   // '' = walk the whole list exactly like a customer; otherwise one model only.
   const [testModel, setTestModel] = useState('');
-  // '' = keys in order (what customers get); 'consult' = only the consult key.
+  // '' = keys in order (what customers get); otherwise that one key only.
   const [testKey, setTestKey] = useState('');
 
   const [available, setAvailable] = useState(null);
@@ -201,7 +201,7 @@ function AiReplies() {
         models,
         typing: form.typing,
         ...(testModel ? { model: testModel } : {}),
-        ...(testKey === 'consult' ? { keyTier: 'consult' } : {}),
+        ...(testKey ? { keyTier: testKey } : {}),
         sendProfile: form.sendProfile,
         history,
         opening,
@@ -246,6 +246,12 @@ function AiReplies() {
           title="Used only after the free key's quota is used up, with the same models in the same order."
         >
           <span className="badge-dot" />Consult key {status?.consultKeyConfigured ? 'set on server' : 'not set'}
+        </span>
+        <span
+          className={`badge ${status?.productKeyConfigured ? 'green' : 'gray'}`}
+          title="Last in the chain: used only once the consult key is used up too, with the same models in the same order. After this one runs out the chat falls back to the scripted replies."
+        >
+          <span className="badge-dot" />Product key {status?.productKeyConfigured ? 'set on server' : 'not set'}
         </span>
         <span className="badge blue"><span className="badge-dot" />Today: {today.aiReplies || 0} AI replies</span>
         <span className="badge gray"><span className="badge-dot" />{fallbackTotal} scripted fallbacks</span>
@@ -396,6 +402,9 @@ function AiReplies() {
             <option value="">Keys in order (what customers get)</option>
             <option value="consult" disabled={!status?.consultKeyConfigured}>
               Consult key only{status?.consultKeyConfigured ? '' : ' (not set on server)'}
+            </option>
+            <option value="product" disabled={!status?.productKeyConfigured}>
+              Product key only{status?.productKeyConfigured ? '' : ' (not set on server)'}
             </option>
           </select>
         </div>

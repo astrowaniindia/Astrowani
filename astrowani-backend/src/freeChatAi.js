@@ -28,11 +28,29 @@
 // to multiply one model's FREE quota is not: Google's API terms forbid circumventing
 // limits, which is why there is exactly one free key.
 //
-// TWO KEYS, 2026-09-14 (owner's decision): GEMINI_API_KEY is tried first.
-// GEMINI_API_KEY_CONSULT (the "consult" key, a card-linked account with credit added) is
-// used only once the first key's quota is used up (every model on it is out of quota),
-// with the same model list, in the same order, under exactly the same limit and skipping
-// rules. When the consult key runs out too, the chat falls back to the scripted engine.
+// THREE KEYS, 2026-09-20 (owner's decision; was two from 2026-09-14). Tried strictly in
+// order, each one only after the one before it is USED UP (every model on it out of
+// quota), with the same model list, in the same order, under exactly the same limits and
+// skipping rules:
+//
+//   1. GEMINI_API_KEY          - free
+//   2. GEMINI_API_KEY_CONSULT  - the "consult" key, a card-linked account with credit
+//   3. GEMINI_API_KEY_PRODUCT  - the product key, added last as a third line of defence
+//
+// When the product key runs out too, the chat falls back to the scripted engine, which is
+// what it has always done after the last key.
+//
+// The product key is deliberately treated EXACTLY like the others — no special quota
+// assumptions, no skipping ahead to it, no "it's paid so hammer it" behaviour. The owner
+// asked for it to be handled as a free key for now and will say when that changes; since
+// every key already runs under identical rules, that is the default and nothing special
+// had to be built to honour it.
+//
+// One condition on the product key, worth stating because it is the difference between
+// ordinary use and a terms violation: it must be a key whose quota we are entitled to —
+// a billing-enabled project, or a genuinely separate account of our own. Adding a THIRD
+// free-tier key from another Google account purely to multiply one model's free quota is
+// the circumvention the note above rules out, and this chain must not be used for that.
 
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
@@ -169,20 +187,28 @@ const state = {
   perCustomer: new Map(), // customerId -> count, reset daily with stats
 };
 
-// Blocks and stats are kept per key: the same model can be out of quota on the free
-// key and fine on the consult one. The consult key's entries are labelled "<model> (consult key)".
-const CONSULT_SUFFIX = ' (consult key)';
-const slot = (model, tier) => (tier === 'consult' ? `${model}${CONSULT_SUFFIX}` : model);
+// Blocks and stats are kept per key: the same model can be out of quota on one key and
+// fine on the next, so each key needs its own entry or a block on one would silently
+// disable the model everywhere. The free key keeps the bare model name (it is the
+// original, and changing it would orphan the stats already collected against it).
+const TIER_SUFFIX = { consult: ' (consult key)', product: ' (product key)' };
+const slot = (model, tier) => `${model}${TIER_SUFFIX[tier] || ''}`;
 
 // The consult key. GEMINI_API_KEY_PAID was its first name (2026-09-14) and is still
 // accepted, so a VPS .env written with it keeps working.
 const CONSULT_KEY = () => process.env.GEMINI_API_KEY_CONSULT || process.env.GEMINI_API_KEY_PAID || '';
+// The product key (the owner's name for it, 2026-09-20). Deliberately NOT called _PAID:
+// it is handled as a free key for now and the billing status is expected to change, so a
+// name that asserts one would become a lie the next person reads as fact.
+const PRODUCT_KEY = () => process.env.GEMINI_API_KEY_PRODUCT || process.env.GEMINI_API_KEY_3 || '';
 
-// The keys to try, in order: free first, then consult.
+// The keys to try, in order: free, then consult, then product. A key that is not set is
+// simply absent from the chain, so the backend runs unchanged until the env var exists.
 function geminiKeys() {
   const keys = [];
   if (process.env.GEMINI_API_KEY) keys.push({ tier: 'free', key: process.env.GEMINI_API_KEY });
   if (CONSULT_KEY()) keys.push({ tier: 'consult', key: CONSULT_KEY() });
+  if (PRODUCT_KEY()) keys.push({ tier: 'product', key: PRODUCT_KEY() });
   return keys;
 }
 
@@ -476,9 +502,11 @@ async function generate({ config, customer, history, opening, secondsLeft, langu
   const QUOTA_BLOCK = /limit|credit|billing/;
 
   for (const [keyIndex, { tier, key }] of keys.entries()) {
-    // Move on to the consult key only when the free key is USED UP: every model on it
+    // Move on to the NEXT key only when the one before it is USED UP: every model on it
     // was out of quota (now, or already known). A slow or overloaded model is not
     // a reason to start paying — that falls back to the scripted chat as before.
+    // This walks any number of keys, because each one is compared against the key
+    // immediately before it rather than against the free key specifically.
     if (keyIndex > 0) {
       const freeTried = attempts.filter((a) => a.tier === keys[keyIndex - 1].tier);
       const usedUp = freeTried.length > 0 && freeTried.every((a) => (
@@ -612,9 +640,10 @@ module.exports = function registerFreeChatAiRoutes(app) {
       config,
       defaults: { instructions: DEFAULT_INSTRUCTIONS, models: DEFAULTS.models, typing: DEFAULTS.typing },
       status: {
-        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || CONSULT_KEY()),
+        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || CONSULT_KEY() || PRODUCT_KEY()),
         freeKeyConfigured: !!process.env.GEMINI_API_KEY,
         consultKeyConfigured: !!CONSULT_KEY(),
+        productKeyConfigured: !!PRODUCT_KEY(),
         today: { day: stats() && state.statsDay, ...state.stats },
         modelBlocks: blocks,
         lastError: state.lastError,
@@ -664,9 +693,11 @@ module.exports = function registerFreeChatAiRoutes(app) {
     const saved = await loadConfig();
     const listed = cleanModels(b.models);
     const single = typeof b.model === 'string' && MODEL_NAME_RE.test(b.model.trim()) ? b.model.trim() : null;
-    // "Test consult key": only that key, ignoring its current blocks so the admin
-    // sees Google's real answer for it.
-    const onlyTier = b.keyTier === 'consult' ? 'consult' : null;
+    // "Test <key> only": just that key, ignoring its current blocks so the admin sees
+    // Google's real answer for it. Anything not in this list is ignored and the full
+    // chain runs, so an unknown value can never silently narrow the test to one key.
+    const TESTABLE_TIERS = ['consult', 'product'];
+    const onlyTier = TESTABLE_TIERS.includes(b.keyTier) ? b.keyTier : null;
     const config = {
       ...saved,
       instructions: typeof b.instructions === 'string' && b.instructions.trim() ? b.instructions.slice(0, MAX_INSTRUCTIONS_CHARS) : saved.instructions,
@@ -701,8 +732,9 @@ module.exports = function registerFreeChatAiRoutes(app) {
   // Admin: which models this key can actually call, straight from Google, so
   // the list is not built from guessed names.
   app.get('/api/admin/free-bot-chat/ai/models', requireAdmin, h(async (req, res) => {
-    const key = process.env.GEMINI_API_KEY || CONSULT_KEY();
-    if (!key) return res.status(400).json({ success: false, message: 'Neither GEMINI_API_KEY nor GEMINI_API_KEY_CONSULT is set on the server.' });
+    // Any configured key can list models; they all see the same catalogue.
+    const key = process.env.GEMINI_API_KEY || CONSULT_KEY() || PRODUCT_KEY();
+    if (!key) return res.status(400).json({ success: false, message: 'No Gemini key is set on the server (GEMINI_API_KEY, GEMINI_API_KEY_CONSULT or GEMINI_API_KEY_PRODUCT).' });
     const found = [];
     let pageToken;
     for (let page = 0; page < 10; page++) {
