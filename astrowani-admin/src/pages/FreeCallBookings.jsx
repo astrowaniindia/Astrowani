@@ -229,6 +229,23 @@ export default function FreeCallBookings() {
     patchBooking(row.id, { status });
   };
 
+  const deleteBooking = async (row) => {
+    const who = row.customer_name || 'this booking';
+    if (!window.confirm(
+      `Permanently delete ${who}'s call on ${fmtSlot(row.slot_start)}? This cannot be undone.\n\n` +
+      `(To just cancel it and keep a record, use the status dropdown instead.)`,
+    )) return;
+    setBusy(true);
+    try {
+      await client.delete(`/api/admin/free-call-bookings/${row.id}`);
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const copyText = (txt, id) => {
     if (!txt) return;
     navigator.clipboard.writeText(txt);
@@ -821,6 +838,15 @@ export default function FreeCallBookings() {
                           title="Internal admin note"
                         >
                           Note
+                        </button>
+                        <button
+                          className="btn ghost sm"
+                          disabled={busy}
+                          onClick={() => deleteBooking(r)}
+                          title="Permanently delete this booking"
+                          style={{ color: '#dc2626' }}
+                        >
+                          🗑️ Delete
                         </button>
                       </div>
                     </td>

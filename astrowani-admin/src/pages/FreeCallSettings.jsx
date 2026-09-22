@@ -17,6 +17,7 @@ const OFFER_DEFAULTS = {
   assignedAstrologerId: '',
   poolAstrologerIds: [],
   displayAstrologerIds: [],
+  enabledPlatforms: { android: true, ios: true },
   displayFeaturedAstrologerId: '',
   astrologerName: '',
   astrologerImage: '',
@@ -57,6 +58,12 @@ export default function FreeCallSettings() {
           ...saved,
           openTime: toClock(saved.openTime ?? saved.openHour, OFFER_DEFAULTS.openTime),
           closeTime: toClock(saved.closeTime ?? saved.closeHour, OFFER_DEFAULTS.closeTime),
+          // Field-by-field so a blob saved before this existed, or one that only ever
+          // turned off one platform, still defaults the other one to true.
+          enabledPlatforms: {
+            android: saved.enabledPlatforms?.android !== false,
+            ios: saved.enabledPlatforms?.ios !== false,
+          },
         });
       }
     } catch (e) {
@@ -262,6 +269,42 @@ export default function FreeCallSettings() {
                 : 'Offer banner and scheduling cards are completely hidden in the customer app.'}
             </span>
           </label>
+        </div>
+
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <p className="muted" style={{ margin: '0 0 10px', fontSize: 12.5 }}>
+            Independent per-platform switch — turn the offer off for one app while it
+            keeps running on the other (e.g. paused on Android, still live for the
+            first App Store submission). This wins over the master toggle above and
+            over an active invite: a platform switched off here is off for everyone
+            on that platform.
+          </p>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            {[
+              { key: 'android', label: 'Available on Android' },
+              { key: 'ios', label: 'Available on iOS' },
+            ].map(({ key, label }) => {
+              const on = offer.enabledPlatforms?.[key] !== false;
+              return (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) =>
+                      setOffer((p) => ({
+                        ...p,
+                        enabledPlatforms: { ...p.enabledPlatforms, [key]: e.target.checked },
+                      }))
+                    }
+                    style={{ width: 18, height: 18, cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 13.5, fontWeight: on ? 600 : 400, color: on ? 'inherit' : '#c0392b' }}>
+                    {label}{!on ? ' — OFF' : ''}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
         </div>
       </div>
 

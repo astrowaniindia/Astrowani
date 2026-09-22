@@ -22,6 +22,7 @@
 // (e.g. a QA pass) can't pollute real numbers either.
 // ─────────────────────────────────────────────────────────────────────────────
 const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('./adminRoutes');
 const { TtlCache } = require('./ttlCache');
 const { hogqlSinceClause } = require('./analyticsSince');
@@ -34,6 +35,13 @@ const POSTHOG_PERSONAL_API_KEY = process.env.POSTHOG_PERSONAL_API_KEY;
 function isConfigured() {
   return !!(POSTHOG_HOST && POSTHOG_PROJECT_ID && POSTHOG_PERSONAL_API_KEY);
 }
+
+// A few cards are answered by Postgres rather than PostHog, because the truth lives
+// there and no client event can reproduce it (see the free-call outcome stage below).
+const db = createClient(
+  process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 // TTL cache so a 30-60s dashboard auto-refresh doesn't re-hit PostHog's Query
 // API on every poll — using the shared TtlCache (src/ttlCache.js) rather than
@@ -55,6 +63,15 @@ async function runHogQL(hogql) {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Every "day" on this dashboard is an INDIAN day. `toDate(timestamp)` alone resolves
+// against whatever timezone the PostHog project is set to — so with a UTC project the
+// "Today" card silently dropped everyone active between 00:00 and 05:30 IST into
+// yesterday (measured 2026-09-20: 47 signups by the UTC day vs 54 by the IST day).
+// `toTimeZone` re-presents the same absolute instant in IST, so this is correct
+// regardless of the project setting and stays correct if that setting ever changes.
+const ANALYTICS_TZ = 'Asia/Kolkata';
+const LOCAL_DATE = `toDate(toTimeZone(timestamp, '${ANALYTICS_TZ}'))`;
+
 // Every card on the Analytics page shares ONE date-range control (preset buttons +
 // custom From/To) instead of each card having its own — this is the single place that
 // resolves whatever the frontend sent into a HogQL WHERE clause. `from`/`to` (both
@@ -64,7 +81,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 function resolveDateWhere(req, { defaultDays = 7, maxDays = 180 } = {}) {
   const { from, to } = req.query;
   if (ISO_DATE.test(from || '') && ISO_DATE.test(to || '')) {
-    return `toDate(timestamp) >= toDate('${from}') AND toDate(timestamp) <= toDate('${to}')`;
+    return `${LOCAL_DATE} >= toDate('${from}') AND ${LOCAL_DATE} <= toDate('${to}')`;
   }
   const days = clampDays(req.query.days, defaultDays, maxDays);
   return `timestamp >= now() - INTERVAL ${days} DAY`;
@@ -76,10 +93,36 @@ function resolveDateWhere(req, { defaultDays = 7, maxDays = 180 } = {}) {
 function resolveDateStart(req, { defaultDays = 7, maxDays = 180 } = {}) {
   const { from, to } = req.query;
   if (ISO_DATE.test(from || '') && ISO_DATE.test(to || '')) {
-    return `toDate(timestamp) >= toDate('${from}')`;
+    return `${LOCAL_DATE} >= toDate('${from}')`;
   }
   const days = clampDays(req.query.days, defaultDays, maxDays);
   return `timestamp >= now() - INTERVAL ${days} DAY`;
+}
+
+// The range a response was actually computed for, echoed back so the dashboard can
+// refuse to render a card under a header it does not belong to. Each of the auth /
+// signup-to-consult / journey cards fetches on its own, so without this a slow or
+// failed refetch left the PREVIOUS range's numbers on screen under the new dates —
+// which is exactly how a week's signups came to be read as one day's (2026-09-20).
+function rangeMeta(req, { defaultDays = 7, maxDays = 180 } = {}) {
+  const { from, to } = req.query;
+  if (ISO_DATE.test(from || '') && ISO_DATE.test(to || '')) return { from, to };
+  return { days: clampDays(req.query.days, defaultDays, maxDays) };
+}
+
+// The same range the HogQL clauses use, as absolute instants, for the Postgres-backed
+// cards. The dashboard's dates are IST calendar dates (see ANALYTICS_TZ) and
+// `created_at` is timestamptz, so the boundaries are built with an explicit +05:30 —
+// never with the server's local timezone, which is UTC on the VPS.
+function resolveRangeInstants(req, { defaultDays = 7, maxDays = 180 } = {}) {
+  const { from, to } = req.query;
+  if (ISO_DATE.test(from || '') && ISO_DATE.test(to || '')) {
+    const endExclusive = new Date(`${to}T00:00:00+05:30`);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1); // `to` is inclusive
+    return { startIso: new Date(`${from}T00:00:00+05:30`).toISOString(), endIso: endExclusive.toISOString() };
+  }
+  const days = clampDays(req.query.days, defaultDays, maxDays);
+  return { startIso: new Date(Date.now() - days * 86400000).toISOString(), endIso: null };
 }
 
 function clampDays(raw, fallback, max) {
@@ -346,6 +389,32 @@ module.exports = function registerPostHogRoutes(app) {
   // being invisible); every other event fires on a confirmed outcome (an OTP actually
   // sent, actually verified), matching the existing call_initiated/chat_initiated
   // convention above rather than inventing a new one.
+  // One screen now serves BOTH flows (2026-09-20, commit 519a634): the customer types
+  // a number and the screen decides. It always fires `login_screen_viewed` +
+  // `login_submit_tapped`, and only then — once the server answers NO_ACCOUNT — does the
+  // signup path take over with `signup_otp_sent`.
+  //
+  // So the first two stages are genuinely SHARED and cannot be attributed to one flow.
+  // Counting only the old `Register` events here made the signup funnel read
+  // "Viewed 2 -> OTP Sent 47 (2350%)", because the top measured a near-dead screen while
+  // everything below it measured everyone. `shared: true` is passed through to the UI so
+  // it can say so rather than presenting a drop-off that does not exist.
+  const SHARED_ENTRY_STAGES = [
+    {
+      key: 'viewed',
+      label: 'Opened sign-in screen',
+      shared: true,
+      screenNames: ['Login', 'Register'],
+      events: ['login_screen_viewed', 'signup_screen_viewed'],
+    },
+    {
+      key: 'submitted',
+      label: 'Tapped Continue',
+      shared: true,
+      events: ['login_submit_tapped', 'signup_submit_tapped'],
+    },
+  ];
+
   const AUTH_FUNNELS = {
     // Short signup (2026-09-14): mobile -> OTP -> name -> welcome. The old
     // "Tapped Upload Photo" stage was removed with the photo step — keeping a stage
@@ -354,22 +423,22 @@ module.exports = function registerPostHogRoutes(app) {
     signup: {
       label: 'Signup',
       stages: [
-        { key: 'viewed', label: 'Viewed Signup Screen', screenName: 'Register' },
-        { key: 'submitted', label: 'Tapped Get OTP', event: 'signup_submit_tapped' },
-        { key: 'otp_sent', label: 'OTP Sent', event: 'signup_otp_sent' },
-        { key: 'otp_verified', label: 'OTP Verified', event: 'signup_otp_verified' },
-        { key: 'completed', label: 'Account Created', event: 'signup_completed' },
-        { key: 'name_saved', label: 'Name Saved', event: 'signup_name_saved' },
-        { key: 'welcome', label: 'Tapped Namaste (reached Home)', event: 'signup_welcome_hi_tapped' },
+        { ...SHARED_ENTRY_STAGES[0] },
+        { ...SHARED_ENTRY_STAGES[1] },
+        { key: 'otp_sent', label: 'OTP Sent', events: ['signup_otp_sent'] },
+        { key: 'otp_verified', label: 'OTP Verified', events: ['signup_otp_verified'] },
+        { key: 'completed', label: 'Account Created', events: ['signup_completed'] },
+        { key: 'name_saved', label: 'Name Saved', events: ['signup_name_saved'] },
+        { key: 'welcome', label: 'Tapped Namaste (reached Home)', events: ['signup_welcome_hi_tapped'] },
       ],
     },
     login: {
       label: 'Login',
       stages: [
-        { key: 'viewed', label: 'Viewed Login Screen', screenName: 'Login' },
-        { key: 'submitted', label: 'Tapped Get OTP', event: 'login_submit_tapped' },
-        { key: 'otp_sent', label: 'OTP Sent', event: 'login_otp_sent' },
-        { key: 'completed', label: 'Logged In', event: 'login_completed' },
+        { ...SHARED_ENTRY_STAGES[0] },
+        { ...SHARED_ENTRY_STAGES[1] },
+        { key: 'otp_sent', label: 'OTP Sent', events: ['login_otp_sent'] },
+        { key: 'completed', label: 'Logged In', events: ['login_completed'] },
       ],
     },
   };
@@ -379,15 +448,25 @@ module.exports = function registerPostHogRoutes(app) {
     const dateWhere = resolveDateWhere(req, { defaultDays: 7 });
     const def = AUTH_FUNNELS[type];
 
-    const selects = def.stages.map((s) => s.screenName
-      ? `count(DISTINCT if((event = '$screen' AND properties.$screen_name = '${s.screenName}') OR event = '${s.screenName === 'Register' ? 'signup_screen_viewed' : 'login_screen_viewed'}', person_id, NULL)) AS ${s.key}`
-      : `count(DISTINCT if(event = '${s.event}', person_id, NULL)) AS ${s.key}`
-    ).join(',\n        ');
-    const eventList = [
-      ...def.stages.map((s) => `'${s.event || '$screen'}'`),
-      "'signup_screen_viewed'",
-      "'login_screen_viewed'",
-    ].join(', ');
+    // A stage matches any of its named events, plus (for the entry stage) a `$screen`
+    // view of any of its screens — the app has shipped both the named event and plain
+    // autocapture at different times, and old installed builds still send the old names.
+    const stageCondition = (st) => {
+      const parts = (st.events || []).map((e) => `event = '${e}'`);
+      (st.screenNames || []).forEach((n) => {
+        parts.push(`(event = '$screen' AND properties.$screen_name = '${n}')`);
+      });
+      return parts.join(' OR ');
+    };
+    const selects = def.stages
+      .map((st) => `count(DISTINCT if(${stageCondition(st)}, person_id, NULL)) AS ${st.key}`)
+      .join(',\n        ');
+    const eventList = [...new Set(
+      def.stages.flatMap((st) => [
+        ...(st.events || []),
+        ...((st.screenNames || []).length ? ['$screen'] : []),
+      ])
+    )].map((e) => `'${e}'`).join(', ');
 
     const rows = await runHogQL(`
       SELECT
@@ -397,8 +476,20 @@ module.exports = function registerPostHogRoutes(app) {
         AND event IN (${eventList})
     `);
     const values = rows[0] || def.stages.map(() => 0);
-    const stages = def.stages.map((s, i) => ({ key: s.key, label: s.label, count: Number(values[i]) || 0 }));
-    return res.json({ success: true, type, label: def.label, stages });
+    const stages = def.stages.map((st, i) => ({
+      key: st.key,
+      label: st.label,
+      shared: !!st.shared,
+      count: Number(values[i]) || 0,
+    }));
+    return res.json({
+      success: true,
+      type,
+      label: def.label,
+      stages,
+      range: rangeMeta(req, { defaultDays: 7 }),
+      note: 'The first two stages are shared by signup and login — one screen serves both, and which flow it is only becomes known after the number is checked.',
+    });
   }));
 
   // ── Signup -> first consultation, end to end ──
@@ -506,6 +597,7 @@ module.exports = function registerPostHogRoutes(app) {
         ...JOURNEY_PRE.map((s, i) => ({ key: s.key, label: s.label, count: pre[i] || 0 })),
         ...JOURNEY_COHORT.map((s, i) => ({ key: s.key, label: s.label, count: cohort[i] || 0 })),
       ],
+      range: rangeMeta(req, { defaultDays: 30 }),
     });
   }));
 
@@ -559,6 +651,7 @@ module.exports = function registerPostHogRoutes(app) {
         { key: 'requested', label: 'Requested a chat or call', count: requested || 0 },
         { key: 'connected', label: 'Consultation connected', count: connected || 0 },
       ],
+      range: rangeMeta(req, { defaultDays: 30 }),
     });
   }));
 
@@ -687,13 +780,25 @@ module.exports = function registerPostHogRoutes(app) {
       WITH ordered AS (
         SELECT
           properties.$screen_name AS screen,
-          leadInFrame(properties.$screen_name) OVER (PARTITION BY properties.$session_id ORDER BY timestamp) AS next_screen
+          -- The frame is NOT optional. ClickHouse defaults an ORDER BY window to
+          -- "RANGE UNBOUNDED PRECEDING AND CURRENT ROW", and leadInFrame only looks
+          -- INSIDE the frame — so with the default it can never see the next row and
+          -- returns NULL for all of them. That read as "the session ended here",
+          -- putting the Home exit rate at 99.7% (526 of 527) when the real figure is
+          -- 66 of 389: measured 2026-09-20, most people go on to ChatScreen.
+          leadInFrame(properties.$screen_name) OVER (
+            PARTITION BY properties.$session_id ORDER BY timestamp
+            ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+          ) AS next_screen
         FROM events
         WHERE event = '$screen' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
       )
       SELECT next_screen, count() AS n
       FROM ordered
-      WHERE screen = 'Home'
+      -- The app's route is named HomeScreen; this asked for 'Home' and matched nothing,
+      -- so the card read 0 Home views next to a Top Screens table showing 332 of them
+      -- (2026-09-20). 'Home' is kept for any older build that reported the short name.
+      WHERE screen IN ('HomeScreen', 'Home')
       GROUP BY next_screen
       ORDER BY n DESC
       LIMIT 20
@@ -735,8 +840,35 @@ module.exports = function registerPostHogRoutes(app) {
                       'free_call_slot_picked', 'free_call_booked', 'free_call_answered',
                       'free_call_offer_dismissed', 'free_call_booking_failed', 'free_call_declined')
     `);
-    const [shown, slotsOpened, slotPicked, booked, answered, dismissed, failed, declined] =
+    const [shown, slotsOpened, slotPicked, booked, answeredInApp, dismissed, failed, declined] =
       rows[0] || [0, 0, 0, 0, 0, 0, 0, 0];
+
+    // "Call Answered" used to count the `free_call_answered` event, which only fires when
+    // the customer answers an IN-APP ring (components/FreeCallIncoming.js). Astrologers
+    // run these calls from the `tel:` dialler in the vendor app and then mark the booking
+    // done, so that event never fires for them and the stage read 0 forever — on
+    // 2026-09-20 it showed "0 answered" against 6 bookings the database had as completed.
+    //
+    // The outcome of a free call is recorded in `free_call_bookings.status`, so that is
+    // what this stage reports now: the bookings MADE in this range (the same cohort as
+    // the "Booked" stage above), by how they turned out. The in-app figure is kept
+    // alongside it as a separate stat rather than deleted — it is the only measure of
+    // that path — but it is no longer presented as the outcome of the funnel.
+    const { startIso, endIso } = resolveRangeInstants(req, { defaultDays: 7 });
+    let outcomes = null;
+    try {
+      let q = db.from('free_call_bookings').select('status').gte('created_at', startIso);
+      if (endIso) q = q.lt('created_at', endIso);
+      const { data, error } = await q;
+      if (error) throw error;
+      outcomes = { booked: 0, completed: 0, missed: 0, cancelled: 0, total: data.length };
+      data.forEach((r) => {
+        if (Object.prototype.hasOwnProperty.call(outcomes, r.status)) outcomes[r.status] += 1;
+      });
+    } catch (err) {
+      // A funnel that cannot read one stage must not blank the other four.
+      console.error('[postHogRoutes] free-call outcomes query failed:', err.message);
+    }
 
     // Dismissal breakdown by step
     const dismissRows = await runHogQL(`
@@ -756,8 +888,16 @@ module.exports = function registerPostHogRoutes(app) {
         { key: 'slotsOpened', label: 'Opened Slots', count: Number(slotsOpened) || 0 },
         { key: 'slotPicked', label: 'Selected Slot', count: Number(slotPicked) || 0 },
         { key: 'booked', label: 'Booked Free Call', count: Number(booked) || 0 },
-        { key: 'answered', label: 'Call Answered', count: Number(answered) || 0 },
+        {
+          key: 'completed',
+          label: 'Call Completed',
+          count: outcomes ? outcomes.completed : 0,
+          source: 'database',
+          unavailable: !outcomes,
+        },
       ],
+      outcomes,
+      answeredInApp: Number(answeredInApp) || 0,
       dismissed: Number(dismissed) || 0,
       failed: Number(failed) || 0,
       declined: Number(declined) || 0,

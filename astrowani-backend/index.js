@@ -1609,20 +1609,6 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
     });
   }
 
-  if (phoneNumber === PLAY_STORE_REVIEWER_PHONE) {
-    await otpStore.set(phoneNumber, {
-      otp: PLAY_STORE_REVIEWER_OTP,
-      sessionId: Date.now().toString(),
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days — reviewers can take a while
-    });
-    console.log(`[reviewer-otp] Fixed OTP issued for Play Store reviewer number ${phoneNumber}`);
-    return res.status(200).json({
-      success: true,
-      message: 'OTP sent successfully',
-      result: { Details: Date.now().toString() },
-    });
-  }
-
   // Login must not silently create an account, and signup must not silently log an
   // existing user in — both would send an OTP either way, hiding the actual problem.
   // Only enforced when the caller explicitly says which flow this is (`intent`); callers
@@ -1656,6 +1642,28 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
         message: 'An account already exists for this number. Please log in instead.',
       });
     }
+  }
+
+  // The store reviewer's fixed code. Deliberately placed AFTER the intent check and
+  // BEFORE the send throttle: the bypass exists to skip the SMS, not to skip what a
+  // login or a signup MEANS. Sitting above that check (until 2026-09-20) it answered
+  // "OTP sent" to a login for a number with no account, so the app carried on as a
+  // login, and a reviewer on a fresh install with no account row was dropped straight
+  // onto Home -- never seeing the name step or the welcome screen. Now a login for a
+  // missing account 404s as it does for everyone, the app turns that into a signup by
+  // itself, and this block issues the same fixed code for it.
+  if (phoneNumber === PLAY_STORE_REVIEWER_PHONE) {
+    await otpStore.set(phoneNumber, {
+      otp: PLAY_STORE_REVIEWER_OTP,
+      sessionId: Date.now().toString(),
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days — reviewers can take a while
+    });
+    console.log(`[reviewer-otp] Fixed OTP issued for Play Store reviewer number ${phoneNumber}`);
+    return res.status(200).json({
+      success: true,
+      message: 'OTP sent successfully',
+      result: { Details: Date.now().toString() },
+    });
   }
 
   // Server-side send throttle. The 60s cooldown in both apps is UI only and is

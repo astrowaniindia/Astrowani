@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -309,6 +309,26 @@ export default function Analytics() {
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
+  // The three cards below (auth funnel, signup->consultation, first journey) each fetch
+  // on their own rather than inside load(), so one failing never blanks the page. The
+  // cost was that a slow or failed refetch left the PREVIOUS range's numbers on screen
+  // under the new dates — on 2026-09-20 this card showed a week of signups (154) beneath
+  // a "20 Sept - 20 Sept" header while the day's real figure was 54, which reads as a
+  // data problem rather than a stale card.
+  //
+  // Every one of those endpoints now echoes the range it was computed for, so a response
+  // that no longer matches the selection is dropped instead of rendered. The ref (not the
+  // closed-over value) is what makes this work for an out-of-order response: the callback
+  // closes over the range it ASKED for, while this always holds the range on screen now.
+  const currentRangeRef = useRef(dateRange);
+  currentRangeRef.current = dateRange;
+  const isStaleResponse = (data) => {
+    const r = data?.range;
+    if (!r || !r.from) return false; // an older backend that does not echo: render it
+    const cur = currentRangeRef.current;
+    return r.from !== cur.from || r.to !== cur.to;
+  };
+
   const load = useCallback(async () => {
     try {
       const dateParams = { from: dateRange.from, to: dateRange.to };
@@ -384,14 +404,18 @@ export default function Analytics() {
   // Independent fetch, keyed on its own selector state — separate from the main load()
   // so switching Signup/Login doesn't re-fetch every other card on the page.
   const loadAuthFunnel = useCallback(async () => {
+    setAuthFunnel(null); // clear first: never show the old range under the new dates
     try {
       const { data } = await client.get('/api/admin/analytics/auth-funnel', {
         params: { type: authFunnelType, from: dateRange.from, to: dateRange.to },
       });
+      if (isStaleResponse(data)) return;
       setAuthFunnel(data);
     } catch (e) {
       // A missing/misconfigured POSTHOG_* var already shows the page-level "not
-      // configured" state via the main load() call — nothing extra to show here.
+      // configured" state via the main load() call. This used to swallow the error and
+      // leave whatever was on screen before, which is worse than saying nothing.
+      setAuthFunnel({ error: true });
     }
   }, [authFunnelType, dateRange]);
 
@@ -400,10 +424,12 @@ export default function Analytics() {
   // Signup -> first consultation. Independent fetch so a failure here never
   // blanks the rest of the page.
   const loadSignupConsult = useCallback(async () => {
+    setSignupConsult(null);
     try {
       const { data } = await client.get('/api/admin/analytics/signup-to-consult', {
         params: { from: dateRange.from, to: dateRange.to },
       });
+      if (isStaleResponse(data)) return;
       setSignupConsult(data);
     } catch (e) {
       setSignupConsult({ error: true });
@@ -415,10 +441,12 @@ export default function Analytics() {
   // The full first journey, click by click. Own fetch, so a failure here leaves the
   // rest of the page intact.
   const loadJourney = useCallback(async () => {
+    setJourney(null);
     try {
       const { data } = await client.get('/api/admin/analytics/onboarding-journey', {
         params: { from: dateRange.from, to: dateRange.to },
       });
+      if (isStaleResponse(data)) return;
       setJourney(data);
     } catch (e) {
       setJourney({ error: true });
@@ -856,9 +884,18 @@ export default function Analytics() {
           a name. Switch between Signup and Login above to see either funnel.
         </p>
         {authFunnel?.stages?.length ? (
-          <StepFunnel stages={authFunnel.stages} />
+          <>
+            <StepFunnel stages={authFunnel.stages} />
+            {authFunnel?.note && (
+              <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+                {authFunnel.note}
+              </p>
+            )}
+          </>
         ) : (
-          <p className="muted" style={{ margin: 0 }}>Loading…</p>
+          <p className="muted" style={{ margin: 0 }}>
+            {authFunnel?.error ? 'Could not load this funnel right now.' : 'Loading…'}
+          </p>
         )}
 
         {/* The funnel above shows WHERE people fall out; these show WHY. The apps have
@@ -950,7 +987,15 @@ export default function Analytics() {
 
         <div style={{ marginTop: 16 }}>
           {freeCallFunnel?.stages?.length ? (
-            <StepFunnel stages={freeCallFunnel.stages} baseLabel="offer shown" />
+            <>
+              <StepFunnel stages={freeCallFunnel.stages} baseLabel="offer shown" />
+              <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+                The last stage comes from the bookings table, not from app events — these calls are
+                dialled from the astrologer's phone, so nothing in the customer app can observe one
+                being answered. It counts the bookings made in this range that the astrologer has
+                since marked done.
+              </p>
+            </>
           ) : (
             <p className="muted" style={{ margin: 0 }}>No free call offer activity in this range.</p>
           )}
@@ -970,7 +1015,13 @@ export default function Analytics() {
               Booking Failures: <strong style={{ color: (freeCallFunnel?.failed ?? 0) > 0 ? 'var(--red)' : 'inherit' }}>{freeCallFunnel?.failed ?? 0}</strong>
             </span>
             <span className="muted">
-              Customer Declined Ring: <strong style={{ color: (freeCallFunnel?.declined ?? 0) > 0 ? 'var(--amber)' : 'inherit' }}>{freeCallFunnel?.declined ?? 0}</strong>
+              Missed by astrologer: <strong style={{ color: (freeCallFunnel?.outcomes?.missed ?? 0) > 0 ? 'var(--red)' : 'inherit' }}>{freeCallFunnel?.outcomes?.missed ?? 0}</strong>
+            </span>
+            <span className="muted">
+              Still upcoming: <strong style={{ color: 'var(--text-primary)' }}>{freeCallFunnel?.outcomes?.booked ?? 0}</strong>
+            </span>
+            <span className="muted">
+              Cancelled: <strong style={{ color: 'var(--text-primary)' }}>{freeCallFunnel?.outcomes?.cancelled ?? 0}</strong>
             </span>
           </div>
         </div>

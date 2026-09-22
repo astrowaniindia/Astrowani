@@ -74,6 +74,13 @@ const DEFAULTS = {
   // Stored blobs from before that date may still carry those keys; they are simply
   // ignored, since DEFAULTS is what defines the shape.
   displayAstrologerIds: [],
+  // Per-platform kill switch, independent of `enabled` above. Lets the admin run
+  // the offer on one app while it is off on the other -- e.g. keep it live on iOS
+  // during the first App Store submission while pausing it on Android for a
+  // capacity reason, or the reverse. Missing/unrecognised platform (web, admin,
+  // an old app build that sends nothing) is never blocked -- only 'android' and
+  // 'ios' can actually be turned off.
+  enabledPlatforms: { android: true, ios: true },
   headerText: 'Your first 12-minute call is on us',
   bodyText: 'Pick a date and time that suits you. Our astrologer will call you directly — you do not have to do anything else.',
   ctaText: 'Book my free call',
@@ -164,6 +171,17 @@ async function loadOffer() {
   merged.displayAstrologerIds = merged.displayAstrologerIds
     .filter((id) => typeof id === 'string' && id)
     .slice(0, DISPLAY_ROSTER_MAX);
+  // Read field-by-field rather than spreading `parsed.enabledPlatforms` wholesale --
+  // an admin blob carrying only {android:false} must still default ios to true, not
+  // drop it. Anything other than the literal `false` counts as enabled, matching
+  // this file's general fail-open posture for a feature toggle (not a money path).
+  {
+    const rawPlat = (parsed && typeof parsed.enabledPlatforms === 'object' && parsed.enabledPlatforms) || {};
+    merged.enabledPlatforms = {
+      android: rawPlat.android !== false,
+      ios: rawPlat.ios !== false,
+    };
+  }
   // An empty pool would mean a capacity of zero, i.e. nothing bookable at all.
   // Falling back to manual keeps the offer working and leaves the bookings in the
   // admin's queue, which is recoverable; a dead offer is not.
@@ -647,11 +665,36 @@ const publicBooking = (b) => b && ({
   dateKey: businessDateKey(new Date(b.slot_start)),
 });
 
+/**
+ * Which platform is asking, from the app-sent `platform` param -- query for GETs,
+ * body for the POST. Anything other than exactly 'android' or 'ios' (missing,
+ * 'web', an unrecognised value) is treated as unknown, never as one of the two
+ * real platforms, so it can never be blocked by a platform-specific toggle.
+ */
+function platformOf(req) {
+  const v = (req.query && req.query.platform) || (req.body && req.body.platform);
+  return v === 'ios' || v === 'android' ? v : null;
+}
+
+/**
+ * The platform kill switch. This is a HARD stop -- it wins over an active invite,
+ * unlike `offer.enabled` -- because if the admin has switched Android off, an
+ * invited Android customer should not slip through either. An unrecognised
+ * platform is never blocked (see platformOf above).
+ */
+function platformAllowed(offer, platform) {
+  if (platform !== 'android' && platform !== 'ios') return true;
+  return offer.enabledPlatforms[platform] !== false;
+}
+
 module.exports = function registerFreeCallRoutes(app) {
   setInterval(() => sendDueReminders(app), 60 * 1000).unref();
   /* ── Customer: is the offer on, am I eligible, have I already booked? ────── */
   app.get('/api/free-call/offer', h(async (req, res) => {
     const offer = await loadOffer();
+    if (!platformAllowed(offer, platformOf(req))) {
+      return res.status(200).json({ success: true, enabled: false, eligible: false, booking: null });
+    }
     const customer = await resolveCustomer(req);
     // An invited customer sees the offer even while it is switched off for everyone else.
     const invite = customer ? await findActiveInvite(customer.id) : null;
@@ -690,6 +733,9 @@ module.exports = function registerFreeCallRoutes(app) {
    */
   app.get('/api/free-call/slots', h(async (req, res) => {
     const offer = await loadOffer();
+    if (!platformAllowed(offer, platformOf(req))) {
+      return res.status(200).json({ success: true, enabled: false, dates: [], slots: [] });
+    }
     const customer = await resolveCustomer(req);
     if (!offer.enabled && !(customer && (await findActiveInvite(customer.id)))) {
       return res.status(200).json({ success: true, enabled: false, dates: [], slots: [] });
@@ -729,6 +775,9 @@ module.exports = function registerFreeCallRoutes(app) {
    */
   app.post('/api/free-call/book', h(async (req, res) => {
     const offer = await loadOffer();
+    if (!platformAllowed(offer, platformOf(req))) {
+      return res.status(403).json({ success: false, code: 'PLATFORM_DISABLED', message: 'This offer is not available in this app right now.' });
+    }
     const customer = await resolveCustomer(req);
     const invite = customer ? await findActiveInvite(customer.id) : null;
     if (!offer.enabled && !invite) {
@@ -1162,6 +1211,23 @@ module.exports = function registerFreeCallRoutes(app) {
         dateKey: businessDateKey(new Date(data.slot_start)),
       },
     });
+  }));
+
+  /* ── Admin: permanently delete a booking ──────────────────────────────────
+   * Distinct from `status: 'cancelled'` (which keeps the row as a record) —
+   * this removes it entirely, e.g. for a test/spam/mistaken booking. Because
+   * `free_call_bookings_customer_live_uniq` blocks a second live booking per
+   * customer, deleting is also the only way to let that customer book again.
+   */
+  app.delete('/api/admin/free-call-bookings/:id', requireAdmin, h(async (req, res) => {
+    const { data: existing, error: readErr } = await db
+      .from('free_call_bookings').select('id').eq('id', req.params.id).single();
+    if (readErr || !existing) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    const { error } = await db.from('free_call_bookings').delete().eq('id', req.params.id);
+    if (error) throw new Error(error.message);
+
+    return res.status(200).json({ success: true });
   }));
 
   /* ── Vendor: my assigned free calls ───────────────────────────────────────
