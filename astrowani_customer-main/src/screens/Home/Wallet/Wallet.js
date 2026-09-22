@@ -26,11 +26,6 @@ import { LanguageContext } from '../../../context/LanguageContext';
 import { SOCKET_URL } from '../../../config/api';
 import { captureEvent } from '../../../utils/Analytics';
 import { razorpayPrefill } from '../../../utils/customerIdentity';
-import MascotTip from '../../../components/MascotTip';
-import {
-  canShowTip, tipText, trackTipShown, trackTipAction, dismissTip, turnOffTips, markTipSeen, TIP_IDS,
-  syncMascotTipsCustomer,
-} from '../../../utils/mascotTips';
 
 const presetAmounts = [50, 100, 200, 500, 1000, 2000];
 
@@ -71,34 +66,12 @@ const Wallet = ({navigation, route}) => {
     reportAmountSelected(text, 'typed');
   }, [reportAmountSelected]);
 
-  // Guide mascot. With a suggested amount it explains what's already filled in (every
-  // time — it's specific to this visit); otherwise a one-time "it's quick and safe" tip.
-  const mascotTipId = TIP_IDS.recharge;
-  const [showMascot, setShowMascot] = useState(() =>
-    suggestedAmount > 0 ? canShowTip(TIP_IDS.lowBalance) : canShowTip(mascotTipId),
-  );
-  // The prefilled line has its own id so an admin rewording of the one-time tip
-  // can't replace it with text that doesn't mention the amount.
-  const mascotText = suggestedAmount > 0
-    ? tipText('recharge_prefilled', { amount: suggestedAmount })
-    : tipText(mascotTipId);
-
   React.useEffect(() => {
     captureEvent('wallet_viewed');
     // Prefilled from the low-balance popup: the amount was chosen for them, and they can
     // pay without touching the field — so report it now or this visit never registers a
     // choice at all. This is the exact path both of 2026-09-20's recharge attempts took.
     if (suggestedAmount > 0) reportAmountSelected(suggestedAmount, 'suggested');
-    let active = true;
-    // Re-check against THIS customer's "already seen" flags, which may not be the
-    // ones in memory if another account used this phone earlier.
-    syncMascotTipsCustomer().then(() => {
-      if (!active) return;
-      const show = suggestedAmount > 0 ? canShowTip(TIP_IDS.lowBalance) : canShowTip(mascotTipId);
-      setShowMascot(show);
-      if (show) trackTipShown(mascotTipId, { prefilled: suggestedAmount > 0 });
-    });
-    return () => { active = false; };
     // Once per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -165,9 +138,6 @@ const Wallet = ({navigation, route}) => {
       }
 
       captureEvent('wallet_recharged', { amount: finalAmount });
-      // They've recharged once — the "it's quick and safe" tip has done its job.
-      markTipSeen(mascotTipId);
-      setShowMascot(false);
       setAmount('');
       amountReportedRef.current = false; // a second top-up this visit is a new choice
       Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
@@ -270,24 +240,6 @@ const Wallet = ({navigation, route}) => {
         />
       </View>
 
-      {showMascot && (
-        <MascotTip
-          text={mascotText}
-          style={styles.mascot}
-          onClose={() => {
-            // Only the one-time tip is remembered; the prefilled line is per visit.
-            if (suggestedAmount > 0) trackTipAction(mascotTipId, 'close_prefilled');
-            else dismissTip(mascotTipId);
-            setShowMascot(false);
-          }}
-          onTurnOff={suggestedAmount > 0 ? undefined : () => {
-            turnOffTips(mascotTipId);
-            setShowMascot(false);
-          }}
-          turnOffLabel={t('mascot.turnOff')}
-        />
-      )}
-
       <View style={{ flex: 1 }} />
 
       <View style={styles.bottomSection}>
@@ -383,10 +335,6 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
     color: '#E0E0E0',
     fontFamily: 'Lato-Regular',
-  },
-  mascot: {
-    marginHorizontal: scale(20),
-    marginTop: verticalScale(14),
   },
   inputSection: {
     backgroundColor: COLORS.white,

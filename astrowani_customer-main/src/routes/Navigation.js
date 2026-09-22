@@ -183,7 +183,15 @@ export default function Navigation({ initialRoute }) {
       >
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right' }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
-        <Stack.Screen options={{ headerShown: false }} name="Login" component={Login} />
+        {/* contentStyle pins react-native-screens' native container background to
+            match the screen's own root color. Without it, on iOS, a screen whose
+            own KeyboardAvoidingView/ScrollView doesn't reach the true bottom edge
+            leaves native-stack's default content background showing through as a
+            visible strip above the home indicator -- confirmed live via Appetize
+            (2026-09-22): present on every screen using this ScrollView +
+            KeyboardAvoidingView pattern, absent on the intro splash, which sits
+            outside the navigator entirely. */}
+        <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: COLORS.AstroMaroon } }} name="Login" component={Login} />
         <Stack.Screen options={{ headerShown: false }} name="Register" component={Register} />
         {/* Signup after OTP: name, then the avatar welcome, then Home. */}
         <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} name="SignupName" component={SignupName} />
@@ -191,7 +199,7 @@ export default function Navigation({ initialRoute }) {
         {/* Birth details, asked when chat/call/video/free offers need them (utils/profileGate.js). */}
         <Stack.Screen options={{ headerShown: false }} name="CompleteBirthDetails" component={CompleteBirthDetails} />
 
-        <Stack.Screen options={{ headerShown: false }} name="VerifyOtp" component={VerifyOtp} />
+        <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: COLORS.AstroMaroon } }} name="VerifyOtp" component={VerifyOtp} />
         <Stack.Screen options={{ title: 'Verify Phone', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="OtpScreen" component={OtpScreen} />
         <Stack.Screen options={{ title: 'Verify Email', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="EmailOtpScreen" component={EmailOtpScreen} />
         <Stack.Screen options={{ headerShown: false }} name="DrawerNavigator" component={DrawerNavigator} />
@@ -680,6 +688,10 @@ export default function Navigation({ initialRoute }) {
               backgroundColor: COLORS.AstroMaroon,
             },
             headerTintColor: '#fff',
+            // Same fix as Login/VerifyOtp — pins native-stack's content background
+            // to Wallet.js's own container color (#F8F9FA) so no foreign color
+            // shows through above the home indicator on iOS.
+            contentStyle: { backgroundColor: '#F8F9FA' },
           })}
         />
 
