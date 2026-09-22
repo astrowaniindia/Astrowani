@@ -50,15 +50,44 @@ const db = createClient(
 // each issuing their own during a cache-miss window.
 const queryCache = new TtlCache({ ttlMs: 60 * 1000, maxEntries: 200 });
 
+// The Analytics page fires ~20 different HogQL queries in one page load (each card
+// is independent so one failing doesn't blank the others — see astrowani-admin's
+// Analytics.jsx), plus a 60s auto-refresh doing the same. That's a real concurrent
+// burst against PostHog's Query API, and PostHog occasionally answers a handful of
+// them with a 429 (rate limited) or a transient 5xx under that burst — reported
+// 2026-09-23 as 3 of 21 cards failing with no data, a different 3 each time, not a
+// broken query in any of them. A single retry after a short random delay covers
+// exactly this: a genuine bad query (400, malformed HogQL) fails identically on
+// retry so it still surfaces, but a rate limit or a blip usually clears within a
+// second.
+async function postHogQuery(hogql) {
+  const MAX_ATTEMPTS = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const { data } = await axios.post(
+        `${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`,
+        { query: { kind: 'HogQLQuery', query: hogql } },
+        { headers: { Authorization: `Bearer ${POSTHOG_PERSONAL_API_KEY}` }, timeout: 15000 }
+      );
+      return data.results || [];
+    } catch (err) {
+      lastErr = err;
+      const status = err.response?.status;
+      // Retry only transient failures: a rate limit, a momentary server error, or no
+      // response at all (timeout/network blip — `!status`). Any other 4xx means the
+      // query itself is wrong, and resending identical text changes nothing.
+      const transient = status === 429 || (status >= 500 && status < 600) || !status;
+      if (!transient || attempt === MAX_ATTEMPTS) throw err;
+      const delayMs = 300 * attempt + Math.random() * 300;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastErr; // unreachable — the loop always returns or throws above
+}
+
 async function runHogQL(hogql) {
-  return queryCache.get(hogql, async () => {
-    const { data } = await axios.post(
-      `${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`,
-      { query: { kind: 'HogQLQuery', query: hogql } },
-      { headers: { Authorization: `Bearer ${POSTHOG_PERSONAL_API_KEY}` }, timeout: 15000 }
-    );
-    return data.results || [];
-  });
+  return queryCache.get(hogql, () => postHogQuery(hogql));
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -948,17 +977,23 @@ module.exports = function registerPostHogRoutes(app) {
         WHERE event = 'wallet_recharged' AND properties.app = 'customer' AND ${ENV_FILTER} AND ${dateStart}
           AND person_id IN (${startedInRange})
       `),
+      // Existence only ("has this event ever fired at all"), not a count — LIMIT 1
+      // lets ClickHouse stop at the first match instead of scanning every
+      // 'free_bot_chat_message_sent' event ever recorded, unbounded by any date
+      // filter, just to answer yes/no. The unbounded count(DISTINCT ...) version of
+      // this was one of the heavier queries this card fired on every load.
       runHogQL(`
-        SELECT count(DISTINCT person_id)
+        SELECT 1
         FROM events
         WHERE event = 'free_bot_chat_message_sent' AND properties.app = 'customer' AND ${ENV_FILTER}
+        LIMIT 1
       `),
     ]);
     const [shown, accepted, started, messaged, completed, dismissed, endedEarly, aiFallback] =
       (counts[0] || [0, 0, 0, 0, 0, 0, 0, 0]).map((n) => Number(n) || 0);
     const rechargedCount = Number(recharged[0]?.[0]) || 0;
     // Message tracking exists at all (any date) → the stage is meaningful for this range.
-    const messageTracked = (Number(messageEver[0]?.[0]) || 0) > 0;
+    const messageTracked = messageEver.length > 0;
 
     const stages = [
       { key: 'shown', label: 'Offer Shown', count: shown },
