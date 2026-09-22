@@ -10,7 +10,9 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const child = spawn(process.execPath, ['--env-file=.env', 'index.js'], {
   cwd: require('path').join(__dirname, '..'),
   env: {
-    ...process.env, PORT: String(PORT), DISABLE_SESSION_MANAGER: '1',
+    // Explicitly OFF (not just omitted) so an inherited ENABLE_SESSION_MANAGER=true
+    // can never leak through and start real billing against production.
+    ...process.env, PORT: String(PORT), ENABLE_SESSION_MANAGER: '',
     JWT_SECRET: crypto.randomBytes(48).toString('base64url'),
     CORS_ORIGINS: 'https://admin.astrowani.com,https://backend.astrowani.com',
   },

@@ -20,8 +20,10 @@ const child = spawn(process.execPath, ['--env-file=.env', 'index.js'], {
   env: {
     ...process.env, PORT: String(PORT),
     JWT_SECRET: crypto.randomBytes(48).toString('base64url'),
-    // Safe: the fanout now starts BEFORE this guard, because it is read-only.
-    DISABLE_SESSION_MANAGER: '1',
+    // Safe: the fanout starts regardless, because it is read-only. Explicitly OFF
+    // (not just omitted) so an inherited ENABLE_SESSION_MANAGER=true can never leak
+    // through and start real billing against production.
+    ENABLE_SESSION_MANAGER: '',
   },
 });
 let log = '';

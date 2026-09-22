@@ -179,7 +179,7 @@ specific accounts, not a code change.
 
 All of this was implemented, then tested against either a locally-booted copy
 of the backend (pointed at the *real* Supabase project but with its own
-background jobs disabled — see `DISABLE_SESSION_MANAGER` below) or throwaway
+background jobs disabled — see `ENABLE_SESSION_MANAGER` below) or throwaway
 rows that were created and deleted within the same test run. Nothing here
 should have touched real user data. **If you are auditing this claim, the
 right move is to re-run the test scripts in `scripts/`, not to take this
@@ -370,17 +370,21 @@ creates a uniquely-tagged (`{name}-{Date.now()}`) row, exercises it, then
 deletes it in a `finally` block. If you write new verification scripts,
 follow this pattern; never test money logic against a real account.
 
-### 6.3 `DISABLE_SESSION_MANAGER=1`
+### 6.3 `ENABLE_SESSION_MANAGER=true` (⚠ CORRECTED 2026-09-23 — polarity flipped)
 Booting a local instance of the backend against the *real* production
 Supabase credentials (which is what you want, since there's no staging
-environment) will, if left default, start `sessionManager`'s background
-loops — which **write to the live database**:
+environment) starts `sessionManager`'s background loops — which **write to
+the live database** — ONLY if `ENABLE_SESSION_MANAGER=true` is explicitly set:
 `checkEarningsResets()` zeroes `today_earnings` on every astrologer on a
 schedule, and `markStaleRequestsMissed()` flips pending requests to
-`'missed'`. Setting `DISABLE_SESSION_MANAGER=1` in the environment when
-booting a local/test instance turns those loops off while leaving the HTTP API
-(and the read-only Realtime fan-out subscription, which is safe) running.
-**Never set this in the actual production deployment.**
+`'missed'`. This used to be the opt-out `DISABLE_SESSION_MANAGER=1`, which
+defaulted to running those loops unless someone remembered to set it — the
+exact failure mode that once zeroed every astrologer's `today_earnings` from
+a local boot with nothing set either way. Leaving `ENABLE_SESSION_MANAGER`
+unset (the default for any local/test run) is now the safe direction; the
+HTTP API and the read-only Realtime fan-out subscription still run regardless.
+**The real production deployment must have `ENABLE_SESSION_MANAGER=true` set**
+(via the "Set backend env keys" GitHub Action), or real billing silently stops.
 
 ---
 

@@ -23,9 +23,15 @@ jobs:
           SENTRY_WEBHOOK_SECRET: ${{ secrets.SENTRY_WEBHOOK_SECRET }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           GITHUB_ALERT_TOKEN: ${{ secrets.ALERT_GITHUB_TOKEN }}
+          # Not a secret — a fixed literal, not a GitHub secret. Required for
+          # sessionManager's billing/earnings-reset/stale-request loops to run at all
+          # (see index.js's server.listen callback). Missing or any other value keeps
+          # them off, which is the safe default for a local/test boot — production is
+          # the one place this must be 'true'.
+          ENABLE_SESSION_MANAGER: 'true'
         run: |
           set -e
-          KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN"
+          KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/k && chmod 600 ~/.ssh/k
           : > /tmp/newkeys

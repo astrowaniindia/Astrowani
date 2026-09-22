@@ -19,7 +19,9 @@ const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
 
 const child = spawn(process.execPath, ['--env-file=.env', 'index.js'], {
   cwd: require('path').join(__dirname, '..'),
-  env: { ...process.env, PORT: String(PORT), JWT_SECRET, DISABLE_SESSION_MANAGER: '1' },
+  // Explicitly OFF (not just omitted) so an inherited ENABLE_SESSION_MANAGER=true from
+  // the calling shell can never leak through and start real billing against production.
+  env: { ...process.env, PORT: String(PORT), JWT_SECRET, ENABLE_SESSION_MANAGER: '' },
 });
 let log = '';
 child.stdout.on('data', (d) => { log += d; });

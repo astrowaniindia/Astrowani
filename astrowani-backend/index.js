@@ -6176,12 +6176,19 @@ app.use((err, req, res, next) => {
 server.listen(PORT, () => {
   console.log(`🚀 Astrowani backend server is running on http://localhost:${PORT}`);
 
-  // DISABLE_SESSION_MANAGER=1 boots the HTTP API without the background loops.
-  // Those loops write to the shared database the moment they start —
+  // ENABLE_SESSION_MANAGER must be exactly 'true' for the background loops below to
+  // start. Those loops write to the shared database the moment they start —
   // checkEarningsResets() zeroes today_earnings across every astrologer, and
-  // markStaleRequestsMissed() flips pending requests to 'missed'. Running a
-  // local instance against production credentials to test an endpoint would
-  // otherwise silently corrupt live data. Never set this on the real server.
+  // markStaleRequestsMissed() flips pending requests to 'missed'. Running a local
+  // instance against production credentials to test an endpoint would otherwise
+  // silently corrupt live data — which is exactly what happened once, on a local boot
+  // with nothing set either way.
+  //
+  // This is deliberately an opt-IN, not the opt-out DISABLE_SESSION_MANAGER=1 it
+  // replaces: that flag defaulted to running the billing worker unless someone
+  // remembered to set it, which is precisely the failure mode above. A forgotten or
+  // missing var must be the SAFE direction, so nothing in `.env.example` sets this —
+  // production sets it explicitly (see the "Set backend env keys" GitHub Action).
   // One Realtime subscription for the whole system, rebroadcast over Socket.io,
   // replacing the four per-user subscriptions the customer app used to open.
   // Starts regardless of DISABLE_SESSION_MANAGER below: this is read-only — it
@@ -6220,18 +6227,18 @@ server.listen(PORT, () => {
     onChange: () => contentCache.invalidate('remedies:'),
   });
 
-  // DISABLE_SESSION_MANAGER gates only the loops that WRITE.
-  if (process.env.DISABLE_SESSION_MANAGER === '1') {
-    console.warn('[startup] DISABLE_SESSION_MANAGER=1 — billing, earnings resets and the ' +
-      'stale-request sweep are OFF. This must never be set in production.');
-    return;
+  // Gates only the loops that WRITE (billing, earnings resets, stale-request sweep).
+  if (process.env.ENABLE_SESSION_MANAGER === 'true') {
+    sessionManager.start(io); // Start the SessionManager with io instance
+  } else {
+    console.warn('[startup] ENABLE_SESSION_MANAGER is not "true" — billing, earnings ' +
+      'resets and the stale-request sweep are OFF. Production must have ' +
+      'ENABLE_SESSION_MANAGER=true set, or real billing silently stops.');
   }
-  sessionManager.start(io); // Start the SessionManager with io instance
 
-  // Live Aarti detection. Read-only against YouTube plus a cache write, so it
-  // is NOT gated by DISABLE_SESSION_MANAGER (that flag is about money-writing
-  // loops) — but it is started after it, so a disabled session manager returns
-  // above and this stays off too on a machine deliberately running inert.
+  // Live Aarti detection. Read-only against YouTube plus a cache write, so it is a
+  // genuinely separate concern from the money-writing loops above and starts
+  // regardless of ENABLE_SESSION_MANAGER.
   liveAartiPoller.start();
 });
 
