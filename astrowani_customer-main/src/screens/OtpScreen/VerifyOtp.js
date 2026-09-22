@@ -284,7 +284,9 @@ const VerifyOtp = ({navigation, route}) => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      {/* style={{flex:1}} required on iOS, not just contentContainerStyle -- see
+          CLAUDE.md subsystem BG and Login.js's identical fix. */}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
@@ -376,6 +378,9 @@ const styles = StyleSheet.create({
   main: {
     flex: 1,
     backgroundColor: COLORS.AstroMaroon,
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,

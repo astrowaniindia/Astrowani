@@ -184,7 +184,13 @@ const Login = ({navigation, route}) => {
         <Text style={[styles.langPillText, language === 'Hindi' && styles.langPillTextActive]}>हिं</Text>
       </TouchableOpacity>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      {/* style={{flex:1}} is required on iOS, not just contentContainerStyle -- without
+          it the ScrollView sizes to its own content instead of claiming the KeyboardAvoidingView's
+          full height, leaving a gap of unknown color beneath it. Android fills regardless
+          (documented iOS trap, see CLAUDE.md subsystem BG). Confirmed live via Appetize
+          (2026-09-22): this, not contentStyle, is what was leaving the strip above the
+          home indicator on Login/VerifyOtp. */}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Image
             source={require('../../assets/images/logo2.jpeg')}
@@ -332,6 +338,9 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     fontSize: moderateScale(12),
     marginHorizontal: scale(4),
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
