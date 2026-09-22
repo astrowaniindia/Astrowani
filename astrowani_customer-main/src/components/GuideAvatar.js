@@ -13,20 +13,41 @@
 //     alwaysShow
 //   />
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Image, Keyboard, Platform } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { hasSeenGuideHint, markGuideHintSeen } from '../utils/onboardingFlags';
 import { captureEvent } from '../utils/Analytics';
 
-const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, alwaysShow = false, avatarSize, offsetX = 0, avatarOffsetY = 0, boxOffsetY = 0, layout = 'stack', onPress }) => {
+const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, alwaysShow = false, avatarSize, offsetX = 0, avatarOffsetY = 0, boxOffsetY = 0, layout = 'stack', onPress, hideOnKeyboard = true }) => {
   const [visible, setVisible] = useState(alwaysShow);
   const [checked, setChecked] = useState(alwaysShow);
   const slideAnim = useRef(new Animated.Value(40)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const bounceAnim = useRef(new Animated.Value(0)).current;
   const bounceLoopRef = useRef(null);
+
+  // The avatar is absolutely positioned against the BOTTOM of the screen, and on
+  // Android the manifest's adjustResize shrinks the window when the keyboard opens —
+  // so "the bottom" moves up with it and the avatar rides along, landing on top of the
+  // Continue button it is supposed to be pointing at. It is a hint, and a hint must
+  // never sit between the customer and the thing they are trying to tap.
+  //
+  // So it steps out of the way while the keyboard is up and comes back, in its usual
+  // place, when the keyboard closes. Both screens that use it (Login, Register) are
+  // forms, and on both the keyboard covers that resting place anyway.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (!hideOnKeyboard) return undefined;
+    // iOS gets the `Will` events so the avatar is gone before the keyboard slides over
+    // it; Android only reliably reports `Did`.
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, [hideOnKeyboard]);
 
   useEffect(() => {
     if (alwaysShow) return undefined;
@@ -71,6 +92,7 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
   };
 
   if (!checked || !visible) return null;
+  if (keyboardOpen) return null;
 
   const isRow = layout === 'row';
   const handlePress = onPress || (alwaysShow ? undefined : dismiss);

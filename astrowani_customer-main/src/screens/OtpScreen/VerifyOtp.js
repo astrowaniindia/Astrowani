@@ -13,6 +13,7 @@ import {
   TextInput,
   BackHandler,
   NativeModules,
+  PermissionsAndroid,
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -95,6 +96,23 @@ const VerifyOtp = ({navigation, route}) => {
 
   const getFcmToken = async () => {
     try {
+      // On Android 13+ getToken() makes Firebase ask for POST_NOTIFICATIONS there and
+      // then — which is why the "Allow Astrowani to send you notifications?" dialog was
+      // landing on the OTP screen, before the customer had been given any reason to say
+      // yes. The first thing they see in the app should not be a permission request they
+      // have no context for; a "no" here is permanent and costs every later reminder.
+      //
+      // So the token is only fetched once permission already exists. Otherwise it is
+      // skipped, and the free-call booking asks later (FreeCallOffer.afterBooked), where
+      // "we will remind you about your call" is an actual reason — and
+      // requestUserPermission() fetches and syncs the token the moment it is granted
+      // (getFCMToken in utils/PushNotification.js), so nothing is lost by waiting.
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        );
+        if (!granted) return '';
+      }
       return (await messaging().getToken()) || '';
     } catch (e) {
       return '';

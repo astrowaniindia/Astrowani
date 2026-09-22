@@ -8,8 +8,31 @@
 // fetch must not break Home; the worst outcome of a failure is that a customer
 // isn't shown the offer this launch, which is recoverable on the next one.
 
+import { Image, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from './ApiCall';
+
+// Sent as `platform` on every free-call request so the admin can turn the offer
+// off for one app while leaving it on for the other (astrowani-backend/src/
+// freeCallRoutes.js `enabledPlatforms`). Not a security boundary -- just tells
+// the server which per-platform switch to check.
+const PLATFORM = Platform.OS;
+
+// Warm the astrologer faces the offer card shows, the moment we know which they are.
+// The card is a row of photographs off Supabase; fetched only when the card renders
+// they arrive visibly late and the card pops. Doing it HERE (rather than in the
+// screen) means every path that asks for the offer warms them -- including the
+// prefetch SignupName fires while the customer is still typing their name, which
+// buys roughly a minute.
+function warmAstrologerFaces(data) {
+  const list = data?.offer?.astrologers;
+  if (!Array.isArray(list)) return;
+  list.forEach((a) => {
+    if (typeof a?.image === 'string' && /^https?:/.test(a.image)) {
+      Image.prefetch(a.image).catch(() => {});
+    }
+  });
+}
 
 async function authHeader() {
   const token = await AsyncStorage.getItem('token');
@@ -24,9 +47,13 @@ const OFFER_OFF = { enabled: false, eligible: false, booking: null, offer: null 
  */
 async function fetchFreeCallOffer() {
   try {
-    const res = await Instance.get('/api/free-call/offer', await authHeader());
+    const res = await Instance.get('/api/free-call/offer', {
+      ...(await authHeader()),
+      params: { platform: PLATFORM },
+    });
     if (res.data?.success) {
       lastOffer = { data: res.data, at: Date.now() };
+      warmAstrologerFaces(res.data);
       return res.data;
     }
     return OFFER_OFF;
@@ -85,7 +112,7 @@ export async function getFreeCallSlots(date) {
   try {
     const res = await Instance.get('/api/free-call/slots', {
       ...(await authHeader()),
-      params: date ? { date } : {},
+      params: date ? { date, platform: PLATFORM } : { platform: PLATFORM },
     });
     return res.data?.success ? res.data : { dates: [], slots: [] };
   } catch (_) {
@@ -104,7 +131,7 @@ export async function getFreeCallSlots(date) {
 export async function bookFreeCall(slotStart) {
   lastOffer = null; // eligibility is about to change either way
   try {
-    const res = await Instance.post('/api/free-call/book', { slotStart }, await authHeader());
+    const res = await Instance.post('/api/free-call/book', { slotStart, platform: PLATFORM }, await authHeader());
     return res.data;
   } catch (err) {
     const data = err?.response?.data;

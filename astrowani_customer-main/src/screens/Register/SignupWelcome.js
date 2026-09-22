@@ -7,14 +7,16 @@
 // between the OTP and Home, so this is the moment the offer is most likely to land;
 // on Home the same offer was a popup that 59% closed. The Namaste tap is replaced by
 // the one Claim button. There is no on-screen skip (owner's call, 2026-09-19);
-// Android back still goes Home, and the gift box on Home keeps the offer reachable.
+// Android back still goes Home -- but on the card's 'intro' step it now asks once
+// first (2026-09-20, see askBeforeLeaving below), and the gift box on Home keeps the
+// offer reachable either way.
 //
 // Deliberately asks for nothing. Birth details are asked when the customer first
 // tries something that needs them (see utils/profileGate.js).
 //
 // Copy is Hinglish in the English setting (it reads warmer than formal English
 // for this audience) and Devanagari in the Hindi setting.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StatusBar,
   StyleSheet,
@@ -39,6 +41,7 @@ import { captureEvent } from '../../utils/Analytics';
 import { getFreeCallOffer } from '../../api/FreeCallApi';
 import FreeCallOffer from '../../components/FreeCallOffer';
 import { markFreeCallOfferSeen } from '../../utils/onboardingFlags';
+import { showStatusPopup } from '../../components/StatusPopup';
 
 // How long to wait for the offer before falling back to the plain welcome.
 const GIFT_WAIT_MS = 5000;
@@ -127,6 +130,9 @@ export default function SignupWelcome({ navigation, route }) {
   const bounce = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const leftRef = useRef(false);
+  // Where the free-call card is: 'intro' (offer not taken up yet), 'slots', 'done'.
+  const giftStepRef = useRef('intro');
+  const askingRef = useRef(false);
   // null = still asking, false = no offer for this customer, object = show the gift.
   const [gift, setGift] = useState(null);
 
@@ -140,12 +146,8 @@ export default function SignupWelcome({ navigation, route }) {
     }, GIFT_WAIT_MS);
     // Usually already on its way from the name screen (SignupName prefetches it).
     getFreeCallOffer({ usePrefetched: true }).then((fc) => {
-      // Warm the astrologer photos the card shows, so it opens complete.
-      (fc?.offer?.astrologers || []).forEach((a) => {
-        if (typeof a?.image === 'string' && /^https?:/.test(a.image)) {
-          Image.prefetch(a.image).catch(() => {});
-        }
-      });
+      // Faces are warmed in api/FreeCallApi.js, as soon as ANY offer fetch lands --
+      // including SignupName's prefetch, which is a minute earlier than this screen.
       if (settled) return;
       settled = true;
       const show = !!(fc?.enabled && fc?.eligible && fc?.offer);
@@ -188,16 +190,50 @@ export default function SignupWelcome({ navigation, route }) {
     navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
   };
 
+  const onGiftStep = useCallback((step) => { giftStepRef.current = step; }, []);
+
   // This is the root of the stack after signup, so a plain back would close the
   // app. Treat it as "Hi" instead.
+  //
+  // ONE EXCEPTION (2026-09-20): while the free-call card is still on its 'intro'
+  // step, back asks first. Measured that day, 4 of 8 new customers left this screen
+  // in 2-36 seconds without ever tapping Claim — and since the card has no on-screen
+  // skip, back is the only door, so a reflex gesture and a considered "no thanks"
+  // look identical. A soft confirm separates the two and costs one tap. It is NOT
+  // shown once a time is booked ('done'), where leaving is the correct thing to do,
+  // nor on the plain welcome (no gift), which has its own Namaste button.
+  const askBeforeLeaving = () => {
+    if (askingRef.current) return;
+    askingRef.current = true;
+    captureEvent('signup_welcome_leave_confirm_shown');
+    showStatusPopup({
+      variant: 'confirmPay',
+      title: t('freeCall.leaveTitle'),
+      message: t('freeCall.leaveMessage', { count: gift?.offer?.durationMinutes || 12 }),
+      // Staying is the primary action: the offer is free, so leaving should not be
+      // the easiest thing to hit (same reasoning as hooks/useConfirmLeaveReport.js).
+      confirmText: t('freeCall.leaveStay'),
+      onConfirm: () => {
+        askingRef.current = false;
+        captureEvent('signup_welcome_leave_cancelled');
+      },
+      cancelText: t('freeCall.leaveAnyway'),
+      onCancel: () => {
+        askingRef.current = false;
+        goHome('back_confirmed');
+      },
+    });
+  };
+
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      goHome('back');
+      if (gift && giftStepRef.current === 'intro') askBeforeLeaving();
+      else goHome('back');
       return true;
     });
     return () => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [gift]);
 
   // Birth details right after booking: open the form on top of Home, so saving (or
   // backing out of) it lands the customer on Home.
@@ -218,9 +254,13 @@ export default function SignupWelcome({ navigation, route }) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.AstroMaroon} />
-        <ScrollView
-          contentContainerStyle={[styles.giftScroll, { paddingBottom: insets.bottom + verticalScale(16) }]}
-          showsVerticalScrollIndicator={false}>
+        {/* FIXED, never scrolls (2026-09-20, owner's call). The card used to sit in a
+            page-level ScrollView, which made the whole screen slide around under the
+            slot grid and read as two things scrolling at once. Now the page holds
+            still and only the times scroll, inside the card. Everything here is sized
+            to fit one screen -- keep it that way: anything added has to earn its
+            height. */}
+        <View style={[styles.giftPage, { paddingBottom: insets.bottom + verticalScale(12) }]}>
           {/* The guide avatar, gently floating, says the greeting in a speech bubble. */}
           <View style={styles.giftHero}>
             <Animated.Image
@@ -236,7 +276,6 @@ export default function SignupWelcome({ navigation, route }) {
               <Text style={styles.giftTitle}>
                 {firstName ? t('welcome.giftTitle', { name: firstName }) : t('welcome.giftTitleNoName')}
               </Text>
-              <Text style={styles.giftSub}>{t('welcome.giftBlessing')}</Text>
             </View>
           </View>
 
@@ -246,12 +285,13 @@ export default function SignupWelcome({ navigation, route }) {
             offer={gift.offer}
             t={t}
             source="welcome"
+            onStepChange={onGiftStep}
             needsBirthDetails
             onAddBirthDetails={addBirthDetails}
             onClose={() => goHome('free_call_done')}
           />
 
-        </ScrollView>
+        </View>
       </View>
     );
   }
@@ -483,24 +523,23 @@ const styles = StyleSheet.create({
 
   footer: { paddingHorizontal: scale(24), alignItems: 'stretch' },
 
-  giftScroll: {
-    flexGrow: 1,
-    justifyContent: 'center',
+  giftPage: {
+    flex: 1,
     alignItems: 'center',
     paddingHorizontal: scale(20),
-    paddingTop: verticalScale(16),
+    paddingTop: verticalScale(12),
   },
   giftHero: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     alignSelf: 'stretch',
-    marginBottom: verticalScale(14),
+    marginBottom: verticalScale(10),
   },
-  giftAvatar: { height: verticalScale(150), aspectRatio: GUIDE_AVATAR_ASPECT },
+  giftAvatar: { height: verticalScale(118), aspectRatio: GUIDE_AVATAR_ASPECT },
   giftBubble: {
     flex: 1,
     marginLeft: scale(12),
-    marginBottom: verticalScale(40),
+    marginBottom: verticalScale(24),
     backgroundColor: CREAM,
     borderRadius: moderateScale(18),
     borderWidth: 1.5,
@@ -545,13 +584,6 @@ const styles = StyleSheet.create({
     borderRightColor: CREAM,
   },
   giftTitle: { color: COLORS.AstroMaroon, fontSize: moderateScale(16), fontWeight: '800', lineHeight: moderateScale(22) },
-  giftSub: {
-    color: '#5a4034',
-    fontSize: moderateScale(13.5),
-    fontWeight: '600',
-    lineHeight: moderateScale(19),
-    marginTop: verticalScale(5),
-  },
   hint: {
     color: COLORS.AstroSoftOrange,
     fontSize: moderateScale(13),

@@ -78,6 +78,16 @@ export default function CompleteBirthDetails({ navigation, route }) {
   // Set once the details are saved, so leaving the screen tells the gate to carry on
   // with the action the customer tapped instead of cancelling it.
   const savedRef = useRef(false);
+  // Auto-advance only ever reacts to something the customer just did. Without this,
+  // a returning customer whose details are already cached would be carried through
+  // both steps before they had read either one.
+  const touchedRef = useRef(false);
+  const touch = () => { touchedRef.current = true; };
+  // Turned off for good the moment the customer walks BACK to step 1. They came back
+  // to change an answer, and both answers are already filled -- so auto-advance would
+  // throw them forward again the instant the screen drew, which is a trap, not a
+  // convenience. From then on the button is how they move on. (Reported 2026-09-20.)
+  const autoAdvanceOffRef = useRef(false);
 
   // However the screen closes — saved, back button, swipe — the waiting action gets
   // its answer exactly once.
@@ -133,14 +143,38 @@ export default function CompleteBirthDetails({ navigation, route }) {
     });
   }, [slide, fade]);
 
+  // After a free call is booked these details are not optional: they are what the
+  // astrologer reads before dialling, and a booking without them wastes the call and
+  // the customer's slot. So in THAT flow the screen cannot be backed out of — the
+  // header arrow is hidden on the first step and hardware back does nothing.
+  //
+  // Only in that flow. The same screen is opened by utils/profileGate.js before a chat
+  // or a call, and trapping someone there would leave them unable to get back to the
+  // app at all. Stepping backwards between steps keeps working either way.
+  const mustComplete = intent === 'free_call_after_booking';
+
   const handleBack = useCallback(() => {
     if (step > 0) {
+      autoAdvanceOffRef.current = true;
       goToStep(step - 1, -1);
       return;
     }
+    if (mustComplete) return; // nowhere to go: the form is the last step
     captureEvent('birth_details_abandoned', { intent });
     navigation.goBack();
-  }, [step, goToStep, navigation, intent]);
+  }, [step, goToStep, navigation, intent, mustComplete]);
+
+  // Covers what the hardware-back listener cannot: the iOS swipe-back gesture and any
+  // programmatic pop. `savedRef` is set just before the successful save navigates away,
+  // so the real exit is never blocked.
+  useEffect(() => {
+    if (!mustComplete) return undefined;
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      if (savedRef.current) return;
+      e.preventDefault();
+    });
+    return unsub;
+  }, [navigation, mustComplete]);
 
   // Hardware back walks the steps backwards before leaving.
   useEffect(() => {
@@ -210,10 +244,33 @@ export default function CompleteBirthDetails({ navigation, route }) {
     save();
   };
 
+  // ── Move on by itself once a step is answered ──────────────────────────────
+  // No "Aage badhein" tap (2026-09-20, owner's call): the button was a second action
+  // for a decision already made. Step 1 leaves as soon as both choices are picked;
+  // step 2 saves once all three birth fields are in. The short delay is deliberate --
+  // the customer must SEE the chip they tapped turn selected, or the screen appears
+  // to jump on its own.
+  useEffect(() => {
+    if (step !== 0 || autoAdvanceOffRef.current) return undefined;
+    if (!touchedRef.current || !gender || !marital) return undefined;
+    const id = setTimeout(() => goToStep(1, 1), 260);
+    return () => clearTimeout(id);
+  }, [step, gender, marital, goToStep]);
+
+  useEffect(() => {
+    // Time of birth stays OPTIONAL -- this fires only when the customer has in fact
+    // given all three. Leaving it blank is still valid and still uses the button.
+    if (step !== 1 || !touchedRef.current || saving || savedRef.current) return undefined;
+    if (!dob || !s(place) || !tob) return undefined;
+    const id = setTimeout(() => save(), 320);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, dob, place, tob, saving]);
+
   const STEP_TITLES = [t('birthGate.step1Title'), t('birthGate.step2Title')];
   const STEP_SUBS = [t('birthGate.step1Sub'), t('birthGate.step2Sub')];
   // Straight after booking the free call this is the last step, and says so.
-  const afterBooking = intent === 'free_call_after_booking';
+  const afterBooking = mustComplete;
   const GUIDE = [
     afterBooking ? t('birthGate.guideAfterBooking') : t('birthGate.guideStep1'),
     t('birthGate.guideStep2'),
@@ -234,9 +291,16 @@ export default function CompleteBirthDetails({ navigation, route }) {
       <StatusBar barStyle="dark-content" backgroundColor="#f7f3f1" />
 
       <View style={[styles.header, { paddingTop: insets.top + verticalScale(10) }]}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Icon name="arrow-back" size={moderateScale(26)} color={COLORS.AstroMaroon} />
-        </TouchableOpacity>
+        {/* A control that visibly does nothing is worse than no control, so on the first
+            step of the mandatory flow the arrow is not drawn at all — the space is kept
+            so the title does not shift as the customer moves between steps. */}
+        {mustComplete && step === 0 ? (
+          <View style={styles.backButton} />
+        ) : (
+          <TouchableOpacity onPress={handleBack} style={styles.backButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon name="arrow-back" size={moderateScale(26)} color={COLORS.AstroMaroon} />
+          </TouchableOpacity>
+        )}
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{afterBooking ? t('birthGate.lastStepTitle') : t('birthGate.title')}</Text>
           <Text style={styles.stepCounter}>{t('birthGate.stepOf', { n: step + 1, total: TOTAL_STEPS })}</Text>
@@ -259,7 +323,7 @@ export default function CompleteBirthDetails({ navigation, route }) {
           contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <Animated.View style={{ opacity: fade, transform: [{ translateX: slide }] }}>
+          <Animated.View style={{ flexGrow: 1, opacity: fade, transform: [{ translateX: slide }] }}>
             <Text style={styles.stepTitle}>{STEP_TITLES[step]}</Text>
             <Text style={styles.stepSub}>{STEP_SUBS[step]}</Text>
 
@@ -277,17 +341,21 @@ export default function CompleteBirthDetails({ navigation, route }) {
 
             {step === 0 && (
               <>
+                {/* Pushed to the BOTTOM of the screen (2026-09-20): these are the only
+                    things to tap here, and at the top of a tall phone they sit where a
+                    thumb cannot comfortably reach. */}
+                <View style={styles.pushDown} />
                 <Text style={styles.fieldLabel}>{t('birthGate.genderLabel')}</Text>
                 <View style={styles.choiceRow}>
                   {GENDERS.map((g) => (
-                    <Choice key={g.value} label={g.label} selected={gender === g.value} onPress={() => setGender(g.value)} />
+                    <Choice key={g.value} label={g.label} selected={gender === g.value} onPress={() => { touch(); setGender(g.value); }} />
                   ))}
                 </View>
 
                 <Text style={styles.fieldLabel}>{t('birthGate.maritalLabel')}</Text>
                 <View style={styles.choiceRow}>
                   {MARITAL.map((m) => (
-                    <Choice key={m.value} label={m.label} selected={marital === m.value} onPress={() => setMarital(m.value)} />
+                    <Choice key={m.value} label={m.label} selected={marital === m.value} onPress={() => { touch(); setMarital(m.value); }} />
                   ))}
                 </View>
               </>
@@ -313,6 +381,7 @@ export default function CompleteBirthDetails({ navigation, route }) {
                     initialValue={place}
                     inputStyle={styles.input}
                     onSelect={(picked) => {
+                      touch();
                       setPlace(picked ? picked.label : '');
                       setPlaceState(picked?.state || '');
                     }}
@@ -337,6 +406,11 @@ export default function CompleteBirthDetails({ navigation, route }) {
           </Animated.View>
         </ScrollView>
 
+        {/* The button stays on BOTH steps. On step 1 it is usually never tapped --
+            picking both choices moves on by itself -- but it has to be there for the
+            customer who came back to change an answer, and for anyone who reaches for
+            a button out of habit. On step 2 it is the only way out for someone who
+            leaves time of birth blank, which is allowed. */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + verticalScale(10) }]}>
           {step > 0 && (
             <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.85}>
@@ -370,7 +444,7 @@ export default function CompleteBirthDetails({ navigation, route }) {
           maximumDate={new Date()}
           onChange={(event, selected) => {
             setShowDobPicker(false);
-            if (event?.type !== 'dismissed' && selected) setDob(selected);
+            if (event?.type !== 'dismissed' && selected) { touch(); setDob(selected); }
           }}
         />
       )}
@@ -381,7 +455,7 @@ export default function CompleteBirthDetails({ navigation, route }) {
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={(event, selected) => {
             setShowTobPicker(false);
-            if (event?.type !== 'dismissed' && selected) setTob(selected);
+            if (event?.type !== 'dismissed' && selected) { touch(); setTob(selected); }
           }}
         />
       )}
@@ -516,6 +590,8 @@ const styles = StyleSheet.create({
   },
   noteText: { flex: 1, marginLeft: scale(9), fontSize: moderateScale(12), color: '#6b574d', lineHeight: moderateScale(17.5) },
 
+  // Eats the free space above the choices so they sit at the bottom of the screen.
+  pushDown: { flexGrow: 1, minHeight: verticalScale(10) },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

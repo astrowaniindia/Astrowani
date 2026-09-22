@@ -25,6 +25,9 @@ import {
   ScrollView,
   ActivityIndicator,
   StyleSheet,
+  Dimensions,
+  Animated,
+  Easing,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
@@ -104,6 +107,11 @@ const FreeCallOffer = ({
   // inline: render just the card, in the page (the signup Welcome screen), with no
   // Modal and no dimmed backdrop. The host screen provides its own way out.
   inline = false,
+  // Told which step the card is on, whenever it changes. The host owns the way out
+  // in inline mode, and "are you sure" is only right before the offer has landed:
+  // the signup Welcome screen asks on 'intro' and leaves instantly on 'done'.
+  // Pass a stable callback (useCallback) — this fires on every change of it.
+  onStepChange,
 }) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
@@ -115,6 +123,73 @@ const FreeCallOffer = ({
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(null);
+  // ── The "there is more below" nudge ──────────────────────────────────────
+  // A wall of time chips that happens to be cut off at the bottom reads as the whole
+  // list. Nobody scrolls something they do not know is scrollable, so once the times
+  // land the grid scrolls itself down a little, holds for a beat, and glides back:
+  // enough for the eye to catch that the chips moved and more exist underneath.
+  // Only when something IS actually hidden, only once per date, and it gets out of the
+  // way the instant the customer touches the list — a hint that fights the finger is
+  // worse than no hint.
+  const slotScrollRef = useRef(null);
+  const hintTimers = useRef([]);
+  const hintedForDate = useRef(null);
+  const userScrolledSlots = useRef(false);
+  const slotContentH = useRef(0);
+  const slotViewH = useRef(0);
+
+  const clearHintTimers = useCallback(() => {
+    hintTimers.current.forEach(clearTimeout);
+    hintTimers.current = [];
+  }, []);
+
+  // Whether anything is still hidden below the fold, which drives both the nudge and
+  // the little "more times" chevron.
+  const [moreBelow, setMoreBelow] = useState(false);
+  const chevronBounce = useRef(new Animated.Value(0)).current;
+
+  const refreshMoreBelow = useCallback((offsetY = 0) => {
+    const hidden = slotContentH.current - slotViewH.current - offsetY;
+    setMoreBelow(hidden > verticalScale(12));
+  }, []);
+
+  // The chevron breathes downward so it reads as "keep going that way" rather than as a
+  // static icon nobody looks at twice.
+  useEffect(() => {
+    if (!moreBelow) { chevronBounce.stopAnimation(); chevronBounce.setValue(0); return undefined; }
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(chevronBounce, { toValue: 1, duration: 620, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(chevronBounce, { toValue: 0, duration: 620, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [moreBelow, chevronBounce]);
+
+  const maybeHintScroll = useCallback(() => {
+    const contentH = slotContentH.current;
+    const viewH = slotViewH.current;
+    if (!slotScrollRef.current || !viewH) return;
+    // Less than about half a row hidden is not worth a nudge.
+    if (contentH - viewH < verticalScale(24)) return;
+    if (hintedForDate.current === activeDate) return;
+    hintedForDate.current = activeDate;
+    userScrolledSlots.current = false;
+    const peek = Math.min(verticalScale(84), contentH - viewH);
+    clearHintTimers();
+    const step1 = setTimeout(() => {
+      if (userScrolledSlots.current) return;
+      slotScrollRef.current?.scrollTo({ y: peek, animated: true });
+    }, 420);
+    const step2 = setTimeout(() => {
+      if (userScrolledSlots.current) return;
+      slotScrollRef.current?.scrollTo({ y: 0, animated: true });
+    }, 1620); // ~1s resting at the peek, so the movement registers
+    hintTimers.current.push(step1, step2);
+  }, [activeDate, clearHintTimers]);
+
+  // A hint firing into an unmounted card would scroll nothing and warn in dev.
+  useEffect(() => clearHintTimers, [clearHintTimers]);
+
   // After a booking: the pending hop to the birth-details form (see afterBooked).
   const autoNextRef = useRef(null);
   const visibleRef = useRef(visible);
@@ -180,6 +255,9 @@ const FreeCallOffer = ({
     }, wait);
   };
 
+  // Keep the host in step with the card (see onStepChange above).
+  useEffect(() => { if (onStepChange) onStepChange(step); }, [step, onStepChange]);
+
   const goToSlots = async () => {
     captureEvent('free_call_slots_opened', { source });
     setStep('slots');
@@ -195,6 +273,33 @@ const FreeCallOffer = ({
   };
 
   // Tapping a time books it at once; there is no separate Confirm step.
+  // The slot chips themselves.
+  const renderSlots = () => {
+    const open = slots.filter((s) => !s.past);
+    if (open.length === 0) return <Text style={styles.empty}>{tr('freeCall.noSlots')}</Text>;
+    return open.map((s) => {
+      const on = picked === s.start;
+      return (
+        <TouchableOpacity
+          key={s.start}
+          activeOpacity={s.taken ? 1 : 0.85}
+          disabled={s.taken || booking}
+          style={[styles.slot, s.taken && styles.slotTaken, on && styles.slotOn]}
+          onPress={() => {
+            captureEvent('free_call_slot_selected', { source, slot_start: s.start });
+            setPicked(s.start);
+            setError('');
+            confirm(s.start);
+          }}>
+          <Text style={[styles.slotTxt, s.taken && styles.slotTxtTaken, on && styles.slotTxtOn]}>
+            {s.label}
+          </Text>
+          {s.taken && <Text style={styles.takenTag}>{tr('freeCall.taken')}</Text>}
+        </TouchableOpacity>
+      );
+    });
+  };
+
   const confirm = async (slotStart = picked) => {
     if (!slotStart || booking) return;
     setBooking(true);
@@ -253,8 +358,11 @@ const FreeCallOffer = ({
   // cluster at all rather than a placeholder, which AstrologerCluster handles.
   const cluster = Array.isArray(offer.astrologers) ? offer.astrologers : [];
 
+  // Inline, the card GROWS to the page once there are times to show, so the slot grid
+  // gets the leftover height and the page itself never scrolls (2026-09-20). On
+  // 'intro' it still hugs its content -- a short card is the point; no flex there.
   const card = (
-        <View style={[styles.card, inline && styles.cardInline]}>
+        <View style={[styles.card, inline && styles.cardInline, inline && step !== 'intro' && styles.cardFill]}>
 
           {/* ── Intro ─────────────────────────────────────────────────── */}
           {step === 'intro' && (
@@ -304,8 +412,13 @@ const FreeCallOffer = ({
                 <Text style={styles.headerSmall}>{tr('freeCall.pickDate')}</Text>
               </View>
 
+              {/* flexGrow 0 + flex-start is load-bearing (2026-09-20): once the card
+                  flexes to fill the page, a horizontal ScrollView with no height of
+                  its own eats the leftover space and stretches every date chip to the
+                  full height of it. */}
               <ScrollView
                 horizontal
+                style={styles.dateScroll}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.dateStrip}>
                 {dates.map((d) => {
@@ -330,45 +443,51 @@ const FreeCallOffer = ({
 
               <Text style={styles.sectionLabel}>{tr('freeCall.pickTime')}</Text>
 
-              <View style={styles.slotArea}>
+              {/* One compact, scrolling box wherever this card appears. It used to be a
+                  vertical ScrollView nested inside the signup Welcome page's own
+                  ScrollView, which on Android does not scroll at all without
+                  nestedScrollEnabled — so every time past the first dozen was simply
+                  unreachable, on every date, for every customer who signed up. The flag
+                  below is what makes the inner list win the gesture.
+
+                  The box is also sized to the screen now rather than a hardcoded 196dp:
+                  the live offer generates FORTY times a day and the old window showed
+                  about twelve of them. */}
+              <View style={[styles.slotArea, inline && styles.slotAreaFill]}>
                 {loadingSlots ? (
                   <ActivityIndicator color={COLORS.AstroMaroon} style={{ marginTop: verticalScale(30) }} />
                 ) : (
-                  <ScrollView contentContainerStyle={styles.slotGrid}>
-                    {slots.filter((s) => !s.past).length === 0 ? (
-                      <Text style={styles.empty}>{tr('freeCall.noSlots')}</Text>
-                    ) : (
-                      slots.filter((s) => !s.past).map((s) => {
-                        const on = picked === s.start;
-                        return (
-                          <TouchableOpacity
-                            key={s.start}
-                            activeOpacity={s.taken ? 1 : 0.85}
-                            disabled={s.taken || booking}
-                            style={[
-                              styles.slot,
-                              s.taken && styles.slotTaken,
-                              on && styles.slotOn,
-                            ]}
-                            onPress={() => {
-                              captureEvent('free_call_slot_selected', { source, slot_start: s.start });
-                              setPicked(s.start);
-                              setError('');
-                              confirm(s.start);
-                            }}>
-                            <Text style={[
-                              styles.slotTxt,
-                              s.taken && styles.slotTxtTaken,
-                              on && styles.slotTxtOn,
-                            ]}>{s.label}</Text>
-                            {s.taken && (
-                              <Text style={styles.takenTag}>{tr('freeCall.taken')}</Text>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })
-                    )}
+                  <ScrollView
+                    ref={slotScrollRef}
+                    contentContainerStyle={styles.slotGrid}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    persistentScrollbar
+                    scrollEventThrottle={16}
+                    onScroll={(e) => refreshMoreBelow(e.nativeEvent.contentOffset.y)}
+                    onContentSizeChange={(w, h) => { slotContentH.current = h; refreshMoreBelow(0); maybeHintScroll(); }}
+                    onLayout={(e) => { slotViewH.current = e.nativeEvent.layout.height; refreshMoreBelow(0); maybeHintScroll(); }}
+                    onScrollBeginDrag={() => { userScrolledSlots.current = true; clearHintTimers(); }}>
+                    {renderSlots()}
                   </ScrollView>
+                )}
+
+                {/* Sits over the last row so the chips are visibly cut off rather than
+                    ending cleanly — a list with a tidy bottom edge looks complete. Not
+                    touchable, so it never eats a tap meant for the time underneath. */}
+                {moreBelow && !loadingSlots && (
+                  <View style={styles.moreBelowWrap} pointerEvents="none">
+                    <View style={styles.moreFadeA} />
+                    <View style={styles.moreFadeB} />
+                    <Animated.View
+                      style={[
+                        styles.morePill,
+                        { transform: [{ translateY: chevronBounce.interpolate({ inputRange: [0, 1], outputRange: [0, verticalScale(4)] }) }] },
+                      ]}>
+                      <Text style={styles.morePillTxt}>{tr('freeCall.moreTimes')}</Text>
+                      <MaterialIcons name="keyboard-arrow-down" size={moderateScale(16)} color={COLORS.AstroMaroon} />
+                    </Animated.View>
+                  </View>
                 )}
               </View>
 
@@ -461,6 +580,15 @@ const FreeCallOffer = ({
   );
 };
 
+// The slot grid is the whole point of this screen and it must not be a peephole.
+// With the live offer (11:30-24:00 at 15-minute steps) the server returns FORTY slots a
+// day; the old fixed 196dp box showed about twelve, so most of the day was unreachable
+// for anyone whose scroll did not work — and on the signup Welcome screen it never did
+// (see the nested-scroll note below). Sized against the screen instead of hardcoded, and
+// bounded so the card still fits on a small phone.
+const SCREEN_H = Dimensions.get('window').height;
+const SLOT_AREA_H = Math.min(Math.max(SCREEN_H * 0.38, 220), 340);
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -485,6 +613,7 @@ const styles = StyleSheet.create({
   // On the signup Welcome screen the card sits on the same brown as its own header,
   // so a gold edge is what separates the two.
   cardInline: { borderWidth: 1.5, borderColor: COLORS.AstroGold },
+  cardFill: { flex: 1 },
   card: {
     width: '100%',
     maxWidth: scale(360),
@@ -604,7 +733,8 @@ const styles = StyleSheet.create({
   ctaDisabled: { backgroundColor: '#B99C8A' },
   ctaText: { color: '#fff', fontWeight: '700', fontSize: moderateScale(14.5) },
 
-  dateStrip: { paddingHorizontal: scale(14), paddingVertical: verticalScale(12), gap: scale(8) },
+  dateScroll: { flexGrow: 0, flexShrink: 0 },
+  dateStrip: { paddingHorizontal: scale(14), paddingVertical: verticalScale(12), gap: scale(8), alignItems: 'flex-start' },
   dateChip: {
     width: scale(54),
     paddingVertical: verticalScale(8),
@@ -629,7 +759,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(18),
     marginBottom: verticalScale(6),
   },
-  slotArea: { height: verticalScale(196), paddingHorizontal: scale(14) },
+  slotArea: { height: SLOT_AREA_H, paddingHorizontal: scale(14) },
+  // Inline the card owns the page, so the times take whatever height is left rather
+  // than a measured slice of the screen.
+  slotAreaFill: { height: undefined, flex: 1 },
+  moreBelowWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: verticalScale(46),
+  },
+  // Two stacked translucent bands stand in for a gradient (no gradient library here),
+  // enough to soften the cut-off edge under the pill.
+  moreFadeA: { position: 'absolute', left: 0, right: 0, bottom: 0, height: verticalScale(30), backgroundColor: 'rgba(253,248,243,0.75)' },
+  moreFadeB: { position: 'absolute', left: 0, right: 0, bottom: 0, height: verticalScale(16), backgroundColor: 'rgba(253,248,243,0.95)' },
+  morePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(3),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(999),
+    backgroundColor: '#FFF4E8',
+    borderWidth: 1,
+    borderColor: '#E8D5C3',
+    marginBottom: verticalScale(2),
+  },
+  morePillTxt: { fontSize: moderateScale(11), fontWeight: '700', color: COLORS.AstroMaroon },
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: scale(8), paddingBottom: verticalScale(8) },
   slot: {
     paddingHorizontal: scale(12),

@@ -1266,6 +1266,7 @@ const translations = {
     'freeCall.pickDate': 'Pick a date',
     'freeCall.pickTime': 'Pick a time',
     'freeCall.noSlots': 'No times left on this day. Try another date.',
+    'freeCall.moreTimes': 'More times',
     'freeCall.taken': 'Taken',
     'freeCall.booking': 'Booking…',
     'freeCall.callingYou': 'An astrologer from Astrowani will call you on {{phone}} at your booking time. You do not need to do anything else.',
@@ -1280,6 +1281,11 @@ const translations = {
     'freeCall.minutesCall': '{{count}}-minute call with an astrologer',
     'freeCall.claimFree': 'Claim my FREE call',
     'freeCall.trustLine': '✓ ₹0  ·  ✓ Real astrologer  ·  ✓ Private',
+    // Asked when back is pressed on the free-call card before it has been claimed.
+    'freeCall.leaveTitle': 'Your free call is still waiting',
+    'freeCall.leaveMessage': 'A {{count}}-minute call with a real astrologer, at ₹0. It only takes a moment to pick a time.',
+    'freeCall.leaveStay': 'Pick my time',
+    'freeCall.leaveAnyway': 'Maybe later',
 
     // ── App update prompt (components/AppUpdatePrompt.js) ──
     // These are FALLBACKS only. The live copy comes from the admin's App Prompts page
@@ -2542,6 +2548,7 @@ const translations = {
     'freeCall.pickDate': 'तारीख चुनें',
     'freeCall.pickTime': 'समय चुनें',
     'freeCall.noSlots': 'इस दिन कोई समय उपलब्ध नहीं है। दूसरी तारीख चुनें।',
+    'freeCall.moreTimes': 'और समय',
     'freeCall.taken': 'बुक हो चुका',
     'freeCall.booking': 'बुक हो रहा है…',
     'freeCall.callingYou': 'एस्ट्रोवाणी के एक ज्योतिषी आपके बुकिंग समय पर आपको {{phone}} पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
@@ -2556,6 +2563,10 @@ const translations = {
     'freeCall.minutesCall': 'ज्योतिषी से {{count}} मिनट की कॉल',
     'freeCall.claimFree': 'मेरी मुफ़्त कॉल लें',
     'freeCall.trustLine': '✓ ₹0  ·  ✓ असली ज्योतिषी  ·  ✓ निजी',
+    'freeCall.leaveTitle': 'आपकी मुफ़्त कॉल अभी भी आपका इंतज़ार कर रही है',
+    'freeCall.leaveMessage': 'असली ज्योतिषी से {{count}} मिनट की कॉल, बिलकुल ₹0 में। समय चुनने में बस एक पल लगेगा।',
+    'freeCall.leaveStay': 'समय चुनें',
+    'freeCall.leaveAnyway': 'बाद में',
 
     // ── App update prompt (components/AppUpdatePrompt.js) ──
     'appUpdate.title': 'नया अपडेट उपलब्ध है',

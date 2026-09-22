@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -48,6 +48,29 @@ const Wallet = ({navigation, route}) => {
   const [amount, setAmount] = useState(suggestedAmount > 0 ? String(suggestedAmount) : '');
   const [processing, setProcessing] = useState(false);
 
+  // "Customer chose an amount" — one event per visit, however the amount arrived.
+  // This used to fire ONLY when a preset chip was tapped, so anyone who typed their own
+  // figure, or arrived from the low-balance popup with one already filled in, went
+  // unrecorded: the recharge funnel read "Selected Amount 0" above "Initiated Payment 2",
+  // a stage smaller than the one after it, which is the signature of broken
+  // instrumentation rather than of a real drop-off (measured 2026-09-20).
+  //
+  // The funnel counts distinct people, so once per visit is what it needs; the ref is
+  // reset after a completed recharge so a second top-up in the same visit still counts.
+  const amountReportedRef = useRef(false);
+  const reportAmountSelected = useCallback((value, via) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (amountReportedRef.current) return;
+    amountReportedRef.current = true;
+    captureEvent('recharge_amount_selected', { amount: n, via });
+  }, []);
+
+  const handleAmountChange = useCallback((text) => {
+    setAmount(text);
+    reportAmountSelected(text, 'typed');
+  }, [reportAmountSelected]);
+
   // Guide mascot. With a suggested amount it explains what's already filled in (every
   // time — it's specific to this visit); otherwise a one-time "it's quick and safe" tip.
   const mascotTipId = TIP_IDS.recharge;
@@ -62,6 +85,10 @@ const Wallet = ({navigation, route}) => {
 
   React.useEffect(() => {
     captureEvent('wallet_viewed');
+    // Prefilled from the low-balance popup: the amount was chosen for them, and they can
+    // pay without touching the field — so report it now or this visit never registers a
+    // choice at all. This is the exact path both of 2026-09-20's recharge attempts took.
+    if (suggestedAmount > 0) reportAmountSelected(suggestedAmount, 'suggested');
     let active = true;
     // Re-check against THIS customer's "already seen" flags, which may not be the
     // ones in memory if another account used this phone earlier.
@@ -142,6 +169,7 @@ const Wallet = ({navigation, route}) => {
       markTipSeen(mascotTipId);
       setShowMascot(false);
       setAmount('');
+      amountReportedRef.current = false; // a second top-up this visit is a new choice
       Alert.alert(t('wallet.paymentSuccessful'), t('wallet.paymentId', { id: data.razorpay_payment_id }));
     } catch (error) {
       // Our own API failures carry a real message; Razorpay's need unwrapping, or
@@ -179,7 +207,11 @@ const Wallet = ({navigation, route}) => {
     <TouchableOpacity
       style={styles.presetChip}
       onPress={() => {
-        captureEvent('recharge_amount_selected', { amount: item, via: 'preset' });
+        // A preset tap is a deliberate, discrete choice, so it reports every time
+        // rather than once per visit; it still latches the ref so the subsequent
+        // setAmount does not also report the same decision as 'typed'.
+        amountReportedRef.current = false;
+        reportAmountSelected(item, 'preset');
         setAmount(item.toString());
       }}>
       <Text style={styles.presetText}>+ ₹{item}</Text>
@@ -215,7 +247,7 @@ const Wallet = ({navigation, route}) => {
             style={styles.amountInput}
             keyboardType="number-pad"
             value={amount}
-            onChangeText={setAmount}
+            onChangeText={handleAmountChange}
             placeholder="0"
             placeholderTextColor="#ccc"
             maxLength={6}
