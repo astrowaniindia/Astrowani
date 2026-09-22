@@ -500,6 +500,13 @@ module.exports = function registerPostHogRoutes(app) {
   // the first chat/call, so drop-off can move rather than disappear; only an
   // end-to-end view shows the net effect.
   //
+  // "viewed" counts BOTH `signup_screen_viewed` (the old, now-unreachable Register
+  // screen) and `login_screen_viewed` (the merged Login screen every signup/login visit
+  // actually fires since 2026-09-20, commit 519a634) — same fix as the auth-funnel's
+  // SHARED_ENTRY_STAGES above. Counting only the old event made this card's own top
+  // stage read near-zero under a real "OTP Sent" figure, an impossible funnel shape
+  // (found 2026-09-22 while investigating the identical bug in /auth-funnel).
+  //
   // Two parts, because the stages count different people:
   //  - Before an account exists (screen opened, OTP sent) there is no customer to
   //    follow, so those are plain distinct-person counts inside the date range.
@@ -609,11 +616,11 @@ module.exports = function registerPostHogRoutes(app) {
     const [preRows, cohortRows] = await Promise.all([
       runHogQL(`
         SELECT
-          count(DISTINCT if((event = '$screen' AND properties.$screen_name = 'Register') OR event = 'signup_screen_viewed', person_id, NULL)) AS viewed,
+          count(DISTINCT if((event = '$screen' AND properties.$screen_name IN ('Register', 'Login')) OR event IN ('signup_screen_viewed', 'login_screen_viewed'), person_id, NULL)) AS viewed,
           count(DISTINCT if(event = 'signup_otp_sent', person_id, NULL)) AS otp_sent
         FROM events
         WHERE ${scope} AND ${dateWhere}
-          AND event IN ('$screen', 'signup_screen_viewed', 'signup_otp_sent')
+          AND event IN ('$screen', 'signup_screen_viewed', 'login_screen_viewed', 'signup_otp_sent')
       `),
       runHogQL(`
         SELECT
