@@ -4470,7 +4470,7 @@ only direct writer was the vendor app's `utils/Firebase.js` `syncTokenWithBacken
 - **Vendor app**: `syncTokenWithBackend` posts there with `{fcmToken, deviceId, platform}`;
   skips when not signed in (login carries the token itself). The `supabase` import is gone
   from `Firebase.js`.
-- **`sql/hardening_11_revoke_astrologer_fcm_token_update.sql` — written, NOT applied, and
+- **`sql/hardening_11_revoke_astrologer_fcm_token_update.sql` — ⚠ APPLIED 2026-09-23 (see CU). The original note follows: written, NOT applied, and
   must NOT be applied yet.** Old installed builds still write directly; revoking now would
   make their refreshes fail and leave stale tokens. Apply once the vendor OTA has been
   picked up (the app opened at least twice since — hot-updater applies on the next launch).
@@ -4513,7 +4513,7 @@ astrologer back on. The only direct writers were two functions in vendor
   previously a failed write left the switch showing a state that was not real. GO LIVE
   passes `track:false` so it is not double-counted as `availability_toggled` next to its
   own `go_live_toggled` event.
-- **`sql/hardening_12_revoke_astrologer_toggle_update.sql` — written, NOT applied, and must
+- **`sql/hardening_12_revoke_astrologer_toggle_update.sql` — ⚠ APPLIED 2026-09-23 (see CU). The original note follows: written, NOT applied, and must
   NOT be applied yet**, for the same old-build reason as hardening_11 (an OLD build shows
   the switch changed while nothing happened). Its tail raises if any of the five is still
   writable and prints every other astrologers column anon can still update. Apply with or
@@ -4548,7 +4548,7 @@ customers' pending consultations.
   `NotificationScreen` (one + mark-all). No direct write to the three tables remains in
   the customer app (grep-verified). Lint per file equals HEAD.
 - **Vendor app**: `Notification.js` mark-read (the only vendor write of the three).
-- **`sql/hardening_13_revoke_request_status_and_notification_update.sql` — written, NOT
+- **`sql/hardening_13_revoke_request_status_and_notification_update.sql` — ⚠ APPLIED 2026-09-23 (see CU). The original note follows: written, NOT
   applied.** Apply only after BOTH apps' OTAs are picked up; early-apply harm is bounded
   (a cancel becomes a 75s-sweep 'missed', a read badge un-sticks) and stated in the file.
 
@@ -4623,7 +4623,7 @@ trigger: an unattended OS event.
 
 ### BZ. Still open, with dates
 
-- **`hardening_11`, `12`, `13` — apply on or after 2026-09-18.** The OTAs shipped on
+- ~~**`hardening_11`, `12`, `13` — apply on or after 2026-09-18.**~~ **APPLIED 2026-09-23 — see CU.** The OTAs shipped on
   2026-09-11 (BU/BV/BW), and Hot Updater applies a bundle on the next launch after it
   downloads. A week is an estimate for adoption. It can be applied sooner if the Supabase
   API logs show no direct anon writes to those columns for a day or two. **Before
@@ -5570,7 +5570,7 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
 #### Not store steps, but still open and related
 - [ ] **Rotate the Razorpay live key** (still in git history): `MD files/razorpay-key-rotation-runbook.md`.
 - [ ] Set `RAZORPAY_WEBHOOK_SECRET` + add the webhook in the Razorpay dashboard (BT item 7).
-- [ ] Apply `hardening_13`, then `11` + `12`, **on or after 2026-09-18** (BZ).
+- [x] Apply `hardening_13`, then `11` + `12` — **DONE 2026-09-23**, plus `hardening_17` (BZ, CU).
 - [ ] **Supabase Pro** for database backups (CA). A store launch will bring more users onto a database with no backups.
 - [ ] Moderation: check admin → **Moderation (Reports)** at least daily once live. Both stores expect reported content to be handled promptly (aim for within 24 h).
 
@@ -5814,3 +5814,59 @@ endpoint answers 200. The Supabase `rls_disabled_in_public` ERROR went from **8 
 - **The 31 `rls_enabled_no_policy` INFO lints are FINE, not a to-do.** RLS on with no policy
   means deny-everyone, which is the correct posture for a table only the service role should
   touch. Do not "fix" them by adding permissive policies.
+
+### CU. The overdue write-revokes are applied — and the log check that unblocked them
+
+`hardening_11`, `12`, `13` (written 2026-09-11, scheduled for "on or after 2026-09-18",
+still unapplied on 2026-09-23) plus a new **`hardening_17`** are all **APPLIED to production
+2026-09-23**. Net result, asserted globally by hardening_17's own tail:
+
+> **`anon` and `authenticated` now hold ZERO INSERT/UPDATE/DELETE privileges anywhere in
+> `public`.** Every write to this database now goes through the backend or the service role.
+
+What was still open until then, on any row, to anyone holding the publishable key that ships
+inside both APKs: `astrologers.fcm_token` (redirect an astrologer's incoming-call pushes) and
+the five availability toggles (take any astrologer offline, or switch a suspended one on),
+`call_requests.status` / `chat_requests.status` (cancel other customers' pending
+consultations), and `notifications.is_read`.
+
+**`hardening_17` is new and finishes `hardening_13`.** That file revoked only `status`, but
+the app used to write companion columns in the *same* statement — `call_requests.responded_at`
+and `session_id`, `chat_requests.responded_at`. After hardening_13 those were the last write
+grants left in the database. `session_id` is the one worth naming: a table-wide UPDATE meant a
+request row could be repointed at a different session.
+
+> **THE METHOD THAT ACTUALLY UNBLOCKED THIS, and the one to reuse.** BZ's precondition was a
+> device test ("toggle online/offline on a real phone, confirm a call still rings"), which is
+> one phone, once, and had gone undone for five days. BZ also offers a second route — "apply
+> sooner if the Supabase API logs show no direct anon writes for a day or two" — and that is
+> strictly better evidence, because it covers the entire installed base. Use
+> `query_logs` on `source = 'edge_logs'` and group by
+> **`log_attributes['request.sb.jwt.apikey.payload.role']`**.
+>
+> **Do not read the raw request counts and stop there.** The trailing 24h showed 2,888 PATCHes
+> to `chat_requests`, 2,876 to `call_requests` and 159 to `astrologers` — which reads as
+> "thousands of live direct writes, do not touch this." Broken down by role, **every single
+> one** was `service_role` with `x_client_info: supabase-js/2.108.2; runtime=node` — i.e. our
+> own backend, which bypasses column grants entirely and cannot be affected by a revoke. The
+> only non-service-role traffic in the whole window was 814 OTA update-check RPCs
+> (`get_target_app_version_list`, `get_update_info_by_app_version`). **Zero anon writes to any
+> table.** The apps had fully migrated; the raw count was measuring the thing that was never
+> at risk. Corroborated in code: every remaining `.from('call_requests')` /
+> `.from('chat_requests')` call in both apps is a `.select()`.
+>
+> That 814/day figure is also why `hardening_15` deliberately left `anon`'s EXECUTE on the
+> hot-updater routines alone — revoking it would stop OTA updates reaching every installed app.
+
+**Verified against production afterwards**, through the real REST API with the publishable
+key: `astrologers.is_online`, `astrologers.fcm_token`, `call_requests.status`,
+`chat_requests.status`, `notifications.is_read` and `call_requests.session_id` all answer
+**401/42501** to a PATCH, while `astrologers`, `chat_sessions`, `chat_requests`,
+`call_requests`, `notifications` and `app_settings` still answer **200** to a SELECT so the
+apps keep working. All backend endpoints 200; the three replacement endpoints
+(`/api/vendor/availability`, `/api/vendor/fcm-token`, `/api/notifications/read`) still routed.
+
+**Still open** — unchanged from CT, and now the only remaining public exposure: anon SELECT on
+`chat_requests` (8 columns incl. `caller_name`) and `chat_sessions` (13 columns). Those have
+live app readers and need the move-to-backend-then-OTA-then-revoke treatment; the two
+Supabase `rls_disabled_in_public` ERRORs are exactly these.
