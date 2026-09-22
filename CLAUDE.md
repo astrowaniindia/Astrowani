@@ -5726,3 +5726,91 @@ Sentry issue created / regressed (production, error|fatal)
 - Verified 2026-09-19: unsigned POST -> 401 "Bad signature"; signed test for REACT-NATIVE-Y
   created issue #19 and started the routine within seconds; OTA dry run (customer) built
   both bundles on the runner (7.7 MB each).
+
+---
+
+## Session 2026-09-23: the `authenticated` role was wide open (Supabase advisory)
+
+### CT. Every table granted full access to a role nobody was watching
+
+A Supabase advisory email (`rls_disabled_in_public` + `sensitive_columns_exposed`) led to
+the largest security hole this project has had. **Applied to production the same day** —
+`sql/hardening_15_revoke_authenticated_role.sql` and `sql/hardening_16_lock_call_history.sql`.
+
+**What was exposed.** All **55** tables in `public` granted the Postgres `authenticated`
+role full INSERT/SELECT/UPDATE/REFERENCES on **every column**: `admins` (login rows),
+`otp_codes`, `withdrawal_requests`, both wallet ledgers, `astrologers`
+(`bank_account_number`, `bank_ifsc`, `upi_id`, `wallet_balance`, `today_earnings`,
+`phone_number`, `voip_token`) and `customers` (`mobile`, `wallet_balance`, `coin_balance`,
+`dob`).
+
+**Nobody granted it.** It is the Supabase project template's DEFAULT PRIVILEGES:
+
+```
+pg_default_acl, schema public, objtype 'r' (tables):
+  supabase_admin -> {anon=arwdDxtm, authenticated=arwdDxtm, service_role=…}
+  postgres       -> {authenticated=arwdDxtm, service_role=…}
+```
+
+so every `CREATE TABLE` auto-granted it from the day the project was created.
+
+> **THE RULE THIS PRODUCES — and it is the important part of this section.**
+> `hardening_01` … `hardening_14` are a long, careful, genuinely good sequence of access
+> audits. **Every single one of them reasoned only about `anon`** — the key shipped inside
+> both APKs, the obvious attacker path — and not one looked at `authenticated`. A dozen
+> passes over "who can reach this table" all shared the same blind spot, because they all
+> started from the same mental model. **When auditing Postgres access here, enumerate
+> `information_schema.role_table_grants` by grantee with no WHERE clause first, and check
+> `pg_default_acl` as well** — the roles you did not think to name are exactly the ones that
+> will be open, and a default privilege re-opens the hole on the next migration no matter how
+> many REVOKEs precede it.
+
+**Why it was exploitable.** The apps do not use Supabase Auth — they use our own Express JWT,
+which is why `auth.uid()` is always NULL and why RLS policies are not expressible on the core
+tables (subsystem U). `select count(*) from auth.users` = **0**. But GoTrue is enabled by
+default on every Supabase project and is reachable with the publishable key baked into both
+APKs. Anyone could have signed up through Supabase directly — no app involvement at all —
+and received a valid `role: authenticated` JWT carrying full read/write on everything above.
+RLS being off on the core tables meant there was no second line of defence behind the grant.
+
+**Why the fix was safe.** Nothing legitimate uses that role: the backend runs on the
+**service role** (bypasses grants and RLS), the apps and admin read through **`anon`**
+(untouched — its 16 tables are exactly as they were), and `grep -r "supabase.auth."` across
+both apps and the admin returns zero hits. `hardening_15` revokes tables, sequences and
+functions, **and fixes the `postgres` default privileges** so new tables do not re-open it.
+
+**`hardening_16`** closed `call_history`, found during the same pass: fully anon-readable —
+`client_name`, `astrologer_name`, avatars, `charge_per_minute`, `total_charge`,
+`duration_minutes`. A downloadable log of who consulted whom and for how much. It has **zero
+readers** in all three codebases; its only references are the two account-deletion UPDATEs in
+`src/accountRoutes.js` that scrub exactly those columns as PII, and those run on the service
+role. Revoked from anon, RLS enabled.
+
+### Verified against production 2026-09-23
+
+`authenticated` now holds **0** privileges on tables, routines and sequences; `anon` still
+has its **16** tables. Through the real REST API with the publishable key: `customers`,
+`otp_codes`, `admins`, `withdrawal_requests`, `wallet_transactions`, `call_history` and
+`astrologers.bank_account_number` all answer **42501**, while `astrologers`, `app_settings`
+and `chat_sessions` still answer **200** (so the apps keep working), and every backend
+endpoint answers 200. The Supabase `rls_disabled_in_public` ERROR went from **8 tables to 2**.
+
+### Still open (deliberately — these need app changes first)
+
+- **`chat_requests`** — anon can SELECT all 8 columns (`caller_id`, `caller_name`,
+  `receiver_id`, …) and UPDATE `status`/`responded_at` on ANY row. Read directly by the
+  vendor app in 3 places (`MissedSessionsHome.js`, `CustomDrawer.js`, `HomeScreen.js`).
+- **`chat_sessions`** — anon can SELECT 13 columns. Read directly by both apps in 8+ places.
+
+  These are the same move-to-backend-then-revoke pattern as BU/BV/BW: add an endpoint,
+  migrate the app reads, OTA, wait for adoption, then revoke. Much lower severity than what
+  was just closed (session metadata and names, not bank details or OTP codes), but real.
+- **`supabase_admin`'s default privileges still auto-grant to `anon` AND `authenticated`**
+  on new tables. Could not be altered from here (owned by a Supabase-internal superuser;
+  `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` fails as `postgres`). Latent rather than
+  live: tables created from the SQL editor / MCP / migrations are owned by `postgres`, whose
+  default is now clean. **If a future table somehow comes back world-open, this is why** —
+  check `pg_default_acl` before assuming a migration misfired.
+- **The 31 `rls_enabled_no_policy` INFO lints are FINE, not a to-do.** RLS on with no policy
+  means deny-everyone, which is the correct posture for a table only the service role should
+  touch. Do not "fix" them by adding permissive policies.
