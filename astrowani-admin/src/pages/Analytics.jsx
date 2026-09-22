@@ -329,76 +329,99 @@ export default function Analytics() {
     return r.from !== cur.from || r.to !== cur.to;
   };
 
-  const load = useCallback(async () => {
+  // Every request below used to share ONE Promise.all with only 4 of ~20 calls
+  // individually guarded — so a single endpoint hiccuping (a slow query, a transient
+  // 500) rejected the whole batch, the catch block ran, and EVERY card on the page
+  // blanked out under one generic "Network Error" banner even though the other ~19
+  // requests had already succeeded. Every card below already renders fine off a null
+  // value (optional chaining throughout), so the fix is to let each request fail on
+  // its own: the page now shows real data for everything that loaded, and names
+  // exactly which cards did not — instead of throwing away 19 good answers because of
+  // 1 bad one.
+  const safeGet = async (url, params) => {
     try {
-      const dateParams = { from: dateRange.from, to: dateRange.to };
-      const [summaryRes, trendRes, screensRes, funnelRes, remediesFunnelRes, revenueRes, sessionsRes, retentionRes,
-        revByTypeRes, paymentFunnelRes, customerSplitRes, homeInteractionsRes, homeFlowRes,
-        outcomesRes, astroPerfRes, authFailuresRes, blockedRes,
-        freeCallRes, servicesRes, walletRes, freeChatRes] = await Promise.all([
-        // Summary is app-scoped now — DAU/WAU/MAU used to silently blend customer and
-        // vendor users, and astrologers keep their app open all day.
-        client.get('/api/admin/analytics/summary', { params: { ...dateParams, app: appTab } }),
-        client.get('/api/admin/analytics/trend', { params: dateParams }),
-        client.get('/api/admin/analytics/top-screens', { params: { ...dateParams, app: appTab } }),
-        client.get('/api/admin/analytics/funnel', { params: dateParams }),
-        client.get('/api/admin/analytics/remedies-funnel', { params: dateParams }),
-        client.get('/api/admin/analytics/revenue', { params: dateParams }),
-        client.get('/api/admin/analytics/session-volume', { params: dateParams }),
-        // Retention is a rolling 30-day cohort window by nature (not "events between two
-        // dates") — deliberately not wired to the shared date-range control above.
-        client.get('/api/admin/analytics/retention', { params: { days: 30 } }),
-        // Supabase-backed — no POSTHOG_* dependency, so these never trip notConfigured.
-        client.get('/api/admin/analytics/revenue-by-type', { params: dateParams }),
-        client.get('/api/admin/analytics/payment-funnel', { params: dateParams }),
-        client.get('/api/admin/analytics/customer-revenue-split', { params: dateParams }),
-        // Customer-app-only (Home.js has no vendor equivalent) — not tied to appTab.
-        client.get('/api/admin/analytics/home-interactions', { params: dateParams }),
-        client.get('/api/admin/analytics/home-flow', { params: dateParams }),
-        // Supabase-backed: the outcome of every request that reached a request row.
-        client.get('/api/admin/analytics/request-outcomes', { params: dateParams }),
-        client.get('/api/admin/analytics/astrologer-performance', { params: { ...dateParams, limit: 50 } }),
-        // PostHog-backed: why signups/logins failed, and attempts blocked before a
-        // request row ever existed (low balance, busy, service off).
-        client.get('/api/admin/analytics/auth-failures', { params: dateParams }),
-        client.get('/api/admin/analytics/blocked-attempts', { params: dateParams }),
-        client.get('/api/admin/analytics/free-call-funnel', { params: dateParams }).catch(() => ({ data: null })),
-        client.get('/api/admin/analytics/services-engagement', { params: dateParams }).catch(() => ({ data: null })),
-        client.get('/api/admin/analytics/wallet-funnel', { params: dateParams }).catch(() => ({ data: null })),
-        client.get('/api/admin/analytics/free-chat-funnel', { params: dateParams }).catch(() => ({ data: null })),
-      ]);
-      setSummary(summaryRes.data);
-      setTrend(pivotTrend(trendRes.data.points || []));
-      setTopScreens(screensRes.data.screens || []);
-      setFunnel(funnelRes.data);
-      setRemediesFunnel(remediesFunnelRes.data);
-      setRevenue(revenueRes.data);
-      setSessionVolume(sessionsRes.data);
-      setRetention(retentionRes.data);
-      setRevenueByType(revByTypeRes.data);
-      setPaymentFunnel(paymentFunnelRes.data);
-      setCustomerSplit(customerSplitRes.data);
-      setHomeInteractions(homeInteractionsRes.data.sections || []);
-      setHomeFlow(homeFlowRes.data);
-      setRequestOutcomes(outcomesRes.data);
-      setAstroPerf(astroPerfRes.data.astrologers || []);
-      setAuthFailures(authFailuresRes.data);
-      setBlockedAttempts(blockedRes.data);
-      setFreeCallFunnel(freeCallRes?.data || null);
-      setFreeChatFunnel(freeChatRes?.data || null);
-      setServicesEngagement(servicesRes?.data || null);
-      setWalletFunnel(walletRes?.data || null);
-      setNotConfigured(false);
-      setError('');
+      const { data } = await client.get(url, { params });
+      return { data, ok: true };
     } catch (e) {
-      if (e.response?.status === 503) {
-        setNotConfigured(true);
-      } else {
-        setError(e.response?.data?.message || e.message);
-      }
-    } finally {
-      setLoading(false);
+      return { data: null, ok: false, status: e.response?.status, message: e.response?.data?.message || e.message };
     }
+  };
+
+  const load = useCallback(async () => {
+    const dateParams = { from: dateRange.from, to: dateRange.to };
+    const requests = {
+      // Summary is app-scoped now — DAU/WAU/MAU used to silently blend customer and
+      // vendor users, and astrologers keep their app open all day.
+      summary: safeGet('/api/admin/analytics/summary', { ...dateParams, app: appTab }),
+      trend: safeGet('/api/admin/analytics/trend', dateParams),
+      topScreens: safeGet('/api/admin/analytics/top-screens', { ...dateParams, app: appTab }),
+      funnel: safeGet('/api/admin/analytics/funnel', dateParams),
+      remediesFunnel: safeGet('/api/admin/analytics/remedies-funnel', dateParams),
+      revenue: safeGet('/api/admin/analytics/revenue', dateParams),
+      sessionVolume: safeGet('/api/admin/analytics/session-volume', dateParams),
+      // Retention is a rolling 30-day cohort window by nature (not "events between two
+      // dates") — deliberately not wired to the shared date-range control above.
+      retention: safeGet('/api/admin/analytics/retention', { days: 30 }),
+      // Supabase-backed — no POSTHOG_* dependency, so these never trip notConfigured.
+      revenueByType: safeGet('/api/admin/analytics/revenue-by-type', dateParams),
+      paymentFunnel: safeGet('/api/admin/analytics/payment-funnel', dateParams),
+      customerSplit: safeGet('/api/admin/analytics/customer-revenue-split', dateParams),
+      // Customer-app-only (Home.js has no vendor equivalent) — not tied to appTab.
+      homeInteractions: safeGet('/api/admin/analytics/home-interactions', dateParams),
+      homeFlow: safeGet('/api/admin/analytics/home-flow', dateParams),
+      // Supabase-backed: the outcome of every request that reached a request row.
+      requestOutcomes: safeGet('/api/admin/analytics/request-outcomes', dateParams),
+      astroPerf: safeGet('/api/admin/analytics/astrologer-performance', { ...dateParams, limit: 50 }),
+      // PostHog-backed: why signups/logins failed, and attempts blocked before a
+      // request row ever existed (low balance, busy, service off).
+      authFailures: safeGet('/api/admin/analytics/auth-failures', dateParams),
+      blockedAttempts: safeGet('/api/admin/analytics/blocked-attempts', dateParams),
+      freeCall: safeGet('/api/admin/analytics/free-call-funnel', dateParams),
+      services: safeGet('/api/admin/analytics/services-engagement', dateParams),
+      wallet: safeGet('/api/admin/analytics/wallet-funnel', dateParams),
+      freeChat: safeGet('/api/admin/analytics/free-chat-funnel', dateParams),
+    };
+    const keys = Object.keys(requests);
+    const values = await Promise.all(Object.values(requests));
+    const results = Object.fromEntries(keys.map((k, i) => [k, values[i]]));
+
+    // If the core PostHog-backed summary call specifically 503s, PostHog itself isn't
+    // configured yet — show the existing full-page explainer rather than a page full of
+    // empty cards that all look individually broken.
+    if (!results.summary.ok && results.summary.status === 503) {
+      setNotConfigured(true);
+      setLoading(false);
+      return;
+    }
+    setNotConfigured(false);
+
+    setSummary(results.summary.data);
+    setTrend(pivotTrend(results.trend.data?.points || []));
+    setTopScreens(results.topScreens.data?.screens || []);
+    setFunnel(results.funnel.data);
+    setRemediesFunnel(results.remediesFunnel.data);
+    setRevenue(results.revenue.data);
+    setSessionVolume(results.sessionVolume.data);
+    setRetention(results.retention.data);
+    setRevenueByType(results.revenueByType.data);
+    setPaymentFunnel(results.paymentFunnel.data);
+    setCustomerSplit(results.customerSplit.data);
+    setHomeInteractions(results.homeInteractions.data?.sections || []);
+    setHomeFlow(results.homeFlow.data);
+    setRequestOutcomes(results.requestOutcomes.data);
+    setAstroPerf(results.astroPerf.data?.astrologers || []);
+    setAuthFailures(results.authFailures.data);
+    setBlockedAttempts(results.blockedAttempts.data);
+    setFreeCallFunnel(results.freeCall.data);
+    setServicesEngagement(results.services.data);
+    setWalletFunnel(results.wallet.data);
+    setFreeChatFunnel(results.freeChat.data);
+
+    const failedKeys = keys.filter((k) => !results[k].ok);
+    setError(failedKeys.length
+      ? `${failedKeys.length} of ${keys.length} analytics requests failed and are showing no data (${failedKeys.join(', ')}). Everything else on this page is current — click Refresh to retry the rest.`
+      : '');
+    setLoading(false);
   }, [appTab, dateRange]);
 
   // Independent fetch, keyed on its own selector state — separate from the main load()
