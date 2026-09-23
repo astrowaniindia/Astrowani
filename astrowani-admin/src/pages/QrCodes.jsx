@@ -330,6 +330,22 @@ export default function QrCodes() {
                   {copied === toSource(form.source) ? 'Copied ✓' : 'Copy link'}
                 </button>
               </div>
+              {/* Nothing is saved here: the QR is generated from the code just typed, so a
+                  QR can be downloaded without creating a poster. Attribution still works —
+                  it keys off the code inside the link, and an unsaved code shows up in the
+                  table as "unregistered" once a customer signs up through it. */}
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+                <QrPreview source={toSource(form.source)} />
+                <div>
+                  <button type="button" className="btn" onClick={() => downloadQr(toSource(form.source))}>
+                    Download QR (PNG)
+                  </button>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6, maxWidth: 380 }}>
+                    No need to save a poster first. Saving one only adds a name and location so you can
+                    recognise it later in the table.
+                  </div>
+                </div>
+              </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
