@@ -57,6 +57,7 @@ const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { requireAdmin } = require('./adminRoutes');
+const audienceRules = require('./audience');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -312,7 +313,8 @@ async function resolveCustomer(req) {
   } catch (_) {
     return null;
   }
-  const cols = 'id, name, gender, dob, time_of_birth, place_of_birth, marital_status, free_bot_chat_credited_at';
+  // acquisition_source/_raw ride along for the audience check below — no extra query.
+  const cols = 'id, name, gender, dob, time_of_birth, place_of_birth, marital_status, free_bot_chat_credited_at, acquisition_source, acquisition_raw';
   let customer = null;
   if (decoded.phone) customer = await findCustomerByPhone(db, decoded.phone, cols);
   const userId = decoded.userId || decoded._id || decoded.id;
@@ -583,6 +585,14 @@ module.exports = function registerFreeChatAiRoutes(app) {
 
     const config = await loadConfig();
     if (!config.enabled) return fallback('disabled');
+
+    // Audience gate. Until now the ONLY thing deciding who gets a free chat lived in
+    // the app (Home.js), so anything calling this endpoint directly burned Gemini
+    // quota regardless. This is the server-side half, so an admin turning the offer
+    // off for a paid-traffic segment actually protects the spend rather than just
+    // hiding a button. Falls back to the scripted engine rather than erroring, so a
+    // blocked customer who somehow reached the screen still gets a coherent reply.
+    if (!(await audienceRules.isAllowed(customer, 'free_chat'))) return fallback('not_in_audience');
 
     // Only inside a free chat that started recently. A null timestamp means the
     // screen's mark-used call has not landed yet (it races the opening message).

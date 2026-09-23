@@ -22,6 +22,10 @@ const { sendPush } = require('./push');
 const vendorDevices = require('./vendorDevices');
 const { checkAstrologerBusy, checkCustomerBusy } = require('./busyStatus');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
+// Named audienceRules, not `audience`: inviteRecipients(audience, targetIds) below
+// already uses that identifier for its own string parameter, and a shadowed module
+// reference inside that function would be a silent trap for whoever edits it next.
+const audienceRules = require('./audience');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -203,6 +207,11 @@ async function loadOffer() {
   return merged;
 }
 
+// acquisition_source/_raw ride along so the audience check (src/audience.js) costs no
+// extra query. Null for every pre-tracking signup and every iOS customer, which the
+// audience module treats as the `unknown` segment and leaves alone by default.
+const CUSTOMER_COLS = 'id, name, mobile, acquisition_source, acquisition_raw';
+
 /** JWT → the real customers row. Same pattern as orderRoutes/astroRoutes. */
 async function resolveCustomer(req) {
   const authHeader = req.headers.authorization;
@@ -215,12 +224,12 @@ async function resolveCustomer(req) {
   }
   let customer = null;
   if (decoded.phone) {
-    customer = await findCustomerByPhone(db, decoded.phone, 'id, name, mobile');
+    customer = await findCustomerByPhone(db, decoded.phone, CUSTOMER_COLS);
   }
   const userId = decoded.userId || decoded._id || decoded.id;
   // Guarded: a soft-removed account must not resolve from a retained token.
   if (!customer && userId) {
-    customer = await findCustomerById(db, userId, 'id, name, mobile');
+    customer = await findCustomerById(db, userId, CUSTOMER_COLS);
   }
   return customer;
 }
@@ -713,8 +722,13 @@ module.exports = function registerFreeCallRoutes(app) {
       });
     }
     const booking = await findLiveBooking(customer.id);
-    // Invited: anyone without a live free-call booking. Otherwise brand-new only.
-    const eligible = !booking && (!!invite || (await isNewCustomer(customer.id)));
+    // Invited: anyone without a live free-call booking. Otherwise brand-new only, AND
+    // in an audience the admin still offers this to (src/audience.js).
+    //
+    // An invite deliberately bypasses the audience rule, exactly as it already bypasses
+    // offer.enabled and isNewCustomer: an admin who hand-picked this customer means it.
+    const audienceOk = !!invite || (await audienceRules.isAllowed(customer, 'free_call'));
+    const eligible = !booking && audienceOk && (!!invite || (await isNewCustomer(customer.id)));
     return res.status(200).json({
       success: true,
       enabled: true,
@@ -791,6 +805,15 @@ module.exports = function registerFreeCallRoutes(app) {
         success: false, code: 'ALREADY_BOOKED',
         message: 'You have already booked your free call.',
         booking: publicBooking(existing),
+      });
+    }
+    // Re-checked here and not just in /offer: the offer response is advisory, this is
+    // the write. Same NOT_ELIGIBLE code on purpose — FreeCallOffer.js already handles
+    // it, so no app release is needed for the refusal path.
+    if (!invite && !(await audienceRules.isAllowed(customer, 'free_call'))) {
+      return res.status(403).json({
+        success: false, code: 'NOT_ELIGIBLE',
+        message: 'This offer is not available for your account.',
       });
     }
     if (!invite && !(await isNewCustomer(customer.id))) {

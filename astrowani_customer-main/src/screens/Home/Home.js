@@ -954,7 +954,17 @@ const Home = ({navigation}) => {
       // have actually used the offer.
       // Never eligible on iOS (first App Store build) -- see utils/featureFlags.js.
       // With eligibility off, the banners, the mascot tip and the popup all stay away.
-      if (FREE_BOT_CHAT_ENABLED && !userData.freeBotChatCredited) {
+      // `freeChatAllowed` comes from GET /api/users/profile and is the audience gate
+      // (backend src/audience.js): the admin can switch the free chat off for a
+      // segment, e.g. traffic from a paid ad that already cost money to acquire. It is
+      // `true` for everyone until a rule is written, and `true` for any customer with
+      // no acquisition source at all — every pre-tracking signup and every iOS
+      // customer — unless a rule names `unknown` explicitly. An older build that has
+      // never heard of the field sends undefined, which `!== false` reads as allowed,
+      // so this can never switch an offer off by accident. The server re-checks it in
+      // freeChatAi.js regardless, so this is the UI half, not the enforcement.
+      const freeChatAllowed = userData.freeChatAllowed !== false;
+      if (FREE_BOT_CHAT_ENABLED && freeChatAllowed && !userData.freeBotChatCredited) {
         const eligible = await isEligibleForFreeConsultation(userData.id);
         if (eligible) {
           // Card content (name/photo/experience/text) is admin-editable —
@@ -2081,6 +2091,8 @@ const Home = ({navigation}) => {
         t={t}
         source={freeCallSource}
         startAtSlots={freeCallStartAtSlots}
+        showBookedBadge
+        bookedCount={359}
         // Birth details come AFTER booking now, as an optional step on the
         // confirmation screen (2026-09-19). Asking first lost ~1 in 4 people.
         needsBirthDetails={!isProfileComplete()}

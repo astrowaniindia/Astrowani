@@ -36,6 +36,7 @@ import FreeCallBookings from './pages/FreeCallBookings';
 import FreeCallSettings from './pages/FreeCallSettings';
 import GuideAvatar from './pages/GuideAvatar';
 import QrCodes from './pages/QrCodes';
+import Audience from './pages/Audience';
 
 export default function App() {
   return (
@@ -78,6 +79,7 @@ export default function App() {
         <Route path="free-call-settings" element={<FreeCallSettings />} />
         <Route path="guide-avatar" element={<GuideAvatar />} />
         <Route path="qr-codes" element={<QrCodes />} />
+        <Route path="audience" element={<Audience />} />
       </Route>
     </Routes>
   );

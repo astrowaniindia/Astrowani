@@ -31,6 +31,7 @@ const vendorDevices = require('./src/vendorDevices');
 // Where a signup came from (offline QR poster / Google Ads / organic). See
 // src/acquisition.js for the `qr_` naming rule that keeps those channels apart.
 const acquisition = require('./src/acquisition');
+const audienceRules = require('./src/audience');
 const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
@@ -2437,7 +2438,27 @@ app.get('/api/users/profile', async (req, res) => {
       });
     }
 
-    return res.status(200).json({ success: true, data: toProfile(row, decoded) });
+    // Which welcome offers this customer is still in the audience for. Added here
+    // rather than inside toProfile() so that helper stays synchronous and pure.
+    //
+    // This endpoint is where the APP learns its own segment: Home already calls it on
+    // mount, and the row is already loaded with select('*'), so both the decision and
+    // its delivery are free. Everything is `true` until an admin writes a rule, and a
+    // customer with no acquisition_source (all 701 pre-tracking signups, every iOS
+    // customer) stays `true` unless a rule names `unknown` explicitly.
+    const profile = toProfile(row, decoded);
+    try {
+      const { segment, features } = await audienceRules.decide(row);
+      profile.segment = segment;
+      profile.freeCallAllowed = features.free_call !== false;
+      profile.freeChatAllowed = features.free_chat !== false;
+    } catch (_) {
+      // decide() already swallows its own failures; this is belt and braces so a
+      // profile read can never break over a marketing gate.
+      profile.freeCallAllowed = true;
+      profile.freeChatAllowed = true;
+    }
+    return res.status(200).json({ success: true, data: profile });
   } catch (err) {
     if (isAuthTokenError(err)) return sendSessionExpired(res);
     noteReadFailure('profile-get', err);

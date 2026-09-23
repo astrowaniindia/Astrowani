@@ -29,6 +29,7 @@ const {
   UPDATE_KEY: APP_PROMPT_UPDATE_KEY,
   REVIEW_KEY: APP_PROMPT_REVIEW_KEY,
 } = require('./appPromptRoutes');
+const audienceRules = require('./audience');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
 // Phone canonicalization + the tolerant "is this number already an astrologer"
 // lookup, shared with the OTP/login path so an admin-created account is stored in
@@ -1696,6 +1697,70 @@ module.exports = function registerAdminRoutes(app) {
   }));
 
   // Upsert a single setting: body { key, value }.
+  // ── Audience targeting ──────────────────────────────────────────────────────
+  // Which welcome offers each acquisition segment still gets. The rules themselves are
+  // written through the generic PATCH /api/admin/settings below (key `audience_rules`);
+  // these two routes exist for reading the current shape and, more importantly, for
+  // showing an admin what a rule would actually DO before they save it.
+
+  app.get('/api/admin/audience/rules', requireAdmin, h(async (req, res) => {
+    const rules = await audienceRules.loadRules();
+    return res.json({
+      success: true,
+      key: audienceRules.SETTINGS_KEY,
+      features: audienceRules.FEATURES,
+      defaultSegments: audienceRules.DEFAULT_SEGMENTS,
+      // A stored config with no segments at all is the un-configured state, not a
+      // broken one — hand the admin page the defaults to start from.
+      rules: rules.segments.length ? rules : { segments: audienceRules.DEFAULT_SEGMENTS, features: rules.features },
+    });
+  }));
+
+  /**
+   * How many CURRENT customers a candidate rule set would allow and block.
+   *
+   * This is the guard rail. The owner's hard requirement is that the existing customer
+   * base is never touched by accident, and every one of them has acquisition_source
+   * NULL — so a careless `only:` rule would silently cut off everybody. The admin page
+   * calls this on every edit and refuses to save without showing the numbers.
+   *
+   * Counts from the live customers table, paged (PostgREST caps a plain select at 1000
+   * rows and does NOT error — at 684 signups in the last 30 days this table crosses
+   * that line imminently, so a plain .select() here would quietly under-report).
+   */
+  app.post('/api/admin/audience/preview', requireAdmin, h(async (req, res) => {
+    const candidate = audienceRules.normalizeRules(req.body?.rules);
+
+    const { rows, truncated } = await pagedSelect(() => db
+      .from('customers')
+      .select('id, mobile, acquisition_source, acquisition_raw')
+      .order('id'));
+
+    // Soft-removed accounts carry a 'deleted:' phone tag and are not a real audience.
+    const live = rows.filter((c) => !String(c.mobile || '').startsWith('deleted:'));
+
+    const bySegment = new Map();
+    const blocked = {};
+    for (const f of audienceRules.FEATURES) blocked[f] = 0;
+
+    for (const c of live) {
+      const { segment, features } = audienceRules.decideWith(candidate, c.acquisition_source, c.acquisition_raw);
+      bySegment.set(segment, (bySegment.get(segment) || 0) + 1);
+      for (const f of audienceRules.FEATURES) if (features[f] === false) blocked[f] += 1;
+    }
+
+    const labels = new Map(candidate.segments.map((seg) => [seg.id, seg.label]));
+    return res.json({
+      success: true,
+      totalCustomers: live.length,
+      truncated,
+      blocked,
+      segments: [...bySegment.entries()]
+        .map(([id, count]) => ({ id, label: labels.get(id) || id, count }))
+        .sort((a, b) => b.count - a.count),
+    });
+  }));
+
   app.patch('/api/admin/settings', requireAdmin, h(async (req, res) => {
     const { key, value } = req.body || {};
     if (!key) return res.status(400).json({ success: false, message: 'key required' });
@@ -1720,6 +1785,9 @@ module.exports = function registerAdminRoutes(app) {
     if (key === APP_PROMPT_UPDATE_KEY || key === APP_PROMPT_REVIEW_KEY) {
       invalidateAppPromptCache(key);
     }
+    // Same reasoning for the audience rules: an admin switching an offer back ON for a
+    // segment should take effect on the next app launch, not up to a minute later.
+    if (key === audienceRules.SETTINGS_KEY) audienceRules.invalidateAudienceCache();
     // The Analytics page's "count from" date is held in memory; reload it now so
     // the next refresh of the page already uses the new date.
     if (key === ANALYTICS_SINCE_KEY) await refreshAnalyticsSince();
