@@ -197,8 +197,15 @@ async function sendOtpSms(e164, otp, log) {
   attempts.push({ provider: 'msg91', ok: fallback.ok, reason: fallback.reason });
   if (fallback.ok) {
     if (log) {
+      // Still worth a durable record — this line is what an EnableX outage
+      // looks like in the log, and a real repeat of the 2026-08-20 outage
+      // needs to be visible as a pattern. But the OTP WAS delivered, so this
+      // is not "something broke," it's the failover doing its job — hence
+      // 'warning', not Sentry's default 'error' (which pages instantly).
+      // The path below, where MSG91 also fails and nobody got the OTP, is
+      // the one that should still page.
       log('sms-failover', new Error('Primary SMS provider failed; delivered via fallback'), {
-        phone: e164, attempts,
+        phone: e164, attempts, sentryLevel: 'warning',
       });
     }
     return { ok: true, provider: 'msg91', id: fallback.id, attempts };

@@ -59,6 +59,12 @@ function logError(source, err, extra = {}) {
   if (inLogError) return;
   inLogError = true;
 
+  // Pulled out rather than left in `extra` so it doesn't get spread into the
+  // persisted file-log entry as if it were caller context. See sentry.js's
+  // captureError — an event worth a durable record but not an instant page
+  // (e.g. a successful SMS failover) passes { sentryLevel: 'warning' }.
+  const { sentryLevel, ...loggedExtra } = extra;
+
   try {
     ensureLogDir();
     rotateIfOversized();
@@ -68,7 +74,7 @@ function logError(source, err, extra = {}) {
       source, // e.g. 'express', 'uncaughtException', 'unhandledRejection', 'socket'
       message: err && err.message ? err.message : String(err),
       stack: err && err.stack ? err.stack : undefined,
-      ...extra,
+      ...loggedExtra,
     };
 
     try {
@@ -85,7 +91,7 @@ function logError(source, err, extra = {}) {
     } catch (_) {}
 
     try {
-      captureError(err instanceof Error ? err : new Error(entry.message));
+      captureError(err instanceof Error ? err : new Error(entry.message), sentryLevel);
     } catch (_) {}
   } finally {
     inLogError = false;

@@ -22,10 +22,19 @@ function initSentry() {
   console.log('[Sentry] Backend error reporting initialized.');
 }
 
-function captureError(err) {
+// level: an optional Sentry severity override ('warning', 'info', ...). Omitted
+// (or anything falsy) keeps Sentry's default 'error'. Exists for events that are
+// worth a durable record — e.g. a successful SMS failover — but do not deserve
+// the "error, page me now" treatment a hard failure gets.
+function captureError(err, level) {
   if (!initialized || !err) return;
   try {
-    Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+    const exception = err instanceof Error ? err : new Error(String(err));
+    if (level) {
+      Sentry.captureException(exception, { level });
+    } else {
+      Sentry.captureException(exception);
+    }
   } catch (_) {
     // Reporting must never itself crash the process.
   }
