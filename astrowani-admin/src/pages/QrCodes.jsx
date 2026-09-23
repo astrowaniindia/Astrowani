@@ -84,6 +84,19 @@ export default function QrCodes() {
   const [form, setForm] = useState({ source: '', label: '', city: '', location: '', placedAt: '', note: '' });
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [copied, setCopied] = useState('');
+
+  // Copies a poster's Play Store link. The label flips to "Copied" for a moment so
+  // it's obvious the click did something.
+  const copyLink = async (source) => {
+    try {
+      await navigator.clipboard.writeText(storeLink(source));
+      setCopied(source);
+      setTimeout(() => setCopied((c) => (c === source ? '' : c)), 2000);
+    } catch (e) {
+      window.prompt('Copy this link:', storeLink(source));
+    }
+  };
 
   const [openSource, setOpenSource] = useState('');
   const [detail, setDetail] = useState(null);
@@ -210,6 +223,16 @@ export default function QrCodes() {
         ad installs carry Google&apos;s own tag and can never appear here.
       </p>
 
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>How this works</h3>
+        <ol className="muted" style={{ fontSize: 13, lineHeight: 1.8, margin: 0, paddingLeft: 18 }}>
+          <li><strong>Add a poster</strong> below — one per place you will stick a poster. Only the short code is required.</li>
+          <li>The page makes that poster&apos;s <strong>tracking link</strong> (a Play Store link with a UTM tag inside). Copy it, or download it as a <strong>QR code</strong>.</li>
+          <li>Send the <strong>QR image</strong> to the printer. Never retype the link by hand.</li>
+          <li>When someone scans it, installs and signs up, they show up on that poster&apos;s row here — with how much they paid.</li>
+        </ol>
+      </div>
+
       {migrationMissing && (
         <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--amber, #d97706)' }}>
           <strong>Tracking is not switched on yet.</strong>
@@ -292,6 +315,19 @@ export default function QrCodes() {
             <input type="text" placeholder="Paid ₹500/month to the shop" value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </label>
+          {toSource(form.source) && toSource(form.source) !== QR_PREFIX && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Tracking link for this poster (updates as you type)</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <code style={{ flex: 1, minWidth: 260, wordBreak: 'break-all', fontSize: 11 }}>
+                  {storeLink(toSource(form.source))}
+                </code>
+                <button type="button" className="btn secondary sm" onClick={() => copyLink(toSource(form.source))}>
+                  {copied === toSource(form.source) ? 'Copied ✓' : 'Copy link'}
+                </button>
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <button className="btn" type="submit" disabled={saving}>
               {saving ? 'Saving…' : editing ? 'Save changes' : 'Add poster'}
@@ -368,9 +404,9 @@ export default function QrCodes() {
                           <QrPreview source={r.source} />
                           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                             <button className="btn sm" onClick={() => downloadQr(r.source, r.label)}>Download PNG</button>
-                            <button className="btn secondary sm" onClick={() => {
-                              navigator.clipboard?.writeText(storeLink(r.source));
-                            }}>Copy link</button>
+                            <button className="btn secondary sm" onClick={() => copyLink(r.source)}>
+                              {copied === r.source ? 'Copied ✓' : 'Copy link'}
+                            </button>
                           </div>
                         </div>
                         <div style={{ flex: 1, minWidth: 280 }}>
@@ -454,6 +490,9 @@ export default function QrCodes() {
                     <td className="muted">{inr(r.walletBalance)}</td>
                     <td className="muted">{day(r.lastSignupAt)}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="btn secondary sm" style={{ marginRight: 6 }} onClick={() => copyLink(r.source)}>
+                        {copied === r.source ? 'Copied ✓' : 'Copy link'}
+                      </button>
                       <button className="btn secondary sm" onClick={() => openDetail(r.source)}>Open</button>
                     </td>
                   </>
