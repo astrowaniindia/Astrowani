@@ -78,7 +78,18 @@ jobs:
           done
 
       - name: Confirm the live admin serves the new build
+        # A single curl right after the file swap can catch nginx mid-reload or a
+        # transient Cloudflare edge hiccup (525, SSL handshake failed to origin) —
+        # seen once on 2026-09-23, gone within seconds, unrelated to the deploy
+        # itself (the swap had already succeeded; re-checking moments later
+        # returned 200). Retry a few times before failing the job, so a one-off
+        # blip doesn't report a broken deploy that isn't broken.
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' https://manu.astrowani.com/)
-          echo "manu.astrowani.com -> $code"
-          test "$code" = "200"
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://manu.astrowani.com/)
+            echo "manu.astrowani.com -> $code (attempt $attempt/5)"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::manu.astrowani.com did not return 200 after 5 attempts (last: $code)"
+          exit 1
