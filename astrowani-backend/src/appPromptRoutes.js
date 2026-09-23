@@ -26,6 +26,7 @@ const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush, isPushReady } = require('./push');
 const { TtlCache } = require('./ttlCache');
+const { buildRecipients } = require('./recipients');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -279,9 +280,11 @@ module.exports = function registerAppPromptRoutes(app) {
     const recipientType = audience === 'all_astrologers' ? 'astrologer' : 'customer';
     const table = recipientType === 'astrologer' ? 'astrologers' : 'customers';
 
-    const { data, error } = await db.from(table).select('id, fcm_token');
-    if (error) throw error;
-    const recipients = data || [];
+    // Paged + soft-delete aware (see src/recipients.js). Deliberately NOT segmented:
+    // "please update" and "please rate us" are about which BUILD someone is on, not
+    // where they came from, so an acquisition filter would be meaningless here.
+    const built = await buildRecipients(db, table, {});
+    const recipients = built.recipients;
     if (!recipients.length) {
       return res.status(404).json({ success: false, message: 'No matching recipients found' });
     }

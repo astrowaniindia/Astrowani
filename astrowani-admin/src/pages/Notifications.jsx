@@ -18,6 +18,11 @@ function personLabel(p, isAstrologer) {
 
 export default function Notifications() {
   const [audience, setAudience] = useState('all_customers');
+  // Acquisition-group targeting for an untargeted CUSTOMER broadcast. Empty = everyone,
+  // which is the default and the behaviour this page has always had.
+  const [segments, setSegments] = useState([]);
+  const [allSegments, setAllSegments] = useState([]);
+  const [reach, setReach] = useState(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
@@ -33,6 +38,25 @@ export default function Notifications() {
   const [historyLoading, setHistoryLoading] = useState(true);
 
   const isPersonal = audience === 'customer' || audience === 'astrologer';
+  // Only customers carry an acquisition source; astrologers never do.
+  const canSegment = audience === 'all_customers';
+
+  useEffect(() => {
+    client.get('/api/admin/audience/rules')
+      .then(({ data }) => setAllSegments(data.rules?.segments || data.defaultSegments || []))
+      .catch(() => setAllSegments([]));
+  }, []);
+
+  // Reach is computed by the SAME builder the send uses, so the number shown is the
+  // number that gets hit.
+  useEffect(() => {
+    if (isPersonal) { setReach(null); return; }
+    let alive = true;
+    client.post('/api/admin/notifications/preview', { audience, segments: canSegment ? segments : [] })
+      .then(({ data }) => { if (alive) setReach(data); })
+      .catch(() => { if (alive) setReach(null); });
+    return () => { alive = false; };
+  }, [audience, segments, isPersonal, canSegment]);
   const isAstrologer = audience === 'astrologer';
   const people = isAstrologer ? astrologers : customers;
 
@@ -89,6 +113,7 @@ export default function Notifications() {
       const { data } = await client.post('/api/admin/notifications/send', {
         audience,
         targetIds: isPersonal ? selectedIds : undefined,
+        segments: canSegment && segments.length ? segments : undefined,
         title,
         body,
       });
@@ -127,6 +152,43 @@ export default function Notifications() {
             </button>
           ))}
         </div>
+
+        {canSegment && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+              Limit to customer groups <span className="muted" style={{ fontWeight: 400 }}>(optional)</span>
+            </label>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {allSegments.map((seg) => (
+                <label key={seg.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={segments.includes(seg.id)}
+                    onChange={() => setSegments((cur) => (
+                      cur.includes(seg.id) ? cur.filter((x) => x !== seg.id) : [...cur, seg.id]
+                    ))}
+                  />
+                  {seg.label || seg.id}
+                </label>
+              ))}
+              {!allSegments.length && <span className="muted" style={{ fontSize: 12 }}>No groups configured.</span>}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              Tick none to reach everyone. Groups come from Audience Targeting.
+            </div>
+          </div>
+        )}
+
+        {!isPersonal && reach && (
+          <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+            Will reach <strong>{reach.recipientCount}</strong>{' '}
+            {audience === 'all_astrologers' ? 'astrologers' : 'customers'}
+            {reach.withPushToken != null && <> &middot; {reach.withPushToken} can receive a push</>}
+            {reach.skippedSegment > 0 && <> &middot; {reach.skippedSegment} excluded by group</>}
+            {reach.skippedDeleted > 0 && <> &middot; {reach.skippedDeleted} deleted account{reach.skippedDeleted === 1 ? '' : 's'} skipped</>}
+            {reach.truncated && <> &middot; <strong>counts may under-report</strong></>}
+          </div>
+        )}
 
         {isPersonal && (
           <>

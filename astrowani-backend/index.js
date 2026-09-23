@@ -2571,6 +2571,10 @@ app.get('/api/banners/all', async (req, res) => {
           // the per-viewer filtering. Defaults to 'all' so a database without the
           // column yet behaves exactly as before.
           audience: b.audience || 'all',
+          // Acquisition segments, same client-side-filter reasoning as `audience`
+          // above. Empty array = show to everyone, which is what every banner that
+          // predates the column resolves to.
+          segments: String(b.segments || '').split(',').map((x) => x.trim()).filter(Boolean),
           hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
         })),
       };

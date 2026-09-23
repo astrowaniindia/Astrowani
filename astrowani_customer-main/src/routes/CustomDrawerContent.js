@@ -16,6 +16,7 @@ import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
 import { resetAnalyticsIdentity, captureEvent } from '../utils/Analytics';
+import { clearViewerSegment } from '../utils/viewerSegment';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
 import { PLAY_STORE_URL } from '../config/api';
 
@@ -110,6 +111,9 @@ function CustomDrawerContent(props, navigation) {
       // anonymous id instead of the person who actually logged out.
       captureEvent('logout');
       resetAnalyticsIdentity();
+      // The next customer to sign in on this handset must not inherit the previous
+      // one's acquisition group (it drives which banners they see).
+      clearViewerSegment();
       resetWalletBalance();
       await AsyncStorage.clear();
       props.navigation.reset({

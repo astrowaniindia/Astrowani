@@ -5,7 +5,7 @@ import ImageField from '../components/ImageField';
 
 const EMPTY = {
   title: '', title_hi: '', description: '', description_hi: '', image: '',
-  sort_order: 0, is_active: true, app: 'both', language: 'both', audience: 'all',
+  sort_order: 0, is_active: true, app: 'both', language: 'both', audience: 'all', segments: '',
   placement: 'home_primary', action_type: 'none', action_value: '',
 };
 
@@ -48,6 +48,7 @@ const SCREEN_OPTIONS = [
 ];
 
 export default function Banners() {
+  const [segmentOptions, setSegmentOptions] = useState([]);
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -80,6 +81,12 @@ export default function Banners() {
       console.error('load settings failed (run app_settings_schema.sql):', e.message);
     }
   };
+  useEffect(() => {
+    client.get('/api/admin/audience/rules')
+      .then(({ data }) => setSegmentOptions(data.rules?.segments || data.defaultSegments || []))
+      .catch(() => setSegmentOptions([]));
+  }, []);
+
   useEffect(() => { load(); }, []);
 
   const saveInterval = async () => {
@@ -271,6 +278,32 @@ export default function Banners() {
               "Both Languages"). Use this when the banner image itself has English/Hindi text
               baked in and needs a different image per language — the Title/Description (Hindi)
               fields above are for when the same image works for both.
+            </div>
+          </div>
+          <div className="field"><label>Which customer groups</label>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 4 }}>
+              {segmentOptions.map((seg) => {
+                const cur = String(editing.segments || '').split(',').map((x) => x.trim()).filter(Boolean);
+                return (
+                  <label key={seg.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={cur.includes(seg.id)}
+                      onChange={() => {
+                        const next = cur.includes(seg.id) ? cur.filter((x) => x !== seg.id) : [...cur, seg.id];
+                        set('segments', next.join(','));
+                      }}
+                    />
+                    {seg.label || seg.id}
+                  </label>
+                );
+              })}
+              {!segmentOptions.length && <span className="muted" style={{ fontSize: 12 }}>No groups configured.</span>}
+            </div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              Tick none to show this banner to everyone. Groups are set up in Audience Targeting,
+              and are about where a customer came from &mdash; separate from the new/returning
+              setting below.
             </div>
           </div>
           <div className="field"><label>Who sees it</label>

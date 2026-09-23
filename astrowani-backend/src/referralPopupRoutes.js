@@ -14,6 +14,7 @@
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush, isPushReady } = require('./push');
+const { buildRecipients } = require('./recipients');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -50,7 +51,7 @@ const CHUNK_SIZE = 500; // FCM multicast limit per call
 module.exports = function registerReferralPopupRoutes(app) {
   // ── Send — show the referral popup to all customers/astrologers, or specific people ──
   app.post('/api/admin/referral-popup/send', requireAdmin, h(async (req, res) => {
-    const { audience, targetIds, title, body } = req.body || {};
+    const { audience, targetIds, title, body, segments } = req.body || {};
     const validAudiences = ['all_customers', 'all_astrologers', 'customer', 'astrologer'];
     if (!validAudiences.includes(audience)) {
       return res.status(400).json({ success: false, message: 'Invalid audience' });
@@ -68,19 +69,19 @@ module.exports = function registerReferralPopupRoutes(app) {
 
     let recipients = [];
     let targetNames = [];
+    // Paged, soft-delete aware, segment aware — see src/recipients.js for why the
+    // previous plain .select() was a silent truncation waiting to happen.
+    const built = await buildRecipients(db, table, {
+      targetIds: isPersonal ? targetIds : null,
+      extraCols: recipientType === 'astrologer' ? 'first_name, last_name' : 'name',
+      segments: isPersonal ? null : segments,
+    });
+    recipients = built.recipients;
     if (isPersonal) {
-      const nameCols = recipientType === 'astrologer' ? 'id, fcm_token, first_name, last_name' : 'id, fcm_token, name';
-      const { data, error } = await db.from(table).select(nameCols).in('id', targetIds);
-      if (error) throw error;
-      if (!data || !data.length) return res.status(404).json({ success: false, message: 'No matching recipients found' });
-      recipients = data.map((d) => ({ id: d.id, fcm_token: d.fcm_token }));
-      targetNames = data.map((d) => recipientType === 'astrologer'
+      if (!recipients.length) return res.status(404).json({ success: false, message: 'No matching recipients found' });
+      targetNames = recipients.map((d) => recipientType === 'astrologer'
         ? (`${d.first_name || ''} ${d.last_name || ''}`.trim() || 'Astrologer')
         : (d.name || 'Customer'));
-    } else {
-      const { data, error } = await db.from(table).select('id, fcm_token');
-      if (error) throw error;
-      recipients = data || [];
     }
 
     if (!recipients.length) {

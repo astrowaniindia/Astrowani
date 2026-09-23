@@ -206,7 +206,7 @@ module.exports = function registerAdminRoutes(app) {
       'is_active', 'app', 'language', 'placement', 'action_type', 'action_value',
       // Who the banner is for: all | new | returning. See sql/banner_audience.sql —
       // 'new' is a customer who can still claim the free chat.
-      'audience'],
+      'audience', 'segments'],
   });
   crud('thoughts', 'thoughts', {
     allowed: ['text', 'text_hi', 'author', 'author_hi', 'is_active'],

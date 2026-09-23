@@ -42,12 +42,34 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ success: false, message: err.message || 'Server error' });
 });
 
+const { buildRecipients } = require('./recipients');
+
 const CHUNK_SIZE = 500; // FCM multicast limit per call
 
 module.exports = function registerNotificationRoutes(app) {
+  // ── Preview — how many people a broadcast would actually reach ────────────────
+  // Backed by the SAME buildRecipients() the send uses, so the number an admin sees
+  // is the number that gets hit. (The free-call invite preview works this way for the
+  // same reason; a preview computed differently from the send is worse than none.)
+  app.post('/api/admin/notifications/preview', requireAdmin, h(async (req, res) => {
+    const { audience, segments } = req.body || {};
+    const recipientType = audience === 'astrologer' || audience === 'all_astrologers' ? 'astrologer' : 'customer';
+    const table = recipientType === 'astrologer' ? 'astrologers' : 'customers';
+    const built = await buildRecipients(db, table, { segments });
+    return res.json({
+      success: true,
+      recipientCount: built.recipients.length,
+      withPushToken: built.recipients.filter((r) => r.fcm_token).length,
+      skippedDeleted: built.skippedDeleted,
+      skippedSegment: built.skippedSegment,
+      truncated: built.truncated,
+    });
+  }));
+
+
   // ── Send — broadcast to all customers/astrologers, or a personal notification ──
   app.post('/api/admin/notifications/send', requireAdmin, h(async (req, res) => {
-    const { audience, targetIds, title, body } = req.body || {};
+    const { audience, targetIds, title, body, segments } = req.body || {};
     const validAudiences = ['all_customers', 'all_astrologers', 'customer', 'astrologer'];
     if (!validAudiences.includes(audience)) {
       return res.status(400).json({ success: false, message: 'Invalid audience' });
@@ -67,19 +89,21 @@ module.exports = function registerNotificationRoutes(app) {
     // Resolve recipients: [{ id, fcm_token }], and display names for the history log.
     let recipients = [];
     let targetNames = [];
+    // buildRecipients pages the read (a plain .select() silently stops at 1000 rows —
+    // this table is about to cross that), skips soft-removed accounts, and applies the
+    // segment filter for an untargeted customer broadcast.
+    const extraCols = recipientType === 'astrologer' ? 'first_name, last_name' : 'name';
+    const built = await buildRecipients(db, table, {
+      targetIds: isPersonal ? targetIds : null,
+      extraCols,
+      segments: isPersonal ? null : segments,
+    });
+    recipients = built.recipients;
     if (isPersonal) {
-      const nameCols = recipientType === 'astrologer' ? 'id, fcm_token, first_name, last_name' : 'id, fcm_token, name';
-      const { data, error } = await db.from(table).select(nameCols).in('id', targetIds);
-      if (error) throw error;
-      if (!data || !data.length) return res.status(404).json({ success: false, message: 'No matching recipients found' });
-      recipients = data.map((d) => ({ id: d.id, fcm_token: d.fcm_token }));
-      targetNames = data.map((d) => recipientType === 'astrologer'
+      if (!recipients.length) return res.status(404).json({ success: false, message: 'No matching recipients found' });
+      targetNames = recipients.map((d) => recipientType === 'astrologer'
         ? (`${d.first_name || ''} ${d.last_name || ''}`.trim() || 'Astrologer')
         : (d.name || 'Customer'));
-    } else {
-      const { data, error } = await db.from(table).select('id, fcm_token');
-      if (error) throw error;
-      recipients = data || [];
     }
 
     if (!recipients.length) {
@@ -133,8 +157,14 @@ module.exports = function registerNotificationRoutes(app) {
 
     // Compact admin history log. target_id only makes sense for a single-person send;
     // for a multi-person personal send, target_name lists everyone instead.
+    // Segment-filtered sends are recorded as `all_customers:qr,ads` so the history
+    // says WHO was reached, not just "all customers". Same subsystem:audience
+    // convention freeCallRoutes already writes (free_call_invite:all_not_booked).
+    const loggedAudience = (!isPersonal && Array.isArray(segments) && segments.length)
+      ? `${audience}:${segments.join(',')}`
+      : audience;
     await db.from('notification_broadcasts').insert([{
-      audience,
+      audience: loggedAudience,
       target_id: isPersonal && targetIds.length === 1 ? targetIds[0] : null,
       target_name: isPersonal ? targetNames.join(', ') : null,
       title,
@@ -146,8 +176,11 @@ module.exports = function registerNotificationRoutes(app) {
 
     return res.json({
       success: true,
-      audience,
+      audience: loggedAudience,
       targetNames,
+      skippedDeleted: built.skippedDeleted,
+      skippedSegment: built.skippedSegment,
+      truncated: built.truncated,
       recipientCount: recipients.length,
       pushSuccess: successCount,
       pushFailure: failureCount,

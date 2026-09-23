@@ -9,6 +9,7 @@
 // tells the customer there is more than one banner and lets them look at it.
 import React from 'react';
 import { View, ScrollView, TouchableOpacity, Linking, StyleSheet, Dimensions } from 'react-native';
+import { getViewerSegment, hydrateViewerSegment } from '../utils/viewerSegment';
 import FastImage from 'react-native-fast-image';
 import Instance from '../api/ApiCall';
 import { LanguageContext } from '../context/LanguageContext';
@@ -54,6 +55,13 @@ const PlacementBanner = ({
   // other stage are filtered out. Left undefined (the default) means "show
   // everything", which is what every screen other than Home wants.
   audience,
+  // Which acquisition group this viewer belongs to ('qr', 'ads', 'google',
+  // 'unknown'…), as reported by GET /api/users/profile. A banner that names one or
+  // more segments is shown only to those; a banner naming none is shown to everyone.
+  // Undefined here — an older build, a screen that does not know, a profile that has
+  // not loaded yet — means "no segment filtering", so a banner can never be hidden
+  // just because we do not know who is looking.
+  segment: segmentProp,
   // Lets a screen take over the tap. Return true to say "handled, don't navigate"
   // — Home uses it to open the free-chat offer instead of following the banner's
   // own action while the customer is still eligible.
@@ -74,6 +82,18 @@ const PlacementBanner = ({
   const cacheKey = `banners_${app}_${placement}_${apiLanguage}`;
   // Starts from banners prepared before this screen opened (utils/homePreload.js),
   // so the slot shows real banners on the first frame instead of popping in.
+
+  // Falls back to the shared cache so Chat/Call/Video get segment targeting without
+  // each having to fetch a profile they otherwise do not need. Null until a profile
+  // has been seen, which means "no filtering" — see utils/viewerSegment.js.
+  const [cachedSegment, setCachedSegment] = React.useState(getViewerSegment());
+  React.useEffect(() => {
+    let alive = true;
+    hydrateViewerSegment().then((seg) => { if (alive && seg) setCachedSegment(seg); });
+    return () => { alive = false; };
+  }, []);
+  const segment = segmentProp || cachedSegment;
+
   const [banners, setBanners] = React.useState(() => getHomeMemory(cacheKey)?.banners ?? null);
   const [intervalMs, setIntervalMs] = React.useState(() => getHomeMemory(cacheKey)?.intervalMs || 4000);
   const [currentIndex, setCurrentIndex] = React.useState(0);
@@ -146,6 +166,14 @@ const PlacementBanner = ({
             // never touches this setting sees no change in behaviour.
             const a = b.audience || 'all';
             return a === 'all' || !audience || a === audience;
+          })
+          .filter((b) => {
+            // Acquisition targeting. Empty list = everyone, which is every banner
+            // that predates the feature, so an admin who never touches this sees no
+            // change. Fails OPEN on an unknown viewer for the same reason.
+            const want = Array.isArray(b.segments) ? b.segments : [];
+            if (!want.length || !segment) return true;
+            return want.includes(segment);
           })
           .map((b) => ({ uri: b.imageUrl, actionType: b.actionType, actionValue: b.actionValue }))
       : fallbackImages.map((source) => ({ source, actionType: 'none', actionValue: null }));

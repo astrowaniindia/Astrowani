@@ -64,6 +64,7 @@ import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 import { isEligibleForFreeConsultation } from '../../utils/freeConsultation';
+import { setViewerSegment } from '../../utils/viewerSegment';
 import { hasSeenFreeBotChatOffer, markFreeBotChatOfferSeen, hasSeenFreeCallOffer, markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { getWalletBalance } from '../../utils/wallet';
 import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
@@ -940,6 +941,9 @@ const Home = ({navigation}) => {
           // return;
         }
       setUser(userData);
+      // Cache the acquisition group for banner targeting on every screen —
+      // see utils/viewerSegment.js.
+      setViewerSegment(userData.segment);
       // Store user data in AsyncStorage for chat screens
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
 
