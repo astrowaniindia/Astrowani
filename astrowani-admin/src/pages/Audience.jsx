@@ -49,6 +49,7 @@ export default function Audience() {
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
   const previewTimer = useRef(null);
 
   const load = async () => {
@@ -56,8 +57,13 @@ export default function Audience() {
     setError('');
     try {
       const { data } = await client.get('/api/admin/audience/rules');
-      setSegments(data.rules?.segments?.length ? data.rules.segments : (data.defaultSegments || []));
-      setFeatures(data.rules?.features || {});
+      const loadedSegments = data.rules?.segments?.length ? data.rules.segments : (data.defaultSegments || []);
+      const loadedFeatures = data.rules?.features || {};
+      setSegments(loadedSegments);
+      setFeatures(loadedFeatures);
+      // Snapshot of what is actually stored, so the Save buttons can tell the admin
+      // whether anything is still unsaved rather than always looking the same.
+      setSavedSnapshot(JSON.stringify({ segments: loadedSegments, features: loadedFeatures }));
     } catch (e) {
       setError(e.response?.data?.message || e.message || 'Failed to load targeting rules.');
     } finally {
@@ -131,6 +137,10 @@ export default function Audience() {
     });
   };
 
+  // Every rule lives in ONE stored setting, so any Save button saves the whole page.
+  // Said plainly on the buttons rather than implying each card saves in isolation.
+  const dirty = savedSnapshot !== null && JSON.stringify(payload) !== savedSnapshot;
+
   const blockedFor = (key) => preview?.blocked?.[key] ?? null;
   const total = preview?.totalCustomers ?? null;
 
@@ -164,6 +174,21 @@ export default function Audience() {
       setSaving(false);
     }
   };
+
+  // Defined AFTER save() on purpose. It is read during render, and a const declared
+  // below its reader sits in the temporal dead zone — the same shape as the
+  // deps-array bug in CLAUDE.md BR. Ordering it here removes the trap instead of
+  // relying on React happening to call this component late enough.
+  const SaveButton = ({ style }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', ...style }}>
+      <button className="btn" onClick={save} disabled={saving || loading}>
+        {saving ? 'Saving…' : 'Save settings'}
+      </button>
+      <span className="muted" style={{ fontSize: 12 }}>
+        {dirty ? 'You have unsaved changes.' : 'Everything on this page is saved.'}
+      </span>
+    </div>
+  );
 
   return (
     <div>
@@ -285,6 +310,8 @@ export default function Audience() {
               ))}
             </div>
           )}
+
+          <SaveButton style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border, rgba(128,128,128,.2))' }} />
         </div>
       ))}
 
@@ -334,10 +361,8 @@ export default function Audience() {
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button className="btn" onClick={save} disabled={saving || loading}>
-          {saving ? 'Saving…' : 'Save rules'}
-        </button>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <SaveButton />
         <button className="btn secondary" onClick={load} disabled={loading || saving}>Undo changes</button>
       </div>
 
