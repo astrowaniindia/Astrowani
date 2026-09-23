@@ -25,6 +25,9 @@ class MainApplication : Application(), ReactApplication {
               // Keeps the mic alive while backgrounded during a call — see
               // CallForegroundService.kt.
               add(CallServicePackage())
+              // Reads which QR poster / ad this install came from, for the admin's
+              // offline-QR attribution. See InstallReferrerModule.kt.
+              add(InstallReferrerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

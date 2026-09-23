@@ -172,6 +172,10 @@ dependencies {
     // Theme.SplashScreen isn't a publicly referenceable XML resource, this is
     // the only supported way to customize the cold-start splash from XML.
     implementation 'androidx.core:core-splashscreen:1.0.1'
+    // Play Install Referrer — tells us which offline QR poster (or which ad) an
+    // install came from. Read once at signup by InstallReferrerModule.kt. Adds no
+    // permission to the manifest; it binds to a Play Store service.
+    implementation 'com.android.installreferrer:installreferrer:2.2'
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

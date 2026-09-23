@@ -579,7 +579,11 @@ Both apps must point `SOCKET_URL` to the same backend IP (not localhost — use 
 Real-time wallet balance shown in Home tab of customer bottom nav. Updates on every transaction via Supabase Realtime.
 
 ### 4. Call History / Session Log Screen
-- `chat_sessions` table already has `caller_id`, `vendor_id`, `started_at`, `ended_at`, `duration_minutes`, `total_charged`
+- `chat_sessions` has `caller_id`, `vendor_id`, `started_at`, `ended_at`, `per_minute_charge`.
+  ⚠ CORRECTED 2026-09-23: it has **NO `duration_minutes` and no `total_charged`** — this line
+  claimed both for months and they have never existed. Duration is derived from
+  `ended_at - started_at` (see `/api/admin/analytics/session-volume` and `src/qrRoutes.js`,
+  both of which also exclude implausible >12h sessions from minutes).
 - New screen in customer app: `src/screens/CallHistory.js`
 - New screen in vendor app: `src/screens/EarningsHistory.js`
 
@@ -5870,3 +5874,107 @@ apps keep working. All backend endpoints 200; the three replacement endpoints
 `chat_requests` (8 columns incl. `caller_name`) and `chat_sessions` (13 columns). Those have
 live app readers and need the move-to-backend-then-OTA-then-revoke treatment; the two
 Supabase `rls_disabled_in_public` ERRORs are exactly these.
+
+---
+
+## Subsystem added 2026-09-23: offline QR poster attribution
+
+### CV. One printed code per location, and what each one actually brought in
+
+Posters going up in Haridwar and Rishikesh. Each carries its own Play Store link, so a
+customer who scans it is tagged with that poster for life, and the admin can see which
+walls produce paying customers rather than which produce scans.
+
+**THE RULE THE WHOLE THING RESTS ON: every poster's `utm_source` starts with `qr_`.**
+Google Ads sets its own `utm_source` and organic Play browsing sends
+`utm_source=google-play&utm_medium=organic`, neither of which can begin with that
+prefix — so "is this a QR customer" is a prefix test and the three channels can never
+be mixed. There is no channel column and none is needed. `src/acquisition.js` owns the
+rule, `qrRoutes.js` enforces it server-side on create (400), and a poster registered
+without it would silently never match.
+
+**The chain:** poster QR → Play Store link with `referrer=utm_source=qr_<place>` →
+Play retains it → `InstallReferrerModule.kt` reads it → sent with the OTP verify →
+`customers.acquisition_source`.
+
+| Piece | Where |
+|---|---|
+| `sql/acquisition_source.sql` | `customers.acquisition_source` + `acquisition_raw` + partial index. **APPLIED 2026-09-23.** |
+| `src/acquisition.js` | parsing, sanitising, the `qr_` rule, channel bucketing |
+| `index.js` `mobile-otp-verify` | accepts `acquisitionSource`/`acquisitionRaw`, writes on the INSERT branch only |
+| `src/qrRoutes.js` | `/api/admin/qr/sources` (+ `/:source`, PUT, DELETE) |
+| customer `android/.../InstallReferrerModule.kt` + `Package.kt` | the native read |
+| customer `src/utils/acquisition.js` | reads it at signup, guarded + timed out |
+| admin `pages/QrCodes.jsx` | the page; generates the printable QR with `qrcode` |
+
+**Things that are load-bearing — do not "simplify" them:**
+
+- **Attribution is written ONLY on the branch that creates the account**, never on the
+  existing-customer branch. A returning customer who reinstalls after scanning carries
+  that poster's referrer, and crediting it would re-attribute someone the poster did
+  not win. Acquisition is a property of the account's origin, not of a login.
+- **It is a SEPARATE update, not part of `insertAccountRow`.** That helper drops its
+  optional columns as one group on a missing-column error, so folding these in would
+  mean an unapplied migration silently costs the terms-acceptance record too — legally
+  meaningful, where this is only marketing. Best-effort: the account already exists by
+  then and a failure here must never fail a signup.
+- **The client is not the authority on what gets stored.** `resolveFromRequest` always
+  re-derives the source from the raw referrer and re-sanitises; a hand-crafted request
+  cannot write an arbitrary string into a column the admin reads back.
+- **Sent on BOTH the signup and login paths.** The login screen's own notice also
+  creates accounts for a new number (`termsAccepted`'s `login_notice` branch), so
+  gating on `isSignup` would drop attribution for anyone who tapped Login.
+- **`null` means UNKNOWN, not organic** — every pre-2026-09 customer, every iOS
+  customer, every sideload. Do not write a query that folds them together.
+- **The overview is the UNION of the registry and the sources seen in the data.** A
+  registered poster with no signups must appear (it is how you check the link was
+  printed right), and an unregistered source appearing in the data must also appear, or
+  a typo'd poster reads as a dead location rather than a bad link.
+- **Deleting a poster removes its label, never its attribution** — its customers keep
+  `acquisition_source` and it reports on under its raw code.
+- **`chat_sessions` has NO `duration_minutes` column** (CLAUDE.md claimed it did —
+  wrong, measured 2026-09-23). Duration is `ended_at - started_at`, with the same
+  12-hour implausible-session exclusion as `/api/admin/analytics/session-volume`.
+
+**iOS gets nothing here and that is expected** — there is no Play Install Referrer
+equivalent without a paid attribution SDK. An iPhone-heavy spot can look dead while
+working. The page says so.
+
+**What this can and cannot answer.** Scans happen in a phone's camera and installs that
+never sign up leave no row, so neither is here — those are Play Console → Grow →
+Acquisition, grouped by `utm_source`. This page starts at signup and covers everything
+after it, which is the half Play Console cannot give you.
+
+### ⚠️ This needs a STORE RELEASE, not an OTA
+`InstallReferrerModule.kt`, its Gradle dependency and the `MainApplication` registration
+are native. The JS is OTA-safe (the native module is presence-guarded, so an older build
+running this bundle simply reports no attribution) — but **no attribution is captured
+until a build carrying the native module is on the Play Store**, which is also the build
+a poster-scanner downloads. Merged manifest gains exactly one permission,
+`com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE` (normal-level,
+no user prompt, no Play Console declaration); verified no BILLING permission appears.
+
+### Verified 2026-09-23
+- Parsing/sanitising **27/27** offline.
+- Routes **43/43** over HTTP against the LIVE database via a bare Express harness
+  (**`index.js` never booted** — it starts sessionManager's billing worker against
+  production): auth refusals, the `qr_` enforcement, a zero-signup poster still listed,
+  the funnel arithmetic (2 recharges from 1 customer = 1 paying customer, not 2), the
+  12-hour session exclusion (20 minutes counted, a 40-day zombie session counted as a
+  session but contributing 0 minutes), no leakage between two posters, `google-play`
+  refused as a QR source, unregistered sources still visible, and delete/archive keeping
+  attribution. Teardown asserted 0 synthetic rows and the registry restored exactly.
+- **QR round trip 27/27**: the generated PNG was decoded with a real decoder (`jsqr`)
+  and the decoded text equals the link byte-for-byte across four source lengths; its
+  referrer then resolves back to the same poster through the real backend parser, while
+  Google Ads / organic referrers never match. **This is the check that matters** — a QR
+  encoding the wrong thing is a wall poster that tracks nothing for weeks.
+- Admin page driven in a browser against that harness (gitignored `.env.local`, removed
+  after): stats correct, the zero-signup poster listed, drill-down renders the QR and
+  the right 6 customers, the create form auto-prefixes and strips illegal characters.
+- `:app:compileDebugKotlin` **BUILD SUCCESSFUL** (13 tasks executed, so the new Kotlin
+  genuinely compiled) — from **PowerShell**, not the Bash tool. Admin `npm run build`
+  succeeds. Customer app lint clean.
+
+**Not exercised on a device.** The native read needs a real Play-installed build; that
+is the one thing only a store release can prove.

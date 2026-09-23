@@ -28,6 +28,9 @@ const walletRecharge = require('./src/walletRecharge');
 // Per-device astrologer sign-in state. Signing out on one device must not sign
 // the astrologer out on another — see sql/vendor_devices.sql.
 const vendorDevices = require('./src/vendorDevices');
+// Where a signup came from (offline QR poster / Google Ads / organic). See
+// src/acquisition.js for the `qr_` naming rule that keeps those channels apart.
+const acquisition = require('./src/acquisition');
 const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
@@ -795,6 +798,9 @@ require('./src/adminRoutes')(app);
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
 require('./src/sentryRoutes')(app);
+// Offline QR poster attribution (/api/admin/qr/*). Needs adminRoutes' requireAdmin,
+// which is exported there, so it registers after it.
+require('./src/qrRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);
@@ -1892,9 +1898,12 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // deviceId / devicePlatform / appVersion are sent by updated vendor builds only.
   // Their ABSENCE is normal and must keep working — see the compatibility rule in
   // src/vendorDevices.js.
+  // acquisitionSource / acquisitionRaw are the Play Install Referrer the app read for
+  // itself (Android only, and only on builds that ship the native reader). They are
+  // recorded ONLY when this verify creates the account — see the insert below.
   const {
     phoneNumber: rawPhoneNumber, otp, fcmToken, role, referralCode, termsAccepted,
-    deviceId, devicePlatform, appVersion,
+    deviceId, devicePlatform, appVersion, acquisitionSource, acquisitionRaw,
   } = req.body;
 
   if (!rawPhoneNumber || !otp) {
@@ -2078,6 +2087,40 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         if (insertError) throw insertError;
         supabaseCustomerId = newCustomer?.id;
         isNewAccount = !!newCustomer?.id;
+
+        // Where they came from — stamped ONLY here, on the branch that creates the
+        // account, and never on the existing-customer branch above. A returning
+        // customer who reinstalls after scanning a poster carries that poster's
+        // referrer, and crediting it would re-attribute someone the QR did not win;
+        // acquisition is a property of the account's origin, not of a login.
+        //
+        // A SEPARATE write rather than part of insertAccountRow, deliberately: that
+        // helper drops its optional columns as one group on a missing-column error,
+        // so folding these in would mean an unapplied migration silently costs the
+        // terms-acceptance record too — which is legally meaningful, while this is
+        // only a marketing attribution. Best-effort on purpose: the account already
+        // exists by this point and a failure here must never fail the signup.
+        if (supabaseCustomerId) {
+          const { source: acqSource, raw: acqRaw } = acquisition.resolveFromRequest({
+            acquisitionSource, acquisitionRaw,
+          });
+          if (acqSource || acqRaw) {
+            const { error: acqError } = await supabaseService
+              .from('customers')
+              .update({ acquisition_source: acqSource, acquisition_raw: acqRaw })
+              .eq('id', supabaseCustomerId);
+            if (acqError) {
+              if (isMissingColumnError(acqError)) {
+                console.warn(
+                  '[acquisition] customers has no acquisition_* columns — run ' +
+                  'sql/acquisition_source.sql. Signup succeeded; attribution NOT recorded.',
+                );
+              } else {
+                console.error('[acquisition] could not record source:', acqError.message);
+              }
+            }
+          }
+        }
 
         if (referrerId && supabaseCustomerId && referrerId !== supabaseCustomerId) {
           await supabaseService.from('referrals').insert([{

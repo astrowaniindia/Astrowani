@@ -25,6 +25,7 @@ import {showAlert} from '../../Component/CustomAlert';
 import messaging from '@react-native-firebase/messaging';
 import {identifyCustomer, captureEvent} from '../../utils/Analytics';
 import {apiFailureReason} from '../../utils/apiFailureReason';
+import {getAcquisition} from '../../utils/acquisition';
 import {LanguageContext} from '../../context/LanguageContext';
 
 // True only on Android builds that include the SMS User Consent native module.
@@ -136,12 +137,22 @@ const VerifyOtp = ({navigation, route}) => {
     verifyingRef.current = true;
     setVerifying(true);
     try {
-      const fcmToken = await getFcmToken();
+      // In parallel, so the referrer read costs no extra wait. getAcquisition never
+      // throws and resolves to nulls on iOS, on a build without the native module, or
+      // if Play takes too long — so Promise.all here can only be settled by getFcmToken.
+      const [fcmToken, acq] = await Promise.all([getFcmToken(), getAcquisition()]);
       const res = await Instance.post('/api/users/mobile-otp-verify', {
         phoneNumber,
         otp: otpCode,
         fcmToken,
         role,
+        // Which QR poster / ad this install came from. Sent on BOTH the signup and
+        // login paths on purpose: the login screen's own notice also creates accounts
+        // for a new number (see termsAccepted's 'login_notice' branch in the backend),
+        // so gating this on isSignup would drop attribution for anyone who tapped
+        // Login. The backend records it only when it actually creates the row.
+        acquisitionSource: acq.acquisitionSource,
+        acquisitionRaw: acq.acquisitionRaw,
         // Labels the acceptance as having come from the Register screen's
         // checkbox rather than the Login screen's notice. The backend stamps the
         // actual timestamp itself — this flag only picks which source to record.

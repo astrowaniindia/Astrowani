@@ -111,6 +111,7 @@ const ALL_GROUPS = [
       { to: '/notifications', label: 'Push Notifications' },
       { to: '/app-prompts', label: 'In-App Prompts' },
       { to: '/referral-popup', label: 'Referral Popups' },
+      { to: '/qr-codes', label: 'QR Codes (Offline)' },
     ],
   },
   {
