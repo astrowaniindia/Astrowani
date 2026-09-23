@@ -1092,6 +1092,158 @@ module.exports = function registerAdminRoutes(app) {
     return res.json({ success: true, newBalance });
   }));
 
+  // Buckets a wallet_transactions debit description into a coarse spend category, so
+  // the admin can see at a glance what a recharge was actually spent on without
+  // reading every ledger row. Matched against the exact description strings written
+  // by sessionManager.js / astroRoutes.js / orderRoutes.js / freeServicesRoutes.js /
+  // index.js (gifts) / adminRoutes.js (manual debits) / process_session_billing.sql —
+  // update this alongside any of those if a description prefix ever changes.
+  function categorizeDebit(description) {
+    const d = String(description || '');
+    if (/^Refund/i.test(d)) return 'refund';
+    if (/^Automated .*(billing)/i.test(d)) return 'sessions';
+    if (/^Astro Report/i.test(d)) return 'reports';
+    if (/^Remedy order/i.test(d)) return 'shop';
+    if (/^Free Service/i.test(d)) return 'freeServices';
+    if (/^Gift:/i.test(d)) return 'gifts';
+    if (/^Coin purchase/i.test(d)) return 'coins';
+    if (/^Admin wallet/i.test(d)) return 'adminAdjustment';
+    return 'other';
+  }
+  const SPEND_CATEGORY_LABELS = {
+    sessions: 'Chat / call / video sessions',
+    reports: 'Astro reports',
+    shop: 'Wani Shop orders',
+    freeServices: 'Free services (₹1)',
+    gifts: 'Gifts sent',
+    coins: 'Coin purchases',
+    adminAdjustment: 'Admin deduction',
+    refund: 'Refunded back',
+    other: 'Other / uncategorized',
+  };
+
+  // Every debit ever made by any of the given customer ids, chunked (a single
+  // `.in()` with 1000s of UUIDs 414s — see pagedSelect.js) and paged (a table this
+  // size otherwise silently truncates at PostgREST's 1000-row cap).
+  async function fetchDebitsForCustomers(ids) {
+    const rows = [];
+    let truncated = false;
+    for (const chunk of chunkIds(ids)) {
+      const { rows: page, truncated: t } = await pagedSelect(() =>
+        db.from('wallet_transactions').select('user_id, amount, description, created_at').eq('type', 'debit').in('user_id', chunk)
+      );
+      rows.push(...page);
+      truncated = truncated || t;
+    }
+    return { rows, truncated };
+  }
+
+  // ── Recharge activity — every customer who has ever completed a paid recharge,
+  // with a running total of what they've spent since, broken down by category. Built
+  // to answer "who put money in, and what did they actually do with it" without
+  // reading raw ledger rows by hand.
+  app.get('/api/admin/customers/recharge-activity', requireAdmin, h(async (req, res) => {
+    const { rows: recharges, truncated: rechargesTruncated } = await pagedSelect(() =>
+      db.from('wallet_recharges').select('customer_id, amount, paid_at').eq('status', 'paid')
+    );
+
+    if (!recharges.length) {
+      return res.json({ success: true, data: [], truncated: false, categoryLabels: SPEND_CATEGORY_LABELS });
+    }
+
+    const byCustomer = new Map();
+    for (const r of recharges) {
+      const entry = byCustomer.get(r.customer_id) || { totalRecharged: 0, rechargeCount: 0, firstRechargeAt: r.paid_at, lastRechargeAt: r.paid_at };
+      entry.totalRecharged += Number(r.amount) || 0;
+      entry.rechargeCount += 1;
+      if (r.paid_at && (!entry.firstRechargeAt || r.paid_at < entry.firstRechargeAt)) entry.firstRechargeAt = r.paid_at;
+      if (r.paid_at && (!entry.lastRechargeAt || r.paid_at > entry.lastRechargeAt)) entry.lastRechargeAt = r.paid_at;
+      byCustomer.set(r.customer_id, entry);
+    }
+
+    const ids = [...byCustomer.keys()];
+
+    const custRows = [];
+    for (const chunk of chunkIds(ids)) {
+      const { data, error } = await db.from('customers').select('id, name, mobile, email, wallet_balance, created_at').in('id', chunk);
+      if (error) throw error;
+      custRows.push(...(data || []));
+    }
+    const custMap = new Map(custRows.map((c) => [c.id, c]));
+
+    const { rows: debits, truncated: debitsTruncated } = await fetchDebitsForCustomers(ids);
+    const spendByCustomer = new Map();
+    for (const t of debits) {
+      const cat = categorizeDebit(t.description);
+      const entry = spendByCustomer.get(t.user_id) || {};
+      entry[cat] = (entry[cat] || 0) + (Number(t.amount) || 0);
+      spendByCustomer.set(t.user_id, entry);
+    }
+
+    const data = ids
+      .filter((id) => custMap.has(id)) // a hard-deleted customer cascades its recharge rows away too, but guard anyway
+      .map((id) => {
+        const c = custMap.get(id);
+        const r = byCustomer.get(id);
+        const spend = spendByCustomer.get(id) || {};
+        const totalSpent = Object.values(spend).reduce((s, v) => s + v, 0);
+        return {
+          id,
+          name: c.name,
+          mobile: /^deleted:/.test(String(c.mobile || '')) ? null : c.mobile,
+          isDeleted: /^deleted:/.test(String(c.mobile || '')),
+          email: c.email,
+          walletBalance: Number(c.wallet_balance || 0),
+          createdAt: c.created_at,
+          totalRecharged: r.totalRecharged,
+          rechargeCount: r.rechargeCount,
+          firstRechargeAt: r.firstRechargeAt,
+          lastRechargeAt: r.lastRechargeAt,
+          spend,
+          totalSpent,
+        };
+      })
+      .sort((a, b) => b.totalRecharged - a.totalRecharged);
+
+    return res.json({
+      success: true,
+      data,
+      truncated: rechargesTruncated || debitsTruncated,
+      categoryLabels: SPEND_CATEGORY_LABELS,
+    });
+  }));
+
+  // ── One customer's full wallet timeline — every recharge and every debit/credit,
+  // merged and time-ordered, for the "what exactly did they do with it" drill-down. ──
+  app.get('/api/admin/customers/:id/wallet-timeline', requireAdmin, h(async (req, res) => {
+    const id = req.params.id;
+    const [{ data: recharges, error: rErr }, { data: txns, error: tErr }] = await Promise.all([
+      db.from('wallet_recharges').select('id, amount, status, created_at, paid_at, razorpay_payment_id').eq('customer_id', id).order('created_at', { ascending: false }).limit(200),
+      db.from('wallet_transactions').select('id, type, amount, description, created_at').eq('user_id', id).order('created_at', { ascending: false }).limit(500),
+    ]);
+    if (rErr) throw rErr;
+    if (tErr) throw tErr;
+
+    const events = [
+      ...(recharges || []).map((r) => ({
+        kind: 'recharge',
+        status: r.status,
+        amount: Number(r.amount),
+        description: r.status === 'paid' ? `Recharge via Razorpay (${r.razorpay_payment_id || '—'})` : `Recharge ${r.status}`,
+        at: r.paid_at || r.created_at,
+      })),
+      ...(txns || []).map((t) => ({
+        kind: t.type, // 'credit' | 'debit'
+        category: t.type === 'debit' ? categorizeDebit(t.description) : null,
+        amount: Number(t.amount),
+        description: t.description,
+        at: t.created_at,
+      })),
+    ].sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    return res.json({ success: true, data: events, categoryLabels: SPEND_CATEGORY_LABELS });
+  }));
+
   // ── Sessions ──────────────────────────────────────────────────────────────
   app.get('/api/admin/sessions', requireAdmin, h(async (req, res) => {
     const { data, error } = await db

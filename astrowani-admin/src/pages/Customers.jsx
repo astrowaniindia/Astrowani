@@ -87,6 +87,208 @@ function formatTob(t) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
+const WALLET_FILTERS = [
+  { key: 'all', label: 'Any Balance' },
+  { key: 'has', label: 'Has Balance' },
+  { key: 'zero', label: 'Zero Balance' },
+];
+
+function formatDateTime(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// "Recharge Activity" section: customers who have ever completed a paid recharge,
+// with a running total of what they've actually spent since, broken down by category.
+function RechargeActivitySection() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [categoryLabels, setCategoryLabels] = useState({});
+  const [truncated, setTruncated] = useState(false);
+  const [timeline, setTimeline] = useState(null); // { customer, loading, error, events }
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await client.get('/api/admin/customers/recharge-activity');
+      setRows(data.data || []);
+      setCategoryLabels(data.categoryLabels || {});
+      setTruncated(!!data.truncated);
+    } catch (e) {
+      console.error('Failed to load recharge activity:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.toLowerCase().trim();
+    return rows.filter((r) =>
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.mobile || '').toLowerCase().includes(q) ||
+      (r.email || '').toLowerCase().includes(q)
+    );
+  }, [rows, search]);
+
+  const totals = useMemo(() => {
+    const totalRecharged = rows.reduce((s, r) => s + r.totalRecharged, 0);
+    const totalSpent = rows.reduce((s, r) => s + r.totalSpent, 0);
+    return { customers: rows.length, totalRecharged, totalSpent };
+  }, [rows]);
+
+  const openTimeline = async (customer) => {
+    setTimeline({ customer, loading: true });
+    try {
+      const { data } = await client.get(`/api/admin/customers/${customer.id}/wallet-timeline`);
+      setTimeline({ customer, events: data.data || [], categoryLabels: data.categoryLabels || {} });
+    } catch (e) {
+      setTimeline({ customer, error: e.response?.data?.message || e.message });
+    }
+  };
+
+  return (
+    <div>
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', marginBottom: 20 }}>
+        <div className="stat">
+          <div className="stat-header"><span className="label">Customers Who Recharged</span></div>
+          <div className="value">{loading ? '…' : totals.customers.toLocaleString('en-IN')}</div>
+        </div>
+        <div className="stat">
+          <div className="stat-header"><span className="label">Total Recharged</span></div>
+          <div className="value" style={{ color: 'var(--emerald)' }}>{loading ? '…' : `₹${totals.totalRecharged.toLocaleString('en-IN')}`}</div>
+        </div>
+        <div className="stat">
+          <div className="stat-header"><span className="label">Total Spent Since</span></div>
+          <div className="value">{loading ? '…' : `₹${totals.totalSpent.toLocaleString('en-IN')}`}</div>
+          <div className="stat-footer"><span className="muted">Across sessions, reports, shop, gifts…</span></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: '14px 18px', marginBottom: 20 }}>
+        <div className="search-bar-wrap">
+          <span className="search-bar-icon">🔍</span>
+          <input
+            type="text"
+            placeholder="Search recharged customers by name, phone, or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {truncated && (
+          <div className="muted" style={{ marginTop: 10, fontSize: 12, color: 'var(--red, #c0392b)' }}>
+            ⚠️ This dataset is large enough that some rows may be missing from the totals above — treat these as a lower bound.
+          </div>
+        )}
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Recharged</th>
+              <th>Recharges</th>
+              <th>Last Recharge</th>
+              <th>Current Balance</th>
+              <th>Spent Since (by category)</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr><td colSpan={7} className="empty" style={{ padding: '36px 20px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}><span className="pulse-dot" /> Loading recharge activity…</div>
+              </td></tr>
+            )}
+            {!loading && filtered.length === 0 && (
+              <tr><td colSpan={7} className="empty" style={{ padding: '48px 20px', textAlign: 'center' }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>💳</div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>No customers have recharged their wallet yet</div>
+              </td></tr>
+            )}
+            {!loading && filtered.map((r) => (
+              <tr key={r.id}>
+                <td>
+                  <div style={{ fontWeight: 700 }}>{r.name || 'Anonymous User'}{r.isDeleted ? ' (deleted)' : ''}</div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>{r.mobile || r.email || '—'}</div>
+                </td>
+                <td>
+                  <span style={{ fontWeight: 700, color: 'var(--emerald)' }}>₹{r.totalRecharged.toLocaleString('en-IN')}</span>
+                </td>
+                <td>{r.rechargeCount}</td>
+                <td style={{ fontSize: 12.5 }}>{formatDateTime(r.lastRechargeAt)}</td>
+                <td>
+                  <span style={{ fontWeight: 700, color: r.walletBalance > 0 ? '#059669' : 'var(--text-primary)' }}>
+                    ₹{r.walletBalance.toLocaleString('en-IN')}
+                  </span>
+                </td>
+                <td>
+                  {Object.keys(r.spend || {}).length === 0 ? (
+                    <span className="muted" style={{ fontSize: 12 }}>Nothing spent yet</span>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 320 }}>
+                      {Object.entries(r.spend)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([cat, amt]) => (
+                          <span key={cat} className="pill-badge" style={{ fontSize: 10.5 }} title={categoryLabels[cat] || cat}>
+                            {categoryLabels[cat] || cat}: ₹{amt.toLocaleString('en-IN')}
+                          </span>
+                        ))}
+                    </div>
+                  )}
+                </td>
+                <td style={{ textAlign: 'right' }}>
+                  <button className="btn ghost sm" onClick={() => openTimeline(r)}>View Timeline</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {timeline && (
+        <Modal title={`Wallet Timeline — ${timeline.customer.name || timeline.customer.mobile || 'Customer'}`} onClose={() => setTimeline(null)}>
+          {timeline.loading && <div className="muted">Loading…</div>}
+          {timeline.error && <div style={{ color: 'var(--red, #c0392b)' }}>{timeline.error}</div>}
+          {timeline.events && (
+            timeline.events.length === 0 ? (
+              <div className="muted">No wallet activity recorded.</div>
+            ) : (
+              <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+                {timeline.events.map((e, i) => {
+                  const isCredit = e.kind === 'credit' || (e.kind === 'recharge' && e.status === 'paid');
+                  const label = e.kind === 'recharge'
+                    ? (e.status === 'paid' ? 'Recharge' : `Recharge (${e.status})`)
+                    : (e.kind === 'debit' ? (timeline.categoryLabels[e.category] || 'Debit') : 'Credit');
+                  return (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                        <div className="muted" style={{ fontSize: 11.5 }}>{e.description}</div>
+                        <div className="muted" style={{ fontSize: 11 }}>{formatDateTime(e.at)}</div>
+                      </div>
+                      <div style={{ fontWeight: 700, color: isCredit ? '#059669' : 'var(--maroon)', whiteSpace: 'nowrap' }}>
+                        {isCredit ? '+' : '−'}₹{e.amount.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+          <div className="actions" style={{ marginTop: 16 }}>
+            <button className="btn secondary" onClick={() => setTimeline(null)}>Close</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // "Profile details" block of the customer popup: every field the customer can fill,
 // showing the value or a dash, plus a filled-count so gaps are obvious at a glance.
 function ProfileDetails({ profile }) {
@@ -162,6 +364,8 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
+  const [walletFilter, setWalletFilter] = useState('all');
+  const [view, setView] = useState('list'); // 'list' | 'recharges'
   const [topup, setTopup] = useState(null); // customer being topped up
   const [amount, setAmount] = useState('');
   const [walletMode, setWalletMode] = useState('add'); // 'add' | 'remove'
@@ -235,6 +439,9 @@ export default function Customers() {
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {
       if (!inRange(r.created_at, timeFilter)) return false;
+      const wallet = Number(r.wallet_balance || 0);
+      if (walletFilter === 'has' && !(wallet > 0)) return false;
+      if (walletFilter === 'zero' && !(wallet <= 0)) return false;
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
       const name = (r.name || '').toLowerCase();
@@ -243,7 +450,7 @@ export default function Customers() {
       const id = String(r.id || '').toLowerCase();
       return name.includes(q) || mobile.includes(q) || email.includes(q) || id.includes(q);
     });
-  }, [rows, timeFilter, search]);
+  }, [rows, timeFilter, walletFilter, search]);
 
   const closeTopup = () => {
     setTopup(null);
@@ -339,16 +546,38 @@ export default function Customers() {
             Real-time tracking of new customer app signups, wallet balances, and contact details.
           </p>
         </div>
-        <div className="btn-group">
-          <button className="btn secondary sm" onClick={() => load()} title="Reload customer list">
-            <span>🔄</span> Refresh
-          </button>
-          <button className="btn ghost sm" onClick={exportCSV} title="Export filtered customers to CSV">
-            <span>📥</span> Export CSV
-          </button>
-        </div>
+        {view === 'list' && (
+          <div className="btn-group">
+            <button className="btn secondary sm" onClick={() => load()} title="Reload customer list">
+              <span>🔄</span> Refresh
+            </button>
+            <button className="btn ghost sm" onClick={exportCSV} title="Export filtered customers to CSV">
+              <span>📥</span> Export CSV
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* ── View switcher ── */}
+      <div className="btn-group" style={{ marginBottom: 20 }}>
+        <button
+          className={`btn sm ${view === 'list' ? '' : 'secondary'}`}
+          onClick={() => setView('list')}
+        >
+          👥 All Customers
+        </button>
+        <button
+          className={`btn sm ${view === 'recharges' ? '' : 'secondary'}`}
+          onClick={() => setView('recharges')}
+        >
+          💳 Recharge Activity
+        </button>
+      </div>
+
+      {view === 'recharges' ? (
+        <RechargeActivitySection />
+      ) : (
+        <>
       {/* ── Real-Time Signup KPIs ── */}
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', marginBottom: 24 }}>
         <div className="stat" style={{ cursor: 'pointer' }} onClick={() => setTimeFilter('all')}>
@@ -449,6 +678,28 @@ export default function Customers() {
                 ✕
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Wallet balance filter chips */}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Wallet:</span>
+          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+            {WALLET_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`btn sm ${walletFilter === f.key ? '' : 'ghost'}`}
+                style={{
+                  borderRadius: 20,
+                  fontWeight: walletFilter === f.key ? 700 : 500,
+                  background: walletFilter === f.key ? 'var(--maroon)' : undefined,
+                  color: walletFilter === f.key ? '#fff' : undefined,
+                }}
+                onClick={() => setWalletFilter(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -817,6 +1068,8 @@ export default function Customers() {
             )}
           </div>
         </Modal>
+      )}
+        </>
       )}
     </div>
   );
