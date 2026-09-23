@@ -673,6 +673,12 @@ io.on('connection', (socket) => {
     const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
     const viewerId = realId || data.viewerId; // fall back for unauthenticated/guest viewers
     socket.join('live_' + data.sessionId);
+    // The broadcaster joins its own room as a "viewer" with its own id. Mark that socket
+    // so sweepLiveSessions() can tell "the host is still here" from "only viewers are
+    // left watching a stream whose host has gone".
+    if (realId && String(realId) === String(data.astrologerId)) {
+      socket.data.liveHostOf = data.sessionId;
+    }
     socket.emit('live_join_ack', { viewerId });
     io.to(data.astrologerId).emit('live_viewer_joined', { ...data, viewerId });
   });
@@ -3268,6 +3274,68 @@ app.post('/api/vendor/fcm-token', async (req, res) => {
   } catch (e) {
     console.error('[push] vendor fcm-token save error:', e.message);
     return res.status(500).json({ success: false, message: 'Could not save token' });
+  }
+});
+
+// What is the astrologer in the middle of RIGHT NOW? (2026-09-24)
+//
+// The app calls this when it opens or comes back to the foreground, so an astrologer who
+// switched away from a chat / call / live stream (or whose phone killed the app while it
+// sat in the background) lands straight back inside it instead of on Home. The astrologer
+// comes from the verified JWT, never a parameter.
+//
+// A chat_sessions row is created is_active:false at accept time and only flips on once both
+// sides have connected, so "active" here is: not ended, and either activated or accepted in
+// the last 90s (still connecting). Anything older that never activated is a dead accept and
+// must not drag the astrologer into an empty room. Fails to "nothing active" on any error.
+app.get('/api/vendor/active-session', async (req, res) => {
+  const none = { success: true, chat: null, call: null, live: null };
+  try {
+    const astroId = await resolveVendorIdFromReq(req);
+    if (!astroId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const now = Date.now();
+    const [{ data: sessions }, { data: lives }] = await Promise.all([
+      supabaseService.from('chat_sessions')
+        .select('id, request_id, caller_id, per_minute_charge, started_at, call_type, is_active')
+        .eq('vendor_id', astroId).is('ended_at', null)
+        .gte('started_at', new Date(now - 3 * 60 * 60 * 1000).toISOString())
+        .order('started_at', { ascending: false }).limit(5),
+      supabaseService.from('live_sessions')
+        .select('id, title, started_at')
+        .eq('astrologer_id', astroId).eq('is_active', true)
+        .order('started_at', { ascending: false }).limit(1),
+    ]);
+
+    const live = (lives && lives[0])
+      ? { sessionId: lives[0].id, title: lives[0].title || null, startedAt: lives[0].started_at }
+      : null;
+
+    const s = (sessions || []).find((row) =>
+      row.is_active || (now - new Date(row.started_at).getTime()) < 90 * 1000);
+    if (!s) return res.status(200).json({ ...none, live });
+
+    let callerName = '';
+    try {
+      const { data: cust } = await supabaseService
+        .from('customers').select('name').eq('id', s.caller_id).maybeSingle();
+      callerName = (cust && cust.name) || '';
+    } catch (_) { /* a missing name must not hide the session */ }
+
+    const info = {
+      sessionId: s.id,
+      requestId: s.request_id || null,
+      callerId: s.caller_id,
+      callerName,
+      perMinuteCharge: s.per_minute_charge,
+      startedAt: s.started_at,
+      callType: s.call_type || 'chat',
+    };
+    const isChat = info.callType === 'chat';
+    return res.status(200).json({ success: true, chat: isChat ? info : null, call: isChat ? null : info, live });
+  } catch (e) {
+    console.error('[active-session] error:', e.message);
+    return res.status(200).json(none);
   }
 });
 
@@ -6037,6 +6105,61 @@ async function endLiveSession(sessionId, reason) {
       console.error('[live] notifyWaitlistIfFree error:', e.message));
   }
   io.to('live_' + sessionId).emit('live_ended', { sessionId, reason: reason || 'ended' });
+  // The astrologer's app shows an ongoing "you are live" notification; if it was in the
+  // background when the stream ended (admin force-stop, host-lost sweep) nothing else
+  // would clear it. Best-effort — must never affect ending the stream.
+  if (sess?.astrologer_id) {
+    vendorDevices.pushTargetFor(sess.astrologer_id)
+      .then((astro) => (astro && astro.fcm_token
+        ? sendPush(astro.fcm_token, { data: { type: 'session_ended', sessionId: String(sessionId) } })
+        : null))
+      .catch((e) => console.error('[live] session_ended push error:', e.message));
+  }
+}
+
+// A broadcast whose host has vanished (app crashed, phone died, process killed) used to stay
+// "live" forever: nothing ever marked it ended, so customers kept seeing a dead stream and
+// the astrologer showed as busy until they happened to start another one. The host's socket
+// carries socket.data.liveHostOf (set in live_join); if no such socket has been in the room
+// for LIVE_HOST_LOST_MS the stream is ended. Five minutes matches the chat/call background
+// allowance, so an astrologer who switches apps or loses signal briefly is not cut.
+const LIVE_HOST_LOST_MS = 5 * 60 * 1000;
+const liveHostLostSince = new Map(); // live session id -> ms first seen without a host
+async function sweepLiveSessions() {
+  try {
+    const { data: lives } = await supabaseService
+      .from('live_sessions').select('id').eq('is_active', true);
+    const activeIds = new Set();
+    for (const l of lives || []) {
+      activeIds.add(l.id);
+      const sockets = await io.in('live_' + l.id).fetchSockets();
+      if (sockets.some((s) => s.data && s.data.liveHostOf === l.id)) {
+        liveHostLostSince.delete(l.id);
+        continue;
+      }
+      const since = liveHostLostSince.get(l.id);
+      if (!since) { liveHostLostSince.set(l.id, Date.now()); continue; }
+      if (Date.now() - since >= LIVE_HOST_LOST_MS) {
+        liveHostLostSince.delete(l.id);
+        console.warn(`[live] Host of ${l.id} gone for ${Math.round(LIVE_HOST_LOST_MS / 1000)}s — ending stream.`);
+        await endLiveSession(l.id, 'broadcaster_lost');
+      }
+    }
+    for (const id of [...liveHostLostSince.keys()]) {
+      if (!activeIds.has(id)) liveHostLostSince.delete(id);
+    }
+  } catch (e) {
+    console.error('[live] sweep error:', e.message);
+  }
+}
+// LIVE_SWEEP=off silences this for a second instance pointed at the same database (a local
+// run against production data): it would see every real host as "gone" — their sockets are
+// connected to the real server — and end their live streams after five minutes. Exactly one
+// instance, the production one, may run this.
+if (process.env.LIVE_SWEEP !== 'off') {
+  setInterval(sweepLiveSessions, 30 * 1000).unref?.();
+} else {
+  console.log('[live] sweep disabled (LIVE_SWEEP=off)');
 }
 
 // SECURITY (fixed 2026-08-08): had zero auth — anyone who read a sessionId off the public

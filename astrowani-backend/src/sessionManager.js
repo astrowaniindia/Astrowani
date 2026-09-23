@@ -6,6 +6,7 @@ const { checkAstrologerBusy } = require('./busyStatus');
 const { notifyWaitlistIfFree } = require('./waitlist');
 const { logError } = require('./errorLogger');
 const wallet = require('./wallet');
+const vendorDevices = require('./vendorDevices');
 
 // Initialize Supabase Client with Service Role Key for administrative access
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -33,15 +34,28 @@ class SessionManager {
   // customer. See endStaleBilledSessions().
   static MAX_BILLED_SESSION_MS = 2 * 60 * 60 * 1000;
 
-  // How long a customer or astrologer may be disconnected from a billed session before
-  // it is ended. Covers a brief network drop or a backend restart (clients rejoin on
-  // reconnect); nothing is billed during it. See bothParticipantsPresent().
+  // How long a CUSTOMER may be disconnected from a billed session before it is ended.
+  // Covers a brief network drop or a backend restart (clients rejoin on reconnect);
+  // nothing is billed during it. See bothParticipantsPresent().
   static SESSION_PRESENCE_GRACE_MS = 45 * 1000;
+
+  // How long the ASTROLOGER may be disconnected from a billed session (socket gone —
+  // network blip, elevator, tunnel) before it is ended. Product decision 2026-09-24:
+  // same 5-minute allowance as the background grace — a call must not die because the
+  // astrologer's connection hiccuped for a few seconds. Billing is paused while absent,
+  // so the customer is not charged for the gap. A 10-second Wi-Fi cut on 2026-09-24 took
+  // ~50s to reconnect (Wi-Fi re-association + socket.io backoff) and this 45s grace
+  // killed a live call mid-consultation.
+  static VENDOR_ABSENT_GRACE_MS = 5 * 60 * 1000;
 
   // How long an ASTROLOGER may keep a billed session open while their app is in the
   // background (pressed Home / switched apps) before it is ended. Billing continues
   // as normal during it.
   static VENDOR_BACKGROUND_GRACE_MS = 5 * 60 * 1000;
+
+  // How long a pending call/chat request keeps ringing before it counts as missed.
+  // Product decision 2026-09-24: 5 minutes (was ~60s).
+  static REQUEST_RING_MS = 5 * 60 * 1000;
 
   constructor() {
     this.pollingInterval = 30 * 1000; // Poll every 30 seconds
@@ -389,12 +403,15 @@ class SessionManager {
   }
 
   /**
-   * Marks call/chat requests as MISSED when they sit 'pending' longer than ~75s
-   * (the customer-side timeout is 60s; this is the authoritative backup for cases
-   * where the customer app closed before its timer fired).
+   * Marks call/chat requests as MISSED when they sit 'pending' longer than the ring window
+   * plus a 15s margin. A request rings until the customer cancels, the astrologer rejects
+   * or accepts, or REQUEST_RING_MS (5 minutes) passes — the customer app's own timer
+   * (REQUEST_RING_TIMEOUT_MS in astrowani_customer-main/src/utils/requestTimeouts.js) fires
+   * first; this is the authoritative backup for cases where the customer app closed before
+   * it could. Both must move together or requests get marked missed early.
    */
   async markStaleRequestsMissed() {
-    const cutoff = new Date(Date.now() - 75 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - (SessionManager.REQUEST_RING_MS + 15 * 1000)).toISOString();
     try {
       const { data: missedCalls } = await supabase.from('call_requests')
         .update({ status: 'missed' })
@@ -640,12 +657,17 @@ class SessionManager {
       }
       allPresent = false;
       const since = this.absentSince.get(key);
+      // The astrologer gets the 5-minute allowance here too (VENDOR_ABSENT_GRACE_MS);
+      // the customer keeps the short one so a vanished customer stops the billing clock.
+      const graceMs = role === 'vendor'
+        ? SessionManager.VENDOR_ABSENT_GRACE_MS
+        : SessionManager.SESSION_PRESENCE_GRACE_MS;
       if (!since) {
         this.absentSince.set(key, nowMs);
         console.warn(`[SessionManager] Session ${session.id}: ${role} not connected — billing paused.`);
-      } else if (nowMs - since >= SessionManager.SESSION_PRESENCE_GRACE_MS) {
+      } else if (nowMs - since >= graceMs) {
         const who = role === 'caller' ? 'Customer' : 'Astrologer';
-        console.warn(`[SessionManager] Session ${session.id}: ${role} away ${Math.round((nowMs - since) / 1000)}s — ending session.`);
+        console.warn(`[SessionManager] Session ${session.id}: ${role} away ${Math.round((nowMs - since) / 1000)}s (grace ${Math.round(graceMs / 1000)}s) — ending session.`);
         this.absentSince.delete(`${session.id}:caller`);
         this.absentSince.delete(`${session.id}:vendor`);
         await this.terminateSession(session.id, `${who} left the session (app closed or lost connection)`);
@@ -784,26 +806,46 @@ class SessionManager {
       if (key.startsWith(`${sessionId}:`)) this.vendorBackgroundSince.delete(key);
     }
 
-    // Fetch session first to get caller_id and vendor_id
+    // Claim the end atomically: only flip the row if it is still active, and bail out if
+    // someone else already ended it. A normal call runs this at least TWICE (the ending
+    // side posts /api/call/end, the other side's app then posts it again after receiving
+    // session_ended), and the sweeps add more callers. Without the guard the second run
+    // overwrote ended_at with a later time (skewing billed duration), re-emitted
+    // session_ended and re-sent its push, and re-ran the referral/waitlist work below.
     const { data: session } = await supabase
-      .from('chat_sessions')
-      .select('caller_id, vendor_id')
-      .eq('id', sessionId)
-      .single();
-
-    await supabase
       .from('chat_sessions')
       .update({
         is_active: false,
         ended_at: new Date().toISOString()
       })
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .eq('is_active', true)
+      .select('caller_id, vendor_id');
+    const sessionRow = (session || [])[0];
+    if (!sessionRow) {
+      // Already ended (or never existed) — every notification below already went out.
+      console.log(`[SessionManager] Session ${sessionId} was already ended; nothing to do.`);
+      return;
+    }
     
     // Notify clients directly via their personal rooms + session room
-    if (this.io && session) {
-      this.io.to(session.caller_id).emit('session_ended', { sessionId, reason });
-      this.io.to(session.vendor_id).emit('session_ended', { sessionId, reason });
+    if (this.io) {
+      this.io.to(sessionRow.caller_id).emit('session_ended', { sessionId, reason });
+      this.io.to(sessionRow.vendor_id).emit('session_ended', { sessionId, reason });
       this.io.to(sessionId).emit('session_ended', { sessionId, reason });
+    }
+
+    // The astrologer's app may be backgrounded or its process asleep, with its socket long
+    // gone — the emits above reach nobody. It shows an ongoing "chat/call in progress"
+    // notification for the whole session, so tell the device the session is over and let it
+    // clear that notification. Data-only, best-effort: a failed push must never affect
+    // ending the session.
+    if (sessionRow.vendor_id) {
+      vendorDevices.pushTargetFor(sessionRow.vendor_id)
+        .then((astro) => (astro && astro.fcm_token
+          ? sendPush(astro.fcm_token, { data: { type: 'session_ended', sessionId: String(sessionId) } })
+          : null))
+        .catch((e) => console.error('[SessionManager] session_ended push error:', e.message));
     }
 
     // A free introductory call is not proof of paid engagement, so it must not
@@ -813,15 +855,15 @@ class SessionManager {
     // migrated yet.
     const freeBooking = await this.closeFreeCallBooking(sessionId);
 
-    if (session?.caller_id && !freeBooking) {
-      await this.maybeRewardReferral(session.caller_id);
+    if (sessionRow.caller_id && !freeBooking) {
+      await this.maybeRewardReferral(sessionRow.caller_id);
     }
 
     // If this was the astrologer's only busy-source, let anyone waiting for them know.
-    if (session?.vendor_id) {
-      const stillBusy = await checkAstrologerBusy(supabase, session.vendor_id);
+    if (sessionRow.vendor_id) {
+      const stillBusy = await checkAstrologerBusy(supabase, sessionRow.vendor_id);
       if (!stillBusy.busy) {
-        await notifyWaitlistIfFree(supabase, sendPush, session.vendor_id);
+        await notifyWaitlistIfFree(supabase, sendPush, sessionRow.vendor_id);
       }
     }
   }
