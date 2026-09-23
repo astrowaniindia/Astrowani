@@ -33,7 +33,11 @@ const day = (s) => (s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit'
  * parameters and drop them from the referrer entirely.
  */
 function storeLink(source) {
-  const referrer = `utm_source=${source}&utm_medium=offline&utm_campaign=qr_poster`;
+  // utm_source ONLY, on purpose. The backend reads nothing else, and every extra
+  // parameter makes the QR denser: with medium+campaign it was 61x61 dots, now 49x49,
+  // so each dot is ~22% bigger on the printed poster and scans faster from further
+  // away. Do not add parameters back without re-measuring.
+  const referrer = `utm_source=${source}`;
   return `https://play.google.com/store/apps/details?id=${PACKAGE}&referrer=${encodeURIComponent(referrer)}`;
 }
 
@@ -49,7 +53,7 @@ async function downloadQr(source, label) {
     // 1024px and error-correction 'Q' (~25% recoverable): a poster gets rained on,
     // scuffed and partly covered, and a code that stops scanning is a dead location.
     const dataUrl = await QRCode.toDataURL(storeLink(source), {
-      width: 1024, margin: 2, errorCorrectionLevel: 'Q',
+      width: 1024, margin: 4, errorCorrectionLevel: 'Q',
     });
     const a = document.createElement('a');
     a.href = dataUrl;
