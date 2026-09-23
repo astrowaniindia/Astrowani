@@ -409,14 +409,19 @@ function cancelPendingSessionTermination(sessionId, participantId) {
   }
 }
 
-function scheduleSessionAbandonCheck(sessionId, participantId) {
+function scheduleSessionAbandonCheck(sessionId, participantId, isVendor) {
   const key = `${sessionId}:${participantId}`;
   if (pendingSessionTerminations.has(key)) return; // already scheduled — e.g. duplicate disconnect events
   // An astrologer whose app was sent to the background (not closed) gets the longer
-  // background window (sessionManager keeps billing during it).
+  // background window (sessionManager keeps billing during it). An astrologer whose
+  // socket just dropped (network blip) gets the 5-minute allowance too — product rule:
+  // a consultation must not die because the astrologer's connection hiccuped. Only the
+  // CUSTOMER's disappearance keeps the short 25s money-leak guard.
   const graceMs = sessionManager.isVendorBackground(sessionId, participantId)
     ? sessionManager.constructor.VENDOR_BACKGROUND_GRACE_MS
-    : SESSION_ABANDON_GRACE_MS;
+    : isVendor
+      ? sessionManager.constructor.VENDOR_ABSENT_GRACE_MS
+      : SESSION_ABANDON_GRACE_MS;
   const timer = setTimeout(async () => {
     pendingSessionTerminations.delete(key);
     try {
@@ -494,6 +499,7 @@ io.on('connection', (socket) => {
     // running for this exact participant+session (a reconnect within the grace period).
     socket.data.sessionId = sessionId;
     socket.data.participantId = realId;
+    socket.data.isVendorParticipant = String(sessionRow.vendor_id) === String(realId);
     cancelPendingSessionTermination(sessionId, realId);
   });
 
@@ -750,9 +756,9 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    const { sessionId, participantId } = socket.data || {};
+    const { sessionId, participantId, isVendorParticipant } = socket.data || {};
     if (sessionId && participantId) {
-      scheduleSessionAbandonCheck(sessionId, participantId);
+      scheduleSessionAbandonCheck(sessionId, participantId, isVendorParticipant);
     }
   });
 });
