@@ -1,5 +1,7 @@
 import {NativeModules, Platform} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DeviceInfo from 'react-native-device-info';
+import {SOCKET_URL} from '../config/api';
 
 /**
  * Which offline QR poster (or ad) this install came from.
@@ -95,4 +97,65 @@ export async function getAcquisition() {
   }
 }
 
-export default {getAcquisition};
+// ── First open ──────────────────────────────────────────────────────────────
+//
+// Tell the backend "an install from poster X has opened", BEFORE any signup, so the QR
+// page can show installs that never became customers. The install referrer is read the
+// same way as at signup; only QR posters are reported (organic/Ads installs have their
+// own reporting). Fire-and-forget: it must never delay, block or fail anything the
+// person is doing.
+const FIRST_OPEN_DONE_KEY = 'qrFirstOpenReported';
+const FIRST_OPEN_TRIES_KEY = 'qrFirstOpenTries';
+// The referrer is normally ready on first launch, but a wedged Play Services can answer
+// empty once. A few launches are tried before giving up, so a hiccup does not lose an
+// install — but an ordinary (non-QR) install stops after that instead of asking forever.
+const MAX_TRIES = 3;
+
+async function stableInstallId() {
+  // Derived from the device + the moment THIS install was made, not from anything in
+  // AsyncStorage: logout wipes AsyncStorage, and a fresh random id would then count the
+  // same install twice. A reinstall changes firstInstallTime, so it correctly counts anew.
+  const [uid, first] = await Promise.all([DeviceInfo.getUniqueId(), DeviceInfo.getFirstInstallTime()]);
+  return `${uid}-${first}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+}
+
+export async function reportFirstOpen() {
+  try {
+    if (Platform.OS !== 'android') return;
+    if (await AsyncStorage.getItem(FIRST_OPEN_DONE_KEY)) return;
+
+    const tries = Number(await AsyncStorage.getItem(FIRST_OPEN_TRIES_KEY)) || 0;
+    if (tries >= MAX_TRIES) return;
+    AsyncStorage.setItem(FIRST_OPEN_TRIES_KEY, String(tries + 1)).catch(() => {});
+
+    const {acquisitionSource, acquisitionRaw} = await getAcquisition();
+    // Nothing to report (organic install, sideload, old build): leave it for the next
+    // launch until the tries run out.
+    if (!acquisitionRaw && !acquisitionSource) return;
+    if (!/^qr_/.test(String(acquisitionSource || ''))) {
+      // A definite non-QR answer — no reason to ask again on later launches.
+      await AsyncStorage.setItem(FIRST_OPEN_DONE_KEY, '1');
+      return;
+    }
+
+    const installId = await stableInstallId();
+    if (installId.length < 16) return;
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+    const res = await fetch(`${SOCKET_URL}/api/acquisition/first-open`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({installId, acquisitionSource, acquisitionRaw}),
+      signal: controller ? controller.signal : undefined,
+    });
+    if (timer) clearTimeout(timer);
+    // Marked done only once the backend has actually answered, so a network failure at
+    // first launch is retried on the next one.
+    if (res && res.ok) await AsyncStorage.setItem(FIRST_OPEN_DONE_KEY, '1');
+  } catch (e) {
+    // Never surfaced: this is bookkeeping, not part of anything the person asked for.
+  }
+}
+
+export default {getAcquisition, reportFirstOpen};

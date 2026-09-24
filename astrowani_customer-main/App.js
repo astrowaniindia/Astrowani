@@ -16,6 +16,7 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import { hydrateHomeCache, prefetchHomeData } from './src/utils/homePreload';
 import { loadMascotTips } from './src/utils/mascotTips';
 import { prefetchFreeCallOffer } from './src/api/FreeCallApi';
+import { reportFirstOpen } from './src/utils/acquisition';
 import Instance from './src/api/ApiCall';
 import { resetAnalyticsIdentity } from './src/utils/Analytics';
 
@@ -64,6 +65,9 @@ const App = () => {
     prefetchHomeData({ force: true });
     // Guide mascot tips: admin config + "already seen" memory, ready before any screen.
     loadMascotTips();
+    // QR poster funnel: report this install's first launch (before any signup). Background,
+    // never blocks or fails anything; a no-op for installs not from a poster.
+    reportFirstOpen();
     // Free call offer for a signed-in customer, so Home can open its popup the moment
     // it appears (the welcome screen does the same right after signup).
     AsyncStorage.getItem('token')

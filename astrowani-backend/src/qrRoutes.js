@@ -9,10 +9,14 @@
 //
 // WHAT THIS CAN AND CANNOT TELL YOU, because the difference matters when reading the
 // numbers:
-//   - SCANS are not here. A scan happens in a phone's camera app and never touches
-//     us. Play Console's own acquisition report counts store-listing visits.
-//   - INSTALLS that never signed up are not here either — an install with no account
-//     leaves no row in our database. Play Console counts those too.
+//   - SCANS are counted because the poster's QR now encodes our own short link
+//     (GET /q/<source>, see qrTrackingRoutes.js), which logs the hit and then redirects
+//     to the Play Store. Posters printed BEFORE that change point straight at the Play
+//     Store and are not counted. Numbers are page hits, not people: "unique" is by a
+//     hashed device fingerprint, approximate.
+//   - INSTALLS that OPENED the app are counted (the app reports its first launch with
+//     the install referrer). An install that never opens the app leaves no trace with us
+//     — Play Console counts those.
 //   - SIGNUPS and everything after them (recharges, sessions, revenue) ARE here, and
 //     are the numbers Play Console cannot give you, because it has no idea which
 //     installs became paying customers.
@@ -187,6 +191,34 @@ const emptyTotals = () => ({
   lastSignupAt: null,
 });
 
+/**
+ * Scans / distinct scanners / installs-that-opened per source, from qr_funnel_counts().
+ *
+ * Never throws: if sql/qr_funnel_events.sql has not been run the funnel simply reads as
+ * unavailable and the page keeps showing signups, which are unaffected.
+ */
+async function loadFunnel() {
+  const { data, error } = await db.rpc('qr_funnel_counts');
+  if (error) {
+    // PGRST202 = function not found in the schema cache, 42883 = undefined function.
+    if (error.code === 'PGRST202' || error.code === '42883' || /qr_funnel_counts/i.test(error.message || '')) {
+      return { bySource: new Map(), missing: true };
+    }
+    console.error('[qr] funnel counts failed:', error.message);
+    return { bySource: new Map(), missing: true };
+  }
+  const bySource = new Map();
+  for (const r of data || []) {
+    bySource.set(r.source, {
+      scans: Number(r.scans) || 0,
+      uniqueScans: Number(r.unique_scans) || 0,
+      installsOpened: Number(r.installs) || 0,
+    });
+  }
+  return { bySource, missing: false };
+}
+const emptyFunnel = () => ({ scans: 0, uniqueScans: 0, installsOpened: 0 });
+
 module.exports = function registerQrRoutes(app) {
   // ── Overview: one row per poster ───────────────────────────────────────────
   //
@@ -219,6 +251,8 @@ module.exports = function registerQrRoutes(app) {
       });
     }
 
+    const funnel = await loadFunnel();
+
     const ids = customers.map((c) => c.id);
     const [{ byCustomer: recharges, truncated: rt }, { byCustomer: sessions, truncated: st }] =
       ids.length
@@ -227,6 +261,9 @@ module.exports = function registerQrRoutes(app) {
 
     const bySource = new Map();
     for (const source of Object.keys(registry)) bySource.set(source, emptyTotals());
+    // A source seen ONLY in scans or installs (nobody has signed up yet) must still
+    // appear — it is how a typo'd or unregistered poster gets noticed.
+    for (const source of funnel.bySource.keys()) if (!bySource.has(source)) bySource.set(source, emptyTotals());
 
     for (const c of customers) {
       const totals = bySource.get(c.acquisition_source) || emptyTotals();
@@ -256,14 +293,18 @@ module.exports = function registerQrRoutes(app) {
         source,
         ...(registry[source] || { label: '', location: '', city: '', note: '', placedAt: '', archived: false }),
         ...totals,
+        ...(funnel.bySource.get(source) || emptyFunnel()),
         // Derived from timestamps, so fractional — rounded once, here, rather than in
         // every consumer.
         minutes: Math.round(totals.minutes),
         registered: Object.prototype.hasOwnProperty.call(registry, source),
       }))
-      .sort((a, b) => b.signups - a.signups || a.source.localeCompare(b.source));
+      .sort((a, b) => b.signups - a.signups || (b.scans || 0) - (a.scans || 0) || a.source.localeCompare(b.source));
 
-    return res.json({ success: true, data, truncated: truncated || rt || st, migrationMissing: false });
+    return res.json({
+      success: true, data, truncated: truncated || rt || st, migrationMissing: false,
+      funnelMissing: funnel.missing,
+    });
   }));
 
   // ── One poster's customers ─────────────────────────────────────────────────
@@ -292,6 +333,7 @@ module.exports = function registerQrRoutes(app) {
       : [{ byCustomer: new Map() }, { byCustomer: new Map() }];
 
     const registry = await readRegistry();
+    const funnel = await loadFunnel();
 
     const data = rows.map((c) => {
       const deleted = /^deleted:/.test(String(c.mobile || ''));
@@ -320,6 +362,8 @@ module.exports = function registerQrRoutes(app) {
       success: true,
       source,
       poster: registry[source] || null,
+      funnel: funnel.bySource.get(source) || emptyFunnel(),
+      funnelMissing: funnel.missing,
       data,
       migrationMissing: false,
     });

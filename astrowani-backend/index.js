@@ -826,6 +826,7 @@ require('./src/sentryRoutes')(app);
 // Offline QR poster attribution (/api/admin/qr/*). Needs adminRoutes' requireAdmin,
 // which is exported there, so it registers after it.
 require('./src/qrRoutes')(app);
+require('./src/qrTrackingRoutes')(app); // public: GET /q/:source (scan log + redirect), POST /api/acquisition/first-open
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);

@@ -5,17 +5,16 @@ import client from '../api/client';
 // Offline QR posters — one printed code per physical location, and what each one
 // actually brought in.
 //
-// HOW THE ATTRIBUTION WORKS: every poster gets a Play Store link carrying its own
-// `referrer=utm_source=qr_<place>`. Play hands that string back to the app on first
-// run, and the app sends it with the signup, landing in customers.acquisition_source.
+// HOW THE ATTRIBUTION WORKS: a poster's QR encodes OUR short link
+// (https://backend.astrowani.com/q/qr_<place>). That link logs the scan and redirects to
+// the Play Store with `referrer=utm_source=qr_<place>`. Play hands that string back to
+// the app: on first launch the app reports the install, and at signup it is stored on the
+// customer (customers.acquisition_source). So the page shows the whole funnel:
+//   scans -> opened the app -> signed up -> paid.
 //
-// WHAT THIS PAGE CANNOT SHOW, stated on the page itself because otherwise the numbers
-// read as worse than they are: scans and installs-that-never-signed-up never reach our
-// database. Play Console counts those. This page starts at signup — which is the half
-// Play Console cannot give you, because it has no idea who became a paying customer.
-
-// Must match applicationId in astrowani_customer-main/android/app/build.gradle.
-const PACKAGE = 'com.astrowanicustomer';
+// WHAT IT STILL CANNOT SHOW, stated on the page itself: an install that never opens the
+// app (Play Console counts those), and posters printed BEFORE the short link existed
+// (they point straight at the Play Store, so their scans are invisible to us).
 
 // The prefix is what keeps these posters from ever colliding with Google Ads or
 // organic Play traffic, which set their own utm_source. The backend enforces it too.
@@ -25,20 +24,20 @@ const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
 const pct = (num, den) => (den > 0 ? `${Math.round((num / den) * 100)}%` : '—');
 const day = (s) => (s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
+// The backend's public scan link. Deliberately NOT derived from VITE_API_URL: a QR made
+// while running this page locally would otherwise encode localhost and be printed.
+const SCAN_BASE = 'https://backend.astrowani.com';
+
 /**
- * The Play Store link to encode in a poster's QR.
+ * The link a poster's QR encodes.
  *
- * The whole referrer is encoded as ONE parameter value. Leaving the inner `&`
- * unescaped would make Play read utm_medium and utm_campaign as separate top-level
- * parameters and drop them from the referrer entirely.
+ * It points at OUR server, which logs the scan and then redirects to the Play Store with
+ * the referrer (see astrowani-backend/src/qrTrackingRoutes.js). Being much shorter than
+ * a Play URL also makes the QR sparser: fewer, bigger dots scan faster from further away.
+ * Nothing but the source is in the link — the backend builds the Play URL itself.
  */
 function storeLink(source) {
-  // utm_source ONLY, on purpose. The backend reads nothing else, and every extra
-  // parameter makes the QR denser: with medium+campaign it was 61x61 dots, now 49x49,
-  // so each dot is ~22% bigger on the printed poster and scans faster from further
-  // away. Do not add parameters back without re-measuring.
-  const referrer = `utm_source=${source}`;
-  return `https://play.google.com/store/apps/details?id=${PACKAGE}&referrer=${encodeURIComponent(referrer)}`;
+  return `${SCAN_BASE}/q/${source}`;
 }
 
 /** Normalize typed input into a valid source, matching the backend's own rule. */
@@ -83,6 +82,7 @@ export default function QrCodes() {
   const [error, setError] = useState('');
   const [migrationMissing, setMigrationMissing] = useState(false);
   const [truncated, setTruncated] = useState(false);
+  const [funnelMissing, setFunnelMissing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   const [form, setForm] = useState({ source: '', label: '', city: '', location: '', placedAt: '', note: '' });
@@ -114,6 +114,7 @@ export default function QrCodes() {
       setRows(data.data || []);
       setMigrationMissing(!!data.migrationMissing);
       setTruncated(!!data.truncated);
+      setFunnelMissing(!!data.funnelMissing);
     } catch (e) {
       setError(e.response?.data?.message || e.message || 'Failed to load QR posters.');
     } finally {
@@ -207,11 +208,14 @@ export default function QrCodes() {
   );
 
   const totals = useMemo(() => rows.reduce((acc, r) => ({
+    scans: acc.scans + (r.scans || 0),
+    uniqueScans: acc.uniqueScans + (r.uniqueScans || 0),
+    opened: acc.opened + (r.installsOpened || 0),
     signups: acc.signups + r.signups,
     paying: acc.paying + r.payingCustomers,
     revenue: acc.revenue + r.totalRecharged,
     sessions: acc.sessions + r.sessions,
-  }), { signups: 0, paying: 0, revenue: 0, sessions: 0 }), [rows]);
+  }), { scans: 0, uniqueScans: 0, opened: 0, signups: 0, paying: 0, revenue: 0, sessions: 0 }), [rows]);
 
   const best = useMemo(
     () => rows.filter((r) => r.signups > 0).sort((a, b) => b.totalRecharged - a.totalRecharged)[0],
@@ -231,11 +235,21 @@ export default function QrCodes() {
         <h3 style={{ marginTop: 0 }}>How this works</h3>
         <ol className="muted" style={{ fontSize: 13, lineHeight: 1.8, margin: 0, paddingLeft: 18 }}>
           <li><strong>Add a poster</strong> below — one per place you will stick a poster. Only the short code is required.</li>
-          <li>The page makes that poster&apos;s <strong>tracking link</strong> (a Play Store link with a UTM tag inside). Copy it, or download it as a <strong>QR code</strong>.</li>
+          <li>The page makes that poster&apos;s <strong>tracking link</strong> (our own short link, which sends people on to the Play Store). Copy it, or download it as a <strong>QR code</strong>.</li>
           <li>Send the <strong>QR image</strong> to the printer. Never retype the link by hand.</li>
-          <li>When someone scans it, installs and signs up, they show up on that poster&apos;s row here — with how much they paid.</li>
+          <li>Each poster&apos;s row then shows the whole path: <strong>scanned → opened the app → signed up → paid</strong>, with how much they paid.</li>
         </ol>
       </div>
+
+      {funnelMissing && (
+        <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--amber, #d97706)' }}>
+          <strong>Scan and install counting is not switched on.</strong>
+          <p className="muted" style={{ margin: '6px 0 0' }}>
+            Run <code>astrowani-backend/sql/qr_funnel_events.sql</code>. Until then the Scanned and Opened
+            columns read zero, but signups and everything after them are unaffected.
+          </p>
+        </div>
+      )}
 
       {migrationMissing && (
         <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--amber, #d97706)' }}>
@@ -260,7 +274,9 @@ export default function QrCodes() {
 
       <div className="stat-grid">
         {[
-          { label: 'Customers from QR posters', value: totals.signups, footer: 'Signed up after scanning' },
+          { label: 'People who scanned', value: totals.uniqueScans, footer: `${totals.scans} scans in total · counted from the short link` },
+          { label: 'Installed and opened the app', value: `${totals.opened}${totals.uniqueScans ? ` (${pct(totals.opened, totals.uniqueScans)})` : ''}`, footer: 'Share of scanners who reached the app' },
+          { label: 'Customers from QR posters', value: `${totals.signups}${totals.opened ? ` (${pct(totals.signups, totals.opened)})` : ''}`, footer: 'Verified their number — share of those who opened' },
           { label: 'Of those, have paid', value: `${totals.paying} (${pct(totals.paying, totals.signups)})`, footer: 'Completed at least one recharge' },
           { label: 'Money in from QR customers', value: inr(totals.revenue), footer: 'Total recharged, all time' },
           { label: 'Best poster', value: best ? (best.label || best.source) : '—', footer: best ? `${inr(best.totalRecharged)} from ${best.signups} customers` : 'No signups yet' },
@@ -382,6 +398,8 @@ export default function QrCodes() {
           <thead>
             <tr>
               <th>Poster</th>
+              <th title="Distinct phones that hit the poster's link (total hits in brackets)">Scanned</th>
+              <th title="Installs that opened the app at least once">Opened app</th>
               <th>Signed up</th>
               <th>Paid</th>
               <th>Money in</th>
@@ -392,15 +410,15 @@ export default function QrCodes() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
+            {loading && <tr><td colSpan={10} className="empty">Loading…</td></tr>}
             {!loading && !visible.length && (
-              <tr><td colSpan={8} className="empty">
+              <tr><td colSpan={10} className="empty">
                 No posters yet. Add one above, download its QR, and put it on the wall.
               </td></tr>
             )}
             {!loading && visible.map((r) => (
               <tr key={r.source} style={openSource === r.source ? { background: 'var(--maroon-50, rgba(0,0,0,.03))' } : undefined}>
-                <td colSpan={openSource === r.source ? 8 : 1} style={openSource === r.source ? { padding: 0 } : undefined}>
+                <td colSpan={openSource === r.source ? 10 : 1} style={openSource === r.source ? { padding: 0 } : undefined}>
                   {openSource !== r.source ? (
                     <>
                       <div className="cell-title">{r.label || r.source}</div>
@@ -500,7 +518,17 @@ export default function QrCodes() {
                 </td>
                 {openSource !== r.source && (
                   <>
-                    <td>{r.signups}</td>
+                    <td>
+                      {r.uniqueScans || 0}
+                      {(r.scans || 0) > (r.uniqueScans || 0) && <span className="muted" style={{ fontSize: 11 }}> ({r.scans})</span>}
+                    </td>
+                    <td>
+                      {r.installsOpened || 0}
+                      {r.uniqueScans > 0 && <span className="muted" style={{ fontSize: 11 }}> ({pct(r.installsOpened || 0, r.uniqueScans)})</span>}
+                    </td>
+                    <td>{r.signups}
+                      {r.installsOpened > 0 && <span className="muted" style={{ fontSize: 11 }}> ({pct(r.signups, r.installsOpened)})</span>}
+                    </td>
                     <td>
                       {r.payingCustomers}
                       <span className="muted" style={{ fontSize: 11 }}> ({pct(r.payingCustomers, r.signups)})</span>
@@ -527,13 +555,22 @@ export default function QrCodes() {
         <h3 style={{ marginTop: 0 }}>How to read these numbers</h3>
         <ul className="muted" style={{ fontSize: 13, lineHeight: 1.7, margin: 0, paddingLeft: 18 }}>
           <li>
-            <strong>Scans and installs are not here.</strong> A scan happens in the phone&apos;s camera and
-            never reaches us, and an install that never finishes signup leaves no record. For those two,
-            open Play Console → Grow → Acquisition and group by <code>utm_source</code>.
+            <strong>Scanned</strong> counts hits on the poster&apos;s short link — approximate. It is distinct
+            phones, with total hits in brackets, so someone scanning twice is one person. People behind the
+            same office or mobile network can occasionally look like one. Link-preview robots are ignored.
           </li>
           <li>
-            <strong>This page starts at signup</strong> — and everything after it. That is the half Play
-            Console cannot show you, because it does not know who ended up paying.
+            <strong>Opened app</strong> is installs from the poster that were opened at least once — including
+            people who never signed up. An install that is never opened is invisible to us; Play Console →
+            Grow → Acquisition (group by <code>utm_source</code>) counts those.
+          </li>
+          <li>
+            <strong>Posters printed before the short link existed</strong> point straight at the Play Store,
+            so their scans are not counted — only opens and signups are. Print new codes from this page.
+          </li>
+          <li>
+            <strong>Opens and signups only count from build 46 onward.</strong> Someone who installs an older
+            version through the same poster still opens the app, but nothing reports it.
           </li>
           <li>
             <strong>iPhone scans will not appear.</strong> Apple provides no equivalent way to tell which
