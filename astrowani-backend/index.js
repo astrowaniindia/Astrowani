@@ -396,7 +396,10 @@ async function resolveSocketIdentity(token) {
 // socket reconnect, see VoiceCallScreen.tsx/VideoCallScreen.tsx/ChatSessionScreen.js);
 // only a participant that never comes back within it gets the session force-ended, on
 // both sides, via the same terminateSession() used by every other end-of-call path.
-const SESSION_ABANDON_GRACE_MS = 25000;
+// 2 min (was 25s): a customer locking their phone or switching apps drops the socket for
+// ~40-60s and used to kill a paid chat for both sides. Billing is paused while they are
+// away (sessionManager.bothParticipantsPresent), so the wait costs the customer nothing.
+const SESSION_ABANDON_GRACE_MS = 2 * 60 * 1000;
 const pendingSessionTerminations = new Map(); // "sessionId:participantId" -> Timeout
 
 function cancelPendingSessionTermination(sessionId, participantId) {
@@ -416,7 +419,7 @@ function scheduleSessionAbandonCheck(sessionId, participantId, isVendor) {
   // background window (sessionManager keeps billing during it). An astrologer whose
   // socket just dropped (network blip) gets the 5-minute allowance too — product rule:
   // a consultation must not die because the astrologer's connection hiccuped. Only the
-  // CUSTOMER's disappearance keeps the short 25s money-leak guard.
+  // CUSTOMER's disappearance gets the shorter 2-minute guard.
   const graceMs = sessionManager.isVendorBackground(sessionId, participantId)
     ? sessionManager.constructor.VENDOR_BACKGROUND_GRACE_MS
     : isVendor

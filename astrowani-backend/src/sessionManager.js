@@ -34,10 +34,11 @@ class SessionManager {
   // customer. See endStaleBilledSessions().
   static MAX_BILLED_SESSION_MS = 2 * 60 * 60 * 1000;
 
-  // How long a CUSTOMER may be disconnected from a billed session before it is ended.
+  // How long a CUSTOMER may be disconnected from a billed session before it is ended
+  // (2 min, was 45s — a phone lock / app switch drops the socket ~40-60s).
   // Covers a brief network drop or a backend restart (clients rejoin on reconnect);
   // nothing is billed during it. See bothParticipantsPresent().
-  static SESSION_PRESENCE_GRACE_MS = 45 * 1000;
+  static SESSION_PRESENCE_GRACE_MS = 2 * 60 * 1000;
 
   // How long the ASTROLOGER may be disconnected from a billed session (socket gone —
   // network blip, elevator, tunnel) before it is ended. Product decision 2026-09-24:
