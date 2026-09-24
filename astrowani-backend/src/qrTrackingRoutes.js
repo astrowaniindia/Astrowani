@@ -84,8 +84,17 @@ function androidLandingHtml(source) {
   <a class="alt" href="${web}">Open in browser instead</a>
 </div>
 <script>
+  var go = document.getElementById('go').href;
+  var web = ${JSON.stringify(web)};
   // Try once on load; some browsers block this without a tap, which is why the button exists.
-  setTimeout(function () { window.location.href = document.getElementById('go').href; }, 250);
+  setTimeout(function () { window.location.href = go; }, 250);
+  // A real computer has no Play app to open, so after a moment send it to the web listing.
+  // Deliberately NOT done on a touch device: a phone whose browser blocked the auto-open
+  // (or reports itself as a desktop, e.g. Chrome's "Desktop site" mode) must keep the
+  // button in front of the person, or we are back to stranding them on the web page.
+  setTimeout(function () {
+    if (!document.hidden && !(navigator.maxTouchPoints > 0)) window.location.href = web;
+  }, 2200);
 </script>
 </body></html>`;
 }
@@ -148,12 +157,15 @@ module.exports = function registerQrTrackingRoutes(app) {
     // Respond FIRST and unconditionally; the log is best-effort afterwards.
     res.set('Cache-Control', 'no-store');
     const uaHeader = String(req.headers['user-agent'] || '');
-    if (valid && /android/i.test(uaHeader) && !BOT_UA.test(uaHeader)) {
-      // A person on an Android phone: hand them to the Play APP (see playIntentUrl).
+    // NOT gated on the user-agent saying "Android": a phone in Chrome's "Desktop site" mode
+    // sends a desktop user-agent (seen 2026-09-25 — both real scans were logged as
+    // non-Android), and gating on it sent that phone to the web listing again. Everyone
+    // except iPhones (no Play Store) and link-preview robots gets the page; the page itself
+    // decides what a non-touch computer should do.
+    if (valid && !/iPhone|iPad|iPod/i.test(uaHeader) && !BOT_UA.test(uaHeader)) {
       res.status(200).type('html').send(androidLandingHtml(source));
     } else {
-      // Everyone else — iPhones, computers, link-preview robots, a bad source — gets the
-      // plain redirect to the Play listing.
+      // iPhones, link-preview robots, a bad source: the plain redirect to the Play listing.
       res.redirect(302, target);
     }
 
@@ -162,9 +174,28 @@ module.exports = function registerQrTrackingRoutes(app) {
     if (BOT_UA.test(ua)) return;
     if (!allowLog(`scan:${req.ip}`, 30)) return;
 
+    const row = {
+      source,
+      visitor_hash: visitorHash(req),
+      is_android: /android/i.test(ua) || /android/i.test(String(req.headers['sec-ch-ua-platform'] || '')),
+      // Kept so a scan that behaves oddly can be diagnosed from the row itself (2026-09-25:
+      // a real phone's scans were logged as non-Android and nothing said why). A browser
+      // signature is not personal data.
+      user_agent: ua.slice(0, 200),
+      platform_hint: String(req.headers['sec-ch-ua-platform'] || '').slice(0, 40),
+    };
     db.from('qr_scan_events')
-      .insert({ source, visitor_hash: visitorHash(req), is_android: /android/i.test(ua) })
-      .then(({ error }) => { if (error) warnOnce('scan insert', error); })
+      .insert(row)
+      .then(({ error }) => {
+        if (!error) return;
+        // The two diagnostic columns come from sql/qr_scan_events_user_agent.sql; if it has not
+        // been applied yet, still count the scan rather than losing it.
+        if (/user_agent|platform_hint/.test(error.message || '')) {
+          const { user_agent, platform_hint, ...plain } = row;
+          return db.from('qr_scan_events').insert(plain).then((r) => { if (r.error) warnOnce('scan insert', r.error); });
+        }
+        warnOnce('scan insert', error);
+      })
       .catch((e) => warnOnce('scan insert', e));
   });
 
