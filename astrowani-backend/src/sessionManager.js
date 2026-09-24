@@ -820,7 +820,12 @@ class SessionManager {
         ended_at: new Date().toISOString()
       })
       .eq('id', sessionId)
-      .eq('is_active', true)
+      // Claim on "not ended yet", NOT on is_active: a call session is only activated when
+      // the media connects (signal_connection), and billing also flips is_active off on low
+      // balance. Keying on is_active=true meant ending a call that never connected was
+      // treated as "already ended" — no session_ended was sent and the astrologer's screen
+      // sat on "Connecting…" forever (seen 2026-09-24 after a video ring timeout).
+      .is('ended_at', null)
       .select('caller_id, vendor_id');
     const sessionRow = (session || [])[0];
     if (!sessionRow) {
