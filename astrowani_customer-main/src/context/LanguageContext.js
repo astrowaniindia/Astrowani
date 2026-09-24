@@ -597,6 +597,7 @@ const translations = {
     'chatSession.sendFailedMsg': 'Please check your internet connection and tap send again.',
     'chatSession.astrologerEnded': 'The astrologer has ended the session.',
     'chatSession.endedGeneric': 'This session has ended.',
+    'chatSession.lowBalanceEnded': 'Your wallet balance ran out, so the session has ended. Please recharge to continue.',
 
     // ReusableList shared card
     'common.viewProfile': 'Profile',
@@ -1896,6 +1897,7 @@ const translations = {
     'chatSession.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और फिर से भेजें दबाएं।',
     'chatSession.astrologerEnded': 'ज्योतिषी ने सत्र समाप्त कर दिया है।',
     'chatSession.endedGeneric': 'यह सत्र समाप्त हो गया है।',
+    'chatSession.lowBalanceEnded': 'आपका वॉलेट बैलेंस खत्म हो गया, इसलिए सत्र समाप्त हो गया। जारी रखने के लिए कृपया रिचार्ज करें।',
 
     // ReusableList shared card
     'common.viewProfile': 'प्रोफ़ाइल',

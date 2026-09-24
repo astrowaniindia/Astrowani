@@ -333,6 +333,7 @@ const translations = {
     'call.sendFailedTitle': 'Message not sent',
     'call.sendFailedMsg': 'Please check your internet connection and send it again.',
     'call.sessionEnded': 'Session Ended',
+    'call.customerBalanceEnded': "The customer's wallet balance ran out, so the session has ended.",
 
     'editProfile.requiredNotice': 'Fields marked with',
     'editProfile.requiredNoticeSuffix': 'are required for your profile to appear on the Astrowani customer app.',
@@ -824,6 +825,7 @@ const translations = {
     'call.sendFailedTitle': 'संदेश नहीं भेजा गया',
     'call.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और इसे फिर से भेजें।',
     'call.sessionEnded': 'सत्र समाप्त',
+    'call.customerBalanceEnded': 'ग्राहक का वॉलेट बैलेंस खत्म हो गया, इसलिए सत्र समाप्त हो गया।',
 
     'editProfile.requiredNotice': 'जिन फ़ील्ड पर',
     'editProfile.requiredNoticeSuffix': 'का निशान है, वे Astrowani ग्राहक ऐप में आपकी प्रोफ़ाइल दिखाने के लिए आवश्यक हैं।',

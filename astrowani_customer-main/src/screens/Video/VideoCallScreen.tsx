@@ -563,12 +563,16 @@ const VideoCallScreen = ({route, navigation}: any) => {
       )}
 
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerLabel}>{t('call.videoCall')}</Text>
-        {perMinuteCharge > 0 && (
-          <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>
-        )}
-      </View>
+      {/* Only before the call connects: once active, the in-call bar below already shows the
+          timer and rate, and this label used to overlap it. */}
+      {!isActive && (
+        <View style={styles.header}>
+          <Text style={styles.headerLabel}>{t('call.videoCall')}</Text>
+          {perMinuteCharge > 0 && (
+            <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>
+          )}
+        </View>
+      )}
 
       {/* Connecting / Ringing UI */}
       {!isActive && (
@@ -739,7 +743,8 @@ const styles = StyleSheet.create({
   inCallName: {fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 4},
   statusPillSmall: {flexDirection: 'row', alignItems: 'center', gap: 6},
   // Absolute so it floats over the full-screen remote video rather than displacing it.
-  introBannerWrap: {position: 'absolute', top: 96, left: 0, right: 0, zIndex: 5},
+  // right edge stops short of the self-view (PIP_WIDTH + its 16 margin + a gap), so the banner text is not hidden under it
+  introBannerWrap: {position: 'absolute', top: 96, left: 0, right: PIP_WIDTH + 16 + 8, zIndex: 5},
   inCallTimer: {fontSize: 14, color: '#34C759', fontWeight: '500', fontVariant: ['tabular-nums']},
   localVideoPiP: {
     position: 'absolute',

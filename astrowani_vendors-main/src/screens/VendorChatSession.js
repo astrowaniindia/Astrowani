@@ -173,7 +173,7 @@ const VendorChatSession = ({ route, navigation }) => {
 
         socketRef.current.on('session_ended', (data) => {
           console.log('Session terminated via socket:', data.reason);
-          endSessionLocal(data.reason);
+          endSessionLocal(data.reason === 'insufficient_balance' ? t('call.customerBalanceEnded') : data.reason);
         });
 
         // Load existing messages.

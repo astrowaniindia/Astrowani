@@ -386,7 +386,9 @@ const ChatSessionScreen = ({ route, navigation }) => {
             
             socketRef.current.on('session_ended', (termData) => {
               console.log('Session terminated via socket:', termData.reason);
-              endSession(termData.reason);
+              // Server codes are not customer copy: show a proper message for the one a customer
+              // can act on (low wallet), pass anything else through.
+              endSession(termData.reason === 'insufficient_balance' ? t('chatSession.lowBalanceEnded') : termData.reason);
             });
 
             // Start timer — anchored to the session's real start time so it can't drift.
