@@ -22,6 +22,9 @@
 -- here AND in the Supabase SQL editor, in that order — this file is now the
 -- source of truth for review, but the dashboard is still what actually runs.
 --
+-- UPDATE 2026-09-24: step 9 no longer drifts (hardening_18_billing_no_drift.sql); search_path
+-- pinned to public to match the live function.
+--
 -- UPDATE 2026-08-14: vendor_wallet_transactions.customer_id added (see
 -- sql/hardening_06_vendor_txn_counterparty.sql — run that migration first, it
 -- adds the column) so the vendor wallet screen can show WHO a per-minute
@@ -46,6 +49,7 @@ CREATE OR REPLACE FUNCTION public.process_session_billing(p_session_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
     v_caller_id uuid;
@@ -140,7 +144,7 @@ BEGIN
 
     -- 9. Advance chat_sessions.next_billing_at by 60 seconds relative to the greatest of next_billing_at and NOW()
     UPDATE public.chat_sessions
-    SET next_billing_at = GREATEST(next_billing_at, NOW()) + INTERVAL '60 seconds'
+    SET next_billing_at = GREATEST(next_billing_at + INTERVAL '60 seconds', NOW())
     WHERE id = p_session_id
     AND is_active = true;
 

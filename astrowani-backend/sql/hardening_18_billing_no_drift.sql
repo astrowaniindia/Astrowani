@@ -12,15 +12,16 @@
 -- GREATEST(..., NOW()) is kept so a long outage never causes a burst of catch-up
 -- charges (still at most one minute per call).
 -- Same signature as before, so CREATE OR REPLACE really replaces it (no overload).
--- NOT APPLIED — this raises what customers are charged (to the advertised rate), so it
--- needs the owner's go-ahead. Apply in the SQL editor, then update
--- process_session_billing.sql to match.
+-- APPLIED 2026-09-24 with the owner's go-ahead (it raises what customers are charged, to
+-- the advertised rate). NOTE: the live function carries SET search_path TO 'public', which
+-- the older process_session_billing.sql snapshot lacked — kept here so it isn't dropped.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.process_session_billing(p_session_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
     v_caller_id uuid;
