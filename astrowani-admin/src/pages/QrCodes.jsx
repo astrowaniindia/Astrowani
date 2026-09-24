@@ -83,7 +83,6 @@ export default function QrCodes() {
   const [migrationMissing, setMigrationMissing] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const [funnelMissing, setFunnelMissing] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
 
   const [form, setForm] = useState({ source: '', label: '', city: '', location: '', placedAt: '', note: '' });
   const [saving, setSaving] = useState(false);
@@ -191,8 +190,9 @@ export default function QrCodes() {
   const remove = async (r) => {
     if (!window.confirm(
       `Delete the poster "${r.label || r.source}"?\n\n` +
-      'Its customers KEEP their attribution — the poster just loses its name and location ' +
-      'and will still show under its raw code. Archive it instead if you only want it out of the way.',
+      'Nothing is lost. It moves to "Archived & deleted posters" at the bottom of this page with ' +
+      'its name and every number, and you can restore it any time.\n\n' +
+      'Its QR keeps working: if the printed code is still on a wall, new scans will keep counting.',
     )) return;
     try {
       await client.delete(`/api/admin/qr/sources/${encodeURIComponent(r.source)}`);
@@ -202,10 +202,22 @@ export default function QrCodes() {
     }
   };
 
-  const visible = useMemo(
-    () => rows.filter((r) => showArchived || !r.archived),
-    [rows, showArchived],
-  );
+  // Active posters fill the main table; archived and deleted ones live in their own section
+  // below, so the main list stays about what is on walls now. The summary cards above still
+  // count EVERYTHING (all-time) — a customer's recharge is real whether or not the poster
+  // that brought them in has been taken down.
+  const visible = useMemo(() => rows.filter((r) => !r.archived && !r.deleted), [rows]);
+  const archivedRows = useMemo(() => rows.filter((r) => r.archived || r.deleted), [rows]);
+
+  const restore = async (r) => {
+    if (!window.confirm(`Bring "${r.label || r.source}" back into the active list?`)) return;
+    try {
+      await client.put(`/api/admin/qr/sources/${encodeURIComponent(r.source)}`, { ...r, archived: false, deleted: false });
+      await load();
+    } catch (e) {
+      window.alert(e.response?.data?.message || e.message || 'Failed to restore.');
+    }
+  };
 
   const totals = useMemo(() => rows.reduce((acc, r) => ({
     scans: acc.scans + (r.scans || 0),
@@ -290,6 +302,12 @@ export default function QrCodes() {
           </div>
         ))}
       </div>
+
+      {archivedRows.length > 0 && (
+        <p className="muted" style={{ fontSize: 12, margin: '8px 2px 0' }}>
+          These totals are all-time and include {archivedRows.length} archived or deleted poster{archivedRows.length === 1 ? '' : 's'} — see the bottom of the page.
+        </p>
+      )}
 
       <div className="card" style={{ marginTop: 20, marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${editing}` : 'Add a poster'}</h3>
@@ -382,10 +400,6 @@ export default function QrCodes() {
         <button className="btn secondary sm" onClick={load} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
-        </label>
         <span className="muted" style={{ fontSize: 12 }}>
           {visible.length} poster{visible.length === 1 ? '' : 's'}
         </span>
@@ -552,6 +566,56 @@ export default function QrCodes() {
           </tbody>
         </table>
       </div>
+
+      {archivedRows.length > 0 && (
+        <details className="card" style={{ marginTop: 20 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+            Archived &amp; deleted posters ({archivedRows.length})
+          </summary>
+          <p className="muted" style={{ fontSize: 12, margin: '8px 0 12px' }}>
+            Kept for reference. Nothing here is removed from the reports, and any of them can be restored.
+            If a printed code is still on a wall, it keeps counting here.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Poster</th><th>Status</th><th>Scans</th><th>Opened app</th><th>Signed up</th>
+                  <th>Paid</th><th>Money in</th><th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedRows.map((r) => (
+                  <tr key={r.source}>
+                    <td>
+                      <div className="cell-title">{r.label || r.source}</div>
+                      <div className="cell-sub muted">
+                        <code>{r.source}</code>{r.city ? ` · ${r.city}` : ''}{r.location ? ` · ${r.location}` : ''}
+                      </div>
+                    </td>
+                    <td>
+                      {r.deleted
+                        ? <span className="badge red" title={r.deletedAt ? `Deleted ${day(r.deletedAt)}` : undefined}>deleted{r.deletedAt ? ` · ${day(r.deletedAt)}` : ''}</span>
+                        : <span className="badge gray">archived</span>}
+                    </td>
+                    <td>{r.scans || 0}{(r.scans || 0) > 0 && <span className="muted" style={{ fontSize: 11 }}> ({r.uniqueScans || 0} phone{(r.uniqueScans || 0) === 1 ? '' : 's'})</span>}</td>
+                    <td>{r.installsOpened || 0}</td>
+                    <td>{r.signups}</td>
+                    <td>{r.payingCustomers}</td>
+                    <td><strong>{inr(r.totalRecharged)}</strong></td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="btn secondary sm" style={{ marginRight: 6 }} onClick={() => copyLink(r.source)}>
+                        {copied === r.source ? 'Copied ✓' : 'Copy link'}
+                      </button>
+                      <button className="btn sm" onClick={() => restore(r)}>Restore</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
 
       <div className="card" style={{ marginTop: 20 }}>
         <h3 style={{ marginTop: 0 }}>How to read these numbers</h3>

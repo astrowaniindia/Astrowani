@@ -91,7 +91,16 @@ function sanitizeEntry(input = {}) {
     note: str(input.note, 500),
     placedAt: '',
     archived: !!input.archived,
+    // "Deleted" is a soft state: the poster leaves the active list but keeps its name,
+    // location and every number it earned, and can be restored. Nothing is ever erased.
+    deleted: !!input.deleted,
+    deletedAt: '',
   };
+  if (entry.deleted) {
+    entry.archived = true;
+    const at = str(input.deletedAt, 40);
+    entry.deletedAt = at && !Number.isNaN(Date.parse(at)) ? at : new Date().toISOString();
+  }
   // Stored as a plain YYYY-MM-DD string — it is a "when did we put the poster up"
   // note an admin types, not a timestamp anything computes with.
   const placed = str(input.placedAt, 10);
@@ -389,11 +398,16 @@ module.exports = function registerQrRoutes(app) {
     return res.json({ success: true, source, poster: registry[source] });
   }));
 
-  // ── Remove a poster from the registry ──────────────────────────────────────
+  // ── Delete a poster ────────────────────────────────────────────────────────
   //
-  // Registry only. The customers it brought in keep their acquisition_source, so the
-  // source simply reverts to "unregistered" in the overview and keeps reporting under
-  // its raw name — deleting a label must never delete attribution history.
+  // A SOFT delete: the poster is marked deleted (and archived) and keeps its name, location
+  // and everything it brought in, so it can be looked at later or restored. It moves to the
+  // "Archived & deleted" section of the page. Nothing is removed — not the registry entry,
+  // not the customers' attribution, not the scan/install history — because the money those
+  // customers spent is real and a poster's history should outlive the poster.
+  //
+  // The poster's link keeps working and keeps counting for as long as the printed code is
+  // still on a wall; deleting it here does not switch the QR off.
   app.delete('/api/admin/qr/sources/:source', requireAdmin, h(async (req, res) => {
     const source = normalizeSource(req.params.source);
     if (!source) return res.status(400).json({ success: false, message: 'Invalid source' });
@@ -402,8 +416,8 @@ module.exports = function registerQrRoutes(app) {
     if (!Object.prototype.hasOwnProperty.call(registry, source)) {
       return res.status(404).json({ success: false, message: 'No such poster' });
     }
-    delete registry[source];
+    registry[source] = sanitizeEntry({ ...registry[source], deleted: true, archived: true, deletedAt: new Date().toISOString() });
     await writeRegistry(registry);
-    return res.json({ success: true });
+    return res.json({ success: true, poster: registry[source] });
   }));
 };
