@@ -21,7 +21,7 @@ import client from '../api/client';
 const QR_PREFIX = 'qr_';
 
 const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
-const pct = (num, den) => (den > 0 ? `${Math.round((num / den) * 100)}%` : '—');
+const pct = (num, den) => (den > 0 ? `${Math.min(100, Math.round((num / den) * 100))}%` : '—');
 const day = (s) => (s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 // The backend's public scan link. Deliberately NOT derived from VITE_API_URL: a QR made
@@ -275,9 +275,9 @@ export default function QrCodes() {
       <div className="stat-grid">
         {[
           { label: 'QR scans', value: totals.scans, footer: `From ${totals.uniqueScans} different phone${totals.uniqueScans === 1 ? '' : 's'} · every scan counted` },
-          { label: 'Installed and opened the app', value: `${totals.opened}${totals.uniqueScans ? ` (${pct(totals.opened, totals.uniqueScans)})` : ''}`, footer: 'Share of different phones that reached the app' },
-          { label: 'Customers from QR posters', value: `${totals.signups}${totals.opened ? ` (${pct(totals.signups, totals.opened)})` : ''}`, footer: 'Verified their number — share of those who opened' },
-          { label: 'Of those, have paid', value: `${totals.paying} (${pct(totals.paying, totals.signups)})`, footer: 'Completed at least one recharge' },
+          { label: 'Installed and opened the app', value: totals.opened, footer: totals.uniqueScans ? `${pct(totals.opened, totals.uniqueScans)} of the different phones that scanned` : 'No scans yet' },
+          { label: 'Customers from QR posters', value: totals.signups, footer: totals.opened ? `Verified their number · ${pct(totals.signups, totals.opened)} of installs that opened` : 'Verified their number' },
+          { label: 'Of those, have paid', value: totals.paying, footer: totals.signups ? `${pct(totals.paying, totals.signups)} of the customers · completed at least one recharge` : 'Completed at least one recharge' },
           { label: 'Money in from QR customers', value: inr(totals.revenue), footer: 'Total recharged, all time' },
           { label: 'Best poster', value: best ? (best.label || best.source) : '—', footer: best ? `${inr(best.totalRecharged)} from ${best.signups} customers` : 'No signups yet' },
         ].map((c) => (
