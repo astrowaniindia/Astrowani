@@ -202,10 +202,10 @@ export default function QrCodes() {
     }
   };
 
-  // Active posters fill the main table; archived and deleted ones live in their own section
-  // below, so the main list stays about what is on walls now. The summary cards above still
-  // count EVERYTHING (all-time) — a customer's recharge is real whether or not the poster
-  // that brought them in has been taken down.
+  // Active posters fill the main table AND the summary cards. Archived and deleted posters
+  // are kept whole in their own section below, but do NOT count in the cards: deleting a
+  // poster is how you take it out of the numbers (a test poster, a wall that came down).
+  // Nothing is erased — the archive section shows their own totals.
   const visible = useMemo(() => rows.filter((r) => !r.archived && !r.deleted), [rows]);
   const archivedRows = useMemo(() => rows.filter((r) => r.archived || r.deleted), [rows]);
 
@@ -219,7 +219,7 @@ export default function QrCodes() {
     }
   };
 
-  const totals = useMemo(() => rows.reduce((acc, r) => ({
+  const sumRows = (list) => list.reduce((acc, r) => ({
     scans: acc.scans + (r.scans || 0),
     uniqueScans: acc.uniqueScans + (r.uniqueScans || 0),
     opened: acc.opened + (r.installsOpened || 0),
@@ -227,11 +227,13 @@ export default function QrCodes() {
     paying: acc.paying + r.payingCustomers,
     revenue: acc.revenue + r.totalRecharged,
     sessions: acc.sessions + r.sessions,
-  }), { scans: 0, uniqueScans: 0, opened: 0, signups: 0, paying: 0, revenue: 0, sessions: 0 }), [rows]);
+  }), { scans: 0, uniqueScans: 0, opened: 0, signups: 0, paying: 0, revenue: 0, sessions: 0 });
+  const totals = useMemo(() => sumRows(visible), [visible]);
+  const archivedTotals = useMemo(() => sumRows(archivedRows), [archivedRows]);
 
   const best = useMemo(
-    () => rows.filter((r) => r.signups > 0).sort((a, b) => b.totalRecharged - a.totalRecharged)[0],
-    [rows],
+    () => [...visible].filter((r) => r.signups > 0).sort((a, b) => b.totalRecharged - a.totalRecharged)[0],
+    [visible],
   );
 
   return (
@@ -305,7 +307,8 @@ export default function QrCodes() {
 
       {archivedRows.length > 0 && (
         <p className="muted" style={{ fontSize: 12, margin: '8px 2px 0' }}>
-          These totals are all-time and include {archivedRows.length} archived or deleted poster{archivedRows.length === 1 ? '' : 's'} — see the bottom of the page.
+          These totals are for active posters only. {archivedRows.length} archived or deleted poster{archivedRows.length === 1 ? ' is' : 's are'} kept
+          separately at the bottom of the page ({archivedTotals.scans} scans · {archivedTotals.signups} customer{archivedTotals.signups === 1 ? '' : 's'} · {inr(archivedTotals.revenue)}) and are not counted above.
         </p>
       )}
 
@@ -573,8 +576,10 @@ export default function QrCodes() {
             Archived &amp; deleted posters ({archivedRows.length})
           </summary>
           <p className="muted" style={{ fontSize: 12, margin: '8px 0 12px' }}>
-            Kept for reference. Nothing here is removed from the reports, and any of them can be restored.
-            If a printed code is still on a wall, it keeps counting here.
+            Kept for reference and NOT counted in the totals above. Together: {archivedTotals.scans} scans ·{' '}
+            {archivedTotals.opened} opened the app · {archivedTotals.signups} customer{archivedTotals.signups === 1 ? '' : 's'} ·{' '}
+            {inr(archivedTotals.revenue)} recharged. Any of them can be restored. If a printed code is still on a
+            wall, new scans keep counting here.
           </p>
           <div className="table-wrap">
             <table>
