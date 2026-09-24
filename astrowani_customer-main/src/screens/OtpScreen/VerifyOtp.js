@@ -180,7 +180,12 @@ const VerifyOtp = ({navigation, route}) => {
           navigation.reset({index: 0, routes: [{name: 'SignupName'}]});
         } else {
           captureEvent('login_completed');
-          navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
+          // A brief "Namaste ji" welcome-back before Home (2026-09-23) -- distinct
+          // from the new-signup gift screen: no free-call offer check here, and
+          // SignupWelcome auto-advances instead of waiting for a tap when
+          // route.params.isLogin is set. Kept in the same reset (not a push) so
+          // back from Home still lands outside this stack, same as before.
+          navigation.reset({index: 0, routes: [{name: 'SignupWelcome', params: { isLogin: true }}]});
         }
       } else {
         captureEvent(isSignup ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_rejected' });

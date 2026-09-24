@@ -56,6 +56,42 @@ const CLUSTER_OVERLAP = scale(14);
 const FALLBACK_FACE = require('../assets/images/brandStarLogo.png');
 const faceSource = (uri) => (uri ? { uri } : FALLBACK_FACE);
 
+// Social-proof badge — "N people booked in the last 2 days" with a small green
+// live-style dot that pulses out a ripple, like a water wave. Shown only where a
+// caller opts in via `showBookedBadge` (the Home popup): the signup Welcome
+// screen already shows its own copy of this above the card, next to the guide
+// avatar, so this must stay off there or it would render twice.
+function LiveDot() {
+  const rippleScale = useRef(new Animated.Value(0)).current;
+  const rippleOpacity = useRef(new Animated.Value(0.6)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.parallel([
+        Animated.timing(rippleScale, { toValue: 1, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(rippleOpacity, { toValue: 0, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [rippleScale, rippleOpacity]);
+  const scaleVal = rippleScale.interpolate({ inputRange: [0, 1], outputRange: [1, 2.8] });
+  return (
+    <View style={styles.liveDotWrap}>
+      <Animated.View style={[styles.liveDotRipple, { transform: [{ scale: scaleVal }], opacity: rippleOpacity }]} />
+      <View style={styles.liveDotCore} />
+    </View>
+  );
+}
+
+function LiveBookedBadge({ count }) {
+  return (
+    <View style={styles.liveBadgeRow}>
+      <LiveDot />
+      <Text style={styles.liveBadgeText}>{count} people booked in last 2 days</Text>
+    </View>
+  );
+}
+
 /**
  * The astrologer cluster: a static row of overlapping faces.
  *
@@ -112,6 +148,11 @@ const FreeCallOffer = ({
   // the signup Welcome screen asks on 'intro' and leaves instantly on 'done'.
   // Pass a stable callback (useCallback) — this fires on every change of it.
   onStepChange,
+  // Shown only for the Home popup presentation — a social-proof line, "N people
+  // booked in the last 2 days". The signup Welcome screen already shows its own
+  // copy of this next to the guide avatar, above this card, so it stays false there.
+  showBookedBadge = false,
+  bookedCount = 346,
 }) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
@@ -373,6 +414,7 @@ const FreeCallOffer = ({
                   The admin headerText ("Your first 12-minute call is on us") is not
                   shown: it repeated the headline. */}
               <View style={[styles.header, styles.headerCentered]}>
+                {showBookedBadge && <LiveBookedBadge count={bookedCount} />}
                 <View style={styles.limitedTag}>
                   <MaterialIcons name="card-giftcard" size={moderateScale(19)} color={COLORS.AstroMaroon} />
                   <Text style={styles.limitedTagText}>{tr('freeCall.limitedOffer')}</Text>
@@ -634,6 +676,42 @@ const styles = StyleSheet.create({
   },
   giftRow: { flexDirection: 'row', alignItems: 'center', gap: scale(6) },
   headerCentered: { alignItems: 'center', paddingTop: verticalScale(20), paddingBottom: verticalScale(18) },
+  // Social-proof badge, centered above the limited-offer tag (Home popup only).
+  liveBadgeRow: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    borderRadius: moderateScale(14),
+    paddingVertical: verticalScale(5),
+    paddingHorizontal: scale(10),
+    marginBottom: verticalScale(10),
+  },
+  liveBadgeText: {
+    color: '#fff',
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+    marginLeft: scale(6),
+  },
+  liveDotWrap: {
+    width: scale(10),
+    height: scale(10),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDotRipple: {
+    position: 'absolute',
+    width: scale(10),
+    height: scale(10),
+    borderRadius: scale(5),
+    backgroundColor: '#3ECF6A',
+  },
+  liveDotCore: {
+    width: scale(7),
+    height: scale(7),
+    borderRadius: scale(3.5),
+    backgroundColor: '#3ECF6A',
+  },
   limitedTag: {
     flexDirection: 'row',
     alignItems: 'center',

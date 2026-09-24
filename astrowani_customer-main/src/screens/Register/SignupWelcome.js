@@ -119,11 +119,50 @@ function Halo({ size }) {
   );
 }
 
+// PREVIEW ONLY (2026-09-23): a social-proof badge — "N people booked in the last
+// 2 days" — with a small green live-style dot that pulses out a ripple, like a
+// water wave. Count is a placeholder for now; wiring it to a real number is a
+// follow-up once the look is approved.
+function LiveDot() {
+  const rippleScale = useRef(new Animated.Value(0)).current;
+  const rippleOpacity = useRef(new Animated.Value(0.6)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.parallel([
+        Animated.timing(rippleScale, { toValue: 1, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(rippleOpacity, { toValue: 0, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [rippleScale, rippleOpacity]);
+  const scale = rippleScale.interpolate({ inputRange: [0, 1], outputRange: [1, 2.8] });
+  return (
+    <View style={styles.liveDotWrap}>
+      <Animated.View style={[styles.liveDotRipple, { transform: [{ scale }], opacity: rippleOpacity }]} />
+      <View style={styles.liveDotCore} />
+    </View>
+  );
+}
+
+function LiveBookedBadge({ count }) {
+  return (
+    <View style={styles.liveBadgeRow}>
+      <LiveDot />
+      <Text style={styles.liveBadgeText}>{count} people booked in last 2 days</Text>
+    </View>
+  );
+}
+
 export default function SignupWelcome({ navigation, route }) {
   const { t } = React.useContext(LanguageContext);
   const insets = useSafeAreaInsets();
   const name = (route?.params?.name || '').trim();
   const firstName = name.split(/\s+/)[0] || '';
+  // Returning user, routed here from VerifyOtp's login branch (2026-09-23) for a
+  // brief "Namaste ji" before Home -- never the free-call gift flow, which is
+  // signup-only, so the eligibility fetch below is skipped entirely.
+  const isLogin = !!route?.params?.isLogin;
 
   const enter = useRef(new Animated.Value(0)).current;
   const bubbleIn = useRef(new Animated.Value(0)).current;
@@ -137,6 +176,25 @@ export default function SignupWelcome({ navigation, route }) {
   const [gift, setGift] = useState(null);
 
   useEffect(() => {
+    if (isLogin) {
+      captureEvent('login_welcome_viewed');
+      setGift(false);
+      // A greeting, not a decision point -- nothing here to tap through, so it
+      // moves on by itself rather than waiting for "Namaste" like signup does.
+      const advance = setTimeout(() => goHome('login_auto'), 1800);
+      Animated.sequence([
+        Animated.timing(enter, { toValue: 1, duration: 550, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.spring(bubbleIn, { toValue: 1, friction: 6, tension: 60, useNativeDriver: true }),
+      ]).start();
+      const float = Animated.loop(
+        Animated.sequence([
+          Animated.timing(bounce, { toValue: -8, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(bounce, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+      );
+      float.start();
+      return () => { clearTimeout(advance); float.stop(); };
+    }
     captureEvent('signup_welcome_viewed');
     // Ask for the free call offer now, while the customer reads this screen, so
     // Home can show its popup the moment it opens.
@@ -181,6 +239,9 @@ export default function SignupWelcome({ navigation, route }) {
     float.start();
     beat.start();
     return () => { float.stop(); beat.stop(); clearTimeout(giveUp); };
+    // Mount-only: isLogin is fixed for the lifetime of this screen and goHome is
+    // re-created every render, so listing it would refire this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enter, bubbleIn, bounce, pulse]);
 
   const goHome = (via) => {
@@ -279,6 +340,8 @@ export default function SignupWelcome({ navigation, route }) {
             </View>
           </View>
 
+          <LiveBookedBadge count={359} />
+
           <FreeCallOffer
             inline
             visible
@@ -328,9 +391,11 @@ export default function SignupWelcome({ navigation, route }) {
         {/* Speech bubble */}
         <Animated.View style={[styles.bubble, { opacity: bubbleIn, transform: [{ scale: bubbleScale }] }]}>
           <Text style={styles.bubbleTitle}>
-            {firstName ? t('welcome.greetingTitle', { name: firstName }) : t('welcome.greetingTitleNoName')}
+            {isLogin
+              ? t('welcome.backGreetingTitle')
+              : (firstName ? t('welcome.greetingTitle', { name: firstName }) : t('welcome.greetingTitleNoName'))}
           </Text>
-          <Text style={styles.bubbleText}>{t('welcome.greeting')}</Text>
+          <Text style={styles.bubbleText}>{isLogin ? t('welcome.backGreeting') : t('welcome.greeting')}</Text>
           <View style={styles.bubbleTailWrap} pointerEvents="none">
             <View style={styles.bubbleTailBorder} />
             <View style={styles.bubbleTail} />
@@ -367,25 +432,67 @@ export default function SignupWelcome({ navigation, route }) {
         </Animated.View>
       </View>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + verticalScale(18) }]}>
-        <Text style={styles.hint}>{t('welcome.hint')}</Text>
-        <Animated.View style={{ transform: [{ scale: pulse }] }}>
-          <TouchableOpacity
-            style={styles.hiBtn}
-            activeOpacity={0.85}
-            disabled={gift === null}
-            onPress={() => goHome('button')}>
-            {gift === null
-              ? <ActivityIndicator color={COLORS.AstroMaroon} />
-              : <Text style={styles.hiBtnText}>{t('welcome.hi')}</Text>}
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
+      {/* Login: this is a greeting, not a decision -- it auto-advances (see the
+          mount effect), so there is nothing here to tap through. */}
+      {!isLogin && (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + verticalScale(18) }]}>
+          <Text style={styles.hint}>{t('welcome.hint')}</Text>
+          <Animated.View style={{ transform: [{ scale: pulse }] }}>
+            <TouchableOpacity
+              style={styles.hiBtn}
+              activeOpacity={0.85}
+              disabled={gift === null}
+              onPress={() => goHome('button')}>
+              {gift === null
+                ? <ActivityIndicator color={COLORS.AstroMaroon} />
+                : <Text style={styles.hiBtnText}>{t('welcome.hi')}</Text>}
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Social-proof badge above the offer card (preview, 2026-09-23).
+  liveBadgeRow: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    borderRadius: moderateScale(14),
+    paddingVertical: verticalScale(5),
+    paddingHorizontal: scale(10),
+    marginBottom: verticalScale(10),
+    marginRight: scale(10),
+  },
+  liveBadgeText: {
+    color: CREAM,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+    marginLeft: scale(6),
+  },
+  liveDotWrap: {
+    width: scale(10),
+    height: scale(10),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDotRipple: {
+    position: 'absolute',
+    width: scale(10),
+    height: scale(10),
+    borderRadius: scale(5),
+    backgroundColor: '#3ECF6A',
+  },
+  liveDotCore: {
+    width: scale(7),
+    height: scale(7),
+    borderRadius: scale(3.5),
+    backgroundColor: '#3ECF6A',
+  },
+
   container: { flex: 1, backgroundColor: COLORS.AstroMaroon, overflow: 'hidden' },
 
   brandRow: {
@@ -531,7 +638,7 @@ const styles = StyleSheet.create({
   },
   giftHero: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     alignSelf: 'stretch',
     marginBottom: verticalScale(10),
   },
@@ -539,7 +646,7 @@ const styles = StyleSheet.create({
   giftBubble: {
     flex: 1,
     marginLeft: scale(12),
-    marginBottom: verticalScale(24),
+    marginTop: verticalScale(2),
     backgroundColor: CREAM,
     borderRadius: moderateScale(18),
     borderWidth: 1.5,
