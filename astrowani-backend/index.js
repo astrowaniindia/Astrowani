@@ -489,10 +489,19 @@ io.on('connection', (socket) => {
       return;
     }
     const { data: sessionRow } = await supabaseService
-      .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+      .from('chat_sessions').select('id, caller_id, vendor_id, ended_at').eq('id', sessionId).maybeSingle();
     if (!sessionRow
       || (String(sessionRow.caller_id) !== String(realId) && String(sessionRow.vendor_id) !== String(realId))) {
       console.warn(`[socket] join_session rejected — ${realId} is not a participant of session ${sessionId}`);
+      return;
+    }
+    // The other side may have ended this session while THIS device was offline (network cut,
+    // phone locked): the session_ended broadcast reached nobody, and on reconnect the client
+    // just re-joins the room — so its screen sat on a dead call with the timer still running
+    // (seen 2026-09-24: astrologer stuck on a video call for a minute after the customer
+    // ended it). Tell a late joiner the session is already over.
+    if (sessionRow.ended_at) {
+      socket.emit('session_ended', { sessionId, reason: 'Session already ended' });
       return;
     }
     socket.join(sessionId);
