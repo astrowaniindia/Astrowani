@@ -4,9 +4,9 @@
 //
 // The guide mascot keeps the customer company while they wait (utils/mascotTips.js,
 // tip `waiting_astrologer`). Customers were cancelling requests part-way through the
-// 60-second wait, so its message changes as time passes, and after
-// SEE_OTHERS_AFTER_S it offers other online astrologers instead of leaving them to
-// give up. Switched off from the admin, the popup falls back to the plain version.
+// wait, so its message changes as time passes, and after SEE_OTHERS_AFTER_S it offers
+// other online astrologers instead of leaving them to give up. Switched off from the
+// admin, the popup falls back to the plain version.
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -20,7 +20,12 @@ import MascotTip from './MascotTip';
 import { canShowTip, tipText, trackTipShown, trackTipAction, TIP_IDS } from '../utils/mascotTips';
 
 const SECOND_MESSAGE_AFTER_S = 12;
-const SEE_OTHERS_AFTER_S = 25;
+// A request now rings for 5 minutes (utils/requestTimeouts.js), so "the astrologer seems
+// busy, try someone else" appears at the START OF THE 4TH MINUTE — 180s — not before.
+// It was 25s, tuned for the old 60-second ring, which offered other astrologers to
+// someone who had barely started waiting. Keep it inside the ring: it must stay well
+// below REQUEST_RING_TIMEOUT_MS or it would never be seen.
+const SEE_OTHERS_AFTER_S = 180;
 
 // `context` names the screen that raised the request, since this popup is shared by five
 // of them (Home, Chat, Search, AstrologerInfo, ExpertsList).
