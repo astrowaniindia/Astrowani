@@ -9,6 +9,7 @@ import {
   PermissionsAndroid,
   FlatList,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import {
   RTCPeerConnection,
@@ -27,6 +28,8 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {LanguageContext} from '../../context/LanguageContext';
 import LanguageToggle from '../../components/LanguageToggle';
 import ReportCustomerSheet from '../../components/ReportCustomerSheet';
+import { showStatusPopup } from '../../components/StatusPopup';
+import {showOngoingSession, hideOngoingSession} from '../../utils/ongoingSession';
 
 // Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
 // is now the primary relay; OpenRelay's free public servers are kept only as a
@@ -136,9 +139,32 @@ const GoLiveScreen = ({route, navigation}: any) => {
       const headers = await authHeaders();
       await axios.post(`${SOCKET_URL}/api/live/${sessionId}/end`, {}, {headers});
     } catch (_) {}
+    hideOngoingSession(sessionId);
     cleanup();
     navigation.goBack();
   }, [cleanup, navigation, authHeaders]);
+
+  // Back (arrow, hardware button) used to end the broadcast the instant the screen
+  // unmounted. Ask first — the red End button stays immediate. Kept in a ref so the
+  // one-time listener always calls the current endLive.
+  const endLiveRef = useRef(endLive);
+  endLiveRef.current = endLive;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (endingRef.current) return false;
+      showStatusPopup({
+        variant: 'missed',
+        title: t('goLive.endTitle'),
+        message: t('goLive.endMsg'),
+        confirmText: t('goLive.end'),
+        cancelText: t('common.cancel'),
+        onConfirm: () => endLiveRef.current(),
+      });
+      return true;
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +231,17 @@ const GoLiveScreen = ({route, navigation}: any) => {
       sessionIdRef.current = sessionId;
       setIsLive(true);
 
+      // "You are live" in the notification bar + (on a current build) a camera+mic
+      // foreground service, so the broadcast keeps capturing when the astrologer switches
+      // apps and the notification takes them back. Cleared by endLive, or by the server's
+      // session_ended push if the stream is ended while the app is away.
+      showOngoingSession({
+        kind: 'live',
+        sessionId,
+        title: t('ongoing.liveTitle'),
+        body: t('ongoing.liveBody'),
+      });
+
       // Socket — broadcaster joins its personal room (for targeted signalling) + the live room.
       const socketToken = await AsyncStorage.getItem('token');
       const socket = io(SOCKET_URL, { auth: { token: socketToken } });
@@ -254,15 +291,15 @@ const GoLiveScreen = ({route, navigation}: any) => {
     });
     return () => {
       cancelled = true;
-      if (!endingRef.current) {
-        socketRef.current?.emit('end_live', {sessionId: sessionIdRef.current, astrologerId: astroIdRef.current});
-        authHeaders()
-          .then((headers) => axios.post(`${SOCKET_URL}/api/live/${sessionIdRef.current}/end`, {}, {headers}))
-          .catch(() => {});
-      }
+      // Deliberately does NOT end the broadcast. Ending on purpose goes through endLive()
+      // (End button, or back after the confirm), which sets endingRef. Reaching here without
+      // it means the screen was torn down under the astrologer — Android destroying the
+      // activity, a forced sign-out. Ending the stream then cut it whenever they merely
+      // switched apps. Leave it: the server ends it if the host stays gone for 5 minutes
+      // (sweepLiveSessions), and reopening the app offers to resume it.
       cleanup();
     };
-  }, [addViewer, removeViewer, cleanup, navigation, authHeaders]);
+  }, [addViewer, removeViewer, cleanup, navigation, authHeaders, t]);
 
   const toggleMute = () => {
     const next = !muted;
@@ -293,7 +330,17 @@ const GoLiveScreen = ({route, navigation}: any) => {
           <MaterialIcons name="visibility" size={16} color="#fff" />
           <Text style={styles.viewerText}>{viewerCount}</Text>
         </View>
-        <TouchableOpacity style={styles.endBtn} onPress={endLive}>
+        <TouchableOpacity style={styles.endBtn} onPress={() => {
+          if (endingRef.current) return;
+          showStatusPopup({
+            variant: 'missed',
+            title: t('goLive.endTitle'),
+            message: t('goLive.endMsg'),
+            confirmText: t('goLive.end'),
+            cancelText: t('common.cancel'),
+            onConfirm: () => endLiveRef.current(),
+          });
+        }}>
           <Text style={styles.endBtnText}>{t('goLive.end')}</Text>
         </TouchableOpacity>
       </View>

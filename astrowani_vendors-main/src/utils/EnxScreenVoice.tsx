@@ -30,8 +30,10 @@ import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
 import {startCallForegroundService, stopCallForegroundService} from './callForegroundService';
 import {endCallKitCall} from './callKeep';
+import { showStatusPopup } from '../components/StatusPopup';
 import {LanguageContext} from '../context/LanguageContext';
 import {createIceRecovery} from './iceRecovery';
+import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 
 interface Props {
   route: any;
@@ -89,6 +91,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const readyRetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const socketRef = useRef<any>(null);
+  // 5-minute background allowance — see sessionAppState.js.
+  useSessionAppState(sessionId, socketRef, isEndingRef);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ring1Anim = useRef(new Animated.Value(0)).current;
@@ -207,6 +211,19 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     isEndingRef.current = true;
     doEndCall();
   }, [doEndCall]);
+
+  // The red End button and Android back both ask here, through the themed popup rather
+  // than the default Alert — a reflex press must not drop a paying customer.
+  const confirmEnd = useCallback(() => {
+    showStatusPopup({
+      variant: 'missed',
+      title: t('call.endCallTitle'),
+      message: t('call.endCallMsg'),
+      confirmText: t('call.end'),
+      cancelText: t('common.cancel'),
+      onConfirm: () => onPressDisconnect(),
+    });
+  }, [onPressDisconnect, t]);
 
   // ─── Controls ───────────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {
@@ -327,6 +344,9 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       // would still get treated as an abandoned session and end a perfectly live call.
       socket.on('connect', () => {
         if (sessionId) socket.emit('join_session', sessionId);
+        // Also re-state foreground/background: a reconnect while the app is in another
+        // app must keep the 5-minute background allowance, not lose it.
+        reportSessionAppState(socket, sessionId);
       });
 
       // Emit webrtc_ready periodically until offer arrives
@@ -392,10 +412,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     setupSocket();
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
-      Alert.alert(t('call.endCallTitle'), t('call.endCallMsg'), [
-        {text: t('common.cancel'), style: 'cancel'},
-        {text: t('call.end'), style: 'destructive', onPress: onPressDisconnect},
-      ], {cancelable: false});
+      confirmEnd();
       return true;
     });
 
@@ -501,7 +518,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
           <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.endBtn} onPress={confirmEnd} activeOpacity={0.8}>
           <MaterialIcons name="call-end" size={34} color="#fff" />
         </TouchableOpacity>
 

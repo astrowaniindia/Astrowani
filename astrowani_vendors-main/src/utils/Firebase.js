@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
 import Instance from '../api/ApiCall';
 import { getDeviceId } from './deviceId';
+import { hideOngoingSession } from './ongoingSession';
 import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displayGenericNotification } from './incomingRequestNotifications';
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
@@ -16,6 +17,8 @@ global.RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
 const INCOMING_REQUEST_TYPES = ['incoming_call', 'incoming_video_call', 'chat_request'];
 const CANCEL_REQUEST_TYPE = 'cancel_incoming_request';
+// Sent by sessionManager.terminateSession to the astrologer's device when a session ends.
+const SESSION_ENDED_TYPE = 'session_ended';
 
 // Registration.js saves fcm_token once, at signup — but it's never refreshed after that,
 // so most vendor devices end up with a stale/missing token by the time push actually
@@ -99,6 +102,9 @@ messaging().onMessage(async remoteMessage => {
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     // Customer gave up (timeout/cancel) before we acted — pull down the now-stale notification.
     await cancelIncomingRequestForKey(data);
+  } else if (data.type === SESSION_ENDED_TYPE) {
+    // The server ended a chat/call/live while this app was away — clear its ongoing notification.
+    await hideOngoingSession(data.sessionId);
   } else if (ADMIN_NOTIFICATION_TYPES.includes(data.type)) {
     // Sent as data-only (see backend notificationRoutes.js) specifically so it reaches this
     // handler instead of being silently auto-displayed by the OS without our large icon.
@@ -113,6 +119,8 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
     await displayIncomingRequestNotification(data);
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     await cancelIncomingRequestForKey(data);
+  } else if (data.type === SESSION_ENDED_TYPE) {
+    await hideOngoingSession(data.sessionId);
   } else if (ADMIN_NOTIFICATION_TYPES.includes(data.type)) {
     await displayGenericNotification(data);
   }

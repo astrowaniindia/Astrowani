@@ -13,6 +13,7 @@ import { showInsufficientBalanceAlert } from '../utils/insufficientBalanceAlert'
 import { ensureProfileComplete } from '../utils/profileGate';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
+import { REQUEST_RING_TIMEOUT_MS } from '../utils/requestTimeouts';
 
 const useChatRequest = (navigation) => {
   const { t } = useContext(LanguageContext);
@@ -244,7 +245,7 @@ const useChatRequest = (navigation) => {
         setPendingRequestId(null);
         if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
         showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('chat.notPickedUp') });
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       console.log('sendChatRequest error:', err?.message || JSON.stringify(err));
       Alert.alert(t('common.error'), t('chat.couldNotSendRequest', { msg: err?.message || 'Please try again.' }));

@@ -8,6 +8,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigationRef } from '../utils/navigationRef';
+import { resumeActiveSession } from '../utils/activeSessionResume';
 import Registration from '../screens/Registration';
 import Login from '../screens/Login/Login';
 import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
@@ -107,10 +108,15 @@ function NavigationScreen() {
     }
   };
 
+  // Coming back to the app (from another app, or from the "chat in progress" notification)
+  // → if a chat/live is still running, go straight into it. Delayed slightly so a pending
+  // Accept navigation (above) gets there first; the check skips when the astrologer is
+  // already on the chat screen. See activeSessionResume.js.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         consumePendingCallNavigationWithRetry();
+        setTimeout(() => resumeActiveSession(), 800);
       }
     });
     return () => subscription.remove();
@@ -143,7 +149,14 @@ function NavigationScreen() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef} onReady={() => consumePendingCallNavigationWithRetry()}>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        consumePendingCallNavigationWithRetry();
+        // Cold start (app was killed, or opened from the ongoing notification): if a chat or
+        // live is still running, land in it instead of on Home.
+        setTimeout(() => resumeActiveSession(), 1200);
+      }}>
       {/* Must be inside NavigationContainer — PostHog's screen-autocapture hook reads
           navigation state via @react-navigation/native's own hooks, which only work
           for descendants of NavigationContainer. Independent of the onReady above. */}
@@ -332,7 +345,9 @@ function NavigationScreen() {
         <Stack.Screen
           name="VendorChatSession"
           component={VendorChatSession}
-          options={{ headerShown: false }}
+          // gestureEnabled:false — an iOS swipe-back would pop the chat without the
+          // "end this chat?" confirmation; the screen's own back arrow asks first.
+          options={{ headerShown: false, gestureEnabled: false }}
         />
 
         <Stack.Screen

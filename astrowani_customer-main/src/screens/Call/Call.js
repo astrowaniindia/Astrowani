@@ -528,6 +528,7 @@ import { requestNotifyMe } from '../../utils/notifyMe';
 import { captureEvent } from '../../utils/Analytics';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import {useModalPresence} from '../../utils/modalPresentation';
+import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -768,10 +769,10 @@ const CallsList = ({navigation}) => {
         .subscribe();
       callChannelRef.current = channel;
 
-      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
         cleanupAndAlert(t('alerts.notPickedUpAudio'), 'missed', 'Not Answered');
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsWaiting(false);
       if (err?.response?.status === 409) {

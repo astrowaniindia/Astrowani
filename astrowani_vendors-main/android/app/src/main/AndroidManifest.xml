@@ -48,6 +48,12 @@
          the foreground, so the astrologer's voice stopped reaching the customer when
          they switched apps. See CallForegroundService.kt. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <!-- Live broadcast in the background: Android 14+ stops camera capture for any app that
+         is not in the foreground unless a foreground service of type "camera" is running. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
+    <!-- Chat in the background: keeps the app's socket alive so a chat is not cut while the
+         astrologer is in another app. See CallForegroundService.kt (mode "chat"). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <!-- A foreground service must post a notification, and from Android 13 that
          needs this permission. The vendor app never declared it. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -101,6 +107,6 @@
           android:name=".CallForegroundService"
           android:enabled="true"
           android:exported="false"
-          android:foregroundServiceType="microphone" />
+          android:foregroundServiceType="microphone|camera|dataSync" />
     </application>
 </manifest>

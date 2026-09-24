@@ -38,6 +38,7 @@ import { ensureProfileComplete } from '../../utils/profileGate';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { LanguageContext } from '../../context/LanguageContext';
+import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 
 // Shared detailed astrologer card used by the category screens. Shows the full
 // profile (avatar, rating, name, specialty, languages, experience, price) plus
@@ -262,7 +263,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           setIsCallWaiting(false);
           showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: type === 'video' ? t('alerts.notPickedUpVideo') : t('alerts.notPickedUpAudio') });
         }
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsCallWaiting(false);
       if (err?.response?.status === 409) {

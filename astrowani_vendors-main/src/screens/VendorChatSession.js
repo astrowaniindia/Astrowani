@@ -9,10 +9,14 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  Dimensions,
   StatusBar,
   ImageBackground,
   ScrollView,
   AppState,
+  Alert,
+  BackHandler,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +31,7 @@ import { captureEvent } from '../utils/Analytics';
 import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
+import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -36,7 +41,9 @@ const SCRIPTED_REPLIES = [
 ];
 
 const VendorChatSession = ({ route, navigation }) => {
-  const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId } = route.params;
+  // startedAt is only sent when this screen is REOPENED into a chat already in progress
+  // (activeSessionResume.js), so the timer shows the chat's real age instead of 00:00.
+  const { requestId, callerName, callerId, perMinuteCharge, sessionId: initialSessionId, startedAt } = route.params;
   // Report/block, reachable DURING the conversation — the moment abuse happens is
   // the moment the astrologer needs this, not after the session has ended. Both
   // stores expect the reporting mechanism to sit with the content it is about.
@@ -62,10 +69,44 @@ const VendorChatSession = ({ route, navigation }) => {
   const pollMsgRef = useRef(null);
   const pollEndRef = useRef(null);
   const socketRef = useRef(null);
+  const isEndingRef = useRef(false);
+  const startMsRef = useRef(null);
+  const typingTimerRef = useRef(null);
 
   const pad = (n) => n.toString().padStart(2, '0');
   const minutes = Math.floor(seconds / 60);
   const secs = seconds % 60;
+
+  // ─── Keyboard height (Android) ───────────────────────────────────────────
+  // targetSdk 36 is edge-to-edge, so Android 15+ ignores adjustResize and the keyboard
+  // covered the input. KeyboardAvoidingView is not a fix here: its Android padding also
+  // stuck after the keyboard closed, leaving a dead strip under the input. So track the
+  // height ourselves and reset it on hide. (iOS still uses KeyboardAvoidingView.)
+  // Verified on an Android 17 (API 37) emulator, Gboard docked.
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    // Distance from the keyboard's top edge to the bottom of the window. The event's
+    // own `height` is 24dp short here: it leaves out the nav-bar inset under
+    // edge-to-edge, which clipped the input row by that much. If the window still
+    // resizes (older Android) the window already ends at the keyboard, this is ~0 and
+    // nothing is added twice.
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      const c = e.endCoordinates || {};
+      setKbHeight(c.screenY > 0
+        ? Math.max(0, Dimensions.get('window').height - c.screenY)
+        : (c.height || 0));
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // The list shrinks when the keyboard opens but keeps its scroll offset, which left
+  // the newest message hidden behind the input. Keep the end in view.
+  useEffect(() => {
+    const id = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
+    return () => clearTimeout(id);
+  }, [kbHeight]);
 
   // ─── App in background / foreground ──────────────────────────────────────
   // Pressing Home or switching apps mid-chat tells the server, which then keeps the
@@ -167,6 +208,10 @@ const VendorChatSession = ({ route, navigation }) => {
         });
         socketRef.current.on('chat_typing', ({ isTyping }) => {
           setCustomerTyping(isTyping);
+          // If the customer drops mid-typing no "stopped" event ever arrives and the
+          // indicator would stay on forever; expire it.
+          if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+          if (isTyping) typingTimerRef.current = setTimeout(() => setCustomerTyping(false), 6000);
         });
 
           // Check if Customer ended the chat
@@ -183,34 +228,70 @@ const VendorChatSession = ({ route, navigation }) => {
           }, 5000);
       }
 
-      // Start timer
-      setSessionStartMs(Date.now());
+      // Start timer — from the chat's real start when resuming, else now.
+      const parsedStart = startedAt ? new Date(startedAt).getTime() : NaN;
+      const startMs = Number.isFinite(parsedStart) ? parsedStart : Date.now();
+      startMsRef.current = startMs;
+      setSessionStartMs(startMs);
       setTimerActive(true);
+
+      // Ongoing "chat in progress" notification + (on a current build) a foreground
+      // service so the chat survives the astrologer switching apps. Cleared in
+      // endSessionLocal, or by the server's session_ended push if the app was away.
+      if (finalSessionId) {
+        showOngoingSession({
+          kind: 'chat',
+          sessionId: finalSessionId,
+          title: t('ongoing.chatTitle'),
+          body: t('ongoing.chatBody', { name: callerName || t('common.customer') }),
+        });
+      }
       captureEvent('chat_started', { session_id: sessionIdRef.current });
     };
 
     init();
 
     return () => {
+      // Refs are assigned by init() after this effect runs, so the cleanup must read the
+      // latest .current — that is the point, not a stale-closure bug.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (pollMsgRef.current) clearInterval(pollMsgRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
-      // Same fix as the customer-side ChatSessionScreen: leaving via hardware back /
-      // swipe-back / navigating away only used to disconnect the socket without telling
-      // the backend, so a session the vendor abandoned this way stayed active/billable.
-      if (sessionIdRef.current && socketRef.current) {
-        socketRef.current.emit('end_session', { sessionId: sessionIdRef.current });
-        setTimeout(() => socketRef.current && socketRef.current.disconnect(), 300);
-      } else if (socketRef.current) {
-        socketRef.current.disconnect();
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      // Leaving on purpose (End button, or back after the confirm) goes through
+      // endSession(), which has already told the backend and set isEndingRef. So the only
+      // way to reach this cleanup WITHOUT that flag is the screen being torn down under
+      // the astrologer: Android destroying the activity, a forced sign-out, a navigation
+      // reset. That must NOT end their chat — this used to emit end_session here, which is
+      // why a chat could vanish when the astrologer merely switched apps and Android
+      // reclaimed the screen. Instead tell the server the app is away (5-minute window,
+      // the same as pressing Home) and let activeSessionResume.js bring them back.
+      if (socketRef.current) {
+        if (sessionIdRef.current && !isEndingRef.current) {
+          socketRef.current.emit('session_app_state', { sessionId: sessionIdRef.current, state: 'background' });
+        }
+        const sock = socketRef.current;
+        setTimeout(() => sock.disconnect(), 300);
       }
     };
+    // Run-once mount effect by design: sockets, timers and the back handler must not be
+    // torn down and rebuilt when a re-render changes callerName or the callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const endSessionLocal = (reason) => {
+    // The session can end from several places at once (End button, socket
+    // session_ended, the 5s poll seeing ended_at). Without this guard each one called
+    // goBack(), so a chat that ended two ways popped TWO screens.
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     captureEvent('chat_ended', {
       session_id: sessionIdRef.current,
-      duration_seconds: sessionStartMs ? Math.round((Date.now() - sessionStartMs) / 1000) : 0,
+      // A ref, not the sessionStartMs state: this is called from socket/poll handlers
+      // created at mount, whose closure still holds the pre-start null.
+      duration_seconds: startMsRef.current ? Math.round((Date.now() - startMsRef.current) / 1000) : 0,
     });
+    hideOngoingSession(sessionIdRef.current);
     setTimerActive(false);
     if (pollMsgRef.current) clearInterval(pollMsgRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
@@ -327,8 +408,38 @@ const VendorChatSession = ({ route, navigation }) => {
     if (socketRef.current && sessionIdRef.current) {
       socketRef.current.emit('end_session', { sessionId: sessionIdRef.current });
     }
+    // Reliable path if the socket is mid-reconnect (the emit above is then lost); idempotent.
+    if (sessionIdRef.current) {
+      Instance.post('/api/call/end', { sessionId: sessionIdRef.current })
+        .catch((e) => console.log('[chat] end via HTTP failed:', e?.message));
+    }
     endSessionLocal();
   };
+
+  // Back (arrow, hardware button, gesture) and the red End button both confirm through the
+  // themed StatusPopup — the default Android Alert looked nothing like the app. Back used to
+  // end the chat on the spot, so a reflex back-press dropped a paying customer.
+  const confirmEnd = () => {
+    showStatusPopup({
+      variant: 'missed',
+      title: t('chat.endTitle'),
+      message: t('chat.endMsg'),
+      confirmText: t('call.end'),
+      cancelText: t('common.cancel'),
+      onConfirm: endSession,
+    });
+  };
+  const confirmEndRef = useRef(confirmEnd);
+  confirmEndRef.current = confirmEnd;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // A chat that has already ended has nothing left to protect; let back through.
+      if (isEndingRef.current) return false;
+      confirmEndRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 
   const handleTyping = (text) => {
     setNewMessage(text);
@@ -364,10 +475,9 @@ const VendorChatSession = ({ route, navigation }) => {
     // insets the single source of truth. Same defect Register.jsx had.
     <View style={[styles.safeArea, {paddingTop: insets.top}]}>
       <StatusBar backgroundColor={COLORS.AstroMaroon} barStyle="light-content" />
-
       {/* ── Header ─────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={endSession}>
+        <TouchableOpacity style={styles.backBtn} onPress={confirmEnd}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         
@@ -394,7 +504,7 @@ const VendorChatSession = ({ route, navigation }) => {
 
         <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
 
-        <TouchableOpacity style={styles.endBtn} onPress={endSession}>
+        <TouchableOpacity style={styles.endBtn} onPress={confirmEnd}>
           <Ionicons name="call" size={16} color="#fff" />
           <Text style={styles.endText}>{t('call.end')}</Text>
         </TouchableOpacity>
@@ -402,7 +512,7 @@ const VendorChatSession = ({ route, navigation }) => {
 
       {/* ── Chat + Input ────────────────────────── */}
       <KeyboardAvoidingView
-        style={styles.flex}
+        style={[styles.flex, Platform.OS === 'android' && {paddingBottom: kbHeight}]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
         <ImageBackground 
@@ -443,7 +553,7 @@ const VendorChatSession = ({ route, navigation }) => {
           ))}
         </ScrollView>
 
-        <View style={[styles.inputRow, {paddingBottom: insets.bottom + 16}]}>
+        <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
           <TextInput
             style={styles.input}
             placeholder={t('call.messagePlaceholder')}

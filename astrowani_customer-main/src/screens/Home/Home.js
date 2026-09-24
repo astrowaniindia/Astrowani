@@ -89,6 +89,7 @@ import { astroServiceLabel } from '../../utils/astroServiceLabel';
 import RequestingPopup from '../../components/RequestingPopup';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
+import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -766,10 +767,10 @@ const Home = ({navigation}) => {
         .subscribe();
       callChannelRef.current = channel;
 
-      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
         cancelCall(t('alerts.notPickedUpAudio'), 'missed', 'Not Answered');
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
 
       return response.data.token;
     } catch (error) {
@@ -898,10 +899,10 @@ const Home = ({navigation}) => {
         .subscribe();
       callChannelRef.current = channel;
 
-      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
         cancelCall(t('alerts.notPickedUpVideo'), 'missed', 'Not Answered');
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
 
       return response.data.token;
     } catch (error) {

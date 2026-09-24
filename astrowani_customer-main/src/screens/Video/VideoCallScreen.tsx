@@ -194,7 +194,14 @@ const VideoCallScreen = ({route, navigation}: any) => {
         );
       } catch (e) { console.log('[VideoCallScreen] doEndCall error:', e); }
     }
-    navigation.replace('DrawerNavigator');
+    // Return to whatever the customer started from (astrologer profile, a list tab, Home)
+    // instead of always resetting to Home. Home is only the fallback when there is no
+    // screen underneath (e.g. the app was reopened straight into the call).
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('DrawerNavigator');
+    }
     // Prompt for a review only if the session actually connected.
     if (recieverId && callDurationRef.current > 0) {
       showReviewPrompt({ astrologerId: recieverId, name: recieverName, image: recieverImage });

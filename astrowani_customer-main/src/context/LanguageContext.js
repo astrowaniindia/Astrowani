@@ -596,6 +596,7 @@ const translations = {
     'chatSession.sendFailedTitle': 'Message not sent',
     'chatSession.sendFailedMsg': 'Please check your internet connection and tap send again.',
     'chatSession.astrologerEnded': 'The astrologer has ended the session.',
+    'chatSession.endedGeneric': 'This session has ended.',
 
     // ReusableList shared card
     'common.viewProfile': 'Profile',
@@ -794,6 +795,11 @@ const translations = {
     'welcome.chipReports': 'Kundli\n& Reports',
     'welcome.hint': 'Shuru karne ke liye Namaste boliye',
     'welcome.hi': 'Namaste',
+    // Returning-user (login) welcome, distinct from the first-time signup copy
+    // above -- "welcome to the family" every single login would read oddly for
+    // a regular customer (2026-09-23).
+    'welcome.backGreetingTitle': 'Namaste ji 🙏',
+    'welcome.backGreeting': 'Aapka Astrowani mein phir se swagat hai!',
     'welcome.giftTitle': 'Astrowani mein aapka swagat hai, {{name}} ji 🙏',
     'welcome.giftTitleNoName': 'Astrowani mein aapka swagat hai 🙏',
     'welcome.giftBlessing': 'Aapka jeevan sukh, shanti aur safalta se bhara rahe. Aapke liye ek chhota sa tohfa 🎁',
@@ -1889,6 +1895,7 @@ const translations = {
     'chatSession.sendFailedTitle': 'संदेश नहीं भेजा गया',
     'chatSession.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और फिर से भेजें दबाएं।',
     'chatSession.astrologerEnded': 'ज्योतिषी ने सत्र समाप्त कर दिया है।',
+    'chatSession.endedGeneric': 'यह सत्र समाप्त हो गया है।',
 
     // ReusableList shared card
     'common.viewProfile': 'प्रोफ़ाइल',
@@ -2082,6 +2089,8 @@ const translations = {
     'welcome.chipReports': 'कुंडली\nऔर रिपोर्ट',
     'welcome.hint': 'शुरू करने के लिए नमस्ते बोलिए',
     'welcome.hi': 'नमस्ते',
+    'welcome.backGreetingTitle': 'नमस्ते जी 🙏',
+    'welcome.backGreeting': 'आपका Astrowani में फिर से स्वागत है!',
     'welcome.giftTitle': 'Astrowani में आपका स्वागत है, {{name}} जी 🙏',
     'welcome.giftTitleNoName': 'Astrowani में आपका स्वागत है 🙏',
     'welcome.giftBlessing': 'आपका जीवन सुख, शांति और सफलता से भरा रहे। आपके लिए एक छोटा सा उपहार 🎁',

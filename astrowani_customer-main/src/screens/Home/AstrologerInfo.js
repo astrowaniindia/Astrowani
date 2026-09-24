@@ -51,6 +51,7 @@ import {
 } from '../../utils/astrologerAvailability';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
+import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 
 const { width } = Dimensions.get('window');
 
@@ -332,7 +333,7 @@ const AstrologerInfo = ({route, navigation}) => {
         )
         .subscribe();
 
-      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
         if (!navigated) {
           navigated = true;
@@ -344,7 +345,7 @@ const AstrologerInfo = ({route, navigation}) => {
           setIsCallWaiting(false);
           showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('alerts.notPickedUpAudio') });
         }
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsCallWaiting(false);
       if (err?.response?.status === 409) {
@@ -513,7 +514,7 @@ const AstrologerInfo = ({route, navigation}) => {
         )
         .subscribe();
 
-      // Auto-cancel after 1 minute if vendor doesn't respond → missed call
+      // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
         if (!navigated) {
           navigated = true;
@@ -525,7 +526,7 @@ const AstrologerInfo = ({route, navigation}) => {
           setIsCallWaiting(false);
           showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('alerts.notPickedUpVideo') });
         }
-      }, 60000);
+      }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsCallWaiting(false);
       if (err?.response?.status === 409) {

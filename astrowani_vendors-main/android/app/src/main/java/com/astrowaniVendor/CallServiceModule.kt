@@ -22,13 +22,22 @@ class CallServiceModule(private val reactContext: ReactApplicationContext) :
 
   override fun getName(): String = "CallForegroundService"
 
+  // Original two-argument entry point, kept so the JS shipped before "chat"/"live" modes
+  // existed (and any OTA bundle older than this binary) keeps working unchanged.
   @ReactMethod
   fun start(title: String?, body: String?, promise: Promise) {
+    startMode(title, body, CallForegroundService.MODE_CALL, promise)
+  }
+
+  // JS feature-detects this method to know the installed binary understands "chat"/"live".
+  @ReactMethod
+  fun startMode(title: String?, body: String?, mode: String?, promise: Promise) {
     try {
       val intent = Intent(reactContext, CallForegroundService::class.java).apply {
         action = CallForegroundService.ACTION_START
         putExtra(CallForegroundService.EXTRA_TITLE, title ?: "Call in progress")
         putExtra(CallForegroundService.EXTRA_BODY, body ?: "Tap to return to your call")
+        putExtra(CallForegroundService.EXTRA_MODE, mode ?: CallForegroundService.MODE_CALL)
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         reactContext.startForegroundService(intent)

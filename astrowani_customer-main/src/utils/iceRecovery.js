@@ -36,7 +36,11 @@ const DISCONNECT_GRACE_MS = 6000;
 // not reset per attempt. Without this, a connection flapping between 'failed'
 // and 'disconnected' could keep pushing the deadline out indefinitely while the
 // call sat dead on screen and the session kept billing.
-const RECOVERY_WINDOW_MS = 15000;
+//
+// Product decision 2026-09-24: match the astrologer side and the backend's
+// 5-minute graces — the call must not be cut before the 5-minute rule allows
+// it. The window still clears the moment ICE reports 'connected'.
+const RECOVERY_WINDOW_MS = 5 * 60 * 1000;
 // Two restarts is enough to cover a network handover. Beyond that the path is
 // genuinely gone and retrying only delays telling the user.
 const MAX_ATTEMPTS = 2;

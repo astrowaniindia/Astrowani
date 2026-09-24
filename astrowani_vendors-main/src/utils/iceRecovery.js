@@ -34,9 +34,18 @@
 const DISCONNECT_GRACE_MS = 6000;
 // Hard bound on a whole recovery episode, measured from the FIRST failure —
 // not reset per attempt. Without this, a connection flapping between 'failed'
-// and 'disconnected' could keep pushing the deadline out indefinitely while the
-// call sat dead on screen and the session kept billing.
-const RECOVERY_WINDOW_MS = 15000;
+// and 'disconnected' could keep pushing the deadline out indefinitely while
+// the call sat dead on screen.
+//
+// Product decision 2026-09-24: the astrologer's side holds the line for the
+// FULL 5 minutes, the same ceiling as the server's VENDOR_ABSENT_GRACE_MS —
+// the call must not die before the 5-minute rule allows it. A 15s window here
+// used to end calls the server had just decided to keep: observed live — a
+// 10s Wi-Fi cut took ~50s to re-associate, ICE reached 'connected' once during
+// the window, then flapped to 'failed' once more and this timer fired at 15s.
+// The window still clears the moment ICE reports 'connected' (below), so a
+// call that heals early is never held open artificially.
+const RECOVERY_WINDOW_MS = 5 * 60 * 1000;
 // Two restarts is enough to cover a network handover. Beyond that the path is
 // genuinely gone and retrying only delays telling the user.
 const MAX_ATTEMPTS = 2;

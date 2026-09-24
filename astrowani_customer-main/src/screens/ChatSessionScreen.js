@@ -12,6 +12,8 @@ import {
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  Dimensions,
   StatusBar,
   BackHandler,
 } from 'react-native';
@@ -81,6 +83,31 @@ const ChatSessionScreen = ({ route, navigation }) => {
     }
   };
 
+  // ─── Keyboard height (Android) ────────────────────────────────────────────
+  // targetSdk 36 is edge-to-edge, so Android 15+ ignores adjustResize and the keyboard
+  // covered the input and send button. KeyboardAvoidingView does nothing on Android here
+  // (and its padding stuck after closing), so track the height ourselves and reset it on
+  // hide. Same fix as the astrologer app's VendorChatSession. iOS keeps KeyboardAvoidingView.
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    // Distance from the keyboard's top edge to the window bottom; the event's own
+    // `height` leaves out the nav-bar inset under edge-to-edge and clipped the input row.
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      const c = e.endCoordinates || {};
+      setKbHeight(c.screenY > 0
+        ? Math.max(0, Dimensions.get('window').height - c.screenY)
+        : (c.height || 0));
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  // The list shrinks when the keyboard opens but keeps its offset; keep the newest message in view.
+  useEffect(() => {
+    const id = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
+    return () => clearTimeout(id);
+  }, [kbHeight]);
+
   // ─── End session ──────────────────────────────────────────────────────────
   const endSession = (message) => {
     if (hasEndedRef.current) return;
@@ -123,6 +150,12 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const manualEndSession = async () => {
     if (socketRef.current && sessionRef.current) {
         socketRef.current.emit('end_session', { sessionId: sessionRef.current.id });
+        // The socket emit is lost if the socket is mid-reconnect (after a screen lock or a
+        // network blip) because endSession() disconnects right after — and the astrologer's
+        // side would then sit in a dead chat until the absence grace expires. The HTTP call
+        // is the reliable path, exactly as the call screens already do; both are idempotent.
+        Instance.post('/api/call/end', { sessionId: sessionRef.current.id })
+          .catch((e) => console.log('[chat] end via HTTP failed:', e?.message));
     }
     endSession(null);
   }
@@ -462,7 +495,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
               .eq('id', sessionRef.current.id)
               .single();
             if (checkSess?.ended_at) {
-              endSession(t('chatSession.astrologerEnded'));
+              endSession(t('chatSession.endedGeneric'));
             }
           }, 45000);
 
@@ -522,7 +555,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, {paddingTop: insets.top}]}
+      style={[styles.container, {paddingTop: insets.top}, Platform.OS === 'android' && {paddingBottom: kbHeight}]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
       {/* ── Header: name + timer + wallet ─────── */}
@@ -552,7 +585,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
         <View style={styles.headerRight}>
           <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
-          <TouchableOpacity style={styles.endBtn} onPress={manualEndSession}>
+          <TouchableOpacity style={styles.endBtn} onPress={confirmEndChat}>
             <Ionicons name="call" size={16} color="#fff" />
             <Text style={styles.endText}>{t('chatSession.end')}</Text>
           </TouchableOpacity>
@@ -588,7 +621,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
       {/* ── Input ─────────────────────────────── */}
       {!connecting && (
-        <View style={[styles.inputRow, {paddingBottom: insets.bottom + 16}]}>
+        <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
           <TextInput
             style={styles.input}
             value={text}
