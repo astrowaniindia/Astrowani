@@ -38,6 +38,58 @@ function playUrl(source) {
   return `${PLAY_BASE}&referrer=${encodeURIComponent(`utm_source=${source}`)}`;
 }
 
+/**
+ * The Android "open in the Play Store APP" targets for a poster.
+ *
+ * WHY THE SHORT LINK CANNOT JUST 302 TO play.google.com: a QR that encodes a Play URL
+ * directly is resolved by the camera/Lens, which opens the Play app. Ours opens in
+ * Chrome first, and Chrome only hands a play.google.com URL to the app after a real tap
+ * on a link — not when a redirect delivers it. The person landed on Google's WEB listing
+ * in the browser (seen 2026-09-25 on a real phone), which is exactly the wrong place to
+ * start an install. So on Android we serve a small page whose button is a genuine tap
+ * that launches the Play app, with the referrer attached.
+ *
+ *   intent://  — opens the Play app; if it is missing, Chrome follows the https fallback.
+ *   The referrer is a single-encoded value inside the intent data; Play decodes it.
+ */
+function playIntentUrl(source) {
+  const referrer = encodeURIComponent(`utm_source=${source}`);
+  const fallback = encodeURIComponent(playUrl(source));
+  return `intent://details?id=${PLAY_PACKAGE}&referrer=${referrer}`
+    + `#Intent;scheme=market;package=com.android.vending;S.browser_fallback_url=${fallback};end`;
+}
+
+function androidLandingHtml(source) {
+  const intent = playIntentUrl(source);
+  const web = playUrl(source);
+  // Values here are built only from a source already restricted to [a-z0-9_.-] and from
+  // fixed strings, so nothing user-controlled reaches the markup unescaped.
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Astrowani</title>
+<style>
+  html,body{margin:0;height:100%;background:#592a19;color:#fff;font-family:system-ui,-apple-system,Roboto,sans-serif}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;box-sizing:border-box}
+  h1{font-size:26px;margin:0 0 6px;color:#ffd700}
+  p{margin:0 0 26px;opacity:.9;font-size:15px}
+  a.btn{display:block;width:100%;max-width:340px;background:#ffd700;color:#3d1c11;text-decoration:none;font-weight:700;font-size:18px;padding:16px 20px;border-radius:14px}
+  a.alt{margin-top:22px;color:#f1d9c4;font-size:14px}
+</style></head>
+<body><div class="wrap">
+  <h1>Astrowani</h1>
+  <p>Opening Google Play&hellip;<br>Google Play खुल रहा है&hellip;</p>
+  <a class="btn" id="go" href="${intent}">Open in Google Play<br><span style="font-weight:500;font-size:14px">Google Play में खोलें</span></a>
+  <a class="alt" href="${web}">Open in browser instead</a>
+</div>
+<script>
+  // Try once on load; some browsers block this without a tap, which is why the button exists.
+  setTimeout(function () { window.location.href = document.getElementById('go').href; }, 250);
+</script>
+</body></html>`;
+}
+
 // Link-preview fetchers and search bots also request URLs that are pasted into chats.
 // They are not people scanning a poster, and counting them would inflate every number.
 const BOT_UA = /bot|crawl|spider|preview|facebookexternalhit|slurp|whatsapp|telegram|skype|curl|wget|python-requests|headless/i;
@@ -93,9 +145,17 @@ module.exports = function registerQrTrackingRoutes(app) {
     const valid = !!source && isQrSource(source);
     const target = playUrl(valid ? source : null);
 
-    // Redirect FIRST and unconditionally; the log is best-effort afterwards.
+    // Respond FIRST and unconditionally; the log is best-effort afterwards.
     res.set('Cache-Control', 'no-store');
-    res.redirect(302, target);
+    const uaHeader = String(req.headers['user-agent'] || '');
+    if (valid && /android/i.test(uaHeader) && !BOT_UA.test(uaHeader)) {
+      // A person on an Android phone: hand them to the Play APP (see playIntentUrl).
+      res.status(200).type('html').send(androidLandingHtml(source));
+    } else {
+      // Everyone else — iPhones, computers, link-preview robots, a bad source — gets the
+      // plain redirect to the Play listing.
+      res.redirect(302, target);
+    }
 
     if (!valid) return;
     const ua = String(req.headers['user-agent'] || '');
@@ -144,4 +204,5 @@ module.exports = function registerQrTrackingRoutes(app) {
 };
 
 module.exports.playUrl = playUrl;
+module.exports.playIntentUrl = playIntentUrl;
 module.exports.QR_PREFIX = QR_PREFIX;
