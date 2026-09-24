@@ -274,8 +274,8 @@ export default function QrCodes() {
 
       <div className="stat-grid">
         {[
-          { label: 'People who scanned', value: totals.uniqueScans, footer: `${totals.scans} scans in total · counted from the short link` },
-          { label: 'Installed and opened the app', value: `${totals.opened}${totals.uniqueScans ? ` (${pct(totals.opened, totals.uniqueScans)})` : ''}`, footer: 'Share of scanners who reached the app' },
+          { label: 'QR scans', value: totals.scans, footer: `From ${totals.uniqueScans} different phone${totals.uniqueScans === 1 ? '' : 's'} · every scan counted` },
+          { label: 'Installed and opened the app', value: `${totals.opened}${totals.uniqueScans ? ` (${pct(totals.opened, totals.uniqueScans)})` : ''}`, footer: 'Share of different phones that reached the app' },
           { label: 'Customers from QR posters', value: `${totals.signups}${totals.opened ? ` (${pct(totals.signups, totals.opened)})` : ''}`, footer: 'Verified their number — share of those who opened' },
           { label: 'Of those, have paid', value: `${totals.paying} (${pct(totals.paying, totals.signups)})`, footer: 'Completed at least one recharge' },
           { label: 'Money in from QR customers', value: inr(totals.revenue), footer: 'Total recharged, all time' },
@@ -398,7 +398,7 @@ export default function QrCodes() {
           <thead>
             <tr>
               <th>Poster</th>
-              <th title="Distinct phones that hit the poster's link (total hits in brackets)">Scanned</th>
+              <th title="Every scan of this poster's link (different phones in brackets)">Scans</th>
               <th title="Installs that opened the app at least once">Opened app</th>
               <th>Signed up</th>
               <th>Paid</th>
@@ -519,8 +519,10 @@ export default function QrCodes() {
                 {openSource !== r.source && (
                   <>
                     <td>
-                      {r.uniqueScans || 0}
-                      {(r.scans || 0) > (r.uniqueScans || 0) && <span className="muted" style={{ fontSize: 11 }}> ({r.scans})</span>}
+                      {r.scans || 0}
+                      {(r.scans || 0) > 0 && (
+                        <span className="muted" style={{ fontSize: 11 }}> ({r.uniqueScans || 0} phone{(r.uniqueScans || 0) === 1 ? '' : 's'})</span>
+                      )}
                     </td>
                     <td>
                       {r.installsOpened || 0}
@@ -555,9 +557,10 @@ export default function QrCodes() {
         <h3 style={{ marginTop: 0 }}>How to read these numbers</h3>
         <ul className="muted" style={{ fontSize: 13, lineHeight: 1.7, margin: 0, paddingLeft: 18 }}>
           <li>
-            <strong>Scanned</strong> counts hits on the poster&apos;s short link — approximate. It is distinct
-            phones, with total hits in brackets, so someone scanning twice is one person. People behind the
-            same office or mobile network can occasionally look like one. Link-preview robots are ignored.
+            <strong>Scans</strong> counts every hit on the poster&apos;s short link, so someone scanning twice adds
+            two. The brackets show how many different phones those came from — approximate, since people on
+            the same office or mobile network can occasionally look like one. Link-preview robots are ignored.
+            The install and signup percentages are measured against different phones, not raw scans.
           </li>
           <li>
             <strong>Opened app</strong> is installs from the poster that were opened at least once — including
