@@ -5991,7 +5991,7 @@ numbers (digits, +91/0 prefixes, Devanagari digits, spelled-out English/Hindi di
 names / "give me your number" wording (LOW). A match is written to `session_flags`
 (`sql/session_flags.sql`, **APPLIED 2026-09-25**, service-role only) by
 `contactLeakRoutes.recordChatFlag()`, called fire-and-forget from `POST /api/chat/message`.
-**It records, it never blocks or delays a message.** Admin review: sidebar "Off-platform
+**It records; it never blocks or delays a message.** (Updated same day: the server now also MASKS contact details -- see the end of this section.) Admin review: sidebar "Off-platform
 Contact Flags" (`pages/SessionFlags.jsx`) with severity/status/sender filters, the
 surrounding conversation, and a 30-day repeat-offender tally.
 
@@ -6006,3 +6006,14 @@ surrounding conversation, and a 30-day repeat-offender tally.
   Options and the consent/legal prerequisites are in the 2026-09-25 session notes.
   Also unresolved: account deletion (subsystem CN) purges `chat_messages`, which
   conflicts with keeping chats as evidence -- needs an owner retention decision.
+
+- **Masking (2026-09-25, later):** `maskContacts()` in the detector runs in `POST /api/chat/message`
+  BEFORE the insert, so phone numbers, emails, UPI ids, links and handles are saved as stars
+  (one star per digit/letter, separators kept). The response carries `masked: true`. Wording-only
+  matches ("whatsapp", "apna number de do") are flagged but NOT masked. The flag keeps the
+  ORIGINAL text as evidence (`session_flags.excerpt`, admin only); `chat_messages`, the socket
+  relay, the history endpoint and the vendor's push notification all carry the masked text.
+  Both chat screens show a permanent `ContactWarningBanner` ("do not share phone numbers…") and
+  a popup when a send was masked; keys `chatSession.*` (customer) / `call.*` (vendor), EN + HI.
+  Messages saved before this stay unmasked. **App-side warning needs an OTA to reach installed
+  apps; the masking itself is server-side and live on deploy.**

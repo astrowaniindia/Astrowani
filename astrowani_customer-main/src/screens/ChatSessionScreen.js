@@ -33,6 +33,7 @@ import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
 import SessionIntroBanner from '../components/SessionIntroBanner';
+import ContactWarningBanner from '../components/ContactWarningBanner';
 import { LanguageContext } from '../context/LanguageContext';
 
 const ChatSessionScreen = ({ route, navigation }) => {
@@ -276,6 +277,14 @@ const ChatSessionScreen = ({ route, navigation }) => {
       });
       if (!res.data?.success || !res.data?.data) throw new Error(res.data?.message || 'send failed');
       mergeMessages([res.data.data]);
+      // The server replaced a phone number / email / link with stars - say why.
+      if (res.data.masked) {
+        showStatusPopup({
+          variant: 'error',
+          title: t('chatSession.contactMaskedTitle'),
+          message: t('chatSession.contactMaskedMsg'),
+        });
+      }
     } catch (e) {
       console.warn('chat message send error:', e?.message);
       // Don't overwrite anything typed since.
@@ -608,6 +617,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
         >
           {/* Prompt to share birth details first. Presentational only — billing is
               unchanged and starts when the session connects, exactly as before. */}
+          <ContactWarningBanner text={t('chatSession.noContactNotice')} />
           <SessionIntroBanner />
           <FlatList
             ref={flatListRef}

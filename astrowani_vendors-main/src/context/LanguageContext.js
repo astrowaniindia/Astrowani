@@ -332,6 +332,9 @@ const translations = {
     'call.messagePlaceholder': 'Message...',
     'call.sendFailedTitle': 'Message not sent',
     'call.sendFailedMsg': 'Please check your internet connection and send it again.',
+    'call.noContactNotice': 'Do not share phone numbers or contact details in chat. They are hidden automatically and you can get flagged.',
+    'call.contactMaskedTitle': 'Contact details hidden',
+    'call.contactMaskedMsg': 'Sharing phone numbers, emails or links is not allowed. Your message was sent with them hidden, and repeated attempts can get your account flagged.',
     'call.sessionEnded': 'Session Ended',
     'call.customerBalanceEnded': "The customer's wallet balance ran out, so the session has ended.",
 
@@ -824,6 +827,9 @@ const translations = {
     'call.messagePlaceholder': 'संदेश...',
     'call.sendFailedTitle': 'संदेश नहीं भेजा गया',
     'call.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और इसे फिर से भेजें।',
+    'call.noContactNotice': 'चैट में फ़ोन नंबर या संपर्क विवरण साझा न करें। वे अपने-आप छिप जाते हैं और आपको फ़्लैग किया जा सकता है।',
+    'call.contactMaskedTitle': 'संपर्क विवरण छिपाया गया',
+    'call.contactMaskedMsg': 'फ़ोन नंबर, ईमेल या लिंक साझा करना मना है। आपका संदेश इन्हें छिपाकर भेजा गया है, और बार-बार कोशिश करने पर आपका अकाउंट फ़्लैग हो सकता है।',
     'call.sessionEnded': 'सत्र समाप्त',
     'call.customerBalanceEnded': 'ग्राहक का वॉलेट बैलेंस खत्म हो गया, इसलिए सत्र समाप्त हो गया।',
 

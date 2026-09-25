@@ -53,43 +53,61 @@ function isMobile(run) {
   return d.length === 10 && /^[6-9]/.test(d);
 }
 
-function findPhones(text) {
-  text = text.replace(/[️⃣​-‍]/g, '');
-  const tokens = text.match(/\p{Nd}+|[\p{L}\p{M}]+|[^\p{L}\p{M}\p{Nd}]+/gu) || [];
-  const found = [];
+// Returns [{start, end}] character ranges of phone numbers in the ORIGINAL text.
+function findPhoneRanges(text) {
+  const re = /\p{Nd}+|[\p{L}\p{M}]+|[^\p{L}\p{M}\p{Nd}]+/gu;
+  const ranges = [];
   let run = '';
+  let runStart = null;
+  let runEnd = null;
   let pendingMult = 1;
+  let multStart = null;
 
   const endRun = () => {
-    if (run.length >= 10 && isMobile(run)) found.push(run);
-    run = '';
-    pendingMult = 1;
+    if (run.length >= 10 && isMobile(run)) ranges.push({ start: runStart, end: runEnd });
+    run = ''; runStart = null; runEnd = null; pendingMult = 1; multStart = null;
+  };
+  const consume = (digits, start, end) => {
+    if (runStart === null) runStart = multStart !== null ? multStart : start;
+    run += digits;
+    runEnd = end;
+    pendingMult = 1; multStart = null;
   };
 
-  for (const tok of tokens) {
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const tok = m[0];
+    const start = m.index;
+    const end = start + tok.length;
     if (/^\p{Nd}+$/u.test(tok)) {
-      for (const ch of Array.from(tok)) run += digitValue(ch) ?? '';
-      pendingMult = 1;
+      consume(Array.from(tok).map((ch) => digitValue(ch) ?? '').join(''), start, end);
       continue;
     }
     if (/^[\p{L}\p{M}]+$/u.test(tok)) {
+      // Keycap / zero-width marks left over after a digit are transparent.
+      if (/^[\p{M}​-‍]+$/u.test(tok)) { if (runEnd !== null) runEnd = end; continue; }
       const w = tok.toLowerCase();
-      if (MULTIPLIERS[w]) { pendingMult = MULTIPLIERS[w]; continue; }
+      if (MULTIPLIERS[w]) { pendingMult = MULTIPLIERS[w]; multStart = runStart === null ? start : multStart; continue; }
       if (Object.prototype.hasOwnProperty.call(WORD_DIGITS, w)) {
-        run += WORD_DIGITS[w].repeat(pendingMult);
-        pendingMult = 1;
+        consume(WORD_DIGITS[w].repeat(pendingMult), start, end);
         continue;
       }
       endRun();
       continue;
     }
-    // Punctuation / whitespace: transparent unless it contains a run-breaker.
     if (TRANSPARENT.test(tok)) continue;
     endRun();
   }
   endRun();
-  return found;
+  return ranges;
 }
+
+function findPhones(text) {
+  return findPhoneRanges(text).map((r) => text.slice(r.start, r.end));
+}
+
+// Combining marks (keycap, vowel signs) are dropped rather than starred, so one digit = one star.
+const starAll = (str) => str.replace(/[\p{M}​-‍]/gu, '').replace(/[\p{L}\p{Nd}]/gu, '*');
 
 const EMAIL_RE = /[A-Z0-9._%+-]+\s?(?:@|\(at\)|\[at\])\s?[A-Z0-9-]+\s?(?:\.|\(dot\)|\[dot\])\s?[A-Z]{2,}/i;
 const UPI_RE = /\b[\w.-]{2,}@(?:ok(?:axis|hdfcbank|icici|sbi)|ybl|ibl|axl|paytm|upi|apl|sbi|oksbi|hdfcbank|icici|pnb|barodampay|freecharge|jio|airtel)\b/i;
@@ -124,4 +142,26 @@ function analyze(text) {
   return { flagged: true, severity: high.length ? 'high' : 'low', kinds };
 }
 
-module.exports = { analyze, findPhones };
+/**
+ * Replaces contact details with stars: every letter/digit of a phone number, email, UPI id,
+ * link or handle becomes '*' (separators and everything else are kept). Wording-only
+ * matches (a channel name, "give me your number") are left alone -- only actual details
+ * are hidden.
+ * @returns {{ text: string, masked: boolean }}
+ */
+function maskContacts(text) {
+  if (typeof text !== 'string' || !text) return { text: text || '', masked: false };
+  let out = text;
+  const ranges = findPhoneRanges(out);
+  for (let i = ranges.length - 1; i >= 0; i--) {
+    const { start, end } = ranges[i];
+    out = out.slice(0, start) + starAll(out.slice(start, end)) + out.slice(end);
+  }
+  for (const re of [EMAIL_RE, UPI_RE, URL_RE, HANDLE_RE]) {
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    out = out.replace(g, (mm) => starAll(mm));
+  }
+  return { text: out, masked: out !== text };
+}
+
+module.exports = { analyze, findPhones, maskContacts };

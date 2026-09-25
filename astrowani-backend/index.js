@@ -35,6 +35,7 @@ const audienceRules = require('./src/audience');
 const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
 const contactLeak = require('./src/contactLeakRoutes');
+const contactLeakDetector = require('./src/contactLeakDetector');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -4349,12 +4350,17 @@ app.post('/api/chat/message', async (req, res) => {
       }
     }
 
+    // Contact details (phone, email, UPI, link, handle) are replaced with stars BEFORE
+    // the row is saved, so neither the other party, the socket relay, nor the history
+    // endpoint ever carries them. The audit flag below still sees the original text.
+    const { text: safeMessage, masked } = contactLeakDetector.maskContacts(String(message));
+
     const { data, error } = await supabaseService.from('chat_messages').insert([{
       room_id: roomId,
       session_id: sessionId || null,
       sender_id: senderId,
       receiver_id: receiverId || null,
-      message,
+      message: safeMessage,
     }]).select().single();
     if (error) throw error;
 
@@ -4371,7 +4377,7 @@ app.post('/api/chat/message', async (req, res) => {
       customerId: flagSession ? flagSession.caller_id : (isVendor ? receiverId : senderId),
     });
 
-    return res.status(200).json({ success: true, data });
+    return res.status(200).json({ success: true, data, masked });
   } catch (error) {
     console.error('[Chat] message send error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to send message' });

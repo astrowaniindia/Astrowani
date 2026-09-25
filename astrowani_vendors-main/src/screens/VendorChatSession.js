@@ -31,6 +31,7 @@ import { captureEvent } from '../utils/Analytics';
 import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
+import ContactWarningBanner from '../components/ContactWarningBanner';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
@@ -371,6 +372,7 @@ const VendorChatSession = ({ route, navigation }) => {
     // failure puts typed text back and says so. A success adds the saved row straight
     // from the response, so it shows even if the socket is mid-reconnect (deduped by id).
     const msgToken = await AsyncStorage.getItem('token');
+    let pushText = msg; // what the customer's lock screen shows - the SAVED (masked) text
     try {
       const res = await Instance.post('/api/chat/message', {
         roomId: requestId,
@@ -382,6 +384,11 @@ const VendorChatSession = ({ route, navigation }) => {
       });
       if (!res.data?.success || !res.data?.data) throw new Error(res.data?.message || 'send failed');
       mergeMessages([res.data.data]);
+      pushText = res.data.data.message || msg;
+      // The server replaced a phone number / email / link with stars - say why.
+      if (res.data.masked) {
+        showStatusPopup({ variant: 'error', title: t('call.contactMaskedTitle'), message: t('call.contactMaskedMsg') });
+      }
     } catch (e) {
       console.warn('chat message send error:', e?.message);
       // Let the same text be sent again straight away (the double-tap guard above
@@ -397,7 +404,7 @@ const VendorChatSession = ({ route, navigation }) => {
     Instance.post('/api/push/notify-chat-message', {
       customerId: callerId,
       astrologerId: astroIdRef.current,
-      message: msg,
+      message: pushText,
     }, {
       headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
     }).catch(() => {});
@@ -520,6 +527,7 @@ const VendorChatSession = ({ route, navigation }) => {
           style={{ flex: 1 }} 
           imageStyle={{ opacity: 0.15 }}
         >
+          <ContactWarningBanner text={t('call.noContactNotice')} />
           <FlatList
             ref={flatListRef}
             data={messages}
