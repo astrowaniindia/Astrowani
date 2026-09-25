@@ -1,9 +1,7 @@
 name: Server diagnose (read-only)
 
-# Manual only. Logs in to the VPS with the same deploy key the deploy workflows use and
-# prints load, memory, network and web-server timings. Changes NOTHING. Added 2026-09-25 to
-# find why the admin site is intermittently slow; run it from the Actions tab or
-# `gh workflow run server-diagnose.yml`, read the log, and delete the workflow when done.
+# Manual only. Times the public sites from the GitHub runner. Changes NOTHING. Added
+# 2026-09-25 to find why the admin site is intermittently slow; delete when done.
 
 on:
   workflow_dispatch:
@@ -12,40 +10,19 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Diagnose
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      - name: Time the public sites
         run: |
           set +e
-          mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          echo "=== 1. Cloudflare's OFFICIAL address ranges today"
-          curl -s -m 20 https://www.cloudflare.com/ips-v4 > /tmp/cf4.txt; echo >> /tmp/cf4.txt
-          curl -s -m 20 https://www.cloudflare.com/ips-v6 > /tmp/cf6.txt
-          wc -l /tmp/cf4.txt /tmp/cf6.txt
-          cat > /tmp/diag.sh <<'REMOTE'
-          echo "=== 2. the ranges the server accepts (geo block)"
-          sed -n '/geo /,/^}/p' /etc/nginx/conf.d/astrowani-cloudflare.conf 2>&1 | grep -E "^\s+[0-9a-f:.]+/[0-9]+ 1;" | awk '{print $1}'
-          echo "=== 3. requests nginx DROPPED (status 444) today, by connecting IP"
-          awk '$9==444{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -25
-          echo "=== 4. counts by status today"
-          awk '{print $9}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -8
-          REMOTE
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/diag.sh > /tmp/remote.out 2>&1
-          cat /tmp/remote.out
-          echo "=== 5. official ranges the server does NOT list"
-          python3 - <<'PY'
-          import re
-          off=[l.strip() for l in open('/tmp/cf4.txt').read().split() if l.strip()]+[l.strip() for l in open('/tmp/cf6.txt').read().split() if l.strip()]
-          txt=open('/tmp/remote.out').read()
-          sec=txt.split('=== 2.')[1].split('=== 3.')[0] if '=== 2.' in txt else ''
-          have=set(re.findall(r'[0-9a-f:.]+/\d+', sec))
-          missing=[o for o in off if o not in have]
-          extra=[h for h in have if h not in off]
-          print('official:',len(off),'server lists:',len(have))
-          print('MISSING on server:',missing or 'none')
-          print('extra on server (not official):',extra or 'none')
-          PY
+          W='ttfb=%{time_starttransfer}s total=%{time_total}s code=%{http_code} colo-ip=%{remote_ip}'
+          echo "=== 1. admin index.html (NOT cached by Cloudflare: goes to the origin) x12"
+          for i in $(seq 1 12); do curl -s -o /dev/null -m 30 -D /tmp/h.txt -w "$W\n" https://manu.astrowani.com/; grep -iE "^cf-ray|^cf-cache-status" /tmp/h.txt | tr -d '\r' | tr '\n' ' '; echo; done
+          echo "=== 2. admin JS bundle (CACHED at Cloudflare's edge: origin not involved) x12"
+          for i in $(seq 1 12); do curl -s -o /dev/null -m 45 -D /tmp/h.txt -H "accept-encoding: gzip" -w "$W\n" https://manu.astrowani.com/assets/index-BY8bnQyr.js; grep -iE "^cf-ray|^cf-cache-status|^age" /tmp/h.txt | tr -d '\r' | tr '\n' ' '; echo; done
+          echo "=== 3. same index.html forced to HTTP/1.1 x6"
+          for i in $(seq 1 6); do curl -s -o /dev/null -m 30 --http1.1 -w "$W\n" https://manu.astrowani.com/; done
+          echo "=== 4. backend API through Cloudflare x8"
+          for i in $(seq 1 8); do curl -s -o /dev/null -m 30 -w "$W\n" https://backend.astrowani.com/api/astrologers; done
+          echo "=== 5. the shop site x6"
+          for i in $(seq 1 6); do curl -s -o /dev/null -m 30 -w "$W\n" https://shop.astrowani.com/; done
+          echo "=== 6. control: another Cloudflare-proxied site (cloudflare.com) x4"
+          for i in $(seq 1 4); do curl -s -o /dev/null -m 30 -w "$W\n" https://www.cloudflare.com/; done
