@@ -21,19 +21,16 @@ jobs:
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          echo "=== public site timed FROM THE GITHUB RUNNER (same vantage as the deploy check), x12"
-          for i in $(seq 1 12); do curl -s -o /dev/null -m 40 -w "manu /   ttfb=%{time_starttransfer}s total=%{time_total}s code=%{http_code}
-" https://manu.astrowani.com/; done
-          curl -s -o /dev/null -m 60 -H "accept-encoding: gzip" -w "manu js  ttfb=%{time_starttransfer}s total=%{time_total}s size=%{size_download} code=%{http_code}
-" https://manu.astrowani.com/assets/index-BY8bnQyr.js
-          for i in 1 2 3; do curl -s -o /dev/null -m 40 -w "backend   ttfb=%{time_starttransfer}s total=%{time_total}s code=%{http_code}
-" https://backend.astrowani.com/api/astrologers; done
+          echo "=== public site timed FROM THE GITHUB RUNNER (same vantage as the deploy check)"
+          for i in $(seq 1 12); do curl -s -o /dev/null -m 40 -w "manu /   ttfb=%{time_starttransfer}s total=%{time_total}s code=%{http_code}\n" https://manu.astrowani.com/; done
+          curl -s -o /dev/null -m 60 -H "accept-encoding: gzip" -w "manu js  ttfb=%{time_starttransfer}s total=%{time_total}s size=%{size_download} code=%{http_code}\n" https://manu.astrowani.com/assets/index-BY8bnQyr.js
+          for i in 1 2 3; do curl -s -o /dev/null -m 40 -w "backend   ttfb=%{time_starttransfer}s total=%{time_total}s code=%{http_code}\n" https://backend.astrowani.com/api/astrologers; done
           cat > /tmp/diag.sh <<'REMOTE'
-          echo "=== backend process"; pm2 describe astrowani-backend 2>&1 | grep -E "status|uptime|restarts|unstable|created at|script path" | head -8
+          echo "=== backend process"; pm2 describe astrowani-backend 2>&1 | grep -E "status|uptime|restarts|unstable|created at" | head -8
           echo "=== backend error log (last 25 lines)"; tail -n 25 ~/.pm2/logs/astrowani-backend-error.log 2>&1 | cut -c1-220
-          echo "=== nginx upstream-refused errors per hour, last 24h"; grep -h "Connection refused" /var/log/nginx/error.log 2>&1 | awk '{print substr($1,6,5)" "substr($2,1,2)"h"}' | sort | uniq -c | tail -12
-          echo "=== nginx: requests per hour today by status class"; awk '{split($4,a,":"); h=a[2]; s=substr($9,1,1); c[h" "s]++} END{for(k in c) print k, c[k]}' /var/log/nginx/access.log 2>&1 | sort | tail -30
-          echo "=== top client IPs today (requests)"; awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -6
+          echo "=== nginx upstream-refused errors per hour"; grep -h "Connection refused" /var/log/nginx/error.log 2>&1 | awk '{print substr($1,6,5)" "substr($2,1,2)"h"}' | sort | uniq -c | tail -12
+          echo "=== nginx: requests per hour today by status class"; awk '{split($4,a,":"); h=a[2]; s=substr($9,1,1); c[h" "s]++} END{for(k in c) print k, c[k]}' /var/log/nginx/access.log 2>&1 | sort | tail -40
+          echo "=== top client IPs today"; awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -6
           echo "=== top URLs today"; awk '{print $7}' /var/log/nginx/access.log | cut -c1-60 | sort | uniq -c | sort -rn | head -6
-REMOTE
+          REMOTE
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/diag.sh
