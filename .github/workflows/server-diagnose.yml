@@ -22,24 +22,20 @@ jobs:
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          echo "=== A. THROUGH Cloudflare, from the runner (x10)"
-          for i in $(seq 1 10); do curl -s -o /dev/null -m 25 -w "via-CF   connect=%{time_connect}s tls=%{time_appconnect}s ttfb=%{time_starttransfer}s code=%{http_code} ip=%{remote_ip}\n" https://manu.astrowani.com/; done
-          echo "=== B. DIRECT to the origin IP, bypassing Cloudflare (403 is expected; only the timings matter) (x10)"
-          for i in $(seq 1 10); do curl -s -k -o /dev/null -m 25 --resolve manu.astrowani.com:443:$VPS_HOST -w "direct   connect=%{time_connect}s tls=%{time_appconnect}s ttfb=%{time_starttransfer}s code=%{http_code}\n" https://manu.astrowani.com/; done
-          echo "=== C. runner network sanity"
-          curl -s -o /dev/null -m 15 -w "google  ttfb=%{time_starttransfer}s code=%{http_code}\n" https://www.google.com/
           cat > /tmp/diag.sh <<'REMOTE'
-          echo "=== D. web server TLS / rate-limit / resolver settings"
-          grep -rnE "ssl_stapling|resolver|limit_req|limit_conn|keepalive_timeout|worker_connections|worker_processes|ssl_session" /etc/nginx/nginx.conf /etc/nginx/conf.d /etc/nginx/sites-enabled /etc/nginx/snippets 2>/dev/null | cut -c1-160 | head -25
-          echo "=== E. kernel TCP counters (drops / overflows)"
-          nstat -az 2>/dev/null | grep -iE "ListenOverflows|ListenDrops|TCPReqQFull|SynRetrans|TCPTimeouts|TCPBacklogDrop|PruneCalled|TCPAbortOnMemory"
-          echo "=== F. firewall (needs root; may be blocked)"
-          sudo -n ufw status 2>&1 | head -15
-          sudo -n iptables -S 2>&1 | head -20
-          echo "=== G. nginx upstream-refused errors per hour"; grep -h "Connection refused" /var/log/nginx/error.log 2>&1 | awk '{print substr($1,6,5)" "substr($2,1,2)"h"}' | sort | uniq -c | tail -8
-          echo "=== H. other nginx error kinds today"; grep -h "$(date -u +%Y/%m/%d)" /var/log/nginx/error.log 2>&1 | grep -oE "\[(error|warn|crit|alert)\] [0-9#]+: \*?[0-9]* ?[a-zA-Z_()0-9: ]{0,40}" | sed -E 's/[0-9]+#[0-9]+: \*[0-9]+ //' | sort | uniq -c | sort -rn | head -8
-          echo "=== I. requests per hour today by status class"; awk '{split($4,a,":"); h=a[2]; s=substr($9,1,1); c[h" "s]++} END{for(k in c) print k, c[k]}' /var/log/nginx/access.log 2>&1 | sort | tail -40
-          echo "=== J. top client IPs / URLs today"; awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -5; awk '{print $7}' /var/log/nginx/access.log | cut -c1-50 | sort | uniq -c | sort -rn | head -5
-          echo "=== K. backend process"; pm2 describe astrowani-backend 2>&1 | grep -E "status|uptime|restarts|unstable|created at" | head -6
+          echo "=== 1. ufw rules mentioning 443 (both IP versions)"
+          sudo -n ufw status verbose 2>&1 | grep -E "443|Status|Default|Logging"
+          echo "=== 2. ip6tables: rules + packet counters for 443"
+          sudo -n ip6tables -S 2>&1 | grep -E "443|-P " | head -8
+          sudo -n ip6tables -L ufw6-user-input -v -n 2>&1 | head -12
+          echo "=== 3. what is nginx listening on"
+          ss -ltn 2>&1 | grep -E ":443|:80 "
+          echo "=== 4. server IPv6 addresses"
+          ip -6 addr show scope global 2>&1 | grep inet6 | head -3
+          echo "=== 5. firewall blocks of port 443 in the kernel log (UFW BLOCK ... DPT=443)"
+          sudo -n journalctl -k --since "-6h" --no-pager 2>&1 | grep -E "UFW BLOCK" | grep "DPT=443" | awk '{for(i=1;i<=NF;i++) if($i ~ /^(SRC|PROTO)=/) printf $i" "; print ""}' | cut -c1-80 | sort | uniq -c | sort -rn | head -10
+          sudo -n journalctl -k --since "-6h" --no-pager 2>&1 | grep -c "UFW BLOCK"
+          echo "=== 6. how many nginx requests arrived over IPv6 vs IPv4 today (from Cloudflare edges)"
+          awk '{ if ($1 ~ /:/) v6++; else v4++ } END{print "v6:", v6, " v4:", v4}' /var/log/nginx/access.log
           REMOTE
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/diag.sh
