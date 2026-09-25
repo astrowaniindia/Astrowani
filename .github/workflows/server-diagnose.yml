@@ -22,20 +22,30 @@ jobs:
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          echo "=== 1. Cloudflare's OFFICIAL address ranges today"
+          curl -s -m 20 https://www.cloudflare.com/ips-v4 > /tmp/cf4.txt; echo >> /tmp/cf4.txt
+          curl -s -m 20 https://www.cloudflare.com/ips-v6 > /tmp/cf6.txt
+          wc -l /tmp/cf4.txt /tmp/cf6.txt
           cat > /tmp/diag.sh <<'REMOTE'
-          echo "=== 1. ufw rules mentioning 443 (both IP versions)"
-          sudo -n ufw status verbose 2>&1 | grep -E "443|Status|Default|Logging"
-          echo "=== 2. ip6tables: rules + packet counters for 443"
-          sudo -n ip6tables -S 2>&1 | grep -E "443|-P " | head -8
-          sudo -n ip6tables -L ufw6-user-input -v -n 2>&1 | head -12
-          echo "=== 3. what is nginx listening on"
-          ss -ltn 2>&1 | grep -E ":443|:80 "
-          echo "=== 4. server IPv6 addresses"
-          ip -6 addr show scope global 2>&1 | grep inet6 | head -3
-          echo "=== 5. firewall blocks of port 443 in the kernel log (UFW BLOCK ... DPT=443)"
-          sudo -n journalctl -k --since "-6h" --no-pager 2>&1 | grep -E "UFW BLOCK" | grep "DPT=443" | awk '{for(i=1;i<=NF;i++) if($i ~ /^(SRC|PROTO)=/) printf $i" "; print ""}' | cut -c1-80 | sort | uniq -c | sort -rn | head -10
-          sudo -n journalctl -k --since "-6h" --no-pager 2>&1 | grep -c "UFW BLOCK"
-          echo "=== 6. how many nginx requests arrived over IPv6 vs IPv4 today (from Cloudflare edges)"
-          awk '{ if ($1 ~ /:/) v6++; else v4++ } END{print "v6:", v6, " v4:", v4}' /var/log/nginx/access.log
+          echo "=== 2. the ranges the server accepts (geo block)"
+          sed -n '/geo /,/^}/p' /etc/nginx/conf.d/astrowani-cloudflare.conf 2>&1 | grep -E "^\s+[0-9a-f:.]+/[0-9]+ 1;" | awk '{print $1}'
+          echo "=== 3. requests nginx DROPPED (status 444) today, by connecting IP"
+          awk '$9==444{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -25
+          echo "=== 4. counts by status today"
+          awk '{print $9}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -8
           REMOTE
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/diag.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/diag.sh > /tmp/remote.out 2>&1
+          cat /tmp/remote.out
+          echo "=== 5. official ranges the server does NOT list"
+          python3 - <<'PY'
+          import re
+          off=[l.strip() for l in open('/tmp/cf4.txt').read().split() if l.strip()]+[l.strip() for l in open('/tmp/cf6.txt').read().split() if l.strip()]
+          txt=open('/tmp/remote.out').read()
+          sec=txt.split('=== 2.')[1].split('=== 3.')[0] if '=== 2.' in txt else ''
+          have=set(re.findall(r'[0-9a-f:.]+/\d+', sec))
+          missing=[o for o in off if o not in have]
+          extra=[h for h in have if h not in off]
+          print('official:',len(off),'server lists:',len(have))
+          print('MISSING on server:',missing or 'none')
+          print('extra on server (not official):',extra or 'none')
+          PY
