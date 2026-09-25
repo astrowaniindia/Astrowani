@@ -33,7 +33,6 @@ import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
 import SessionIntroBanner from '../components/SessionIntroBanner';
-import ContactWarningBanner from '../components/ContactWarningBanner';
 import { LanguageContext } from '../context/LanguageContext';
 
 const ChatSessionScreen = ({ route, navigation }) => {
@@ -617,7 +616,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
         >
           {/* Prompt to share birth details first. Presentational only — billing is
               unchanged and starts when the session connects, exactly as before. */}
-          <ContactWarningBanner text={t('chatSession.noContactNotice')} />
           <SessionIntroBanner />
           <FlatList
             ref={flatListRef}

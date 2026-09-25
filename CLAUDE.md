@@ -6013,7 +6013,12 @@ surrounding conversation, and a 30-day repeat-offender tally.
   matches ("whatsapp", "apna number de do") are flagged but NOT masked. The flag keeps the
   ORIGINAL text as evidence (`session_flags.excerpt`, admin only); `chat_messages`, the socket
   relay, the history endpoint and the vendor's push notification all carry the masked text.
-  Both chat screens show a permanent `ContactWarningBanner` ("do not share phone numbers…") and
-  a popup when a send was masked; keys `chatSession.*` (customer) / `call.*` (vendor), EN + HI.
+  Only the SENDER of a masked message sees a warning popup (the receiver gets no notice --
+  the owner asked for warnings to go to whoever tried, never both at once; a permanent
+  banner shown to both sides was built and removed); keys `chatSession.*` (customer) / `call.*` (vendor), EN + HI.
   Messages saved before this stay unmasked. **App-side warning needs an OTA to reach installed
   apps; the masking itself is server-side and live on deploy.**
+- **Proof view (2026-09-25):** admin "View proof" on a flag shows astrologer/customer, session
+  times and the conversation with the flagged message highlighted, showing the text AS TYPED
+  (from `session_flags.excerpt`) plus what the other side saw; "Copy proof" gives plain text.
+  Chat only -- there is no call recording, so calls have no proof to show.

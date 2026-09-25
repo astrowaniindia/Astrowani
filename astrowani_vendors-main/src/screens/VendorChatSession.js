@@ -31,7 +31,6 @@ import { captureEvent } from '../utils/Analytics';
 import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
-import ContactWarningBanner from '../components/ContactWarningBanner';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
@@ -527,7 +526,6 @@ const VendorChatSession = ({ route, navigation }) => {
           style={{ flex: 1 }} 
           imageStyle={{ opacity: 0.15 }}
         >
-          <ContactWarningBanner text={t('call.noContactNotice')} />
           <FlatList
             ref={flatListRef}
             data={messages}

@@ -26,7 +26,7 @@ export default function SessionFlags() {
   const [severity, setSeverity] = useState('high');
   const [role, setRole] = useState('astrologer');
   const [open, setOpen] = useState(null); // flag id whose conversation is showing
-  const [context, setContext] = useState([]);
+  const [context, setContext] = useState(null); // proof for the open flag
 
   const load = async () => {
     setLoading(true);
@@ -58,13 +58,29 @@ export default function SessionFlags() {
   const toggleContext = async (r) => {
     if (open === r.id) { setOpen(null); return; }
     setOpen(r.id);
-    setContext([]);
+    setContext(null);
     try {
       const { data } = await client.get(`/api/admin/session-flags/${r.id}/context`);
-      setContext(data.data || []);
+      setContext(data.data || { messages: [] });
     } catch (e) {
-      setContext([{ id: 'err', from: 'customer', message: e.response?.data?.message || 'Could not load conversation.' }]);
+      setContext({ error: e.response?.data?.message || 'Could not load the proof.', messages: [] });
     }
+  };
+
+  const fmt = (d) => (d ? new Date(d).toLocaleString() : '—');
+
+  // Plain-text version of the proof, for pasting into a warning email or a dispute.
+  const copyProof = async (c) => {
+    const lines = [
+      `Off-platform contact flag ${c.flag.id}`,
+      `Astrologer: ${c.astrologer.name} ${c.astrologer.phone || ''}`,
+      `Customer: ${c.customer.name} ${c.customer.mobile || ''}`,
+      `Session: ${fmt(c.session?.started_at)} to ${fmt(c.session?.ended_at)}`,
+      '',
+      ...c.messages.map((m) => `[${fmt(m.created_at)}] ${m.name}: ${m.message}${m.isFlagged ? '   <-- FLAGGED' : ''}`),
+    ];
+    try { await navigator.clipboard.writeText(lines.join('\n')); window.alert('Proof copied.'); }
+    catch (_) { window.alert('Could not copy.'); }
   };
 
   return (
@@ -139,7 +155,7 @@ export default function SessionFlags() {
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {r.session_id && (
                       <button className="btn secondary" style={{ marginRight: 6 }} onClick={() => toggleContext(r)}>
-                        {open === r.id ? 'Hide chat' : 'View chat'}
+                        {open === r.id ? 'Hide proof' : 'View proof'}
                       </button>
                     )}
                     {r.status === 'pending' && (
@@ -153,12 +169,39 @@ export default function SessionFlags() {
                 {open === r.id && (
                   <tr>
                     <td colSpan={8} style={{ background: 'rgba(0,0,0,0.03)' }}>
-                      {context.length === 0 && <span className="muted">Loading conversation…</span>}
-                      {context.map((m) => (
-                        <div key={m.id} style={{ padding: '2px 0', fontWeight: m.isFlagged ? 700 : 400 }}>
-                          <span className="muted">{m.from === 'astrologer' ? 'Astrologer' : 'Customer'}:</span> {m.message}
+                      {!context && <span className="muted">Loading proof…</span>}
+                      {context?.error && <span style={{ color: '#c0392b' }}>{context.error}</span>}
+                      {context && !context.error && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <b>Astrologer:</b> {context.astrologer?.name} <span className="muted">{context.astrologer?.phone}</span>
+                            {' · '}<b>Customer:</b> {context.customer?.name} <span className="muted">{context.customer?.mobile}</span>
+                            {' · '}<b>Session:</b> <span className="muted">{fmt(context.session?.started_at)} → {fmt(context.session?.ended_at)}</span>
+                            <button className="btn secondary" style={{ marginLeft: 12 }} onClick={() => copyProof(context)}>Copy proof</button>
+                          </div>
+                          {context.messages.length === 0 && (
+                            <span className="muted">No saved conversation for this flag.</span>
+                          )}
+                          {context.messages.map((m) => (
+                            <div
+                              key={m.id}
+                              style={{
+                                padding: '4px 8px', marginBottom: 2, borderRadius: 4,
+                                background: m.isFlagged ? 'rgba(192,57,43,0.12)' : 'transparent',
+                                borderLeft: m.isFlagged ? '3px solid #c0392b' : '3px solid transparent',
+                              }}
+                            >
+                              <span className="muted">{fmt(m.created_at)} · {m.name} ({m.from}):</span>{' '}
+                              <span style={{ fontWeight: m.isFlagged ? 700 : 400 }}>{m.message}</span>
+                              {m.isFlagged && (
+                                <div className="muted" style={{ fontSize: 12 }}>
+                                  ↑ as typed. The customer/astrologer actually saw: “{m.savedAs}”
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </td>
                   </tr>
                 )}

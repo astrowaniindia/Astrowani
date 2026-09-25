@@ -93,23 +93,56 @@ module.exports = function registerContactLeakRoutes(app) {
     return res.json({ success: true, data: data || [], repeat });
   }));
 
-  // The conversation around a flag, so a reviewer can judge intent.
+  // Proof for one flag: the flagged message exactly as the sender typed it (the saved chat
+  // copy has stars in place of the contact details), the conversation around it with real
+  // names, and session details. Read-only.
   app.get('/api/admin/session-flags/:id/context', requireAdmin, h(async (req, res) => {
-    const { data: flag, error } = await db.from('session_flags').select('*').eq('id', req.params.id).maybeSingle();
+    const { data: flag, error } = await db.from('session_flags')
+      .select('*, astrologers(first_name, last_name, phone_number), customers(name, mobile)')
+      .eq('id', req.params.id).maybeSingle();
     if (error) throw error;
     if (!flag) return res.status(404).json({ success: false, message: 'Not found' });
-    if (!flag.session_id) return res.json({ success: true, data: [] });
-    const { data: msgs, error: mErr } = await db.from('chat_messages')
-      .select('id, sender_id, message, created_at')
-      .eq('session_id', flag.session_id).order('created_at', { ascending: true }).limit(200);
-    if (mErr) throw mErr;
+
+    const astroName = `${flag.astrologers?.first_name || ''} ${flag.astrologers?.last_name || ''}`.trim() || 'Astrologer';
+    const custName = flag.customers?.name || 'Customer';
+
+    let session = null;
+    let messages = [];
+    if (flag.session_id) {
+      const { data: sess } = await db.from('chat_sessions')
+        .select('id, started_at, ended_at, per_minute_charge').eq('id', flag.session_id).maybeSingle();
+      session = sess || null;
+      const { data: msgs, error: mErr } = await db.from('chat_messages')
+        .select('id, sender_id, message, created_at')
+        .eq('session_id', flag.session_id).order('created_at', { ascending: true }).limit(300);
+      if (mErr) throw mErr;
+      messages = (msgs || []).map((m) => {
+        const isFlagged = String(m.id) === String(flag.message_id);
+        const fromAstro = String(m.sender_id) === String(flag.astrologer_id);
+        return {
+          id: m.id,
+          from: fromAstro ? 'astrologer' : 'customer',
+          name: fromAstro ? astroName : custName,
+          created_at: m.created_at,
+          isFlagged,
+          // The saved copy is masked; show what was actually typed for the flagged one.
+          message: isFlagged && flag.excerpt ? flag.excerpt : m.message,
+          savedAs: isFlagged ? m.message : undefined,
+        };
+      });
+    }
     return res.json({
       success: true,
-      data: (msgs || []).map((m) => ({
-        ...m,
-        from: m.sender_id === flag.astrologer_id ? 'astrologer' : 'customer',
-        isFlagged: String(m.id) === String(flag.message_id),
-      })),
+      data: {
+        flag: {
+          id: flag.id, source: flag.source, severity: flag.severity, kinds: flag.kinds,
+          sender_role: flag.sender_role, created_at: flag.created_at, status: flag.status,
+        },
+        astrologer: { name: astroName, phone: flag.astrologers?.phone_number || null },
+        customer: { name: custName, mobile: flag.customers?.mobile || null },
+        session,
+        messages,
+      },
     });
   }));
 
