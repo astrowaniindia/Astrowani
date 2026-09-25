@@ -6145,3 +6145,9 @@ network with a 15 s limit. It no longer reports a false failure when the runner'
 - The vendor manifest declares `AD_ID` / `ACCESS_ADSERVICES_AD_ID` in its own AndroidManifest since
   at least build 27 -- so the astrologer app's Play "Advertising ID" answer must be Yes; this is not new.
 - Sentry source maps are not uploaded (no auth token on the build machine).
+
+### OTA 2026-09-25: chat number masking popup (both apps, android + ios)
+Customer bundle `01a0d812-c52e-70a8-99bf-7f982ae75625`, vendor bundle deployed the same afternoon
+from commit `ac525b6` (`npx hot-updater bundle disable <id>` to roll back). Installed builds pick it up
+on their next launch. The JS also carries the dormant call-recording hooks, guarded by
+`NativeModules.CallRecording`, so builds without the native recorder simply skip them.
