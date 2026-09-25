@@ -6130,3 +6130,18 @@ network with a 15 s limit. It no longer reports a false failure when the runner'
    Cloudflare-to-origin leg reliable. The origin is in Malaysia; Indian visitors normally use the
    Mumbai edge, where a request from the VPS through Cloudflare measured 30-170 ms.
 3. Do not spend more time on nginx / kernel tuning for this; nothing there is wrong.
+
+### Store builds 2026-09-25: customer 47 and vendor 29 (built, NOT uploaded)
+- Customer `versionCode 47` (name 24.1), vendor `versionCode 29` (name 6.6); names unchanged so OTA
+  bundles keep matching. AABs: `D:\Astrowani-Releases\astrowani-customer-24.1-47.aab` and
+  `astrowani-vendor-6.6-29.aab`. Signed with the correct upload keys (customer CN=Astrowani
+  Customer, SHA-256 55:01:0B:59...; vendor CN=Astrowani, 76:FC:45:AF... -- checked with
+  `keytool -printcert -jarfile`, the vendor debug-key trap did not trigger).
+- New in these builds over customer 46 / vendor 28: the **native call recorder**
+  (`CallRecorder` / `RecordingAudioDeviceModule` / `CallRecordingModule`, subsystem CX; dormant until
+  the admin switch is on AND R2 is configured) and the JS since then (chat number masking + the
+  sender-only "Contact details hidden" popup, offer guard is server-side). Both manifests were read
+  back: `enableOnBackInvokedCallback="false"`, no BILLING permission.
+- The vendor manifest declares `AD_ID` / `ACCESS_ADSERVICES_AD_ID` in its own AndroidManifest since
+  at least build 27 -- so the astrologer app's Play "Advertising ID" answer must be Yes; this is not new.
+- Sentry source maps are not uploaded (no auth token on the build machine).
