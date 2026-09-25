@@ -34,6 +34,7 @@ const acquisition = require('./src/acquisition');
 const audienceRules = require('./src/audience');
 const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
+const contactLeak = require('./src/contactLeakRoutes');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -820,6 +821,7 @@ if (!JWT_SECRET || JWT_SECRET.length < 32 || WEAK_SECRETS.has(JWT_SECRET)) {
 
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
+contactLeak(app); // off-platform contact flags: admin review queue
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
 require('./src/sentryRoutes')(app);
@@ -4336,9 +4338,11 @@ app.post('/api/chat/message', async (req, res) => {
     // session by guessing/enumerating its id. The row is only trusted for real sessions;
     // messages sent without a sessionId (a stale/legacy caller) are still inserted as
     // before but obviously cannot be relayed into a session room they don't identify.
+    let flagSession = null;
     if (sessionId) {
       const { data: sessionRow } = await supabaseService
         .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+      flagSession = sessionRow;
       if (!sessionRow
         || (String(sessionRow.caller_id) !== String(senderId) && String(sessionRow.vendor_id) !== String(senderId))) {
         return res.status(403).json({ success: false, message: 'Not a participant of this session' });
@@ -4355,6 +4359,17 @@ app.post('/api/chat/message', async (req, res) => {
     if (error) throw error;
 
     if (sessionId) io.to(sessionId).emit('new_chat_message', data);
+
+    // Off-platform contact audit (phone / email / UPI / handle). Fire-and-forget: it only
+    // records, never blocks or delays the message. See src/contactLeakRoutes.js.
+    contactLeak.recordChatFlag({
+      message,
+      messageId: data?.id,
+      sessionId,
+      senderRole: isVendor ? 'astrologer' : 'customer',
+      astrologerId: flagSession ? flagSession.vendor_id : (isVendor ? senderId : receiverId),
+      customerId: flagSession ? flagSession.caller_id : (isVendor ? receiverId : senderId),
+    });
 
     return res.status(200).json({ success: true, data });
   } catch (error) {

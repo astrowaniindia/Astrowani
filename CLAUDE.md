@@ -5978,3 +5978,31 @@ no user prompt, no Play Console declaration); verified no BILLING permission app
 
 **Not exercised on a device.** The native read needs a real Play-installed build; that
 is the one thing only a store release can prove.
+
+---
+
+## Subsystem added 2026-09-25: off-platform contact flags (chat)
+
+### CW. Detecting astrologers moving customers off the platform
+
+Every chat message is described by `src/contactLeakDetector.js` (pure, no I/O): phone
+numbers (digits, +91/0 prefixes, Devanagari digits, spelled-out English/Hindi digits,
+"double nine", keycap emoji), emails, UPI ids, links, social handles (HIGH), and channel
+names / "give me your number" wording (LOW). A match is written to `session_flags`
+(`sql/session_flags.sql`, **APPLIED 2026-09-25**, service-role only) by
+`contactLeakRoutes.recordChatFlag()`, called fire-and-forget from `POST /api/chat/message`.
+**It records, it never blocks or delays a message.** Admin review: sidebar "Off-platform
+Contact Flags" (`pages/SessionFlags.jsx`) with severity/status/sender filters, the
+surrounding conversation, and a 30-day repeat-offender tally.
+
+- A phone only counts when, after stripping a +91/91/0 prefix, a run is EXACTLY ten digits
+  starting 6-9. Birth details ("15 08 1995 10 30") are twelve digits in a row and must not
+  flag; commas and slashes end a run. Do not loosen this to windows/substrings -- a DOB
+  like "26 09 1995 06 45" contains a valid-looking mobile as a sliding window.
+- Flags survive account deletion (person links become NULL), like `customer_reports`.
+- Verified: detector 28/28, routes 11/11 against the live DB (bare Express harness,
+  `index.js` never booted), admin build OK. Not exercised from a real chat on a device.
+- **NOT built: call recording.** Calls are P2P WebRTC; the server never sees media.
+  Options and the consent/legal prerequisites are in the 2026-09-25 session notes.
+  Also unresolved: account deletion (subsystem CN) purges `chat_messages`, which
+  conflicts with keeping chats as evidence -- needs an owner retention decision.
