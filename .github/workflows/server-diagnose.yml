@@ -1,9 +1,8 @@
 name: Server diagnose (read-only)
 
-# Manual only. Times the public sites from the GitHub runner and, at the same moment,
-# records the TCP handshakes (headers only, no payload) arriving at the VPS on port 443, to see
-# whether Cloudflare's connection attempts are being lost. Changes NOTHING. Added 2026-09-25 to
-# find why the admin site is intermittently slow; delete when done.
+# Manual only. Times the public site from the GitHub runner while the VPS records packet
+# counters and retransmissions (headers only, no payload) on port 443. Changes NOTHING.
+# Added 2026-09-25 to find why the admin site is intermittently slow; delete when done.
 
 on:
   workflow_dispatch:
@@ -12,7 +11,7 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Capture handshakes while timing requests
+      - name: Capture while timing requests
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -24,34 +23,38 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           SSH="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i $HOME/.ssh/deploy_key $VPS_USER@$VPS_HOST"
           cat > /tmp/cap.sh <<'REMOTE'
-          which tcpdump || echo "NO TCPDUMP"
-          sudo -n timeout 80 tcpdump -nn -tt -l -i any 'tcp port 443 and (tcp[tcpflags] & (tcp-syn|tcp-rst) != 0)' 2>/dev/null > /tmp/hs.txt
-          echo "captured lines: $(wc -l < /tmp/hs.txt)"
+          echo "=== network settings"
+          ip -o link show eth0 | grep -oE "mtu [0-9]+"
+          sysctl net.ipv4.tcp_congestion_control net.ipv4.tcp_mtu_probing net.ipv4.tcp_slow_start_after_idle net.core.default_qdisc 2>&1
+          echo "=== path MTU from the server to the internet (DF bit set; 'Frag needed' or loss = a smaller path MTU)"
+          for n in 1472 1452 1432 1400 1372; do printf "payload %s: " $n; ping -M do -s $n -c 2 -W 2 1.1.1.1 2>&1 | grep -E "received|Frag|too long" | head -1; done
+          nstat -n > /dev/null 2>&1
+          sudo -n timeout 70 tcpdump -nn -tt -l -i eth0 'tcp src port 443 and (tcp[tcpflags] & (tcp-syn) == 0)' -c 20000 2>/dev/null > /tmp/out.txt
+          echo "=== TCP counters accumulated during the test window"
+          nstat -a 2>/dev/null | grep -E "TcpRetransSegs|TcpOutSegs|TCPTimeouts|TCPLossProbes|TCPSlowStartRetrans|TCPLostRetransmit|TCPSpuriousRTOs|TCPFastRetrans|TCPSynRetrans"
           python3 - <<'PY'
           import re, collections
-          syn=collections.defaultdict(list); sa=collections.defaultdict(list)
-          for line in open('/tmp/hs.txt'):
-              m=re.search(r'^([\d.]+)\s+\S+\s+(?:In|Out)\s+IP6?\s+(\S+)\.(\d+) > (\S+)\.(\d+): Flags \[([^\]]*)\]', line)
+          seen=collections.defaultdict(list)   # (dst,dport,seq) -> [(t,len)]
+          for line in open('/tmp/out.txt'):
+              m=re.search(r'^([\d.]+)\s+eth0\s+Out\s+IP\s+\S+\.443 > (\S+)\.(\d+): Flags \[[^\]]*\], (?:seq (\d+)(?::\d+)?)?.*?length (\d+)', line)
               if not m: continue
-              t=float(m.group(1)); s=m.group(2); sp=m.group(3); d=m.group(4); dp=m.group(5); fl=m.group(6)
-              if dp=='443' and fl=='S': syn[(s,sp)].append(t)
-              elif sp=='443' and fl=='S.': sa[(d,dp)].append(t)
-          n=len(syn); retr=[k for k,v in syn.items() if len(v)>1]
-          print('distinct inbound connection attempts (SYN):', n)
-          print('attempts whose SYN arrived MORE THAN ONCE (a retransmit):', len(retr))
-          print('attempts answered with a SYN-ACK:', sum(1 for k in syn if k in sa))
-          print('attempts NEVER answered:', sum(1 for k in syn if k not in sa))
-          for k in retr[:12]:
-              v=syn[k]; print('  ', k[0], 'src-port', k[1], 'SYN times (s after first):', [round(x-v[0],2) for x in v], 'answered:', k in sa, ('first reply after %.2fs' % (sa[k][0]-v[0])) if k in sa else '')
+              t=float(m.group(1)); dst=m.group(2); dp=m.group(3); seq=m.group(4); ln=int(m.group(5))
+              if ln>0 and seq: seen[(dst,dp,seq)].append((t,ln))
+          data=len(seen); retr={k:v for k,v in seen.items() if len(v)>1}
+          print("=== outbound data segments (server to Cloudflare):", data, " retransmitted:", len(retr))
+          big=[v[0][1] for v in retr.values()]
+          if big:
+              print("sizes of retransmitted segments (bytes):", sorted(collections.Counter(big).items(), key=lambda x:-x[1])[:8])
+              gaps=[round(v[1][0]-v[0][0],2) for v in retr.values()]
+              print("delay before retransmit (s):", sorted(gaps)[:20])
           PY
-          echo '--- sample of raw lines:'; head -4 /tmp/hs.txt | cut -c1-150
-          rm -f /tmp/hs.txt
+          rm -f /tmp/out.txt
           REMOTE
           $SSH 'bash -s' < /tmp/cap.sh > /tmp/cap.out 2>&1 &
           CAP=$!
-          sleep 8
-          echo "=== requests through Cloudflare during the capture (1 per second, 45 of them)"
-          for i in $(seq 1 45); do curl -s -o /dev/null -m 30 -w "ttfb=%{time_starttransfer}s code=%{http_code}\n" https://manu.astrowani.com/; sleep 1; done
+          sleep 25
+          echo "=== 60 requests through Cloudflare during the capture"
+          for i in $(seq 1 60); do curl -s -o /dev/null -m 30 -w "%{time_starttransfer}\n" https://manu.astrowani.com/; sleep 0.5; done | awk '{n++; s+=$1; if($1>1)slow++; if($1>m)m=$1} END{print "requests:",n," slower than 1s:",slow," max:",m,"s"}'
           wait $CAP
-          echo "=== server-side handshake report"
+          echo "=== server-side report"
           cat /tmp/cap.out
