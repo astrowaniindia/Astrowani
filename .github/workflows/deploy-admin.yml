@@ -78,18 +78,28 @@ jobs:
           done
 
       - name: Confirm the live admin serves the new build
-        # A single curl right after the file swap can catch nginx mid-reload or a
-        # transient Cloudflare edge hiccup (525, SSL handshake failed to origin) —
-        # seen once on 2026-09-23, gone within seconds, unrelated to the deploy
-        # itself (the swap had already succeeded; re-checking moments later
-        # returned 200). Retry a few times before failing the job, so a one-off
-        # blip doesn't report a broken deploy that isn't broken.
+        # WHY THIS RUNS ON THE VPS (changed 2026-09-25): this used to curl the public URL from
+        # the GitHub runner with a 15 s timeout. Anything that has to go from Cloudflare back to
+        # this server is erratic from the runner's US edge -- measured 0.3 s to 22 s, about 1 in 6
+        # requests over a second, some none in 25 s -- while the server itself is idle and answers
+        # directly in milliseconds (see CLAUDE.md, "Admin slowness investigation"). That made a
+        # deploy that had already succeeded report failure (run of 2026-09-25 06:59 UTC).
+        # It now asks the VPS to fetch its own public URL (through Cloudflare, from the Mumbai
+        # edge) and checks that the page references THIS build's bundle, which is a stronger
+        # check than "returned 200": it proves the new files are what is being served.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
+          EXPECTED=$(grep -o 'assets/index-[^"]*\.js' astrowani-admin/dist/index.html | head -1)
+          echo "expecting bundle: $EXPECTED"
+          test -n "$EXPECTED"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -i $HOME/.ssh/deploy_key"
           for attempt in 1 2 3 4 5; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://manu.astrowani.com/)
-            echo "manu.astrowani.com -> $code (attempt $attempt/5)"
-            if [ "$code" = "200" ]; then exit 0; fi
+            served=$(ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" 'curl -s --max-time 30 https://manu.astrowani.com/' | grep -o 'assets/index-[^"]*\.js' | head -1)
+            echo "served bundle: ${served:-<none>} (attempt $attempt/5)"
+            if [ "$served" = "$EXPECTED" ]; then exit 0; fi
             sleep 10
           done
-          echo "::error::manu.astrowani.com did not return 200 after 5 attempts (last: $code)"
+          echo "::error::manu.astrowani.com is not serving the new build ($EXPECTED) after 5 attempts (last saw: ${served:-nothing})"
           exit 1

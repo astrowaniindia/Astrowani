@@ -6092,3 +6092,41 @@ astrologer's time), `free_chat` (stamped used at signup, in `mobile-otp-verify`,
   recorded). The Privacy Policy should say a hashed number is kept to prevent offer misuse.
 - Verified 14/14 against the live DB (same number in `+91`/bare formats matches; other numbers
   unaffected; snapshot idempotent; test rows removed).
+
+## Admin/API slowness investigation 2026-09-25 (READ BEFORE CHASING "THE SERVER IS SLOW")
+
+**Symptom:** `deploy-admin.yml`'s final "confirm live" step failed (curl exit 28 x5, 15 s each)
+right after a successful file swap; manu.astrowani.com and even backend.astrowani.com felt slow
+from a developer PC, with a 1.9 MB script taking ~20 s.
+
+**Verdict: the server is healthy. The variance is between Cloudflare and the origin.** Measured
+with a one-off read-only diagnostic workflow (since deleted; it SSHed in with the deploy key):
+- VPS idle: load 0.00, 4.6 GB RAM free, nginx + pm2 up, disk 9%. `sudo -n` works for the deploy
+  user (ufw, ip6tables, journalctl, tcpdump), so deeper checks are possible via a workflow.
+- Cloudflare-**cached** files (the JS bundle, `cf-cache-status: HIT`) arrive in 40-55 ms every time
+  from the runner. Anything that must go back to the **origin** through Cloudflare (index.html,
+  the API, the shop) takes 0.3 s minimum (LAX edge to a far-away origin) and ~1 request in 6
+  takes over 1 s, with spikes of 2.5 / 4 / 7 / 15 / 22 s and a few with no answer in 25 s.
+- Connecting to the origin **directly** (bypassing Cloudflare) is a steady 0.24 s connect /
+  0.74 s first byte. A tcpdump during the test showed **every SYN arriving exactly once and
+  answered in ~0.1 ms, none retransmitted, none lost**. So the origin never sees the delay.
+- Ruled out with evidence: CPU/RAM, ufw (443 open v4 and v6, nginx on both), the Cloudflare-only
+  allow-list (matches Cloudflare's published ranges exactly, only 19 non-CF requests dropped
+  all day), IPv6, path MTU (1500 works end to end), TCP retransmit rate (0.35%, normal),
+  conntrack (239 / 262144), fail2ban (0 bans).
+- **Two things in the "slow" reports were the developer's own connection:** GitHub's API and
+  SSH to the VPS also timed out intermittently from that PC, and its requests were routed to a
+  Marseille Cloudflare edge (`cf-ray` ...-MRS). The GitHub runner and the VPS itself do not
+  have this problem. A fail2ban ban was suspected and disproved (0 banned).
+
+**What was changed:** the deploy's confirm step now runs **on the VPS** and checks that the page
+references the new build's bundle (stronger than "200") instead of curling from GitHub's US
+network with a 15 s limit. It no longer reports a false failure when the runner's path is slow.
+
+**Not changed, needs the owner (Cloudflare dashboard) if the slowness ever matters to users:**
+1. A Cache Rule for `manu.astrowani.com` (cache the SPA shell a few minutes) so the admin never
+   touches the origin. Hashed assets are already cached. Purge on deploy or keep the TTL short.
+2. Argo Smart Routing (~$5/month + per-GB) or a Cloudflare Tunnel (free) makes the
+   Cloudflare-to-origin leg reliable. The origin is in Malaysia; Indian visitors normally use the
+   Mumbai edge, where a request from the VPS through Cloudflare measured 30-170 ms.
+3. Do not spend more time on nginx / kernel tuning for this; nothing there is wrong.
