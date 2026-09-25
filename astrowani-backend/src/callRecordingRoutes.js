@@ -157,7 +157,9 @@ async function purgeExpired() {
     for (const r of data || []) {
       try {
         await storage.remove(r.storage_key);
-        await db.from('call_recordings').update({ storage_key: null }).eq('id', r.id);
+        // Retention applies to the audio AND its transcript (90 days by default). What a
+        // flag quoted (session_flags.excerpt) stays as the record of the violation itself.
+        await db.from('call_recordings').update({ storage_key: null, transcript: null }).eq('id', r.id);
       } catch (e) { console.error('[call-recordings] purge failed for', r.id, e.message); }
     }
   } catch (_) { /* table missing or transient -- try again next hour */ }

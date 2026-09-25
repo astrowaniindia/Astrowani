@@ -891,7 +891,7 @@ module.exports = function registerAdminRoutes(app) {
     if (!astro) return res.status(404).json({ success: false, message: 'Astrologer not found' });
 
     await db.from('call_requests').delete().eq('astrologer_id', id);
-    await db.from('chat_messages').delete().eq('receiver_id', id);
+    // chat_messages are deliberately KEPT (evidence retention, owner decision 2026-09-25).
 
     const { error: delErr } = await db.from('astrologers').delete().eq('id', id);
 
@@ -1046,8 +1046,7 @@ module.exports = function registerAdminRoutes(app) {
     await recordDeletedCustomer(id);
 
     await db.from('call_requests').delete().eq('customer_id', id);
-    await db.from('chat_messages').delete().eq('sender_id', id);
-    await db.from('chat_messages').delete().eq('receiver_id', id);
+    // chat_messages are deliberately KEPT (evidence retention, owner decision 2026-09-25).
 
     const { error: delErr } = await db.from('customers').delete().eq('id', id);
 

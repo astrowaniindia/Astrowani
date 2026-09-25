@@ -337,8 +337,10 @@ module.exports = (app) => {
       await recordDeletedCustomer(id);
 
       await db.from('call_requests').delete().eq('customer_id', id);
-      await db.from('chat_messages').delete().eq('sender_id', id);
-      await db.from('chat_messages').delete().eq('receiver_id', id);
+      // chat_messages are deliberately KEPT (owner decision 2026-09-25): chats and call
+      // recordings are retained as safety / dispute evidence even after an account is
+      // deleted. The website's delete-account page and the Privacy Policy say so. They have
+      // no foreign key, so keeping them cannot block the delete below.
 
       const { error: delErr } = await db.from('customers').delete().eq('id', id);
       if (!delErr) {
@@ -579,8 +581,7 @@ module.exports.registerVendorAccountRoutes = (app) => {
       await purgeAstrologerPersonalData(id);
 
       await db.from('call_requests').delete().eq('astrologer_id', id);
-      await db.from('chat_messages').delete().eq('receiver_id', id);
-      await db.from('chat_messages').delete().eq('sender_id', id);
+      // chat_messages are deliberately KEPT, same as the customer path above.
 
       const { error: delErr } = await db.from('astrologers').delete().eq('id', id);
       if (!delErr) {

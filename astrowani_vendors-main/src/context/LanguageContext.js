@@ -207,7 +207,7 @@ const translations = {
     'settings.deleteAccount': 'Delete my account',
     'settings.confirmDeleteTitle': 'Delete your account?',
     'settings.confirmDeleteMsg':
-      'This permanently removes your astrologer account. Your profile stops appearing to customers and you will no longer receive calls or chats. This cannot be undone.',
+      'This permanently removes your astrologer account. Your profile stops appearing to customers and you will no longer receive calls or chats. Chat messages and call recordings are kept for safety and dispute purposes, and earnings records for legal reasons. This cannot be undone.',
     'settings.deleteChecking': 'Checking your account…',
     'settings.deletePreviewFailed':
       'Could not check your account right now. Please try again when you are back online.',
@@ -711,7 +711,7 @@ const translations = {
     'settings.deleteAccount': 'मेरा खाता हटाएं',
     'settings.confirmDeleteTitle': 'क्या आप अपना खाता हटाना चाहते हैं?',
     'settings.confirmDeleteMsg':
-      'इससे आपका ज्योतिषी खाता हमेशा के लिए हट जाएगा। आपकी प्रोफ़ाइल ग्राहकों को दिखना बंद हो जाएगी और आपको कॉल या चैट मिलना बंद हो जाएंगी। इसे वापस नहीं किया जा सकता।',
+      'इससे आपका ज्योतिषी खाता हमेशा के लिए हट जाएगा। आपकी प्रोफ़ाइल ग्राहकों को दिखना बंद हो जाएगी और आपको कॉल या चैट मिलना बंद हो जाएंगी। सुरक्षा और विवाद निपटारे के लिए चैट संदेश और कॉल रिकॉर्डिंग, तथा कानूनी कारणों से कमाई के रिकॉर्ड रखे जाते हैं। इसे वापस नहीं किया जा सकता।',
     'settings.deleteChecking': 'आपका खाता जांचा जा रहा है…',
     'settings.deletePreviewFailed':
       'अभी आपका खाता जांचा नहीं जा सका। नेटवर्क आने पर दोबारा कोशिश करें।',

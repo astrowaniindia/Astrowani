@@ -6151,3 +6151,16 @@ Customer bundle `01a0d812-c52e-70a8-99bf-7f982ae75625`, vendor bundle deployed t
 from commit `ac525b6` (`npx hot-updater bundle disable <id>` to roll back). Installed builds pick it up
 on their next launch. The JS also carries the dormant call-recording hooks, guarded by
 `NativeModules.CallRecording`, so builds without the native recorder simply skip them.
+
+### Retention decisions 2026-09-25 (owner) -- supersedes the chat purge in subsystem CN
+- **Deleting an account no longer erases chat messages or call recordings.** All four
+  `chat_messages` deletes (customer + astrologer self-delete in `accountRoutes.js`, the two admin
+  delete routes) were removed; the profile/personal data purge is unchanged. Verified against the
+  live DB: after a self-delete the account is gone and both chat messages remain.
+- **Call recordings are kept 90 days**, then the hourly purge clears the audio AND the transcript
+  (`callRecordingRoutes.purgeExpired`); the flagged sentence in `session_flags.excerpt` stays.
+- **Nothing ever purges `chat_messages`** -- there is no retention period for them. If one is
+  chosen, add a scheduled delete.
+- In-app delete confirmations (customer + vendor, EN + HI) now say chats/recordings are kept; that
+  text ships by OTA. The website pages must be updated by the owner: see
+  `MD files/Account-Deletion-Retention-Wording.md`.
