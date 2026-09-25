@@ -210,6 +210,7 @@ async function loadOffer() {
 // acquisition_source/_raw ride along so the audience check (src/audience.js) costs no
 // extra query. Null for every pre-tracking signup and every iOS customer, which the
 // audience module treats as the `unknown` segment and leaves alone by default.
+const offerGuard = require('./offerGuard');
 const CUSTOMER_COLS = 'id, name, mobile, acquisition_source, acquisition_raw';
 
 /** JWT → the real customers row. Same pattern as orderRoutes/astroRoutes. */
@@ -548,6 +549,18 @@ async function isNewCustomer(customerId) {
 }
 
 /**
+ * Did an earlier account on this phone number already use the free call, or already have a
+ * real consultation? (src/offerGuard.js -- recorded when that account was deleted.)
+ * An INVITED customer is still held to "one free call per person", but is not required to be
+ * a first-time customer, which is what the invite exists to override.
+ */
+async function usedByEarlierAccount(customer, invited) {
+  if (await offerGuard.claimedByOther(customer.mobile, offerGuard.OFFERS.FREE_CALL, customer.id, { failClosed: true })) return true;
+  if (invited) return false;
+  return offerGuard.claimedByOther(customer.mobile, offerGuard.OFFERS.WELCOME, customer.id, { failClosed: true });
+}
+
+/**
  * The face cluster shown on the offer card, and which of those faces the card
  * settles on.
  *
@@ -728,7 +741,10 @@ module.exports = function registerFreeCallRoutes(app) {
     // An invite deliberately bypasses the audience rule, exactly as it already bypasses
     // offer.enabled and isNewCustomer: an admin who hand-picked this customer means it.
     const audienceOk = !!invite || (await audienceRules.isAllowed(customer, 'free_call'));
-    const eligible = !booking && audienceOk && (!!invite || (await isNewCustomer(customer.id)));
+    // An earlier, now-deleted account on this number already used the offer (or was a real
+    // customer). Fails closed: a free call is a real astrologer's time.
+    const usedBefore = await usedByEarlierAccount(customer, !!invite);
+    const eligible = !booking && audienceOk && !usedBefore && (!!invite || (await isNewCustomer(customer.id)));
     return res.status(200).json({
       success: true,
       enabled: true,
@@ -820,6 +836,13 @@ module.exports = function registerFreeCallRoutes(app) {
       return res.status(403).json({
         success: false, code: 'NOT_ELIGIBLE',
         message: 'This offer is for first-time customers only.',
+      });
+    }
+    if (await usedByEarlierAccount(customer, !!invite)) {
+      await offerGuard.logBlock({ offerKey: offerGuard.OFFERS.FREE_CALL, customerId: customer.id, mobile: customer.mobile });
+      return res.status(403).json({
+        success: false, code: 'NOT_ELIGIBLE',
+        message: 'This offer has already been used with this phone number.',
       });
     }
 

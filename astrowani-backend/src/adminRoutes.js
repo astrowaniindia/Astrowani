@@ -1039,6 +1039,9 @@ module.exports = function registerAdminRoutes(app) {
     const { data: customer } = await db.from('customers').select('id, name, mobile').eq('id', id).single();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
 
+    // Remember which new-customer offers this number already used (src/offerGuard.js).
+    await require('./offerGuard').snapshotCustomer(id);
+
     // Keeps their past events out of Analytics once the row is gone.
     await recordDeletedCustomer(id);
 

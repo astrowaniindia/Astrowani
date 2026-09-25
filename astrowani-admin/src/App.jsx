@@ -20,6 +20,7 @@ import AstroServices from './pages/AstroServices';
 import Live from './pages/Live';
 import Moderation from './pages/Moderation';
 import SessionFlags from './pages/SessionFlags';
+import OfferGuard from './pages/OfferGuard';
 import Missed from './pages/Missed';
 import Withdrawals from './pages/Withdrawals';
 import Reports from './pages/Reports';
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="live" element={<Live />} />
         <Route path="moderation" element={<Moderation />} />
         <Route path="session-flags" element={<SessionFlags />} />
+        <Route path="offer-guard" element={<OfferGuard />} />
         <Route path="missed" element={<Missed />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="referral-popup" element={<ReferralPopup />} />

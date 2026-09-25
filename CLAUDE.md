@@ -6063,3 +6063,32 @@ first is safe. Participant-checked against `chat_sessions`; identity always from
 iOS is NOT covered (different audio-device mechanism) -- iPhones simply never start a recording.
 Account deletion does not yet purge call recordings/transcripts (decide with the chat-retention
 question).
+
+## Subsystem added 2026-09-25: offer abuse guard (delete + re-register exploit)
+
+### CY. New-customer offers cannot be re-claimed by deleting the account
+
+**The exploit (confirmed in code):** delete the account, sign up again with the same number,
+and the free 12-minute call and free 5-minute chat were available again -- a re-registered
+number is a fresh `customers` row, and the old account's sessions stay under the OLD id.
+**Do not "fix" this by removing account deletion:** Google Play and Apple both require it.
+
+`src/offerGuard.js` (`sql/offer_guard.sql`, **APPLIED 2026-09-25**): when an account is deleted
+(customer self-delete in `accountRoutes.js`, admin delete in `adminRoutes.js`),
+`snapshotCustomer()` looks at what it really used and stores it against an HMAC-SHA256 hash of
+the canonical 10-digit number (`offer_claims`; last 4 digits kept for the admin). Later accounts
+on that number are refused: `free_call` (booking/offer routes, fails CLOSED -- it is a real
+astrologer's time), `free_chat` (stamped used at signup, in `mobile-otp-verify`, fails open),
+`welcome_session` (had a real consultation -> not a new customer). Refusals land in
+`offer_blocks`; admin page "Offer Abuse Guard".
+- The snapshot runs BEFORE the purge (the purge deletes the bookings it reads) and never throws:
+  a deletion must always succeed.
+- A 'missed' or 'cancelled' free-call booking does NOT count as used.
+- The hash key is `OFFER_GUARD_SECRET`, falling back to `JWT_SECRET`. **Rotating that secret
+  forgets every remembered number.** Set a dedicated one if JWT_SECRET might ever rotate.
+- **Adding a new offer:** add its key to `OFFERS`, add one line to `snapshotCustomer()`, call
+  `claimedByOther()` where it is granted. No migration.
+- Not covered: a different phone number, and accounts deleted before 2026-09-25 (nothing was
+  recorded). The Privacy Policy should say a hashed number is kept to prevent offer misuse.
+- Verified 14/14 against the live DB (same number in `+91`/bare formats matches; other numbers
+  unaffected; snapshot idempotent; test rows removed).

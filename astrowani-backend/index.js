@@ -36,6 +36,7 @@ const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
 const contactLeak = require('./src/contactLeakRoutes');
 const contactLeakDetector = require('./src/contactLeakDetector');
+const offerGuard = require('./src/offerGuard');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -823,6 +824,7 @@ if (!JWT_SECRET || JWT_SECRET.length < 32 || WEAK_SECRETS.has(JWT_SECRET)) {
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
 contactLeak(app); // off-platform contact flags: admin review queue
+require('./src/offerGuardRoutes')(app); // offer abuse guard: admin view
 require('./src/callRecordingRoutes')(app); // call audio: upload authorisation, transcription, flags
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
@@ -2117,6 +2119,10 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         if (insertError) throw insertError;
         supabaseCustomerId = newCustomer?.id;
         isNewAccount = !!newCustomer?.id;
+
+        // A number that used the welcome chat (or was a real customer) before deleting its
+        // account must not get it again. Best-effort; see src/offerGuard.js.
+        if (supabaseCustomerId) await offerGuard.stampFreeChatForReturningNumber(supabaseCustomerId, phoneNumber);
 
         // Where they came from — stamped ONLY here, on the branch that creates the
         // account, and never on the existing-customer branch above. A returning

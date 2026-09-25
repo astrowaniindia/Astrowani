@@ -23,6 +23,7 @@
 
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
+const offerGuard = require('./offerGuard');
 const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { recordDeletedCustomer } = require('./analyticsExclusions');
 
@@ -328,6 +329,9 @@ module.exports = (app) => {
       // references a customer (favorites, reviews, referrals, wallet_recharges,
       // voice_notes, astrologer_waitlist, astrologer_reports, support_tickets) is
       // ON DELETE CASCADE/SET NULL and goes automatically with the row below.
+      // BEFORE anything is erased: remember which new-customer offers this number already
+      // used, so deleting and re-registering cannot claim them again. Never throws.
+      await offerGuard.snapshotCustomer(id);
       await purgeCustomerPersonalData(id);
       // Keeps their past events out of the admin's Analytics once the row is gone.
       await recordDeletedCustomer(id);
