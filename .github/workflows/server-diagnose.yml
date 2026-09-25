@@ -1,7 +1,9 @@
 name: Server diagnose (read-only)
 
-# Manual only. Times the public sites from the GitHub runner. Changes NOTHING. Added
-# 2026-09-25 to find why the admin site is intermittently slow; delete when done.
+# Manual only. Times the public sites from the GitHub runner and, at the same moment,
+# records the TCP handshakes (headers only, no payload) arriving at the VPS on port 443, to see
+# whether Cloudflare's connection attempts are being lost. Changes NOTHING. Added 2026-09-25 to
+# find why the admin site is intermittently slow; delete when done.
 
 on:
   workflow_dispatch:
@@ -10,19 +12,45 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Time the public sites
+      - name: Capture handshakes while timing requests
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           set +e
-          W='ttfb=%{time_starttransfer}s total=%{time_total}s code=%{http_code} colo-ip=%{remote_ip}'
-          echo "=== 1. admin index.html (NOT cached by Cloudflare: goes to the origin) x12"
-          for i in $(seq 1 12); do curl -s -o /dev/null -m 30 -D /tmp/h.txt -w "$W\n" https://manu.astrowani.com/; grep -iE "^cf-ray|^cf-cache-status" /tmp/h.txt | tr -d '\r' | tr '\n' ' '; echo; done
-          echo "=== 2. admin JS bundle (CACHED at Cloudflare's edge: origin not involved) x12"
-          for i in $(seq 1 12); do curl -s -o /dev/null -m 45 -D /tmp/h.txt -H "accept-encoding: gzip" -w "$W\n" https://manu.astrowani.com/assets/index-BY8bnQyr.js; grep -iE "^cf-ray|^cf-cache-status|^age" /tmp/h.txt | tr -d '\r' | tr '\n' ' '; echo; done
-          echo "=== 3. same index.html forced to HTTP/1.1 x6"
-          for i in $(seq 1 6); do curl -s -o /dev/null -m 30 --http1.1 -w "$W\n" https://manu.astrowani.com/; done
-          echo "=== 4. backend API through Cloudflare x8"
-          for i in $(seq 1 8); do curl -s -o /dev/null -m 30 -w "$W\n" https://backend.astrowani.com/api/astrologers; done
-          echo "=== 5. the shop site x6"
-          for i in $(seq 1 6); do curl -s -o /dev/null -m 30 -w "$W\n" https://shop.astrowani.com/; done
-          echo "=== 6. control: another Cloudflare-proxied site (cloudflare.com) x4"
-          for i in $(seq 1 4); do curl -s -o /dev/null -m 30 -w "$W\n" https://www.cloudflare.com/; done
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i $HOME/.ssh/deploy_key $VPS_USER@$VPS_HOST"
+          cat > /tmp/cap.sh <<'REMOTE'
+          which tcpdump || echo "NO TCPDUMP"
+          sudo -n timeout 80 tcpdump -nn -tt -l -i any 'tcp port 443 and (tcp[tcpflags] & (tcp-syn|tcp-rst) != 0)' 2>/dev/null > /tmp/hs.txt
+          echo "captured lines: $(wc -l < /tmp/hs.txt)"
+          python3 - <<'PY'
+          import re, collections
+          syn=collections.defaultdict(list); sa=collections.defaultdict(list)
+          for line in open('/tmp/hs.txt'):
+              m=re.search(r'^([\d.]+) \S+ (?:In|Out)\s+IP6? (\S+)\.(\d+) > (\S+)\.(\d+): Flags \[([^\]]*)\]', line)
+              if not m: continue
+              t=float(m.group(1)); s=m.group(2); sp=m.group(3); d=m.group(4); dp=m.group(5); fl=m.group(6)
+              if dp=='443' and fl=='S': syn[(s,sp)].append(t)
+              elif sp=='443' and fl=='S.': sa[(d,dp)].append(t)
+          n=len(syn); retr=[k for k,v in syn.items() if len(v)>1]
+          print('distinct inbound connection attempts (SYN):', n)
+          print('attempts whose SYN arrived MORE THAN ONCE (a retransmit):', len(retr))
+          print('attempts answered with a SYN-ACK:', sum(1 for k in syn if k in sa))
+          print('attempts NEVER answered:', sum(1 for k in syn if k not in sa))
+          for k in retr[:12]:
+              v=syn[k]; print('  ', k[0], 'src-port', k[1], 'SYN times (s after first):', [round(x-v[0],2) for x in v], 'answered:', k in sa, ('first reply after %.2fs' % (sa[k][0]-v[0])) if k in sa else '')
+          PY
+          rm -f /tmp/hs.txt
+          REMOTE
+          $SSH 'bash -s' < /tmp/cap.sh > /tmp/cap.out 2>&1 &
+          CAP=$!
+          sleep 8
+          echo "=== requests through Cloudflare during the capture (1 per second, 45 of them)"
+          for i in $(seq 1 45); do curl -s -o /dev/null -m 30 -w "ttfb=%{time_starttransfer}s code=%{http_code}\n" https://manu.astrowani.com/; sleep 1; done
+          wait $CAP
+          echo "=== server-side handshake report"
+          cat /tmp/cap.out
