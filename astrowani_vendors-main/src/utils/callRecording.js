@@ -6,16 +6,14 @@
 // "not enabled" until an admin switches it on AND storage is configured. Nothing is captured
 // and no notice is shown in that case.
 //
-// The user is TOLD when recording starts (a notice popup), and the microphone is not recorded
-// while they are muted -- the native tap sees the raw hardware mic, so setCallRecordingMuted
+// No notice is shown in the call (owner's decision, 2026-09-25). The microphone is not recorded
+// while the user is muted -- the native tap sees the raw hardware mic, so setCallRecordingMuted
 // must be called on every mute toggle.
 //
 // Everything here swallows failures: recording is an audit aid and must never break a call.
 import { NativeModules, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
-import { showStatusPopup } from '../components/StatusPopup';
-import { translate } from '../context/LanguageContext';
 
 const { CallRecording } = NativeModules;
 const available = Platform.OS === 'android' && !!CallRecording;
@@ -42,11 +40,6 @@ export async function startCallRecording(sessionId, callType) {
     const started = await CallRecording.start(String(sessionId));
     if (!started) return false;
     current = { recordingId: d.recordingId, uploadUrl: d.uploadUrl, sessionId: String(sessionId) };
-    showStatusPopup({
-      variant: 'info',
-      title: translate('callRecording.noticeTitle'),
-      message: translate('callRecording.noticeMsg'),
-    });
     return true;
   } catch (_) {
     return false;

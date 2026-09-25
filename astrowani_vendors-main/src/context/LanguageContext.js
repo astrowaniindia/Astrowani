@@ -334,8 +334,6 @@ const translations = {
     'call.sendFailedMsg': 'Please check your internet connection and send it again.',
     'call.contactMaskedTitle': 'Contact details hidden',
     'call.contactMaskedMsg': 'Sharing phone numbers, emails or links is not allowed. Your message was sent with them hidden, and repeated attempts can get your account flagged.',
-    'callRecording.noticeTitle': 'Call is being recorded',
-    'callRecording.noticeMsg': 'For safety and quality, the audio of this call is recorded and reviewed if needed. Please do not share phone numbers or other contact details.',
     'call.sessionEnded': 'Session Ended',
     'call.customerBalanceEnded': "The customer's wallet balance ran out, so the session has ended.",
 
@@ -830,8 +828,6 @@ const translations = {
     'call.sendFailedMsg': 'कृपया अपना इंटरनेट कनेक्शन जांचें और इसे फिर से भेजें।',
     'call.contactMaskedTitle': 'संपर्क विवरण छिपाया गया',
     'call.contactMaskedMsg': 'फ़ोन नंबर, ईमेल या लिंक साझा करना मना है। आपका संदेश इन्हें छिपाकर भेजा गया है, और बार-बार कोशिश करने पर आपका अकाउंट फ़्लैग हो सकता है।',
-    'callRecording.noticeTitle': 'कॉल रिकॉर्ड हो रही है',
-    'callRecording.noticeMsg': 'सुरक्षा और गुणवत्ता के लिए इस कॉल की ऑडियो रिकॉर्डिंग की जाती है और ज़रूरत पड़ने पर जांची जाती है। कृपया फ़ोन नंबर या अन्य संपर्क विवरण साझा न करें।',
     'call.sessionEnded': 'सत्र समाप्त',
     'call.customerBalanceEnded': 'ग्राहक का वॉलेट बैलेंस खत्म हो गया, इसलिए सत्र समाप्त हो गया।',
 

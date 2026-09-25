@@ -6043,8 +6043,8 @@ microphone and uploads it; the server transcribes it (Gemini audio input) and ru
 - Own-mic only: on speakerphone the other person's voice can bleed into a track; the admin proof
   panel says so. Hardware AEC (default on) reduces it.
 - JS: `src/utils/callRecording.js` in both apps. Start at `call_connected`, stop+upload in
-  `doEndCall` (not awaited). Shows a notice popup (`callRecording.noticeTitle/Msg`, EN+HI) only when
-  the backend actually started a recording.
+  `doEndCall` (not awaited). NO in-call notice is shown (owner's decision 2026-09-25, after a notice popup was built and
+  removed). Consent therefore rests on the Terms/Privacy wording alone -- keep that step.
 
 **Server:** `src/callRecordingRoutes.js`, `src/objectStorage.js` (R2 via `aws4fetch`, private bucket,
 presigned PUT for phones / GET for admin), `sql/call_recordings.sql` (APPLIED 2026-09-25).

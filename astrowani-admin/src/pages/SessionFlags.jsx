@@ -131,7 +131,7 @@ export default function SessionFlags() {
           </span>
           <p className="muted" style={{ margin: '6px 0' }}>
             Each phone records its own microphone during a call (not while muted) and uploads it; the audio is
-            transcribed and checked for spoken phone numbers. Users see a notice when recording starts. Only apps
+            transcribed and checked for spoken phone numbers. No notice is shown in the call. Only apps
             updated with the recording build take part.
           </p>
           {!rec.storageConfigured && (
