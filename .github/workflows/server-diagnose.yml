@@ -31,7 +31,7 @@ jobs:
           import re, collections
           syn=collections.defaultdict(list); sa=collections.defaultdict(list)
           for line in open('/tmp/hs.txt'):
-              m=re.search(r'^([\d.]+) \S+ (?:In|Out)\s+IP6? (\S+)\.(\d+) > (\S+)\.(\d+): Flags \[([^\]]*)\]', line)
+              m=re.search(r'^([\d.]+)\s+\S+\s+(?:In|Out)\s+IP6?\s+(\S+)\.(\d+) > (\S+)\.(\d+): Flags \[([^\]]*)\]', line)
               if not m: continue
               t=float(m.group(1)); s=m.group(2); sp=m.group(3); d=m.group(4); dp=m.group(5); fl=m.group(6)
               if dp=='443' and fl=='S': syn[(s,sp)].append(t)
@@ -44,6 +44,7 @@ jobs:
           for k in retr[:12]:
               v=syn[k]; print('  ', k[0], 'src-port', k[1], 'SYN times (s after first):', [round(x-v[0],2) for x in v], 'answered:', k in sa, ('first reply after %.2fs' % (sa[k][0]-v[0])) if k in sa else '')
           PY
+          echo '--- sample of raw lines:'; head -4 /tmp/hs.txt | cut -c1-150
           rm -f /tmp/hs.txt
           REMOTE
           $SSH 'bash -s' < /tmp/cap.sh > /tmp/cap.out 2>&1 &
