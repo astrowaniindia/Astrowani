@@ -6163,4 +6163,4 @@ on their next launch. The JS also carries the dormant call-recording hooks, guar
   chosen, add a scheduled delete.
 - In-app delete confirmations (customer + vendor, EN + HI) now say chats/recordings are kept; that
   text ships by OTA. The website pages must be updated by the owner: see
-  `MD files/Account-Deletion-Retention-Wording.md`.
+  `MD files/Astrowani-Website-Text-Changes.docx` (exact find/replace text for the delete-account page, Privacy Policy and Terms, written against the live pages on 2026-09-25).
