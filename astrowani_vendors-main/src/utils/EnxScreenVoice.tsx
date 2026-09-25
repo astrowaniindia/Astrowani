@@ -32,6 +32,7 @@ import {startCallForegroundService, stopCallForegroundService} from './callForeg
 import {endCallKitCall} from './callKeep';
 import { showStatusPopup } from '../components/StatusPopup';
 import {LanguageContext} from '../context/LanguageContext';
+import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
 import {createIceRecovery} from './iceRecovery';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 
@@ -168,6 +169,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     // Drop the mic privilege and its notification promptly — a foreground service
     // left running would hold the microphone open after the call ended.
     stopCallForegroundService();
+    stopAndUploadCallRecording();
     // End the CallKit call too, or iOS keeps showing this consultation as an active
     // call in its own UI and system call log after our screens have torn down - the
     // astrologer would look permanently stuck on a call. No-op on Android and when the
@@ -229,6 +231,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const toggleMute = useCallback(() => {
     const next = !audioMuted;
     setAudioMuted(next);
+    setCallRecordingMuted(next);
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((t: any) => { t.enabled = !next; });
     }
@@ -296,6 +299,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
             isConnectedRef.current = true;
             setIsConnected(true);
             captureEvent('call_connected', {call_type: 'voice', session_id: sessionId});
+            // Audio recording for the contact-detail audit (no-op unless an admin enabled it).
+            startCallRecording(sessionId, 'voice');
             // Android silences the mic for a backgrounded app (and from API 34 only a
             // microphone-type foreground service prevents it). Started HERE because the
             // screen is guaranteed foregrounded and RECORD_AUDIO already granted —

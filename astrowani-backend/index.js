@@ -823,6 +823,7 @@ if (!JWT_SECRET || JWT_SECRET.length < 32 || WEAK_SECRETS.has(JWT_SECRET)) {
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
 contactLeak(app); // off-platform contact flags: admin review queue
+require('./src/callRecordingRoutes')(app); // call audio: upload authorisation, transcription, flags
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
 require('./src/sentryRoutes')(app);

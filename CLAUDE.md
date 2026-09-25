@@ -6022,3 +6022,44 @@ surrounding conversation, and a 30-day repeat-offender tally.
   times and the conversation with the flagged message highlighted, showing the text AS TYPED
   (from `session_flags.excerpt`) plus what the other side saw; "Copy proof" gives plain text.
   Chat only -- there is no call recording, so calls have no proof to show.
+
+### CX. Call audio recording (2026-09-25) -- BUILT, DORMANT, needs a store build + R2
+
+Audio only, no media server. Calls stay peer-to-peer WebRTC. Each phone records ITS OWN
+microphone and uploads it; the server transcribes it (Gemini audio input) and runs the same
+`contactLeakDetector` as chat; a hit becomes a `session_flags` row with `source='call'`.
+
+**Capture (Android only, NATIVE -> needs a Play Store release; not OTA-able):**
+- `MainApplication.onCreate` sets `WebRTCModuleOptions.getInstance().audioDeviceModule =
+  RecordingAudioDeviceModule(this)`. react-native-webrtc 124 exposes this option, so NO library
+  patch. The wrapper builds a FRESH `JavaAudioDeviceModule` per `getNativeAudioDeviceModulePointer()`
+  because react-native-webrtc releases the module it is given and rebuilds its factory when the JS
+  context is recreated (hot-update reload); one long-lived module would be reused after release.
+- The module's `setSamplesReadyCallback` feeds `CallRecorder` (AAC-LC ADTS, 32 kbps, ~240 KB/min,
+  bounded queue + writer thread; drops buffers rather than blocking audio; 40 MB cap).
+- **MUTE RULE:** that callback sees the RAW hardware mic, before WebRTC applies the app's mute.
+  Every mute toggle must call `setCallRecordingMuted(next)` (done in all four call screens) or a
+  muted user is still recorded. Any NEW mute control must do the same.
+- Own-mic only: on speakerphone the other person's voice can bleed into a track; the admin proof
+  panel says so. Hardware AEC (default on) reduces it.
+- JS: `src/utils/callRecording.js` in both apps. Start at `call_connected`, stop+upload in
+  `doEndCall` (not awaited). Shows a notice popup (`callRecording.noticeTitle/Msg`, EN+HI) only when
+  the backend actually started a recording.
+
+**Server:** `src/callRecordingRoutes.js`, `src/objectStorage.js` (R2 via `aws4fetch`, private bucket,
+presigned PUT for phones / GET for admin), `sql/call_recordings.sql` (APPLIED 2026-09-25).
+`POST /api/call-recordings/start` answers `{enabled:false}` (HTTP 200) unless
+`app_settings.call_recording_enabled = 'true'` AND storage is configured -- so shipping the apps
+first is safe. Participant-checked against `chat_sessions`; identity always from the JWT. Retention:
+`expires_at` default 90 days, hourly purge deletes the object.
+
+**TO TURN ON (owner):**
+1. Cloudflare R2: create bucket `astrowani-call-recordings` (private) + an API token scoped to THAT
+   bucket only (separate from the OTA token). Set on the VPS: `R2_ENDPOINT`, `R2_CALL_BUCKET`,
+   `R2_CALL_ACCESS_KEY_ID`, `R2_CALL_SECRET_ACCESS_KEY` (`set-backend-env.yml` allowlist).
+2. Update Terms/Privacy/consent wording (calls may be recorded) -- legal, before enabling.
+3. Ship customer + vendor store builds carrying the native recorder.
+4. Admin -> Off-platform Contact Flags -> "Call recording" -> Switch ON.
+iOS is NOT covered (different audio-device mechanism) -- iPhones simply never start a recording.
+Account deletion does not yet purge call recordings/transcripts (decide with the chat-retention
+question).

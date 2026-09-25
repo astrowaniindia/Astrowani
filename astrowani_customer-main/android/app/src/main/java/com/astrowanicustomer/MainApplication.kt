@@ -12,6 +12,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
 import com.hotupdater.HotUpdater
+import com.oney.WebRTCModule.WebRTCModuleOptions
 
 class MainApplication : Application(), ReactApplication {
 
@@ -25,6 +26,9 @@ class MainApplication : Application(), ReactApplication {
               // Keeps the mic alive while backgrounded during a call — see
               // CallForegroundService.kt.
               add(CallServicePackage())
+              // Records this phone's own microphone during a call, for the admin's contact-detail
+              // audit. Dormant unless an admin enables it. See CallRecorder.kt.
+              add(CallRecordingPackage())
               // Reads which QR poster / ad this install came from, for the admin's
               // offline-QR attribution. See InstallReferrerModule.kt.
               add(InstallReferrerPackage())
@@ -48,6 +52,9 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     SoLoader.init(this, OpenSourceMergedSoMapping)
+    // Same audio device module react-native-webrtc would build, plus a microphone tap for call
+    // recording. Must be set before the WebRTC native module is constructed.
+    WebRTCModuleOptions.getInstance().audioDeviceModule = RecordingAudioDeviceModule(this)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       load()

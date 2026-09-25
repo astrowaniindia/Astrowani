@@ -35,6 +35,7 @@ import {captureEvent} from '../../utils/Analytics';
 import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
 import SessionIntroBanner from '../../components/SessionIntroBanner';
 import {LanguageContext} from '../../context/LanguageContext';
+import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from '../../utils/callRecording';
 import {createIceRecovery} from '../../utils/iceRecovery';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
@@ -177,6 +178,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const doEndCall = useCallback(async () => {
     stopCallTimer(); stopRingCountdown(); stopRipple(); cleanupWebRTC();
     hideActiveSessionNotification();
+    stopAndUploadCallRecording();
     const sid = sessionIdRef.current;
     captureEvent('call_ended', {
       call_type: 'video',
@@ -232,6 +234,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const toggleMute = useCallback(() => {
     const next = !audioMuted;
     setAudioMuted(next);
+    setCallRecordingMuted(next);
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((t: any) => { t.enabled = !next; });
     }
@@ -317,6 +320,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
             isConnectedRef.current = true;
             setCallState('in_call');
             captureEvent('call_connected', {call_type: 'video', session_id: sessionIdRef.current});
+            // Audio recording for the contact-detail audit (no-op unless an admin enabled it).
+            startCallRecording(sessionIdRef.current, 'video');
             // Persistent notification — billing keeps running even if the customer
             // backgrounds the app (e.g. presses the phone's Home button) without
             // actually ending the call. See activeSessionNotification.js.

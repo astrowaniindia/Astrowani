@@ -33,6 +33,7 @@ import color from '../../common/consts/color';
 import useElapsedSeconds from '../../hooks/useElapsedSeconds';
 import {captureEvent} from '../../utils/Analytics';
 import {LanguageContext} from '../../context/LanguageContext';
+import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from '../../utils/callRecording';
 import {createIceRecovery} from '../../utils/iceRecovery';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
@@ -179,6 +180,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     stopRipple();
     cleanupWebRTC();
     hideActiveSessionNotification();
+    stopAndUploadCallRecording();
     const sid = sessionIdRef.current;
     captureEvent('call_ended', {
       call_type: 'voice',
@@ -239,6 +241,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const toggleMute = useCallback(() => {
     const next = !audioMuted;
     setAudioMuted(next);
+    setCallRecordingMuted(next);
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((t: any) => { t.enabled = !next; });
     }
@@ -312,6 +315,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             isConnectedRef.current = true;
             setCallState('in_call');
             captureEvent('call_connected', {call_type: 'voice', session_id: sessionIdRef.current});
+            // Audio recording for the contact-detail audit (no-op unless an admin enabled it).
+            startCallRecording(sessionIdRef.current, 'voice');
             // Persistent notification — billing keeps running even if the customer
             // backgrounds the app (e.g. presses the phone's Home button) without
             // actually ending the call. See activeSessionNotification.js.

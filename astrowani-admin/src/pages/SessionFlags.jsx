@@ -27,6 +27,32 @@ export default function SessionFlags() {
   const [role, setRole] = useState('astrologer');
   const [open, setOpen] = useState(null); // flag id whose conversation is showing
   const [context, setContext] = useState(null); // proof for the open flag
+  const [rec, setRec] = useState(null); // call-recording status { storageConfigured, enabled, transcriptionKey }
+  const [audioUrls, setAudioUrls] = useState({}); // recordingId -> short-lived playback url
+
+  const loadRec = async () => {
+    try { const { data } = await client.get('/api/admin/call-recordings/status'); setRec(data); } catch (_) { setRec(null); }
+  };
+  useEffect(() => { loadRec(); }, []);
+
+  const toggleRecording = async () => {
+    const next = !rec.enabled;
+    if (next && !window.confirm(
+      'Switch call recording ON?\n\nCalls in the updated apps will be recorded (each person\'s own microphone) and checked for phone numbers. ' +
+      'Make sure your Terms and Privacy Policy already say calls may be recorded.',
+    )) return;
+    try {
+      await client.patch('/api/admin/settings', { key: 'call_recording_enabled', value: next ? 'true' : 'false' });
+      await loadRec();
+    } catch (e) { window.alert(e.response?.data?.message || e.message || 'Failed to save.'); }
+  };
+
+  const playRecording = async (id) => {
+    try {
+      const { data } = await client.get(`/api/admin/call-recordings/${id}/audio`);
+      setAudioUrls((u) => ({ ...u, [id]: data.url }));
+    } catch (e) { window.alert(e.response?.data?.message || 'Could not load the recording.'); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -94,6 +120,28 @@ export default function SessionFlags() {
       {tableMissing && (
         <div className="card" style={{ marginBottom: 12 }}>
           Run <code>sql/session_flags.sql</code> in the Supabase SQL editor to enable this page.
+        </div>
+      )}
+
+      {rec && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <b>Call recording (audio)</b>{' '}
+          <span className={`badge ${rec.enabled && rec.storageConfigured ? 'green' : 'amber'}`}>
+            {rec.enabled && rec.storageConfigured ? 'ON' : 'OFF'}
+          </span>
+          <p className="muted" style={{ margin: '6px 0' }}>
+            Each phone records its own microphone during a call (not while muted) and uploads it; the audio is
+            transcribed and checked for spoken phone numbers. Users see a notice when recording starts. Only apps
+            updated with the recording build take part.
+          </p>
+          {!rec.storageConfigured && (
+            <p style={{ color: '#c0392b', margin: '6px 0' }}>
+              Storage is not set up yet (R2_ENDPOINT, R2_CALL_BUCKET, R2_CALL_ACCESS_KEY_ID, R2_CALL_SECRET_ACCESS_KEY
+              on the server), so nothing can be recorded even if switched on.
+            </p>
+          )}
+          {!rec.transcriptionKey && <p style={{ color: '#c0392b', margin: '6px 0' }}>No Gemini key on the server, so recordings could not be transcribed.</p>}
+          <button className="btn" onClick={toggleRecording}>{rec.enabled ? 'Switch OFF' : 'Switch ON'}</button>
         </div>
       )}
 
@@ -179,7 +227,30 @@ export default function SessionFlags() {
                             {' · '}<b>Session:</b> <span className="muted">{fmt(context.session?.started_at)} → {fmt(context.session?.ended_at)}</span>
                             <button className="btn secondary" style={{ marginLeft: 12 }} onClick={() => copyProof(context)}>Copy proof</button>
                           </div>
-                          {context.messages.length === 0 && (
+                          {(context.recordings || []).map((rc) => (
+                            <div
+                              key={rc.id}
+                              style={{
+                                padding: '6px 8px', marginBottom: 6, borderRadius: 4,
+                                background: rc.isFlagged ? 'rgba(192,57,43,0.12)' : 'rgba(0,0,0,0.04)',
+                                borderLeft: rc.isFlagged ? '3px solid #c0392b' : '3px solid transparent',
+                              }}
+                            >
+                              <b>Call recording · {rc.name} ({rc.role})</b>{' '}
+                              <span className="muted">
+                                {Math.round((rc.duration_ms || 0) / 1000)}s · {rc.status}{rc.error ? ` (${rc.error})` : ''}
+                              </span>
+                              {rc.hasAudio && !audioUrls[rc.id] && (
+                                <button className="btn secondary" style={{ marginLeft: 10 }} onClick={() => playRecording(rc.id)}>Load audio</button>
+                              )}
+                              {audioUrls[rc.id] && <audio controls src={audioUrls[rc.id]} style={{ display: 'block', marginTop: 6 }} />}
+                              {rc.transcript && <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{rc.transcript}</div>}
+                              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                                This is what that person&apos;s own microphone picked up. If they were on speaker, the other person&apos;s voice can appear too.
+                              </div>
+                            </div>
+                          ))}
+                          {context.messages.length === 0 && !(context.recordings || []).length && (
                             <span className="muted">No saved conversation for this flag.</span>
                           )}
                           {context.messages.map((m) => (

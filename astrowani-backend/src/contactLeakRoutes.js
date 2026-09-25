@@ -131,9 +131,23 @@ module.exports = function registerContactLeakRoutes(app) {
         };
       });
     }
+    // Call recordings for this session (each side's own microphone), with transcripts.
+    let recordings = [];
+    if (flag.session_id) {
+      const { data: recs } = await db.from('call_recordings')
+        .select('id, role, status, duration_ms, bytes, transcript, flagged, created_at, storage_key, error')
+        .eq('session_id', flag.session_id).order('created_at', { ascending: true });
+      recordings = (recs || []).map(({ storage_key, ...r }) => ({
+        ...r,
+        name: r.role === 'astrologer' ? astroName : custName,
+        hasAudio: !!storage_key,
+        isFlagged: String(r.id) === String(flag.message_id),
+      }));
+    }
     return res.json({
       success: true,
       data: {
+        recordings,
         flag: {
           id: flag.id, source: flag.source, severity: flag.severity, kinds: flag.kinds,
           sender_role: flag.sender_role, created_at: flag.created_at, status: flag.status,
