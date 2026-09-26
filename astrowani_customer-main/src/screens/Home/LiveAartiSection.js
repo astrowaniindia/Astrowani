@@ -17,11 +17,17 @@
 //      rectangle forever. This one listens for YouTube's own error events and a
 //      no-response timeout, then offers "Watch on YouTube".
 //   3. Nothing live => render nothing. No placeholder, no empty box.
+//   4. No player while the app is in the BACKGROUND. A YouTube embed is a
+//      WebView holding a video decoder; keeping one alive behind a backgrounded
+//      app wastes memory and battery, and on a low-memory device the main
+//      thread can stall inside Chromium's own bridge setup long enough for
+//      Android to record a Background ANR. That is not hypothetical — it is
+//      what this rule was added in response to.
 //
 // Placement: bottom of Home, right before "What Our Clients Say" — see Home.js.
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity,
+  AppState, View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity,
   ActivityIndicator, Image, Linking,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -54,6 +60,13 @@ const CARD_GAP = scale(10);
 // Snap distance must include the gap or the row drifts out of alignment after
 // a few swipes.
 const SNAP = CARD_WIDTH + CARD_GAP;
+
+// Android reports 'active' | 'background'; iOS adds 'inactive'. Anything else
+// (including null, which Android can report before the first change event) is
+// treated as foreground on purpose: this must fail OPEN, or a missed initial
+// state would leave the section permanently showing a thumbnail instead of the
+// live stream it exists to play.
+const isForeground = (state) => state !== 'background' && state !== 'inactive';
 
 // If the player has not reported "ready" by now, something is wrong that
 // YouTube did not raise as an error event (no network, blocked script, a
@@ -122,23 +135,28 @@ function playerHtml(videoId) {
 // YouTube's documented player error codes.
 const EMBED_BLOCKED = [101, 150];
 
-function LiveCard({ channel, isActive, t }) {
+function LiveCard({ channel, isActive, appActive, t }) {
   const [state, setState] = useState('loading'); // loading | playing | failed
   const timerRef = useRef(null);
+
+  // Two separate conditions, deliberately not merged at the call site: isActive is
+  // the card's place in the row, appActive is whether the app is on screen at all.
+  // A player is only justified when both hold.
+  const shouldPlay = isActive && appActive;
 
   const fail = useCallback(() => setState('failed'), []);
 
   useEffect(() => {
-    if (!isActive || state !== 'loading') return undefined;
+    if (!shouldPlay || state !== 'loading') return undefined;
     timerRef.current = setTimeout(fail, READY_TIMEOUT_MS);
     return () => clearTimeout(timerRef.current);
-  }, [isActive, state, fail]);
+  }, [shouldPlay, state, fail]);
 
-  // Leaving the card resets it, so coming back retries rather than showing a
-  // stale failure.
+  // Leaving the card — or leaving the app — resets it, so coming back retries
+  // rather than showing a stale failure.
   useEffect(() => {
-    if (!isActive) setState('loading');
-  }, [isActive]);
+    if (!shouldPlay) setState('loading');
+  }, [shouldPlay]);
 
   const openOnYouTube = () => {
     Linking.openURL(`https://www.youtube.com/watch?v=${channel.videoId}`).catch(() => {});
@@ -181,7 +199,7 @@ function LiveCard({ channel, isActive, t }) {
               <Text style={styles.fallbackBtnText}>{t('liveAarti.watchOnYouTube')}</Text>
             </View>
           </TouchableOpacity>
-        ) : isActive ? (
+        ) : shouldPlay ? (
           <>
             <WebView
               source={{ html: playerHtml(channel.videoId), baseUrl: 'https://www.youtube.com' }}
@@ -204,7 +222,8 @@ function LiveCard({ channel, isActive, t }) {
             )}
           </>
         ) : (
-          // Off-screen card: a still image, never a second video decoder.
+          // Off-screen card, or a backgrounded app: a still image, never a live
+          // video decoder.
           <View style={styles.idle}>
             <Image source={{ uri: channel.thumbnail || thumbFor(channel.videoId) }} style={styles.fallbackThumb} />
             <View style={styles.fallbackVeil} />
@@ -228,6 +247,16 @@ export default function LiveAartiSection() {
   const { t } = useContext(LanguageContext);
   const [channels, setChannels] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  // One listener for the whole row, not one per card — every card needs the same
+  // answer, and the cards are rebuilt whenever the live list changes.
+  const [appActive, setAppActive] = useState(() => isForeground(AppState.currentState));
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      setAppActive(isForeground(state));
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -289,7 +318,7 @@ export default function LiveAartiSection() {
         onScrollEndDrag={onScroll}
         scrollEventThrottle={16}>
         {channels.map((c, i) => (
-          <LiveCard key={c.id} channel={c} isActive={i === activeIndex} t={t} />
+          <LiveCard key={c.id} channel={c} isActive={i === activeIndex} appActive={appActive} t={t} />
         ))}
       </ScrollView>
 
