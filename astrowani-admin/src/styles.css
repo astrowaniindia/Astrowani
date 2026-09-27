@@ -1745,16 +1745,42 @@ table td:first-child img {
   border-radius: 6px !important;
 }
 
-/* Image preview in form fields */
+/* Image preview in form fields.
+   Excludes the crop modal's image: ImageCropModal renders INSIDE the .field
+   wrapper, so without the :not() this 72x52 thumbnail rule shrank the picture
+   being cropped down to a thumbnail floating in the middle of the cropper. */
 .field .thumb,
 .image-field-preview,
-.field img {
+.field img:not(.reactEasyCrop_Image) {
   width: 72px !important;
   height: 52px !important;
   max-width: 72px !important;
   max-height: 52px !important;
   object-fit: cover !important;
   border-radius: 8px !important;
+}
+
+/* react-easy-crop sizes its media itself (and its own CSS is not !important),
+   so keep every app-level image rule off it. */
+.reactEasyCrop_Image {
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: fill !important;
+  border-radius: 0 !important;
+}
+.reactEasyCrop_Contain {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+.reactEasyCrop_Cover_Horizontal {
+  width: 100% !important;
+  height: auto !important;
+}
+.reactEasyCrop_Cover_Vertical {
+  width: auto !important;
+  height: 100% !important;
 }
 
 /* ── STORE PRODUCTS / GEMSTONES GRID ── */
