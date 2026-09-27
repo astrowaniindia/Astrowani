@@ -2590,13 +2590,26 @@ app.get('/api/banners/all', async (req, res) => {
       ]);
       if (error) throw error;
       const intervalSeconds = Math.max(1, Number(intervalRaw) || 4);
+      // Banner artwork has its wording baked into the picture, so a Hindi
+      // customer needs a different image, not just a translated title. Resolved
+      // HERE rather than in the app because this response is already cached per
+      // (app, language, placement) — see cacheKey above — so `imageUrl` can just
+      // be the right image for the language that was asked for, and every app
+      // already installed picks this up with no update.
+      //
+      // Falls back to `image` whenever there is no Hindi artwork (including on a
+      // database that predates sql/banner_image_hi.sql, where image_hi is
+      // undefined), which is the whole point: uploading one banner keeps showing
+      // it to everybody. Deliberately NOT symmetric — an English customer is
+      // never shown Hindi artwork, since that is the thing this exists to stop.
+      const wantsHindi = language === 'hindi';
       return {
         intervalSeconds,
         data: (data || []).map((b) => ({
           id: b.id,
           title: b.title,
           description: b.description,
-          imageUrl: b.image,
+          imageUrl: (wantsHindi && b.image_hi) ? b.image_hi : b.image,
           link: b.link,
           placement: b.placement,
           actionType: b.action_type,
@@ -2610,7 +2623,13 @@ app.get('/api/banners/all', async (req, res) => {
           // above. Empty array = show to everyone, which is what every banner that
           // predates the column resolves to.
           segments: String(b.segments || '').split(',').map((x) => x.trim()).filter(Boolean),
-          hindi: { title: b.title_hi || b.title, description: b.description_hi || b.description },
+          hindi: {
+            title: b.title_hi || b.title,
+            description: b.description_hi || b.description,
+            // Same resolution as imageUrl above, offered unconditionally so a
+            // caller that did not pass ?language= can still pick per-viewer.
+            imageUrl: b.image_hi || b.image,
+          },
         })),
       };
     });

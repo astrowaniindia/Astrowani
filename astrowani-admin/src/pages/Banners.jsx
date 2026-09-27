@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 
 const EMPTY = {
-  title: '', title_hi: '', description: '', description_hi: '', image: '',
+  title: '', title_hi: '', description: '', description_hi: '', image: '', image_hi: '',
   sort_order: 0, is_active: true, app: 'both', language: 'both', audience: 'all', segments: '',
   placement: 'home_primary', action_type: 'none', action_value: '',
 };
@@ -189,7 +189,12 @@ export default function Banners() {
                 <td>{r.title}</td>
                 <td><span className="badge gray">{PLACEMENTS[r.placement]?.label || r.placement || 'home_primary'}</span></td>
                 <td><span className="badge gray">{APP_LABELS[r.app || 'both']}</span></td>
-                <td><span className="badge gray">{LANGUAGE_LABELS[r.language || 'both']}</span></td>
+                <td>
+                  <span className="badge gray">{LANGUAGE_LABELS[r.language || 'both']}</span>
+                  {/* So it is visible at a glance which banners already have Hindi
+                      artwork and which fall back to the English image. */}
+                  {r.image_hi ? <span className="badge blue" style={{ marginLeft: 6 }}>+ Hindi image</span> : null}
+                </td>
                 <td><span className={`badge ${(r.audience || 'all') === 'all' ? 'gray' : 'blue'}`}>
                   {AUDIENCE_LABELS[r.audience || 'all']}
                 </span></td>
@@ -234,12 +239,28 @@ export default function Banners() {
           ) : null; })()}
 
           <ImageField
-            label="Banner image (URL or upload)"
+            label="Banner image — English / default (URL or upload)"
             value={editing.image}
             onChange={(v) => set('image', v)}
             recommendedWidth={PLACEMENTS[editing.placement || 'home_primary']?.width}
             recommendedHeight={PLACEMENTS[editing.placement || 'home_primary']?.height}
           />
+
+          {/* Optional second artwork for customers using the app in Hindi. Blank
+              is the normal case: they then see the English image, so a banner
+              uploaded once still reaches everybody. See sql/banner_image_hi.sql. */}
+          <ImageField
+            label="Banner image — Hindi (optional)"
+            value={editing.image_hi}
+            onChange={(v) => set('image_hi', v)}
+            recommendedWidth={PLACEMENTS[editing.placement || 'home_primary']?.width}
+            recommendedHeight={PLACEMENTS[editing.placement || 'home_primary']?.height}
+          />
+          <div className="muted" style={{ marginTop: -8, marginBottom: 14, fontSize: 13 }}>
+            Shown instead of the image above to customers who have set the app to Hindi.
+            <strong> Leave it empty and they simply see the English image</strong> — so you
+            never have to upload two. Same size as above.
+          </div>
 
           <div className="field"><label>When tapped…</label>
             <select value={editing.action_type || 'none'} onChange={(e) => set('action_type', e.target.value)}>
@@ -274,10 +295,11 @@ export default function Banners() {
               <option value="both">Both Languages</option>
             </select>
             <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              Shown to a customer whose app language matches (or who set no preference and it's
-              "Both Languages"). Use this when the banner image itself has English/Hindi text
-              baked in and needs a different image per language — the Title/Description (Hindi)
-              fields above are for when the same image works for both.
+              This <strong>hides</strong> the banner from customers on the other language — pick
+              "English only" and a Hindi customer sees nothing in this slot. Leave it on
+              "Both Languages" unless you really want it hidden. To show
+              <em> different artwork</em> per language, use the Hindi image field above instead:
+              that never hides anything.
             </div>
           </div>
           <div className="field"><label>Which customer groups</label>

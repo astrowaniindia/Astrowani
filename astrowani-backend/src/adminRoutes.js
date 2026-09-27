@@ -202,7 +202,9 @@ module.exports = function registerAdminRoutes(app) {
   });
   crud('banners', 'banners', {
     orderBy: 'sort_order', ascending: true,
-    allowed: ['title', 'title_hi', 'description', 'description_hi', 'image', 'link', 'sort_order',
+    // image_hi = optional Hindi artwork; blank means Hindi customers see `image`.
+    // See sql/banner_image_hi.sql and the resolution in GET /api/banners/all.
+    allowed: ['title', 'title_hi', 'description', 'description_hi', 'image', 'image_hi', 'link', 'sort_order',
       'is_active', 'app', 'language', 'placement', 'action_type', 'action_value',
       // Who the banner is for: all | new | returning. See sql/banner_audience.sql —
       // 'new' is a customer who can still claim the free chat.
