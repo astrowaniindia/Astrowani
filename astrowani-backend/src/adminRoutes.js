@@ -982,11 +982,21 @@ module.exports = function registerAdminRoutes(app) {
   const isSoftDeletedCustomer = (row) => /^deleted:/.test(String(row?.mobile || ''));
 
   app.get('/api/admin/customers', requireAdmin, h(async (req, res) => {
-    const { data, error } = await db
+    // PAGED, deliberately. A plain `.select()` is capped at 1000 rows by PostgREST and
+    // does NOT error — it just returns the newest 1000 and stops. The page counts rows
+    // in JS, so "Total customers" froze at exactly 1,000 and stayed there for days while
+    // real signups kept arriving (measured 2026-09-27: 1,219 visible, 1,000 shown).
+    // Ordered newest-first, so the rows it silently dropped were the OLDEST ones —
+    // "Joined today" still looked right, which is why it read as a plausible number
+    // rather than an obvious break. See src/pagedSelect.js.
+    const { rows: data, truncated } = await pagedSelect(() => db
       .from('customers')
       .select('id, name, mobile, email, wallet_balance, created_at, fcm_token')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
+      // `id` is the tiebreaker, not decoration: .range() paging is only correct against
+      // a TOTAL order, and created_at alone has ties (bulk signups share a timestamp),
+      // which lets Postgres return a tied row on two pages and drop another entirely.
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }));
 
     // Deleted accounts are hidden by default. They used to stay in the list forever
     // with "(deleted)" bolted onto the name and a `deleted:…` string where the phone
@@ -1008,6 +1018,9 @@ module.exports = function registerAdminRoutes(app) {
       // Lets the page offer "show deleted" only when there is something to show, and
       // proves the rows still exist rather than looking like they were destroyed.
       deletedCount: all.filter(isSoftDeletedCustomer).length,
+      // Only set if pagedSelect's hard limit tripped, so the page can say the totals
+      // under-report instead of quietly showing a wrong number again.
+      truncated,
     });
   }));
 
@@ -2252,12 +2265,19 @@ module.exports = function registerAdminRoutes(app) {
     const thresholdDays = Number(days) > 0 ? Number(days) : 30;
     const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: customers, error } = await applyAudienceFilter(
-      db.from('customers').select('fcm_token').not('fcm_token', 'is', null),
+    // PAGED. The preview endpoint above counts with `count: 'exact', head: true`, which
+    // is uncapped — but this send used a plain `.select()`, capped at 1000 rows and
+    // silent about it. Past 1000 token-holders the admin would be shown "N will receive
+    // this", only the first 1000 would actually get it, and the response's `targeted`
+    // would agree with the under-delivery. 779 today, so this has not bitten yet.
+    const { rows: customers, truncated } = await pagedSelect(() => applyAudienceFilter(
+      // Ordered by id purely to give .range() a stable total order to page against;
+      // an unordered paged select can skip and duplicate rows. Order is irrelevant to
+      // a broadcast otherwise.
+      db.from('customers').select('fcm_token').not('fcm_token', 'is', null).order('id'),
       audience,
       cutoff,
-    );
-    if (error) throw error;
+    ));
     const tokens = (customers || []).map((c) => c.fcm_token).filter(Boolean);
 
     // FCM allows up to 500 tokens per multicast call — chunk accordingly.
@@ -2270,7 +2290,7 @@ module.exports = function registerAdminRoutes(app) {
       successCount += result.successCount || 0;
       failureCount += result.failureCount || 0;
     }
-    return res.json({ success: true, audience, days: thresholdDays, targeted: tokens.length, successCount, failureCount });
+    return res.json({ success: true, audience, days: thresholdDays, targeted: tokens.length, successCount, failureCount, truncated });
   }));
 
   console.log('[admin] routes registered under /api/admin');
