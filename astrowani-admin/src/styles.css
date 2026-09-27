@@ -1912,6 +1912,21 @@ table td:first-child img {
 }
 
 /* ── CUSTOMER TRACKING & NEW ASTROLOGERS MODERN UI ── */
+/* Pager under the customers table. Outside .table-wrap on purpose, so it does not
+   scroll sideways with a wide table. */
+.customer-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
 .customer-avatar {
   width: 38px;
   height: 38px;

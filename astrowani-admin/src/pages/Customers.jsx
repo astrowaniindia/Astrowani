@@ -359,6 +359,21 @@ function ProfileDetails({ profile }) {
   );
 }
 
+// Page numbers to render: always first and last, plus a window around the current
+// page, with ellipses for the gaps. At 1,200+ customers a naive 1..N row of buttons
+// would be 25 buttons wide and wrap onto three lines.
+function pageWindow(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const out = [1];
+  const from = Math.max(2, current - 1);
+  const to = Math.min(total - 1, current + 1);
+  if (from > 2) out.push('...');
+  for (let i = from; i <= to; i++) out.push(i);
+  if (to < total - 1) out.push('...');
+  out.push(total);
+  return out;
+}
+
 export default function Customers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -376,6 +391,12 @@ export default function Customers() {
   const [inspecting, setInspecting] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [profile, setProfile] = useState(null); // { loading } | { error } | { data }
+  // Paging is CLIENT-side: the route already returns every customer in one response
+  // (it has to, because the four stat cards and the tab counts are computed from the
+  // whole set). This only limits how many rows are RENDERED — 1,200+ <tr>s made the
+  // page scroll forever and re-render slowly on every keystroke in the search box.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   // Load everything the customer has filled in whenever the details popup opens.
   useEffect(() => {
@@ -451,6 +472,27 @@ export default function Customers() {
       return name.includes(q) || mobile.includes(q) || email.includes(q) || id.includes(q);
     });
   }, [rows, timeFilter, walletFilter, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  // Any change to what is being filtered puts you back on page 1. Without this you can
+  // search from page 9 and land on an empty table that looks like "no results" when the
+  // matches are all sitting on page 1.
+  useEffect(() => { setPage(1); }, [timeFilter, walletFilter, search, showDeleted, pageSize]);
+
+  // Clamped at RENDER time, not in an effect. A clamping effect raced the reset above:
+  // both run in the same commit, the clamp still sees the pre-reset `page`, and its
+  // setPage wins — so switching to "Joined Today" from page 25 landed on page 3 of 3
+  // ("Showing 101-115 of 115") instead of page 1. Deriving it has no such ordering
+  // hazard, and it still covers the other case (deleting the last row on the final
+  // page steps back instead of showing an empty table).
+  const safePage = Math.min(page, totalPages);
+
+  const pageStart = (safePage - 1) * pageSize;
+  const pagedRows = useMemo(
+    () => filteredRows.slice(pageStart, pageStart + pageSize),
+    [filteredRows, pageStart, pageSize],
+  );
 
   const closeTopup = () => {
     setTopup(null);
@@ -759,7 +801,7 @@ export default function Customers() {
             )}
 
             {!loading &&
-              filteredRows.map((r) => {
+              pagedRows.map((r) => {
                 const recent = isRecent(r.created_at);
                 const wallet = Number(r.wallet_balance || 0);
 
@@ -902,6 +944,58 @@ export default function Customers() {
           </tbody>
         </table>
       </div>
+
+      {/* Pager. Sits OUTSIDE .table-wrap so it stays put instead of scrolling
+          sideways with a wide table. Hidden when everything already fits. */}
+      {!loading && filteredRows.length > 0 && (
+        <div className="customer-pager">
+          <div className="muted" style={{ fontSize: 13 }}>
+            Showing <strong style={{ color: 'var(--text-primary)' }}>{pageStart + 1}</strong>
+            {'–'}
+            <strong style={{ color: 'var(--text-primary)' }}>{Math.min(pageStart + pageSize, filteredRows.length)}</strong>
+            {' of '}
+            <strong style={{ color: 'var(--text-primary)' }}>{filteredRows.length.toLocaleString('en-IN')}</strong>
+            {filteredRows.length !== rows.length ? ' matching' : ''}
+            {' customers'}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }} className="muted">
+              Rows
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                style={{ width: 78, padding: '5px 8px' }}
+              >
+                {[25, 50, 100, 250].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+
+            {totalPages > 1 && (
+              <div className="btn-group">
+                <button className="btn ghost sm" disabled={safePage === 1} onClick={() => setPage(1)} title="First page">{'«'}</button>
+                <button className="btn ghost sm" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Prev</button>
+                {pageWindow(safePage, totalPages).map((n, i) => (
+                  n === '...'
+                    ? <span key={`gap${i}`} className="muted" style={{ padding: '0 4px', alignSelf: 'center' }}>{'…'}</span>
+                    : (
+                      <button
+                        key={n}
+                        className={`btn sm ${n === safePage ? '' : 'ghost'}`}
+                        onClick={() => setPage(n)}
+                        style={{ minWidth: 34 }}
+                      >
+                        {n}
+                      </button>
+                    )
+                ))}
+                <button className="btn ghost sm" disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>Next</button>
+                <button className="btn ghost sm" disabled={safePage === totalPages} onClick={() => setPage(totalPages)} title="Last page">{'»'}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Wallet Top-up / Adjustment Modal ── */}
       {topup && (
