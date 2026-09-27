@@ -1325,6 +1325,19 @@ textarea {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* Fade only, no scale. For modals holding something that measures its own box
+   on mount — react-easy-crop does, and a `transform` does not fire a resize
+   observation, so it would keep the size it read mid-animation (~95%) forever
+   and select slightly less than the whole image. */
+.modal.modal-no-zoom {
+  animation-name: modalFadeOnly;
+}
+
+@keyframes modalFadeOnly {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .modal h3 {
   margin: 0 0 16px;
   font-size: 20px;

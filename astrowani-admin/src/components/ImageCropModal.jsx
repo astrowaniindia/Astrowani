@@ -29,7 +29,7 @@ export default function ImageCropModal({ imageSrc, targetWidth, targetHeight, on
   };
 
   return (
-    <Modal title="Adjust image" onClose={onCancel}>
+    <Modal title="Adjust image" onClose={onCancel} className="modal-no-zoom">
       <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
         Drag to reposition, scroll or use the slider to zoom. This decides exactly what shows —
         final size will be {targetWidth} × {targetHeight}px.
