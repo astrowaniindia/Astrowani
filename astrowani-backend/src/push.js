@@ -107,6 +107,49 @@ const DEAD_TOKEN_CODES = new Set([
 // recorded" and the pushes themselves carry on untouched.
 let removalColumnAvailable = true;
 
+// A SINGLE `not-registered` response is not reliable enough to act on immediately.
+// Measured 2026-09-28: a customer actively chatting (recharging, being billed minute by
+// minute) got marked "app removed" mid-session. FCM's HTTP v1 API is documented to return
+// this code sporadically under a burst of sends to the same token in quick succession —
+// exactly what a live chat produces, since every message the astrologer sends fires its
+// own single-token push (see /api/push/notify-chat-message) — without the token actually
+// being dead. Trusting the first response nulled a token that kept working seconds later.
+//
+// So: require the SAME token to be seen dead again after some real time has passed, with
+// no successful send to it in between, before actually clearing it. A genuinely
+// uninstalled app keeps failing every time and gets caught a few minutes later than
+// before; a burst-flaky response self-heals the moment the very next send succeeds.
+// In-memory only (resets on redeploy) — same posture as every other in-memory counter in
+// this codebase; worst case after a restart is one extra confirmation cycle, never a
+// wrongly-cleared token.
+const DEAD_CONFIRM_WINDOW_MS = 5 * 60 * 1000;
+const pendingDeadSince = new Map(); // token -> ms timestamp of first dead sighting
+
+/**
+ * Given this round's dead and successful tokens, returns the subset of `dead` that
+ * should actually be recorded as removed now — those seen dead before, at least
+ * DEAD_CONFIRM_WINDOW_MS ago, with no success in between. Updates `pendingDeadSince`
+ * in place: records a first sighting, clears an entry on success, and clears a
+ * confirmed entry once it's about to be acted on (the token is about to be nulled in
+ * the database, so it can never be sent to — and therefore never reconfirmed — again).
+ */
+function confirmDeadTokens(dead, succeeded) {
+  const now = Date.now();
+  for (const token of succeeded) pendingDeadSince.delete(token);
+
+  const confirmed = [];
+  for (const token of dead) {
+    const firstSeen = pendingDeadSince.get(token);
+    if (firstSeen == null) {
+      pendingDeadSince.set(token, now);
+    } else if (now - firstSeen >= DEAD_CONFIRM_WINDOW_MS) {
+      confirmed.push(token);
+      pendingDeadSince.delete(token);
+    }
+  }
+  return confirmed;
+}
+
 function isMissingColumn(err) {
   const msg = `${err?.message || ''} ${err?.details || ''}`.toLowerCase();
   return err?.code === '42703' || err?.code === 'PGRST204' || msg.includes('app_removed_at');
@@ -165,6 +208,18 @@ function deadTokensFrom(tokenList, response) {
   return dead;
 }
 
+/** Pulls the SUCCESSFULLY delivered tokens out of a multicast response — proof of life,
+ *  used to clear a pending "might be dead" sighting for that token. */
+function succeededTokensFrom(tokenList, response) {
+  const responses = response?.responses;
+  if (!Array.isArray(responses)) return [];
+  const ok = [];
+  responses.forEach((r, i) => {
+    if (r?.success && tokenList[i]) ok.push(tokenList[i]);
+  });
+  return ok;
+}
+
 /**
  * Clears any "app removed" mark for a customer, called when a fresh token is registered
  * — i.e. they reinstalled and signed in again. Without this a returning customer would
@@ -215,8 +270,12 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
     // one send is caught by the next.
     const dead = deadTokensFrom(tokenList, response);
     if (dead.length) {
-      console.log(`[push] ${dead.length} token(s) rejected as unregistered — app removed on those devices`);
-      recordDeadTokens(dead).catch(() => {});
+      const succeeded = succeededTokensFrom(tokenList, response);
+      const confirmed = confirmDeadTokens(dead, succeeded);
+      if (confirmed.length) {
+        console.log(`[push] ${confirmed.length} token(s) confirmed unregistered — app removed on those devices`);
+        recordDeadTokens(confirmed).catch(() => {});
+      }
     }
 
     return response;
@@ -233,6 +292,9 @@ module.exports = {
   getPushDebugInfo: () => debugInfo,
   // exported for tests
   _deadTokensFrom: deadTokensFrom,
+  _succeededTokensFrom: succeededTokensFrom,
+  _confirmDeadTokens: confirmDeadTokens,
+  _pendingDeadSince: pendingDeadSince,
   _recordDeadTokens: recordDeadTokens,
   _DEAD_TOKEN_CODES: DEAD_TOKEN_CODES,
 };
