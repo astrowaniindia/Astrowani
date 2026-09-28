@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useRef } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,14 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  PermissionsAndroid,
-  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
-import AudioRecorderPlayer from 'react-native-audio-recorder-player';
-import RNFS from 'react-native-fs';
 import { LanguageContext } from '../../context/LanguageContext';
-
-const audioRecorderPlayer = new AudioRecorderPlayer();
+import VoiceNoteRecorderModal from '../../components/VoiceNoteRecorderModal';
 
 // Types a referral commission applies to. life_report is deliberately absent — it has no
 // commission rate and the backend rejects it with NOT_COMMISSIONABLE.
@@ -38,14 +33,9 @@ const MyCustomers = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Recording modal state
-  const [target, setTarget] = useState(null); // customer being sent a voice note
-  const [recording, setRecording] = useState(false);
-  const [recordedPath, setRecordedPath] = useState(null);
-  const [durationMs, setDurationMs] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [sending, setSending] = useState(false);
-  const startTimeRef = useRef(0);
+  // Voice-note target — the modal itself (recording/upload) lives in the shared
+  // VoiceNoteRecorderModal, reused by ChatHistoryThread.js.
+  const [target, setTarget] = useState(null);
 
   // Remedy recommendation state
   const [recommendTarget, setRecommendTarget] = useState(null); // customer being recommended to
@@ -73,19 +63,7 @@ const MyCustomers = () => {
     fetchData();
   }, []);
 
-  const requestMicPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
-  };
-
-  const openRecorder = (customer) => {
-    setTarget(customer);
-    setRecordedPath(null);
-    setDurationMs(0);
-    setRecording(false);
-    setPlaying(false);
-  };
+  const openRecorder = (customer) => setTarget(customer);
 
   // ── Recommend a remedy to a customer ──────────────────────────────────────
   // Items are fetched once and cached for the session — the catalogue barely changes
@@ -127,88 +105,6 @@ const MyCustomers = () => {
       Alert.alert(t('customers.recommendFailed'), e.response?.data?.message || e.message);
     } finally {
       setRecommendBusy(null);
-    }
-  };
-
-  const closeRecorder = async () => {
-    try {
-      if (recording) await audioRecorderPlayer.stopRecorder();
-      if (playing) await audioRecorderPlayer.stopPlayer();
-    } catch (_) {}
-    audioRecorderPlayer.removeRecordBackListener();
-    audioRecorderPlayer.removePlayBackListener();
-    setTarget(null);
-  };
-
-  const startRecording = async () => {
-    const ok = await requestMicPermission();
-    if (!ok) {
-      Alert.alert(t('customers.micRequiredTitle'), t('customers.micRequiredBody'));
-      return;
-    }
-    setRecordedPath(null);
-    setDurationMs(0);
-    startTimeRef.current = Date.now();
-    await audioRecorderPlayer.startRecorder();
-    audioRecorderPlayer.addRecordBackListener((e) => {
-      setDurationMs(e.currentPosition);
-    });
-    setRecording(true);
-  };
-
-  const stopRecording = async () => {
-    const path = await audioRecorderPlayer.stopRecorder();
-    audioRecorderPlayer.removeRecordBackListener();
-    setRecording(false);
-    setRecordedPath(path);
-  };
-
-  const previewPlayback = async () => {
-    if (!recordedPath) return;
-    if (playing) {
-      await audioRecorderPlayer.stopPlayer();
-      audioRecorderPlayer.removePlayBackListener();
-      setPlaying(false);
-      return;
-    }
-    setPlaying(true);
-    await audioRecorderPlayer.startPlayer(recordedPath);
-    audioRecorderPlayer.addPlayBackListener((e) => {
-      if (e.currentPosition >= e.duration) {
-        audioRecorderPlayer.stopPlayer();
-        audioRecorderPlayer.removePlayBackListener();
-        setPlaying(false);
-      }
-    });
-  };
-
-  const sendVoiceNote = async () => {
-    if (!recordedPath || !target) return;
-    setSending(true);
-    try {
-      const base64 = await RNFS.readFile(recordedPath, 'base64');
-      const token = await AsyncStorage.getItem('token');
-
-      const uploadRes = await Instance.post(
-        '/api/upload-image',
-        { base64: `data:audio/mp4;base64,${base64}`, folder: 'voice-notes' },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      const audioUrl = uploadRes.data?.url;
-      if (!audioUrl) throw new Error('Upload failed');
-
-      await Instance.post(
-        '/api/vendor/voice-notes',
-        { customerId: target.id, audioUrl, durationSeconds: Math.round(durationMs / 1000) },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-
-      Alert.alert(t('customers.voiceSentTitle'), t('customers.voiceSentBody', { name: target.name }));
-      closeRecorder();
-    } catch (e) {
-      Alert.alert(t('customers.sendFailed'), e.response?.data?.message || e.message || t('common.tryAgain'));
-    } finally {
-      setSending(false);
     }
   };
 
@@ -260,48 +156,7 @@ const MyCustomers = () => {
         />
       )}
 
-      <Modal visible={!!target} transparent animationType="fade" onRequestClose={closeRecorder}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Voice note for {target?.name}</Text>
-            <Text style={styles.modalSubtitle}>A short check-in — let them know you're thinking of them.</Text>
-
-            <View style={styles.recordArea}>
-              {!recordedPath ? (
-                <TouchableOpacity
-                  style={[styles.recordBtn, recording && styles.recordBtnActive]}
-                  onPress={recording ? stopRecording : startRecording}>
-                  <Icon name={recording ? 'stop' : 'mic'} size={32} color="#fff" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.recordBtn} onPress={previewPlayback}>
-                  <Icon name={playing ? 'pause' : 'play'} size={32} color="#fff" />
-                </TouchableOpacity>
-              )}
-              <Text style={styles.durationText}>
-                {recording ? 'Recording…' : recordedPath ? `${Math.round(durationMs / 1000)}s recorded` : 'Tap to record'}
-              </Text>
-              {recordedPath && !recording && (
-                <TouchableOpacity onPress={() => { setRecordedPath(null); setDurationMs(0); }}>
-                  <Text style={styles.reRecordText}>Re-record</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={closeRecorder}>
-                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sendBtn, (!recordedPath || sending) && styles.sendBtnDisabled]}
-                onPress={sendVoiceNote}
-                disabled={!recordedPath || sending}>
-                {sending ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.sendBtnText}>Send</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <VoiceNoteRecorderModal target={target} onClose={() => setTarget(null)} />
 
       {/* Remedy picker. Confirmation replaces the list rather than stacking a second
           alert on top — the astrologer needs to see WHAT they recommended and what it
@@ -495,28 +350,6 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(10), paddingHorizontal: scale(34), marginTop: verticalScale(16),
   },
   recommendDoneBtnTxt: { color: '#fff', fontWeight: '700', fontSize: moderateScale(13) },
-  modalCard: { width: '85%', backgroundColor: '#fff', borderRadius: moderateScale(16), padding: scale(20) },
-  modalTitle: { fontSize: moderateScale(17), fontWeight: 'bold', color: '#222', textAlign: 'center' },
-  modalSubtitle: { fontSize: moderateScale(12), color: '#888', textAlign: 'center', marginTop: 4, marginBottom: verticalScale(20) },
-  recordArea: { alignItems: 'center', marginBottom: verticalScale(20) },
-  recordBtn: {
-    width: scale(72),
-    height: scale(72),
-    borderRadius: scale(36),
-    backgroundColor: COLORS.AstroMaroon,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 3,
-  },
-  recordBtnActive: { backgroundColor: '#D32F2F' },
-  durationText: { marginTop: verticalScale(10), fontSize: moderateScale(13), color: '#666' },
-  reRecordText: { marginTop: verticalScale(8), color: COLORS.AstroMaroon, fontWeight: '600', fontSize: moderateScale(13) },
-  modalActions: { flexDirection: 'row', justifyContent: 'space-between' },
-  cancelBtn: { flex: 1, paddingVertical: verticalScale(12), borderRadius: moderateScale(8), alignItems: 'center', backgroundColor: '#eee', marginRight: scale(8) },
-  cancelBtnText: { color: '#333', fontWeight: 'bold', fontSize: moderateScale(14) },
-  sendBtn: { flex: 1, paddingVertical: verticalScale(12), borderRadius: moderateScale(8), alignItems: 'center', backgroundColor: COLORS.AstroMaroon, marginLeft: scale(8) },
-  sendBtnDisabled: { opacity: 0.5 },
-  sendBtnText: { color: '#fff', fontWeight: 'bold', fontSize: moderateScale(14) },
 });
 
 export default MyCustomers;
