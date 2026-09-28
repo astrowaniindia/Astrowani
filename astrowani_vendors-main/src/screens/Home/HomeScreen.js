@@ -29,6 +29,7 @@ import io from 'socket.io-client';
 import { SOCKET_URL } from '../../config/api';
 import MissedSessionsHome from '../../components/MissedSessionsHome';
 import HomeBanner from '../../components/HomeBanner';
+import OngoingSessionBar from '../../components/OngoingSessionBar';
 import { isVendorProfileComplete, ensureVendorProfileComplete, fetchAstrologerRow } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
@@ -642,6 +643,10 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Pinned above the ScrollView (not inside it) so it never scrolls away — an
+          active call/chat/live is time-sensitive enough to stay visible regardless of
+          scroll position. Renders nothing when there's nothing active. */}
+      <OngoingSessionBar navigation={navigation} />
       {/*
         style={{flex: 1}} is what PINS the bottom bar below. Without it the
         ScrollView sizes to its own content instead of claiming the space above
