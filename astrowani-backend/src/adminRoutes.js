@@ -991,14 +991,37 @@ module.exports = function registerAdminRoutes(app) {
     // Ordered newest-first, so the rows it silently dropped were the OLDEST ones —
     // "Joined today" still looked right, which is why it read as a plausible number
     // rather than an obvious break. See src/pagedSelect.js.
-    const { rows: data, truncated } = await pagedSelect(() => db
+    // `app_removed_at`/`app_removed_reason` come from sql/customer_app_removed.sql and
+    // drive the "App removed" state in the UI.
+    //
+    // The fallback below is NOT defensive padding. Naming a column PostgREST does not
+    // know 400s the ENTIRE query — it does not merely omit the field — so on a database
+    // without that migration this select would return nothing and the Customer Tracking
+    // page would show zero customers. That exact trap has bitten this codebase before
+    // (`astrologers.profile_image` in freeCallRoutes, 2026-09-27). Degrade to "no
+    // removal info" instead, so deploy order does not matter.
+    const BASE_COLS = 'id, name, mobile, email, wallet_balance, created_at, fcm_token';
+    const REMOVAL_COLS = `${BASE_COLS}, app_removed_at, app_removed_reason`;
+
+    // `id` is the tiebreaker, not decoration: .range() paging is only correct against
+    // a TOTAL order, and created_at alone has ties (bulk signups share a timestamp),
+    // which lets Postgres return a tied row on two pages and drop another entirely.
+    const buildCustomers = (cols) => () => db
       .from('customers')
-      .select('id, name, mobile, email, wallet_balance, created_at, fcm_token')
-      // `id` is the tiebreaker, not decoration: .range() paging is only correct against
-      // a TOTAL order, and created_at alone has ties (bulk signups share a timestamp),
-      // which lets Postgres return a tied row on two pages and drop another entirely.
+      .select(cols)
       .order('created_at', { ascending: false })
-      .order('id', { ascending: false }));
+      .order('id', { ascending: false });
+
+    let data;
+    let truncated;
+    try {
+      ({ rows: data, truncated } = await pagedSelect(buildCustomers(REMOVAL_COLS)));
+    } catch (err) {
+      const msg = `${err?.message || ''} ${err?.details || ''}`.toLowerCase();
+      if (!(err?.code === '42703' || err?.code === 'PGRST204' || msg.includes('app_removed_at'))) throw err;
+      console.warn('[admin] customers.app_removed_at missing — run sql/customer_app_removed.sql. Listing without app-removal info.');
+      ({ rows: data, truncated } = await pagedSelect(buildCustomers(BASE_COLS)));
+    }
 
     // Deleted accounts are hidden by default. They used to stay in the list forever
     // with "(deleted)" bolted onto the name and a `deleted:…` string where the phone

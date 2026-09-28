@@ -93,6 +93,17 @@ const WALLET_FILTERS = [
   { key: 'zero', label: 'Zero Balance' },
 ];
 
+// "Unknown" rather than "still installed": a customer with no push token cannot be
+// reached, so there is no way to learn whether they removed the app. Labelling that
+// group as installed would invent a fact, and it is the LARGER group (471 of 1,267 on
+// 2026-09-28), so the invented fact would dominate any churn figure read off this page.
+const APP_FILTERS = [
+  { key: 'all', label: 'Everyone' },
+  { key: 'removed', label: '🚫 App removed' },
+  { key: 'push', label: '🔔 Push on' },
+  { key: 'nopush', label: 'Unknown (no push)' },
+];
+
 function formatDateTime(dateStr) {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -380,6 +391,7 @@ export default function Customers() {
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
   const [walletFilter, setWalletFilter] = useState('all');
+  const [appFilter, setAppFilter] = useState('all'); // 'all' | 'removed' | 'push' | 'nopush'
   const [view, setView] = useState('list'); // 'list' | 'recharges'
   const [topup, setTopup] = useState(null); // customer being topped up
   const [amount, setAmount] = useState('');
@@ -440,11 +452,21 @@ export default function Customers() {
     const today = active.filter((r) => inRange(r.created_at, 'today')).length;
     const week = active.filter((r) => inRange(r.created_at, 'week')).length;
     const month = active.filter((r) => inRange(r.created_at, 'month')).length;
+    // `appRemoved` counts customers Firebase has told us no longer have the app. It is
+    // deliberately NOT presented as a churn rate: the denominator would have to be the
+    // push-enabled population, because a customer who never granted notification
+    // permission can never be detected either way. `pushOff` is that blind spot, shown
+    // beside it so the removed figure is never read as the whole story.
+    const appRemoved = active.filter((r) => r.app_removed_at).length;
+    const pushOn = active.filter((r) => !r.app_removed_at && r.fcm_token).length;
     return {
       total: active.length,
       today,
       week,
       month,
+      appRemoved,
+      pushOn,
+      pushOff: active.length - appRemoved - pushOn,
     };
   }, [rows]);
 
@@ -463,6 +485,9 @@ export default function Customers() {
       const wallet = Number(r.wallet_balance || 0);
       if (walletFilter === 'has' && !(wallet > 0)) return false;
       if (walletFilter === 'zero' && !(wallet <= 0)) return false;
+      if (appFilter === 'removed' && !r.app_removed_at) return false;
+      if (appFilter === 'push' && !(r.fcm_token && !r.app_removed_at)) return false;
+      if (appFilter === 'nopush' && (r.fcm_token || r.app_removed_at)) return false;
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
       const name = (r.name || '').toLowerCase();
@@ -471,14 +496,14 @@ export default function Customers() {
       const id = String(r.id || '').toLowerCase();
       return name.includes(q) || mobile.includes(q) || email.includes(q) || id.includes(q);
     });
-  }, [rows, timeFilter, walletFilter, search]);
+  }, [rows, timeFilter, walletFilter, appFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
 
   // Any change to what is being filtered puts you back on page 1. Without this you can
   // search from page 9 and land on an empty table that looks like "no results" when the
   // matches are all sitting on page 1.
-  useEffect(() => { setPage(1); }, [timeFilter, walletFilter, search, showDeleted, pageSize]);
+  useEffect(() => { setPage(1); }, [timeFilter, walletFilter, appFilter, search, showDeleted, pageSize]);
 
   // Clamped at RENDER time, not in an effect. A clamping effect raced the reset above:
   // both run in the same commit, the clamp still sees the pre-reset `page`, and its
@@ -669,6 +694,30 @@ export default function Customers() {
             <span className="muted">Current calendar month</span>
           </div>
         </div>
+
+        <div
+          className="stat"
+          style={{ cursor: 'pointer', borderColor: appFilter === 'removed' ? 'var(--crimson)' : undefined }}
+          onClick={() => { setAppFilter(appFilter === 'removed' ? 'all' : 'removed'); setTimeFilter('all'); }}
+          title="Customers whose push token Firebase rejected as belonging to an uninstalled app. Only customers who had notifications enabled can ever be detected — see the note below the number."
+        >
+          <div className="stat-header">
+            <span className="label">App Removed</span>
+            <div className="stat-icon-wrap" style={{ background: 'var(--crimson-bg)', color: 'var(--crimson)' }}>🚫</div>
+          </div>
+          <div className="value" style={{ color: metrics.appRemoved ? 'var(--crimson)' : undefined }}>
+            {loading ? '…' : metrics.appRemoved.toLocaleString('en-IN')}
+          </div>
+          <div className="stat-footer">
+            {/* The blind spot is stated ON the card, not buried in a tooltip. Without it
+                this number reads as total churn, when it can only ever describe the
+                push-enabled slice — and the undetectable group is currently the bigger
+                one, so the omission would mislead by a wide margin. */}
+            <span className="muted">
+              {loading ? ' ' : `of ${metrics.pushOn + metrics.appRemoved} detectable · ${metrics.pushOff} unknown`}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* ── Filter Bar & Search ── */}
@@ -738,6 +787,25 @@ export default function Customers() {
                   color: walletFilter === f.key ? '#fff' : undefined,
                 }}
                 onClick={() => setWalletFilter(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>App:</span>
+          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+            {APP_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`btn sm ${appFilter === f.key ? '' : 'ghost'}`}
+                style={{
+                  borderRadius: 20,
+                  fontWeight: appFilter === f.key ? 700 : 500,
+                  background: appFilter === f.key ? 'var(--maroon)' : undefined,
+                  color: appFilter === f.key ? '#fff' : undefined,
+                }}
+                onClick={() => setAppFilter(f.key)}
               >
                 {f.label}
               </button>
@@ -827,9 +895,28 @@ export default function Customers() {
                                 ✨ NEW
                               </span>
                             )}
-                            {r.fcm_token && !r.isDeleted && (
-                              <span className="pill-badge blue" title="Customer App Installed with Push Notifications Active">
-                                📱 App Active
+                            {/* This is "we hold a push token for them", NOT "they are on the
+                                app now" and NOT "they still have it installed". A missing
+                                badge usually just means notification permission was never
+                                granted — on Android 13+ the app deliberately skips asking at
+                                signup (see VerifyOtp.getFcmToken) — and plenty of customers
+                                without it have consulted and paid. It can also be stale in
+                                the other direction: nothing clears the token on logout or
+                                uninstall, only on account deletion. */}
+                            {!r.isDeleted && r.app_removed_at && (
+                              <span
+                                className="pill-badge red"
+                                title={`Firebase rejected this customer's push token on ${formatDateTime(r.app_removed_at)}, which means the app is no longer installed on that device. Note the same rejection also happens if they cleared the app's data or moved to a new phone.`}
+                              >
+                                🚫 App removed
+                              </span>
+                            )}
+                            {!r.isDeleted && !r.app_removed_at && r.fcm_token && (
+                              <span
+                                className="pill-badge blue"
+                                title="Notifications are enabled — we hold a push token for this customer, so broadcasts and reminders can reach them. This is not a sign that they are using the app right now, and it is not cleared when they log out."
+                              >
+                                🔔 Push on
                               </span>
                             )}
                             {r.isDeleted && (
@@ -1117,10 +1204,15 @@ export default function Customers() {
             <div className="field">
               <label>Account Status</label>
               <div>
+                {/* "Active account", not "Active App Customer". This field only knows
+                    whether the row was soft-deleted — it has never known anything about
+                    the app — and claiming app presence here directly contradicted the
+                    "App removed" state in the field below it. Whether they still have
+                    the app is answered there, where the evidence actually is. */}
                 {inspecting.isDeleted ? (
                   <span className="badge red">Deleted / Inactive</span>
                 ) : (
-                  <span className="pill-badge green">Active App Customer</span>
+                  <span className="pill-badge green">Active account</span>
                 )}
               </div>
             </div>
@@ -1135,10 +1227,37 @@ export default function Customers() {
           </div>
 
           <div className="field">
-            <label>Push Notification Token (FCM)</label>
-            <div style={{ wordBreak: 'break-all', fontSize: 11, fontFamily: 'monospace', color: inspecting.fcm_token ? 'var(--emerald)' : 'var(--text-light)' }}>
-              {inspecting.fcm_token ? 'Active on Android / iOS Device' : 'No push token registered'}
-            </div>
+            <label>App &amp; Notifications</label>
+            {inspecting.app_removed_at ? (
+              <>
+                <div style={{ fontSize: 12.5, color: 'var(--crimson)', fontWeight: 600 }}>
+                  App removed — {formatDateTime(inspecting.app_removed_at)}
+                </div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+                  Firebase rejected this customer&apos;s push token, which means the app is no longer
+                  installed on that device. The same rejection also occurs if they cleared the app&apos;s
+                  data or moved to a new phone. They cannot be reached by notification until they
+                  reinstall and sign in.
+                </div>
+              </>
+            ) : inspecting.fcm_token ? (
+              <>
+                <div style={{ fontSize: 12.5, color: 'var(--emerald)' }}>Enabled — a push token is stored</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+                  Broadcasts and reminders can be delivered. If they remove the app, this turns into
+                  &ldquo;App removed&rdquo; the next time a notification is sent to them.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12.5, color: 'var(--text-light)' }}>Not enabled — no push token stored</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+                  Usually means notification permission was never granted, not that the app was removed.
+                  Because there is no way to reach this device, we can never tell whether they still
+                  have the app.
+                </div>
+              </>
+            )}
           </div>
 
           <ProfileDetails profile={profile} />

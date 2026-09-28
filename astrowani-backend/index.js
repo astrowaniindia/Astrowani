@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
-const { sendPush } = require('./src/push');
+const { sendPush, clearAppRemovedMark } = require('./src/push');
 // Records failures that endpoints deliberately swallow, so a silent mass
 // outage still reaches Sentry and /health. See src/degradation.js.
 const { noteReadFailure, getDegradation } = require('./src/degradation');
@@ -2088,6 +2088,11 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
           const { error: updateError } = await supabaseService
             .from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
           if (updateError) console.error('Failed to update customer fcm_token:', updateError.message);
+          // They are reachable again, so drop any "app removed" mark a previous failed
+          // push left behind — otherwise a customer who reinstalled would be shown as
+          // gone forever while their notifications quietly worked. Not awaited: a login
+          // must not wait on, or fail over, bookkeeping.
+          clearAppRemovedMark(supabaseCustomerId).catch(() => {});
         }
       } else {
         // Create a new customer row — gets their own referral code to share, and (if they
@@ -3242,6 +3247,8 @@ app.post('/api/users/fcm-token', async (req, res) => {
     const { fcmToken } = req.body;
     if (!fcmToken) return res.status(400).json({ success: false, message: 'fcmToken is required' });
     await supabaseService.from('customers').update({ fcm_token: fcmToken }).eq('id', customer.id);
+    // Reachable again — see the matching call in mobile-otp-verify.
+    clearAppRemovedMark(customer.id).catch(() => {});
     return res.status(200).json({ success: true });
   } catch (e) {
     console.error('[push] fcm-token save error:', e.message);

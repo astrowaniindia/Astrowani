@@ -2064,6 +2064,14 @@ table td:first-child img {
   border: 1px solid var(--indigo-border);
 }
 
+/* Named `red` to match `.badge.red`, which already maps to the crimson tokens. Both
+   are theme-aware, so this stays legible in dark mode. */
+.pill-badge.red {
+  background: var(--crimson-bg);
+  color: var(--crimson);
+  border: 1px solid var(--crimson-border);
+}
+
 .search-bar-wrap {
   position: relative;
   flex: 1;
