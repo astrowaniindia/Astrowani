@@ -5,14 +5,32 @@
 import notifee, { AndroidImportance, AndroidVisibility, AndroidCategory } from '@notifee/react-native';
 import { startRinging, stopRinging } from './incomingRingtone';
 
-// v2: the v1 channel had sound:'default' + vibration:true, which made Android play its own
-// one-shot notification ping/buzz the instant the notification posted — a beat before
-// incomingRingtone.js's continuous ringtone kicked in ("ping then ring"). Channel sound/
-// vibration are immutable once created on a device (Android platform restriction — Notifee
-// can't override them post-creation), so silencing v1 in code wouldn't have applied to an
-// already-installed app; bumping the id forces a fresh channel with the corrected settings.
-const CHANNEL_ID = 'astrowani-incoming-requests-v2';
-let channelReady = null;
+// TWO channels, and the difference is the whole point (fixed 2026-09-28).
+//
+// THE BUG: there was one channel, deliberately SILENT (sound: undefined, vibration: false),
+// because incomingRingtone.js plays the ringtone itself. That works while the app is alive —
+// and is exactly why astrologers were missing requests when it was not. With the app killed,
+// an incoming request runs through Firebase's headless background handler, which rings for a
+// second or two and is then killed by Android along with the whole process. The ringtone is a
+// JS setInterval, so it dies with it. The notification itself survives (verified: process
+// dead, notification still posted) but is silent, and its heads-up banner collapses into the
+// shade after a few seconds. To the astrologer that is "it came for one second and vanished",
+// and the customer sat there ringing out. Measured on an Android 14 emulator.
+//
+// THE FIX: when the app is NOT in the foreground, post on a channel that carries the sound and
+// vibration itself, so ANDROID rings it — that keeps ringing whether or not our process is
+// alive. When the app IS in the foreground we keep the silent channel and let
+// incomingRingtone.js ring, because the app is alive by definition and this avoids the
+// "ping then ring" double-sound that the old v1 channel caused.
+//
+// ⚠ Channel sound/vibration are IMMUTABLE once created on a device (Android platform
+// restriction — Notifee cannot override them afterwards), so these ids must be bumped rather
+// than edited to change sound behaviour on already-installed apps. That is why they are v3.
+const CHANNEL_ID_SILENT = 'astrowani-incoming-requests-v3-silent';
+const CHANNEL_ID_RINGING = 'astrowani-incoming-requests-v3-ringing';
+// Kept so an upgrading device stops showing the old, permanently-silent channel in settings.
+const LEGACY_CHANNEL_IDS = ['astrowani-incoming-requests-v2'];
+const channelsReady = {};
 
 // The ringtone used to be started only from HomeScreen.js's popupQueue effect — which
 // requires the React app to actually be mounted. That's fine while the app is open, but a
@@ -25,21 +43,26 @@ let channelReady = null;
 // — and ringing should only stop once none of them are still outstanding.
 const activeNotificationIds = new Set();
 
-async function ensureChannel() {
-  if (!channelReady) {
-    channelReady = notifee.createChannel({
-      id: CHANNEL_ID,
-      name: 'Incoming Calls & Chats',
+async function ensureChannel(ringing) {
+  const id = ringing ? CHANNEL_ID_RINGING : CHANNEL_ID_SILENT;
+  if (!channelsReady[id]) {
+    channelsReady[id] = notifee.createChannel({
+      id,
+      name: ringing ? 'Incoming Calls & Chats' : 'Incoming Calls & Chats (in app)',
       importance: AndroidImportance.HIGH,
       visibility: AndroidVisibility.PUBLIC,
-      // No channel sound/vibration — incomingRingtone.js (InCallManager + Vibration) is the
-      // sole source of both, so the notification post itself stays silent and the ringtone is
-      // the first and only thing the vendor hears.
-      sound: undefined,
-      vibration: false,
+      // Ringing channel: Android owns the sound and vibration, so they survive our process
+      // being killed. Silent channel: incomingRingtone.js is the sole source of both.
+      sound: ringing ? 'default' : undefined,
+      vibration: !!ringing,
+      vibrationPattern: ringing ? [300, 700, 300, 700] : undefined,
+    });
+    // Best-effort tidy-up of the superseded channel; never let it block a ringing request.
+    LEGACY_CHANNEL_IDS.forEach((legacy) => {
+      notifee.deleteChannel(legacy).catch(() => {});
     });
   }
-  return channelReady;
+  return channelsReady[id];
 }
 
 function titleFor(type) {
@@ -63,8 +86,12 @@ function idKeyFor(payload) {
 
 // Returns the notification's id (also used as the notifee-side dedupe key, keyed to the
 // room/caller so a duplicate socket+push delivery of the same request doesn't double-post).
-export async function displayIncomingRequestNotification(payload) {
-  await ensureChannel();
+// `foreground` says the React app is alive and on screen, so incomingRingtone.js can be
+// trusted to ring. Anything else (backgrounded, or a headless push into a killed app) must
+// use the ringing channel, because our process may be gone a second from now.
+export async function displayIncomingRequestNotification(payload, { foreground = false } = {}) {
+  const ringing = !foreground;
+  await ensureChannel(ringing);
   const type = payload.type;
   const isChat = type === 'chat_request';
   const notificationId = `incoming_${idKeyFor(payload) || Date.now()}`;
@@ -85,11 +112,15 @@ export async function displayIncomingRequestNotification(payload) {
     body: payload.callerName ? `From ${payload.callerName}` : undefined,
     data: requestData,
     android: {
-      channelId: CHANNEL_ID,
+      channelId: ringing ? CHANNEL_ID_RINGING : CHANNEL_ID_SILENT,
       importance: AndroidImportance.HIGH,
       category: AndroidCategory.CALL,
       ongoing: true,
       autoCancel: false,
+      // Keeps the channel's sound repeating like a real incoming call instead of a single
+      // ping, for as long as the notification is up. Only meaningful on the ringing channel;
+      // the silent one has no sound to loop.
+      loopSound: ringing,
       // NO fullScreenAction, deliberately (removed 2026-09-03).
       //
       // It used to be set here so an incoming request could launch the app full-screen over
@@ -123,7 +154,11 @@ export async function displayIncomingRequestNotification(payload) {
   });
 
   activeNotificationIds.add(notificationId);
-  startRinging();
+  // Only ring from JS when the app is actually alive to keep doing it. On the background/
+  // killed path the channel rings instead — starting a setInterval there would ring for the
+  // second or two before Android kills the process and then stop dead, which is precisely
+  // the symptom this change exists to remove.
+  if (foreground) startRinging();
 
   return notificationId;
 }
@@ -132,12 +167,13 @@ export async function displayIncomingRequestNotification(payload) {
 // title (e.g. an astrologer persona name like "Manju Ji") and body text. Distinct from the
 // incoming-request notifications above: no actions, no ongoing/ CALL category, plain tap-to-open.
 export async function displayGenericNotification({ title, body }) {
-  await ensureChannel();
+  // Silent channel: an admin broadcast must not ring like an incoming consultation.
+  await ensureChannel(false);
   await notifee.displayNotification({
     title: title || 'Astrowani',
     body,
     android: {
-      channelId: CHANNEL_ID,
+      channelId: CHANNEL_ID_SILENT,
       importance: AndroidImportance.HIGH,
       largeIcon: 'ic_launcher',
       pressAction: { id: 'default', launchActivity: 'default' },

@@ -1,6 +1,7 @@
 // HomeScreen.js — Vendor side
 // Listens via Supabase Realtime for incoming chat/call requests
-// Shows NotificationPopup → Accept navigates to session screen, Reject updates status
+// Shows IncomingRequestCard inline at the top of the dashboard (NOT a modal — see that
+// component) → Accept navigates to session screen, Reject updates status
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -22,7 +23,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import NotificationPopup from '../notificationPopup';
+import IncomingRequestCard from '../../components/IncomingRequestCard';
 import showToast from '../../utils/showToast';
 import { supabase } from '../../api/SupabaseClient';
 import io from 'socket.io-client';
@@ -149,6 +150,27 @@ const HomeScreen = () => {
   const [popupQueue, setPopupQueue] = useState([]);
   const popupData = popupQueue[0] || null;
   const popupVisible = popupQueue.length > 0;
+  const scrollRef = useRef(null);
+
+  // The request card lives at the TOP of the dashboard, so it is only any use if the
+  // astrologer is actually looking at the top of the dashboard. A request can land while
+  // they are scrolled down, or on another screen pushed over this one (Wallet, Profile,
+  // Session History) — this stack keeps HomeScreen mounted underneath, so the card is
+  // sitting there unseen. Bring them to it: pop back to the dashboard and scroll to top.
+  // Runs on the 0 -> non-empty transition only, so it cannot fight the astrologer's own
+  // scrolling while a request is already on screen.
+  const hadRequestRef = useRef(false);
+  useEffect(() => {
+    const hasRequest = popupQueue.length > 0;
+    if (hasRequest && !hadRequestRef.current) {
+      try {
+        if (navigation.canGoBack()) navigation.popToTop();
+      } catch (_) { /* best effort — never let navigation break the ring */ }
+      // After the pop, so the ScrollView we scroll is the one now on screen.
+      setTimeout(() => scrollRef.current?.scrollTo({ y: 0, animated: true }), 120);
+    }
+    hadRequestRef.current = hasRequest;
+  }, [popupQueue.length, navigation]);
 
   // Ring continuously (re-triggered ringtone + vibration, see incomingRingtone.js) for as long
   // as there's anything in the queue — covers audio/video calls and chat requests uniformly
@@ -653,12 +675,24 @@ const HomeScreen = () => {
         Same defect the customer app's Register screen had.
       */}
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} tintColor={COLORS.AstroMaroon} />
         }>
+      {/* Incoming chat/call request — INLINE, at the very top of the dashboard, never a
+          Modal. See IncomingRequestCard for why: as a Modal this could be dismissed by a
+          stray tap/back press and then never shown again, so astrologers were losing
+          consultations they never even got to decline. */}
+      <IncomingRequestCard
+        data={popupData}
+        onAccept={handleAccept}
+        onCancel={handleCancel}
+        queueCount={Math.max(0, popupQueue.length - 1)}
+      />
+
       {/* Banner — admin-managed, rotates on the admin-set interval */}
       <HomeBanner />
 
@@ -796,13 +830,6 @@ const HomeScreen = () => {
       {/* Missed sessions with time filters (Today default / Yesterday / This Month / All) */}
       <MissedSessionsHome />
 
-      <NotificationPopup
-        visible={popupVisible}
-        data={popupData}
-        onAccept={handleAccept}
-        onCancel={handleCancel}
-        queueCount={Math.max(0, popupQueue.length - 1)}
-      />
       </ScrollView>
 
       {/* Fixed Bottom Bar */}

@@ -95,10 +95,14 @@ messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
   const data = remoteMessage?.data || {};
   if (INCOMING_REQUEST_TYPES.includes(data.type)) {
-    // HomeScreen's own socket/Realtime listener already shows the in-app popup while it's
-    // mounted and foregrounded — this heads-up notification covers every other screen too
-    // (e.g. vendor is on Profile/Wallet when a request comes in).
-    await displayIncomingRequestNotification(data);
+    // HomeScreen's own socket/Realtime listener already shows the in-app request card while
+    // it's mounted and foregrounded — this heads-up notification covers every other screen
+    // too (e.g. vendor is on Profile/Wallet when a request comes in).
+    //
+    // foreground: true — onMessage only fires with the app open, so the process is alive and
+    // incomingRingtone.js can ring. Using the silent channel here avoids the notification's
+    // own sound landing on top of that ringtone.
+    await displayIncomingRequestNotification(data, { foreground: true });
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     // Customer gave up (timeout/cancel) before we acted — pull down the now-stale notification.
     await cancelIncomingRequestForKey(data);
@@ -116,6 +120,9 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
   const data = remoteMessage?.data || {};
   if (INCOMING_REQUEST_TYPES.includes(data.type)) {
+    // No `foreground` flag: this handler runs backgrounded or in a KILLED app, where Android
+    // kills this headless task moments later. The notification must therefore carry its own
+    // sound (ringing channel) — anything we start in JS here stops when the process dies.
     await displayIncomingRequestNotification(data);
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     await cancelIncomingRequestForKey(data);

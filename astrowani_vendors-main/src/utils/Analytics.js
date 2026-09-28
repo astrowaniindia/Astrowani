@@ -68,11 +68,29 @@ function applyEnvironmentSuperProperties() {
 }
 applyEnvironmentSuperProperties();
 
+// A DEBUG BUILD IS NEVER PRODUCTION, whatever the server says.
+//
+// The remote `analytics_environment` setting exists so a RELEASE build can be held in
+// 'test' before launch. It was also, unintentionally, promoting debug builds to
+// 'production': the value has been 'production' since 2026-09-11, so every developer and
+// emulator session since then has been counted as real customer traffic. Measured
+// 2026-09-27 while pulling the call connect-failure rate — one afternoon of emulator
+// testing moved the production figure from 9.7% to 14.3%, and that contamination is
+// invisible in the data because the events look identical to real ones.
+//
+// So the override may only ever DOWNGRADE. 'test' from the server still applies to a
+// release build; 'production' from the server cannot override a debug build.
+function resolveEnvironment(value) {
+  if (!value) return null;
+  if (BUILD_ENVIRONMENT === 'test' && value === 'production') return null;
+  return value;
+}
+
 export async function loadAnalyticsEnvironment() {
   // Cached last-known remote value first (fast, works offline), authoritative remote
   // value second. A failed read keeps whatever we already have — never 'test'.
   try {
-    const cached = normalizeEnv(await AsyncStorage.getItem(ENV_CACHE_KEY));
+    const cached = resolveEnvironment(normalizeEnv(await AsyncStorage.getItem(ENV_CACHE_KEY)));
     if (cached) { currentEnvironment = cached; applyEnvironmentSuperProperties(); }
   } catch (_) {}
 
@@ -82,7 +100,7 @@ export async function loadAnalyticsEnvironment() {
       .select('value')
       .eq('key', 'analytics_environment')
       .limit(1);
-    const remote = data && data.length ? normalizeEnv(data[0].value) : null;
+    const remote = resolveEnvironment(data && data.length ? normalizeEnv(data[0].value) : null);
     if (remote) {
       currentEnvironment = remote;
       applyEnvironmentSuperProperties();

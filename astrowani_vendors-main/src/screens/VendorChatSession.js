@@ -64,6 +64,7 @@ const VendorChatSession = ({ route, navigation }) => {
   const [sentChip, setSentChip] = useState(null);
 
   const flatListRef = useRef(null);
+  const inputRef = useRef(null);
   const sessionIdRef = useRef(initialSessionId);
   const astroIdRef = useRef(null);
   const pollMsgRef = useRef(null);
@@ -78,27 +79,103 @@ const VendorChatSession = ({ route, navigation }) => {
   const secs = seconds % 60;
 
   // ─── Keyboard height (Android) ───────────────────────────────────────────
-  // targetSdk 36 is edge-to-edge, so Android 15+ ignores adjustResize and the keyboard
-  // covered the input. KeyboardAvoidingView is not a fix here: its Android padding also
-  // stuck after the keyboard closed, leaving a dead strip under the input. So track the
-  // height ourselves and reset it on hide. (iOS still uses KeyboardAvoidingView.)
-  // Verified on an Android 17 (API 37) emulator, Gboard docked.
+  // targetSdk 36 is edge-to-edge, so on Android 15+ the OS ignores adjustResize and the
+  // keyboard covered the input. KeyboardAvoidingView is not a fix here: its Android
+  // padding also stuck after the keyboard closed, leaving a dead strip under the input.
+  // So track the height ourselves and reset it on hide. (iOS still uses
+  // KeyboardAvoidingView.) Verified on an Android 17 (API 37) emulator, Gboard docked.
+  //
+  // ⚠ CORRECTED: the assumption below used to be "if the window still resizes (older
+  // Android) this computes to ~0, so nothing is added twice" — measured wrong on a real
+  // (non-edge-to-edge-enforced) phone: `Dimensions.get('window')` had not yet reflected
+  // the OS's own resize at the instant keyboardDidShow fired (it updates on a different
+  // tick), so this still computed a real, nonzero height and added it ON TOP of the
+  // resize the OS had already done. That is what showed as a dead gap between the input
+  // and the real keyboard, with the chat list squeezed down to nothing in the doubly-
+  // shrunk remaining space — exactly the bug reported 2026-09-28. Now detected
+  // explicitly: compare against the window height last seen with the keyboard closed,
+  // and skip our own compensation whenever the OS has already shrunk the window.
+  // WHETHER we need to pad at all depends on the device, and it MUST be measured, not
+  // assumed. Two behaviours exist in the field and they need opposite handling:
+  //
+  //   * Android 15+/edge-to-edge enforced: the IME simply covers the app. Our own layout
+  //     area keeps its full height, so we have to reserve the keyboard's space ourselves
+  //     or the input row sits underneath the keyboard.
+  //   * Android 14 and below (a Redmi 12C, most budget phones in the field): the OS/RN
+  //     already shrinks the layout area for the IME. Reserving it again counts the
+  //     keyboard TWICE — which is the bug reported 2026-09-28: the message list collapsed
+  //     to a sliver, the input row floated up near the header, and a dead brown gap sat
+  //     between it and the real keyboard.
+  //
+  // Measured on an Android 14 / 720x1650 / 320dpi emulator matching a Redmi 12C: window
+  // stays 801dp with the keyboard up (it never resizes, so watching `Dimensions` can
+  // never tell these two cases apart — that is why the previous two attempts failed),
+  // while the ROOT VIEW shrinks 777 -> 526dp and the keyboard's top is at screenY 526.
+  // The root already ends exactly at the keyboard. So the root view's own height is the
+  // signal, and it is the one thing that directly reflects whichever behaviour applies.
   const [kbHeight, setKbHeight] = useState(0);
+  const rootHeightRef = useRef(0);
+  const kbRef = useRef({ visible: false, screenY: 0 });
+  // Debounce settle timer — see the comment on scheduleRecomputeKbPad for why this exists.
+  const kbSettleRef = useRef(null);
+
+  // Padding is NOT applied to the root view, so this cannot feed back into its height.
+  const recomputeKbPad = (rootHeight) => {
+    if (Platform.OS !== 'android') return;
+    const { visible, screenY } = kbRef.current;
+    if (!visible || !screenY) { setKbHeight(0); return; }
+    const win = Dimensions.get('window').height;
+    const scr = Dimensions.get('screen').height;
+    // A root much shorter than the window means the OS already made room for the IME.
+    // The 60dp threshold sits well above ordinary status/nav chrome (~48dp) and well
+    // below any real keyboard (~275dp), so it cannot confuse the two.
+    const osHandled = rootHeight > 0 && win - rootHeight > 60;
+    // Screen-relative, NOT window-relative: the window excludes the nav bar, which left
+    // the input row clipped by exactly that inset on the devices that do need padding.
+    setKbHeight(osHandled ? 0 : Math.max(0, scr - screenY));
+  };
+
+  // On a device where the OS resizes the layout for the keyboard (Android 14 and below),
+  // `keyboardDidShow` and the resulting root `onLayout` are two SEPARATE events that can
+  // arrive in either order. Reported 2026-09-28: the input row visibly jumped up and
+  // snapped back on every keyboard open — measured cause was `keyboardDidShow` firing
+  // BEFORE the root's layout pass caught up to the resize, so `recomputeKbPad` briefly ran
+  // against the OLD (pre-resize) root height, read that as "OS hasn't resized", and added
+  // padding for one frame — then the root's own `onLayout` fired a moment later with the
+  // new height and pulled it back out. Both computations were individually correct for the
+  // rootHeight they were given; the bug was applying the FIRST one before the second had a
+  // chance to land. Debouncing so only the value from whichever event arrives LAST actually
+  // reaches `setKbHeight` means the wrong intermediate state is never rendered at all.
+  const scheduleRecomputeKbPad = () => {
+    if (kbSettleRef.current) clearTimeout(kbSettleRef.current);
+    kbSettleRef.current = setTimeout(() => {
+      kbSettleRef.current = null;
+      recomputeKbPad(rootHeightRef.current);
+    }, 48);
+  };
+
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
-    // Distance from the keyboard's top edge to the bottom of the window. The event's
-    // own `height` is 24dp short here: it leaves out the nav-bar inset under
-    // edge-to-edge, which clipped the input row by that much. If the window still
-    // resizes (older Android) the window already ends at the keyboard, this is ~0 and
-    // nothing is added twice.
     const show = Keyboard.addListener('keyboardDidShow', (e) => {
       const c = e.endCoordinates || {};
-      setKbHeight(c.screenY > 0
-        ? Math.max(0, Dimensions.get('window').height - c.screenY)
-        : (c.height || 0));
+      kbRef.current = { visible: true, screenY: c.screenY || 0 };
+      scheduleRecomputeKbPad();
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
-    return () => { show.remove(); hide.remove(); };
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      kbRef.current = { visible: false, screenY: 0 };
+      // Hiding is unambiguous either way, so it applies immediately and cancels anything
+      // still pending — a stale "show" computation must never land after this.
+      if (kbSettleRef.current) { clearTimeout(kbSettleRef.current); kbSettleRef.current = null; }
+      setKbHeight(0);
+    });
+    const dims = Dimensions.addEventListener('change', () => {
+      scheduleRecomputeKbPad();
+    });
+    return () => {
+      show.remove(); hide.remove(); dims.remove();
+      if (kbSettleRef.current) clearTimeout(kbSettleRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The list shrinks when the keyboard opens but keeps its scroll offset, which left
@@ -354,7 +431,15 @@ const VendorChatSession = ({ route, navigation }) => {
     if (lastSentRef.current.text === msg && now - lastSentRef.current.time < 2000) return;
     lastSentRef.current = { text: msg, time: now };
 
-    if (typeof overrideText !== 'string') setNewMessage('');
+    // .clear() (not just setNewMessage('')) because Android's predictive-text keyboards
+    // (Gboard) keep an internal "composing" span for the word just typed; clearing only
+    // the JS-side value leaves that span in place and the keyboard silently re-inserts
+    // the old text right after the state update, making an already-sent message look
+    // stuck/unsent in the box.
+    if (typeof overrideText !== 'string') {
+      setNewMessage('');
+      inputRef.current?.clear();
+    }
 
     // Reset typing status on send
     if (socketRef.current && sessionIdRef.current) {
@@ -479,7 +564,20 @@ const VendorChatSession = ({ route, navigation }) => {
     // applies them again as its own padding, so both edges were counted twice
     // (~59pt top, ~34pt bottom on an iPhone 14 Pro). A plain View makes the manual
     // insets the single source of truth. Same defect Register.jsx had.
-    <View style={[styles.safeArea, {paddingTop: insets.top}]}>
+    <View
+      // The root's measured height is what tells us whether the OS already made room for
+      // the keyboard — see the comment on recomputeKbPad. Must stay on the OUTERMOST view.
+      onLayout={(e) => {
+        const l = e && e.nativeEvent && e.nativeEvent.layout;
+        if (!l) { return; }
+        const h = Math.round(l.height);
+        if (h === rootHeightRef.current) { return; }
+        rootHeightRef.current = h;
+        // Debounced, not immediate — see scheduleRecomputeKbPad's comment. This can fire
+        // before OR after keyboardDidShow; either order must settle to the same answer.
+        scheduleRecomputeKbPad();
+      }}
+      style={[styles.safeArea, {paddingTop: insets.top}]}>
       <StatusBar backgroundColor={COLORS.AstroMaroon} barStyle="light-content" />
       {/* ── Header ─────────────────────────────── */}
       <View style={styles.header}>
@@ -521,9 +619,9 @@ const VendorChatSession = ({ route, navigation }) => {
         style={[styles.flex, Platform.OS === 'android' && {paddingBottom: kbHeight}]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-        <ImageBackground 
-          source={{ uri: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png' }} 
-          style={{ flex: 1 }} 
+        <ImageBackground
+          source={{ uri: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png' }}
+          style={{ flex: 1 }}
           imageStyle={{ opacity: 0.15 }}
         >
           <FlatList
@@ -559,8 +657,10 @@ const VendorChatSession = ({ route, navigation }) => {
           ))}
         </ScrollView>
 
-        <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
+        <View
+          style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             placeholder={t('call.messagePlaceholder')}
             placeholderTextColor="#999"
