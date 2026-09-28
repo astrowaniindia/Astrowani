@@ -24,6 +24,8 @@ import RemedyReferrals from '../screens/Drawer/RemedyReferrals';
 import FreeCalls from '../screens/Drawer/FreeCalls';
 import BlockedCustomers from '../screens/Drawer/BlockedCustomers';
 import WhatsAppChats from '../screens/Drawer/WhatsAppChats';
+import ChatHistoryList from '../screens/Drawer/ChatHistoryList';
+import ChatHistoryThread from '../screens/Drawer/ChatHistoryThread';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import VideoCall from '../screens/VideoCall';
@@ -265,6 +267,26 @@ function NavigationScreen() {
           component={WhatsAppChats}
           options={() => ({
             title: t('drawer.whatsapp'),
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+          })}
+        />
+        <Stack.Screen
+          name="ChatHistoryList"
+          component={ChatHistoryList}
+          options={() => ({
+            title: t('chatHistory.title'),
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(16) },
+          })}
+        />
+        <Stack.Screen
+          name="ChatHistoryThread"
+          component={ChatHistoryThread}
+          options={({ route }) => ({
+            title: route.params?.name || t('common.customer'),
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(16) },

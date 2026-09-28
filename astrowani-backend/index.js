@@ -6016,6 +6016,118 @@ app.get('/vendor/customers', async (req, res) => {
   }
 });
 
+// ── Vendor chat history (WhatsApp-style) ────────────────────────────────────
+//
+// Built from `chat_messages` directly, not `chat_sessions` — the pairing that
+// matters here is sender/receiver, not session_id or room_id (the two apps don't
+// even agree on the same room_id shape — see /api/chat/message's callers). This
+// also means a brand-new session with a returning customer naturally merges into
+// their existing thread: every message either party has ever sent lives in the
+// same table, keyed by the same two real ids.
+//
+// One list endpoint (who has the astrologer talked to, most recent first) and one
+// thread endpoint (everything said with ONE customer, oldest first). Both are
+// read-only — sending from history is done through the existing voice-note upload
+// (POST /api/vendor/voice-notes), never a fresh text message outside a live,
+// billed session.
+app.get('/api/vendor/chat-threads', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+
+    // A recent page, not the whole table — enough to build "who did I last talk
+    // to"; a conversation with nothing said in months simply won't be near the
+    // top, which is the correct WhatsApp-style behaviour.
+    const { data: rows, error } = await supabaseService
+      .from('chat_messages')
+      .select('id, sender_id, receiver_id, message, created_at')
+      .or(`sender_id.eq.${vendorId},receiver_id.eq.${vendorId}`)
+      .order('created_at', { ascending: false })
+      .limit(3000);
+    if (error) throw error;
+
+    // One row per customer: the FIRST one seen per id, since rows are already
+    // newest-first — that first sighting is the last message in that thread.
+    const byCustomer = {};
+    (rows || []).forEach((m) => {
+      const otherId = String(m.sender_id) === String(vendorId) ? m.receiver_id : m.sender_id;
+      // Skip rows with no receiver (a legacy message predating receiverId always
+      // being sent) or a stray message with the astrologer as both parties.
+      if (!otherId || String(otherId) === String(vendorId)) return;
+      if (!byCustomer[otherId]) {
+        byCustomer[otherId] = {
+          customerId: otherId,
+          lastMessage: m.message,
+          lastMessageAt: m.created_at,
+          lastMessageFromMe: String(m.sender_id) === String(vendorId),
+        };
+      }
+    });
+
+    const customerIds = Object.keys(byCustomer);
+    if (customerIds.length === 0) return res.status(200).json({ success: true, data: [] });
+
+    const { data: customers } = await supabaseService
+      .from('customers').select('id, name, profile_image').in('id', customerIds);
+    const byId = {};
+    (customers || []).forEach((c) => { byId[c.id] = c; });
+
+    const data = customerIds
+      .map((id) => ({
+        ...byCustomer[id],
+        name: byId[id]?.name || 'Customer',
+        profileImage: byId[id]?.profile_image || null,
+      }))
+      .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('GET /api/vendor/chat-threads error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch chat history' });
+  }
+});
+
+// Every message ever exchanged between this astrologer and ONE customer, across
+// every session/room they've had — a new session's messages land in the same
+// table keyed by the same two ids, so they merge into this same thread with no
+// extra work. Oldest first, capped at the most recent 1000 messages.
+app.get('/api/vendor/chat-threads/:customerId', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    const { customerId } = req.params;
+    if (!customerId) return res.status(400).json({ success: false, message: 'customerId is required' });
+
+    const { data: rows, error } = await supabaseService
+      .from('chat_messages')
+      .select('id, sender_id, receiver_id, message, created_at, session_id')
+      .or(`and(sender_id.eq.${vendorId},receiver_id.eq.${customerId}),and(sender_id.eq.${customerId},receiver_id.eq.${vendorId})`)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+
+    const { data: customer } = await supabaseService
+      .from('customers').select('id, name, profile_image').eq('id', customerId).maybeSingle();
+
+    return res.status(200).json({
+      success: true,
+      customer: customer
+        ? { id: customer.id, name: customer.name || 'Customer', profileImage: customer.profile_image || null }
+        : { id: customerId, name: 'Customer', profileImage: null },
+      // Reverse back to oldest-first for display — fetched newest-first so the
+      // LIMIT keeps the most recent 1000 messages, not the oldest 1000.
+      data: (rows || []).reverse().map((m) => ({ ...m, fromMe: String(m.sender_id) === String(vendorId) })),
+    });
+  } catch (err) {
+    console.error('GET /api/vendor/chat-threads/:customerId error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch chat history' });
+  }
+});
+
 // GET the current customer's received voice notes.
 app.get('/api/customer/voice-notes', async (req, res) => {
   try {

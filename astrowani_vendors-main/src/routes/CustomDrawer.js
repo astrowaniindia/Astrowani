@@ -178,6 +178,13 @@ function CustomDrawer(props) {
           onPress={() => props.navigation.navigate('MyCustomers')}
         />
         <DrawerItem
+          label={t('drawer.chatHistory')}
+          icon={() => (
+            <Icon name="chat-bubble-outline" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => props.navigation.navigate('ChatHistoryList')}
+        />
+        <DrawerItem
           label={t('drawer.profile')}
           icon={() => (
             <EvilIcons name="user" size={24} color={COLORS.AstroMaroon} />
