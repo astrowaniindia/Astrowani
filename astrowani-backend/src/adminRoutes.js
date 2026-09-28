@@ -1151,6 +1151,16 @@ module.exports = function registerAdminRoutes(app) {
     if (/^Admin wallet/i.test(d)) return 'adminAdjustment';
     return 'other';
   }
+
+  // Human label for chat_sessions.call_type ('chat' | 'audio' | 'voice' | 'video' —
+  // 'audio'/'voice' are the same thing, see CLAUDE.md's note on that inconsistency).
+  function sessionTypeLabel(callType) {
+    const t = String(callType || '').toLowerCase();
+    if (t === 'video') return 'Video call';
+    if (t === 'audio' || t === 'voice') return 'Audio call';
+    if (t === 'chat') return 'Chat';
+    return 'Session';
+  }
   const SPEND_CATEGORY_LABELS = {
     sessions: 'Chat / call / video sessions',
     reports: 'Astro reports',
@@ -1260,10 +1270,35 @@ module.exports = function registerAdminRoutes(app) {
     const id = req.params.id;
     const [{ data: recharges, error: rErr }, { data: txns, error: tErr }] = await Promise.all([
       db.from('wallet_recharges').select('id, amount, status, created_at, paid_at, razorpay_payment_id').eq('customer_id', id).order('created_at', { ascending: false }).limit(200),
-      db.from('wallet_transactions').select('id, type, amount, description, created_at').eq('user_id', id).order('created_at', { ascending: false }).limit(500),
+      db.from('wallet_transactions').select('id, type, amount, description, created_at, session_id').eq('user_id', id).order('created_at', { ascending: false }).limit(500),
     ]);
     if (rErr) throw rErr;
     if (tErr) throw tErr;
+
+    // Enrich the 'sessions' category (chat/call/video billing) with WHICH kind of
+    // session it was and WHICH astrologer it was with, so the timeline doesn't
+    // lump three different services under one generic "Automated X billing" line.
+    // wallet_transactions.session_id -> chat_sessions.vendor_id -> astrologers.name.
+    const sessionIds = [...new Set((txns || []).map((t) => t.session_id).filter(Boolean))];
+    const sessionInfoById = new Map();
+    if (sessionIds.length) {
+      const { data: sessions, error: sErr } = await db
+        .from('chat_sessions').select('id, vendor_id, call_type').in('id', sessionIds);
+      if (sErr) throw sErr;
+      const vendorIds = [...new Set((sessions || []).map((s) => s.vendor_id).filter(Boolean))];
+      let astroNameById = new Map();
+      if (vendorIds.length) {
+        const { data: astros, error: aErr } = await db.from('astrologers').select('id, first_name, last_name').in('id', vendorIds);
+        if (aErr) throw aErr;
+        astroNameById = new Map((astros || []).map((a) => [a.id, `${a.first_name || ''} ${a.last_name || ''}`.trim() || 'Astrologer']));
+      }
+      for (const s of sessions || []) {
+        sessionInfoById.set(s.id, {
+          sessionType: sessionTypeLabel(s.call_type),
+          astrologerName: astroNameById.get(s.vendor_id) || null,
+        });
+      }
+    }
 
     const events = [
       ...(recharges || []).map((r) => ({
@@ -1273,13 +1308,19 @@ module.exports = function registerAdminRoutes(app) {
         description: r.status === 'paid' ? `Recharge via Razorpay (${r.razorpay_payment_id || '—'})` : `Recharge ${r.status}`,
         at: r.paid_at || r.created_at,
       })),
-      ...(txns || []).map((t) => ({
-        kind: t.type, // 'credit' | 'debit'
-        category: t.type === 'debit' ? categorizeDebit(t.description) : null,
-        amount: Number(t.amount),
-        description: t.description,
-        at: t.created_at,
-      })),
+      ...(txns || []).map((t) => {
+        const category = t.type === 'debit' ? categorizeDebit(t.description) : null;
+        const info = t.session_id ? sessionInfoById.get(t.session_id) : null;
+        return {
+          kind: t.type, // 'credit' | 'debit'
+          category,
+          amount: Number(t.amount),
+          description: t.description,
+          at: t.created_at,
+          sessionType: category === 'sessions' ? (info?.sessionType || null) : null,
+          astrologerName: category === 'sessions' ? (info?.astrologerName || null) : null,
+        };
+      }),
     ].sort((a, b) => new Date(b.at) - new Date(a.at));
 
     return res.json({ success: true, data: events, categoryLabels: SPEND_CATEGORY_LABELS });

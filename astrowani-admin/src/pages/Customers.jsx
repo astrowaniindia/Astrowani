@@ -272,13 +272,22 @@ function RechargeActivitySection() {
               <div style={{ maxHeight: 420, overflowY: 'auto' }}>
                 {timeline.events.map((e, i) => {
                   const isCredit = e.kind === 'credit' || (e.kind === 'recharge' && e.status === 'paid');
+                  // For a session-billing debit, show the specific kind (chat/audio/video)
+                  // and who it was with instead of the generic "Chat / call / video sessions"
+                  // bucket label — that bucket is still fine for the summary table, but a
+                  // per-event timeline should say which one this actually was.
                   const label = e.kind === 'recharge'
                     ? (e.status === 'paid' ? 'Recharge' : `Recharge (${e.status})`)
-                    : (e.kind === 'debit' ? (timeline.categoryLabels[e.category] || 'Debit') : 'Credit');
+                    : (e.kind === 'debit'
+                      ? (e.sessionType || (timeline.categoryLabels[e.category] || 'Debit'))
+                      : 'Credit');
                   return (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                        {e.astrologerName && (
+                          <div className="muted" style={{ fontSize: 11.5 }}>with {e.astrologerName}</div>
+                        )}
                         <div className="muted" style={{ fontSize: 11.5 }}>{e.description}</div>
                         <div className="muted" style={{ fontSize: 11 }}>{formatDateTime(e.at)}</div>
                       </div>
