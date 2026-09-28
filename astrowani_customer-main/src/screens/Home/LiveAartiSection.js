@@ -17,6 +17,14 @@
 //      rectangle forever. This one listens for YouTube's own error events and a
 //      no-response timeout, then offers "Watch on YouTube".
 //   3. Nothing live => render nothing. No placeholder, no empty box.
+//   4. NO player is built until the customer taps one. Constructing the first
+//      WebView in the process makes Android load the whole Chromium provider,
+//      and that happens on the UI thread — measured at ANR length (>5s) on a
+//      low-end handset. This section sits near the bottom of Home, so an
+//      auto-mounted player was paying that cost during Home's first render,
+//      for a card the customer had not scrolled to yet. The card shows its
+//      thumbnail and a play button until tapped; the embed still autoplays
+//      once mounted, so a tap is all it costs.
 //
 // Placement: bottom of Home, right before "What Our Clients Say" — see Home.js.
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -124,20 +132,29 @@ const EMBED_BLOCKED = [101, 150];
 
 function LiveCard({ channel, isActive, t }) {
   const [state, setState] = useState('loading'); // loading | playing | failed
+  // The customer has asked for this card to play. Until then there is no
+  // WebView at all — see rule 4 at the top of this file.
+  const [started, setStarted] = useState(false);
   const timerRef = useRef(null);
+
+  const playerMounted = isActive && started;
 
   const fail = useCallback(() => setState('failed'), []);
 
   useEffect(() => {
-    if (!isActive || state !== 'loading') return undefined;
+    if (!playerMounted || state !== 'loading') return undefined;
     timerRef.current = setTimeout(fail, READY_TIMEOUT_MS);
     return () => clearTimeout(timerRef.current);
-  }, [isActive, state, fail]);
+  }, [playerMounted, state, fail]);
 
   // Leaving the card resets it, so coming back retries rather than showing a
-  // stale failure.
+  // stale failure. Keyed on isActive alone, not on whether the player is
+  // mounted: the card is only "left" when the row scrolls past it.
   useEffect(() => {
-    if (!isActive) setState('loading');
+    if (!isActive) {
+      setState('loading');
+      setStarted(false);
+    }
   }, [isActive]);
 
   const openOnYouTube = () => {
@@ -181,7 +198,7 @@ function LiveCard({ channel, isActive, t }) {
               <Text style={styles.fallbackBtnText}>{t('liveAarti.watchOnYouTube')}</Text>
             </View>
           </TouchableOpacity>
-        ) : isActive ? (
+        ) : playerMounted ? (
           <>
             <WebView
               source={{ html: playerHtml(channel.videoId), baseUrl: 'https://www.youtube.com' }}
@@ -204,12 +221,19 @@ function LiveCard({ channel, isActive, t }) {
             )}
           </>
         ) : (
-          // Off-screen card: a still image, never a second video decoder.
-          <View style={styles.idle}>
+          // Nothing is playing here yet: a still image, never a video decoder
+          // and never a WebView. Tapping the card the customer is looking at
+          // builds the player; the off-screen ones stay inert so only one
+          // player can ever exist.
+          <TouchableOpacity
+            style={styles.idle}
+            activeOpacity={isActive ? 0.85 : 1}
+            disabled={!isActive}
+            onPress={() => setStarted(true)}>
             <Image source={{ uri: channel.thumbnail || thumbFor(channel.videoId) }} style={styles.fallbackThumb} />
             <View style={styles.fallbackVeil} />
             <Ionicons name="play-circle" size={moderateScale(44)} color={COLORS.white} />
-          </View>
+          </TouchableOpacity>
         )}
 
         <View style={styles.liveTag}>
