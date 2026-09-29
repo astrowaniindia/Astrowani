@@ -143,6 +143,83 @@ module.exports = function registerAdminRoutes(app) {
     });
   }));
 
+  // ── Admin (platform revenue) wallet — the ONE ledger every 50/50 split and every
+  // platform-only charge lands in: session billing (chat/call/video, 50% share),
+  // gifts (50% share), astro reports (100%), free services (100%), remedy orders
+  // (100%, minus referral-commission payouts). Built 2026-09-29 alongside the
+  // chat/call/video billing split, so the platform's cut of every revenue stream is
+  // visible in one place instead of only in admin_wallet.balance on the Dashboard.
+  app.get('/api/admin/wallet', requireAdmin, h(async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+    const { type, serviceKey, from, to } = req.query;
+
+    let balance = 0;
+    try {
+      const { data } = await db.from('admin_wallet').select('balance').limit(1).maybeSingle();
+      balance = Number(data?.balance) || 0;
+    } catch (_) { /* table not migrated yet */ }
+
+    const applyFilters = (q) => {
+      if (type === 'credit' || type === 'debit') q = q.eq('type', type);
+      if (serviceKey) q = q.eq('service_key', serviceKey);
+      if (from) q = q.gte('created_at', from);
+      if (to) q = q.lte('created_at', to);
+      return q;
+    };
+
+    // Breakdown by service_key, over every row in the same filtered window — paged so a
+    // busy service_key past 1000 rows doesn't silently under-report (see pagedSelect.js).
+    const { rows: allRows, truncated } = await pagedSelect(() =>
+      applyFilters(db.from('admin_wallet_transactions').select('type, amount, service_key'))
+    );
+    const bySource = new Map();
+    for (const t of allRows) {
+      const key = t.service_key || 'other';
+      const entry = bySource.get(key) || { serviceKey: key, credit: 0, debit: 0, count: 0 };
+      const amt = Number(t.amount) || 0;
+      if (t.type === 'debit') entry.debit += amt; else entry.credit += amt;
+      entry.count += 1;
+      bySource.set(key, entry);
+    }
+    const breakdown = [...bySource.values()]
+      .map((e) => ({ ...e, net: e.credit - e.debit }))
+      .sort((a, b) => b.net - a.net);
+
+    // One page of the actual ledger rows for the table.
+    const { count } = await applyFilters(
+      db.from('admin_wallet_transactions').select('id', { count: 'exact', head: true })
+    );
+    const { data: pageRows, error } = await applyFilters(
+      db.from('admin_wallet_transactions').select('*').order('created_at', { ascending: false })
+    ).range((page - 1) * pageSize, page * pageSize - 1);
+    if (error) throw error;
+
+    // Best-effort customer names for the page in view — never fails the ledger view.
+    const customerIds = [...new Set((pageRows || []).map((r) => r.customer_id).filter(Boolean))];
+    let namesById = {};
+    if (customerIds.length) {
+      try {
+        const { data: custs } = await db.from('customers').select('id, name, mobile').in('id', customerIds);
+        namesById = Object.fromEntries((custs || []).map((c) => [c.id, c.name || c.mobile || null]));
+      } catch (_) { /* best-effort only */ }
+    }
+
+    return res.json({
+      success: true,
+      balance,
+      truncated,
+      breakdown,
+      total: count || 0,
+      page,
+      pageSize,
+      transactions: (pageRows || []).map((r) => ({
+        ...r,
+        customerName: r.customer_id ? namesById[r.customer_id] || null : null,
+      })),
+    });
+  }));
+
   // ── Generic CRUD factory for simple content tables ────────────────────────
   // Registers GET (list), POST (create), PUT/:id (update), DELETE/:id for a table.
   // afterWrite(row): optional side effect run once a create/update has succeeded.

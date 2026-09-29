@@ -6508,6 +6508,23 @@ app.post('/api/gift/send', async (req, res) => {
       context: context || 'profile', session_id: sessionId || null,
     }]);
 
+    // 3b. Credit the platform's cut into the SAME admin_wallet ledger every other revenue
+    // stream uses (astro reports, free services, remedy orders, session billing), so gift
+    // revenue shows up in one unified place instead of only in gift_transactions.platform_cut.
+    // Fire-and-forget with logging, same posture as every other adjustAdminWallet call site —
+    // the customer has already been charged and the astrologer already credited by this
+    // point, so a ledger failure here must never undo or fail the gift itself.
+    try {
+      await wallet.adjustAdminWallet(platformCut, {
+        description: `Gift: ${gift.name} (platform share)`,
+        serviceKey: 'gift',
+        customerId: customer.id,
+        idempotencyKey: `${giftIdempotencyKey}:admin`,
+      });
+    } catch (adminErr) {
+      console.error(`POST /api/gift/send admin ledger credit failed for gift ${giftId}:`, adminErr.message);
+    }
+
     // 4. If live, bump the session total and broadcast a gift toast
     if (context === 'live' && sessionId) {
       const { data: ls } = await supabaseService.from('live_sessions').select('total_gift_amount').eq('id', sessionId).single();
