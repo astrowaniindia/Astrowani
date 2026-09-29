@@ -359,11 +359,11 @@ export default function Audience() {
           onClick={() => setSegments((s) => [...s, blankSegment()])}>
           Add a group
         </button>
-      </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <SaveButton />
-        <button className="btn secondary" onClick={load} disabled={loading || saving}>Undo changes</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border, rgba(128,128,128,.2))' }}>
+          <SaveButton />
+          <button className="btn secondary" onClick={load} disabled={loading || saving}>Undo changes</button>
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: 20 }}>
