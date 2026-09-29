@@ -42,6 +42,7 @@ export default function AdminWallet() {
   const [serviceKey, setServiceKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -67,6 +68,31 @@ export default function AdminWallet() {
   useEffect(() => { load(); }, [page, type, serviceKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // For a FOLDED consultation row (id "session:<uuid>") this deletes every real
+  // admin_wallet_transactions row behind it, not just the one line shown — the backend
+  // resolves that (sql/hardening_22_admin_wallet_delete_transactions.sql). Removes the row
+  // AND reverses its effect on the balance in one atomic step, so the two can never drift
+  // apart. Meant for clearing out test charges, not for disputing a real customer/
+  // astrologer transaction — hence the confirm naming the exact amount every time.
+  const deleteRow = async (r) => {
+    const label = r.folded
+      ? `this consultation (${fmtMoney(Math.abs(r.amount))}, every billed minute behind it)`
+      : `this ${r.type} of ${fmtMoney(Math.abs(r.amount))}`;
+    if (!window.confirm(`Delete ${label} from the Platform Wallet ledger?\n\n"${r.description || '—'}"\n\nThis also reverses it from the balance. This cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(r.id);
+    try {
+      const { data } = await client.delete(`/api/admin/wallet/${encodeURIComponent(r.id)}`);
+      setBalance(data.newBalance ?? balance);
+      await load();
+    } catch (e) {
+      window.alert(e.response?.data?.message || e.message || 'Failed to delete this entry.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div>
@@ -151,12 +177,12 @@ export default function AdminWallet() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>When</th><th>Type</th><th>Source</th><th>Amount</th><th>Customer</th><th>Description</th></tr>
+            <tr><th>When</th><th>Type</th><th>Source</th><th>Amount</th><th>Customer</th><th>Description</th><th></th></tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} className="empty">Loading…</td></tr>}
-            {!loading && error && <tr><td colSpan={6} className="empty" style={{ color: '#c0392b' }}>{error}</td></tr>}
-            {!loading && !error && rows.length === 0 && <tr><td colSpan={6} className="empty">No transactions match these filters.</td></tr>}
+            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
+            {!loading && error && <tr><td colSpan={7} className="empty" style={{ color: '#c0392b' }}>{error}</td></tr>}
+            {!loading && !error && rows.length === 0 && <tr><td colSpan={7} className="empty">No transactions match these filters.</td></tr>}
             {!loading && !error && rows.map((r) => (
               <tr key={r.id}>
                 <td className="muted">{fmtDate(r.created_at)}</td>
@@ -165,6 +191,17 @@ export default function AdminWallet() {
                 <td style={{ fontWeight: 600 }}>{fmtMoney(r.amount)}</td>
                 <td>{r.customerName || '—'}</td>
                 <td style={{ maxWidth: 380 }}>{r.description || '—'}</td>
+                <td>
+                  <button
+                    className="btn secondary"
+                    style={{ padding: '2px 8px', fontSize: 13, color: '#c0392b' }}
+                    disabled={deletingId === r.id}
+                    onClick={() => deleteRow(r)}
+                    title="Delete this entry and reverse it from the balance"
+                  >
+                    {deletingId === r.id ? '…' : 'Delete'}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

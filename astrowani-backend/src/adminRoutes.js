@@ -244,6 +244,52 @@ module.exports = function registerAdminRoutes(app) {
     });
   }));
 
+  // Remove one or more ledger rows from the Platform Wallet — for clearing out test
+  // charges, never for correcting a real customer/astrologer dispute (that needs a
+  // documented manual adjustment, not a silent delete).
+  //
+  // The id in the URL is whatever the wallet list actually displayed, which for a
+  // FOLDED consultation (src/sessionFolding.js) is "session:<uuid>", not a real
+  // admin_wallet_transactions id — that one visible row can be several real rows
+  // underneath (one per billed minute). So this always resolves to the full set of
+  // real ids before deleting anything, and deletes+reverses them in ONE atomic RPC
+  // (sql/hardening_22_admin_wallet_delete_transactions.sql) so admin_wallet.balance
+  // can never drift out of sync with what the ledger actually holds.
+  app.delete('/api/admin/wallet/:id', requireAdmin, h(async (req, res) => {
+    const { id } = req.params;
+    let realIds;
+
+    if (id.startsWith('session:')) {
+      const sessionId = id.slice('session:'.length);
+      const { data: rows, error: selErr } = await db
+        .from('admin_wallet_transactions')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('service_key', 'session_billing');
+      if (selErr) throw selErr;
+      realIds = (rows || []).map((r) => r.id);
+    } else {
+      realIds = [id];
+    }
+
+    if (!realIds.length) {
+      // Nothing left to delete is a successful no-op, not an error — the row may
+      // already be gone from a previous click.
+      return res.json({ success: true, deletedCount: 0, reversedAmount: 0 });
+    }
+
+    const { data, error } = await db.rpc('admin_wallet_delete_transactions', { p_ids: realIds });
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+
+    return res.json({
+      success: true,
+      deletedCount: result?.deleted_count ?? 0,
+      reversedAmount: Number(result?.reversed_amount) || 0,
+      newBalance: Number(result?.new_balance) || 0,
+    });
+  }));
+
   // ── Generic CRUD factory for simple content tables ────────────────────────
   // Registers GET (list), POST (create), PUT/:id (update), DELETE/:id for a table.
   // afterWrite(row): optional side effect run once a create/update has succeeded.
