@@ -1142,7 +1142,19 @@ module.exports = function registerAdminRoutes(app) {
   function categorizeDebit(description) {
     const d = String(description || '');
     if (/^Refund/i.test(d)) return 'refund';
-    if (/^Automated .*(billing)/i.test(d)) return 'sessions';
+    // Session billing is broken out by call type ('Automated chat billing' /
+    // 'Automated audio|voice billing' / 'Automated video billing') so the summary
+    // table shows chat vs. audio vs. video spend separately instead of one lumped
+    // "sessions" bucket. 'sessions' is kept as a fallback for a null/unrecognised
+    // call_type (process_session_billing.sql's COALESCE(v_call_type, 'session')).
+    const billingMatch = d.match(/^Automated (\w+) billing/i);
+    if (billingMatch) {
+      const callType = billingMatch[1].toLowerCase();
+      if (callType === 'chat') return 'chatSessions';
+      if (callType === 'audio' || callType === 'voice') return 'audioSessions';
+      if (callType === 'video') return 'videoSessions';
+      return 'sessions';
+    }
     if (/^Astro Report/i.test(d)) return 'reports';
     if (/^Remedy order/i.test(d)) return 'shop';
     if (/^Free Service/i.test(d)) return 'freeServices';
@@ -1151,6 +1163,7 @@ module.exports = function registerAdminRoutes(app) {
     if (/^Admin wallet/i.test(d)) return 'adminAdjustment';
     return 'other';
   }
+  const SESSION_SPEND_CATEGORIES = new Set(['chatSessions', 'audioSessions', 'videoSessions', 'sessions']);
 
   // Human label for chat_sessions.call_type ('chat' | 'audio' | 'voice' | 'video' —
   // 'audio'/'voice' are the same thing, see CLAUDE.md's note on that inconsistency).
@@ -1162,7 +1175,10 @@ module.exports = function registerAdminRoutes(app) {
     return 'Session';
   }
   const SPEND_CATEGORY_LABELS = {
-    sessions: 'Chat / call / video sessions',
+    chatSessions: 'Chat sessions',
+    audioSessions: 'Audio call sessions',
+    videoSessions: 'Video call sessions',
+    sessions: 'Other sessions',
     reports: 'Astro reports',
     shop: 'Wani Shop orders',
     freeServices: 'Free services (₹1)',
@@ -1317,8 +1333,8 @@ module.exports = function registerAdminRoutes(app) {
           amount: Number(t.amount),
           description: t.description,
           at: t.created_at,
-          sessionType: category === 'sessions' ? (info?.sessionType || null) : null,
-          astrologerName: category === 'sessions' ? (info?.astrologerName || null) : null,
+          sessionType: SESSION_SPEND_CATEGORIES.has(category) ? (info?.sessionType || null) : null,
+          astrologerName: SESSION_SPEND_CATEGORIES.has(category) ? (info?.astrologerName || null) : null,
         };
       }),
     ].sort((a, b) => new Date(b.at) - new Date(a.at));

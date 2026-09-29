@@ -118,6 +118,9 @@ function RechargeActivitySection() {
   const [categoryLabels, setCategoryLabels] = useState({});
   const [truncated, setTruncated] = useState(false);
   const [timeline, setTimeline] = useState(null); // { customer, loading, error, events }
+  const [rechargeTimeFilter, setRechargeTimeFilter] = useState('all'); // filters by lastRechargeAt
+  const [rechargeWalletFilter, setRechargeWalletFilter] = useState('all'); // reuses WALLET_FILTERS
+  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' or a spend category key
 
   const load = async () => {
     setLoading(true);
@@ -135,21 +138,48 @@ function RechargeActivitySection() {
 
   useEffect(() => { load(); }, []);
 
+  // Only categories actually present in the loaded data — no point offering a
+  // "Coin purchases" chip when nobody in this dataset has bought coins.
+  const categoriesPresent = useMemo(() => {
+    const set = new Set();
+    for (const r of rows) {
+      for (const cat of Object.keys(r.spend || {})) set.add(cat);
+    }
+    return [...set].sort((a, b) => (categoryLabels[a] || a).localeCompare(categoryLabels[b] || b));
+  }, [rows, categoryLabels]);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.toLowerCase().trim();
-    return rows.filter((r) =>
-      (r.name || '').toLowerCase().includes(q) ||
-      (r.mobile || '').toLowerCase().includes(q) ||
-      (r.email || '').toLowerCase().includes(q)
-    );
-  }, [rows, search]);
+    return rows.filter((r) => {
+      if (!inRange(r.lastRechargeAt, rechargeTimeFilter)) return false;
+      const wallet = Number(r.walletBalance || 0);
+      if (rechargeWalletFilter === 'has' && !(wallet > 0)) return false;
+      if (rechargeWalletFilter === 'zero' && !(wallet <= 0)) return false;
+      if (categoryFilter !== 'all' && !((r.spend || {})[categoryFilter] > 0)) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase().trim();
+      return (
+        (r.name || '').toLowerCase().includes(q) ||
+        (r.mobile || '').toLowerCase().includes(q) ||
+        (r.email || '').toLowerCase().includes(q)
+      );
+    });
+  }, [rows, search, rechargeTimeFilter, rechargeWalletFilter, categoryFilter]);
+
+  // Reset to a sane state whenever the underlying dataset changes shape so a stale
+  // category filter (e.g. picked before a reload) can't silently hide everything.
+  useEffect(() => {
+    if (categoryFilter !== 'all' && !categoriesPresent.includes(categoryFilter)) {
+      setCategoryFilter('all');
+    }
+  }, [categoriesPresent, categoryFilter]);
 
   const totals = useMemo(() => {
-    const totalRecharged = rows.reduce((s, r) => s + r.totalRecharged, 0);
-    const totalSpent = rows.reduce((s, r) => s + r.totalSpent, 0);
-    return { customers: rows.length, totalRecharged, totalSpent };
-  }, [rows]);
+    // Totals track the FILTERED set, so the stat cards move with the chips/search
+    // instead of always describing the whole unfiltered table.
+    const totalRecharged = filtered.reduce((s, r) => s + r.totalRecharged, 0);
+    const totalSpent = filtered.reduce((s, r) => s + r.totalSpent, 0);
+    return { customers: filtered.length, totalRecharged, totalSpent };
+  }, [filtered]);
 
   const openTimeline = async (customer) => {
     setTimeline({ customer, loading: true });
@@ -180,15 +210,81 @@ function RechargeActivitySection() {
       </div>
 
       <div className="card" style={{ padding: '14px 18px', marginBottom: 20 }}>
-        <div className="search-bar-wrap">
-          <span className="search-bar-icon">🔍</span>
-          <input
-            type="text"
-            placeholder="Search recharged customers by name, phone, or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Last-recharge date filter chips */}
+          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+            {DATE_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`btn sm ${rechargeTimeFilter === f.key ? '' : 'ghost'}`}
+                style={{
+                  borderRadius: 20,
+                  fontWeight: rechargeTimeFilter === f.key ? 700 : 500,
+                  background: rechargeTimeFilter === f.key ? 'var(--maroon)' : undefined,
+                  color: rechargeTimeFilter === f.key ? '#fff' : undefined,
+                }}
+                onClick={() => setRechargeTimeFilter(f.key)}
+                title={f.key === 'all' ? 'Any last-recharge date' : `Last recharged: ${f.label}`}
+              >
+                {f.key === 'all' ? 'Any Time' : f.label.replace('Joined ', '')}
+              </button>
+            ))}
+          </div>
+
+          {/* Search box */}
+          <div className="search-bar-wrap">
+            <span className="search-bar-icon">🔍</span>
+            <input
+              type="text"
+              placeholder="Search recharged customers by name, phone, or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', fontSize: 14 }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Wallet balance + spend category filters */}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Wallet:</span>
+          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+            {WALLET_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`btn sm ${rechargeWalletFilter === f.key ? '' : 'ghost'}`}
+                style={{
+                  borderRadius: 20,
+                  fontWeight: rechargeWalletFilter === f.key ? 700 : 500,
+                  background: rechargeWalletFilter === f.key ? 'var(--maroon)' : undefined,
+                  color: rechargeWalletFilter === f.key ? '#fff' : undefined,
+                }}
+                onClick={() => setRechargeWalletFilter(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>Spent on:</span>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={{ padding: '5px 10px', borderRadius: 20, fontSize: 12.5 }}
+          >
+            <option value="all">Any category</option>
+            {categoriesPresent.map((cat) => (
+              <option key={cat} value={cat}>{categoryLabels[cat] || cat}</option>
+            ))}
+          </select>
+        </div>
+
         {truncated && (
           <div className="muted" style={{ marginTop: 10, fontSize: 12, color: 'var(--red, #c0392b)' }}>
             ⚠️ This dataset is large enough that some rows may be missing from the totals above — treat these as a lower bound.
