@@ -6508,6 +6508,39 @@ app.post('/api/gift/send', async (req, res) => {
       context: context || 'profile', session_id: sessionId || null,
     }]);
 
+    // 3b. Credit the platform's half to admin_wallet (2026-09-30).
+    // Until now `platformCut` was only ever written to gift_transactions, so the
+    // astrologer got their 50% but the platform's 50% never reached admin_wallet —
+    // the balance the admin dashboard reports was missing ALL gift revenue. Reports
+    // (astroRoutes.js) and the ₹1 free services (freeServicesRoutes.js) have always
+    // credited it; gifts were the one money path that did not.
+    //
+    // Log-only, exactly like those two: the customer has already been debited and the
+    // astrologer already paid by this point, so a ledger failure must not fail the gift
+    // (and must not be retried, or the astrologer would be paid twice).
+    //
+    // Recorded in rupees for a COIN gift as well, because 1 coin == ₹1 of catalogue
+    // price and nothing is credited when coins are bought — see coinRoutes.js. No
+    // double count.
+    //
+    // The key is derived from giftIdempotencyKey, so it is stable across a retry of
+    // the same tap and different for a deliberate second gift — the same guarantee
+    // the customer debit itself has.
+    if (platformCut > 0) {
+      try {
+        await wallet.adjustAdminWallet(platformCut, {
+          description: `Platform share (50%) of gift: ${gift.name}`,
+          serviceKey: 'gift',
+          customerId: customer.id,
+          idempotencyKey: `${giftIdempotencyKey}:admin`,
+        });
+      } catch (adminErr) {
+        console.error(
+          `POST /api/gift/send admin ledger credit failed (customer already charged, astrologer already paid): ${adminErr.message}`
+        );
+      }
+    }
+
     // 4. If live, bump the session total and broadcast a gift toast
     if (context === 'live' && sessionId) {
       const { data: ls } = await supabaseService.from('live_sessions').select('total_gift_amount').eq('id', sessionId).single();

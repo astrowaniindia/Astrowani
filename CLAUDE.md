@@ -6164,3 +6164,122 @@ on their next launch. The JS also carries the dormant call-recording hooks, guar
 - In-app delete confirmations (customer + vendor, EN + HI) now say chats/recordings are kept; that
   text ships by OTA. The website pages must be updated by the owner: see
   `MD files/Astrowani-Website-Text-Changes.docx` (exact find/replace text for the delete-account page, Privacy Policy and Terms, written against the live pages on 2026-09-25).
+
+---
+
+## Session 2026-09-30: the 50/50 consultation split, audited — and an unmerged branch
+
+### DB. Consultation revenue is split 50/50 — read this before touching billing
+
+Every billed minute of chat/audio/video now pays the astrologer **half** of what the
+customer is charged; the platform keeps the rest in `admin_wallet`. The customer is quoted
+and debited the FULL per-minute rate as before — the split is invisible to them.
+
+**Where it lives: `sql/process_session_billing.sql`, and that file IS the source of truth
+again.** It had drifted: the split was applied straight to the live database while the
+committed file still said 100%-to-the-astrologer, so re-running the file — which its own
+header instructs you to do — would have silently reverted the platform's entire
+consultation revenue. Synced 2026-09-30; keep it that way.
+
+**Two details in the function are load-bearing:**
+- `astro = ROUND(charge*0.5, 2)` and `admin = charge - astro`. The platform takes the
+  REMAINDER, so the halves always sum to exactly what the customer paid. Rounding both
+  independently would leak or mint a paisa on an odd charge.
+- The `admin_wallet` UPDATE is keyed `WHERE id =` after `SELECT ... FOR UPDATE`. A
+  WHERE-less UPDATE is rejected by this database even inside SECURITY DEFINER — that is
+  what kept `adjust_admin_wallet` silently failing for months (hardening_07). The row is
+  picked the same way `adjust_admin_wallet` picks it (`ORDER BY updated_at LIMIT 1`) so
+  both money paths credit the same wallet.
+
+**The bug that was fixed, and the rule from it** (`hardening_21_…`, applied):
+the platform leg originally `RAISE`d when `admin_wallet` held no row. The function is ONE
+transaction, so that rolled back the customer debit, the astrologer credit, the ledger rows
+**and the `next_billing_at` advance** — and `sessionManager.processBilling` only logs a
+failed RPC, so the session just came due again 30s later, forever. One missing row meant
+**every consultation on the platform ran FREE, silently**. It now sits in its own
+`BEGIN/EXCEPTION` sub-block: a failure is a WARNING and billing continues. Losing one
+minute's ledger entry is recoverable (the customer's `wallet_transactions` debit is the
+authoritative record); refusing to bill is not. **Do not turn that WARNING back into an
+EXCEPTION** — and note this is the same log-only posture `astroRoutes.js`,
+`orderRoutes.js`, `freeServicesRoutes.js` and the gift path already take with
+`admin_wallet`, for the same reason: by then the customer has been charged.
+
+Because that failure is now silent by design, `scripts/dbHealthCheck.js` gained an
+**'Admin wallet singleton'** check — CRITICAL unless `admin_wallet` holds exactly one row.
+Zero means platform revenue is going unrecorded; more than one means the balance
+alternates between rows and neither holds the true total.
+
+> **It was NEVER 50/50 before.** `v_astro_share` appears in no committed version of that
+> file, and the copy exported *out of production* on 2026-08-08 already credited the
+> astrologer the full charge — so the dashboard function paid 100% from the day it was
+> first written, and no later change converted it. The 50/50 that did exist in code was
+> always the **gift** one (`GIFT_VENDOR_SHARE`).
+
+### DC. Gifts now reach `admin_wallet` (they never did)
+
+`platformCut` was computed and written to `gift_transactions.platform_cut`, but there was
+no `adjustAdminWallet` call on the gift path — so the astrologer got their 50% and the
+platform's 50% never entered the balance the admin dashboard reports. Paid reports
+(`astroRoutes.js`) and the ₹1 free services have always credited it; gifts were the one
+money path that did not. Added in `index.js` with `serviceKey: 'gift'`, keyed
+`${giftIdempotencyKey}:admin` so it is stable across a retry of one tap, log-only.
+Recorded in rupees for a COIN gift too — 1 coin == ₹1 of catalogue price and nothing is
+credited when coins are bought, so there is no double count.
+
+### DD. The astrologer's own screens showed the CUSTOMER's rate
+
+`VendorChatSession.js`, `EnxScreenVoice.tsx` and `EnxScreenVideo.tsx` rendered
+`₹{perMinuteCharge}/min • billing active` on the astrologer's screen. That is what the
+customer pays, and they now earn half of it — ten minutes of "₹25/min" followed by ₹125 in
+the wallet is a support ticket every time. Now `t('call.customerRate')` → **"Customer:
+₹25/min"** (EN + HI). **Deliberately does not do the maths in the app**: the share lives
+server-side and hardcoding 0.5 in the client would drift the day it changes.
+
+### DE. ⚠️ THE PLATFORM WALLET SCREEN IS BUILT BUT NOT MERGED — CHECK THIS FIRST
+
+Branch **`origin/claude/billing-astrologer-split-issue-wb5k72`** (3 commits on top of
+`1d81dde`) contains, all unmerged:
+- `GET /api/admin/wallet` in `adminRoutes.js` (+130) — balance, ledger, revenue-by-source,
+  and the per-minute **row folding** that turns 8 × ₹25 ticks into one
+  "Call with X (platform share) +₹200" entry;
+- `astrowani-admin/src/pages/AdminWallet.jsx` (164 lines) + its `App.jsx` route and
+  `Layout.jsx` sidebar entry under **Executive Center**;
+- `sql/hardening_19_billing_50_50_split.sql`, `sql/hardening_20_admin_wallet_session_id.sql`;
+- the same gift → `admin_wallet` fix as DC above.
+
+**The database half of that branch IS live** (the split, and
+`admin_wallet_transactions.session_id`). **The code half is not**: `main` does not have it,
+and production answers **404** on `/api/admin/wallet` while a real admin route answers 401.
+So the Platform Wallet page cannot be reached in production, and the folding it describes
+is not running.
+
+**Do not rebuild that page** — merge the branch. Two things to know when doing it:
+1. It will **conflict in `index.js`** on the gift block (DC), because both sides add the
+   same credit. Keep either; the working-tree version also passes `customerId`, which
+   attributes the ledger row.
+2. `hardening_19`/`20` still carry the `RAISE` that DB fixed. **Do not re-run either after
+   `process_session_billing.sql`** — both reinstate the platform-wide free-consultation
+   outage. `hardening_21` says so at the top.
+
+### Verified 2026-09-30
+Against the LIVE database, each case run for real inside a transaction that was then
+aborted so nothing persisted (synthetic session on the store-reviewer accounts):
+- **`admin_wallet` deleted entirely, charge ₹21** → RPC returned **true**, customer
+  500→479, astrologer +10.50, `today_earnings` +10.50, customer ledger 21, vendor ledger
+  10.50, admin ledger rows 0, `next_billing_at` advanced. The outage is gone.
+- **Normal, charge ₹25** → customer −25, astrologer +12.50, `admin_wallet` +12.50, admin
+  ledger 12.50, halves sum exactly to the charge, and an immediate second call for the same
+  minute returned **false** (no double-bill).
+- **Gift leg** → `adjust_admin_wallet` 189→199.50, a replay under the same key credited
+  **nothing**, exactly one ledger row.
+- Deployed function re-read afterwards: best-effort guard present, split present,
+  `session_id` still written (nothing of hardening_20 was clobbered).
+- `node --check` clean on `index.js` and `dbHealthCheck.js`; the new health check runs and
+  reports `1 admin_wallet row(s)`; vendor eslint clean on all 4 changed files; vendor i18n
+  **497 keys, zero one-sided**.
+
+**Not yet exercised on a device.** A real 2-minute paid call is still the test worth doing:
+check customer −₹X, astrologer +₹X/2, `admin_wallet.balance` +₹X/2, and one
+`service_key='session_billing'` ledger row per minute. Note `admin_wallet_transactions`
+had **zero** `session_billing` rows as of this session, so the split had never yet run on a
+real consultation.

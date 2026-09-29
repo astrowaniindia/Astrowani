@@ -544,7 +544,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
         <View style={styles.connectingOverlay}>
           <View style={styles.header}>
             <Text style={styles.headerLabel}>{t('call.videoCall')}</Text>
-            {perMinuteCharge > 0 && <Text style={styles.rateLabel}>₹{perMinuteCharge}{t('common.perMin')}</Text>}
+            {perMinuteCharge > 0 && <Text style={styles.rateLabel}>{t('call.customerRate', {amount: perMinuteCharge})}</Text>}
           </View>
           <View style={styles.centerContent}>
             <Animated.View style={[styles.ring, {transform: [{scale: ring1Scale}], opacity: ring1Opacity}]} />
@@ -574,7 +574,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
           {perMinuteCharge > 0 && (
             <View style={styles.billingBadge}>
               <Ionicons name="timer-outline" size={13} color={COLORS.AstroGold} />
-              <Text style={styles.billingText}>₹{perMinuteCharge}{t('common.perMin')} • {t('call.billingActive')}</Text>
+              <Text style={styles.billingText}>{t('call.customerRate', {amount: perMinuteCharge})} • {t('call.billingActive')}</Text>
             </View>
           )}
         </View>

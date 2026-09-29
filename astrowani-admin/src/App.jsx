@@ -24,6 +24,7 @@ import OfferGuard from './pages/OfferGuard';
 import Missed from './pages/Missed';
 import Withdrawals from './pages/Withdrawals';
 import Reports from './pages/Reports';
+import AdminWallet from './pages/AdminWallet';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="app-prompts" element={<AppPrompts />} />
         <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="admin-wallet" element={<AdminWallet />} />
         <Route path="support-inbox" element={<SupportInbox />} />
         <Route path="support" element={<Support />} />
         <Route path="new-entries" element={<NewEntries />} />

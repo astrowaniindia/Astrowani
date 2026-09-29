@@ -175,6 +175,28 @@ async function anonExposure() {
   return `${exposed.length} table(s) exposed to the public key`;
 }
 
+async function adminWalletSingleton() {
+  // process_session_billing credits the platform's 50% of every billed minute to the
+  // single admin_wallet row (sql/process_session_billing.sql). That leg is deliberately
+  // BEST EFFORT — it must never abort a consultation's billing — so if the row goes
+  // missing, consultations keep billing correctly and the platform's share silently
+  // stops being recorded. Nothing else would notice, which is why it is asserted here.
+  //
+  // More than one row is also wrong: the function and adjust_admin_wallet both take
+  // `ORDER BY updated_at LIMIT 1` and then stamp updated_at, so with two rows the
+  // balance would alternate between them and neither would hold the true total.
+  const rows = await get('admin_wallet?select=id');
+  const n = rows.length;
+  if (n !== 1) {
+    report('CRITICAL', 'admin-wallet-row',
+      n === 0
+        ? 'admin_wallet has NO row — the platform share of every billed minute, paid report and gift is going unrecorded. Insert exactly one row.'
+        : `admin_wallet has ${n} rows — the platform share will alternate between them and no single row holds the true balance. Consolidate to one.`,
+      rows.map((r) => ({ id: r.id })));
+  }
+  return `${n} admin_wallet row(s)`;
+}
+
 (async () => {
   const checks = [
     ['Stuck sessions', stuckSessions],
@@ -184,6 +206,7 @@ async function anonExposure() {
     ['Stale pending requests', stalePending],
     ['Unfinalized sessions', unfinalizedSessions],
     ['Public-key exposure', anonExposure],
+    ['Admin wallet singleton', adminWalletSingleton],
   ];
 
   const summary = [];

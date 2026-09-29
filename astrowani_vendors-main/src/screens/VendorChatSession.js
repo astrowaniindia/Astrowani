@@ -594,7 +594,7 @@ const VendorChatSession = ({ route, navigation }) => {
           {customerTyping ? (
             <Text style={[styles.charge, { color: '#88ffa8', fontStyle: 'italic' }]}>{t('call.typing')}</Text>
           ) : (
-            <Text style={styles.charge}>₹{perMinuteCharge}{t('common.perMin')}</Text>
+            <Text style={styles.charge}>{t('call.customerRate', {amount: perMinuteCharge})}</Text>
           )}
         </View>
 

@@ -309,6 +309,13 @@ const translations = {
     'call.speaker': 'Speaker',
     'call.earpiece': 'Earpiece',
     'call.billingActive': 'billing active',
+    // The rate shown on an astrologer's own call/chat screen is what the CUSTOMER
+    // pays, not what the astrologer earns — the platform keeps a share of every
+    // billed minute (see sql/process_session_billing.sql). Labelling it stops the
+    // astrologer reading "₹25/min" for ten minutes and then finding half that in
+    // their wallet. Deliberately does NOT do the maths here: the share lives
+    // server-side and hardcoding it in the app would drift the day it changes.
+    'call.customerRate': 'Customer: ₹{{amount}}/min',
     'call.endCallTitle': 'End Call',
     'call.endCallMsg': 'Are you sure you want to end the call?',
     'call.end': 'End',
@@ -821,6 +828,7 @@ const translations = {
     'call.speaker': 'स्पीकर',
     'call.earpiece': 'ईयरपीस',
     'call.billingActive': 'बिलिंग सक्रिय',
+    'call.customerRate': 'ग्राहक: ₹{{amount}}/मिनट',
     'call.endCallTitle': 'कॉल समाप्त करें',
     'call.endCallMsg': 'क्या आप वाकई कॉल समाप्त करना चाहते हैं?',
     'call.end': 'समाप्त करें',
