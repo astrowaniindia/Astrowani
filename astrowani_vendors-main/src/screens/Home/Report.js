@@ -76,6 +76,15 @@ export default function Wallet() {
           dateTime: formatDateTime(t.created_at),
           customerName: t.customerName || null,
           callType: t.callType || null,
+          // A consultation arrives as ONE entry covering the whole session (the backend
+          // folds the per-minute rows — src/sessionFolding.js), with the session's real
+          // start/end so this can show the span instead of just when the last minute
+          // happened to bill. Non-session rows (gifts, withdrawals) have none of these.
+          folded: !!t.folded,
+          startedAt: t.startedAt || null,
+          endedAt: t.endedAt || null,
+          isActive: !!t.isActive,
+          minutesBilled: t.minutesBilled || null,
         })));
       }
 
@@ -170,6 +179,23 @@ export default function Wallet() {
     </View>
   );
 
+  // "12 Aug, 3:04 PM - 3:14 PM · 8 min" for a folded consultation; the plain timestamp
+  // for everything else. The astrologer is paid per minute, so the minutes behind the
+  // figure are the first thing they check.
+  const clock = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+  const sessionLine = (item) => {
+    if (!item.folded || !item.startedAt) return item.dateTime;
+    const from = clock(item.startedAt);
+    const to = item.isActive ? t('wallet.ongoing') : clock(item.endedAt);
+    const span = to ? `${from} - ${to}` : from;
+    const mins = item.minutesBilled ? ` · ${t('wallet.minutesBilled', { count: item.minutesBilled })}` : '';
+    return `${item.dateTime.split(',')[0]}, ${span}${mins}`;
+  };
+
   const renderTransaction = ({ item }) => {
     const typeIcon = CALL_TYPE_ICONS[item.callType] || null;
     // A real session earning reads "Chat with Ansh Sharma" instead of the generic
@@ -192,7 +218,7 @@ export default function Wallet() {
         </View>
         <View style={styles.transactionTextCol}>
           <Text style={styles.transactionDescription} numberOfLines={1}>{title}</Text>
-          <Text style={styles.transactionDate}>{item.dateTime}</Text>
+          <Text style={styles.transactionDate}>{sessionLine(item)}</Text>
         </View>
         <Text style={[styles.transactionAmount, { color: item.isCredit ? '#2E7D32' : '#D32F2F' }]}>
           {item.isCredit ? `+₹${item.amount}` : `-₹${item.amount}`}

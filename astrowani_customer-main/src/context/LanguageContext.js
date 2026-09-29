@@ -13,7 +13,7 @@ const translations = {
     // Home
     'home.welcome': 'Jai Shree Ram',
     'home.search': 'Search Here',
-    'home.bestAstrologers': "India's Best Astrologers",
+    'home.bestAstrologers': 'Chat & Call with Astrologer',
     'home.callWithAstrologers': 'Call with Astrologers',
     'home.videoCallWithAstrologers': 'Video Call with Astrologers',
     'home.viewAll': 'View All',
@@ -540,6 +540,10 @@ const translations = {
 
     'walletHistory.noTransaction': 'No Transaction',
     'walletHistory.addMoney': 'Add Money',
+    // A consultation shows as ONE entry with the session's span and the minutes actually
+    // billed -- never one row per billed minute. See src/sessionFolding.js.
+    'walletHistory.minutesBilled': '{{count}} min billed',
+    'walletHistory.ongoing': 'ongoing',
 
     'freeBotChat.freeChat': 'Free chat',
     'freeBotChat.freeBanner': 'Your free 5-minute welcome chat — completely free',
@@ -1842,6 +1846,8 @@ const translations = {
 
     'walletHistory.noTransaction': 'कोई लेनदेन नहीं',
     'walletHistory.addMoney': 'पैसे जोड़ें',
+    'walletHistory.minutesBilled': '{{count}} मिनट का शुल्क',
+    'walletHistory.ongoing': 'चल रहा है',
 
     'freeBotChat.freeChat': 'मुफ्त चैट',
     'freeBotChat.freeBanner': 'आपकी मुफ्त 5-मिनट की स्वागत चैट — पूरी तरह मुफ्त',

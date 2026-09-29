@@ -50,7 +50,8 @@ const REFERRAL_REWARD_AMOUNT = 50;
 const smsProviders = require('./src/smsProviders');
 const { TtlCache } = require('./src/ttlCache');
 const { contentCache } = require('./src/contentCache');
-const { chunkIds } = require('./src/pagedSelect');
+const { chunkIds, pagedSelect } = require('./src/pagedSelect');
+const sessionFolding = require('./src/sessionFolding');
 const { createLiveAartiPoller } = require('./src/liveAarti');
 const { startAstrologerFanout } = require('./src/astrologerFanout');
 const { startTableFanout } = require('./src/tableFanout');
@@ -4799,29 +4800,100 @@ app.get('/api/wallet', async (req, res) => {
       if (!error) userRow = data;
     }
 
-    // Fetch recent wallet transactions
-    const { data: txns } = await supabase
-      .from('wallet_transactions')
-      .select('*')
-      .eq('user_id', actualUserId)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    // ONE entry per consultation, not one per billed minute. A 10-minute call used to
+    // render as eight separate "-Rs50" lines, which reads as being charged eight times,
+    // and with a 20-row cap a single long call pushed everything else out of view.
+    // See src/sessionFolding.js. Every row is fetched (bounded by pagedSelect) because
+    // folding after a 20-row cut would split one call across the boundary and show a
+    // partial total.
+    const { rows: allTxns } = await pagedSelect(() =>
+      supabase.from('wallet_transactions').select('*').eq('user_id', actualUserId)
+        .order('created_at', { ascending: false })
+    );
+    const sessionMap = await sessionFolding.loadSessionMap(supabaseService, allTxns, 'astrologer');
+    const folded = sessionFolding.foldBySession(allTxns, sessionMap, (sess) =>
+      `${sessionFolding.callTypeLabel(sess.callType)} with ${sess.astrologerName}`
+    ).slice(0, 30);
 
     return res.status(200).json({
       success: true,
       data: {
         balance: userRow?.wallet_balance ?? 0,
-        transactions: (txns || []).map(t => ({
+        transactions: folded.map(t => ({
           id: t.id,
           description: t.description || (t.type === 'credit' ? 'Money Added' : 'Chat/Call Charge'),
           amount: t.type === 'credit' ? t.amount : -t.amount,
           date: new Date(t.created_at).toLocaleDateString('en-IN'),
+          // Folded consultations carry the session's real span so the app can show
+          // "3:04 PM - 3:14 PM" instead of a bare date repeated on every row.
+          folded: !!t.folded,
+          startedAt: t.startedAt || null,
+          endedAt: t.endedAt || null,
+          isActive: !!t.isActive,
+          minutesBilled: t.ticks || null,
+          callType: t.callType || null,
+          createdAt: t.created_at,
         })),
       },
     });
   } catch (err) {
     console.error('GET /api/wallet error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch wallet' });
+  }
+});
+
+/**
+ * What each of THIS customer's sessions actually cost, summed from the ledger.
+ *
+ * My Sessions used to compute the figure itself as
+ * `round(duration_minutes * per_minute_charge)`, which over-reports: the first minute
+ * is billed 60s after connect, and sessionManager PAUSES billing while a participant
+ * is absent (resumeAfterPause pushes next_billing_at forward by the gap). A 10-minute
+ * call that billed 8 minutes showed "Charged Rs500" next to a wallet that had lost
+ * Rs400 -- the app telling the customer it took more of their money than it did.
+ *
+ * So the amount now comes from the same wallet_transactions rows the wallet screen
+ * shows, and a session with no resolvable charge reports null so the app can render
+ * a dash rather than invent a number. The app cannot read wallet_transactions itself:
+ * anon has no SELECT on it (sql/hardening_02_access_control.sql), which is why this
+ * is an endpoint and not a client-side query.
+ *
+ * Scoped to the customer in the verified JWT -- there is deliberately no id parameter.
+ */
+app.get('/api/sessions/charges', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+
+    let customerId = decoded.userId || decoded._id || decoded.id;
+    if (decoded.phone) {
+      const c = await findCustomerByPhone(supabase, decoded.phone, 'id');
+      if (c) customerId = c.id;
+    }
+    if (!customerId || !String(customerId).includes('-')) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const { rows } = await pagedSelect(() =>
+      supabaseService.from('wallet_transactions')
+        .select('session_id, amount, type')
+        .eq('user_id', customerId)
+        .not('session_id', 'is', null)
+    );
+
+    const charges = {};
+    const minutes = {};
+    for (const r of rows || []) {
+      const amt = Number(r.amount) || 0;
+      charges[r.session_id] = (charges[r.session_id] || 0) + (r.type === 'debit' ? amt : -amt);
+      if (r.type === 'debit') minutes[r.session_id] = (minutes[r.session_id] || 0) + 1;
+    }
+
+    return res.status(200).json({ success: true, charges, minutes });
+  } catch (err) {
+    console.error('GET /api/sessions/charges error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch session charges' });
   }
 });
 
@@ -5763,12 +5835,14 @@ app.get('/api/vendor/wallet', async (req, res) => {
       .single();
     if (error) throw error;
 
-    const { data: txns } = await supabaseService
-      .from('vendor_wallet_transactions')
-      .select('*')
-      .eq('vendor_id', vendorId)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    // ONE entry per consultation, not one per billed minute -- an astrologer who took a
+    // single 10-minute call used to see eight "+Rs25" rows, and with a 20-row cap three
+    // calls filled the entire visible history. See src/sessionFolding.js. Fetched in full
+    // (bounded) because folding after a cut would split one call across the boundary.
+    const { rows: txns } = await pagedSelect(() =>
+      supabaseService.from('vendor_wallet_transactions').select('*').eq('vendor_id', vendorId)
+        .order('created_at', { ascending: false })
+    );
 
     // Enrich with the real customer name + session type behind each transaction — the raw
     // row only has a generic "Automated chat earning" description and a session_id, which
@@ -5805,10 +5879,22 @@ app.get('/api/vendor/wallet', async (req, res) => {
       (directCustomers || []).forEach((c) => { directNameMap[c.id] = c.name || 'Customer'; });
     }
 
-    const enrichedTxns = (txns || []).map((t) => ({
+    // Fold the per-minute rows for one session into a single entry carrying the whole
+    // session's span and total, then enrich what is left (gifts, withdrawals, payouts)
+    // with the counterparty name as before.
+    const foldMap = await sessionFolding.loadSessionMap(supabaseService, txns, 'customer');
+    const foldedTxns = sessionFolding.foldBySession(txns, foldMap, (sess) =>
+      `${sessionFolding.callTypeLabel(sess.callType)} with ${sess.customerName}`
+    ).slice(0, 30);
+
+    const enrichedTxns = foldedTxns.map((t) => ({
       ...t,
-      customerName: (t.customer_id && directNameMap[t.customer_id]) || sessionMap[t.session_id]?.customerName || null,
-      callType: sessionMap[t.session_id]?.callType || null,
+      customerName: t.customerName
+        || (t.customer_id && directNameMap[t.customer_id])
+        || sessionMap[t.session_id]?.customerName
+        || null,
+      callType: t.callType || sessionMap[t.session_id]?.callType || null,
+      minutesBilled: t.ticks || null,
     }));
 
     return res.status(200).json({

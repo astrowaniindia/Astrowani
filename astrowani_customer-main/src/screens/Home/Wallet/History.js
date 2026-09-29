@@ -43,13 +43,37 @@ const History = ({navigation}) => {
     fetchTransactions();
   };
 
+  // A consultation is billed a minute at a time, so a 10-minute call writes ~10 ledger
+  // rows. The backend folds them into ONE entry per session (src/sessionFolding.js) and
+  // sends the session's real span with it, so this shows "Call with X · 3:04 PM - 3:14 PM
+  // · 8 min · -₹400" instead of eight identical "-₹50" lines that read as being charged
+  // over and over. Non-session rows (recharges, refunds, gifts) arrive unfolded and fall
+  // back to the plain date, exactly as before.
+  const timeOnly = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  };
+
+  const sessionSpan = (item) => {
+    const from = timeOnly(item.startedAt);
+    if (!from) return item.date;
+    const to = item.isActive ? t('walletHistory.ongoing') : timeOnly(item.endedAt);
+    return `${item.date} · ${from}${to ? ` - ${to}` : ''}`;
+  };
+
   const renderTransaction = ({item}) => (
     <View style={styles.transactionCard}>
       <Text style={styles.transactionDescription}>{item.description}</Text>
       <Text style={[styles.transactionAmount, item.amount < 0 && styles.transactionAmountDebit]}>
         {item.amount > 0 ? `+₹${item.amount}` : `-₹${Math.abs(item.amount)}`}
       </Text>
-      <Text style={styles.transactionDate}>{item.date}</Text>
+      <Text style={styles.transactionDate}>{item.folded ? sessionSpan(item) : item.date}</Text>
+      {item.folded && item.minutesBilled > 0 && (
+        <Text style={styles.transactionMeta}>
+          {t('walletHistory.minutesBilled', {count: item.minutesBilled})}
+        </Text>
+      )}
     </View>
   );
 
@@ -129,4 +153,10 @@ const styles = StyleSheet.create({
   transactionAmount: {fontSize: moderateScale(17), fontFamily: 'Lato-Bold', color: '#2e7d32', marginBottom: 4},
   transactionAmountDebit: {color: '#c0392b'},
   transactionDate: {fontSize: moderateScale(12), color: '#777'},
+  transactionMeta: {
+    fontSize: moderateScale(11),
+    color: COLORS.AstroMaroon,
+    opacity: 0.75,
+    marginTop: verticalScale(2),
+  },
 });

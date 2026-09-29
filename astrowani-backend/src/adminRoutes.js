@@ -31,6 +31,7 @@ const {
 } = require('./appPromptRoutes');
 const audienceRules = require('./audience');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
+const sessionFolding = require('./sessionFolding');
 // Phone canonicalization + the tolerant "is this number already an astrologer"
 // lookup, shared with the OTP/login path so an admin-created account is stored in
 // exactly the shape mobile-otp-verify searches for. See POST /api/admin/astrologers.
@@ -196,62 +197,21 @@ module.exports = function registerAdminRoutes(app) {
       .map((e) => ({ ...e, net: e.credit - e.debit }))
       .sort((a, b) => b.net - a.net);
 
-    // Fold session-billing ticks for the SAME session into one entry. Only rows tagged
-    // service_key='session_billing' with a real session_id are ever folded (requires
-    // sql/hardening_20_admin_wallet_session_id.sql — older rows before that migration have
-    // no session_id and simply show individually, same as today). Gifts, astro reports,
-    // free services and remedy orders are one-shot already and are never touched.
-    const billingSessionIds = [...new Set(
-      allRows.filter((t) => t.service_key === 'session_billing' && t.session_id).map((t) => t.session_id)
-    )];
-    let chatSessionMap = {};
-    if (billingSessionIds.length) {
-      // chunkIds, NOT one big .in(): this list grows by one uuid for every session ever
-      // billed, and a single .in() with ~1000 of them builds a ~37 KB query string that
-      // 414s before any row cap is reached (see pagedSelect.js). Unchunked, this route
-      // would work fine for months and then start failing outright as volume grew.
-      const sessions = [];
-      for (const chunk of chunkIds(billingSessionIds)) {
-        const { data } = await db.from('chat_sessions').select('id, vendor_id, call_type').in('id', chunk);
-        if (data) sessions.push(...data);
-      }
-      const vendorIds = [...new Set(sessions.map((s) => s.vendor_id).filter(Boolean))];
-      let vendorNameById = {};
-      for (const chunk of chunkIds(vendorIds)) {
-        const { data: vendors } = await db.from('astrologers').select('id, first_name, last_name').in('id', chunk);
-        (vendors || []).forEach((v) => {
-          vendorNameById[v.id] = `${v.first_name || ''} ${v.last_name || ''}`.trim() || 'Astrologer';
-        });
-      }
-      (sessions || []).forEach((s) => {
-        chatSessionMap[s.id] = { callType: s.call_type || null, vendorName: vendorNameById[s.vendor_id] || 'Astrologer' };
-      });
-    }
-    const CALL_TYPE_LABEL = { chat: 'Chat', audio: 'Call', voice: 'Call', video: 'Video call' };
-
-    const sessionGroups = new Map();
-    const individual = [];
-    for (const t of allRows) {
-      const session = t.service_key === 'session_billing' && t.session_id ? chatSessionMap[t.session_id] : null;
-      if (session) {
-        const g = sessionGroups.get(t.session_id) || {
-          id: `session:${t.session_id}`,
-          type: 'credit',
-          amount: 0,
-          description: `${CALL_TYPE_LABEL[session.callType] || 'Session'} with ${session.vendorName} (platform share)`,
-          service_key: 'session_billing',
-          created_at: t.created_at,
-          customer_id: t.customer_id,
-        };
-        g.amount += Number(t.amount) || 0;
-        if (t.created_at > g.created_at) g.created_at = t.created_at;
-        sessionGroups.set(t.session_id, g);
-      } else {
-        individual.push(t);
-      }
-    }
-    const folded = [...individual, ...sessionGroups.values()]
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    // Fold session-billing ticks for the SAME session into one entry, via the shared
+    // src/sessionFolding.js — the customer and astrologer wallet histories fold with the
+    // exact same code, so the three views can never disagree about what one consultation
+    // looked like. Only rows whose session_id resolves to a real chat_sessions row fold;
+    // gifts (whose session_id can point at live_sessions), astro reports, free services
+    // and remedy orders are one-shot already and pass through untouched, as do rows
+    // written before sql/hardening_20_admin_wallet_session_id.sql, which have no
+    // session_id at all.
+    const billingRows = allRows.filter((t) => t.service_key === 'session_billing');
+    const foldSessionMap = await sessionFolding.loadSessionMap(db, billingRows, 'both');
+    const folded = sessionFolding.foldBySession(
+      allRows.map((t) => (t.service_key === 'session_billing' ? t : { ...t, session_id: null })),
+      foldSessionMap,
+      (sess) => `${sessionFolding.callTypeLabel(sess.callType)}: ${sess.astrologerName} with ${sess.customerName} (platform share)`
+    );
 
     const total = folded.length;
     const pageRows = folded.slice((page - 1) * pageSize, page * pageSize);
@@ -276,7 +236,10 @@ module.exports = function registerAdminRoutes(app) {
       pageSize,
       transactions: pageRows.map((r) => ({
         ...r,
-        customerName: r.customer_id ? namesById[r.customer_id] || null : null,
+        // A folded consultation already resolved BOTH parties from chat_sessions; only
+        // fall back to the per-row customer_id lookup for the one-shot rows (reports,
+        // free services, gifts) where that is the only attribution there is.
+        customerName: r.customerName || (r.customer_id ? namesById[r.customer_id] || null : null),
       })),
     });
   }));

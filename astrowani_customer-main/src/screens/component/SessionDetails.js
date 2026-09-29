@@ -78,12 +78,23 @@ const SessionDetails = ({session, handleprofile}) => {
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>{t('session.duration')}</Text>
-              <Text style={styles.statValue}>{session.isActive ? t('session.active') : `${session.duration} min`}</Text>
+              <Text style={styles.statValue}>
+                {session.isActive
+                  ? t('session.active')
+                  : session.billedMinutes
+                  ? `${session.duration} min (${session.billedMinutes} billed)`
+                  : `${session.duration} min`}
+              </Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>{t('session.charged')}</Text>
-              <Text style={[styles.statValue, styles.chargedValue]}>{session.isActive ? '—' : `₹${session.deduction}`}</Text>
+              {/* `deduction` is what the wallet ledger actually recorded, not
+                  duration x rate. null means it could not be resolved, and an em dash is
+                  the honest answer — this screen must never overstate what was taken. */}
+              <Text style={[styles.statValue, styles.chargedValue]}>
+                {session.isActive || session.deduction == null ? '—' : `₹${session.deduction}`}
+              </Text>
             </View>
           </View>
         </View>

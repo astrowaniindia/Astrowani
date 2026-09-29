@@ -268,6 +268,10 @@ const translations = {
     'wallet.walletBalance': 'Wallet Balance',
     'wallet.requestWithdrawal': 'Request Withdrawal',
     'wallet.transactions': 'Transactions',
+    // One consultation is ONE entry covering the whole session, never one row per billed
+    // minute (the backend folds them -- src/sessionFolding.js). These label the span.
+    'wallet.minutesBilled': '{{count}} min',
+    'wallet.ongoing': 'ongoing',
     'wallet.withdrawals': 'Withdrawals',
     'wallet.noTransactions': 'No transactions yet.',
     'wallet.noWithdrawals': 'No withdrawal requests yet.',
@@ -787,6 +791,8 @@ const translations = {
     'wallet.walletBalance': 'वॉलेट बैलेंस',
     'wallet.requestWithdrawal': 'निकासी का अनुरोध करें',
     'wallet.transactions': 'लेनदेन',
+    'wallet.minutesBilled': '{{count}} मिनट',
+    'wallet.ongoing': 'चल रहा है',
     'wallet.withdrawals': 'निकासी',
     'wallet.noTransactions': 'अभी तक कोई लेनदेन नहीं।',
     'wallet.noWithdrawals': 'अभी तक कोई निकासी अनुरोध नहीं।',

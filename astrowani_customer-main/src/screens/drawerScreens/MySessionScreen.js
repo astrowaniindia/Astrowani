@@ -6,6 +6,7 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
 import {supabase} from '../../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Instance from '../../api/ApiCall';
 import {LanguageContext} from '../../context/LanguageContext';
 import {captureEvent} from '../../utils/Analytics';
 
@@ -22,6 +23,10 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
   const [loading, setLoading] = useState(true);
   const channelRef = useRef(null);
   const astroMapRef = useRef({});
+  // sessionId -> rupees actually debited / minutes actually billed, from the backend
+  // (the app cannot read wallet_transactions: anon has no SELECT on it).
+  const chargeMapRef = useRef({});
+  const minuteMapRef = useRef({});
 
   const resolveAstro = useCallback(async vendorId => {
     if (!vendorId) return null;
@@ -50,7 +55,15 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
       const durationMins = end
         ? Math.max(1, Math.round((end - start) / 60000))
         : 0;
-      const deduction = Math.round(durationMins * (item.per_minute_charge || 0));
+      // What was ACTUALLY taken, from the wallet ledger — never duration x rate.
+      // Billed minutes and wall-clock minutes legitimately differ: the first minute is
+      // charged 60s after connect, and the backend pauses billing while a participant is
+      // absent. The old calculation told a customer "Charged Rs500" for a call that had
+      // taken Rs400 — the app overstating what it took from them. `null` means the charge
+      // could not be resolved, and the card shows "—" rather than inventing a figure.
+      const charged = chargeMapRef.current[item.id];
+      const deduction = charged === undefined ? null : charged;
+      const billedMinutes = minuteMapRef.current[item.id] ?? null;
 
       const name = astro
         ? `${astro.first_name || ''} ${astro.last_name || ''}`.trim() || t('common.astrologer')
@@ -73,6 +86,7 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
         rate: item.per_minute_charge || 0,
         duration: durationMins,
         deduction,
+        billedMinutes,
         image,
         isActive: item.is_active || false,
         // Minimal person object so the card's "View Profile" can open AstrologerInfo.
@@ -96,6 +110,24 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
         try {
           const myId = await getCustomerId();
           if (!myId) return;
+
+          // Real charges first, so formatSession has them. Best-effort: a failure leaves
+          // the map empty and every card shows "—" for the amount, which is the honest
+          // answer, rather than a number computed from duration that would be too high.
+          try {
+            const token = await AsyncStorage.getItem('token');
+            if (token) {
+              const res = await Instance.get('/api/sessions/charges', {
+                headers: {Authorization: `Bearer ${token}`},
+              });
+              if (res.data?.success) {
+                chargeMapRef.current = res.data.charges || {};
+                minuteMapRef.current = res.data.minutes || {};
+              }
+            }
+          } catch (e) {
+            console.warn('session charges fetch failed:', e.message);
+          }
 
           const {data: records, error} = await supabase
             .from('chat_sessions')
