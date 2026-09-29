@@ -6529,7 +6529,14 @@ app.post('/api/gift/send', async (req, res) => {
       });
     }
 
-    const vendorCredit = Math.round(amount * GIFT_VENDOR_SHARE);
+    // Round to PAISE (2 decimals), not to the nearest whole rupee. Math.round(amount *
+    // GIFT_VENDOR_SHARE) used to round to an integer -- a Rs21 gift split 10.5/10.5 became
+    // Math.round(10.5) = 11 for the astrologer and a shorted Rs10 for the platform, instead
+    // of Rs10.50 each. Same rounding convention as the 50/50 session-billing split
+    // (sql/process_session_billing.sql's `ROUND(v_charge * 0.5, 2)`) -- the astrologer's
+    // half rounds, the platform takes the exact remainder, so the two always sum to
+    // exactly what the customer paid.
+    const vendorCredit = Math.round(amount * GIFT_VENDOR_SHARE * 100) / 100;
     const platformCut = amount - vendorCredit;
 
     // 1+2. Debit the customer and credit the astrologer as one transaction.
