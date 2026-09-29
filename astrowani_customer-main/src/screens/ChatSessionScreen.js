@@ -56,6 +56,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const sessionRef = useRef(null);
   const walletRef = useRef(0);
   const flatListRef = useRef(null);
+  const inputRef = useRef(null);
   const hasEndedRef = useRef(false);
   const chatConnectedRef = useRef(false);
   const detailsSentRef = useRef(false);
@@ -84,23 +85,87 @@ const ChatSessionScreen = ({ route, navigation }) => {
   };
 
   // ─── Keyboard height (Android) ────────────────────────────────────────────
-  // targetSdk 36 is edge-to-edge, so Android 15+ ignores adjustResize and the keyboard
-  // covered the input and send button. KeyboardAvoidingView does nothing on Android here
-  // (and its padding stuck after closing), so track the height ourselves and reset it on
-  // hide. Same fix as the astrologer app's VendorChatSession. iOS keeps KeyboardAvoidingView.
+  // WHETHER we need to pad at all depends on the device, and it MUST be measured, not
+  // assumed. Two behaviours exist in the field and they need opposite handling:
+  //
+  //   * Android 15+/edge-to-edge enforced: the IME simply covers the app. Our layout area
+  //     keeps its full height, so we must reserve the keyboard's space ourselves or the
+  //     input row ends up underneath the keyboard.
+  //   * Android 14 and below (most budget phones in the field): the OS/RN already shrinks
+  //     the layout area for the IME. Reserving it again counts the keyboard TWICE — the
+  //     bug reported 2026-09-28 on the astrologer app: message list collapsed to a sliver,
+  //     input row floated up near the header, dead gap between it and the real keyboard.
+  //
+  // Measured on an Android 14 / 720x1650 / 320dpi emulator: the window stays 801dp with
+  // the keyboard up (it never resizes, so watching `Dimensions` can never tell the two
+  // cases apart), while the ROOT VIEW shrinks 777 -> 526dp and the keyboard's top is at
+  // screenY 526 — the root already ends exactly at the keyboard. So the root view's own
+  // height is the signal. Same fix as the astrologer app's VendorChatSession, where it
+  // was verified end to end. iOS keeps KeyboardAvoidingView.
   const [kbHeight, setKbHeight] = useState(0);
+  const rootHeightRef = useRef(0);
+  const kbRef = useRef({ visible: false, screenY: 0 });
+  // Debounce settle timer — see the comment on scheduleRecomputeKbPad for why this exists.
+  const kbSettleRef = useRef(null);
+
+  // Padding is NOT applied to the root view, so this cannot feed back into its height.
+  const recomputeKbPad = (rootHeight) => {
+    if (Platform.OS !== 'android') return;
+    const { visible, screenY } = kbRef.current;
+    if (!visible || !screenY) { setKbHeight(0); return; }
+    const win = Dimensions.get('window').height;
+    const scr = Dimensions.get('screen').height;
+    // A root much shorter than the window means the OS already made room for the IME.
+    // The 60dp threshold sits well above ordinary status/nav chrome (~48dp) and well
+    // below any real keyboard (~275dp), so it cannot confuse the two.
+    const osHandled = rootHeight > 0 && win - rootHeight > 60;
+    // Screen-relative, NOT window-relative: the window excludes the nav bar, which left
+    // the input row clipped by exactly that inset on devices that do need padding.
+    setKbHeight(osHandled ? 0 : Math.max(0, scr - screenY));
+  };
+
+  // On a device where the OS resizes the layout for the keyboard (Android 14 and below),
+  // `keyboardDidShow` and the resulting root `onLayout` are two SEPARATE events that can
+  // arrive in either order. Reported 2026-09-28: the input row visibly jumped up and
+  // snapped back on every keyboard open — measured cause was `keyboardDidShow` firing
+  // BEFORE the root's layout pass caught up to the resize, so `recomputeKbPad` briefly ran
+  // against the OLD (pre-resize) root height, read that as "OS hasn't resized", and added
+  // padding for one frame — then the root's own `onLayout` fired a moment later with the
+  // new height and pulled it back out. Both computations were individually correct for the
+  // rootHeight they were given; the bug was applying the FIRST one before the second had a
+  // chance to land. Debouncing so only the value from whichever event arrives LAST actually
+  // reaches `setKbHeight` means the wrong intermediate state is never rendered at all. Same
+  // fix as the astrologer app's VendorChatSession, where it was verified end to end.
+  const scheduleRecomputeKbPad = () => {
+    if (kbSettleRef.current) clearTimeout(kbSettleRef.current);
+    kbSettleRef.current = setTimeout(() => {
+      kbSettleRef.current = null;
+      recomputeKbPad(rootHeightRef.current);
+    }, 48);
+  };
+
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
-    // Distance from the keyboard's top edge to the window bottom; the event's own
-    // `height` leaves out the nav-bar inset under edge-to-edge and clipped the input row.
     const show = Keyboard.addListener('keyboardDidShow', (e) => {
       const c = e.endCoordinates || {};
-      setKbHeight(c.screenY > 0
-        ? Math.max(0, Dimensions.get('window').height - c.screenY)
-        : (c.height || 0));
+      kbRef.current = { visible: true, screenY: c.screenY || 0 };
+      scheduleRecomputeKbPad();
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
-    return () => { show.remove(); hide.remove(); };
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      kbRef.current = { visible: false, screenY: 0 };
+      // Hiding is unambiguous either way, so it applies immediately and cancels anything
+      // still pending — a stale "show" computation must never land after this.
+      if (kbSettleRef.current) { clearTimeout(kbSettleRef.current); kbSettleRef.current = null; }
+      setKbHeight(0);
+    });
+    const dims = Dimensions.addEventListener('change', () => {
+      scheduleRecomputeKbPad();
+    });
+    return () => {
+      show.remove(); hide.remove(); dims.remove();
+      if (kbSettleRef.current) clearTimeout(kbSettleRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // The list shrinks when the keyboard opens but keeps its offset; keep the newest message in view.
   useEffect(() => {
@@ -249,7 +314,12 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const sendMessage = async () => {
     if (!text.trim() || !sessionRef.current || !myId) return;
     const msg = text.trim();
+    // .clear() (not just setText('')) because Android's predictive-text keyboards keep
+    // an internal "composing" span for the word just typed; clearing only the JS-side
+    // value leaves that span in place and the keyboard silently re-inserts the old text
+    // right after the state update, making an already-sent message look stuck/unsent.
     setText('');
+    inputRef.current?.clear();
 
     // Reset typing status on send
     if (socketRef.current && sessionRef.current) {
@@ -565,6 +635,20 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
   return (
     <KeyboardAvoidingView
+      // This is the outermost view, so its measured height is what tells us whether the
+      // OS already made room for the keyboard — see the comment on recomputeKbPad. The
+      // paddingBottom below does not change this height (it is flex:1 against its
+      // parent), so there is no feedback loop.
+      onLayout={(e) => {
+        const l = e && e.nativeEvent && e.nativeEvent.layout;
+        if (!l) { return; }
+        const h = Math.round(l.height);
+        if (h === rootHeightRef.current) { return; }
+        rootHeightRef.current = h;
+        // Debounced, not immediate — see scheduleRecomputeKbPad's comment. This can fire
+        // before OR after keyboardDidShow; either order must settle to the same answer.
+        scheduleRecomputeKbPad();
+      }}
       style={[styles.container, {paddingTop: insets.top}, Platform.OS === 'android' && {paddingBottom: kbHeight}]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
@@ -633,6 +717,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
       {!connecting && (
         <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             value={text}
             onChangeText={handleTyping}
