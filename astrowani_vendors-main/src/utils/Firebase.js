@@ -5,7 +5,8 @@ import { Platform, Alert, PermissionsAndroid } from 'react-native';
 import Instance from '../api/ApiCall';
 import { getDeviceId } from './deviceId';
 import { hideOngoingSession } from './ongoingSession';
-import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displayGenericNotification } from './incomingRequestNotifications';
+import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displayGenericNotification, titleFor } from './incomingRequestNotifications';
+import { startRingingService, stopRingingService } from './ringingForegroundService';
 // import PushNotification from 'react-native-push-notification';
 // import { navigationRef } from '../common/component/NavigationService';
 
@@ -120,12 +121,22 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
   const data = remoteMessage?.data || {};
   if (INCOMING_REQUEST_TYPES.includes(data.type)) {
-    // No `foreground` flag: this handler runs backgrounded or in a KILLED app, where Android
-    // kills this headless task moments later. The notification must therefore carry its own
-    // sound (ringing channel) — anything we start in JS here stops when the process dies.
+    // No `foreground` flag: this handler runs backgrounded or in a KILLED app.
     await displayIncomingRequestNotification(data);
+    // The REAL phone ringtone, kept alive by a native foreground service — see
+    // ringingForegroundService.js for why this can't just be incomingRingtone.js here:
+    // Android can reclaim this process moments after this handler returns, which would
+    // silently cut a JS-driven ringtone along with it. Fire-and-forget: never block
+    // showing the notification above on this.
+    startRingingService(
+      titleFor(data.type),
+      data.callerName ? `From ${data.callerName}` : undefined,
+    ).catch(() => {});
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     await cancelIncomingRequestForKey(data);
+    // The customer gave up before we acted — stop the real ringtone the same way the
+    // notification itself gets pulled down.
+    stopRingingService().catch(() => {});
   } else if (data.type === SESSION_ENDED_TYPE) {
     await hideOngoingSession(data.sessionId);
   } else if (ADMIN_NOTIFICATION_TYPES.includes(data.type)) {

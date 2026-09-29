@@ -54,6 +54,22 @@
     <!-- Chat in the background: keeps the app's socket alive so a chat is not cut while the
          astrologer is in another app. See CallForegroundService.kt (mode "chat"). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- Ringing for an incoming call/chat request even with the app backgrounded or fully
+         killed. Android 14+ requires this specific permission to start a "phoneCall" type
+         foreground service; that type is one of the few Android permits starting from the
+         background at all, and only in response to a high-priority FCM message (which the
+         backend already sends — see astrowani-backend/src/push.js). See
+         RingingCallService.kt for why this exists: without a real foreground service, the
+         process (and any ringtone playing in it) can be reclaimed by Android moments after
+         the background push handler returns. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
+    <!-- Required ALONGSIDE FOREGROUND_SERVICE_PHONE_CALL — Android additionally demands
+         either this permission or the DIALER role before it will start a `phoneCall`
+         type foreground service at all. Measured on-device: without it, startForeground()
+         throws immediately and RingingCallService silently falls back to nothing, which is
+         why the first attempt still played the old sound. A normal, auto-granted
+         permission — no user prompt, no Telecom/ConnectionService registration needed. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
     <!-- A foreground service must post a notification, and from Android 13 that
          needs this permission. The vendor app never declared it. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -108,5 +124,13 @@
           android:enabled="true"
           android:exported="false"
           android:foregroundServiceType="microphone|camera|dataSync" />
+      <!-- Rings the real system ringtone for an incoming request, kept alive natively (no
+           dependency on the JS engine surviving) whether the app is backgrounded or fully
+           killed. exported=false — nothing outside this app may start it. -->
+      <service
+          android:name=".RingingCallService"
+          android:enabled="true"
+          android:exported="false"
+          android:foregroundServiceType="phoneCall" />
     </application>
 </manifest>

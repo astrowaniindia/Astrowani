@@ -1,44 +1,44 @@
-// Continuous "incoming call" ringtone for the vendor app — re-triggers InCallManager's
-// ringtone on an interval until explicitly stopped.
+// "Incoming call" ringtone for the vendor app.
 //
-// Why not just rely on InCallManager's native looping (setLooping(true))? Verified on-device
-// (logcat) that it doesn't reliably loop: '_DEFAULT_' can resolve to
-// `content://settings/system/notification_sound` rather than an actual telephony ringtone
-// (common on devices/emulators with no SIM or no ringtone configured), and playback for that
-// URI is delegated to Android's system RingtonePlayer service, which plays the clip once
-// (~2-3s) and completes — it does not honor the caller's setLooping request, since the actual
-// decoding happens in the system process, not the app's local MediaPlayer. Observed via logcat:
-// "RingtonePlayer: onCompletion() abandoning AudioFocus" a few seconds after start, every time.
-// Re-triggering from JS on an interval sidesteps this entirely and doesn't depend on
-// device-specific ringtone-resolution behavior.
+// A single InCallManager.startRingtone('_DEFAULT_') call is enough — and is the correct,
+// normal-sounding behaviour. Confirmed against the actual installed version's native source
+// (react-native-incall-manager@4.2.1, android/.../InCallManagerModule.java): it plays the
+// device's real ringtone (Settings.System.DEFAULT_RINGTONE_URI) through a local MediaPlayer
+// with setLooping(true) set explicitly, and with no `seconds` argument the JS wrapper passes
+// -1 (loop forever) — so it rings continuously, exactly like a normal phone call, until
+// stopRingtone() is called. No JS-side keepalive is needed.
+//
+// ⚠ 2026-09-28: this used to re-trigger startRingtone() on a 3s setInterval, based on a
+// mistaken belief (in an earlier version of this comment) that Android's system
+// RingtonePlayer service plays the clip once and never loops. That class isn't used by this
+// library at all — MediaPlayer.setLooping(true) is. The retrigger didn't just do nothing: it
+// RACED the native player's async prepareAsync(). If a 3s retrigger landed in the brief
+// window after startRingtone() had created the player but before playback had actually begun,
+// the native code saw isPlaying() === false, tore down the not-yet-playing player, and started
+// a new one — every ~3 seconds, forever. That's what produced the broken "tone... tone...
+// tone" stutter instead of one continuous ring (reported on a real device, not an emulator).
+// Do not reintroduce a retrigger loop here without first re-confirming (against the actual
+// installed version's source, not assumption) that the native side genuinely stops early.
 import InCallManager from 'react-native-incall-manager';
 import { Vibration } from 'react-native';
 
-const RETRIGGER_MS = 3000; // slightly longer than the observed ~2.5s single play-through
 const VIBRATE_PATTERN = [0, 1000, 1000];
 
-let intervalId = null;
+let ringing = false;
 
-function fire() {
+export function startRinging() {
+  if (ringing) return; // already ringing — never call startRingtone() a second time while live
+  ringing = true;
   try {
     InCallManager.startRingtone('_DEFAULT_');
   } catch (e) {
     console.warn('[incomingRingtone] startRingtone error:', e?.message);
   }
-}
-
-export function startRinging() {
-  if (intervalId) return; // already ringing
-  fire();
   Vibration.vibrate(VIBRATE_PATTERN, true);
-  intervalId = setInterval(fire, RETRIGGER_MS);
 }
 
 export function stopRinging() {
-  if (intervalId) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
+  ringing = false;
   Vibration.cancel();
   try {
     InCallManager.stopRingtone();

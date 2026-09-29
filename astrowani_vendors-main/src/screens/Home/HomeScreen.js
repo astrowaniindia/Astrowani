@@ -30,11 +30,13 @@ import io from 'socket.io-client';
 import { SOCKET_URL } from '../../config/api';
 import MissedSessionsHome from '../../components/MissedSessionsHome';
 import HomeBanner from '../../components/HomeBanner';
+import OngoingSessionBar from '../../components/OngoingSessionBar';
 import { isVendorProfileComplete, ensureVendorProfileComplete, fetchAstrologerRow } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
 import { endCallKitCallForRequest } from '../../utils/callKeep';
 import { startRinging, stopRinging } from '../../utils/incomingRingtone';
+import { stopRingingService } from '../../utils/ringingForegroundService';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
@@ -180,6 +182,11 @@ const HomeScreen = () => {
   useEffect(() => {
     if (popupQueue.length > 0) {
       startRinging();
+      // The app is definitely alive and mounted at this point — if a request arrived
+      // while it was backgrounded/killed, the native RingingCallService may still be
+      // ringing. Stop it now so the astrologer doesn't hear the real ringtone playing
+      // twice (once from the service, once from incomingRingtone.js taking over here).
+      stopRingingService().catch(() => {});
     } else {
       stopRinging();
     }
@@ -664,6 +671,10 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Pinned above the ScrollView (not inside it) so it never scrolls away — an
+          active call/chat/live is time-sensitive enough to stay visible regardless of
+          scroll position. Renders nothing when there's nothing active. */}
+      <OngoingSessionBar navigation={navigation} />
       {/*
         style={{flex: 1}} is what PINS the bottom bar below. Without it the
         ScrollView sizes to its own content instead of claiming the space above

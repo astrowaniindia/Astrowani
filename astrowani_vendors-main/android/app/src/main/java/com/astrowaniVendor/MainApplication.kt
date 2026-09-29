@@ -26,6 +26,9 @@ class MainApplication : Application(), ReactApplication {
               // Keeps the mic alive while backgrounded during a call — see
               // CallForegroundService.kt.
               add(CallServicePackage())
+              // Rings the real system ringtone for an incoming request even with the app
+              // backgrounded or killed — see RingingCallService.kt.
+              add(RingingServicePackage())
               // Records this phone's own microphone during a call, for the admin's contact-detail
               // audit. Dormant unless an admin enables it. See CallRecorder.kt.
               add(CallRecordingPackage())

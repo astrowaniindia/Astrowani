@@ -62,6 +62,9 @@ const {acceptRequest, rejectRequest} = (() => {
 const {cancelIncomingRequestNotification} = (() => {
   try { return require('./src/utils/incomingRequestNotifications'); } catch (_) { return {}; }
 })();
+const {stopRingingService} = (() => {
+  try { return require('./src/utils/ringingForegroundService'); } catch (_) { return {}; }
+})();
 const {navigationRef} = (() => {
   try { return require('./src/utils/navigationRef'); } catch (_) { return {}; }
 })();
@@ -136,6 +139,9 @@ const handleNotificationAction = async ({type, detail}) => {
     console.warn('[notifee background event] action handling error:', e.message);
   } finally {
     await cancelIncomingRequestNotification(detail.notification?.id);
+    // Accept or Reject resolved the request either way — the real ringtone (started
+    // alongside the notification for the background/killed path) must stop with it.
+    if (stopRingingService) await stopRingingService().catch(() => {});
   }
 };
 

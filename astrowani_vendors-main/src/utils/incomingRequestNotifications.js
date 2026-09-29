@@ -65,7 +65,9 @@ async function ensureChannel(ringing) {
   return channelsReady[id];
 }
 
-function titleFor(type) {
+// Exported so Firebase.js can build a matching title for RingingCallService's own
+// (silent) foreground notification without duplicating this switch.
+export function titleFor(type) {
   if (type === 'incoming_video_call') return 'Incoming Video Call';
   if (type === 'incoming_call') return 'Incoming Call';
   if (type === 'chat_request') return 'New Chat Request';
@@ -117,10 +119,15 @@ export async function displayIncomingRequestNotification(payload, { foreground =
       category: AndroidCategory.CALL,
       ongoing: true,
       autoCancel: false,
-      // Keeps the channel's sound repeating like a real incoming call instead of a single
-      // ping, for as long as the notification is up. Only meaningful on the ringing channel;
-      // the silent one has no sound to loop.
-      loopSound: ringing,
+      // ⚠ INTERIM MITIGATION (2026-09-29), NOT the real fix — see the note above
+      // CHANNEL_ID_RINGING. `loopSound: true` here made Android's own short default
+      // notification "ding" repeat back-to-back for as long as the notification stayed
+      // up — sounding nothing like a phone ringing and reported as an "irritating loop".
+      // false plays that ding ONCE per request (still audible, still actionable) instead
+      // of looping it. The real fix (a phoneCall-type foreground service keeping the
+      // actual InCallManager ringtone playing even with the app killed) is tracked
+      // separately and needs a native build; this line can be reverted once that ships.
+      loopSound: false,
       // NO fullScreenAction, deliberately (removed 2026-09-03).
       //
       // It used to be set here so an incoming request could launch the app full-screen over
