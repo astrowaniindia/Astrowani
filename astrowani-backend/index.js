@@ -4799,24 +4799,85 @@ app.get('/api/wallet', async (req, res) => {
       if (!error) userRow = data;
     }
 
-    // Fetch recent wallet transactions
+    // Fetch a wider raw window than we'll display. A single 10-minute chat/call/video
+    // session is 8-10 SEPARATE per-minute billing rows (process_session_billing runs
+    // every ~60s) — these used to show as 8-10 individual "Automated chat billing -Rs50"
+    // lines, which the owner reported was impossible to reconcile against one real
+    // conversation (2026-09-29). Pull enough raw rows to reliably fill 20 DISPLAY entries
+    // once same-session rows are folded into one below.
     const { data: txns } = await supabase
       .from('wallet_transactions')
       .select('*')
       .eq('user_id', actualUserId)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(300);
+
+    // Only a row that resolves to a REAL chat_sessions row is ever folded. Gifts and
+    // recharges carry no session_id (or, for a live gift, a live_sessions id that never
+    // matches chat_sessions), so they always fall through to `individual` unchanged.
+    const rawSessionIds = [...new Set((txns || []).map(t => t.session_id).filter(Boolean))];
+    let chatSessionMap = {};
+    if (rawSessionIds.length) {
+      const { data: sessions } = await supabase
+        .from('chat_sessions')
+        .select('id, vendor_id, call_type')
+        .in('id', rawSessionIds);
+      const vendorIds = [...new Set((sessions || []).map(s => s.vendor_id).filter(Boolean))];
+      let vendorNameById = {};
+      if (vendorIds.length) {
+        const { data: vendors } = await supabase
+          .from('astrologers').select('id, first_name, last_name').in('id', vendorIds);
+        (vendors || []).forEach(v => {
+          vendorNameById[v.id] = `${v.first_name || ''} ${v.last_name || ''}`.trim() || 'Astrologer';
+        });
+      }
+      (sessions || []).forEach(s => {
+        chatSessionMap[s.id] = { callType: s.call_type || null, vendorName: vendorNameById[s.vendor_id] || 'Astrologer' };
+      });
+    }
+
+    const CALL_TYPE_LABEL = { chat: 'Chat', audio: 'Call', voice: 'Call', video: 'Video call' };
+
+    const sessionGroups = new Map(); // session_id -> { total, lastAt, label }
+    const individual = [];
+    for (const t of (txns || [])) {
+      const session = t.type === 'debit' && t.session_id ? chatSessionMap[t.session_id] : null;
+      if (session) {
+        const g = sessionGroups.get(t.session_id) || {
+          total: 0, lastAt: t.created_at,
+          label: `${CALL_TYPE_LABEL[session.callType] || 'Session'} with ${session.vendorName}`,
+        };
+        g.total += Number(t.amount) || 0;
+        if (t.created_at > g.lastAt) g.lastAt = t.created_at;
+        sessionGroups.set(t.session_id, g);
+      } else {
+        individual.push({
+          id: t.id,
+          description: t.description || (t.type === 'credit' ? 'Money Added' : 'Chat/Call Charge'),
+          amount: t.type === 'credit' ? t.amount : -t.amount,
+          date: new Date(t.created_at).toLocaleDateString('en-IN'),
+          sortAt: t.created_at,
+        });
+      }
+    }
+    const grouped = [...sessionGroups.entries()].map(([sessionId, g]) => ({
+      id: `session:${sessionId}`,
+      description: g.label,
+      amount: -g.total,
+      date: new Date(g.lastAt).toLocaleDateString('en-IN'),
+      sortAt: g.lastAt,
+    }));
+
+    const transactions = [...individual, ...grouped]
+      .sort((a, b) => (a.sortAt < b.sortAt ? 1 : -1))
+      .slice(0, 20)
+      .map(({ sortAt, ...rest }) => rest);
 
     return res.status(200).json({
       success: true,
       data: {
         balance: userRow?.wallet_balance ?? 0,
-        transactions: (txns || []).map(t => ({
-          id: t.id,
-          description: t.description || (t.type === 'credit' ? 'Money Added' : 'Chat/Call Charge'),
-          amount: t.type === 'credit' ? t.amount : -t.amount,
-          date: new Date(t.created_at).toLocaleDateString('en-IN'),
-        })),
+        transactions,
       },
     });
   } catch (err) {
@@ -5763,12 +5824,18 @@ app.get('/api/vendor/wallet', async (req, res) => {
       .single();
     if (error) throw error;
 
+    // Fetch a wider raw window than we'll display. A single 10-minute chat/call/video
+    // session is 8-10 SEPARATE per-minute billing credit rows (process_session_billing
+    // runs every ~60s) — these used to show as 8-10 individual "+Rs25" rows for the SAME
+    // conversation, which the owner reported was impossible to reconcile against one real
+    // consultation (2026-09-29). Pull enough raw rows to reliably fill 20 DISPLAY entries
+    // once same-session rows are folded into one below.
     const { data: txns } = await supabaseService
       .from('vendor_wallet_transactions')
       .select('*')
       .eq('vendor_id', vendorId)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(300);
 
     // Enrich with the real customer name + session type behind each transaction — the raw
     // row only has a generic "Automated chat earning" description and a session_id, which
@@ -5811,9 +5878,38 @@ app.get('/api/vendor/wallet', async (req, res) => {
       callType: sessionMap[t.session_id]?.callType || null,
     }));
 
+    // Fold every per-minute billing credit for the SAME session into one entry — only
+    // rows that resolve to a real chat_sessions row (i.e. genuine billing ticks, always
+    // type 'credit') are folded. Gifts, remedy commission, admin corrections and anything
+    // else keep showing as their own individual row, exactly as before.
+    const sessionGroups = new Map(); // session_id -> aggregated row
+    const individualTxns = [];
+    for (const t of enrichedTxns) {
+      const isBillingTick = t.type === 'credit' && t.session_id && sessionMap[t.session_id];
+      if (isBillingTick) {
+        const g = sessionGroups.get(t.session_id) || {
+          id: `session:${t.session_id}`,
+          type: 'credit',
+          amount: 0,
+          description: 'Consultation Earning',
+          created_at: t.created_at,
+          customerName: t.customerName,
+          callType: t.callType,
+        };
+        g.amount += Number(t.amount) || 0;
+        if (t.created_at > g.created_at) g.created_at = t.created_at;
+        sessionGroups.set(t.session_id, g);
+      } else {
+        individualTxns.push(t);
+      }
+    }
+    const foldedTxns = [...individualTxns, ...sessionGroups.values()]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .slice(0, 20);
+
     return res.status(200).json({
       success: true,
-      data: { ...astro, transactions: enrichedTxns },
+      data: { ...astro, transactions: foldedTxns },
     });
   } catch (err) {
     console.error('GET /api/vendor/wallet error:', err.message);
@@ -6507,6 +6603,23 @@ app.post('/api/gift/send', async (req, res) => {
       amount, vendor_credit: vendorCredit, platform_cut: platformCut,
       context: context || 'profile', session_id: sessionId || null,
     }]);
+
+    // 3b. Credit the platform's cut into the SAME admin_wallet ledger every other revenue
+    // stream uses (astro reports, free services, remedy orders, session billing), so gift
+    // revenue shows up in one unified place instead of only in gift_transactions.platform_cut.
+    // Fire-and-forget with logging, same posture as every other adjustAdminWallet call site —
+    // the customer has already been charged and the astrologer already credited by this
+    // point, so a ledger failure here must never undo or fail the gift itself.
+    try {
+      await wallet.adjustAdminWallet(platformCut, {
+        description: `Gift: ${gift.name} (platform share)`,
+        serviceKey: 'gift',
+        customerId: customer.id,
+        idempotencyKey: `${giftIdempotencyKey}:admin`,
+      });
+    } catch (adminErr) {
+      console.error(`POST /api/gift/send admin ledger credit failed for gift ${giftId}:`, adminErr.message);
+    }
 
     // 4. If live, bump the session total and broadcast a gift toast
     if (context === 'live' && sessionId) {

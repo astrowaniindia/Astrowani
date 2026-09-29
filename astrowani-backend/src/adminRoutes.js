@@ -143,6 +143,136 @@ module.exports = function registerAdminRoutes(app) {
     });
   }));
 
+  // ── Admin (platform revenue) wallet — the ONE ledger every 50/50 split and every
+  // platform-only charge lands in: session billing (chat/call/video, 50% share),
+  // gifts (50% share), astro reports (100%), free services (100%), remedy orders
+  // (100%, minus referral-commission payouts). Built 2026-09-29 alongside the
+  // chat/call/video billing split, so the platform's cut of every revenue stream is
+  // visible in one place instead of only in admin_wallet.balance on the Dashboard.
+  app.get('/api/admin/wallet', requireAdmin, h(async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+    const { type, serviceKey, from, to } = req.query;
+
+    let balance = 0;
+    try {
+      const { data } = await db.from('admin_wallet').select('balance').limit(1).maybeSingle();
+      balance = Number(data?.balance) || 0;
+    } catch (_) { /* table not migrated yet */ }
+
+    const applyFilters = (q) => {
+      if (type === 'credit' || type === 'debit') q = q.eq('type', type);
+      if (serviceKey) q = q.eq('service_key', serviceKey);
+      if (from) q = q.gte('created_at', from);
+      if (to) q = q.lte('created_at', to);
+      return q;
+    };
+
+    // Pull every matching row (bounded — see pagedSelect.js), not just one DB page. Needed
+    // so session-billing rows for the SAME chat/call/video session can be folded into one
+    // entry BEFORE pagination — folding after a DB-level .range() would split one session's
+    // per-minute ticks across two pages and undercount it. Mirrors the exact fix already
+    // applied to the customer/vendor apps' own transaction history (index.js's GET
+    // /api/wallet / GET /api/vendor/wallet, 2026-09-29) — a 10-minute call used to write
+    // 8 separate ~Rs2.50 admin_wallet_transactions rows (one per billing tick), which read
+    // as noise rather than "this conversation earned the platform Rs20".
+    const { rows: allRows, truncated } = await pagedSelect(() =>
+      applyFilters(db.from('admin_wallet_transactions').select('*').order('created_at', { ascending: false }))
+    );
+
+    // Breakdown by service_key is computed over the RAW rows — folding only changes how
+    // many display rows a session becomes, never the underlying amounts, so the totals
+    // here are correct either way. `count` intentionally stays a raw-row (audit) count.
+    const bySource = new Map();
+    for (const t of allRows) {
+      const key = t.service_key || 'other';
+      const entry = bySource.get(key) || { serviceKey: key, credit: 0, debit: 0, count: 0 };
+      const amt = Number(t.amount) || 0;
+      if (t.type === 'debit') entry.debit += amt; else entry.credit += amt;
+      entry.count += 1;
+      bySource.set(key, entry);
+    }
+    const breakdown = [...bySource.values()]
+      .map((e) => ({ ...e, net: e.credit - e.debit }))
+      .sort((a, b) => b.net - a.net);
+
+    // Fold session-billing ticks for the SAME session into one entry. Only rows tagged
+    // service_key='session_billing' with a real session_id are ever folded (requires
+    // sql/hardening_20_admin_wallet_session_id.sql — older rows before that migration have
+    // no session_id and simply show individually, same as today). Gifts, astro reports,
+    // free services and remedy orders are one-shot already and are never touched.
+    const billingSessionIds = [...new Set(
+      allRows.filter((t) => t.service_key === 'session_billing' && t.session_id).map((t) => t.session_id)
+    )];
+    let chatSessionMap = {};
+    if (billingSessionIds.length) {
+      const { data: sessions } = await db.from('chat_sessions').select('id, vendor_id, call_type').in('id', billingSessionIds);
+      const vendorIds = [...new Set((sessions || []).map((s) => s.vendor_id).filter(Boolean))];
+      let vendorNameById = {};
+      if (vendorIds.length) {
+        const { data: vendors } = await db.from('astrologers').select('id, first_name, last_name').in('id', vendorIds);
+        (vendors || []).forEach((v) => {
+          vendorNameById[v.id] = `${v.first_name || ''} ${v.last_name || ''}`.trim() || 'Astrologer';
+        });
+      }
+      (sessions || []).forEach((s) => {
+        chatSessionMap[s.id] = { callType: s.call_type || null, vendorName: vendorNameById[s.vendor_id] || 'Astrologer' };
+      });
+    }
+    const CALL_TYPE_LABEL = { chat: 'Chat', audio: 'Call', voice: 'Call', video: 'Video call' };
+
+    const sessionGroups = new Map();
+    const individual = [];
+    for (const t of allRows) {
+      const session = t.service_key === 'session_billing' && t.session_id ? chatSessionMap[t.session_id] : null;
+      if (session) {
+        const g = sessionGroups.get(t.session_id) || {
+          id: `session:${t.session_id}`,
+          type: 'credit',
+          amount: 0,
+          description: `${CALL_TYPE_LABEL[session.callType] || 'Session'} with ${session.vendorName} (platform share)`,
+          service_key: 'session_billing',
+          created_at: t.created_at,
+          customer_id: t.customer_id,
+        };
+        g.amount += Number(t.amount) || 0;
+        if (t.created_at > g.created_at) g.created_at = t.created_at;
+        sessionGroups.set(t.session_id, g);
+      } else {
+        individual.push(t);
+      }
+    }
+    const folded = [...individual, ...sessionGroups.values()]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+    const total = folded.length;
+    const pageRows = folded.slice((page - 1) * pageSize, page * pageSize);
+
+    // Best-effort customer names for the page in view — never fails the ledger view.
+    const customerIds = [...new Set(pageRows.map((r) => r.customer_id).filter(Boolean))];
+    let namesById = {};
+    if (customerIds.length) {
+      try {
+        const { data: custs } = await db.from('customers').select('id, name, mobile').in('id', customerIds);
+        namesById = Object.fromEntries((custs || []).map((c) => [c.id, c.name || c.mobile || null]));
+      } catch (_) { /* best-effort only */ }
+    }
+
+    return res.json({
+      success: true,
+      balance,
+      truncated,
+      breakdown,
+      total,
+      page,
+      pageSize,
+      transactions: pageRows.map((r) => ({
+        ...r,
+        customerName: r.customer_id ? namesById[r.customer_id] || null : null,
+      })),
+    });
+  }));
+
   // ── Generic CRUD factory for simple content tables ────────────────────────
   // Registers GET (list), POST (create), PUT/:id (update), DELETE/:id for a table.
   // afterWrite(row): optional side effect run once a create/update has succeeded.
