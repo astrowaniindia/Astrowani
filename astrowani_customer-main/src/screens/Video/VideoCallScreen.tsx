@@ -181,7 +181,29 @@ const VideoCallScreen = ({route, navigation}: any) => {
   }, []);
 
   // ─── Call End ───────────────────────────────────────────────────────────────
+  // Leaving must not depend on the teardown above it succeeding — see the long note on
+  // VoiceCallScreen's doEndCall. A throw in any of the native-touching calls below used to
+  // strand the customer on a finished call screen, with `isEndingRef` already set so every
+  // later End press was refused as "already ending".
+  const leftScreenRef = useRef(false);
+  const leaveCallScreen = useCallback(() => {
+    if (leftScreenRef.current) return;
+    leftScreenRef.current = true;
+    try {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.replace('DrawerNavigator');
+      }
+    } catch (_) {
+      try {
+        navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
+      } catch (__) {}
+    }
+  }, [navigation]);
+
   const doEndCall = useCallback(async () => {
+   try {
     stopCallTimer(); stopRingCountdown(); stopRipple(); cleanupWebRTC();
     hideActiveSessionNotification();
     stopAndUploadCallRecording();
@@ -205,16 +227,15 @@ const VideoCallScreen = ({route, navigation}: any) => {
     // Return to whatever the customer started from (astrologer profile, a list tab, Home)
     // instead of always resetting to Home. Home is only the fallback when there is no
     // screen underneath (e.g. the app was reopened straight into the call).
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.replace('DrawerNavigator');
-    }
+    leaveCallScreen();
     // Prompt for a review only if the session actually connected.
     if (recieverId && callDurationRef.current > 0) {
       showReviewPrompt({ astrologerId: recieverId, name: recieverName, image: recieverImage });
     }
-  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, recieverId, recieverName, recieverImage]);
+   } finally {
+     leaveCallScreen();
+   }
+  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, leaveCallScreen, recieverId, recieverName, recieverImage]);
 
   const startRingCountdown = useCallback(() => {
     ringTimerRef.current = setInterval(() => {
@@ -231,10 +252,16 @@ const VideoCallScreen = ({route, navigation}: any) => {
   }, [doEndCall]);
 
   const onPressDisconnect = useCallback(() => {
-    if (isEndingRef.current) return;
+    // Still on screen while already "ending" means the teardown failed to get us off it.
+    // Treat a second press as a real retry, never a silent no-op.
+    if (isEndingRef.current) {
+      leftScreenRef.current = false;
+      leaveCallScreen();
+      return;
+    }
     isEndingRef.current = true;
     doEndCall();
-  }, [doEndCall]);
+  }, [doEndCall, leaveCallScreen]);
 
   // ─── Controls ───────────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {

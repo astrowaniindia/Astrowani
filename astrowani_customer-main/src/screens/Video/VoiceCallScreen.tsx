@@ -193,7 +193,38 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   }, []);
 
   // ─── Call End ───────────────────────────────────────────────────────────────
+  //
+  // LEAVING IS NOT ALLOWED TO DEPEND ON ANYTHING ELSE SUCCEEDING.
+  //
+  // Restoring the navigation call alone was not enough (2026-09-30). doEndCall runs six
+  // unguarded things before it — stopCallTimer, stopRingCountdown, stopRipple,
+  // cleanupWebRTC, hideActiveSessionNotification, captureEvent — several of which reach
+  // native modules. If ANY of them throws, the function dies before navigating, and
+  // because `isEndingRef` has already been set by whoever started the teardown, every
+  // later attempt is refused as "already ending". The screen is then stranded for good:
+  // that is the reported "I press back, it asks me to end the call, I tap End, nothing
+  // happens". The vendor's own call screen has always navigated from a `finally` for
+  // this reason; this brings the customer side in line.
+  const leftScreenRef = useRef(false);
+  const leaveCallScreen = useCallback(() => {
+    if (leftScreenRef.current) return;
+    leftScreenRef.current = true;
+    try {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.replace('DrawerNavigator');
+      }
+    } catch (_) {
+      // Last resort — a reset cannot fail for want of somewhere to go back to.
+      try {
+        navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
+      } catch (__) {}
+    }
+  }, [navigation]);
+
   const doEndCall = useCallback(async () => {
+   try {
     stopCallTimer();
     stopRingCountdown();
     stopRipple();
@@ -249,7 +280,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     const astrologerCut = endedRemotelyRef.current;
 
     if (freeCall) {
-      const goHome = () => navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
+      const goHome = () => {
+        leftScreenRef.current = true;
+        navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
+      };
 
       const askRating = () => showRateAstrowani({
         context: 'free_call',
@@ -272,6 +306,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
       if (freeSeconds < MIN_DAKSHINA_SECONDS) {
         if (astrologerCut) {
+          leftScreenRef.current = true;
           navigation.replace('InstantAstrologers', {astrologerBusy: true});
         } else {
           goHome();
@@ -301,27 +336,21 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       return;
     }
 
-    // LEAVE THE CALL SCREEN. This is not optional and it must come before the review
-    // prompt, which only floats on top of whatever is underneath it.
-    //
-    // This block was lost when the free-call branch above was added: every free-call path
-    // navigates for itself (goHome / replace), the paid path's navigation was deleted with
-    // them, and the comment describing it survived without the code. The result was a call
-    // that ended correctly in every other respect — timer stopped, WebRTC torn down,
-    // /api/call/end posted, rating popup raised — on a call screen that then stayed on
-    // screen forever with no way back. It happened whoever hung up, because both
-    // directions funnel through this one function.
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.replace('DrawerNavigator');
-    }
+    // The paid path leaves via the `finally` below. The review prompt only floats on top
+    // of whatever is underneath, so it must be raised after we have navigated away.
+    leaveCallScreen();
 
     // Prompt for a review only if the session actually connected.
     if (recieverId && callDurationRef.current > 0) {
       showReviewPrompt({ astrologerId: recieverId, name: recieverName, image: recieverImage });
     }
-  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, recieverId, recieverName, recieverImage, freeCall, freeCallSeconds]);
+   } finally {
+     // Whatever happened above — a throw in the WebRTC teardown, a native module that has
+     // gone away, an analytics call that blew up — the customer does not stay on a dead
+     // call screen. Idempotent, so the branches that already navigated are a no-op.
+     leaveCallScreen();
+   }
+  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, leaveCallScreen, recieverId, recieverName, recieverImage, freeCall, freeCallSeconds]);
 
   const startRingCountdown = useCallback(() => {
     ringTimerRef.current = setInterval(() => {
@@ -341,10 +370,18 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   }, [doEndCall]);
 
   const onPressDisconnect = useCallback(() => {
-    if (isEndingRef.current) return;
+    // Already ending, yet the customer is still looking at this screen and pressing End —
+    // so the earlier teardown did not get them off it. Never make this a silent no-op;
+    // that is precisely what leaves somebody tapping a dead button on a finished call.
+    // Clearing the flag makes it a real retry rather than a second dedupe.
+    if (isEndingRef.current) {
+      leftScreenRef.current = false;
+      leaveCallScreen();
+      return;
+    }
     isEndingRef.current = true;
     doEndCall();
-  }, [doEndCall]);
+  }, [doEndCall, leaveCallScreen]);
 
   // ─── Controls ───────────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {
