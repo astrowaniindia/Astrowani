@@ -297,6 +297,59 @@ module.exports = function registerPostHogRoutes(app) {
     });
   }));
 
+  // ── Forced update: did they comply, or walk away? ──────────────────────────
+  //
+  // Counted as DISTINCT PERSONS, not events: the question is what a person did when
+  // they were locked out, and one person pressing back six times is one person giving
+  // up, not six.
+  //
+  // WHAT THIS CANNOT SEE, and do not let the card imply otherwise: UNINSTALLS. Android
+  // never tells an app it is being removed, so no client event can exist for it. That
+  // number lives only in Play Console -> Statistics -> Uninstalls.
+  //
+  // `walkedAway` is a proxy, not a fact: it counts people whose LAST event of any kind
+  // is within a minute of the forced prompt, i.e. they did nothing else afterwards.
+  // It is bounded by the selected range, so somebody shown the prompt in the final
+  // minutes of the window counts as walked away simply because the window ended. Read
+  // it over a range that closed a while ago, not over "today".
+  app.get('/api/admin/analytics/forced-update', requireAdmin, requireConfigured, h(async (req, res) => {
+    const dateWhere = resolveDateWhere(req, { defaultDays: 30 });
+    // toString() on the flag because a JSON boolean and the string 'true' both occur
+    // depending on how the SDK serialised it; comparing to a bare true misses half.
+    const rows = await runHogQL(`
+      SELECT
+        countIf(shownAt > 0) AS shown,
+        countIf(acceptedAt > 0) AS accepted,
+        countIf(backAt > 0) AS backPressed,
+        countIf(lastAt <= shownAt + INTERVAL 1 MINUTE) AS walkedAway
+      FROM (
+        SELECT
+          person_id,
+          maxIf(timestamp, event = 'app_update_prompt_shown'
+                AND toString(properties.force) = 'true') AS shownAt,
+          maxIf(timestamp, event = 'app_update_prompt_accepted'
+                AND toString(properties.force) = 'true') AS acceptedAt,
+          maxIf(timestamp, event = 'app_update_forced_back_pressed') AS backAt,
+          max(timestamp) AS lastAt
+        FROM events
+        WHERE properties.app = 'customer'
+          AND ${ENV_FILTER}
+          AND ${dateWhere}
+        GROUP BY person_id
+      )
+      WHERE shownAt > 0
+    `);
+    const [shown, accepted, backPressed, walkedAway] = (rows[0] || []).map((n) => Number(n) || 0);
+    return res.json({
+      success: true,
+      basis: 'persons',
+      shown: shown || 0,
+      accepted: accepted || 0,
+      backPressed: backPressed || 0,
+      walkedAway: walkedAway || 0,
+    });
+  }));
+
   // ── Remedies commerce funnel — add to cart → cart → checkout → pay → order ──
   //
   // This card used to query remedy_buy_now_clicked / remedy_place_order_clicked /

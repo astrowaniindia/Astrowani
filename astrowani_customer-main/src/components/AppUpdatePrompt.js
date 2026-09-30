@@ -111,9 +111,18 @@ export function AppUpdatePromptHost() {
   // combination with the overlay in render() below — see the comment there.
   useEffect(() => {
     if (!visible || !forced) return undefined;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Recorded because it is the only in-app signal that somebody is trying to get
+      // AWAY from a forced update rather than act on it. Repeated presses from one
+      // person are the shape to watch: that is someone about to background or
+      // uninstall, which nothing else in the app can see.
+      captureEvent('app_update_forced_back_pressed', {
+        latest_version: info?.latestVersion || 'unknown',
+      });
+      return true;
+    });
     return () => sub.remove();
-  }, [visible, forced]);
+  }, [visible, forced, info]);
 
   const later = async () => {
     if (forced) return;

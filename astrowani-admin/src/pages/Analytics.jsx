@@ -194,6 +194,7 @@ export default function Analytics() {
   const [journey, setJourney] = useState(null);
   const [freeCallFunnel, setFreeCallFunnel] = useState(null);
   const [freeChatFunnel, setFreeChatFunnel] = useState(null);
+  const [forcedUpdate, setForcedUpdate] = useState(null);
   const [servicesEngagement, setServicesEngagement] = useState(null);
   const [walletFunnel, setWalletFunnel] = useState(null);
 
@@ -380,6 +381,7 @@ export default function Analytics() {
       services: safeGet('/api/admin/analytics/services-engagement', dateParams),
       wallet: safeGet('/api/admin/analytics/wallet-funnel', dateParams),
       freeChat: safeGet('/api/admin/analytics/free-chat-funnel', dateParams),
+      forcedUpdate: safeGet('/api/admin/analytics/forced-update', dateParams),
     };
     const keys = Object.keys(requests);
     const values = await Promise.all(Object.values(requests));
@@ -416,6 +418,7 @@ export default function Analytics() {
     setServicesEngagement(results.services.data);
     setWalletFunnel(results.wallet.data);
     setFreeChatFunnel(results.freeChat.data);
+    setForcedUpdate(results.forcedUpdate.data);
 
     const failedKeys = keys.filter((k) => !results[k].ok);
     setError(failedKeys.length
@@ -1087,6 +1090,71 @@ export default function Analytics() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* ── Forced Update Response ── */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Forced Update: Did They Comply? (customer app)</h3>
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
+              What people did when they were locked out by a required update. Counted as people,
+              so one person pressing back six times is one person giving up, not six.
+            </p>
+          </div>
+          <div className="btn-group">
+            <Link to="/app-prompts" className="btn ghost sm">Settings</Link>
+          </div>
+        </div>
+
+        {(forcedUpdate?.shown ?? 0) > 0 ? (
+          <>
+            <div className="stat-grid" style={{ marginTop: 16 }}>
+              <div className="stat">
+                <span className="stat-label">Shown a forced update</span>
+                <span className="stat-value">{forcedUpdate.shown}</span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Tapped Update now</span>
+                <span className="stat-value" style={{ color: 'var(--green)' }}>
+                  {forcedUpdate.accepted}
+                  <small className="muted" style={{ fontSize: 13, fontWeight: 400, marginLeft: 6 }}>
+                    {Math.round((forcedUpdate.accepted / forcedUpdate.shown) * 100)}%
+                  </small>
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Pressed back to escape</span>
+                <span className="stat-value" style={{ color: forcedUpdate.backPressed > 0 ? 'var(--amber)' : 'inherit' }}>
+                  {forcedUpdate.backPressed}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Did nothing after</span>
+                <span className="stat-value" style={{ color: forcedUpdate.walkedAway > 0 ? 'var(--red)' : 'inherit' }}>
+                  {forcedUpdate.walkedAway}
+                </span>
+              </div>
+            </div>
+
+            {/* Both caveats are on the card on purpose. Without them "Did nothing after"
+                reads as a churn count and the missing uninstall number reads as zero. */}
+            <p className="muted" style={{ margin: '14px 0 0', fontSize: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <b>Uninstalls are not here and cannot be.</b> Android never tells an app it is being
+              removed, so no in-app number can exist for it — check Play Console → Statistics → Uninstalls
+              and line it up against the dates you had the forced update on.
+              <br />
+              <b>"Did nothing after"</b> means their last activity of any kind was within a minute of
+              seeing the prompt. It is a proxy for walking away, not proof — and anyone shown the prompt
+              right at the end of the selected range counts here simply because the range ended, so read
+              it over a period that has already closed rather than over today.
+            </p>
+          </>
+        ) : (
+          <p className="muted" style={{ margin: '16px 0 0' }}>
+            No forced update has been shown to anyone in this range.
+          </p>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
