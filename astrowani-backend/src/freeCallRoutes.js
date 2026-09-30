@@ -254,6 +254,61 @@ async function selfOptedInAstrologerIds() {
 /** Called after a toggle write so the change shows up immediately, not in 15 seconds. */
 function invalidateOptedInCache() { optedInCache = { ids: optedInCache.ids, at: 0 }; }
 
+/* ── Admin control over who SEES the free-intro-call card ────────────────────
+ * Kept in its OWN app_settings key rather than inside `free_call_offer`: that blob is
+ * the customer-facing offer, and the admin form which owns it rewrites it wholesale, so
+ * a visibility flag parked in there could be wiped by an unrelated save of that form.
+ * This key is only ever written by its own card.
+ *
+ * Hiding needs no app change at all. `{available:false}` is already how
+ * freeIntroToggleState hides the card — the vendor dashboard renders nothing for it —
+ * so this takes effect on the next dashboard load, with no OTA.
+ *
+ * NOTE what this does NOT do: it hides the astrologer's own switch, it does not take
+ * them out of the instant pool. Someone already opted in keeps receiving free intro
+ * calls, they just cannot see or change the setting. Turning the offer off for
+ * customers entirely is a different control — `free_call_offer.enabled`.
+ */
+const INTRO_VISIBILITY_KEY = 'free_intro_call_visibility';
+const INTRO_VISIBILITY_TTL_MS = 15 * 1000;
+let introVisibilityCache = { value: null, at: 0 };
+
+async function loadIntroVisibility() {
+  if (introVisibilityCache.value && Date.now() - introVisibilityCache.at < INTRO_VISIBILITY_TTL_MS) {
+    return introVisibilityCache.value;
+  }
+
+  let row;
+  try {
+    const { data, error } = await db
+      .from('app_settings').select('value').eq('key', INTRO_VISIBILITY_KEY).limit(1);
+    if (error) throw new Error(error.message);
+    row = data && data.length ? data[0].value : null;
+  } catch (_) {
+    // Could not read it. Serve the last known good answer rather than flipping the card
+    // back on for an admin who deliberately hid it. With nothing cached, hide: re-showing
+    // something an admin switched off is the worse of the two failures, and it corrects
+    // itself on the next successful read 15s later.
+    if (introVisibilityCache.value) return introVisibilityCache.value;
+    return { hiddenForAll: true, hiddenAstrologerIds: [] };
+  }
+
+  // No row yet = never configured = nothing hidden. Deliberately NOT the same as a failed
+  // read above: an absent key must preserve the behaviour this feature already had.
+  let parsed = {};
+  if (row) {
+    try { parsed = JSON.parse(row) || {}; } catch (_) { parsed = {}; }
+  }
+  const value = {
+    hiddenForAll: parsed.hiddenForAll === true || parsed.hiddenForAll === 'true',
+    hiddenAstrologerIds: Array.isArray(parsed.hiddenAstrologerIds)
+      ? parsed.hiddenAstrologerIds.filter((id) => typeof id === 'string' && id)
+      : [],
+  };
+  introVisibilityCache = { value, at: Date.now() };
+  return value;
+}
+
 async function loadOffer() {
   let raw = null;
   try {
@@ -2066,6 +2121,14 @@ module.exports = function registerFreeCallRoutes(app) {
    * a strange one that made it harder to volunteer.
    */
   async function freeIntroToggleState(astrologerId) {
+    // Admin hide comes first and costs one cached read: a hidden card should not run the
+    // booking count or the astrologer row query behind it. `available:false` is the same
+    // answer the vendor app already handles, so nothing app-side needs to know about this.
+    const visibility = await loadIntroVisibility();
+    if (visibility.hiddenForAll || visibility.hiddenAstrologerIds.includes(astrologerId)) {
+      return { available: false };
+    }
+
     const offer = await loadOffer();
     const required = offer.minFreeCallsBeforeOptOut;
     const pinned = offer.instantPoolAstrologerIds.includes(astrologerId);

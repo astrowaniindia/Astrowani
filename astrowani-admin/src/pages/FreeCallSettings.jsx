@@ -5,6 +5,12 @@ import ImageField from '../components/ImageField';
 
 import { clockToMinutes, minutesToClock, prettyClock } from '../utils/freeCallClock';
 
+// Visibility of the astrologer's own "Free Introductory Calls" card. Its own key, NOT a
+// field inside free_call_offer: the offer form below rewrites that blob wholesale, so a
+// flag living in there could be wiped by an unrelated save. Read by the backend in
+// src/freeCallRoutes.js (loadIntroVisibility).
+const VISIBILITY_KEY = 'free_intro_call_visibility';
+
 const OFFER_DEFAULTS = {
   enabled: false,
   durationMinutes: 12,
@@ -71,6 +77,14 @@ export default function FreeCallSettings() {
   const [astrologers, setAstrologers] = useState([]);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // Who can SEE the "Free Introductory Calls" card on their vendor dashboard. Its own
+  // app_settings key and its own Save button, deliberately kept off the offer form's
+  // payload above — the two are unrelated and that form rewrites its blob wholesale.
+  const [visibility, setVisibility] = useState({ hiddenForAll: false, hiddenAstrologerIds: [] });
+  const [visibilityLoaded, setVisibilityLoaded] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState(false);
+  const [visibilitySaved, setVisibilitySaved] = useState(false);
+
   const astroName = (a) =>
     [a.first_name, a.last_name].filter(Boolean).join(' ').trim() || a.email || a.id;
 
@@ -78,6 +92,23 @@ export default function FreeCallSettings() {
   const loadOffer = useCallback(async () => {
     try {
       const { data } = await client.get('/api/admin/settings');
+
+      // Same response, so no second round trip. An absent key means nothing is hidden —
+      // that is the state this feature had before the control existed.
+      try {
+        const vis = data.settings?.[VISIBILITY_KEY];
+        const parsed = vis ? JSON.parse(vis) : {};
+        setVisibility({
+          hiddenForAll: parsed.hiddenForAll === true || parsed.hiddenForAll === 'true',
+          hiddenAstrologerIds: Array.isArray(parsed.hiddenAstrologerIds)
+            ? parsed.hiddenAstrologerIds.filter((id) => typeof id === 'string' && id)
+            : [],
+        });
+      } catch (_) {
+        setVisibility({ hiddenForAll: false, hiddenAstrologerIds: [] });
+      }
+      setVisibilityLoaded(true);
+
       const raw = data.settings?.free_call_offer;
       if (raw) {
         const saved = JSON.parse(raw);
@@ -122,6 +153,30 @@ export default function FreeCallSettings() {
   useEffect(() => {
     loadOffer();
   }, [loadOffer]);
+
+  // Writes only VISIBILITY_KEY. Guarded on visibilityLoaded by the button, so a failed
+  // load can never save the empty default over a real setting.
+  const saveVisibility = async () => {
+    setSavingVisibility(true);
+    setVisibilitySaved(false);
+    try {
+      await client.patch('/api/admin/settings', {
+        key: VISIBILITY_KEY,
+        value: JSON.stringify({
+          hiddenForAll: !!visibility.hiddenForAll,
+          // Kept even while "hide from everyone" is on, so unticking that restores the
+          // per-astrologer choices instead of silently clearing them.
+          hiddenAstrologerIds: (visibility.hiddenAstrologerIds || []).filter(Boolean),
+        }),
+      });
+      setVisibilitySaved(true);
+      setTimeout(() => setVisibilitySaved(false), 4000);
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setSavingVisibility(false);
+    }
+  };
 
   const saveOffer = async (next) => {
     setSavingOffer(true);
@@ -1022,6 +1077,108 @@ export default function FreeCallSettings() {
               onChange={(e) => setOffer((p) => ({ ...p, successText: e.target.value }))}
             />
           </div>
+        </div>
+      </div>
+
+      {/* ── Card: who sees the astrologer's own Free Introductory Calls card ──
+          Separate Save button on purpose — this writes a different app_settings key from
+          the offer form, and one button saving two unrelated settings is how you change
+          something you did not mean to. */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
+          Astrologer&apos;s &ldquo;Free Introductory Calls&rdquo; card
+        </h3>
+        <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
+          Controls whether astrologers see the opt-in card on their dashboard. Hiding it
+          takes effect the next time they open the app — no app update needed.
+        </p>
+
+        <label
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+            fontSize: 14, fontWeight: 600, marginBottom: 4,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={!!visibility.hiddenForAll}
+            onChange={(e) => setVisibility((p) => ({ ...p, hiddenForAll: e.target.checked }))}
+          />
+          Hide it from every astrologer
+        </label>
+        <p className="muted" style={{ margin: '0 0 18px 26px', fontSize: 12 }}>
+          Use this to switch the card off across the board while the feature is being worked on.
+        </p>
+
+        <div style={{ opacity: visibility.hiddenForAll ? 0.45 : 1 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+            Or hide it only for specific astrologers
+          </label>
+          <div
+            style={{
+              display: 'flex', flexWrap: 'wrap', gap: '10px 18px', padding: 12,
+              border: '1px solid var(--border)', borderRadius: 8, maxHeight: 220, overflowY: 'auto',
+            }}
+          >
+            {astrologers.length === 0 && (
+              <span className="muted" style={{ fontSize: 12 }}>No approved astrologers found.</span>
+            )}
+            {astrologers.map((a) => {
+              const on = (visibility.hiddenAstrologerIds || []).includes(a.id);
+              return (
+                <label
+                  key={a.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, margin: 0,
+                    cursor: visibility.hiddenForAll ? 'not-allowed' : 'pointer', fontSize: 13,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={!!visibility.hiddenForAll}
+                    onChange={(e) =>
+                      setVisibility((p) => {
+                        const cur = p.hiddenAstrologerIds || [];
+                        return {
+                          ...p,
+                          hiddenAstrologerIds: e.target.checked
+                            ? [...cur, a.id]
+                            : cur.filter((id) => id !== a.id),
+                        };
+                      })
+                    }
+                  />
+                  <span style={{ fontWeight: on ? 600 : 400 }}>{astroName(a)}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Says plainly what this does not do, because the obvious reading of "hidden" is
+            "switched off", and it is not. */}
+        <p className="muted" style={{ margin: '14px 0 0', fontSize: 12 }}>
+          This hides the switch only. An astrologer who already opted in keeps receiving free
+          intro calls — they just cannot see or change the setting. To stop the calls
+          themselves, turn the offer off at the top of this page.
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+          <button
+            className="btn sm"
+            disabled={savingVisibility || !visibilityLoaded}
+            onClick={saveVisibility}
+            style={{ minWidth: 150, fontWeight: 700 }}
+          >
+            {savingVisibility ? 'Saving…' : 'Save card visibility'}
+          </button>
+          {visibilitySaved && (
+            <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>Saved</span>
+          )}
+          {!visibilityLoaded && (
+            <span className="muted" style={{ fontSize: 12 }}>Loading current setting…</span>
+          )}
         </div>
       </div>
 
