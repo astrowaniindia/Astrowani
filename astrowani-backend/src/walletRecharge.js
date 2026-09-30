@@ -21,6 +21,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const wallet = require('./wallet');
 const razorpay = require('./razorpay');
+const rechargeOffer = require('./rechargeOffer');
 
 const db = createClient(
   process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co',
@@ -28,7 +29,13 @@ const db = createClient(
 );
 
 const creditKey = (paymentId) => `razorpay:${paymentId}`;
-const creditNote = (paymentId) => `Wallet recharge via Razorpay (payment ${paymentId})`;
+// The key is deliberately unchanged by the bonus — see rechargeOffer.js. The note names
+// it instead, so a customer reading their wallet history can see where the extra came from.
+const creditNote = (paymentId, bonus = 0, offerLabel = null) => (
+  bonus > 0
+    ? `Wallet recharge via Razorpay (payment ${paymentId}) + ${offerLabel || `₹${bonus} bonus`}`
+    : `Wallet recharge via Razorpay (payment ${paymentId})`
+);
 
 const MIN_RECHARGE_RUPEES = 1;
 const MAX_RECHARGE_RUPEES = 100000;
@@ -122,16 +129,50 @@ async function completeRecharge({ razorpayOrderId, razorpayPaymentId, customerId
 
   if (claimed && claimed.length) {
     const r = claimed[0];
-    const newBalance = await wallet.adjustCustomerWallet(r.customer_id, Number(r.amount), {
-      description: creditNote(razorpayPaymentId),
+
+    // Recharge bonus. Resolved HERE, once, by the server — never sent by the app — and
+    // written to the row before the credit so the figure survives independently of
+    // whatever the offer says later. Included in the SAME credit under the SAME key
+    // rather than credited separately: the app callback and the webhook race on every
+    // payment, and a second credit would be a second thing that could double-fire.
+    //
+    // A failure to resolve or record it must never cost the customer their recharge, so
+    // both are best-effort and fall back to a plain top-up.
+    let bonus = 0;
+    let offerLabel = null;
+    try {
+      const resolved = await rechargeOffer.bonusFor(Number(r.amount));
+      bonus = resolved.bonus;
+      offerLabel = resolved.label;
+      if (bonus > 0) {
+        const { error: markErr } = await db.from('wallet_recharges')
+          .update({ bonus_amount: bonus, offer_label: offerLabel })
+          .eq('id', r.id);
+        if (markErr) {
+          // Could not record it, so do not pay it: an unrecorded bonus is money given
+          // away with nothing to reconcile against, and the self-heal below would not
+          // know to repeat it.
+          console.warn('[walletRecharge] could not record the bonus, crediting the recharge only:', markErr.message);
+          bonus = 0;
+          offerLabel = null;
+        }
+      }
+    } catch (e) {
+      console.warn('[walletRecharge] bonus step failed, crediting the recharge only:', e.message);
+      bonus = 0;
+      offerLabel = null;
+    }
+
+    const newBalance = await wallet.adjustCustomerWallet(r.customer_id, Number(r.amount) + bonus, {
+      description: creditNote(razorpayPaymentId, bonus, offerLabel),
       idempotencyKey: creditKey(razorpayPaymentId),
     });
-    return { matched: true, credited: true, customerId: r.customer_id, newBalance };
+    return { matched: true, credited: true, customerId: r.customer_id, newBalance, bonus };
   }
 
   // Somebody else claimed it, or it is not payable. Re-read the current state.
   let eq = db.from('wallet_recharges')
-    .select('status, customer_id, amount, razorpay_payment_id')
+    .select('status, customer_id, amount, razorpay_payment_id, bonus_amount, offer_label')
     .eq('razorpay_order_id', razorpayOrderId);
   if (customerId) eq = eq.eq('customer_id', customerId);
   const { data: now } = await eq.maybeSingle();
@@ -139,12 +180,19 @@ async function completeRecharge({ razorpayOrderId, razorpayPaymentId, customerId
   if (now?.status === 'paid') {
     // Self-heal: re-apply the credit under the SAME key. A no-op when it already
     // landed; completes it when a previous call claimed the row but failed to credit.
+    //
+    // The bonus is READ BACK from the row, never re-resolved. The offer may have been
+    // changed or switched off since this payment was claimed, and what a payment is worth
+    // has to be decided once. Re-running the slab maths here could also credit a
+    // different total under an idempotency key that has already been used, which would
+    // silently do nothing and leave the row disagreeing with the ledger.
     const payId = now.razorpay_payment_id || razorpayPaymentId;
-    const newBalance = await wallet.adjustCustomerWallet(now.customer_id, Number(now.amount), {
-      description: creditNote(payId),
+    const bonus = Number(now.bonus_amount) || 0;
+    const newBalance = await wallet.adjustCustomerWallet(now.customer_id, Number(now.amount) + bonus, {
+      description: creditNote(payId, bonus, now.offer_label),
       idempotencyKey: creditKey(payId),
     });
-    return { matched: true, alreadyProcessed: true, customerId: now.customer_id, newBalance };
+    return { matched: true, alreadyProcessed: true, customerId: now.customer_id, newBalance, bonus };
   }
   return { matched: true, payable: false, customerId: now?.customer_id };
 }

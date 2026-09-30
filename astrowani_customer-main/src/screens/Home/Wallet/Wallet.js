@@ -52,6 +52,36 @@ const Wallet = ({navigation, route}) => {
   //
   // The funnel counts distinct people, so once per visit is what it needs; the ref is
   // reset after a completed recharge so a second top-up in the same visit still counts.
+  // Recharge bonus offer, purely for display. The bonus that actually gets credited is
+  // resolved server-side at payment time from the same config — nothing here is sent back,
+  // and the server would ignore it if it were. bonusFor() below mirrors the server's
+  // resolveBonus() so the screen cannot promise a figure the backend would not credit.
+  const [offer, setOffer] = useState(null);
+  React.useEffect(() => {
+    let dead = false;
+    axios
+      .get(`${SOCKET_URL}/api/wallet/recharge-offer`)
+      .then((r) => { if (!dead && r.data?.enabled) setOffer(r.data); })
+      .catch(() => {}); // an offer we cannot fetch is simply not advertised
+    return () => { dead = true; };
+  }, []);
+
+  const bonusFor = useCallback((value) => {
+    const amt = Number(value);
+    if (!offer?.enabled || !Number.isFinite(amt) || amt <= 0) return 0;
+    const slab = (offer.slabs || [])
+      .slice()
+      .sort((a, b) => b.minAmount - a.minAmount)
+      .find((s) => amt >= s.minAmount);
+    if (!slab) return 0;
+    let b = slab.type === 'percent' ? (amt * Math.min(slab.value, 100)) / 100 : slab.value;
+    if (slab.maxBonus > 0) b = Math.min(b, slab.maxBonus);
+    b = Math.min(b, amt);
+    return Math.round(b * 100) / 100;
+  }, [offer]);
+
+  const currentBonus = bonusFor(amount);
+
   const amountReportedRef = useRef(false);
   const reportAmountSelected = useCallback((value, via) => {
     const n = Number(value);
@@ -240,13 +270,39 @@ const Wallet = ({navigation, route}) => {
         />
       </View>
 
+      {offer?.enabled && (offer.slabs || []).length > 0 && (
+        <View style={styles.offerCard}>
+          <View style={styles.offerHeader}>
+            <MaterialIcons name="redeem" size={moderateScale(16)} color={COLORS.AstroMaroon} />
+            <Text style={styles.offerTitle}>{t('wallet.offerTitle')}</Text>
+          </View>
+          {offer.slabs.map((s) => (
+            <Text key={s.minAmount} style={styles.offerLine}>
+              {t('wallet.offerSlab', { min: s.minAmount, bonus: s.example })}
+            </Text>
+          ))}
+        </View>
+      )}
+
       <View style={{ flex: 1 }} />
 
       <View style={styles.bottomSection}>
+        {currentBonus > 0 && (
+          <View style={styles.billDetails}>
+            <Text style={styles.bonusText}>{t('wallet.bonusLine')}</Text>
+            <Text style={styles.bonusAmount}>+₹{currentBonus}</Text>
+          </View>
+        )}
         <View style={styles.billDetails}>
           <Text style={styles.billText}>{t('wallet.totalPayable')}</Text>
           <Text style={styles.billAmount}>₹{amount || '0'}</Text>
         </View>
+        {currentBonus > 0 && (
+          <View style={styles.billDetails}>
+            <Text style={styles.billText}>{t('wallet.walletCredit')}</Text>
+            <Text style={styles.billAmount}>₹{Number(amount || 0) + currentBonus}</Text>
+          </View>
+        )}
         {/* Slide, not tap — this opens Razorpay and takes real money. A drag is
             much harder to trigger by accident than a button under a thumb, and it
             matches the confirm gesture used on the paid astro reports. */}
@@ -420,6 +476,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  offerCard: {
+    marginHorizontal: scale(16),
+    marginTop: verticalScale(4),
+    padding: moderateScale(12),
+    borderRadius: moderateScale(10),
+    backgroundColor: '#FFF6E5',
+    borderWidth: 1,
+    borderColor: '#F0D9A8',
+  },
+  offerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    marginBottom: verticalScale(4),
+  },
+  offerTitle: {
+    fontSize: moderateScale(13),
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+  },
+  offerLine: {
+    fontSize: moderateScale(12),
+    color: '#6b4a1f',
+    fontFamily: 'Lato-Regular',
+    marginTop: verticalScale(1),
+  },
+  bonusText: {
+    fontSize: moderateScale(12),
+    color: '#1E7A3C',
+    fontFamily: 'Lato-Bold',
+  },
+  bonusAmount: {
+    fontSize: moderateScale(14),
+    color: '#1E7A3C',
+    fontFamily: 'Lato-Bold',
   },
   billDetails: {
     flex: 1,

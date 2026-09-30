@@ -64,6 +64,17 @@ function numOrZero(v) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * A version FIELD holding "0" (or "0.0", empty, etc.) is not really "set" — no real
+ * installed version is ever below it, so it can never block anyone. Treating a bare "0"
+ * as meaningful is what made the old banner claim "forced update is set" when it was not.
+ */
+function isMeaningfulVersion(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return false;
+  return !/^0+(\.0+)*$/.test(s);
+}
+
 const APP_LABELS = { customer: 'Customer app', vendor: 'Astrologer app' };
 
 export default function AppPrompts() {
@@ -182,9 +193,28 @@ export default function AppPrompts() {
 
   if (!loaded) return <div className="card">Loading…</div>;
 
-  const forcedSomewhere = ['customer', 'vendor'].filter(
-    (k) => update.apps[k].minSupportedVersion || update.apps[k].minSupportedBuild,
-  );
+  /** Plain-English "what will actually happen" for one app, given the saved numbers. */
+  const appStatus = (which) => {
+    const a = update.apps[which];
+    const forced = isMeaningfulVersion(a.minSupportedVersion) || numOrZero(a.minSupportedBuild) > 0;
+    const soft = isMeaningfulVersion(a.latestVersion) || numOrZero(a.latestBuild) > 0;
+    if (!update.enabled) return { tone: 'off', badge: 'Off', text: 'The popup is switched off — nobody sees it, no matter what is filled in below.' };
+    if (forced) {
+      const v = a.minSupportedVersion || `build ${a.minSupportedBuild}`;
+      return { tone: 'forced', badge: 'Blocking old builds', text: `Anyone below ${v} is stopped with no “Later” button until they update.` };
+    }
+    if (soft) {
+      const v = a.latestVersion || `build ${a.latestBuild}`;
+      return { tone: 'soft', badge: 'Reminder only', text: `Anyone below ${v} sees a dismissible reminder with a “Later” button.` };
+    }
+    return { tone: 'none', badge: 'Not set up', text: 'No version is filled in below, so nothing will show for this app yet.' };
+  };
+
+  const badgeStyle = (tone) => ({
+    fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+    background: tone === 'forced' ? '#fde8e8' : tone === 'soft' ? '#e8f5e9' : '#f0f0f0',
+    color: tone === 'forced' ? '#c0392b' : tone === 'soft' ? '#2e7d32' : '#777',
+  });
 
   return (
     <div>
@@ -194,131 +224,146 @@ export default function AppPrompts() {
       <div className="card" style={{ marginBottom: 18 }}>
         <h3 style={{ margin: 0 }}>“A new version is available”</h3>
         <p className="muted" style={{ marginTop: 4, marginBottom: 12 }}>
-          Shown at app launch when the installed build is older than the version you publish
-          here. Tapping <b>Update now</b> opens the Play Store listing.
-          <br />
-          <b>Set the version to the one that is actually live on the Play Store.</b> The app
-          compares against these numbers and nothing else — publishing a version here that is
-          not on the store yet asks every user to install something they cannot get.
+          Shown when someone opens the app on an older build. Tapping the button sends them
+          straight to the Play Store listing. <b>Only type in a version that is actually live
+          on the Play Store</b> — the app has nothing else to compare against, so a number
+          that is not published yet asks everyone to install something they cannot get.
         </p>
 
-        <div className="checkbox-row" style={{ marginBottom: 14 }}>
+        <div className="checkbox-row" style={{ marginBottom: 16 }}>
           <input
             id="upd-on"
             type="checkbox"
             checked={!!update.enabled}
             onChange={(e) => setUpdate((p) => ({ ...p, enabled: e.target.checked }))}
           />
-          <label htmlFor="upd-on" style={{ margin: 0 }}>Update prompt is live</label>
+          <label htmlFor="upd-on" style={{ margin: 0, fontWeight: 600 }}>
+            Turn this popup on
+          </label>
         </div>
 
-        {['customer', 'vendor'].map((which) => (
-          <div
-            key={which}
-            style={{ border: '1px solid #e5e5e5', borderRadius: 8, padding: 14, marginBottom: 14 }}
-          >
-            <h4 style={{ margin: '0 0 10px' }}>{APP_LABELS[which]}</h4>
+        {['customer', 'vendor'].map((which) => {
+          const status = appStatus(which);
+          return (
+            <div
+              key={which}
+              style={{ border: '1px solid #e5e5e5', borderRadius: 10, padding: 16, marginBottom: 16 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                <h4 style={{ margin: 0 }}>{APP_LABELS[which]}</h4>
+                <span style={badgeStyle(status.tone)}>{status.badge}</span>
+              </div>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 16, fontSize: 13 }}>{status.text}</p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              <div className="field">
-                <label>Latest version name (e.g. 24.2)</label>
-                <input
-                  value={update.apps[which].latestVersion || ''}
-                  onChange={(e) => setAppField(which, 'latestVersion', e.target.value)}
-                />
+              {/* Step 1 — optional, skippable reminder */}
+              <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
+                  Step 1 · Remind people below this version — they can tap “Later”
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                  <div className="field">
+                    <label>Version on the Play Store (e.g. 24.2)</label>
+                    <input
+                      value={update.apps[which].latestVersion || ''}
+                      onChange={(e) => setAppField(which, 'latestVersion', e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Build number (optional, more exact)</label>
+                    <input
+                      type="number"
+                      value={update.apps[which].latestBuild || ''}
+                      onChange={(e) => setAppField(which, 'latestBuild', e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="field">
-                <label>Latest version code (optional, more reliable)</label>
-                <input
-                  type="number"
-                  value={update.apps[which].latestBuild || ''}
-                  onChange={(e) => setAppField(which, 'latestBuild', e.target.value)}
-                />
+
+              {/* Step 2 — mandatory, non-dismissible block */}
+              <div style={{ background: '#fff8f6', border: '1px solid #f3d3c9', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                  Step 2 · Block anyone below this version — no “Later”, no way out
+                </div>
+                <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+                  Leave both boxes empty unless an old build is genuinely broken.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                  <div className="field">
+                    <label>Version</label>
+                    <input
+                      value={update.apps[which].minSupportedVersion || ''}
+                      onChange={(e) => setAppField(which, 'minSupportedVersion', e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Build number (optional, more exact)</label>
+                    <input
+                      type="number"
+                      value={update.apps[which].minSupportedBuild || ''}
+                      onChange={(e) => setAppField(which, 'minSupportedBuild', e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="field">
-                <label>Minimum supported version — forces the update</label>
-                <input
-                  value={update.apps[which].minSupportedVersion || ''}
-                  onChange={(e) => setAppField(which, 'minSupportedVersion', e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Minimum supported version code</label>
-                <input
-                  type="number"
-                  value={update.apps[which].minSupportedBuild || ''}
-                  onChange={(e) => setAppField(which, 'minSupportedBuild', e.target.value)}
-                />
-              </div>
+
+              <details>
+                <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#555' }}>
+                  Popup text &amp; Play Store link (optional to change)
+                </summary>
+                <div style={{ marginTop: 12 }}>
+                  <div className="field">
+                    <label>Play Store URL (blank = the app&apos;s own listing)</label>
+                    <input
+                      value={update.apps[which].storeUrl || ''}
+                      onChange={(e) => setAppField(which, 'storeUrl', e.target.value)}
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                    <div className="field">
+                      <label>Title (English)</label>
+                      <input
+                        value={update.apps[which].title || ''}
+                        onChange={(e) => setAppField(which, 'title', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Title (Hindi)</label>
+                      <input
+                        value={update.apps[which].titleHi || ''}
+                        onChange={(e) => setAppField(which, 'titleHi', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Message (English)</label>
+                      <textarea
+                        rows={3}
+                        value={update.apps[which].message || ''}
+                        onChange={(e) => setAppField(which, 'message', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Message (Hindi) — falls back to English if blank</label>
+                      <textarea
+                        rows={3}
+                        value={update.apps[which].messageHi || ''}
+                        onChange={(e) => setAppField(which, 'messageHi', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </details>
             </div>
+          );
+        })}
 
-            <div className="field">
-              <label>Play Store URL (blank = the app&apos;s own listing)</label>
-              <input
-                value={update.apps[which].storeUrl || ''}
-                onChange={(e) => setAppField(which, 'storeUrl', e.target.value)}
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-              <div className="field">
-                <label>Title (English)</label>
-                <input
-                  value={update.apps[which].title || ''}
-                  onChange={(e) => setAppField(which, 'title', e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Title (Hindi)</label>
-                <input
-                  value={update.apps[which].titleHi || ''}
-                  onChange={(e) => setAppField(which, 'titleHi', e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Message (English)</label>
-                <textarea
-                  rows={3}
-                  value={update.apps[which].message || ''}
-                  onChange={(e) => setAppField(which, 'message', e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Message (Hindi) — falls back to English if blank</label>
-                <textarea
-                  rows={3}
-                  value={update.apps[which].messageHi || ''}
-                  onChange={(e) => setAppField(which, 'messageHi', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        ))}
-
-        <div className="field" style={{ maxWidth: 260 }}>
-          <label>Ask again after (hours) — soft prompts only</label>
+        <div className="field" style={{ maxWidth: 280 }}>
+          <label>If someone taps “Later”, ask again after (hours)</label>
           <input
             type="number"
             value={update.remindAfterHours}
             onChange={(e) => setUpdate((p) => ({ ...p, remindAfterHours: e.target.value }))}
           />
         </div>
-
-        {forcedSomewhere.length > 0 && (
-          <div
-            style={{
-              background: '#fff6ed', border: '1px solid #f0c9a8', borderRadius: 8,
-              padding: 12, marginBottom: 12, fontSize: 13,
-            }}
-          >
-            <b>Forced update is set for: {forcedSomewhere.map((k) => APP_LABELS[k]).join(', ')}.</b>
-            <br />
-            Anyone below that version gets a popup with <b>no “Later” button and no way to
-            back out</b> until they update. Use it only for builds that genuinely cannot work
-            any more. If you set it by mistake, clear both minimum fields and save — the fix
-            takes effect on the next app launch.
-          </div>
-        )}
 
         <button className="btn" onClick={saveUpdate} disabled={updateBusy}>
           {updateBusy ? 'Saving…' : 'Save update settings'}
