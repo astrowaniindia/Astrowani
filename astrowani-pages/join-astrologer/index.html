@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Become an Astrologer on Astrowani | Work From Home</title>
+<meta name="description" content="Join Astrowani as a verified astrology consultant. Take chat, call and video consultations from home, set your own hours, and earn per session. Apply on WhatsApp.">
+<meta name="robots" content="index, follow">
+<style>
+  :root {
+    --brown: #592a19;
+    --brown-dark: #3d1c11;
+    --gold: #d4a24c;
+    --cream: #fbf3e9;
+    --ink: #2a1610;
+    --ink-soft: #6b5348;
+    --whatsapp: #25d366;
+    --whatsapp-dark: #1ebe5b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 20px; }
+
+  header.top {
+    background: var(--brown);
+    color: #fff;
+    padding: 16px 0;
+  }
+  header.top .wrap { display: flex; align-items: center; gap: 10px; }
+  .logo-mark {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--gold);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: var(--brown-dark); font-size: 18px;
+    flex-shrink: 0;
+  }
+  .logo-word { font-size: 19px; font-weight: 700; letter-spacing: 0.2px; }
+
+  .hero {
+    background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
+    color: #fff;
+    padding: 40px 0 46px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: 26px;
+    line-height: 1.35;
+    margin: 0 0 12px;
+    font-weight: 800;
+  }
+  .hero p.sub {
+    font-size: 15.5px;
+    line-height: 1.55;
+    color: #f0ddc8;
+    margin: 0 auto 26px;
+    max-width: 480px;
+  }
+
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--whatsapp);
+    color: #fff;
+    font-weight: 700;
+    font-size: 16.5px;
+    padding: 15px 26px;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .cta:active { transform: scale(0.97); background: var(--whatsapp-dark); }
+  .cta svg { width: 22px; height: 22px; flex-shrink: 0; }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    margin-top: 30px;
+    flex-wrap: wrap;
+  }
+  .stat { text-align: center; }
+  .stat .num { font-size: 20px; font-weight: 800; color: var(--gold); }
+  .stat .lbl { font-size: 12px; color: #e4cdb2; margin-top: 2px; }
+
+  section { padding: 40px 0; }
+  section.alt { background: #fff; }
+
+  h2.section-title {
+    font-size: 20px;
+    font-weight: 800;
+    margin: 0 0 22px;
+    text-align: center;
+    color: var(--brown-dark);
+  }
+
+  .cards { display: grid; gap: 14px; }
+  .card {
+    background: #fff;
+    border: 1px solid #eee0cf;
+    border-radius: 14px;
+    padding: 18px 18px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  section.alt .card { background: var(--cream); border-color: #efe2cd; }
+  .card .icon {
+    width: 42px; height: 42px; border-radius: 12px;
+    background: var(--brown);
+    color: var(--gold);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .card .body h3 {
+    margin: 0 0 4px;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .card .body p {
+    margin: 0;
+    font-size: 13.8px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+
+  .steps { counter-reset: step; display: grid; gap: 16px; }
+  .step { display: flex; gap: 14px; align-items: flex-start; }
+  .step .n {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--gold); color: var(--brown-dark);
+    font-weight: 800; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .step .body h3 { margin: 0 0 3px; font-size: 15px; font-weight: 700; }
+  .step .body p { margin: 0; font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+
+  .req-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .req-list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 14.5px; line-height: 1.5; color: var(--ink);
+  }
+  .req-list li::before {
+    content: "✓";
+    color: var(--whatsapp);
+    font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .cta-band {
+    background: var(--brown-dark);
+    text-align: center;
+    padding: 38px 0 42px;
+  }
+  .cta-band p {
+    color: #f0ddc8;
+    font-size: 14.5px;
+    margin: 0 0 18px;
+  }
+
+  footer {
+    background: var(--brown-dark);
+    color: #cbb090;
+    font-size: 12.5px;
+    text-align: center;
+    padding: 18px 0 28px;
+  }
+  footer a { color: #e4cdb2; text-decoration: underline; }
+
+  /* Sticky mobile apply bar */
+  .sticky-bar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: #fff;
+    border-top: 1px solid #eadfcd;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 18px rgba(0,0,0,0.08);
+    z-index: 50;
+  }
+  .sticky-bar .cta { width: 100%; justify-content: center; padding: 13px 18px; font-size: 15.5px; }
+  body { padding-bottom: 74px; }
+
+  @media (min-width: 640px) {
+    .hero h1 { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo-mark">A</div>
+    <div class="logo-word">Astrowani</div>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <h1>Become an Astrology Consultant on Astrowani</h1>
+    <p class="sub">Share your knowledge of astrology, numerology, tarot or Vastu with thousands of genuine seekers — from your own home, on your own schedule.</p>
+    <a class="cta" id="cta-hero" href="#" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.8-.9-2-1s-.5-.1-.7.1-.7 1-.9 1.2-.4.2-.7.1a7 7 0 0 1-2-1.3 8 8 0 0 1-1.4-1.8c-.2-.3 0-.5.1-.6l.4-.5.3-.4c.1-.2 0-.4 0-.5l-.9-2.1c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.5 1.1 2.7c.1.2 1.8 2.8 4.4 3.9.6.3 1.1.4 1.5.5.6.2 1.2.2 1.6.1.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.6-.4Z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3.1.8.8-3-.2-.3a8.2 8.2 0 1 1 7 3.8Z"/></svg>
+      Apply on WhatsApp
+    </a>
+    <div class="stats">
+      <div class="stat"><div class="num">Live</div><div class="lbl">Chat · Call · Video</div></div>
+      <div class="stat"><div class="num">Flexible</div><div class="lbl">Set your own hours</div></div>
+      <div class="stat"><div class="num">Per-minute</div><div class="lbl">Earn on every session</div></div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">Why consultants choose Astrowani</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="icon">🏠</div>
+        <div class="body">
+          <h3>Work from anywhere</h3>
+          <p>Take consultations from home on your phone — no office, no fixed shift.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">💰</div>
+        <div class="body">
+          <h3>Earn per consultation</h3>
+          <p>Get paid for every chat, audio or video session — plus wallet gifts from customers you help.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">📈</div>
+        <div class="body">
+          <h3>A growing platform</h3>
+          <p>Astrowani connects real astrologers with genuine customers looking for guidance every day.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">🕒</div>
+        <div class="body">
+          <h3>You control your time</h3>
+          <p>Go online when you're free and go offline when you're not — no minimum hours forced on you.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2 class="section-title">Who we're looking for</h2>
+    <ul class="req-list">
+      <li>Genuine knowledge of Vedic astrology, numerology, tarot, palmistry or Vastu</li>
+      <li>Comfortable speaking with customers in Hindi and/or English</li>
+      <li>A smartphone with a stable internet connection</li>
+      <li>Patient, respectful and professional with every customer</li>
+      <li>Previous consulting experience is a plus, but not required if your knowledge is strong</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <div class="body">
+          <h3>Message us on WhatsApp</h3>
+          <p>Tap the button below and send us your name and area of expertise.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <div class="body">
+          <h3>Share your background</h3>
+          <p>Tell us about your experience and, if you have them, any certificates.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <div class="body">
+          <h3>Get verified</h3>
+          <p>Our team reviews your profile and sets you up on the Astrowani Astrologer app.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <div class="body">
+          <h3>Start consulting and earning</h3>
+          <p>Go online whenever you're free and start taking real consultations.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="cta-band">
+  <div class="wrap">
+    <p>Ready to get started? It only takes a message.</p>
+    <a class="cta" id="cta-band" href="#" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.8-.9-2-1s-.5-.1-.7.1-.7 1-.9 1.2-.4.2-.7.1a7 7 0 0 1-2-1.3 8 8 0 0 1-1.4-1.8c-.2-.3 0-.5.1-.6l.4-.5.3-.4c.1-.2 0-.4 0-.5l-.9-2.1c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.5 1.1 2.7c.1.2 1.8 2.8 4.4 3.9.6.3 1.1.4 1.5.5.6.2 1.2.2 1.6.1.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.6-.4Z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3.1.8.8-3-.2-.3a8.2 8.2 0 1 1 7 3.8Z"/></svg>
+      Apply on WhatsApp
+    </a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Astrowani &middot; <a href="https://astrowani.com" target="_blank" rel="noopener">astrowani.com</a></p>
+  </div>
+</footer>
+
+<div class="sticky-bar">
+  <a class="cta" id="cta-sticky" href="#" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.8-.9-2-1s-.5-.1-.7.1-.7 1-.9 1.2-.4.2-.7.1a7 7 0 0 1-2-1.3 8 8 0 0 1-1.4-1.8c-.2-.3 0-.5.1-.6l.4-.5.3-.4c.1-.2 0-.4 0-.5l-.9-2.1c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.5 1.1 2.7c.1.2 1.8 2.8 4.4 3.9.6.3 1.1.4 1.5.5.6.2 1.2.2 1.6.1.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.6-.4Z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3.1.8.8-3-.2-.3a8.2 8.2 0 1 1 7 3.8Z"/></svg>
+    Apply on WhatsApp
+  </a>
+</div>
+
+<script>
+  // Number and pre-filled message live here, not baked into three separate hrefs,
+  // so changing the WhatsApp number or the message text is a one-line edit.
+  var WHATSAPP_NUMBER = "917414858885";
+  var MESSAGE = "Hi, I'm interested in becoming an astrology consultant on Astrowani.";
+  var href = "https://wa.me/" + WHATSAPP_NUMBER + "?text=" + encodeURIComponent(MESSAGE);
+  ["cta-hero", "cta-band", "cta-sticky"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.href = href;
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,78 @@
+name: Deploy campaign pages to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'astrowani-pages/**'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy (retries the connection, serializes against the other deploys)
+        # Same flock path as deploy-backend.yml / deploy-admin.yml / deploy-shop.yml, for the
+        # same reason: all four reset the SAME shared checkout (/var/www/astrowani-monorepo),
+        # and two concurrent `git reset --hard` runs against one working tree corrupt each
+        # other. See MD files/vps-git-deploy-guide.md.
+        #
+        # Like the shop, there is no build step: astrowani-pages/ is committed already as
+        # plain HTML, so this is purely a copy.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          cat > /tmp/remote-deploy.sh <<'REMOTE_SCRIPT'
+          set -e
+          exec 9>/tmp/astrowani-deploy.lock
+          flock -w 300 9 || { echo "Timed out waiting for another deploy to finish"; exit 1; }
+
+          cd /var/www/astrowani-monorepo
+          git fetch origin main
+          git reset --hard origin/main
+
+          mkdir -p /var/www/astrowani/pages
+          # Copy new/changed files in first, then remove pages that no longer exist in the
+          # repo — same order as the shop deploy, so a visitor mid-deploy never hits a
+          # half-empty directory.
+          cp -r astrowani-pages/. /var/www/astrowani/pages/
+          find /var/www/astrowani/pages -mindepth 1 -printf '%P\n' | while read -r f; do
+            [ -e "astrowani-pages/$f" ] || rm -rf "/var/www/astrowani/pages/$f"
+          done
+
+          chown -R www-data:www-data /var/www/astrowani/pages
+
+          # Install the Nginx site on first deploy only (see astrowani-shop's deploy for why
+          # this guard exists — certbot rewrites the live file in place afterwards).
+          SITE=/etc/nginx/sites-available/astrowani-pages
+          if [ ! -f "$SITE" ]; then
+            echo "installing nginx site (first deploy)"
+            cp vps-deployment/nginx/astrowani-pages.conf "$SITE"
+            ln -sf "$SITE" /etc/nginx/sites-enabled/astrowani-pages
+          else
+            echo "nginx site already present, leaving it alone"
+          fi
+
+          nginx -t && systemctl reload nginx
+          echo "pages deployed: $(find /var/www/astrowani/pages -maxdepth 1 -mindepth 1 -type d | wc -l) campaign folders"
+          REMOTE_SCRIPT
+
+          attempt=1
+          max_attempts=5
+          until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
+            -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/remote-deploy.sh; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "SSH deploy failed after $max_attempts attempts — giving up."
+              exit 1
+            fi
+            echo "SSH deploy attempt $attempt/$max_attempts failed, retrying in 20s..."
+            attempt=$((attempt + 1))
+            sleep 20
+          done
