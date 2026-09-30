@@ -22,7 +22,6 @@ const { checkAstrologerBusy, buildBusyMap, checkCustomerBusy } = require('./src/
 const { notifyWaitlistIfFree } = require('./src/waitlist');
 const { initSentry } = require('./src/sentry');
 const razorpay = require('./src/razorpay');
-const rechargeOffer = require('./src/rechargeOffer');
 // Every rupee moves through this module — see src/wallet.js for why.
 const wallet = require('./src/wallet');
 const walletRecharge = require('./src/walletRecharge');
@@ -5369,22 +5368,6 @@ app.get('/api/customer/referral-info', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const MIN_RECHARGE_RUPEES = 1;
 const MAX_RECHARGE_RUPEES = 100000; // sanity ceiling — adjust if a legitimate need arises
-
-// What recharge bonus is on offer right now, so the app can advertise it on the wallet
-// screen. DISPLAY ONLY — the bonus that actually gets credited is resolved server-side in
-// walletRecharge.completeRecharge, from the same config, and nothing the app sends back is
-// trusted. Unauthenticated on purpose: it is a public price list, it carries no customer
-// data, and the wallet screen should be able to show it before anything else has loaded.
-// Answers 200 with `enabled:false` when there is no offer, so the app has one shape to
-// render and a failure here never blocks a recharge.
-app.get('/api/wallet/recharge-offer', async (_req, res) => {
-  try {
-    return res.status(200).json({ success: true, ...(await rechargeOffer.publicOffer()) });
-  } catch (e) {
-    console.warn('[wallet] recharge-offer read failed:', e.message);
-    return res.status(200).json({ success: true, enabled: false, slabs: [] });
-  }
-});
 
 app.post('/api/wallet/create-order', async (req, res) => {
   try {

@@ -30,7 +30,6 @@ const {
   REVIEW_KEY: APP_PROMPT_REVIEW_KEY,
 } = require('./appPromptRoutes');
 const audienceRules = require('./audience');
-const rechargeOffer = require('./rechargeOffer');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
 const sessionFolding = require('./sessionFolding');
 // Phone canonicalization + the tolerant "is this number already an astrologer"
@@ -2033,9 +2032,6 @@ module.exports = function registerAdminRoutes(app) {
     // Same reasoning for the audience rules: an admin switching an offer back ON for a
     // segment should take effect on the next app launch, not up to a minute later.
     if (key === audienceRules.SETTINGS_KEY) audienceRules.invalidateAudienceCache();
-    // A recharge offer is money. An admin who switches one OFF because the numbers were
-    // wrong must not keep paying it out for another half-minute while a cache expires.
-    if (key === rechargeOffer.SETTINGS_KEY) rechargeOffer.invalidateCache();
     // The Analytics page's "count from" date is held in memory; reload it now so
     // the next refresh of the page already uses the new date.
     if (key === ANALYTICS_SINCE_KEY) await refreshAnalyticsSince();
