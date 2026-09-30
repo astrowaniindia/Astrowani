@@ -42,7 +42,6 @@ import { ReviewPromptHost } from '../components/ReviewPrompt';
 import { ReferralPromptHost } from '../components/ReferralPromptHost';
 import { FreeCallIncomingHost } from '../components/FreeCallIncoming';
 import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
-import { RateAppPromptHost } from '../components/RateAppPrompt';
 import { FreeCallContinueHost } from '../components/FreeCallContinue';
 import { RateAstrowaniPromptHost } from '../components/RateAstrowaniPrompt';
 import { DakshinaPromptHost } from '../components/DakshinaPrompt';
@@ -753,11 +752,12 @@ export default function Navigation({ initialRoute }) {
     <RateAstrowaniPromptHost />
       <CallFeedbackPromptHost />
       <DakshinaPromptHost />
-    {/* Store-facing prompts. Both run their own launch check and stay silent unless
-        the admin has configured them; the update prompt suppresses the review one so
-        they can never stack. */}
+    {/* Store-facing prompt. Runs its own launch check and stays silent unless the
+        admin has configured it.
+        RateAppPromptHost was removed deliberately: "How are we doing?"
+        (RateAstrowaniPromptHost, above) is now the ONLY star/review popup in the app,
+        so the two can never show a different rating card to the same customer. */}
     <AppUpdatePromptHost />
-    <RateAppPromptHost />
     </>
   );
 }

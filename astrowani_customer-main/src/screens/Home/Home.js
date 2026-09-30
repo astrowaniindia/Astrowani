@@ -59,7 +59,7 @@ import {
 import { showStatusPopup } from '../../components/StatusPopup';
 import { showReferralPrompt } from '../../components/ReferralPromptHost';
 import { showAppUpdatePrompt } from '../../components/AppUpdatePrompt';
-import { showRateAppPrompt } from '../../components/RateAppPrompt';
+import { showRateAstrowani } from '../../components/RateAstrowaniPrompt';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
 import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
@@ -543,8 +543,10 @@ const Home = ({navigation}) => {
       });
       // force: an admin asking explicitly overrides the usual "used it enough yet"
       // gates — but NOT the "already rated" rule, which is honoured in every path.
-      socketRef.current.on('show_review_popup', ({ title, body }) => {
-        showRateAppPrompt({ title, message: body }, { force: true, trigger: 'admin' });
+      socketRef.current.on('show_review_popup', () => {
+        // Routed to the one surviving rating card ("How are we doing?"). It carries its
+        // own copy, so the admin's title/body are not used here.
+        showRateAstrowani({ context: 'admin' });
       });
     };
     setup();

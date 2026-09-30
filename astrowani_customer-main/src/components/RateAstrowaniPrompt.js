@@ -25,7 +25,7 @@
 // willing to tell us what went wrong.
 
 import React, { useCallback, useContext, useEffect, useState } from 'react';
-import { Image, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Linking, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 import { COLORS } from '../Theme/Colors';
@@ -70,23 +70,15 @@ export function RateAstrowaniPromptHost() {
 
   const close = useCallback(() => { setReq(null); setPicked(0); setDone(false); }, []);
 
-  const pick = useCallback((rating) => {
-    if (picked) return; // one answer only; re-tapping must not file a second rating
-    setPicked(rating);
-    captureEvent('app_rated', { rating, context: req?.context || 'unknown' });
-    // Fire and forget — submitAppRating resolves on failure. They did us a favour by
-    // answering and must never see an error for it.
-    submitAppRating({ rating, context: req?.context, sessionId: req?.sessionId });
-    setDone(true);
-  }, [picked, req]);
+  // The thank-you has nothing to tap, so it closes itself rather than sitting there.
+  useEffect(() => {
+    if (!done) return undefined;
+    const timer = setTimeout(close, 2200);
+    return () => clearTimeout(timer);
+  }, [done, close]);
 
-  const goToSupport = useCallback(() => {
-    close();
-    navigationRef.navigate('Support');
-  }, [close]);
-
-  const goToStore = useCallback(() => {
-    captureEvent('app_rating_store_opened', { rating: picked });
+  const goToStore = useCallback((rating) => {
+    captureEvent('app_rating_store_opened', { rating: rating ?? picked });
     // market:// opens the Play app straight on the listing where the review box is;
     // the https URL is the fallback for a device with no Play app (and for iOS later).
     // Never let a failed open leave them staring at a dead button — close either way.
@@ -96,25 +88,35 @@ export function RateAstrowaniPromptHost() {
     close();
   }, [picked, close]);
 
-  if (!req) return null;
+  const pick = useCallback((rating) => {
+    if (picked) return; // one answer only; re-tapping must not file a second rating
+    setPicked(rating);
+    captureEvent('app_rated', { rating, context: req?.context || 'unknown' });
+    // Fire and forget — submitAppRating resolves on failure. They did us a favour by
+    // answering and must never see an error for it.
+    submitAppRating({ rating, context: req?.context, sessionId: req?.sessionId });
+    // A happy answer goes STRAIGHT to the listing. The old "would you share that as a
+    // review?" step in between asked the same question twice and is where people
+    // dropped out — the star tap already was the answer.
+    if (rating > UNHAPPY_AT_OR_BELOW) {
+      goToStore(rating);
+      return;
+    }
+    setDone(true);
+  }, [picked, req, goToStore]);
 
-  const unhappy = picked > 0 && picked <= UNHAPPY_AT_OR_BELOW;
+  if (!req) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <View style={styles.overlay}>
-        <View style={styles.card}>
+      {/* No close button by design: the only ways out are tapping a star or tapping
+          outside the card. */}
+      <Pressable style={styles.overlay} onPress={close}>
+        {/* Absorbs presses so a tap on the card never reads as "tapped outside". */}
+        <Pressable onPress={() => {}}>
+          <View style={styles.card}>
           {!done ? (
             <>
-              {/* A quiet corner dismiss instead of a "Not now" text button. The button
-                  sat directly under the stars and read as a third option competing with
-                  them; this gets out of the way. It is NOT removed altogether — a modal
-                  with no visible way out is a trap, and Android's back gesture alone is
-                  not an affordance anybody can see. */}
-              <TouchableOpacity style={styles.closeBtn} onPress={close} activeOpacity={0.8}>
-                <MaterialIcons name="close" size={moderateScale(17)} color={COLORS.AstroMaroon} />
-              </TouchableOpacity>
-
               {/* The guide mascot, not an abstract sparkle. It is the face that greeted
                   them at login and sits on the Home tips, so "How was Astrowani?" is
                   being asked by somebody they recognise rather than by a glyph. */}
@@ -141,41 +143,25 @@ export function RateAstrowaniPromptHost() {
                     <MaterialIcons
                       name={n <= picked ? 'star' : 'star-border'}
                       size={moderateScale(38)}
-                      color={n <= picked ? COLORS.AstroGold : '#C9A98F'}
+                      color={n <= picked ? COLORS.AstroGold : '#C4C4C4'}
                     />
                   </TouchableOpacity>
                 ))}
               </View>
               <Text style={styles.tapHint}>{t('rateUs.tapHint')}</Text>
             </>
-          ) : unhappy ? (
-            <>
-              <MaterialIcons name="sentiment-dissatisfied" size={moderateScale(32)} color={COLORS.AstroMaroon} />
-              <Text style={styles.title}>{t('rateUs.sorryTitle')}</Text>
-              <Text style={styles.subtitle}>{t('rateUs.sorryBody')}</Text>
-              <TouchableOpacity style={styles.primary} onPress={goToSupport} activeOpacity={0.85}>
-                <Text style={[styles.primaryTxt, styles.primaryTxtNoIcon]}>{t('rateUs.tellUs')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={close} activeOpacity={0.7} style={styles.skip}>
-                <Text style={styles.skipTxt}>{t('common.close')}</Text>
-              </TouchableOpacity>
-            </>
           ) : (
+            /* 1-3 stars. A thumbs-up and a thank-you, nothing to tap and nothing asked
+               of them — 4 and 5 never reach here, they go straight to the listing. */
             <>
-              <MaterialIcons name="favorite" size={moderateScale(32)} color={COLORS.AstroGold} />
+              <MaterialIcons name="thumb-up" size={moderateScale(32)} color={COLORS.AstroGold} />
               <Text style={styles.title}>{t('rateUs.thanksTitle')}</Text>
-              <Text style={styles.subtitle}>{t('rateUs.storeBody')}</Text>
-              <TouchableOpacity style={styles.primary} onPress={goToStore} activeOpacity={0.85}>
-                <MaterialIcons name="rate-review" size={moderateScale(16)} color={COLORS.white} />
-                <Text style={styles.primaryTxt}>{t('rateUs.rateOnStore')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={close} activeOpacity={0.7} style={styles.skip}>
-                <Text style={styles.skipTxt}>{t('rateUs.notNow')}</Text>
-              </TouchableOpacity>
+              <Text style={styles.subtitle}>{t('rateUs.feedbackBody')}</Text>
             </>
           )}
-        </View>
-      </View>
+          </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -192,12 +178,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: moderateScale(12), color: '#6b584c', textAlign: 'center',
     marginTop: verticalScale(5), lineHeight: moderateScale(18),
-  },
-  closeBtn: {
-    position: 'absolute', top: scale(10), right: scale(10),
-    width: scale(28), height: scale(28), borderRadius: scale(14),
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#F0E2D4', borderWidth: 1, borderColor: BORDER, zIndex: 2,
   },
   // A soft halo so the mascot reads as an illustration rather than a stray cut-out.
   mascotRing: {

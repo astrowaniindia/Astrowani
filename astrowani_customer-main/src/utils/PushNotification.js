@@ -6,7 +6,7 @@ import PushNotification from 'react-native-push-notification';
 import Instance from '../api/ApiCall';
 import { navigate, navigationRef } from './NavigationService';
 import { showAppUpdatePrompt } from '../components/AppUpdatePrompt';
-import { showRateAppPrompt } from '../components/RateAppPrompt';
+import { showRateAstrowani } from '../components/RateAstrowaniPrompt';
 import { openFreeCallFromInvite } from './freeCallInvite';
 
 const CHANNEL_ID = 'astrowani-default';
@@ -266,7 +266,7 @@ function handleNotificationTap(remoteMessage) {
     if (type === 'app_update') {
       showAppUpdatePrompt();
     } else {
-      showRateAppPrompt(null, { force: true, trigger: 'push' });
+      showRateAstrowani({ context: 'push' });
     }
   }
 }
