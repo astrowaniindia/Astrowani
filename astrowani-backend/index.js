@@ -1641,6 +1641,16 @@ function verifyEnxDelivery(jobId, e164, authHeader, refund, rescue, schedule = E
 const PLAY_STORE_REVIEWER_PHONE = '9999999999';
 const PLAY_STORE_REVIEWER_OTP = '123456';
 
+// Internal QA test numbers — same fixed-OTP, no-SMS bypass as the reviewer number
+// above, for exercising the real signup flow (free intro call, etc.) on a brand-new
+// customer account without spending a real SMS credit or needing a real phone.
+// Keys must be obviously-fake numbers, never anything a real customer could hold.
+// TEMPORARY for manual QA — remove this block (and QA_TEST_OTPS) once the
+// free-call testing pass is done.
+const QA_TEST_OTPS = {
+  '9123450001': '222222', // customer app — "free intro call" signup-flow QA, 2026-10-01
+};
+
 /**
  * Endpoint to request an OTP
  */
@@ -1729,6 +1739,20 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
       expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days — reviewers can take a while
     });
     console.log(`[reviewer-otp] Fixed OTP issued for Play Store reviewer number ${phoneNumber}`);
+    return res.status(200).json({
+      success: true,
+      message: 'OTP sent successfully',
+      result: { Details: Date.now().toString() },
+    });
+  }
+
+  if (QA_TEST_OTPS[phoneNumber]) {
+    await otpStore.set(phoneNumber, {
+      otp: QA_TEST_OTPS[phoneNumber],
+      sessionId: Date.now().toString(),
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 1 day — short-lived, manual QA only
+    });
+    console.log(`[qa-otp] Fixed OTP issued for internal QA test number ${phoneNumber}`);
     return res.status(200).json({
       success: true,
       message: 'OTP sent successfully',

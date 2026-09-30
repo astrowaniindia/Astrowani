@@ -149,7 +149,7 @@ function LiveBookedBadge({ count }) {
   return (
     <View style={styles.liveBadgeRow}>
       <LiveDot />
-      <Text style={styles.liveBadgeText}>{count} people booked in last 2 days</Text>
+      <Text style={styles.liveBadgeText}>{count} free astrologer calls in 2 days</Text>
     </View>
   );
 }

@@ -88,7 +88,7 @@ function LiveBookedBadge({ count }) {
   return (
     <View style={styles.liveBadgeRow}>
       <LiveDot />
-      <Text style={styles.liveBadgeText}>{count} people booked in last 2 days</Text>
+      <Text style={styles.liveBadgeText}>{count} free astrologer calls in 2 days</Text>
     </View>
   );
 }
@@ -160,7 +160,7 @@ const FreeCallOffer = ({
   // booked in the last 2 days". The signup Welcome screen already shows its own
   // copy of this next to the guide avatar, above this card, so it stays false there.
   showBookedBadge = false,
-  bookedCount = 346,
+  bookedCount = 359,
 }) => {
   // 'intro' -> 'slots' -> 'done'
   const [step, setStep] = useState('intro');
