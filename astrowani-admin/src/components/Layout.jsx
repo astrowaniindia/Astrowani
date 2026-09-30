@@ -84,6 +84,7 @@ const ALL_GROUPS = [
       { to: '/moderation', label: 'Moderation (Reports)' },
       { to: '/session-flags', label: 'Off-platform Contact Flags' },
       { to: '/offer-guard', label: 'Offer Abuse Guard' },
+      { to: '/recharge-offers', label: 'Recharge Offers' },
       { to: '/live-aarti', label: 'Live Aarti & Pooja' },
       { to: '/missed', label: 'Missed Calls' },
       { to: '/free-bot-chat', label: '5 Minute Free Chat' },
