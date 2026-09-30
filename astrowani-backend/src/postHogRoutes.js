@@ -576,9 +576,22 @@ module.exports = function registerPostHogRoutes(app) {
     { key: 'welcome', label: 'Welcome gift screen seen', events: ['signup_welcome_viewed'] },
     { key: 'call_offer', label: 'Free-call offer shown', events: ['free_call_offer_shown'] },
     { key: 'call_claim', label: 'Tapped Claim my FREE call', events: ['free_call_claim_tapped', 'free_call_quick_book_tapped'] },
-    { key: 'call_slots', label: 'Time slots opened', events: ['free_call_slots_opened'] },
-    { key: 'call_slot_picked', label: 'Tapped a time', events: ['free_call_slot_selected'] },
-    { key: 'call_booked', label: 'Free call booked', events: ['free_call_booked'] },
+    // SCHEDULED branch. Only populates while free_call_offer.mode is 'scheduled'.
+    { key: 'call_slots', label: 'Scheduled: time slots opened', events: ['free_call_slots_opened'] },
+    { key: 'call_slot_picked', label: 'Scheduled: tapped a time', events: ['free_call_slot_selected'] },
+    { key: 'call_booked', label: 'Scheduled: free call booked', events: ['free_call_booked'] },
+    // INSTANT branch. Only populates while mode is 'instant'. The two branches are
+    // labelled because exactly one of them is always zero — an unlabelled zero row reads
+    // as "nobody is doing this" rather than "this mode is switched off", which is the
+    // mistake the remedies funnel made for weeks (see CLAUDE.md's analytics rules).
+    { key: 'instant_list', label: 'Instant: astrologer list opened', events: ['free_call_instant_opened'] },
+    { key: 'instant_ring', label: 'Instant: rang an astrologer', events: ['free_call_instant_ring'] },
+    // The free call runs on the ordinary call screen, so connection is the SAME event a
+    // paid call fires. Scoped to the free path by position in this cohort funnel.
+    { key: 'instant_connected', label: 'Instant: call connected', events: ['call_connected'] },
+    { key: 'instant_upsell', label: 'Instant: offered more minutes', events: ['free_call_continue_shown'] },
+    { key: 'instant_pay_started', label: 'Instant: opened the payment', events: ['free_call_continue_started'] },
+    { key: 'instant_paid', label: 'Instant: PAID for more minutes', events: ['free_call_continue_paid'] },
     { key: 'birth_opened', label: 'Birth details opened', events: ['birth_details_screen_viewed'] },
     { key: 'birth_saved', label: 'Birth details saved', events: ['birth_details_saved'] },
     { key: 'chat_offer', label: 'Free 5-minute chat offered', events: ['free_chat_offer_shown'] },

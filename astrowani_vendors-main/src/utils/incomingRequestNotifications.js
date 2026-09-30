@@ -25,11 +25,15 @@ import { startRinging, stopRinging } from './incomingRingtone';
 //
 // ⚠ Channel sound/vibration are IMMUTABLE once created on a device (Android platform
 // restriction — Notifee cannot override them afterwards), so these ids must be bumped rather
-// than edited to change sound behaviour on already-installed apps. That is why they are v3.
-const CHANNEL_ID_SILENT = 'astrowani-incoming-requests-v3-silent';
-const CHANNEL_ID_RINGING = 'astrowani-incoming-requests-v3-ringing';
-// Kept so an upgrading device stops showing the old, permanently-silent channel in settings.
-const LEGACY_CHANNEL_IDS = ['astrowani-incoming-requests-v2'];
+// than edited to change sound behaviour on already-installed apps. That is why they are v4.
+const CHANNEL_ID_SILENT = 'astrowani-incoming-requests-v4-silent';
+const CHANNEL_ID_RINGING = 'astrowani-incoming-requests-v4-ringing';
+// Kept so an upgrading device deletes older channels from notification settings.
+const LEGACY_CHANNEL_IDS = [
+  'astrowani-incoming-requests-v2',
+  'astrowani-incoming-requests-v3-silent',
+  'astrowani-incoming-requests-v3-ringing',
+];
 const channelsReady = {};
 
 // The ringtone used to be started only from HomeScreen.js's popupQueue effect — which
@@ -51,13 +55,12 @@ async function ensureChannel(ringing) {
       name: ringing ? 'Incoming Calls & Chats' : 'Incoming Calls & Chats (in app)',
       importance: AndroidImportance.HIGH,
       visibility: AndroidVisibility.PUBLIC,
-      // Ringing channel: Android owns the sound and vibration, so they survive our process
-      // being killed. Silent channel: incomingRingtone.js is the sole source of both.
-      sound: ringing ? 'default' : undefined,
-      vibration: !!ringing,
-      vibrationPattern: ringing ? [300, 700, 300, 700] : undefined,
+      // Both channels are silent: RingingCallService (background/killed) and
+      // incomingRingtone.js (foreground) own the real ringtone playback and vibration.
+      sound: undefined,
+      vibration: false,
     });
-    // Best-effort tidy-up of the superseded channel; never let it block a ringing request.
+    // Best-effort tidy-up of superseded channels; never let it block a ringing request.
     LEGACY_CHANNEL_IDS.forEach((legacy) => {
       notifee.deleteChannel(legacy).catch(() => {});
     });

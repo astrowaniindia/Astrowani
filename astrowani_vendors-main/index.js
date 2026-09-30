@@ -62,7 +62,7 @@ const {acceptRequest, rejectRequest} = (() => {
 const {cancelIncomingRequestNotification} = (() => {
   try { return require('./src/utils/incomingRequestNotifications'); } catch (_) { return {}; }
 })();
-const {stopRingingService} = (() => {
+const {stopRingingService, getPendingOverlayAction} = (() => {
   try { return require('./src/utils/ringingForegroundService'); } catch (_) { return {}; }
 })();
 const {navigationRef} = (() => {
@@ -165,6 +165,59 @@ if (notifee) {
   // The foreground half. Without this, the buttons are dead whenever the app is open.
   safely('notifee.onForegroundEvent', () => notifee.onForegroundEvent(handleNotificationAction));
 }
+
+// ── Overlay Accept/Reject handler ──────────────────────────────────────────
+//
+// When the persistent overlay's Accept/Reject button is tapped, the native side
+// (RingingCallService → MainActivity.onNewIntent) emits this DeviceEvent. This
+// handler runs the same accept/reject logic as the Notifee notification buttons
+// above, and then cleans up the notification and ringing.
+//
+// Covers the BACKGROUNDED-app case (JS bridge alive, onNewIntent fires). The
+// KILLED-app case (fresh launch, onNewIntent does not fire) is handled by
+// NavigationScreen.js polling getPendingOverlayAction() on mount instead.
+const handleOverlayActionEvent = async (event) => {
+  const { action, data: dataJson } = event || {};
+  if (!action || !dataJson) return;
+
+  try {
+    const req = JSON.parse(dataJson);
+    const notificationId = `incoming_${req.roomId || req.callerId}`;
+
+    if (action === 'reject') {
+      if (rejectRequest) await rejectRequest(req);
+    } else if (action === 'accept') {
+      if (acceptRequest) {
+        const result = await acceptRequest(req);
+        if (result?.ok) {
+          const screen =
+            req.callType === 'video' ? 'VideoCall' : req.callType === 'chat' ? 'VendorChatSession' : 'AudioCall';
+          if (navigationRef.current?.isReady()) {
+            navigationRef.current.navigate(screen, result.navigationParams);
+          } else if (AsyncStorage) {
+            await AsyncStorage.setItem(
+              'pendingCallNavigation',
+              JSON.stringify({screen, params: result.navigationParams}),
+            );
+          }
+        }
+      }
+    }
+
+    // Clean up the notification (the overlay and ringing were already stopped natively
+    // by the button handler before this JS code ran).
+    if (cancelIncomingRequestNotification) {
+      await cancelIncomingRequestNotification(`incoming_${req.roomId || req.callerId}`);
+    }
+  } catch (e) {
+    console.warn('[overlay action] error:', e?.message || e);
+  }
+};
+
+safely('overlayActionListener', () => {
+  const { DeviceEventEmitter } = require('react-native');
+  DeviceEventEmitter.addListener('onOverlayAction', handleOverlayActionEvent);
+});
 
 // Shown INSTEAD of a black screen when the app tree fails to load. A blank window
 // tells you nothing and costs a ten-minute rebuild per guess; the message and stack

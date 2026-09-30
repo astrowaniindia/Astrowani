@@ -8,6 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -18,6 +22,14 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
 /**
@@ -50,6 +62,13 @@ import androidx.core.app.NotificationCompat
  * own foreground notification is deliberately silent/low-priority so the two don't
  * visually or audibly compete; this service's only job is (a) keep the process alive and
  * (b) make the actual ringing sound.
+ *
+ * OVERLAY (added 2026-09-30): Also shows a persistent floating overlay banner at the top
+ * of the screen (via SYSTEM_ALERT_WINDOW) with Accept/Reject buttons. The standard
+ * heads-up notification auto-dismisses after ~5s (Android platform behavior); this
+ * overlay stays visible as long as the request is outstanding — matching the behavior of
+ * a real phone call. Requires the user to grant "Display over other apps" once; degrades
+ * gracefully (notification-only) if the permission is missing.
  */
 class RingingCallService : Service() {
 
@@ -58,9 +77,11 @@ class RingingCallService : Service() {
     const val ACTION_STOP = "com.astrowaniVendor.ringingservice.STOP"
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
+    const val EXTRA_REQUEST_DATA = "requestData"
 
     private const val CHANNEL_ID = "astrowani-ringing-service"
     private const val NOTIFICATION_ID = 4518
+    private const val PREFS_NAME = "overlay_actions"
 
     // Safety net: if JS never calls stop() (a crash, a lost bridge, the request already
     // resolved before the stop message arrived), the ring must not continue forever. The
@@ -75,6 +96,9 @@ class RingingCallService : Service() {
   private val handler = Handler(Looper.getMainLooper())
   private val autoStop = Runnable { stopSelfSafely() }
 
+  // ── Overlay ────────────────────────────────────────────────────────────────
+  private var overlayView: View? = null
+
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,6 +109,7 @@ class RingingCallService : Service() {
 
     val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Incoming request"
     val body = intent?.getStringExtra(EXTRA_BODY)
+    val requestData = intent?.getStringExtra(EXTRA_REQUEST_DATA)
 
     createChannel()
 
@@ -108,6 +133,10 @@ class RingingCallService : Service() {
     startRealRingtone()
     startVibration()
 
+    // Show persistent overlay banner at the top of the screen. Degrades gracefully if
+    // the permission is not granted — the Notifee notification still works.
+    showOverlay(title, body, requestData)
+
     handler.removeCallbacks(autoStop)
     handler.postDelayed(autoStop, MAX_RING_MS)
 
@@ -116,6 +145,8 @@ class RingingCallService : Service() {
     // this service would just ring forever for a request nobody can act on.
     return START_NOT_STICKY
   }
+
+  // ── Ringtone ───────────────────────────────────────────────────────────────
 
   private fun startRealRingtone() {
     try {
@@ -165,8 +196,275 @@ class RingingCallService : Service() {
     }
   }
 
+  // ── Overlay (SYSTEM_ALERT_WINDOW) ──────────────────────────────────────────
+
+  /**
+   * Shows a persistent floating banner at the top of the screen with Accept/Reject
+   * buttons. Uses TYPE_APPLICATION_OVERLAY, which requires the user to have granted
+   * "Display over other apps" in Settings. If the permission is missing, this is a
+   * silent no-op — the regular notification still works.
+   */
+  private fun showOverlay(title: String, body: String?, requestData: String?) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+    if (!Settings.canDrawOverlays(this)) {
+      android.util.Log.d("RingingCallService", "Overlay permission not granted, skipping overlay")
+      return
+    }
+
+    try {
+      removeOverlay() // clean up any stale overlay from a previous request
+
+      val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+      val view = buildOverlayView(title, body, requestData)
+
+      val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+      } else {
+        @Suppress("DEPRECATION")
+        WindowManager.LayoutParams.TYPE_PHONE
+      }
+
+      val params = WindowManager.LayoutParams(
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.WRAP_CONTENT,
+        layoutType,
+        // NOT_FOCUSABLE: the overlay doesn't intercept input outside its bounds, so the
+        // home screen / whatever is behind it remains usable. SHOW_WHEN_LOCKED and
+        // TURN_SCREEN_ON ensure the overlay appears on a locked screen and wakes it.
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+          WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+          WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+          WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+        PixelFormat.TRANSLUCENT,
+      )
+      params.gravity = Gravity.TOP
+
+      wm.addView(view, params)
+      overlayView = view
+    } catch (e: Throwable) {
+      android.util.Log.w("RingingCallService", "showOverlay failed: ${e.message}")
+    }
+  }
+
+  /**
+   * Builds the overlay view hierarchy programmatically (no XML layout required).
+   * Matches the app's dark/gold theme:
+   *
+   *  ┌──────────────────────────────────────────┐
+   *  │  [🔮]  Incoming Call                     │
+   *  │        From Ansh                         │
+   *  │                                          │
+   *  │  [ Reject ]              [ Accept ]      │
+   *  └──────────────────────────────────────────┘
+   */
+  private fun buildOverlayView(title: String, body: String?, requestData: String?): View {
+    val ctx: Context = this
+    val density = resources.displayMetrics.density
+    fun dp(v: Int) = (v * density + 0.5f).toInt()
+
+    // ── Root container ──────────────────────────────────────────────────────
+    val root = LinearLayout(ctx).apply {
+      orientation = LinearLayout.VERTICAL
+      // Extra top padding for the status bar area (~40dp)
+      setPadding(dp(16), dp(48), dp(16), dp(20))
+      background = GradientDrawable().apply {
+        setColor(Color.parseColor("#1E1028"))
+        // Only bottom corners are rounded — top edge is flush with the screen edge
+        cornerRadii = floatArrayOf(
+          0f, 0f, 0f, 0f,
+          dp(24).toFloat(), dp(24).toFloat(),
+          dp(24).toFloat(), dp(24).toFloat(),
+        )
+      }
+      elevation = dp(12).toFloat()
+    }
+
+    // ── Header row: icon + text ─────────────────────────────────────────────
+    val headerRow = LinearLayout(ctx).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(4), 0, dp(4), 0)
+    }
+
+    // App icon
+    val icon = ImageView(ctx).apply {
+      setImageResource(R.mipmap.ic_launcher_round)
+      val iconSize = dp(48)
+      layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply {
+        setMargins(0, 0, dp(14), 0)
+      }
+    }
+    headerRow.addView(icon)
+
+    // Title + body column
+    val textCol = LinearLayout(ctx).apply {
+      orientation = LinearLayout.VERTICAL
+      layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+    }
+
+    val titleView = TextView(ctx).apply {
+      text = "$title \uD83D\uDD14"  // 🔔
+      setTextColor(Color.parseColor("#FFD700"))
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+      typeface = Typeface.DEFAULT_BOLD
+    }
+    textCol.addView(titleView)
+
+    if (!body.isNullOrEmpty()) {
+      val bodyView = TextView(ctx).apply {
+        text = body
+        setTextColor(Color.parseColor("#DDDDDD"))
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        setPadding(0, dp(2), 0, 0)
+      }
+      textCol.addView(bodyView)
+    }
+
+    headerRow.addView(textCol)
+    root.addView(headerRow)
+
+    // ── Divider ─────────────────────────────────────────────────────────────
+    val divider = View(ctx).apply {
+      setBackgroundColor(Color.parseColor("#3A2A4A"))
+      layoutParams = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT, dp(1),
+      ).apply { setMargins(0, dp(14), 0, dp(14)) }
+    }
+    root.addView(divider)
+
+    // ── Button row ──────────────────────────────────────────────────────────
+    val buttonRow = LinearLayout(ctx).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER
+      setPadding(dp(8), 0, dp(8), 0)
+    }
+
+    // Reject button
+    val rejectBtn = TextView(ctx).apply {
+      text = "  ✕  Reject  "
+      setTextColor(Color.WHITE)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+      setPadding(dp(24), dp(14), dp(24), dp(14))
+      background = GradientDrawable().apply {
+        setColor(Color.parseColor("#C0392B"))
+        cornerRadius = dp(28).toFloat()
+      }
+    }
+    rejectBtn.setOnClickListener { handleOverlayAction("reject", requestData) }
+
+    buttonRow.addView(
+      rejectBtn,
+      LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+        setMargins(0, 0, dp(10), 0)
+      },
+    )
+
+    // Accept button
+    val acceptBtn = TextView(ctx).apply {
+      text = "  ✓  Accept  "
+      setTextColor(Color.WHITE)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+      setPadding(dp(24), dp(14), dp(24), dp(14))
+      background = GradientDrawable().apply {
+        setColor(Color.parseColor("#27AE60"))
+        cornerRadius = dp(28).toFloat()
+      }
+    }
+    acceptBtn.setOnClickListener { handleOverlayAction("accept", requestData) }
+
+    buttonRow.addView(
+      acceptBtn,
+      LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+        setMargins(dp(10), 0, 0, 0)
+      },
+    )
+
+    root.addView(buttonRow)
+
+    return root
+  }
+
+  /**
+   * Handles an Accept or Reject tap on the overlay.
+   *
+   * Two delivery paths so the JS side always receives the action regardless of app state:
+   *
+   * 1. **SharedPreferences** (reliable for killed/cold-start): written BEFORE launching
+   *    the Activity so the data survives even if the Activity launch fails. Consumed by
+   *    NavigationScreen.js's onReady / AppState 'active' handler.
+   *
+   * 2. **Intent extra → MainActivity.onNewIntent → DeviceEvent** (immediate for
+   *    backgrounded apps): the Activity is already alive, so onNewIntent fires and emits
+   *    the DeviceEvent directly into the running JS bridge.
+   */
+  private fun handleOverlayAction(action: String, requestData: String?) {
+    if (action == "accept") {
+      // 1. Persist for the killed-app path
+      getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putString("pending_action", action)
+        .putString("pending_data", requestData ?: "{}")
+        .apply()
+
+      // 2. Launch / bring forward the Activity with extras for the backgrounded path
+      try {
+        val intent = Intent(this, MainActivity::class.java).apply {
+          this.action = Intent.ACTION_MAIN
+          addCategory(Intent.CATEGORY_LAUNCHER)
+          flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+          putExtra("overlay_action", action)
+          putExtra("overlay_data", requestData ?: "{}")
+        }
+        startActivity(intent)
+      } catch (e: Throwable) {
+        android.util.Log.w("RingingCallService", "Failed to launch MainActivity: ${e.message}")
+      }
+    } else if (action == "reject") {
+      // Reject must NOT open or bring forward the app Activity.
+      // Emit the onOverlayAction event directly to the live React Native context so JS can
+      // call the reject API and clean up notifications in the background without opening the app.
+      try {
+        val reactApp = application as? com.facebook.react.ReactApplication
+        val reactContext = reactApp?.reactNativeHost?.reactInstanceManager?.currentReactContext
+        if (reactContext != null) {
+          val emitter = reactContext.getJSModule(
+            com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java
+          )
+          emitter.emit("onOverlayAction", com.facebook.react.bridge.Arguments.createMap().apply {
+            putString("action", "reject")
+            putString("data", requestData ?: "{}")
+          })
+        }
+      } catch (e: Throwable) {
+        android.util.Log.w("RingingCallService", "Failed to emit reject overlay action: ${e.message}")
+      }
+    }
+
+    // 3. Stop this service (removes overlay, stops ringing, stops vibration)
+    stopSelfSafely()
+  }
+
+  private fun removeOverlay() {
+    try {
+      overlayView?.let {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        wm.removeView(it)
+      }
+    } catch (_: Throwable) {
+      // View may already have been removed (e.g. process tear-down race)
+    }
+    overlayView = null
+  }
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
   override fun onDestroy() {
     handler.removeCallbacks(autoStop)
+    removeOverlay()
     try {
       vibrator?.cancel()
     } catch (_: Throwable) {
@@ -204,6 +502,8 @@ class RingingCallService : Service() {
       stopForeground(true)
     }
   }
+
+  // ── Notification channel + builder ─────────────────────────────────────────
 
   private fun createChannel() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

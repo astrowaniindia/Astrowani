@@ -9,6 +9,9 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
@@ -82,77 +85,86 @@ const Login = ({navigation}) => {
   };
 
   return (
-    <View style={styles.main}>
+    <KeyboardAvoidingView
+      style={styles.main}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar
         translucent
         backgroundColor="transparent"
         barStyle="light-content"
       />
       <LanguageToggle dark />
-      <Image
-        source={require('../../assets/images/logo1.png')}
-        style={styles.logo}
-      />
-      <Text style={styles.title}>Astrowani</Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <Image
+          source={require('../../assets/images/logo1.png')}
+          style={styles.logo}
+        />
+        <Text style={styles.title}>Astrowani</Text>
 
-      <Text style={styles.subTitle}>{t('login.forAstrologers')}</Text>
-      <View style={styles.loginContainer}>
-        <View style={styles.numberInput}>
-          {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
-              There WAS a working country selector here, but its `callingCode`
-              was never sent to the backend — /api/users/mobile-otp-request
-              hardcodes +91, and the EnableX DLT template and ASTRWI sender ID
-              are India-only. So picking any other country showed the user a
-              different dial code while their number was still dispatched to a
-              +91 number: either bouncing at the carrier, or reaching an
-              unrelated real person. Showing a fixed +91 is the honest state of
-              what the backend can actually do. If international numbers are
-              ever supported, send callingCode and validate per-country
-              server-side rather than reinstating a decorative picker. */}
-          <View style={styles.countryPicker}>
-            <Text style={styles.flag}>🇮🇳</Text>
-            <Text style={styles.callingCode}>+91</Text>
+        <Text style={styles.subTitle}>{t('login.forAstrologers')}</Text>
+        <View style={styles.loginContainer}>
+          <View style={styles.numberInput}>
+            {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
+                There WAS a working country selector here, but its `callingCode`
+                was never sent to the backend — /api/users/mobile-otp-request
+                hardcodes +91, and the EnableX DLT template and ASTRWI sender ID
+                are India-only. So picking any other country showed the user a
+                different dial code while their number was still dispatched to a
+                +91 number: either bouncing at the carrier, or reaching an
+                unrelated real person. Showing a fixed +91 is the honest state of
+                what the backend can actually do. If international numbers are
+                ever supported, send callingCode and validate per-country
+                server-side rather than reinstating a decorative picker. */}
+            <View style={styles.countryPicker}>
+              <Text style={styles.flag}>🇮🇳</Text>
+              <Text style={styles.callingCode}>+91</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              maxLength={12}
+              placeholder={t('login.phoneNumber')}
+              placeholderTextColor={COLORS.gray}
+              keyboardType="phone-pad"
+              value={phoneNumber}
+              // Was maxLength={10} with no filtering — pasting a number with the
+              // country code truncated it to the first 10 CHARACTERS, silently
+              // dropping real digits. See utils/phoneInput.js.
+              onChangeText={(text) => setPhoneNumber(sanitizePhoneInput(text))}
+            />
           </View>
-          <TextInput
-            style={styles.input}
-            maxLength={12}
-            placeholder={t('login.phoneNumber')}
-            keyboardType="phone-pad"
-            value={phoneNumber}
-            // Was maxLength={10} with no filtering — pasting a number with the
-            // country code truncated it to the first 10 CHARACTERS, silently
-            // dropping real digits. See utils/phoneInput.js.
-            onChangeText={(text) => setPhoneNumber(sanitizePhoneInput(text))}
-          />
-        </View>
 
-        <TouchableOpacity
-          style={[styles.otpBtn, loading && styles.disabledBtn]}
-          disabled={loading}
-          onPress={loginByPhone}>
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.btnTxt}>{t('login.continue')}</Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.termsView}>
-          <Text style={styles.termsText}>{t('login.termsPrefix')}</Text>
-          <TouchableOpacity style={styles.termsLink}>
-            <Text style={styles.linktext}>{t('login.termsOfUse')}</Text>
+          <TouchableOpacity
+            style={[styles.otpBtn, loading && styles.disabledBtn]}
+            disabled={loading}
+            onPress={loginByPhone}>
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.btnTxt}>{t('login.continue')}</Text>
+            )}
           </TouchableOpacity>
-          <Text style={styles.termsText}>{t('login.and')}</Text>
-          <TouchableOpacity style={styles.termsLink}>
-            <Text style={styles.linktext}>{t('login.privacyPolicy')}</Text>
+
+          <View style={styles.termsView}>
+            <Text style={styles.termsText}>{t('login.termsPrefix')}</Text>
+            <TouchableOpacity style={styles.termsLink}>
+              <Text style={styles.linktext}>{t('login.termsOfUse')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.termsText}>{t('login.and')}</Text>
+            <TouchableOpacity style={styles.termsLink}>
+              <Text style={styles.linktext}>{t('login.privacyPolicy')}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity onPress={() => navigation.navigate('Registration')}>
+            <Text style={styles.register}>{t('login.noAccount')}</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity onPress={() => navigation.navigate('Registration')}>
-          <Text style={styles.register}>{t('login.noAccount')}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -162,6 +174,12 @@ const styles = StyleSheet.create({
   main: {
     flex: 1,
     backgroundColor: COLORS.AstroMaroon,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
   },
   logo: {
     alignSelf: 'center',
@@ -190,6 +208,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: moderateScale(25),
     borderTopRightRadius: moderateScale(25),
     marginTop: verticalScale(35),
+    minHeight: verticalScale(300),
   },
   tagline: {
     alignSelf: 'center',

@@ -10,28 +10,32 @@
 - `astrowani-admin/` — React + Vite **admin dashboard** (web only, :5173).
 
 ## Current focus
-Preparing the Astrowani backend and Admin Dashboard for deployment onto the user's Hostinger VPS alongside BeHappyTalk.
+Testing fixed incoming call overlay and audio coordination on emulator.
 
 ## Current Phase
-VPS Deployment Planning & Configuration
+Emulator Verification & Testing
 
 ## Work Completed (This Session)
-- Investigated and mapped existing API/Socket configurations pointing to Render (`https://astrowani.onrender.com`).
-- Created Nginx configurations for backend reverse proxy ([nginx-backend](file:///d:/Projects/Astrowani/vps-deployment/nginx/astrowani-backend.conf)) on port `4500` and admin panel static hosting ([nginx-admin](file:///d:/Projects/Astrowani/vps-deployment/nginx/astrowani-admin.conf)).
-- Created a deployment automation shell script ([deploy.sh](file:///d:/Projects/Astrowani/vps-deployment/scripts/deploy.sh)) to set up server directory structure, launch backend processes via PM2, apply domain names to Nginx configurations, test configurations, reload services, and execute Certbot SSL certificates.
-- Generated a detailed step-by-step walkthrough documentation ([VPS_DEPLOYMENT_GUIDE.md](file:///d:/Projects/Astrowani/vps-deployment/VPS_DEPLOYMENT_GUIDE.md)) for DNS configuration, local building, and uploading procedures.
+- Built persistent incoming-call overlay using `SYSTEM_ALERT_WINDOW` in `RingingCallService.kt` with Accept/Reject buttons.
+- Added native bridge methods (`checkOverlayPermission`, `requestOverlayPermission`, `getPendingOverlayAction`) in `RingingServiceModule.kt` and `MainActivity.kt`.
+- Created in-app `OverlayPermissionModal.js` component with Astrowani theme.
+- Fixed Bug 1: Modified `RingingCallService.kt` so the **Reject** button no longer launches `MainActivity`.
+- Fixed Bug 2: Unified ringtone authority to eliminate doubled ringtone when app is backgrounded in recent apps.
+- Fixed temporal declaration order issue in `HomeScreen.js`.
+- Fixed phone keyboard flicker/blur on `Login.js` by wrapping the screen in `KeyboardAvoidingView` and `ScrollView` with `keyboardShouldPersistTaps="handled"`.
+- Verified and tested on `emulator-5554`.
+- Generated updated Standalone Release APK (`Astrowani_Vendor.apk`, 110.7 MB).
+- Incremented vendor app version to `versionCode 32`, `versionName "6.7"`, configured production signing (`my-upload-key.keystore`), and successfully compiled signed Google Play Store **Android App Bundle** at native build path: `astrowani_vendors-main\android\app\build\outputs\bundle\release\app-release.aab`.
 
 ## Next Recommended Action
-1. User creates DNS `A` records for `backend.astrowani.com` and `admin.astrowani.com` pointing to the VPS.
-2. Compile the `astrowani-admin` React panel locally (`npm run build`) pointing `VITE_API_URL` to `https://backend.astrowani.com`.
-3. Upload files to the VPS (via SCP or Git) and execute `vps-deployment/scripts/deploy.sh`.
-4. Update `SOCKET_URL` to `https://backend.astrowani.com` in Customer and Vendor React Native apps.
+1. User uploads `app-release.aab` from `astrowani_vendors-main\android\app\build\outputs\bundle\release\app-release.aab` to Google Play Console.
+2. Confirm commit & push strategy for backend, admin, and customer apps.
 
 ## Open Issues
-- Pointing mobile apps to `backend.astrowani.com` and rebuilds.
+- None.
 
 ## Blockers
-- None (waiting for user DNS setup).
+- None.
 
 ---
 **CLAUDE.md is the living architecture doc; this file is the high-level snapshot.**

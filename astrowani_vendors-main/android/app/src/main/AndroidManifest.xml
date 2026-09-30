@@ -78,6 +78,12 @@
          actually launch the app over the lock screen / other apps instead of silently
          degrading to a normal tap-to-open notification. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <!-- Draws a persistent incoming-call overlay on top of other apps. The regular heads-up
+         notification auto-dismisses after ~5 seconds (Android platform behavior); this lets
+         RingingCallService show a floating Accept/Reject banner that stays visible until the
+         astrologer acts or the caller gives up. Requires the user to grant "Display over
+         other apps" in system Settings once (prompted on first incoming request). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <!-- Remove merged location permissions that are injected by dependencies -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />

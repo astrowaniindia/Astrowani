@@ -1,7 +1,11 @@
 package com.astrowaniVendor
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -30,12 +34,13 @@ class RingingServiceModule(private val reactContext: ReactApplicationContext) :
   override fun getName(): String = "RingingCallService"
 
   @ReactMethod
-  fun start(title: String?, body: String?, promise: Promise) {
+  fun start(title: String?, body: String?, requestDataJson: String?, promise: Promise) {
     try {
       val intent = Intent(reactContext, RingingCallService::class.java).apply {
         action = RingingCallService.ACTION_START
         putExtra(RingingCallService.EXTRA_TITLE, title ?: "Incoming request")
         if (!body.isNullOrEmpty()) putExtra(RingingCallService.EXTRA_BODY, body)
+        if (!requestDataJson.isNullOrEmpty()) putExtra(RingingCallService.EXTRA_REQUEST_DATA, requestDataJson)
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         reactContext.startForegroundService(intent)
@@ -57,6 +62,76 @@ class RingingServiceModule(private val reactContext: ReactApplicationContext) :
       promise.resolve(true)
     } catch (e: Throwable) {
       promise.resolve(false)
+    }
+  }
+
+  // ── Overlay permission helpers ────────────────────────────────────────────
+
+  /**
+   * Returns true if the app has permission to draw over other apps
+   * (SYSTEM_ALERT_WINDOW / "Display over other apps").
+   */
+  @ReactMethod
+  fun checkOverlayPermission(promise: Promise) {
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        promise.resolve(Settings.canDrawOverlays(reactContext))
+      } else {
+        // Pre-Marshmallow: SYSTEM_ALERT_WINDOW is auto-granted via the manifest
+        promise.resolve(true)
+      }
+    } catch (e: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * Opens the system Settings screen where the user can grant "Display over other apps".
+   */
+  @ReactMethod
+  fun requestOverlayPermission(promise: Promise) {
+    try {
+      val intent = Intent(
+        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+        Uri.parse("package:${reactContext.packageName}"),
+      )
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      reactContext.startActivity(intent)
+      promise.resolve(true)
+    } catch (e: Throwable) {
+      android.util.Log.w("RingingServiceModule", "requestOverlayPermission failed: ${e.message}")
+      promise.resolve(false)
+    }
+  }
+
+  // ── Pending overlay action (SharedPreferences) ────────────────────────────
+
+  /**
+   * Returns (and clears) any pending Accept/Reject action that was stored by
+   * RingingCallService's overlay button handler. Used by NavigationScreen.js to
+   * consume the action on cold start (when the JS bridge wasn't alive to receive
+   * a DeviceEvent).
+   *
+   * Returns a WritableMap {action: string, data: string} or null.
+   */
+  @ReactMethod
+  fun getPendingOverlayAction(promise: Promise) {
+    try {
+      val prefs = reactContext.getSharedPreferences("overlay_actions", Context.MODE_PRIVATE)
+      val action = prefs.getString("pending_action", null)
+      val data = prefs.getString("pending_data", null)
+
+      if (action != null) {
+        prefs.edit().clear().apply()
+        val map = Arguments.createMap()
+        map.putString("action", action)
+        map.putString("data", data ?: "{}")
+        promise.resolve(map)
+      } else {
+        promise.resolve(null)
+      }
+    } catch (e: Throwable) {
+      promise.resolve(null)
     }
   }
 }

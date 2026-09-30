@@ -24,6 +24,7 @@ import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import IncomingRequestCard from '../../components/IncomingRequestCard';
+import { getFreeIntroCallState, setFreeIntroCall } from '../../api/FreeIntroCallApi';
 import showToast from '../../utils/showToast';
 import { supabase } from '../../api/SupabaseClient';
 import io from 'socket.io-client';
@@ -31,6 +32,7 @@ import { SOCKET_URL } from '../../config/api';
 import MissedSessionsHome from '../../components/MissedSessionsHome';
 import HomeBanner from '../../components/HomeBanner';
 import OngoingSessionBar from '../../components/OngoingSessionBar';
+import OverlayPermissionModal from '../../components/OverlayPermissionModal';
 import { isVendorProfileComplete, ensureVendorProfileComplete, fetchAstrologerRow } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
@@ -150,6 +152,73 @@ const HomeScreen = () => {
   // the 75s backend sweep flipped it to missed, with no popup ever shown for it. Now every
   // incoming request is queued and shown one at a time, advancing on accept/reject/dismiss.
   const [popupQueue, setPopupQueue] = useState([]);
+  // Seconds left on the "customer is deciding whether to buy more minutes" reservation.
+  // null when not held. Anchored to a deadline rather than decremented, so a throttled
+  // JS thread cannot leave a dead banner on screen (the timer-drift rule in CLAUDE.md).
+  // The astrologer's own free-introductory-call switch. `null` until the first read;
+  // { available:false } hides the card entirely (pre-migration, or the read failed —
+  // one optional card must not be able to break the dashboard).
+  const [introCall, setIntroCall] = useState(null);
+  const [introSaving, setIntroSaving] = useState(false);
+  const [holdUntil, setHoldUntil] = useState(null);
+  const [holdLeft, setHoldLeft] = useState(0);
+
+  // Read the switch once on mount. Resolves to {available:false} on any failure.
+  useEffect(() => {
+    let dead = false;
+    getFreeIntroCallState().then((st) => { if (!dead) setIntroCall(st); });
+    return () => { dead = true; };
+  }, []);
+
+  const toggleIntroCall = useCallback(async (next) => {
+    if (introSaving || !introCall?.available || introCall.managedByAdmin) return;
+
+    // Turning OFF is the gated direction. Warn BEFORE the request when we can already
+    // see it will be refused, so the switch never flips to a state the server will not
+    // accept — same posture as the availability toggles.
+    if (!next && introCall.canDisable === false) {
+      Alert.alert(
+        t('home.introCallLockedTitle'),
+        t('home.introCallLockedBody', {
+          remaining: introCall.remaining ?? 0,
+          required: introCall.required ?? 0,
+        }),
+      );
+      return;
+    }
+
+    setIntroSaving(true);
+    // Optimistic, then reverted from the server's own answer if it refuses — a switch
+    // that shows a state the backend rejected is worse than one that moves late.
+    setIntroCall((prev) => (prev ? { ...prev, enabled: next } : prev));
+    try {
+      const res = await setFreeIntroCall(next);
+      setIntroCall((prev) => ({ ...(prev || {}), ...res, available: true }));
+      showToast(next ? t('home.introCallOn') : t('home.introCallOff'));
+    } catch (err) {
+      setIntroCall((prev) => ({
+        ...(prev || {}),
+        ...(err.state && err.state.available ? err.state : {}),
+        enabled: !next,
+      }));
+      Alert.alert(t('common.error'), err.message);
+    } finally {
+      setIntroSaving(false);
+    }
+  }, [introCall, introSaving, t]);
+
+  // Recomputed from the deadline each tick, never decremented.
+  useEffect(() => {
+    if (!holdUntil) { setHoldLeft(0); return undefined; }
+    const tick = () => {
+      const left = Math.ceil((holdUntil - Date.now()) / 1000);
+      if (left <= 0) { setHoldUntil(null); setHoldLeft(0); return; }
+      setHoldLeft(left);
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [holdUntil]);
   const popupData = popupQueue[0] || null;
   const popupVisible = popupQueue.length > 0;
   const scrollRef = useRef(null);
@@ -175,22 +244,34 @@ const HomeScreen = () => {
   }, [popupQueue.length, navigation]);
 
   // Ring continuously (re-triggered ringtone + vibration, see incomingRingtone.js) for as long
-  // as there's anything in the queue — covers audio/video calls and chat requests uniformly
-  // since they all funnel into popupQueue, and stops automatically on accept/reject/cancel-
-  // dismiss since those all go through setPopupQueue too. This is the single chokepoint; no
-  // per-call-site wiring needed.
+  // as there's anything in the queue and the app is in the FOREGROUND (active).
+  // When backgrounded / in recent apps, RingingCallService (native foreground service) is the
+  // sole authority for ringing and overlay banner — avoiding double ringing.
   useEffect(() => {
+    const handleAppState = (next) => {
+      if (next === 'active' && popupQueue.length > 0) {
+        stopRingingService().catch(() => {});
+        startRinging();
+      } else if (next !== 'active') {
+        stopRinging();
+      }
+    };
+    const sub = AppState.addEventListener('change', handleAppState);
+
     if (popupQueue.length > 0) {
-      startRinging();
-      // The app is definitely alive and mounted at this point — if a request arrived
-      // while it was backgrounded/killed, the native RingingCallService may still be
-      // ringing. Stop it now so the astrologer doesn't hear the real ringtone playing
-      // twice (once from the service, once from incomingRingtone.js taking over here).
-      stopRingingService().catch(() => {});
+      if (AppState.currentState === 'active') {
+        startRinging();
+        stopRingingService().catch(() => {});
+      }
     } else {
       stopRinging();
+      stopRingingService().catch(() => {});
     }
-    return () => stopRinging();
+
+    return () => {
+      sub.remove();
+      stopRinging();
+    };
   }, [popupQueue.length]);
 
   // Add an incoming request to the queue, de-duped by requestId/roomId (the same request
@@ -330,11 +411,28 @@ const HomeScreen = () => {
           table: 'call_requests',
           roomId: data.roomId,
           sessionId: data.sessionId || null, // pre-generated by backend — same UUID customer has
+          // Free intro call. Decided server-side from call_requests.is_free; the socket
+          // and the Realtime INSERT below race, so BOTH must carry it or the astrologer
+          // sees an ordinary "Incoming Call" for unpaid work depending on who wins.
+          isFree: data.isFree === true,
+          freeMinutes: data.freeMinutes || null,
         });
       });
 
       // Customer cancelled/abandoned the pending call → dismiss the popup if it's the one showing.
       socketRef.current.off('call_cancelled');
+      // The astrologer has just been reserved for ~90s while the customer decides
+      // whether to buy more minutes. Tell them, or they simply stop getting requests
+      // with no explanation and assume the app has broken.
+      socketRef.current.off('astrologer_hold_started');
+      socketRef.current.on('astrologer_hold_started', (data) => {
+        const secs = Math.max(0, Number(data?.seconds) || 0);
+        if (!secs) return;
+        setHoldUntil(Date.now() + secs * 1000);
+      });
+      socketRef.current.off('astrologer_hold_ended');
+      socketRef.current.on('astrologer_hold_ended', () => setHoldUntil(null));
+
       socketRef.current.on('call_cancelled', (data) => {
         console.log('[Vendor] Socket call_cancelled received:', data);
         dismissPopupIfMatches(data);
@@ -386,6 +484,8 @@ const HomeScreen = () => {
             table: 'call_requests',
             roomId: req.room_id,
             sessionId: req.session_id || null, // stored by customer at insert time
+            isFree: req.is_free === true,
+            freeMinutes: req.free_minutes || null,
           });
         }
       )
@@ -443,7 +543,7 @@ const HomeScreen = () => {
       const [{ data: pendingCalls }, { data: pendingChats }] = await Promise.all([
         supabase
           .from('call_requests')
-          .select('id, call_type, customer_name, customer_id, room_token, room_id, session_id')
+          .select('id, call_type, customer_name, customer_id, room_token, room_id, session_id, is_free')
           .eq('astrologer_id', astroId)
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
@@ -467,6 +567,8 @@ const HomeScreen = () => {
           table: 'call_requests',
           roomId: call.room_id,
           sessionId: call.session_id || null,
+          isFree: call.is_free === true,
+          freeMinutes: call.free_minutes || null,
         });
       }
       const chat = pendingChats?.[0];
@@ -697,6 +799,18 @@ const HomeScreen = () => {
           Modal. See IncomingRequestCard for why: as a Modal this could be dismissed by a
           stray tap/back press and then never shown again, so astrologers were losing
           consultations they never even got to decline. */}
+      {holdLeft > 0 && (
+        <View style={styles.holdBanner}>
+          <Ionicons name="time-outline" size={18} color="#8a5a00" />
+          <View style={styles.holdBannerText}>
+            <Text style={styles.holdBannerTitle}>{t('home.holdTitle')}</Text>
+            <Text style={styles.holdBannerBody}>
+              {t('home.holdBody', { seconds: holdLeft })}
+            </Text>
+          </View>
+        </View>
+      )}
+
       <IncomingRequestCard
         data={popupData}
         onAccept={handleAccept}
@@ -771,6 +885,44 @@ const HomeScreen = () => {
           <ServiceToggle value={isOnline} onValueChange={toggleOnlineStatus} />
         </View>
       </View>
+
+      {/* Free introductory calls — the astrologer's own opt-in. Deliberately its OWN
+          card above Service Settings, not a fourth row inside it: the three below are
+          paid services with a per-minute rate, this one is unpaid-by-the-customer work
+          the platform pays a fixed amount for. Filing it with the rates would imply it
+          has one. Hidden entirely when the server says it is unavailable. */}
+      {introCall?.available ? (
+        <View style={styles.cardContainer}>
+          <Text style={styles.sectionTitle}>{t('home.introCallTitle')}</Text>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleLeft}>
+              <Ionicons name="gift-outline" size={22} color={COLORS.AstroMaroon} />
+              <Text style={styles.toggleLabel}>{t('home.introCallLabel')}</Text>
+            </View>
+            <View style={styles.toggleRight}>
+              {introCall.managedByAdmin ? (
+                <View style={styles.introLock}>
+                  <Ionicons name="lock-closed" size={14} color="#8a5a00" />
+                </View>
+              ) : (
+                <ServiceToggle value={!!introCall.enabled} onValueChange={toggleIntroCall} />
+              )}
+            </View>
+          </View>
+          <Text style={styles.introHint}>
+            {introCall.managedByAdmin
+              ? t('home.introCallManaged')
+              : introCall.enabled
+                ? (introCall.canDisable
+                    ? t('home.introCallOnHint')
+                    : t('home.introCallCommitHint', {
+                        remaining: introCall.remaining ?? 0,
+                        required: introCall.required ?? 0,
+                      }))
+                : t('home.introCallOffHint')}
+          </Text>
+        </View>
+      ) : null}
 
       {/* Toggles inside a unified premium card */}
       <View style={styles.cardContainer}>
@@ -850,11 +1002,30 @@ const HomeScreen = () => {
           <Text style={styles.historyBtnText}>{t('home.sessionHistoryBtn')}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Persistent Overlay (SYSTEM_ALERT_WINDOW) Permission Prompt */}
+      <OverlayPermissionModal />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  introHint: {
+    fontSize: moderateScale(11.5), color: '#7a6a5e',
+    marginTop: verticalScale(8), lineHeight: moderateScale(17),
+  },
+  introLock: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFF4D6', borderWidth: 1, borderColor: '#E8C766',
+  },
+  holdBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFF4D6', borderColor: '#E8C766', borderWidth: 1,
+    borderRadius: 14, padding: 12, marginHorizontal: 16, marginBottom: 10,
+  },
+  holdBannerText: { flex: 1, marginLeft: 10 },
+  holdBannerTitle: { fontSize: 14, fontWeight: '800', color: '#7a4e00' },
+  holdBannerBody: { fontSize: 12, color: '#8a5a00', marginTop: 2 },
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   scrollContent: { padding: scale(15), paddingBottom: verticalScale(30) },
   pendingApprovalBanner: {

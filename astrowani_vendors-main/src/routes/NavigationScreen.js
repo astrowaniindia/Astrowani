@@ -9,6 +9,9 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigationRef } from '../utils/navigationRef';
 import { resumeActiveSession } from '../utils/activeSessionResume';
+import { getPendingOverlayAction } from '../utils/ringingForegroundService';
+import { acceptRequest, rejectRequest } from '../utils/incomingRequestActions';
+import { cancelIncomingRequestNotification } from '../utils/incomingRequestNotifications';
 import Registration from '../screens/Registration';
 import Login from '../screens/Login/Login';
 import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
@@ -110,6 +113,53 @@ function NavigationScreen() {
     }
   };
 
+  // ── Overlay Accept/Reject (killed-app path) ─────────────────────────────
+  //
+  // When the astrologer taps Accept/Reject on the persistent overlay banner while the
+  // app is fully killed, RingingCallService writes the action to SharedPreferences
+  // because the JS bridge isn't alive to receive a DeviceEvent. This function reads
+  // that pending action on cold start (onReady / AppState 'active') and processes it
+  // — calling the backend, navigating to the call screen, and cleaning up.
+  const consumePendingOverlayAction = async () => {
+    try {
+      const pending = await getPendingOverlayAction();
+      if (!pending) return false;
+
+      const { action, data: dataJson } = pending;
+      const req = JSON.parse(dataJson);
+
+      if (action === 'reject') {
+        await rejectRequest(req);
+      } else if (action === 'accept') {
+        const result = await acceptRequest(req);
+        if (result?.ok) {
+          const screen =
+            req.callType === 'video' ? 'VideoCall'
+            : req.callType === 'chat' ? 'VendorChatSession'
+            : 'AudioCall';
+          if (navigationRef.current?.isReady()) {
+            navigationRef.current.navigate(screen, result.navigationParams);
+          } else {
+            await AsyncStorage.setItem(
+              'pendingCallNavigation',
+              JSON.stringify({ screen, params: result.navigationParams }),
+            );
+          }
+        }
+      }
+
+      // Clean up the Notifee notification (ringing + overlay were already stopped by
+      // the native button handler).
+      const notificationId = `incoming_${req.roomId || req.callerId}`;
+      await cancelIncomingRequestNotification(notificationId);
+
+      return true;
+    } catch (e) {
+      console.warn('[consumePendingOverlayAction] error:', e?.message || e);
+      return false;
+    }
+  };
+
   // Coming back to the app (from another app, or from the "chat in progress" notification)
   // → if a chat/live is still running, go straight into it. Delayed slightly so a pending
   // Accept navigation (above) gets there first; the check skips when the astrologer is
@@ -117,6 +167,7 @@ function NavigationScreen() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
+        consumePendingOverlayAction();
         consumePendingCallNavigationWithRetry();
         setTimeout(() => resumeActiveSession(), 800);
       }
@@ -154,6 +205,7 @@ function NavigationScreen() {
     <NavigationContainer
       ref={navigationRef}
       onReady={() => {
+        consumePendingOverlayAction();
         consumePendingCallNavigationWithRetry();
         // Cold start (app was killed, or opened from the ongoing notification): if a chat or
         // live is still running, land in it instead of on Home.

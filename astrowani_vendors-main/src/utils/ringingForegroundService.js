@@ -14,6 +14,12 @@
 // plays it NATIVELY, independent of whether the JS engine itself stays up after a
 // background push handler returns.
 //
+// OVERLAY (added 2026-09-30): the service now also shows a persistent floating banner
+// (SYSTEM_ALERT_WINDOW) with Accept/Reject buttons at the top of the screen. The
+// standard heads-up notification auto-dismisses after ~5s; the overlay stays visible
+// until the astrologer acts or the caller gives up. Requires "Display over other apps"
+// permission — degrades to notification-only if not granted.
+//
 // Called from Firebase.js's onMessage/setBackgroundMessageHandler for EVERY incoming
 // request notification — not just the killed-app case — so foreground and background
 // behave identically and there is exactly one code path to reason about. It is separate
@@ -29,10 +35,10 @@ const { RingingCallService } = NativeModules;
 
 const available = Platform.OS === 'android' && !!RingingCallService;
 
-export async function startRingingService(title, body) {
+export async function startRingingService(title, body, requestDataJson) {
   if (!available) return false;
   try {
-    return await RingingCallService.start(title || null, body || null);
+    return await RingingCallService.start(title || null, body || null, requestDataJson || null);
   } catch (_) {
     return false;
   }
@@ -44,6 +50,50 @@ export async function stopRingingService() {
     return await RingingCallService.stop();
   } catch (_) {
     return false;
+  }
+}
+
+// ── Overlay permission helpers ────────────────────────────────────────────
+
+/**
+ * Returns true if the app has permission to draw over other apps
+ * (SYSTEM_ALERT_WINDOW). On iOS or if the module is unavailable, returns false.
+ */
+export async function checkOverlayPermission() {
+  if (!available) return false;
+  try {
+    return await RingingCallService.checkOverlayPermission();
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Opens the system Settings screen where the user can grant "Display over other apps".
+ * Safe no-op on iOS.
+ */
+export async function requestOverlayPermission() {
+  if (!available) return false;
+  try {
+    return await RingingCallService.requestOverlayPermission();
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Returns (and clears) any pending Accept/Reject action that was stored by
+ * the overlay's button handler in SharedPreferences. Used on cold start when
+ * the JS bridge wasn't alive to receive a DeviceEvent.
+ *
+ * Returns { action: 'accept'|'reject', data: string (JSON) } or null.
+ */
+export async function getPendingOverlayAction() {
+  if (!available) return null;
+  try {
+    return await RingingCallService.getPendingOverlayAction();
+  } catch (_) {
+    return null;
   }
 }
 

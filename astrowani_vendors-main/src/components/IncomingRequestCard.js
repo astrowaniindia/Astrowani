@@ -66,12 +66,20 @@ const IncomingRequestCard = ({ data, onAccept, onCancel, queueCount = 0 }) => {
       </Text>
       <Text style={styles.message}>{t('popup.requesting')}</Text>
 
-      {/* NOTE: the free-intro-call tag ("Free intro call · N min") that the old popup
-          carried is deliberately NOT here. It belongs to the free-intro-call feature,
-          which is not shipped yet, and its i18n keys ship with it. Add it back as part
-          of that feature — labelling a free call plainly matters, because dressing it up
-          as an ordinary paid call raises pick-up exactly once and then the astrologer
-          finds out from their earnings. */}
+      {/* Labelling a free call plainly matters: dressing one up as an ordinary paid call
+          raises pick-up exactly once, and then the astrologer finds out from their
+          earnings. `isFree` is set server-side from call_requests.is_free and arrives on
+          both the socket payload and the Realtime row — never inferred here. */}
+      {data.isFree && (
+        <View style={styles.freeTag}>
+          <Ionicons name="gift-outline" size={13} color="#1E7A3C" />
+          <Text style={styles.freeTagText}>
+            {data.freeMinutes
+              ? t('popup.freeIntroCallMins', { n: data.freeMinutes })
+              : t('popup.freeIntroCall')}
+          </Text>
+        </View>
+      )}
 
       {queueCount > 0 && (
         <Text style={styles.queueNote}>
@@ -151,6 +159,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#bbb',
     marginBottom: 16,
+  },
+  freeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 5,
+    backgroundColor: '#DFF5E4',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    marginTop: -4,
+    marginBottom: 12,
+  },
+  freeTagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E7A3C',
   },
   queueNote: {
     fontSize: 13,

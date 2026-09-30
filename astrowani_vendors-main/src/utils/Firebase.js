@@ -128,9 +128,24 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
     // Android can reclaim this process moments after this handler returns, which would
     // silently cut a JS-driven ringtone along with it. Fire-and-forget: never block
     // showing the notification above on this.
+    //
+    // requestDataJson carries the full request payload so the persistent overlay banner
+    // can pass it back to JS when the astrologer taps Accept/Reject on the overlay.
+    const callType = data.type === 'incoming_video_call' ? 'video'
+                   : data.type === 'incoming_call' ? 'audio' : 'chat';
+    const requestDataJson = JSON.stringify({
+      table: data.type === 'chat_request' ? 'chat_requests' : 'call_requests',
+      callType,
+      callerId: data.callerId || '',
+      callerName: data.callerName || '',
+      roomId: data.roomId || '',
+      sessionId: data.sessionId || '',
+      token: data.token || '',
+    });
     startRingingService(
       titleFor(data.type),
       data.callerName ? `From ${data.callerName}` : undefined,
+      requestDataJson,
     ).catch(() => {});
   } else if (data.type === CANCEL_REQUEST_TYPE) {
     await cancelIncomingRequestForKey(data);
