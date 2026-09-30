@@ -93,6 +93,17 @@ const translations = {
     'popup.requesting': 'is requesting a consultation...',
     'popup.moreWaiting': 'more waiting',
     'popup.decline': 'Decline',
+    // Free-intro-call tag on the incoming request card. `isFree`/`freeMinutes` come from
+    // the server (call_requests.is_free), never inferred on the device.
+    'popup.freeIntroCall': 'Free intro call',
+    'popup.freeIntroCallMins': 'Free {{n}}-min intro call',
+
+    // Floating "you are still in a session" bar (OngoingSessionBar).
+    'ongoingBar.chat': 'Chat with {{name}}',
+    'ongoingBar.audioCall': 'Audio call with {{name}}',
+    'ongoingBar.videoCall': 'Video call with {{name}}',
+    'ongoingBar.live': "You're live",
+    'ongoingBar.tapToReturn': 'Tap to return',
 
     'sessionHistory.chat': 'Chat',
     'sessionHistory.audioCall': 'Audio Call',
@@ -551,6 +562,24 @@ const translations = {
     'home.nowLive': "You are now live!",
     'home.nowNotLive': "You are offline",
     'home.availabilityFailed': "Couldn't update your status. Please check your connection and try again.",
+
+    // The astrologer's own free-introductory-call switch (HomeScreen). Switching ON is
+    // always allowed; switching OFF needs a minimum number of completed free calls and is
+    // enforced server-side — these strings only report what the server already decided.
+    'home.introCallTitle': 'Free Introductory Calls',
+    'home.introCallLabel': 'Take free intro calls',
+    'home.introCallOn': 'Free introductory calls turned on',
+    'home.introCallOff': 'Free introductory calls turned off',
+    'home.introCallManaged': 'Astrowani manages this setting for your account.',
+    'home.introCallOnHint': 'New customers can book a free introductory call with you. Astrowani pays you a fixed amount for each completed call.',
+    'home.introCallCommitHint': 'Keep this on until you have completed {{required}} introductory calls — {{remaining}} to go.',
+    'home.introCallOffHint': 'Turn this on to receive free introductory calls from new customers.',
+    'home.introCallLockedTitle': 'A few more calls first',
+    'home.introCallLockedBody': 'You need to complete {{required}} free introductory calls before you can turn this off. {{remaining}} to go.',
+    // Shown while a customer is deciding whether to buy more minutes and the astrologer is
+    // held for them. Counted down from a deadline, so the seconds are passed in.
+    'home.holdTitle': "You're reserved for a moment",
+    'home.holdBody': 'A customer is deciding whether to continue with you. Please stay available — {{seconds}}s left.',
     'editProfile.updatedToast': "Profile updated successfully!",
     'editProfile.updatedTitle': "Profile Updated",
     'editProfile.chargesLockedBody': "Your other details were saved, but your chat/call/video charges are locked and can only be changed by the admin team now — contact them if you need a change.",
@@ -631,6 +660,14 @@ const translations = {
     'popup.requesting': 'परामर्श का अनुरोध कर रहे हैं...',
     'popup.moreWaiting': 'और प्रतीक्षारत',
     'popup.decline': 'अस्वीकार करें',
+    'popup.freeIntroCall': 'निःशुल्क परिचय कॉल',
+    'popup.freeIntroCallMins': '{{n}} मिनट की निःशुल्क परिचय कॉल',
+
+    'ongoingBar.chat': '{{name}} के साथ चैट',
+    'ongoingBar.audioCall': '{{name}} के साथ ऑडियो कॉल',
+    'ongoingBar.videoCall': '{{name}} के साथ वीडियो कॉल',
+    'ongoingBar.live': 'आप लाइव हैं',
+    'ongoingBar.tapToReturn': 'वापस जाने के लिए टैप करें',
 
     'sessionHistory.chat': 'चैट',
     'sessionHistory.audioCall': 'ऑडियो कॉल',
@@ -1069,6 +1106,19 @@ const translations = {
     'home.nowLive': "अब आप लाइव हैं!",
     'home.nowNotLive': "आप ऑफ़लाइन हैं",
     'home.availabilityFailed': "आपकी स्थिति अपडेट नहीं हो सकी। कृपया अपना कनेक्शन जांचें और फिर से कोशिश करें।",
+
+    'home.introCallTitle': 'निःशुल्क परिचय कॉल',
+    'home.introCallLabel': 'निःशुल्क परिचय कॉल लें',
+    'home.introCallOn': 'निःशुल्क परिचय कॉल चालू कर दी गई हैं',
+    'home.introCallOff': 'निःशुल्क परिचय कॉल बंद कर दी गई हैं',
+    'home.introCallManaged': 'आपके खाते के लिए यह सेटिंग Astrowani द्वारा प्रबंधित की जाती है।',
+    'home.introCallOnHint': 'नए ग्राहक आपके साथ निःशुल्क परिचय कॉल बुक कर सकते हैं। हर पूरी हुई कॉल के लिए Astrowani आपको एक निश्चित राशि देता है।',
+    'home.introCallCommitHint': 'इसे तब तक चालू रखें जब तक आप {{required}} परिचय कॉल पूरी न कर लें — {{remaining}} और बाकी हैं।',
+    'home.introCallOffHint': 'नए ग्राहकों से निःशुल्क परिचय कॉल पाने के लिए इसे चालू करें।',
+    'home.introCallLockedTitle': 'पहले कुछ और कॉल',
+    'home.introCallLockedBody': 'इसे बंद करने से पहले आपको {{required}} निःशुल्क परिचय कॉल पूरी करनी होंगी। {{remaining}} और बाकी हैं।',
+    'home.holdTitle': 'आपको कुछ देर के लिए आरक्षित रखा गया है',
+    'home.holdBody': 'एक ग्राहक आपके साथ आगे जारी रखने का निर्णय ले रहा है। कृपया उपलब्ध रहें — {{seconds}} सेकंड बाकी।',
     'editProfile.updatedToast': "प्रोफ़ाइल सफलतापूर्वक अपडेट हो गई!",
     'editProfile.updatedTitle': "प्रोफ़ाइल अपडेट हो गई",
     'editProfile.chargesLockedBody': "आपके अन्य विवरण सहेज लिए गए, लेकिन आपके चैट/कॉल/वीडियो शुल्क लॉक हैं और अब केवल एडमिन टीम ही इन्हें बदल सकती है — बदलाव चाहिए तो उनसे संपर्क करें।",

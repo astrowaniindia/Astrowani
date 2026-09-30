@@ -301,6 +301,22 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       return;
     }
 
+    // LEAVE THE CALL SCREEN. This is not optional and it must come before the review
+    // prompt, which only floats on top of whatever is underneath it.
+    //
+    // This block was lost when the free-call branch above was added: every free-call path
+    // navigates for itself (goHome / replace), the paid path's navigation was deleted with
+    // them, and the comment describing it survived without the code. The result was a call
+    // that ended correctly in every other respect — timer stopped, WebRTC torn down,
+    // /api/call/end posted, rating popup raised — on a call screen that then stayed on
+    // screen forever with no way back. It happened whoever hung up, because both
+    // directions funnel through this one function.
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('DrawerNavigator');
+    }
+
     // Prompt for a review only if the session actually connected.
     if (recieverId && callDurationRef.current > 0) {
       showReviewPrompt({ astrologerId: recieverId, name: recieverName, image: recieverImage });

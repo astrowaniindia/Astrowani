@@ -339,9 +339,44 @@ const useChatRequest = (navigation) => {
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
     if (pollerRef.current) { pollerRef.current.stop(); pollerRef.current = null; }
     if (socketRef.current) { try { socketRef.current.disconnect(); } catch (_) {} socketRef.current = null; }
+
+    // Cancelling is a RACE against the astrologer accepting, and the server decides it:
+    // /api/requests/chat/:id/status only moves a row that is still 'pending', so `changed`
+    // is false when the accept got there first. This used to be ignored — we walked away
+    // regardless — which left the astrologer alone in a real, live, metered session while
+    // the customer was back on the profile screen. Observed 2026-09-30.
+    //
+    // Losing the race is not an error: it means the consultation the customer asked for is
+    // ready. Join it rather than abandoning it. (The backend's atomic claim guarantees the
+    // two outcomes are mutually exclusive, so this can never double-fire with a cancel.)
     if (pendingRequestId) {
-      await markRequestStatus('chat', pendingRequestId, 'cancelled');
+      const cancelled = await markRequestStatus('chat', pendingRequestId, 'cancelled');
+      if (!cancelled) {
+        let sessionId = null;
+        try {
+          const token = await AsyncStorage.getItem('token');
+          const res = await Instance.get(`/api/requests/chat/${pendingRequestId}/status`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res?.data?.status === 'accepted') sessionId = res.data.sessionId || null;
+        } catch (_) {
+          // Can't tell. Fall through to the normal cancel teardown below — the astrologer's
+          // side is covered either way by the presence guard, which ends a session nobody
+          // joins. Stranding the customer in a chat we are not sure exists is worse.
+        }
+        if (sessionId) {
+          const astro = astroRef.current;
+          const requestId = pendingRequestId;
+          setRequesting(false);
+          setPendingRequestId(null);
+          setRequestAstro(null);
+          if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
+          navigation.navigate('ChatSessionScreen', { requestId, person: astro, sessionId });
+          return;
+        }
+      }
     }
+
     notifyVendorRequestCancelled();
     setRequesting(false);
     setPendingRequestId(null);

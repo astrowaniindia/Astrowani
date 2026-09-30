@@ -414,7 +414,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
   // ─── Initialise ───────────────────────────────────────────────────────────
   useEffect(() => {
-    let pollCount = 0;
 
     const init = async () => {
       // Get my user ID
@@ -448,24 +447,92 @@ const ChatSessionScreen = ({ route, navigation }) => {
         refetchMessages();
       });
 
-      // Poll until session is created by vendor
+      // ─── Find the session the astrologer's accept created ────────────────────
+      //
+      // WHY THIS IS NO LONGER A BARE SUPABASE READ (bug fixed 2026-09-30). This poll used
+      // one direct Supabase select, guarded by an `isFetching` latch released only in
+      // `finally`, with the give-up check sitting AFTER the await inside the same `try`.
+      // Both halves of that could wedge, and the symptom was identical either way: the
+      // customer stuck on "Waiting for astrologer to accept…" forever, no error, no way
+      // out, while the astrologer was already chatting in the session.
+      //
+      //   * A request that never settled — a slow or half-open connection, precisely what
+      //     this screen has to survive — left the latch true for good. Every later tick
+      //     returned at the top, so the tick counter stopped advancing and the give-up
+      //     check was never reached again.
+      //   * A thrown error got there by the other route: the throw jumped straight past the
+      //     give-up check to `finally`, so the deadline was never evaluated on any failing
+      //     tick, however many of them there were.
+      //
+      // Three things make that unreachable now:
+      //   * every attempt carries its own timeout, so the latch is always released;
+      //   * the deadline is wall-clock and evaluated in `finally`, so it is honoured no
+      //     matter how the attempt finished — resolved, threw, or timed out;
+      //   * the backend is asked alongside Supabase. It answers from the service role and
+      //     resolves the chat request's session itself, so it still works when the direct
+      //     table read is slow, failing, or (per hardening_13's plan) eventually revoked.
+      const ATTEMPT_TIMEOUT_MS = 4000;
+      const CONNECT_DEADLINE_MS = 45000;
+      const waitStartedAt = Date.now();
+      // Separates "nobody picked up" from "they did, and we could not reach the session" —
+      // two different messages, because only one of them is the customer's to retry.
+      let sawAccepted = false;
+
+      const withTimeout = (work, ms) =>
+        Promise.race([
+          Promise.resolve(work),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('attempt timed out')), ms)),
+        ]);
+
+      // Resolved by request_id, or straight by id when the waiting popup already learned it
+      // (the accept response / socket / poll all carry the session id now).
+      const findSessionViaSupabase = async () => {
+        let query = supabase.from('chat_sessions').select('*');
+        query = initialSessionId
+          ? query.or(`id.eq.${initialSessionId},request_id.eq.${requestId}`)
+          : query.eq('request_id', requestId);
+        const { data, error } = await query.limit(1).maybeSingle();
+        if (error) throw error;
+        return data || null;
+      };
+
+      // Only `id` is load-bearing downstream (the socket room, /api/chat/message,
+      // sendCustomerDetails); `started_at` just anchors the timer and falls back to now.
+      // So the id alone is enough to start the chat — we do not need the whole row.
+      const findSessionViaBackend = async () => {
+        if (!requestId) return null;
+        const token = await AsyncStorage.getItem('token');
+        if (!token) return null;
+        const res = await Instance.get(`/api/requests/chat/${requestId}/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res?.data?.status === 'accepted') sawAccepted = true;
+        const sid = res?.data?.sessionId;
+        return sid ? { id: sid, request_id: requestId, started_at: null } : null;
+      };
+
+      // Both sources, every tick, first answer wins. allSettled rather than any/race so one
+      // source being broken is simply ignored instead of rejecting the pair.
+      const findSession = async () => {
+        const results = await Promise.allSettled([
+          withTimeout(findSessionViaSupabase(), ATTEMPT_TIMEOUT_MS),
+          withTimeout(findSessionViaBackend(), ATTEMPT_TIMEOUT_MS),
+        ]);
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value) return r.value;
+        }
+        return null;
+      };
+
       let isFetching = false;
       pollRef.current = setInterval(async () => {
         if (isFetching || sessionRef.current || hasEndedRef.current) return;
         isFetching = true;
-        pollCount++;
         
         try {
-          // Resolved by request_id, or straight by id when the waiting popup already
-          // learned it (the accept response / socket / poll now all carry the session id,
-          // so the chat screen no longer has to discover it for itself).
-          let query = supabase.from('chat_sessions').select('*');
-          query = initialSessionId
-            ? query.or(`id.eq.${initialSessionId},request_id.eq.${requestId}`)
-            : query.eq('request_id', requestId);
-          const { data, error } = await query.limit(1).maybeSingle();
+          const data = await findSession();
 
-          if (data && !error && !sessionRef.current) {
+          if (data && !sessionRef.current) {
             clearInterval(pollRef.current);
             setSession(data);
             sessionRef.current = data;
@@ -565,12 +632,25 @@ const ChatSessionScreen = ({ route, navigation }) => {
             }
           }
 
-          if (pollCount > 30 && !sessionRef.current) {
-            clearInterval(pollRef.current);
-            endSession(t('chat.notPickedUp'));
-          }
+        } catch (e) {
+          // Never fatal on its own — the next tick tries again, and the deadline below is
+          // what actually decides to give up. Swallowing this quietly is the whole reason
+          // the deadline is in `finally`: an attempt that throws must still count.
+          console.log('[ChatSession] session lookup attempt failed:', e?.message);
         } finally {
           isFetching = false;
+
+          // Wall clock, not a tick count: ticks are skipped whenever an attempt is still
+          // in flight, so counting them understates how long the customer has actually
+          // been staring at "Waiting for astrologer to accept…".
+          if (!sessionRef.current && !hasEndedRef.current && Date.now() - waitStartedAt > CONNECT_DEADLINE_MS) {
+            clearInterval(pollRef.current);
+            // If the astrologer never accepted, that is the honest message. If they DID
+            // accept and we still could not reach the session, say so instead of blaming
+            // them for not picking up — and either way leave the screen rather than
+            // sitting on it silently.
+            endSession(sawAccepted ? t('chatSession.couldNotConnect') : t('chat.notPickedUp'));
+          }
         }
       }, 1000);
 

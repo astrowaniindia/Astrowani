@@ -4703,15 +4703,73 @@ app.post('/api/session/accept', async (req, res) => {
     if (!ownedRow) {
       return res.status(200).json({ ok: false, reason: 'not_found' });
     }
-    if (ownedRow.status !== 'pending') {
-      return res.status(200).json({ ok: false, reason: 'cancelled' });
-    }
+    // NOTE: there is deliberately no `status !== 'pending'` rejection here any more. It was
+    // a read-based decision that the atomic claim below now makes properly, and on its own
+    // it was actively wrong for a repeat tap: an astrologer who tapped Accept twice was told
+    // `reason: 'cancelled'`, i.e. that the caller had hung up, while they were in fact
+    // already in the session. That reads as "leave", which is the opposite of what should
+    // happen. One decision point, made by a conditional write, tells the two cases apart.
     const resolvedRequestId = ownedRow.id;
     // Real caller, taken from the owned request row itself — never from the client-supplied
     // reqBody.callerId (see resolveOwnedRequestRow's comment on why that field can't be trusted).
     const realCallerId = ownedRow.callerId;
     if (!realCallerId) {
       return res.status(200).json({ ok: false, reason: 'not_found' });
+    }
+
+    // ── CLAIM THE REQUEST BEFORE CREATING ANYTHING ────────────────────────────
+    //
+    // The `status !== 'pending'` check above is a fast reject, NOT the decision — it is a
+    // read, and the customer's cancel can land in the gap between it and the write. That
+    // gap used to be enormous: the session row was inserted first and the request was only
+    // marked 'accepted' afterwards, by an UPDATE with no status condition at all, which
+    // happily overwrote a row the customer had already cancelled.
+    //
+    // Observed 2026-09-30: customer taps chat, cancels immediately, astrologer's accept
+    // lands inside the gap. The cancel succeeded (its own claim is atomic), the customer
+    // tore down its listeners and left — and then this handler resurrected the row to
+    // 'accepted' and created a live session. The astrologer sat in a chat with a running
+    // meter and nobody on the other end.
+    //
+    // This UPDATE ... WHERE status = 'pending' is the decision. Exactly one of {accept,
+    // cancel} can win it, and the loser is told so. Nothing is created unless we won.
+    let claimedNow = true;
+    if (resolvedRequestId) {
+      const { data: claimedRows, error: claimErr } = await supabaseService
+        .from(targetTable)
+        .update({ status: 'accepted', responded_at: new Date().toISOString() })
+        .eq('id', resolvedRequestId)
+        .eq('status', 'pending')
+        .select('id');
+      if (claimErr) throw claimErr;
+      claimedNow = !!(claimedRows && claimedRows.length);
+
+      if (!claimedNow) {
+        // We did not move it. Either the customer cancelled, or this astrologer already
+        // accepted and tapped again — and those must not be reported the same way. Telling
+        // an astrologer "the caller cancelled" when they are in fact already in the session
+        // is how a live consultation gets abandoned.
+        const { data: nowRow } = await supabaseService
+          .from(targetTable)
+          .select('status')
+          .eq('id', resolvedRequestId)
+          .maybeSingle();
+        if (nowRow?.status !== 'accepted') {
+          return res.status(200).json({ ok: false, reason: 'cancelled' });
+        }
+        // Already accepted: hand back the session that exists rather than making a second
+        // one. Feeding it through reqBody.sessionId lets the insert below take its usual
+        // idempotent path, so this returns the identical success shape as a first accept.
+        const sessionCol = targetTable === 'chat_requests' ? 'request_id' : 'call_request_id';
+        const { data: existingForRequest } = await supabaseService
+          .from('chat_sessions')
+          .select('id')
+          .eq(sessionCol, resolvedRequestId)
+          .maybeSingle();
+        if (existingForRequest?.id) {
+          reqBody.sessionId = existingForRequest.id;
+        }
+      }
     }
 
     const { data: astroData } = await supabaseService
@@ -4777,21 +4835,20 @@ app.post('/api/session/accept', async (req, res) => {
       sessionId = sessionData?.id;
     }
 
-    if (resolvedRequestId) {
-      const fullPayload = { status: 'accepted', responded_at: new Date().toISOString() };
-      if (targetTable === 'call_requests' && sessionId) {
-        fullPayload.session_id = sessionId;
-      }
-      const { error: updateErr } = await supabaseService
-        .from(targetTable)
-        .update(fullPayload)
+    // `status` and `responded_at` were already written by the atomic claim above, and are
+    // deliberately NOT written again here: an unconditional re-write is exactly what used
+    // to resurrect a request the customer had cancelled in the meantime. All that is left
+    // is to point a call_requests row at the session, which could not be known until now.
+    if (resolvedRequestId && targetTable === 'call_requests' && sessionId) {
+      const { error: linkErr } = await supabaseService
+        .from('call_requests')
+        .update({ session_id: sessionId })
         .eq('id', resolvedRequestId);
-
-      if (updateErr) {
-        await supabaseService
-          .from(targetTable)
-          .update({ status: 'accepted' })
-          .eq('id', resolvedRequestId);
+      if (linkErr) {
+        // Not fatal, and normally not even load-bearing: /api/call/initiate already wrote
+        // this column when it created the row, using the same pre-generated session id both
+        // sides are listening on. This write only matters if that one was missing.
+        console.warn('[session/accept] could not link call_request to session:', linkErr.message);
       }
     }
 
