@@ -228,6 +228,21 @@ function handleNotificationTap(remoteMessage) {
   } else if (type === 'free_call_invite') {
     // Admin invite to the free 12-minute call: open the booking on Home.
     openFreeCallFromInvite();
+  } else if (type === 'astrologer_free') {
+    // "They're free now!" from the notify-me waitlist (src/waitlist.js). This push has
+    // existed since the waitlist was built but nothing handled the tap, so it opened
+    // the app's home screen and the customer had to go and find the astrologer
+    // themselves — which is most of the value of the notification gone. Land them on
+    // the profile, where every action button is.
+    const astrologerId = remoteMessage?.data?.astrologerId;
+    if (astrologerId) {
+      // AstrologerInfo needs a `person`; the push carries only an id, so give it the
+      // minimum it can render and let the screen fetch the rest. No autoAction — being
+      // told someone is free is not consent to start a paid call.
+      navigate('AstrologerInfo', { person: { userId: astrologerId, _id: astrologerId } });
+    } else {
+      navigate('NotificationScreen');
+    }
   } else if (type === 'voice_note') {
     navigate('VoiceNotes');
   } else if (type === 'report_delivered' || type === 'order_update') {

@@ -43,6 +43,11 @@ import { ReferralPromptHost } from '../components/ReferralPromptHost';
 import { FreeCallIncomingHost } from '../components/FreeCallIncoming';
 import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
 import { RateAppPromptHost } from '../components/RateAppPrompt';
+import { FreeCallContinueHost } from '../components/FreeCallContinue';
+import { RateAstrowaniPromptHost } from '../components/RateAstrowaniPrompt';
+import { DakshinaPromptHost } from '../components/DakshinaPrompt';
+import { CallFeedbackPromptHost } from '../components/CallFeedbackPrompt';
+import InstantAstrologers from '../screens/FreeCall/InstantAstrologers';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Wallet from '../screens/Home/Wallet/Wallet';
@@ -708,6 +713,11 @@ export default function Navigation({ initialRoute }) {
             headerTintColor: '#fff',
           }}
         />
+        {/* Free INSTANT call: pick an astrologer who is free right now. Registered in
+            the ROOT stack (not under the Remedies/Home tabs) so navigate('InstantAstrologers')
+            resolves from the Home popup, the gift bubble, a push and the low-balance
+            prompt alike. */}
+        <Stack.Screen name="InstantAstrologers" component={InstantAstrologers} options={{ headerShown: false }} />
         <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="VideoCallScreen" component={VideoCallScreen} options={{ headerShown: false }} />
         <Stack.Screen
@@ -735,6 +745,14 @@ export default function Navigation({ initialRoute }) {
         call in this app that travels in that direction — so the "someone is calling
         you" screen has to live at the root, not on any one screen. */}
     <FreeCallIncomingHost />
+    {/* The free call's "5 / 10 / 15 more minutes" offer, and the "how was Astrowani?"
+        stars it raises once it closes. At the root because the call screen has already
+        unmounted by the time either is shown. They are strictly sequential: two root
+        modals at once freeze iOS (utils/modalPresentation). */}
+    <FreeCallContinueHost />
+    <RateAstrowaniPromptHost />
+      <CallFeedbackPromptHost />
+      <DakshinaPromptHost />
     {/* Store-facing prompts. Both run their own launch check and stay silent unless
         the admin has configured them; the update prompt suppresses the review one so
         they can never stack. */}

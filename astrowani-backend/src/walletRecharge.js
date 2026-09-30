@@ -20,6 +20,7 @@
 // with no money, and no retry could ever complete it.
 const { createClient } = require('@supabase/supabase-js');
 const wallet = require('./wallet');
+const razorpay = require('./razorpay');
 
 const db = createClient(
   process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co',
@@ -28,6 +29,61 @@ const db = createClient(
 
 const creditKey = (paymentId) => `razorpay:${paymentId}`;
 const creditNote = (paymentId) => `Wallet recharge via Razorpay (payment ${paymentId})`;
+
+const MIN_RECHARGE_RUPEES = 1;
+const MAX_RECHARGE_RUPEES = 100000;
+
+/**
+ * Start a Razorpay order that tops up a customer's wallet.
+ *
+ * Extracted from POST /api/wallet/create-order (2026-09-27) so the free call's
+ * "buy N more minutes" button can open the gateway through the SAME path. That
+ * matters for one specific reason: completeRecharge + razorpayWebhookRoutes already
+ * recover a payment whose app died before verify-payment landed. A bespoke order type
+ * would have needed its own recovery probe, and "paid but the app crashed" is exactly
+ * the case nobody tests.
+ *
+ * The Razorpay order is created BEFORE the row is written, so a gateway failure leaves
+ * nothing behind — same ordering as orderRoutes' checkout.
+ *
+ * @param {string} customerId
+ * @param {number} amountRupees
+ * @param {string} [receiptPrefix] 'wr' for an ordinary recharge, 'fcc' for a free-call
+ *                                 continuation. Cosmetic: it only shows in Razorpay's
+ *                                 dashboard, but it is what lets you tell the two apart
+ *                                 there when reconciling.
+ * @returns {Promise<{ok:boolean, orderId?:string, amount?:number, currency?:string,
+ *                     keyId?:string, status?:number, code?:string, message?:string}>}
+ *          Never throws for an expected refusal; the caller maps `status` straight to HTTP.
+ */
+async function createRechargeOrder(customerId, amountRupees, receiptPrefix = 'wr') {
+  if (!razorpay.isConfigured()) {
+    return { ok: false, status: 503, code: 'PAYMENTS_UNAVAILABLE', message: 'Payments are temporarily unavailable' };
+  }
+  const amount = Number(amountRupees);
+  if (!Number.isFinite(amount) || amount < MIN_RECHARGE_RUPEES || amount > MAX_RECHARGE_RUPEES) {
+    return {
+      ok: false, status: 400, code: 'BAD_AMOUNT',
+      message: `Amount must be between ₹${MIN_RECHARGE_RUPEES} and ₹${MAX_RECHARGE_RUPEES}`,
+    };
+  }
+  const order = await razorpay.createOrder(amount, `${receiptPrefix}_${Date.now()}`);
+  const { error } = await db.from('wallet_recharges').insert([{
+    customer_id: customerId,
+    amount,
+    razorpay_order_id: order.id,
+    status: 'created',
+  }]);
+  if (error) throw error;
+
+  return {
+    ok: true,
+    orderId: order.id,
+    amount,
+    currency: order.currency,
+    keyId: razorpay.RAZORPAY_KEY_ID,
+  };
+}
 
 /**
  * @param {object}  p
@@ -93,4 +149,9 @@ async function completeRecharge({ razorpayOrderId, razorpayPaymentId, customerId
   return { matched: true, payable: false, customerId: now?.customer_id };
 }
 
-module.exports = { completeRecharge };
+module.exports = {
+  completeRecharge,
+  createRechargeOrder,
+  MIN_RECHARGE_RUPEES,
+  MAX_RECHARGE_RUPEES,
+};

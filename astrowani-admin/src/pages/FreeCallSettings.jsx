@@ -27,11 +27,41 @@ const OFFER_DEFAULTS = {
   bodyText: '',
   ctaText: '',
   successText: '',
+
+  // ── Instant mode ──────────────────────────────────────────────────────────
+  // 'scheduled' is the slot-booking flow every field above configures.
+  // 'instant'   lets the customer ring whoever is free right now.
+  // 'off'       shows nothing, without deleting either configuration.
+  mode: 'scheduled',
+  instantPoolAstrologerIds: [],
+  // Marks reached, not minutes elapsed — see the card in the form for why.
+  payoutMilestones: [{ minutes: 3, amount: 5 }, { minutes: 9, amount: 5 }],
+  minFreeCallsBeforeOptOut: 10,
+  holdDecisionSeconds: 90,
+  holdPaymentSeconds: 180,
+  ringTimeoutSeconds: 60,
+  continueOptions: [5, 10, 15],
+  maxRingAttempts: 10,
+  instantHeaderText: '',
+  instantBodyText: '',
 };
 
 const num = (v, fallback) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
+};
+
+/** "₹5 at 3 min, then ₹10 total at 9 min" — so the admin reads the cumulative figure. */
+const milestoneSummary = (list) => {
+  const steps = [...(list || [])]
+    .filter((m) => Number(m?.minutes) > 0 && Number(m?.amount) > 0)
+    .sort((a, b) => a.minutes - b.minutes);
+  if (!steps.length) return 'nothing is paid.';
+  let running = 0;
+  return `${steps.map((m) => {
+    running += Number(m.amount);
+    return `₹${running} once the call reaches ${m.minutes} min`;
+  }).join(', then ')}.`;
 };
 
 export default function FreeCallSettings() {
@@ -149,6 +179,31 @@ export default function FreeCallSettings() {
     () => (offer.poolAstrologerIds || []).filter((id) => astrologers.some((a) => a.id === id)).length,
     [offer.poolAstrologerIds, astrologers],
   );
+
+  // An empty instant pool falls back to the scheduled Smart Pool server-side, so the
+  // warning must only fire when BOTH are empty — otherwise it would nag an admin who
+  // has deliberately curated one list for both flows.
+  // The milestone list is edited in place. The server re-sorts, de-duplicates and clamps
+  // it on save (freeCallPayout.normaliseMilestones), so the form does not have to fight
+  // the admin mid-keystroke — an out-of-order pair here is corrected, not rejected.
+  const setMilestone = (index, patch) => setOffer((p) => ({
+    ...p,
+    payoutMilestones: (p.payoutMilestones || []).map((m, i) => (i === index ? { ...m, ...patch } : m)),
+  }));
+  const addMilestone = () => setOffer((p) => {
+    const list = p.payoutMilestones || [];
+    const last = list[list.length - 1];
+    return { ...p, payoutMilestones: [...list, { minutes: (last?.minutes || 0) + 3, amount: 5 }] };
+  });
+  const removeMilestone = (index) => setOffer((p) => ({
+    ...p,
+    payoutMilestones: (p.payoutMilestones || []).filter((_, i) => i !== index),
+  }));
+
+  const instantPoolCount = useMemo(() => {
+    const explicit = (offer.instantPoolAstrologerIds || []).filter((id) => astrologers.some((a) => a.id === id));
+    return explicit.length || poolCount;
+  }, [offer.instantPoolAstrologerIds, astrologers, poolCount]);
 
   const shownAstrologerName = useMemo(() => {
     if (offer.displayFeaturedAstrologerId) {
@@ -462,6 +517,223 @@ export default function FreeCallSettings() {
               </p>
             )}
           </div>
+        )}
+      </div>
+
+      {/* ── Card 2b: Instant calls ──
+          Kept in its own card rather than mixed into the slot settings above, because
+          the two flows share almost nothing: instant has no slots, no lead time and no
+          calendar. Switching `mode` is what decides which set actually applies. */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Instant calls</h3>
+        <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
+          Instead of booking a slot for later, the customer picks an astrologer who is free
+          right now and their phone rings immediately — exactly like a paid call.
+        </p>
+
+        <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+          Which flow customers see
+        </label>
+        <select
+          value={offer.mode || 'scheduled'}
+          onChange={(e) => setOffer((p) => ({ ...p, mode: e.target.value }))}
+          style={{ maxWidth: 320 }}
+        >
+          <option value="scheduled">Scheduled — book a slot, we call later</option>
+          <option value="instant">Instant — call an available astrologer now</option>
+          <option value="off">Off — hide the free call entirely</option>
+        </select>
+
+        {offer.mode === 'instant' && (
+          <>
+            <div style={{ marginTop: 20 }}>
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                Always include these astrologers
+              </label>
+              <p className="muted" style={{ margin: '0 0 10px', fontSize: 12.5 }}>
+                Astrologers now <strong>opt themselves in</strong> from a toggle on their own
+                dashboard, and anyone who switches it on appears on the free-call screen.
+                Ticking someone here <strong>pins</strong> them into the pool whether they
+                switched it on or not — their own toggle then shows as locked, with a note to
+                contact support. Leave this empty to let supply be entirely opt-in.
+                Everyone else is completely unaffected and keeps taking paid calls only.
+              </p>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                  gap: 8,
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: 12,
+                  background: 'var(--surface)',
+                }}
+              >
+                {astrologers.length === 0 && (
+                  <span className="muted" style={{ fontSize: 12 }}>No approved astrologers found.</span>
+                )}
+                {astrologers.map((a) => {
+                  const on = (offer.instantPoolAstrologerIds || []).includes(a.id);
+                  return (
+                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer', fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) =>
+                          setOffer((p) => {
+                            const cur = p.instantPoolAstrologerIds || [];
+                            return {
+                              ...p,
+                              instantPoolAstrologerIds: e.target.checked
+                                ? [...cur, a.id]
+                                : cur.filter((id) => id !== a.id),
+                            };
+                          })
+                        }
+                      />
+                      <span style={{ fontWeight: on ? 600 : 400 }}>{astroName(a)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {instantPoolCount === 0 && (
+                <p className="muted" style={{ margin: '8px 0 0', color: '#c0392b', fontSize: 12 }}>
+                  ⚠️ Nobody selected, and the Smart Pool above is empty too. Instant mode cannot
+                  run without at least one astrologer, so the app will fall back to the scheduled flow.
+                </p>
+              )}
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                What the astrologer earns
+              </label>
+              <p className="muted" style={{ margin: '0 0 10px', fontSize: 12.5 }}>
+                Paid by Astrowani when the call ends, not by the customer — and paid for
+                <strong> reaching a mark</strong>, not per minute. A call that ends before the
+                first mark pays nothing, so an astrologer earns for holding a real
+                conversation rather than for picking up. Milestones are cumulative:
+                {' '}{milestoneSummary(offer.payoutMilestones)}
+              </p>
+              {(offer.payoutMilestones || []).map((m, i) => (
+                <div key={i} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>When the call reaches (min)</label>
+                    <input type="number" min="1" max="600" style={{ width: 170 }}
+                      value={m.minutes}
+                      onChange={(e) => setMilestone(i, { minutes: num(e.target.value, 1) })} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>pay a further (₹)</label>
+                    <input type="number" min="1" max="1000" style={{ width: 140 }}
+                      value={m.amount}
+                      onChange={(e) => setMilestone(i, { amount: num(e.target.value, 1) })} />
+                  </div>
+                  <button type="button" className="btn-sm" onClick={() => removeMilestone(i)}>Remove</button>
+                </div>
+              ))}
+              <button type="button" className="btn-sm" onClick={addMilestone}>+ Add a milestone</button>
+
+              <div style={{ marginTop: 16 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block' }}>
+                  Calls required before an astrologer may switch this off
+                </label>
+                <input type="number" min="0" max="500" style={{ width: 140 }}
+                  value={offer.minFreeCallsBeforeOptOut ?? 10}
+                  onChange={(e) => setOffer((p) => ({ ...p, minFreeCallsBeforeOptOut: num(e.target.value, 10) }))} />
+                <p className="muted" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
+                  Switching the toggle ON is always allowed; switching it OFF is refused until
+                  they have completed this many free calls, and the app tells them so on the way
+                  in. It stops the pool draining on the first busy evening and leaving new
+                  customers on a screen with nobody on it. Set to 0 to let anyone opt out at any
+                  time. Pinned astrologers above are never able to opt out from the app.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                Holding the astrologer after the free call
+              </label>
+              <p className="muted" style={{ margin: '0 0 10px', fontSize: 12.5 }}>
+                When a free call ends, the customer is offered more minutes with the same
+                astrologer. During that time nobody else can be given a free call with them —
+                and once the customer starts paying, nobody else can reach them at all.
+                Longer is friendlier to the customer and costs the astrologer idle time.
+                {' '}<strong>&ldquo;Time to decide&rdquo; is the countdown the customer watches</strong>{' '}
+                on the offer, and exactly how long the astrologer shows as busy. Closing the
+                offer releases them immediately, whatever is left on the clock.
+              </p>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Time to decide (sec)</label>
+                  <input type="number" min="10" max="600" style={{ width: 150 }}
+                    value={offer.holdDecisionSeconds ?? 90}
+                    onChange={(e) => setOffer((p) => ({ ...p, holdDecisionSeconds: num(e.target.value, 90) }))} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Time to pay (sec)</label>
+                  <input type="number" min="30" max="900" style={{ width: 150 }}
+                    value={offer.holdPaymentSeconds ?? 180}
+                    onChange={(e) => setOffer((p) => ({ ...p, holdPaymentSeconds: num(e.target.value, 180) }))} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ring for (sec)</label>
+                  <input type="number" min="15" max="300" style={{ width: 130 }}
+                    value={offer.ringTimeoutSeconds ?? 60}
+                    onChange={(e) => setOffer((p) => ({ ...p, ringTimeoutSeconds: num(e.target.value, 60) }))} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Astrologers one customer may try</label>
+                  <input type="number" min="1" max="50" style={{ width: 200 }}
+                    value={offer.maxRingAttempts ?? 10}
+                    onChange={(e) => setOffer((p) => ({ ...p, maxRingAttempts: num(e.target.value, 10) }))} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                &ldquo;More minutes&rdquo; buttons
+              </label>
+              <p className="muted" style={{ margin: '0 0 8px', fontSize: 12.5 }}>
+                Offered when the free call ends. Priced automatically at that astrologer&rsquo;s own
+                per-minute rate — you set the minutes, not the price. Up to four, comma separated.
+              </p>
+              <input
+                type="text"
+                style={{ maxWidth: 260 }}
+                value={(offer.continueOptions || []).join(', ')}
+                onChange={(e) =>
+                  setOffer((p) => ({
+                    ...p,
+                    continueOptions: e.target.value
+                      .split(',')
+                      .map((x) => parseInt(x.trim(), 10))
+                      .filter((x) => Number.isFinite(x) && x > 0),
+                  }))
+                }
+                placeholder="5, 10, 15"
+              />
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                Heading on the offer card
+              </label>
+              <input type="text" value={offer.instantHeaderText || ''}
+                placeholder="Talk to an astrologer free, right now"
+                onChange={(e) => setOffer((p) => ({ ...p, instantHeaderText: e.target.value }))} />
+              <label style={{ display: 'block', margin: '12px 0 6px', fontWeight: 600, fontSize: 13 }}>
+                Supporting line
+              </label>
+              <input type="text" value={offer.instantBodyText || ''}
+                placeholder="Pick anyone who is free and we will connect you straight away."
+                onChange={(e) => setOffer((p) => ({ ...p, instantBodyText: e.target.value }))} />
+            </div>
+          </>
         )}
       </div>
 

@@ -529,6 +529,7 @@ import { captureEvent } from '../../utils/Analytics';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
+import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -555,6 +556,7 @@ const CallsList = ({navigation}) => {
   // Tracks the in-flight request so cancel/back marks it cancelled + notifies the vendor
   const activeCallRef = useRef(null);
   const isInitiatingRef = useRef(false);
+  const outcomePollerRef = useRef(null);
 
   // Notify the vendor that the customer abandoned the pending request (dismisses their popup)
   // status: 'cancelled' (user abandoned) | 'missed' (timeout) | 'rejected' (vendor declined — don't overwrite)
@@ -592,6 +594,7 @@ const CallsList = ({navigation}) => {
     setup();
     return () => {
       if (callChannelRef.current) supabase.removeChannel(callChannelRef.current);
+      if (outcomePollerRef.current) outcomePollerRef.current.stop();
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
@@ -617,6 +620,7 @@ const CallsList = ({navigation}) => {
 
   const cancelCall = () => {
     navigatedRef.current = true;
+    if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
     notifyVendorCancelled(); // dismiss the vendor's incoming-call popup
     if (callChannelRef.current) {
       supabase.removeChannel(callChannelRef.current);
@@ -698,9 +702,17 @@ const CallsList = ({navigation}) => {
       // Track the pending request so cancel/timeout can notify the vendor to dismiss its popup
       activeCallRef.current = { requestId: requestData.id, astrologerId: item.userId, roomId };
 
+      // Server-polled outcome — the backstop behind the socket and Realtime paths. See
+      // utils/awaitRequestOutcome.js for the (measured) ways the single live message got
+      // lost and left this screen ringing while the astrologer was already in the call.
+      const stopOutcomePoller = () => {
+        if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
+      };
+
       const goToCall = dbSessionId => {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
+        stopOutcomePoller();
         activeCallRef.current = null; // accepted → don't cancel
         if (callChannelRef.current) {
           supabase.removeChannel(callChannelRef.current);
@@ -724,6 +736,7 @@ const CallsList = ({navigation}) => {
       const cleanupAndAlert = (msg, status = 'cancelled', title = 'Call Ended') => {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
+        stopOutcomePoller();
         notifyVendorCancelled(status); // dismiss the vendor's incoming-call popup
         if (callChannelRef.current) {
           supabase.removeChannel(callChannelRef.current);
@@ -768,6 +781,19 @@ const CallsList = ({navigation}) => {
         )
         .subscribe();
       callChannelRef.current = channel;
+
+      // Third path: poll the server. Cannot miss an edge, does not care which transport
+      // broke, and covers the astrologer accepting from the notification or the overlay.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: requestData.id,
+        label: 'audio call',
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => {
+          if (status === 'rejected') cleanupAndAlert(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy');
+          else if (status === 'missed') cleanupAndAlert(t('alerts.notPickedUpAudio'), 'missed', 'Not Answered');
+        },
+      });
 
       // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {

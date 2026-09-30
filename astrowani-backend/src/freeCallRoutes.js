@@ -20,8 +20,16 @@ const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { requireAdmin } = require('./adminRoutes');
 const { sendPush } = require('./push');
 const vendorDevices = require('./vendorDevices');
-const { checkAstrologerBusy, checkCustomerBusy } = require('./busyStatus');
+const { checkAstrologerBusy, checkCustomerBusy, buildBusyMap } = require('./busyStatus');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
+const holds = require('./astrologerHolds');
+// Local-only overrides. Inert unless FREE_CALL_LOCAL_TEST=true AND this process is
+// not the billing host — see the interlock in that file.
+const localTest = require('./freeCallLocalTest');
+const { ringAstrologer } = require('./ringAstrologer');
+const { notifyWaitlistIfFree } = require('./waitlist');
+const { createRechargeOrder } = require('./walletRecharge');
+const { normaliseMilestones, DEFAULT_MILESTONES } = require('./freeCallPayout');
 // Named audienceRules, not `audience`: inviteRecipients(audience, targetIds) below
 // already uses that identifier for its own string parameter, and a shadowed module
 // reference inside that function would be a silent trap for whoever edits it next.
@@ -89,6 +97,52 @@ const DEFAULTS = {
   bodyText: 'Pick a date and time that suits you. Our astrologer will call you directly — you do not have to do anything else.',
   ctaText: 'Book my free call',
   successText: 'Booked! Our astrologer will call you at the time you chose.',
+
+  // ── INSTANT MODE (2026-09-27) ────────────────────────────────────────────
+  // 'scheduled' is everything above: pick a slot, the astrologer rings you later.
+  // 'instant'   is the day-1 retention version: pick whoever is free RIGHT NOW and
+  //             their phone rings immediately, exactly as a paid call does.
+  // 'off'       shows nothing, without deleting either.
+  //
+  // The scheduled machinery is deliberately kept rather than removed, so switching
+  // back is one dropdown and not a deploy.
+  mode: 'scheduled',
+  // Who may receive an instant call. Falls back to poolAstrologerIds when empty, so an
+  // admin who already curated a pool does not have to do it twice. An astrologer NOT in
+  // this list is never offered a free call and is completely unaffected by the feature.
+  // Astrologers the ADMIN pins into the instant pool. This is an override on top of the
+  // astrologers' own `free_intro_call_enabled` toggle, not a replacement for it: anyone
+  // who switches themselves on is in the pool, and anyone listed here is in it whether
+  // they switched on or not. Leave it empty to let supply be entirely opt-in.
+  instantPoolAstrologerIds: [],
+  // How many free intro calls an astrologer must have completed before they are allowed
+  // to switch the toggle back OFF. The point of the commitment: the offer is advertised
+  // to brand-new customers, and a pool that empties itself the first busy evening leaves
+  // them staring at a screen with nobody on it.
+  minFreeCallsBeforeOptOut: 10,
+  // What the astrologer earns for a free call, as MARKS REACHED rather than minutes
+  // elapsed: ₹5 for holding the customer to 3 minutes, ₹5 more at 9 (₹10 on a full call).
+  // Paid out of admin_wallet by sessionManager when the call ends — see
+  // payFreeCallAstrologer, and freeCallPayout.js for why it is not per-minute.
+  payoutMilestones: DEFAULT_MILESTONES.map((m) => ({ ...m })),
+  // The reservation after a free call ends, in seconds. 'decision' is how long the
+  // customer has to tap something; 'payment' is how long the gateway gets once they do.
+  // See src/astrologerHolds.js for what each phase blocks.
+  //
+  // holdDecisionSeconds IS THE COUNTDOWN THE CUSTOMER SEES. The continue sheet counts
+  // down the hold's real remaining seconds, so changing this changes the on-screen timer
+  // and how long the astrologer looks busy — the two can never drift apart.
+  holdDecisionSeconds: 90,
+  holdPaymentSeconds: 180,
+  // How long one astrologer is allowed to ring before the app offers the others.
+  ringTimeoutSeconds: 60,
+  // The "more minutes" buttons. Priced server-side at the astrologer's own rate.
+  continueOptions: [5, 10, 15],
+  // How many astrologers one customer may ring on a single free-call attempt, before
+  // they are asked to come back later. Stops the pool being walked for attention.
+  maxRingAttempts: 10,
+  instantHeaderText: 'Talk to an astrologer free, right now',
+  instantBodyText: 'Pick anyone who is free and we will connect you straight away. Your first 12 minutes are on us.',
 };
 
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
@@ -102,6 +156,15 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
 // Both are matched so this holds whichever layer reports it.
 const isMissingTable = (error) =>
   !!error && (error.code === '42P01' || error.code === 'PGRST205');
+
+/**
+ * "That COLUMN does not exist yet." Same two-layer problem as isMissingTable: PostgREST
+ * answers PGRST204 from its schema cache where Postgres would say 42703, and an insert
+ * naming an unknown column can surface as either. The message check is the backstop.
+ */
+const isMissingColumn = (error, column) =>
+  !!error && (error.code === '42703' || error.code === 'PGRST204'
+    || new RegExp(column, 'i').test(error.message || ''));
 
 /**
  * A clock time as minutes after midnight, or null if it is not a valid one.
@@ -143,6 +206,54 @@ const clampInt = (v, lo, hi, fallback) => {
  * these come from a free-text admin JSON blob and a nonsense value (closeHour 99,
  * slotMinutes 0) would otherwise generate an infinite or empty slot grid.
  */
+/**
+ * Astrologers who have switched the free intro call ON for themselves.
+ *
+ * Cached for 15 seconds: loadOffer runs on every free-call request and this would
+ * otherwise add a query to each one. On ANY failure it returns the last known list
+ * rather than an empty one — emptying the pool is how the instant offer silently falls
+ * back to the scheduled flow, and a transient database error must not do that.
+ *
+ * Before sql/free_intro_call_toggle.sql has run the column does not exist; the latch
+ * stops every subsequent call re-asking, and the admin's pinned list still supplies the
+ * pool exactly as it did before, so deploy order does not matter.
+ */
+let optedInCache = { ids: [], at: 0 };
+let optInColumnAvailable = true;
+const OPTED_IN_TTL_MS = 15_000;
+
+function isMissingOptInColumn(err) {
+  const s = `${err?.code || ''} ${err?.message || ''}`;
+  return err?.code === '42703' || /free_intro_call_enabled/.test(s);
+}
+
+async function selfOptedInAstrologerIds() {
+  if (!optInColumnAvailable) return [];
+  if (Date.now() - optedInCache.at < OPTED_IN_TTL_MS) return optedInCache.ids;
+  try {
+    const { data, error } = await db
+      .from('astrologers')
+      .select('id')
+      .eq('free_intro_call_enabled', true);
+    if (error) {
+      if (isMissingOptInColumn(error)) {
+        optInColumnAvailable = false;
+        console.warn('[freeCallRoutes] astrologers.free_intro_call_enabled is missing — run '
+          + 'sql/free_intro_call_toggle.sql. Until then the instant pool is the admin list only.');
+        return [];
+      }
+      return optedInCache.ids;
+    }
+    optedInCache = { ids: (data || []).map((r) => r.id), at: Date.now() };
+    return optedInCache.ids;
+  } catch (_) {
+    return optedInCache.ids;
+  }
+}
+
+/** Called after a toggle write so the change shows up immediately, not in 15 seconds. */
+function invalidateOptedInCache() { optedInCache = { ids: optedInCache.ids, at: 0 }; }
+
 async function loadOffer() {
   let raw = null;
   try {
@@ -204,7 +315,49 @@ async function loadOffer() {
   // Kept for anything still reading whole hours.
   merged.openHour = Math.floor(openMin / 60);
   merged.closeHour = Math.ceil(closeMin / 60);
-  return merged;
+
+  // ── Instant mode ──────────────────────────────────────────────────────────
+  // Everything below is admin free-text, so every value is clamped. An admin typing
+  // 5000 into "payout per minute" must not be able to drain admin_wallet, and typing
+  // 99999 into a hold window must not be able to take an astrologer off the market
+  // for a day.
+  if (!['instant', 'off'].includes(merged.mode)) merged.mode = 'scheduled';
+  if (!Array.isArray(merged.instantPoolAstrologerIds)) merged.instantPoolAstrologerIds = [];
+  merged.instantPoolAstrologerIds = merged.instantPoolAstrologerIds.filter((id) => typeof id === 'string' && id);
+  // Curating one list is enough: an admin who already built a scheduled pool gets it
+  // reused rather than having to tick the same ten people twice.
+  if (!merged.instantPoolAstrologerIds.length) {
+    merged.instantPoolAstrologerIds = merged.poolAstrologerIds.slice();
+  }
+  merged.minFreeCallsBeforeOptOut = clampInt(merged.minFreeCallsBeforeOptOut, 0, 500, DEFAULTS.minFreeCallsBeforeOptOut);
+  // Who is actually offered to customers: everyone who switched themselves on, plus
+  // anyone the admin pinned. Resolved here so the three places that care — the list, the
+  // ring gate, and the "is there anybody at all" fallback below — can never disagree.
+  merged.effectiveInstantPool = [...new Set([
+    ...merged.instantPoolAstrologerIds,
+    ...(await selfOptedInAstrologerIds()),
+  ])];
+  merged.payoutMilestones = normaliseMilestones(merged.payoutMilestones);
+  merged.holdDecisionSeconds = clampInt(merged.holdDecisionSeconds, 10, 600, DEFAULTS.holdDecisionSeconds);
+  merged.holdPaymentSeconds = clampInt(merged.holdPaymentSeconds, 30, 900, DEFAULTS.holdPaymentSeconds);
+  merged.ringTimeoutSeconds = clampInt(merged.ringTimeoutSeconds, 15, 300, DEFAULTS.ringTimeoutSeconds);
+  merged.maxRingAttempts = clampInt(merged.maxRingAttempts, 1, 50, DEFAULTS.maxRingAttempts);
+  if (!Array.isArray(merged.continueOptions)) merged.continueOptions = DEFAULTS.continueOptions.slice();
+  merged.continueOptions = [...new Set(
+    merged.continueOptions.map((n) => clampInt(n, 1, 120, 0)).filter((n) => n > 0),
+  )].sort((a, b) => a - b).slice(0, 4);
+  if (!merged.continueOptions.length) merged.continueOptions = DEFAULTS.continueOptions.slice();
+  // An instant offer with nobody in the pool has no astrologers to show, which reads to
+  // the customer as a broken screen. Fall back to the scheduled flow, which at least
+  // still works, rather than leaving a dead button on Home.
+  if (merged.mode === 'instant' && merged.effectiveInstantPool.length === 0) {
+    console.warn('[freeCallRoutes] instant mode is on but the pool is empty — falling back to scheduled.');
+    merged.mode = 'scheduled';
+  }
+  // LAST, deliberately: after every clamp and after the empty-pool fallback above, so a
+  // forced test pool cannot be clamped away or downgraded back to 'scheduled'. A no-op
+  // in every environment but a developer's own machine.
+  return localTest.applyToOffer(merged);
 }
 
 // acquisition_source/_raw ride along so the audience check (src/audience.js) costs no
@@ -669,6 +822,15 @@ const publicOffer = (offer) => ({
   bodyText: offer.bodyText,
   ctaText: offer.ctaText,
   successText: offer.successText,
+  // Which of the two flows the app should render. Everything below is only read in
+  // instant mode; sending it always keeps the app from needing a second round trip.
+  mode: offer.mode,
+  instantHeaderText: offer.instantHeaderText,
+  instantBodyText: offer.instantBodyText,
+  ringTimeoutSeconds: offer.ringTimeoutSeconds,
+  // NOT sent: payoutMilestones, the pool ids. What an astrologer earns is
+  // not the customer's business, and the pool is an implementation detail — the app
+  // only ever sees the astrologers the list endpoint chooses to return.
 });
 
 const publicBooking = (b) => b && ({
@@ -744,7 +906,12 @@ module.exports = function registerFreeCallRoutes(app) {
     // An earlier, now-deleted account on this number already used the offer (or was a real
     // customer). Fails closed: a free call is a real astrologer's time.
     const usedBefore = await usedByEarlierAccount(customer, !!invite);
-    const eligible = !booking && audienceOk && !usedBefore && (!!invite || (await isNewCustomer(customer.id)));
+    // The same local-test bypass instantGate applies. This endpoint computes eligibility
+    // independently of that gate, so without this line the card never appears on Home and
+    // there is no way into the flow — the gate further in would have allowed it.
+    const eligible = localTest.bypassEligibility()
+      ? true
+      : (!booking && audienceOk && !usedBefore && (!!invite || (await isNewCustomer(customer.id))));
     return res.status(200).json({
       success: true,
       enabled: true,
@@ -753,6 +920,614 @@ module.exports = function registerFreeCallRoutes(app) {
       booking: publicBooking(booking),
       offer: shown,
     });
+  }));
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+   * INSTANT FREE CALL (2026-09-27)
+   *
+   * The customer picks whoever is free right now and that astrologer's phone rings
+   * immediately, exactly as it does for a paid call — same NotificationPopup, same
+   * ringtone, same Accept button, same call screen. The only differences are that
+   * call_requests.is_free is set (which /api/session/accept turns into a session that
+   * the billing loop never touches) and that the astrologer is paid out of
+   * admin_wallet when it ends.
+   *
+   * WHY IT RIDES THE PAID PATH RATHER THAN THE SCHEDULED ONE: the scheduled free call
+   * has the ASTROLOGER ring the CUSTOMER, which needs the customer's app to be
+   * reachable and gives them nothing to do. Reversing it means the whole battle-tested
+   * accept/reject/cold-start stack is reused and the customer gets the familiar
+   * "calling…" screen.
+   *
+   * WHY IT STILL WRITES A free_call_bookings ROW: everything already built on that
+   * table keeps working unchanged — one-free-call-per-customer (an index),
+   * closeFreeCallBooking, endOverdueFreeCalls' 12-minute backstop, offerGuard's
+   * delete-and-reclaim protection, and the admin list. `kind` tells them apart.
+   * ═══════════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * An instant attempt already under way: the booking exists but no call has connected
+   * on it yet. That is the customer ringing round the pool — they must be allowed to
+   * carry on, even though findLiveBooking() makes them "ineligible" for a NEW offer.
+   */
+  /**
+   * Can this astrologer be sold a paid call right now?
+   *
+   * The decision window is ninety seconds long and the world moves inside it: an
+   * astrologer can finish their shift and switch calls off, or be suspended, between the
+   * free call ending and the customer tapping an amount. Selling minutes with somebody
+   * who has gone is not a lost sale, it is a customer who paid and then could not talk.
+   *
+   * Deliberately NOT checked: is_online / is_available. A phone that died mid-call leaves
+   * those exactly as they were, so they would refuse nothing real while quietly blocking
+   * every upsell from an astrologer who simply has not toggled themselves live.
+   */
+  const canTakePaidCall = (a) => !!a
+    && a.is_suspended !== true
+    && a.approval_status !== 'rejected'
+    && a.is_call_enabled !== false;
+
+  const resumableInstantAttempt = (booking) => !!booking
+    && booking.kind === 'instant'
+    && booking.status === 'booked'
+    && !booking.call_session_id;
+
+  /**
+   * Everything the instant screen needs to decide what to show, in one place, so the
+   * list endpoint and the ring endpoint can never disagree about who is eligible.
+   *
+   * Returns { ok, code, message, customer, offer, booking } — `ok:false` carries the
+   * exact refusal the app should render.
+   */
+  async function instantGate(req) {
+    const offer = await loadOffer();
+    if (!platformAllowed(offer, platformOf(req))) {
+      return { ok: false, status: 403, code: 'PLATFORM_DISABLED', message: 'This offer is not available on your device right now.' };
+    }
+    const customer = await resolveCustomer(req);
+    if (!customer) {
+      return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Please log in.' };
+    }
+    const invite = await findActiveInvite(customer.id);
+    if (offer.mode !== 'instant') {
+      return { ok: false, status: 403, code: 'NOT_INSTANT', message: 'Instant calls are not switched on.', offer, customer };
+    }
+    if (!offer.enabled && !invite) {
+      return { ok: false, status: 403, code: 'OFFER_CLOSED', message: 'This offer is closed right now.', offer, customer };
+    }
+
+    const booking = await findLiveBooking(customer.id);
+    // A booking that has already CONNECTED means the free call happened. A booking
+    // still being rung round the pool does not.
+    if (booking && !resumableInstantAttempt(booking) && !localTest.bypassEligibility()) {
+      return { ok: false, status: 409, code: 'ALREADY_USED', message: 'You have already used your free call.', offer, customer, booking };
+    }
+
+    // Local test mode skips the three eligibility gates below. They are all correct and
+    // all fail CLOSED by design, which is exactly why a useful test account is otherwise
+    // single-use: the first run consumes the offer and every run after it answers
+    // NOT_ELIGIBLE, which looks identical to the feature being broken.
+    if (!localTest.bypassEligibility()) {
+      const audienceOk = !!invite || (await audienceRules.isAllowed(customer, 'free_call'));
+      if (!audienceOk) {
+        return { ok: false, status: 403, code: 'NOT_ELIGIBLE', message: 'This offer is not available for your account.', offer, customer };
+      }
+      // Fails CLOSED (see usedByEarlierAccount / isNewCustomer): a free call is a real
+      // astrologer's time, so "we cannot tell" must mean "no".
+      if (await usedByEarlierAccount(customer, !!invite)) {
+        return { ok: false, status: 403, code: 'NOT_ELIGIBLE', message: 'This offer has already been used on this number.', offer, customer };
+      }
+      // An attempt already under way proves they were eligible when it started; do not
+      // re-run the brand-new check, because ringing somebody does not create a session
+      // but a half-finished one would still be confusing to re-evaluate mid-flow.
+      if (!booking && !invite && !(await isNewCustomer(customer.id))) {
+        return { ok: false, status: 403, code: 'NOT_ELIGIBLE', message: 'This offer is for new customers only.', offer, customer };
+      }
+    }
+
+    return { ok: true, customer, offer, booking: booking || null };
+  }
+
+  /** Compact astrologer card for the instant list. Never exposes rates for the free call. */
+  const instantCard = (a, busy) => ({
+    id: a.id,
+    name: astrologerFullName(a) || 'Astrologer',
+    image: a.profile_pic_url || '',
+    experience: a.experience || 0,
+    rating: Number(a.average_rating) || 0,
+    totalReviews: a.total_reviews || 0,
+    languages: Array.isArray(a.languages) ? a.languages : (a.languages ? [a.languages] : []),
+    badgeType: a.badge || null,
+    isBusy: !!(busy && busy.isBusy),
+    busySince: (busy && busy.busySince) || null,
+    busyReason: (busy && busy.reason) || null,
+  });
+
+  /* ── Customer: who can I call right now? ──────────────────────────────────
+   * Busy astrologers are returned too, deliberately. Hiding them would make the
+   * pool look tiny at exactly the busiest moments, and the customer has no way to
+   * ask for the one they wanted — with them visible, the busy pill doubles as the
+   * "notify me" button. The app sorts idle first; the server sends the flag.
+   */
+  app.get('/api/free-call/instant/astrologers', h(async (req, res) => {
+    const gate = await instantGate(req);
+    if (!gate.ok) {
+      return res.status(gate.status).json({
+        success: false, code: gate.code, message: gate.message, astrologers: [],
+      });
+    }
+    const { offer, customer, booking } = gate;
+
+    const active = await activeAstrologers(offer.effectiveInstantPool);
+    if (!active.length) {
+      return res.status(200).json({
+        success: true, astrologers: [], durationMinutes: offer.durationMinutes,
+        attemptsLeft: offer.maxRingAttempts,
+      });
+    }
+
+    const { data: rows, error: rowsErr } = await db
+      .from('astrologers')
+      .select('id, first_name, last_name, profile_pic_url, experience, languages, average_rating, total_reviews, badge, is_online, hidden_from_customers')
+      // hidden_from_customers is respected here for the same reason /api/astrologers
+      // respects it: it exists to keep an approved-but-not-public astrologer (the store
+      // reviewer account) out of customer-facing lists. An admin who pools somebody
+      // hidden would otherwise be quietly sending real customers to them.
+      .not('hidden_from_customers', 'is', true)
+      .in('id', active.map((a) => a.id));
+
+    // DO NOT swallow this. A failed select returns null, which reads downstream as "the
+    // whole panel is offline" — indistinguishable from nobody being available, and the
+    // customer is told to come back later while the astrologers sit idle. One mistyped
+    // column name in the list above is enough to do it (that is exactly how
+    // `profile_image`, which does not exist on this table, hid the entire pool during
+    // testing). Answer 503 so it reads as our fault, not theirs.
+    if (rowsErr) {
+      console.error('[FreeCall] instant list query failed — the pool will look empty:', rowsErr.message);
+      return res.status(503).json({
+        success: false, code: 'LOOKUP_FAILED', astrologers: [],
+        message: 'We could not load the astrologers just now. Please try again in a moment.',
+      });
+    }
+
+    const busyMap = await buildBusyMap(db);
+    const holdMap = await holds.buildHoldMap(db);
+
+    const cards = (rows || [])
+      // An astrologer who is signed out cannot answer, and showing them only produces
+      // a ring nobody hears. Busy is different from absent and stays visible.
+      .filter((a) => a.is_online !== false)
+      .map((a) => {
+        let busy = busyMap[a.id];
+        // Our own reservation must not show us the person we are about to buy more
+        // minutes from as "busy" — they are held FOR this customer.
+        const hold = holdMap[a.id];
+        if (busy && busy.reason === 'hold' && hold && String(hold.customer_id) === String(customer.id)) {
+          busy = null;
+        }
+        return instantCard(a, busy);
+      })
+      .sort((x, y) => (x.isBusy === y.isBusy ? (y.rating - x.rating) : (x.isBusy ? 1 : -1)));
+
+    // Local-test filler only (display), so the grid can be judged without opting real
+    // astrologers in. Empty in every environment but a developer's own machine.
+    const withFillers = [...cards, ...localTest.fakeCards()];
+
+    return res.status(200).json({
+      success: true,
+      astrologers: withFillers,
+      durationMinutes: offer.durationMinutes,
+      ringTimeoutSeconds: offer.ringTimeoutSeconds,
+      attemptsLeft: Math.max(0, offer.maxRingAttempts - ((booking && booking.call_attempts) || 0)),
+    });
+  }));
+
+  /* ── Customer: ring this astrologer now ───────────────────────────────────── */
+  app.post('/api/free-call/instant/ring', h(async (req, res) => {
+    const gate = await instantGate(req);
+    if (!gate.ok) {
+      return res.status(gate.status).json({ success: false, code: gate.code, message: gate.message });
+    }
+    const { customer, offer } = gate;
+    let booking = gate.booking;
+
+    const astrologerId = String(req.body?.astrologerId || '');
+    if (!astrologerId) {
+      return res.status(400).json({ success: false, code: 'BAD_REQUEST', message: 'astrologerId is required' });
+    }
+    // Pool membership is checked server-side: the id arrives from the client and a
+    // client can name anyone. An astrologer outside the pool never agreed to take
+    // free calls and must not be rung by one.
+    if (!offer.effectiveInstantPool.includes(astrologerId)) {
+      return res.status(403).json({ success: false, code: 'NOT_IN_POOL', message: 'That astrologer is not taking free calls.' });
+    }
+    const [active] = await activeAstrologers([astrologerId]);
+    if (!active) {
+      return res.status(404).json({ success: false, code: 'UNAVAILABLE', message: 'That astrologer is not available right now.' });
+    }
+
+    if (booking && (booking.call_attempts || 0) >= offer.maxRingAttempts) {
+      return res.status(429).json({
+        success: false, code: 'TOO_MANY_ATTEMPTS',
+        message: 'You have tried a few astrologers already. Please come back in a little while.',
+      });
+    }
+
+    // Don't ring on top of something the customer is already in.
+    const customerBusy = await checkCustomerBusy(db, customer.id);
+    if (customerBusy.busy) {
+      return res.status(409).json({ success: false, code: 'SELF_BUSY', message: 'You are already on a call or chat.' });
+    }
+    // isFreeCall: true means a 'decision'-phase hold blocks this, while a paying
+    // customer would still get through. See src/astrologerHolds.js.
+    const astroBusy = await checkAstrologerBusy(db, astrologerId, { customerId: customer.id, isFreeCall: true });
+    if (astroBusy.busy) {
+      return res.status(409).json({
+        success: false, code: 'ASTROLOGER_BUSY', busy: true,
+        busySince: astroBusy.busySince, reason: astroBusy.reason,
+        message: 'They just got busy. Pick someone else, or ask us to tell you when they are free.',
+      });
+    }
+
+    const now = new Date();
+    const durationMinutes = offer.durationMinutes;
+
+    // One booking per attempt, reused across every astrologer they try. Creating a
+    // fresh one per ring would trip free_call_bookings_customer_live_uniq on the
+    // second attempt, and would lose the attempt count that caps this.
+    if (!booking) {
+      const row = {
+        customer_id: customer.id,
+        kind: 'instant',
+        slot_start: now.toISOString(),
+        slot_end: new Date(now.getTime() + durationMinutes * 60000).toISOString(),
+        duration_minutes: durationMinutes,
+        status: 'booked',
+        customer_name: customer.name || null,
+        customer_phone: customer.mobile || null,
+        astrologer_id: astrologerId,
+        call_attempts: 0,
+      };
+      const { data: created, error: bookErr } = await db
+        .from('free_call_bookings').insert([row]).select('*').single();
+      if (bookErr) {
+        if (isMissingTable(bookErr)) {
+          return res.status(503).json({ success: false, code: 'MIGRATION_REQUIRED', message: 'Free calls are not set up on the server yet.' });
+        }
+        // `kind` missing = sql/free_call_instant.sql has not run. Refuse rather than
+        // silently writing a row the sweeps and the admin cannot tell apart.
+        if (/kind/.test(bookErr.message || '')) {
+          console.warn('[FreeCall] free_call_bookings.kind missing — run sql/free_call_instant.sql');
+          return res.status(503).json({ success: false, code: 'MIGRATION_REQUIRED', message: 'Free calls are not set up on the server yet.' });
+        }
+        if (bookErr.code === '23505') {
+          return res.status(409).json({ success: false, code: 'ALREADY_USED', message: 'You have already used your free call.' });
+        }
+        throw new Error(bookErr.message);
+      }
+      booking = created;
+    }
+
+    const sessionId = crypto.randomUUID();
+    const roomId = crypto.randomUUID();
+
+    // THE row that makes this call free. is_free is written here, by the server, and
+    // read back by /api/session/accept — the vendor app never gets a say.
+    const { data: requestRow, error: reqErr } = await db
+      .from('call_requests')
+      .insert([{
+        customer_id: customer.id,
+        astrologer_id: astrologerId,
+        customer_name: customer.name || 'Customer',
+        call_type: 'audio',
+        status: 'pending',
+        room_id: roomId,
+        session_id: sessionId,
+        is_free: true,
+      }])
+      .select('id')
+      .single();
+
+    if (reqErr) {
+      // FAILS CLOSED, and this is the most important refusal in the file. Without the
+      // is_free column the request would become an ordinary PAID session at the
+      // astrologer's full rate — a customer charged for something advertised as free.
+      // Refusing the call is the only safe direction.
+      if (isMissingColumn(reqErr, 'is_free')) {
+        console.error('[FreeCall] call_requests.is_free is missing — run sql/free_call_instant.sql. '
+          + 'Refusing the free call rather than creating a BILLED session.');
+        return res.status(503).json({
+          success: false, code: 'MIGRATION_REQUIRED',
+          message: 'Free calls are not set up on the server yet.',
+        });
+      }
+      // A pending request already exists for this astrologer or this customer (the
+      // partial unique indexes from hardening_04 / hardening_10). Somebody won the race.
+      if (reqErr.code === '23505') {
+        return res.status(409).json({
+          success: false, code: 'ASTROLOGER_BUSY', busy: true,
+          message: 'They just got busy. Pick someone else.',
+        });
+      }
+      throw new Error(reqErr.message);
+    }
+
+    await db.from('free_call_bookings')
+      .update({ astrologer_id: astrologerId, call_attempts: (booking.call_attempts || 0) + 1 })
+      .eq('id', booking.id);
+
+    await ringAstrologer({
+      io: app.locals.io,
+      db,
+      receiverId: astrologerId,
+      callType: 'audio',
+      callerName: customer.name || 'Customer',
+      callerId: customer.id,
+      sessionId,
+      roomId,
+      isFree: true,
+      freeMinutes: durationMinutes,
+    });
+
+    console.log(`[FreeCall] instant: customer ${customer.id} ringing astrologer ${astrologerId} (session ${sessionId})`);
+    return res.status(200).json({
+      success: true,
+      requestId: requestRow.id,
+      sessionId,
+      roomId,
+      bookingId: booking.id,
+      durationMinutes,
+      ringTimeoutSeconds: offer.ringTimeoutSeconds,
+      astrologerName: astrologerFullName(active) || 'Astrologer',
+      attemptsLeft: Math.max(0, offer.maxRingAttempts - ((booking.call_attempts || 0) + 1)),
+    });
+  }));
+
+  /* ── Customer: nobody answered / I changed my mind ─────────────────────────
+   * The booking is deliberately NOT cancelled here — the customer is still mid-attempt
+   * and about to try somebody else. cancelStaleInstantBookings in sessionManager hands
+   * the free call back if they never connect with anyone.
+   */
+  app.post('/api/free-call/instant/give-up', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const requestId = String(req.body?.requestId || '');
+    const status = req.body?.status === 'missed' ? 'missed' : 'cancelled';
+    if (!requestId) return res.status(400).json({ success: false, message: 'requestId is required' });
+
+    // Scoped to this customer AND to a still-pending row: an atomic claim, so a request
+    // the astrologer accepted a moment ago is never overwritten.
+    const { data } = await db
+      .from('call_requests')
+      .update({ status, responded_at: new Date().toISOString() })
+      .eq('id', requestId)
+      .eq('customer_id', customer.id)
+      .eq('status', 'pending')
+      .select('id, astrologer_id');
+
+    const changed = !!(data && data.length);
+    // Let the astrologer's popup dismiss itself, same as the paid cancel path.
+    if (changed && app.locals.io) {
+      app.locals.io.to(String(data[0].astrologer_id)).emit('call_cancelled', { requestId });
+    }
+    return res.status(200).json({ success: true, changed });
+  }));
+
+  /* ── Customer: buy more minutes with the astrologer I just spoke to ────────
+   * Prices come from HERE, never from the app. The app renders what it is told.
+   */
+  app.get('/api/free-call/continue/options', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const hold = await holds.getHoldForCustomer(db, customer.id);
+    if (!hold) {
+      return res.status(200).json({ success: true, active: false, options: [] });
+    }
+
+    const { data: astro } = await db
+      .from('astrologers')
+      .select('id, first_name, last_name, profile_pic_url, call_charge_per_minute, audio_price, '
+        + 'is_call_enabled, is_suspended, approval_status')
+      .eq('id', hold.astrologer_id)
+      .maybeSingle();
+
+    // Same fallback chain as /api/call/initiate, so the price quoted here is the price
+    // the paid call will actually bill at.
+    const rate = Number(astro?.call_charge_per_minute ?? astro?.audio_price ?? 0);
+    const offer = await loadOffer();
+
+    // Nothing coherent to sell: a zero rate, an astrologer who has switched calls off
+    // since the free call ended, or one who has already been taken by a paying customer
+    // (a decision-phase hold blocks free calls only — that is deliberate). Their own
+    // hold must not count against them, hence customerId. Fails OPEN on a database
+    // error, matching busyStatus: a blip should cost nobody their upsell.
+    const sellable = rate > 0 && canTakePaidCall(astro)
+      && !(await checkAstrologerBusy(db, hold.astrologer_id, { customerId: customer.id })).busy;
+    const options = sellable
+      ? offer.continueOptions.map((minutes) => ({ minutes, amount: Math.round(rate * minutes) }))
+      : [];
+
+    return res.status(200).json({
+      success: true,
+      active: true,
+      astrologerId: hold.astrologer_id,
+      astrologerName: astrologerFullName(astro || {}) || 'Astrologer',
+      astrologerImage: astro?.profile_pic_url || '',
+      ratePerMinute: rate,
+      options,
+      phase: hold.phase,
+      // The call this offer follows. Carried so an app that was killed mid-offer and
+      // reopens can still raise the "how was Astrowani?" prompt against the right
+      // session — and so it can tell a 'decision' hold (safe to re-offer) from a
+      // 'payment' one (they have already tapped an amount; offering again risks
+      // charging twice).
+      sessionId: hold.session_id || null,
+      // Seconds left, so the sheet can count down rather than guess.
+      expiresInSeconds: Math.max(0, Math.round((new Date(hold.expires_at).getTime() - Date.now()) / 1000)),
+    });
+  }));
+
+  /* ── Customer: I want N more minutes — open the gateway ────────────────────
+   * Deliberately creates an ORDINARY wallet recharge (a wallet_recharges row through
+   * the same helper /api/wallet/create-order uses). Two reasons:
+   *   1. razorpayWebhookRoutes already recovers a wallet recharge whose app died after
+   *      paying. A bespoke order type would need its own recovery probe, and the
+   *      "paid but the app crashed" case is exactly the one nobody tests.
+   *   2. If the astrologer is gone by the time they pay, the money is still theirs,
+   *      sitting in their wallet. Nothing is lost and no refund path is needed.
+   * The paid call is then started by the app through the normal /api/call/initiate.
+   */
+  app.post('/api/free-call/continue/start', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const minutes = clampInt(req.body?.minutes, 1, 120, 0);
+    if (!minutes) return res.status(400).json({ success: false, message: 'minutes is required' });
+
+    const hold = await holds.getHoldForCustomer(db, customer.id);
+    if (!hold) {
+      return res.status(409).json({
+        success: false, code: 'HOLD_EXPIRED',
+        message: 'That astrologer is no longer held for you. We can tell you when they are free.',
+      });
+    }
+    const offer = await loadOffer();
+    if (!offer.continueOptions.includes(minutes)) {
+      return res.status(400).json({ success: false, code: 'BAD_OPTION', message: 'That option is not available.' });
+    }
+
+    const { data: astro } = await db
+      .from('astrologers')
+      .select('id, call_charge_per_minute, audio_price, is_call_enabled, is_suspended, approval_status')
+      .eq('id', hold.astrologer_id)
+      .maybeSingle();
+    const rate = Number(astro?.call_charge_per_minute ?? astro?.audio_price ?? 0);
+    if (!(rate > 0)) {
+      return res.status(409).json({ success: false, code: 'NO_RATE', message: 'This astrologer is not taking paid calls right now.' });
+    }
+
+    // LAST CHECK BEFORE THE GATEWAY OPENS. The options were priced up to ninety seconds
+    // ago and a decision-phase hold deliberately lets a PAYING customer through, so the
+    // astrologer may have been taken, or have ended their shift, in the meantime. Taking
+    // the money anyway is not harmless just because it lands in the customer's own
+    // wallet — they paid to talk to a specific person, and would meet a 409 on the way
+    // to the call. Refused as HOLD_EXPIRED so the sheet offers the waitlist, which is
+    // the useful answer.
+    if (!canTakePaidCall(astro)
+      || (await checkAstrologerBusy(db, hold.astrologer_id, { customerId: customer.id })).busy) {
+      return res.status(409).json({
+        success: false, code: 'HOLD_EXPIRED',
+        message: 'That astrologer has just been taken. We can tell you when they are free.',
+      });
+    }
+
+    const amount = Math.round(rate * minutes);
+
+    // Extend the reservation BEFORE opening the gateway. From here the astrologer is
+    // blocked to everyone else, free or paid — the customer is about to commit money.
+    const upgraded = await holds.upgradeToPayment(db, {
+      astrologerId: hold.astrologer_id,
+      customerId: customer.id,
+      minutes,
+      seconds: offer.holdPaymentSeconds,
+    });
+    if (!upgraded) {
+      return res.status(409).json({
+        success: false, code: 'HOLD_EXPIRED',
+        message: 'That astrologer is no longer held for you. We can tell you when they are free.',
+      });
+    }
+
+    const order = await createRechargeOrder(customer.id, amount, 'fcc');
+    if (!order.ok) {
+      return res.status(order.status || 503).json({ success: false, code: order.code, message: order.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      orderId: order.orderId,
+      amount,
+      minutes,
+      currency: order.currency,
+      keyId: order.keyId,
+      astrologerId: hold.astrologer_id,
+      holdSeconds: offer.holdPaymentSeconds,
+    });
+  }));
+
+  /* ── Customer: no thanks (the dismiss button) ──────────────────────────────
+   * Frees the astrologer immediately rather than making the next customer wait out a
+   * reservation nobody wants any more.
+   */
+  /* ── Customer abandoned the gateway ───────────────────────────────────────
+   * Puts the hold back to the decision phase instead of releasing it outright.
+   * Releasing would be simpler but it would send a customer who merely mistyped a
+   * card straight to the waitlist; keeping the payment phase would block every OTHER
+   * customer for three minutes over a purchase that never happened. Decision phase is
+   * the honest middle: this customer can retry, and paying customers get through.
+   */
+  app.post('/api/free-call/continue/abandon-payment', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const hold = await holds.getHoldForCustomer(db, customer.id);
+    if (!hold) return res.status(200).json({ success: true, active: false });
+    const ok = await holds.downgradeToDecision(db, {
+      astrologerId: hold.astrologer_id,
+      customerId: customer.id,
+      seconds: 45,
+    });
+    return res.status(200).json({ success: true, active: ok });
+  }));
+
+  app.post('/api/free-call/continue/release', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const hold = await holds.getHoldForCustomer(db, customer.id);
+    if (hold) {
+      // Scoped to this customer, so a release can only ever free your OWN reservation.
+      await holds.releaseHold(db, { astrologerId: hold.astrologer_id, customerId: customer.id });
+      // Clear the astrologer's "you are reserved" banner at once, rather than leaving
+      // it counting down against a reservation that no longer exists.
+      const io = app.locals.io;
+      if (io) io.to(hold.astrologer_id).emit('astrologer_hold_ended', { astrologerId: hold.astrologer_id });
+      // They are free now, so anyone on the waitlist for them should hear about it.
+      const stillBusy = await checkAstrologerBusy(db, hold.astrologer_id);
+      if (!stillBusy.busy) {
+        notifyWaitlistIfFree(db, sendPush, hold.astrologer_id).catch(() => {});
+      }
+    }
+    return res.status(200).json({ success: true });
+  }));
+
+  /* ── Customer: how was Astrowani? ──────────────────────────────────────────
+   * OUR rating, not a store review. Deliberately not wired to the Play Store / App
+   * Store prompt: routing only the happy answers to the store is review gating, which
+   * Google's In-App Review guidance names directly and Play treats as ratings
+   * manipulation. The store prompt is triggered by BEHAVIOUR (a call that ran most of
+   * its length) instead — see the app's appReviewGoodMoment flag.
+   */
+  app.post('/api/app-rating', h(async (req, res) => {
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Please log in.' });
+
+    const rating = clampInt(req.body?.rating, 1, 5, 0);
+    if (!rating) return res.status(400).json({ success: false, message: 'rating must be 1-5' });
+
+    const { error } = await db.from('app_ratings').insert([{
+      customer_id: customer.id,
+      rating,
+      context: typeof req.body?.context === 'string' ? req.body.context.slice(0, 40) : null,
+      session_id: req.body?.sessionId || null,
+      comment: typeof req.body?.comment === 'string' ? req.body.comment.slice(0, 2000) : null,
+    }]);
+    if (error && !isMissingTable(error)) {
+      console.error('[app-rating] insert failed:', error.message);
+    }
+    // Always 200: a rating that fails to save must not show the customer an error for
+    // something they did us a favour by answering.
+    return res.status(200).json({ success: true });
   }));
 
   /* ── Customer: the slot grid ──────────────────────────────────────────────
@@ -1276,6 +2051,116 @@ module.exports = function registerFreeCallRoutes(app) {
     return res.status(200).json({ success: true });
   }));
 
+  /* ── Vendor: the free intro call toggle ────────────────────────────────────
+   * Switching ON puts this astrologer into the pool customers pick from; switching OFF
+   * takes them out. The astrologer id comes from the verified JWT, never the body.
+   *
+   * THE COMMITMENT, and why the server owns it: an astrologer must complete
+   * `minFreeCallsBeforeOptOut` free calls before they may switch it back off. The offer
+   * is advertised to brand-new customers, so a pool that drains itself the first busy
+   * evening leaves them on a screen with nobody on it. The vendor app shows a warning on
+   * the way in and refuses on the way out, but the app is never the enforcement point —
+   * the refusal below is (same rule as /api/vendor/availability).
+   *
+   * Switching ON is ALWAYS allowed. The rule exists to keep supply up, and it would be
+   * a strange one that made it harder to volunteer.
+   */
+  async function freeIntroToggleState(astrologerId) {
+    const offer = await loadOffer();
+    const required = offer.minFreeCallsBeforeOptOut;
+    const pinned = offer.instantPoolAstrologerIds.includes(astrologerId);
+
+    const { data: astro, error } = await db
+      .from('astrologers')
+      .select('free_intro_call_enabled')
+      .eq('id', astrologerId)
+      .maybeSingle();
+    if (error && isMissingOptInColumn(error)) {
+      optInColumnAvailable = false;
+      return { available: false };
+    }
+    if (error || !astro) return { available: false };
+
+    // Everything they have already given, scheduled or instant — it is the same work,
+    // and counting only one kind would read as the platform moving the goalposts.
+    const { count } = await db
+      .from('free_call_bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('astrologer_id', astrologerId)
+      .eq('status', 'completed');
+    const completed = Number(count) || 0;
+
+    return {
+      available: true,
+      enabled: astro.free_intro_call_enabled === true || pinned,
+      // Pinned by the admin: their own switch cannot take them out, so say so rather
+      // than showing a toggle that flips back and a pool that keeps calling them.
+      managedByAdmin: pinned,
+      completed,
+      required,
+      remaining: Math.max(0, required - completed),
+      canDisable: !pinned && completed >= required,
+    };
+  }
+
+  app.get('/api/vendor/free-intro-call', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    return res.status(200).json({ success: true, ...(await freeIntroToggleState(astrologerId)) });
+  }));
+
+  app.post('/api/vendor/free-intro-call', h(async (req, res) => {
+    const astrologerId = resolveAstrologerId(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, code: 'BAD_REQUEST', message: 'enabled must be true or false' });
+    }
+
+    const state = await freeIntroToggleState(astrologerId);
+    if (!state.available) {
+      return res.status(503).json({
+        success: false, code: 'NOT_CONFIGURED',
+        message: 'Free intro calls are not set up yet.',
+      });
+    }
+
+    if (!enabled && state.enabled) {
+      if (state.managedByAdmin) {
+        return res.status(403).json({
+          success: false, code: 'MANAGED_BY_ADMIN', ...state,
+          message: 'Astrowani has added you to the free intro call programme. Please contact support to opt out.',
+        });
+      }
+      if (!state.canDisable) {
+        return res.status(403).json({
+          success: false, code: 'MIN_CALLS_NOT_MET', ...state,
+          message: `Please complete ${state.required} free intro calls before switching this off. `
+            + `You have done ${state.completed}.`,
+        });
+      }
+    }
+
+    const { error } = await db
+      .from('astrologers')
+      .update({ free_intro_call_enabled: enabled })
+      .eq('id', astrologerId);
+    if (error) {
+      if (isMissingOptInColumn(error)) {
+        optInColumnAvailable = false;
+        return res.status(503).json({ success: false, code: 'NOT_CONFIGURED', message: 'Free intro calls are not set up yet.' });
+      }
+      throw new Error(error.message);
+    }
+    // So the customer-facing list reflects this on the very next request rather than up
+    // to fifteen seconds later — an astrologer who switches on and is told to wait reads
+    // it as broken.
+    invalidateOptedInCache();
+
+    return res.status(200).json({ success: true, ...(await freeIntroToggleState(astrologerId)) });
+  }));
+
   /* ── Vendor: my assigned free calls ───────────────────────────────────────
    * The astrologer_id comes from the verified vendor JWT, never the query — an
    * astrologer must not be able to read another's list, which here means reading
@@ -1458,11 +2343,11 @@ module.exports = function registerFreeCallRoutes(app) {
 
     const { data: astro } = await db
       .from('astrologers')
-      .select('id, name, first_name, last_name, profile_pic_url, profile_image')
+      .select('id, name, first_name, last_name, profile_pic_url')
       .eq('id', astrologerId)
       .maybeSingle();
     const astroName = booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer';
-    const astroImage = astro?.profile_image || astro?.profile_pic_url || '';
+    const astroImage = astro?.profile_pic_url || '';
 
     const payload = {
       type: 'free_call_incoming',
@@ -1548,7 +2433,7 @@ module.exports = function registerFreeCallRoutes(app) {
 
     const { data: astro } = await db
       .from('astrologers')
-      .select('id, name, first_name, last_name, profile_pic_url, profile_image')
+      .select('id, name, first_name, last_name, profile_pic_url')
       .eq('id', booking.astrologer_id)
       .maybeSingle();
 
@@ -1559,7 +2444,7 @@ module.exports = function registerFreeCallRoutes(app) {
         sessionId: booking.call_session_id,
         astrologerId: booking.astrologer_id,
         astrologerName: booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer',
-        astrologerImage: astro?.profile_image || astro?.profile_pic_url || '',
+        astrologerImage: astro?.profile_pic_url || '',
         durationMinutes: booking.duration_minutes || 12,
       },
     });
@@ -1774,6 +2659,78 @@ function dateLabel(dateKey) {
   return { day: DAY_NAMES[dt.getUTCDay()], date: d, month: MON_NAMES[m - 1] };
 }
 
+/**
+ * Point a customer's live INSTANT booking at the session that has just been created for
+ * it, and stamp when the call started.
+ *
+ * WHY THIS EXISTS, and why it is not optional: everything that happens at the END of a
+ * free call is keyed on `free_call_bookings.call_session_id`.
+ *   * sessionManager.closeFreeCallBooking() finds the booking by it — no link, no booking
+ *     closure, NO PAYOUT and no hold, so the upsell never appears either;
+ *   * sessionManager.endOverdueFreeCalls() finds overrunning calls by it — no link means
+ *     the 12-minute limit is never enforced by the server.
+ * The scheduled flow sets this in its own /ring endpoint. The instant flow cannot: the
+ * session is created later, by /api/session/accept, when the astrologer accepts.
+ *
+ * Found by driving two emulators (2026-09-27): every earlier test stopped at the ring, so
+ * nothing had ever exercised the accept. The call worked and was correctly free — it just
+ * silently paid nobody and would have run forever.
+ *
+ * Never throws: the call is already connecting by the time this runs and must not be
+ * broken by a bookkeeping failure. A miss is loud in the log and fixable by hand.
+ */
+async function linkInstantBookingToSession(customerId, sessionId) {
+  if (!customerId || !sessionId) return false;
+  try {
+    const { data, error } = await db
+      .from('free_call_bookings')
+      .update({
+        call_session_id: sessionId,
+        call_started_at: new Date().toISOString(),
+        call_ended_at: null,
+        call_duration_seconds: null,
+      })
+      .eq('customer_id', customerId)
+      .eq('kind', 'instant')
+      .eq('status', 'booked')
+      .is('call_session_id', null)
+      .select('id');
+    if (error) {
+      if (isMissingColumn(error, 'kind')) return false; // pre-migration; nothing to link
+      console.error('[FreeCall] could not link instant booking to session '
+        + `${sessionId} — this call will NOT pay the astrologer:`, error.message);
+      return false;
+    }
+    if (!data || !data.length) {
+      console.warn(`[FreeCall] no open instant booking for customer ${customerId}; `
+        + `session ${sessionId} is free but unlinked (no payout, no hold).`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[FreeCall] linkInstantBookingToSession threw:', e.message);
+    return false;
+  }
+}
+
+module.exports.linkInstantBookingToSession = linkInstantBookingToSession;
+
+/**
+ * Configured free-call length in seconds, for /api/session/accept to hand to the
+ * ASTROLOGER's call screen. That screen already knows how to run a free call (it takes
+ * freeCall/freeCallSeconds and shows the remaining time); it simply was not being told,
+ * so the astrologer saw a plain elapsed counter while the customer watched a countdown
+ * and had no idea when the free period ran out.
+ */
+async function freeCallDurationSeconds() {
+  try {
+    const offer = await loadOffer();
+    return (Number(offer.durationMinutes) || 12) * 60;
+  } catch (_) {
+    return 12 * 60;
+  }
+}
+module.exports.freeCallDurationSeconds = freeCallDurationSeconds;
 module.exports.loadOffer = loadOffer;
 module.exports.FREE_CALL_TZ_OFFSET_MIN = FREE_CALL_TZ_OFFSET_MIN;
 // Exported for tests only. The slot arithmetic is the part of this file most

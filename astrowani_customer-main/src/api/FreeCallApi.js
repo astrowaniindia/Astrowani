@@ -141,3 +141,161 @@ export async function bookFreeCall(slotStart) {
     throw e;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * INSTANT MODE
+ * The customer picks whoever is free right now and that astrologer's phone rings
+ * immediately. Same read/write split as above: the list RESOLVES on failure (an
+ * empty list is a survivable screen), the ring THROWS (a failed call is something
+ * the customer has to be told about).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const NO_ASTROLOGERS = { astrologers: [], durationMinutes: 12, attemptsLeft: 0 };
+
+/**
+ * Who can be called right now. Busy astrologers are included WITH an `isBusy` flag
+ * rather than removed — the busy pill doubles as the "notify me" button, and a list
+ * that empties itself at peak time reads as a broken screen.
+ */
+export async function getInstantAstrologers() {
+  try {
+    const res = await Instance.get('/api/free-call/instant/astrologers', {
+      ...(await authHeader()),
+      params: { platform: PLATFORM },
+    });
+    if (!res.data?.success) return { ...NO_ASTROLOGERS, code: res.data?.code || null };
+    (res.data.astrologers || []).forEach((a) => {
+      if (typeof a?.image === 'string' && /^https?:/.test(a.image)) Image.prefetch(a.image).catch(() => {});
+    });
+    return res.data;
+  } catch (err) {
+    // A refusal (not eligible, offer off) carries a code the screen can explain.
+    return { ...NO_ASTROLOGERS, code: err?.response?.data?.code || null, message: err?.response?.data?.message };
+  }
+}
+
+/**
+ * Ring one astrologer. THROWS on refusal; `code` is what the screen branches on:
+ * ASTROLOGER_BUSY | NOT_IN_POOL | UNAVAILABLE | SELF_BUSY | TOO_MANY_ATTEMPTS |
+ * ALREADY_USED | NOT_ELIGIBLE | OFFER_CLOSED | MIGRATION_REQUIRED.
+ */
+/**
+ * A window during which this device might be carrying an unfinished free-call offer.
+ *
+ * FreeCallContinueHost reads it to decide whether to ask the server about a live hold on
+ * app foreground. Without it, every customer on every app open would pay for a request
+ * that can only ever matter to someone who rang a free call in the last few minutes —
+ * the cost that CLAUDE.md's section CJ says to watch. Written here because this is the
+ * only way a free instant call can begin, and it is written BEFORE the offer exists
+ * precisely because the interesting case is the app dying before it can be shown.
+ */
+export const FREE_CALL_HOLD_WINDOW_KEY = 'freeCallHoldPossibleUntil';
+const HOLD_WINDOW_MS = 45 * 60 * 1000; // a 12-minute call, a long ring, and slack
+
+export async function ringInstantAstrologer(astrologerId) {
+  lastOffer = null; // eligibility changes the moment this succeeds
+  try {
+    const res = await Instance.post(
+      '/api/free-call/instant/ring',
+      { astrologerId, platform: PLATFORM },
+      await authHeader(),
+    );
+    AsyncStorage.setItem(FREE_CALL_HOLD_WINDOW_KEY, String(Date.now() + HOLD_WINDOW_MS))
+      .catch(() => {});
+    return res.data;
+  } catch (err) {
+    const data = err?.response?.data;
+    const e = new Error(data?.message || 'Could not connect that call. Please try again.');
+    e.code = data?.code || null;
+    e.busySince = data?.busySince || null;
+    throw e;
+  }
+}
+
+/**
+ * Stop ringing — nobody answered, or the customer backed out. Resolves either way:
+ * this is cleanup, and failing it must never block the customer from trying somebody
+ * else. The server keeps the attempt open so they can.
+ */
+export async function giveUpInstantRing(requestId, status = 'cancelled') {
+  try {
+    await Instance.post('/api/free-call/instant/give-up', { requestId, status }, await authHeader());
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * The "more minutes" offer after a free call: is an astrologer still held for me, and
+ * what would each option cost? PRICES COME FROM HERE — the app never multiplies a rate
+ * by minutes itself.
+ */
+export async function getContinueOptions() {
+  try {
+    const res = await Instance.get('/api/free-call/continue/options', await authHeader());
+    return res.data?.success ? res.data : { active: false, options: [] };
+  } catch (_) {
+    return { active: false, options: [] };
+  }
+}
+
+/**
+ * Take one of those options: extends the reservation into its payment phase and opens
+ * a Razorpay order for exactly that amount. THROWS — the customer is trying to spend
+ * money and a silent failure here is the worst possible outcome.
+ *
+ * `code` is HOLD_EXPIRED when the astrologer is no longer reserved, which the sheet
+ * turns into "they're busy now, shall we tell you when they're free?".
+ */
+export async function startContinuePayment(minutes) {
+  try {
+    const res = await Instance.post('/api/free-call/continue/start', { minutes }, await authHeader());
+    return res.data;
+  } catch (err) {
+    const data = err?.response?.data;
+    const e = new Error(data?.message || 'Could not start the payment. Please try again.');
+    e.code = data?.code || null;
+    throw e;
+  }
+}
+
+/** Let the astrologer go (the dismiss button). Resolves either way — it is a courtesy. */
+export async function releaseContinueHold() {
+  try {
+    await Instance.post('/api/free-call/continue/release', {}, await authHeader());
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * The customer opened the gateway and backed out. Hands the astrologer back to other
+ * customers (the hold drops from the payment phase to the decision phase) instead of
+ * leaving them blocked to everyone for three minutes over a purchase that never
+ * happened. Resolves either way — this runs on an error path and must not add a
+ * second failure to the first.
+ */
+export async function abandonContinuePayment() {
+  try {
+    await Instance.post('/api/free-call/continue/abandon-payment', {}, await authHeader());
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * How the customer rated ASTROWANI (not the astrologer, and not a store review).
+ * Resolves on failure: they did us a favour by answering, and showing them an error
+ * for it would be absurd.
+ */
+export async function submitAppRating({ rating, context, sessionId, comment } = {}) {
+  try {
+    await Instance.post('/api/app-rating', { rating, context, sessionId, comment }, await authHeader());
+    return true;
+  } catch (_) {
+    return false;
+  }
+}

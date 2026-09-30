@@ -74,11 +74,20 @@ export function ReviewPromptHost() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       captureEvent('review_submitted', { astrologer_id: target.astrologerId, rating, source: 'post_session_prompt' });
-      // A happy customer is the right moment to ask for a PUBLIC Play Store rating —
-      // and someone who just rated a session 1-3 stars is emphatically not. This only
-      // records the signal; RateAppPrompt picks it up on the next launch rather than
-      // opening a second modal on top of the success popup below.
-      if (rating >= 4) markReviewGoodMoment();
+      // Someone who finished a consultation and then took the trouble to review it is
+      // an engaged customer, and that is the right moment to ask for a PUBLIC store
+      // rating. It is armed for EVERY submitted review, whatever the stars.
+      //
+      // This used to read `if (rating >= 4)`. That is review gating: deciding whether
+      // to offer the store prompt based on the sentiment the customer just expressed.
+      // Google's In-App Review guidance names conditioning the prompt on a user's
+      // answer as a thing not to do, Play's policy treats it as ratings manipulation,
+      // and Apple rejects it. Changed 2026-09-27 — do not put the rating check back.
+      //
+      // The signal is behavioural (they reviewed at all), not sentimental (what they
+      // said). This only RECORDS it; RateAppPrompt picks it up on the next launch
+      // rather than opening a second modal on top of the success popup below.
+      markReviewGoodMoment();
       close();
       showStatusPopup({ variant: 'success', title: 'Thank you!', message: 'Your review has been submitted.' });
     } catch (err) {

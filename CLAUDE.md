@@ -6283,3 +6283,194 @@ check customer −₹X, astrologer +₹X/2, `admin_wallet.balance` +₹X/2, and 
 `service_key='session_billing'` ledger row per minute. Note `admin_wallet_transactions`
 had **zero** `session_billing` rows as of this session, so the split had never yet run on a
 real consultation.
+
+---
+
+## Session 2026-09-30 (later): calls and chat were not connecting — acceptance delivery had no backstop
+
+### DF. What was actually broken, measured before anything was changed
+
+Reported: "the call is not getting connected, neither video nor audio — it just rings until
+the timer is done"; "in chat the astrologer gets connected and comes to the chat room but on
+the customer side only 'request sent' shows"; and later, "video was working fine, chat and
+audio call were the problems".
+
+**The backend was never the problem. Acceptance DELIVERY to the customer was.** Evidence
+gathered first, in this order:
+
+- `chat_requests` / `call_requests` rows were reaching `status='accepted'` with `responded_at`
+  set, and `chat_sessions` rows were being created. `logs/errors.log` on the VPS had nothing
+  but the usual SMS-failover lines.
+- A live end-to-end probe against production proved BOTH transports work when everything is
+  online and subscribed in time: socket `call_accepted` arrived, and the Supabase Realtime
+  UPDATE arrived, for a real `/api/call/initiate` -> `/api/session/accept` cycle.
+- **PostHog dated the break to within one hour.** Customer-side `chat_started` and
+  `call_connected` collapse to ~zero from **2026-09-29 22:00 UTC** while `chat_initiated` and
+  `call_initiated` continue at the same rate. (The customer Android OTA `01a0eefb`, commit
+  `dc94f4b`, shipped at 21:03:46 UTC — the last working chat session started 21:11 UTC on the
+  still-running old bundle, the first broken one at 22:23 UTC after a relaunch.)
+- `$screen` events said how far the app got: in the 07:00 UTC 2026-09-30 test window,
+  **`ChatSessionScreen` = 0 views against 3 `chat_initiated` and one accepted chat** — the
+  customer never navigated at all. For audio, one accepted call produced one `VoiceCallScreen`
+  view and **zero `call_connected`**, and its session died at 34s with `next_billing_at` still
+  NULL, i.e. never activated.
+- `chat_messages` agreed: accepted chats after 21:11 UTC had `from_customer = 0`. The customer
+  auto-sends its birth details on connect, so zero means it was never in the room.
+
+**THE CAUSE, and it is a design gap rather than one bad line: the customer learned the outcome
+from exactly ONE push-style message, and nothing anywhere reconciled state if it was missed.**
+
+| Path | Before |
+|---|---|
+| chat acceptance | ONE Supabase Realtime UPDATE. No socket path existed at all. |
+| call acceptance | socket `call_accepted` **emitted only by the vendor app's HomeScreen**, plus one Realtime UPDATE |
+| rejection | Realtime only — the vendor app emitted nothing |
+| `join_session` | fire-and-forget. Every failure was a silent `return`. Never retried. |
+| pre-connect state | no deadline of any kind (the 30s countdown only starts at `'ringing'`) |
+
+Ways that single message was lost, all real:
+1. **The astrologer accepted from the heads-up notification or the new draw-over-other-apps
+   overlay.** Both run with no HomeScreen and no socket, so `accept_call` was never emitted
+   and Realtime was the only signal that ever existed.
+2. The Realtime channel was still SUBSCRIBING when the accept landed (accepts as fast as 4s
+   were measured; the channel needs ~1s and the socket's verified `join_room` does a DB
+   round trip first).
+3. The customer's phone was locked or the app backgrounded — which is what happens while the
+   tester looks at the *other* handset. That drops both sockets, and neither redelivers.
+
+**And separately, the media path:** `webrtc_ready` -> `webrtc_offer` -> `webrtc_answer` all
+travel through the session socket room. `join_session` does TWO database round trips before
+joining and used to `return` silently on any failure, with no retry and no ack — so a customer
+that was never in the room heard no `webrtc_ready`, never sent an offer, and sat on "Ringing..."
+while the astrologer never reached ICE-connected and never emitted `signal_connection`. That
+is the audio symptom exactly; video survived on timing luck, not design.
+
+### DG. Second reported bug: hanging up inside the connecting window told nobody
+
+"the time between accepting request and getting connected — if one side cuts, the other shows
+connecting connecting connecting ... and it doesn't even tell why."
+
+`terminateSession` does emit `session_ended` to both personal rooms AND the session room, and
+its claim is correctly keyed on `ended_at IS NULL` (not `is_active`), so ending a
+never-connected call is not treated as already-ended. But:
+
+- **a socket that has not finished joining is in none of those rooms, and Socket.io never
+  replays to a room you join afterwards**; and
+- **the astrologer's call screen is in the session room ONLY** (HomeScreen owns the personal
+  room) **and HomeScreen has no `session_ended` listener** — so a customer hanging up early
+  reached the astrologer's app nowhere at all.
+
+Found while fixing it: **`sessionManager.io` was assigned only inside `start(io)`, which is
+gated on `ENABLE_SESSION_MANAGER`.** Every client notification in `terminateSession` sits
+behind `if (this.io)`, so on any process without that flag a session could end with NOBODY
+told. Production sets the flag so no real customer hit it, but tying "can we tell people the
+call ended" to "do we run billing here" is the wrong dependency — and it is what hid this bug
+during local testing. There is now `sessionManager.attachIo(io)`, called unconditionally
+before the gate. **Do not fold it back into `start()`.**
+
+### DH. What changed
+
+**Backend (`index.js`, `src/sessionManager.js`)**
+- `/api/session/accept` **emits the acceptance itself** — `call_accepted` for
+  `call_requests`, `chat_accepted` for `chat_requests` — to the caller's personal room. The
+  notification is now a property of the acceptance, not of which button the astrologer
+  pressed. The vendor's own emit is kept; it is a harmless duplicate because every
+  customer-side handler is idempotent. `/api/session/reject` does the same with
+  `call_rejected` / `chat_rejected`. Both are wrapped so a failed emit can never fail an
+  accepted call.
+- **`join_session` now takes an optional ack callback** and answers `{ok}` plus a `retry`
+  flag, and also emits `session_joined` / `session_join_failed`. `session_not_found` is
+  marked retryable (the row may legitimately not be visible yet); `not_a_participant`,
+  `unauthenticated` and `session_ended` are not. Old builds that pass no callback behave
+  exactly as before.
+- **`GET /api/requests/:kind/:id/status`** — the customer's authoritative "has the astrologer
+  picked up yet?", returning `{status, sessionId}` and resolving a chat request's session id
+  for the chat screen. Scoped to the caller's own row, and **refuses an astrologer token
+  outright**: one phone number can be both a customer and an astrologer (the store-reviewer
+  account is), and `resolveCustomerFromReq` works by phone, so a vendor token would otherwise
+  be served the customer's row. Same trap and same fix as `/api/notifications/read`.
+- **`GET /api/session/:id/state`** — `{ended, endedAt, active, viewer}` for the two
+  participants only. This is what un-sticks a screen stuck on "Connecting...".
+- `sessionManager.attachIo(io)`, above.
+
+**Both apps — three new shared utilities, duplicated per app as every other cross-app util here is**
+- `utils/sessionRoom.js` -> `joinSessionWithRetry(socket, sessionId)`: re-emits every 1.5s
+  until the server acks, gives up only on a non-retryable refusal, and re-arms on reconnect.
+  **Wired into all four call screens and both chat screens.** This is the audio-call fix.
+- `utils/awaitRequestOutcome.js` (customer only) -> polls the status endpoint every 2s while a
+  request is ringing, plus immediately on `AppState` -> active. **Wired into `useChatRequest`
+  and all five call entry points** (`Call.js`, `Video.js`, `Home.js` x2, `AstrologerInfo.js`
+  x2, `ExpertsList.js`). It never decides anything itself — it calls the screen's existing
+  `goToCall` / cleanup, which are already guarded, so whichever path arrives first wins.
+- `utils/preConnectWatchdog.js` (both apps) -> while unconnected, asks
+  `/api/session/:id/state` every 3s. If the session ended, leave AT ONCE naming the other
+  side ("The astrologer ended the call before it connected. You have not been charged." /
+  "The customer ended the call before it connected."). If still alive past 45s, give up with
+  "We could not connect this call." **Its deadline only applies once the endpoint has
+  actually answered** — against a backend without the route it stays a no-op rather than
+  killing slow-but-real connections, so the app half is safe to ship before the backend.
+- `useChatRequest` gained a socket path (it had none) and all three paths funnel into one
+  `resolveAccepted` / `resolveClosed` pair behind a `resolvedRef`. Its ring timeout now
+  **re-checks the server before writing the request off as missed**, so an accept that landed
+  in the last second cannot strand the astrologer.
+- 3 new i18n keys per app, EN + HI (customer 1198 keys, vendor 488, zero one-sided).
+
+**The draw-over-other-apps overlay was deliberately left completely alone** at the owner's
+request. It benefits for free: its accept path goes through `/api/session/accept`, which now
+notifies the customer itself.
+
+### Verified 2026-09-30 — 29/29 over real sockets and HTTP
+
+A harness (`verify.js`, session scratchpad, not the repo) drives a real customer and a real
+astrologer through production's own login, then asserts on **what the customer-shaped client
+receives** — not on the helpers (CLAUDE.md subsystem BN: a harness that only tests your own
+module reports green while the call sites that ignore it stay broken).
+
+Run first against the OLD code as a baseline: **15 failures**, including no server-side
+acceptance notification, no ack from `join_session`, and no status endpoint. Then against the
+fixed code: **29 passed, 0 failed**, teardown confirming 0 leftover call_requests,
+chat_requests or sessions.
+
+Covers: the astrologer accepting over HTTP ONLY (the notification/overlay case) still
+reaching the customer; the session keeping its pre-generated id so both sides address the same
+room; `join_session` acked, and refused with a reason for an unknown session; `webrtc_ready`
+actually reaching the customer; the polling backstop reporting `accepted` + `sessionId`, and
+refusing both an unauthenticated read and an astrologer token; **the hangup-during-connecting
+case** — the astrologer receiving `session_ended` in the session room, both sides' state reads
+agreeing it ended, a late joiner being refused `session_ended`, and a non-participant refused;
+the whole chat flow including its new socket event; and rejection reaching the customer.
+
+> **Run the local backend with `node --env-file=.env scripts/devServer.js` and on a spare
+> `PORT=`.** `index.js` must never be booted directly here, and the first attempt of this
+> session silently lost 15 assertions to `EADDRINUSE` against the dev server already on
+> :4500 — the harness happily tested the OLD code and reported failures as if they were new.
+> **Check the boot log for EADDRINUSE before trusting a local result.**
+
+> **Harness lesson, the fourth recorded in this file: do not blind-retry a POST.**
+> `/api/call/initiate` and `/api/chat/initiate` hold a per-customer in-flight mutex, so a
+> retry of a request the server had already accepted came back `409 selfBusy` — which reads
+> exactly like a product bug and sent me looking for one. GETs retry; POSTs get one long
+> attempt.
+
+Both apps bundle clean for Android (customer 7,963,122 bytes; vendor 6,184,270). `node --check`
+clean on both backend files. Lint on every changed file is back to exactly the pre-existing
+`exhaustive-deps` / unused-var errors, confirmed by linting the HEAD versions side by side.
+
+### Deploy order and what is NOT yet done
+
+1. **Deploy the backend FIRST.** The app half degrades safely without it (the pollers 404 and
+   are ignored, the watchdog's deadline stays disarmed, the join retry just re-emits), but
+   nothing is actually fixed until the routes exist.
+2. **Then OTA both apps, both platforms.** `node scripts/deployOta.js` from each app folder;
+   quote a multi-word message twice on Windows (see subsystem CB).
+3. **Not exercised on two real devices.** The one test worth doing: accept from the
+   *notification* or the *overlay* (not the in-app card) and confirm the customer connects;
+   then start a call and cut it from each side during "Connecting..." and confirm the other
+   side leaves with a reason instead of hanging.
+4. Not changed, noticed in passing: a **vendor HomeScreen crash**
+   (`TypeError: Cannot read property 'length' of undefined`, Sentry `ASTROWANI-VENDOR-6`, 3x
+   at 2026-09-29 23:57-23:58 UTC, caught by the AppRoot ErrorBoundary) on a transient
+   versionCode-31 dev build. It stopped before `5569d70` and `popupQueue` is declared above
+   its uses at HEAD, so it appears already fixed — but if the astrologer dashboard ever shows
+   the error fallback again, that crash also disables HomeScreen's socket listeners, its
+   Realtime channel and the ringtone teardown.

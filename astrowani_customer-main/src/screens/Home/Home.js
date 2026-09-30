@@ -90,6 +90,7 @@ import RequestingPopup from '../../components/RequestingPopup';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
+import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
@@ -427,6 +428,10 @@ const Home = ({navigation}) => {
   const socketRef = React.useRef(null);
   const callChannelRef = React.useRef(null);
   const navigatedRef = React.useRef(false);
+  // Server-polled outcome for the in-flight request — the backstop behind the socket and
+  // Realtime paths. See utils/awaitRequestOutcome.js. Shared by the audio and video call
+  // sites below, which already share cancelCall.
+  const outcomePollerRef = React.useRef(null);
   // Tracks the in-flight call request so cancel/back can mark it cancelled + notify the vendor
   const activeCallRef = React.useRef(null);
 
@@ -621,6 +626,7 @@ const Home = ({navigation}) => {
   const cancelCall = (msg, status = 'cancelled', title = 'Call Ended') => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
+    if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
     const active = activeCallRef.current;
     activeCallRef.current = null;
     if (active?.requestId) {
@@ -710,6 +716,7 @@ const Home = ({navigation}) => {
       const goToCall = dbSessionId => {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
+        if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
         activeCallRef.current = null; // accepted → don't cancel
         if (callChannelRef.current) {
           supabase.removeChannel(callChannelRef.current);
@@ -766,6 +773,19 @@ const Home = ({navigation}) => {
         )
         .subscribe();
       callChannelRef.current = channel;
+
+      // Third path: poll the server. Covers a missed socket/Realtime message and the
+      // astrologer accepting from the notification or the draw-over-other-apps overlay.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: requestData.id,
+        label: 'home audio call',
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => {
+          if (status === 'rejected') cancelCall(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy');
+          else if (status === 'missed') cancelCall(t('alerts.notPickedUpAudio'), 'missed', 'Not Answered');
+        },
+      });
 
       // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
@@ -846,6 +866,7 @@ const Home = ({navigation}) => {
       const goToCall = dbSessionId => {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
+        if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
         activeCallRef.current = null; // accepted → don't cancel
         if (callChannelRef.current) {
           supabase.removeChannel(callChannelRef.current);
@@ -898,6 +919,19 @@ const Home = ({navigation}) => {
         )
         .subscribe();
       callChannelRef.current = channel;
+
+      // Third path: poll the server. Covers a missed socket/Realtime message and the
+      // astrologer accepting from the notification or the draw-over-other-apps overlay.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: requestData.id,
+        label: 'home video call',
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => {
+          if (status === 'rejected') cancelCall(t('alerts.astrologerBusy'), 'rejected', 'Astrologer Busy');
+          else if (status === 'missed') cancelCall(t('alerts.notPickedUpVideo'), 'missed', 'Not Answered');
+        },
+      });
 
       // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {

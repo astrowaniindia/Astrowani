@@ -30,6 +30,7 @@ import useElapsedSeconds from '../utils/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
+import { joinSessionWithRetry } from '../utils/sessionRoom';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
@@ -70,6 +71,7 @@ const VendorChatSession = ({ route, navigation }) => {
   const pollMsgRef = useRef(null);
   const pollEndRef = useRef(null);
   const socketRef = useRef(null);
+  const sessionJoinRef = useRef(null);
   const isEndingRef = useRef(false);
   const startMsRef = useRef(null);
   const typingTimerRef = useRef(null);
@@ -215,9 +217,17 @@ const VendorChatSession = ({ route, navigation }) => {
       // resumed), not just the initial join below — the backend's session-abandon grace
       // timer (index.js) only cancels once this fires, so without it a real reconnect
       // would still get treated as an abandoned session and end a perfectly live chat.
+      // Live messages, typing and session_ended all travel through the session room, so a
+      // join that silently failed left the chat looking connected while nothing arrived.
+      // joinSessionWithRetry keeps trying until the server acks, and re-joins on reconnect.
+      const joinRoom = (sid) => {
+        if (!sid) return;
+        if (sessionJoinRef.current) sessionJoinRef.current.stop();
+        sessionJoinRef.current = joinSessionWithRetry(socketRef.current, sid, { label: 'Vendor/Chat' });
+      };
+
       socketRef.current.on('connect', () => {
         if (!sessionIdRef.current) return;
-        socketRef.current.emit('join_session', sessionIdRef.current);
         // Tell the server which state we are in after every (re)connect, so the
         // background window started while we were asleep is cleared once back.
         socketRef.current.emit('session_app_state', {
@@ -245,7 +255,7 @@ const VendorChatSession = ({ route, navigation }) => {
         sessionIdRef.current = finalSessionId;
 
         // Socket signaling
-        socketRef.current.emit('join_session', finalSessionId);
+        joinRoom(finalSessionId);
         socketRef.current.emit('signal_connection', { sessionId: finalSessionId });
 
         socketRef.current.on('session_ended', (data) => {
@@ -335,6 +345,7 @@ const VendorChatSession = ({ route, navigation }) => {
       if (pollMsgRef.current) clearInterval(pollMsgRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
       // Leaving on purpose (End button, or back after the confirm) goes through
       // endSession(), which has already told the backend and set isEndingRef. So the only
       // way to reach this cleanup WITHOUT that flag is the screen being torn down under

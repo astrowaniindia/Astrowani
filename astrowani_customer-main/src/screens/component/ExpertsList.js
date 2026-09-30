@@ -39,6 +39,7 @@ import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { LanguageContext } from '../../context/LanguageContext';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
+import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 
 // Shared detailed astrologer card used by the category screens. Shows the full
 // profile (avatar, rating, name, specialty, languages, experience, price) plus
@@ -60,6 +61,9 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
   const [isCallWaiting, setIsCallWaiting] = useState(false);
   const [waitingAstro, setWaitingAstro] = useState(null);
   const callSocketRef = useRef(null);
+  // Server-polled outcome for the in-flight request — the backstop behind the socket and
+  // Realtime paths (utils/awaitRequestOutcome.js). Stopped by teardown().
+  const outcomePollerRef = useRef(null);
   const activeCallRef = useRef(null); // { requestId, astrologerId, roomId } while a call is pending
 
   const filteredData = React.useMemo(() => {
@@ -207,6 +211,7 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       const screen = type === 'video' ? 'VideoCallScreen' : 'VoiceCallScreen';
       const teardown = () => {
         try { supabase.removeChannel(channel); } catch (_) {}
+        if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
         sock.removeAllListeners();
         sock.disconnect();
         callSocketRef.current = null;
@@ -253,6 +258,27 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
           },
         )
         .subscribe();
+
+      // Third path: poll the server. Covers a missed socket/Realtime message and the
+      // astrologer accepting from the notification or the draw-over-other-apps overlay.
+      // See utils/awaitRequestOutcome.js.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: requestData.id,
+        label: `category ${type} call`,
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => {
+          if (status === 'rejected') declineCleanup(t('alerts.astrologerBusy'));
+          else if (status === 'missed') {
+            if (navigated) return;
+            navigated = true;
+            activeCallRef.current = null;
+            teardown();
+            setIsCallWaiting(false);
+            showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: type === 'video' ? t('alerts.notPickedUpVideo') : t('alerts.notPickedUpAudio') });
+          }
+        },
+      });
 
       // Auto-cancel after 1 minute if the vendor doesn't respond → missed call
       setTimeout(() => {

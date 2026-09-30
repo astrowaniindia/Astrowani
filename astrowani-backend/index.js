@@ -485,18 +485,42 @@ io.on('connection', (socket) => {
   // they are not part of, or silently eavesdrop on its live message/signaling events. Both
   // sides of this are now closed: joining requires a verified identity that is actually
   // caller_id or vendor_id on the session row.
-  socket.on('join_session', async (sessionId) => {
-    if (!sessionId) return;
+  // `ack` is an OPTIONAL Socket.io acknowledgement callback, and it is what makes a failed
+  // join recoverable. Until 2026-09-30 every failure below was a silent `return`: the client
+  // believed it was in the session room, the room contained nobody, and the vendor's
+  // `webrtc_ready` (emitted every 2s to `socket.to(sessionId)`) reached no one — so the
+  // customer sat on "Ringing…" for the full countdown and the call never connected, with
+  // nothing anywhere saying why. Two DB round trips happen below (identity, then the session
+  // row), either of which can lose a race with the caller's own navigation or just be slow,
+  // and NOTHING retried. Clients now retry until this acks (see joinSessionWithRetry in both
+  // apps). Old builds that pass no callback keep working exactly as before.
+  socket.on('join_session', async (sessionId, ack) => {
+    const reply = (payload) => {
+      if (typeof ack === 'function') { try { ack(payload); } catch (_) {} }
+      // Also emitted as an event, so a client that cannot use acks (or whose ack was lost
+      // with the socket) still learns the outcome.
+      socket.emit(payload.ok ? 'session_joined' : 'session_join_failed', { sessionId, ...payload });
+    };
+    if (!sessionId) { reply({ ok: false, reason: 'no_session_id', retry: false }); return; }
     const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
     if (!realId) {
       console.warn(`[socket] join_session rejected for ${sessionId} — missing/invalid auth token`);
+      reply({ ok: false, reason: 'unauthenticated', retry: false });
       return;
     }
     const { data: sessionRow } = await supabaseService
       .from('chat_sessions').select('id, caller_id, vendor_id, ended_at').eq('id', sessionId).maybeSingle();
-    if (!sessionRow
-      || (String(sessionRow.caller_id) !== String(realId) && String(sessionRow.vendor_id) !== String(realId))) {
+    if (!sessionRow) {
+      // The session row may genuinely not exist YET — the customer can reach its call screen
+      // from the Realtime backup path a moment before the insert is visible to this read.
+      // Worth retrying, unlike a real authorization failure.
+      console.warn(`[socket] join_session deferred — session ${sessionId} not found yet`);
+      reply({ ok: false, reason: 'session_not_found', retry: true });
+      return;
+    }
+    if (String(sessionRow.caller_id) !== String(realId) && String(sessionRow.vendor_id) !== String(realId)) {
       console.warn(`[socket] join_session rejected — ${realId} is not a participant of session ${sessionId}`);
+      reply({ ok: false, reason: 'not_a_participant', retry: false });
       return;
     }
     // The other side may have ended this session while THIS device was offline (network cut,
@@ -506,9 +530,11 @@ io.on('connection', (socket) => {
     // ended it). Tell a late joiner the session is already over.
     if (sessionRow.ended_at) {
       socket.emit('session_ended', { sessionId, reason: 'Session already ended' });
+      reply({ ok: false, reason: 'session_ended', retry: false });
       return;
     }
     socket.join(sessionId);
+    reply({ ok: true });
     console.log(`Socket ${socket.id} joined session room: ${sessionId} (verified participant ${realId})`);
 
     // Track for the disconnect handler below, and cancel any abandon-check already
@@ -886,8 +912,12 @@ require('./src/appleNotificationRoutes')(app);
 
 // Free 12-minute introductory call — customer booking + admin management.
 // Also needs adminRoutes' requireAdmin, so it registers after it.
-require('./src/freeCallRoutes')(app);
+const freeCallRoutes = require('./src/freeCallRoutes');
+freeCallRoutes(app);
 require('./src/whatsappRoutes')(app);
+// Dakshina — the voluntary thank-you after a free intro call. Needs adminRoutes'
+// requireAdmin, so it registers after it.
+require('./src/dakshinaRoutes')(app);
 
 // Gemini replies for the free 5-minute welcome chat, falling back to the app's
 // scripted engine on any failure or when the daily limit is hit. Needs
@@ -3455,6 +3485,82 @@ const CUSTOMER_REQUEST_TABLES = {
 };
 const CUSTOMER_SETTABLE_REQUEST_STATUSES = ['cancelled', 'missed'];
 
+// Read back the customer's OWN pending request — the authoritative answer to "has the
+// astrologer picked up yet?", independent of every live transport.
+//
+// WHY THIS EXISTS (2026-09-30): while waiting, the customer app learned the outcome from
+// exactly one push-style message — a socket `call_accepted` or a single Supabase Realtime
+// UPDATE — and if that one message was missed there was no recovery at all. It stayed on
+// "Request sent" / "Ringing…" until the ring timer expired, while the astrologer was
+// already sitting in the session. Ways to miss it, all real: the Realtime channel is still
+// SUBSCRIBING when the astrologer accepts (a fast accept is ~4s, the channel takes ~1s and
+// the socket's verified join does two DB round trips first); the phone is locked or the app
+// backgrounded, which drops both sockets; a network blip; or — before the accept/reject
+// emits added to /api/session/accept — the astrologer accepted from the notification or the
+// draw-over-other-apps overlay, neither of which has a socket to emit from.
+//
+// So the client now POLLS this while it waits. A missed message costs one poll interval
+// instead of the whole consultation. Scoped to the caller's own row via the verified JWT —
+// there is deliberately no way to read somebody else's request.
+app.get('/api/requests/:kind/:id/status', async (req, res) => {
+  try {
+    const target = CUSTOMER_REQUEST_TABLES[req.params.kind];
+    if (!target) return res.status(404).json({ success: false, message: 'Unknown request type' });
+
+    // This is the CUSTOMER's view of their own request, so refuse an astrologer token
+    // outright rather than letting resolveCustomerFromReq find a customer row.
+    //
+    // One phone number can be both a customer and an astrologer — the store-reviewer
+    // account 9999999999 is exactly that — and resolveCustomerFromReq works by phone, so an
+    // astrologer token would otherwise resolve to the customer who shares the number and be
+    // served that person's request. Same trap, and the same fix, as /api/notifications/read.
+    const authToken = (req.headers.authorization || '').split(' ')[1];
+    let decoded = null;
+    try { decoded = authToken ? jwt.verify(authToken, process.env.JWT_SECRET) : null; } catch (_) { decoded = null; }
+    if (!decoded) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    if (decoded.role === 'astrologer' || decoded.astroId || decoded.vendorId) {
+      return res.status(403).json({ success: false, message: 'This is a customer endpoint' });
+    }
+
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    // `session_id` lives on call_requests only; chat_requests has no such column and asking
+    // for it would 400 the whole select.
+    const sessionColumn = target.table === 'call_requests' ? ', session_id' : '';
+    const { data, error } = await supabaseService
+      .from(target.table)
+      .select(`id, status${sessionColumn}`)
+      .eq('id', req.params.id)
+      .eq(target.owner, customer.id)
+      .maybeSingle();
+    if (error) {
+      if (error.code === '22P02') return res.status(400).json({ success: false, message: 'Invalid request id' });
+      throw error;
+    }
+    // Not found is reported as a 200 with status null rather than a 404: the poller must be
+    // able to tell "no answer yet" from "something is wrong", and a 404 on a row the caller
+    // does not own would also confirm that the row exists for somebody else.
+    if (!data) return res.status(200).json({ success: true, status: null, sessionId: null });
+
+    let sessionId = data.session_id || null;
+    // A chat request carries no session id, so resolve the session the astrologer's accept
+    // created for it. Without this the chat screen would have to go find it itself.
+    if (!sessionId && target.table === 'chat_requests' && data.status === 'accepted') {
+      const { data: sess } = await supabaseService
+        .from('chat_sessions')
+        .select('id')
+        .eq('request_id', data.id)
+        .maybeSingle();
+      sessionId = sess?.id || null;
+    }
+    return res.status(200).json({ success: true, status: data.status, sessionId });
+  } catch (e) {
+    console.error('[requests] customer status read error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not read the request' });
+  }
+});
+
 app.post('/api/requests/:kind/:id/status', async (req, res) => {
   try {
     const target = CUSTOMER_REQUEST_TABLES[req.params.kind];
@@ -4556,7 +4662,15 @@ async function resolveOwnedRequestRow(astroId, targetTable, reqBody) {
   // reqBody.callerId, or a vendor with one legitimate pending request could swap in an
   // arbitrary victim's id while still passing the ownership/row-exists check above.
   const callerColumn = targetTable === 'call_requests' ? 'customer_id' : 'caller_id';
-  let query = supabaseService.from(targetTable).select(`id, status, ${callerColumn}`).eq(ownerColumn, astroId);
+  // is_free lives on call_requests only — the free intro call is a CALL feature, so
+  // chat_requests has no such column and asking for it would 400 the whole select.
+  // This flag MUST come from the row, never from the request body: it decides whether
+  // the customer is billed, so a vendor (or a tampered client) must not get a say.
+  const freeColumn = targetTable === 'call_requests' ? ', is_free' : '';
+  let query = supabaseService
+    .from(targetTable)
+    .select(`id, status, ${callerColumn}${freeColumn}`)
+    .eq(ownerColumn, astroId);
 
   if (reqBody.requestId) {
     query = query.eq('id', reqBody.requestId);
@@ -4570,7 +4684,12 @@ async function resolveOwnedRequestRow(astroId, targetTable, reqBody) {
 
   const { data } = await query.maybeSingle();
   if (!data) return null;
-  return { id: data.id, status: data.status, callerId: data[callerColumn] };
+  return {
+    id: data.id,
+    status: data.status,
+    callerId: data[callerColumn],
+    isFree: data.is_free === true,
+  };
 }
 
 app.post('/api/session/accept', async (req, res) => {
@@ -4601,8 +4720,15 @@ app.post('/api/session/accept', async (req, res) => {
       .eq('id', astroId)
       .single();
 
-    const perMinuteCharge =
-      reqBody.callType === 'chat'
+    // A free intro call is decided SERVER-SIDE, from the request row this astrologer
+    // actually owns. Getting this wrong in either direction is a money bug: bill a call
+    // we advertised as free, or hand away a paid consultation for nothing. The rate is
+    // forced to 0 as well as setting the flag, so that even if something later ignores
+    // is_free, there is no per-minute charge to apply.
+    const isFreeCall = ownedRow.isFree === true;
+    const perMinuteCharge = isFreeCall
+      ? 0
+      : reqBody.callType === 'chat'
         ? astroData?.chat_charge_per_minute ?? 0
         : reqBody.callType === 'video'
         ? astroData?.video_charge_per_minute ?? 0
@@ -4611,6 +4737,7 @@ app.post('/api/session/accept', async (req, res) => {
     const sessionInsertPayload = {
       request_id: targetTable === 'chat_requests' ? resolvedRequestId : null,
       per_minute_charge: perMinuteCharge,
+      is_free: isFreeCall,
       vendor_id: astroId,
       caller_id: realCallerId,
       started_at: new Date().toISOString(),
@@ -4668,11 +4795,59 @@ app.post('/api/session/accept', async (req, res) => {
       }
     }
 
+    // Point the instant free-call booking at the session that was just created. Nothing
+    // else can do this: the booking is written when the customer rings, but the session
+    // only exists here. Without the link, closeFreeCallBooking and endOverdueFreeCalls
+    // have nothing to key on — the call runs, then silently pays the astrologer nothing,
+    // places no hold and never offers the customer more minutes.
+    // Deliberately not awaited-and-thrown: the call is already accepted by this point and
+    // must connect even if the bookkeeping write fails (the helper swallows its own errors).
+    if (isFreeCall && sessionId) {
+      freeCallRoutes.linkInstantBookingToSession(realCallerId, sessionId);
+    }
+
+    // TELL THE CUSTOMER HERE, from the server — do not rely on the astrologer's app to do it.
+    //
+    // Until 2026-09-30 the ONLY socket notification of an acceptance was the vendor app's own
+    // `accept_call` emit from HomeScreen.handleAccept. Every other accept path has no socket at
+    // all: the Notifee Accept button and the draw-over-other-apps overlay both run in a
+    // background/killed-app context and only ever called this endpoint. For those the customer
+    // was left with a single Supabase Realtime UPDATE as its one and only signal, and if that
+    // one message was missed — channel not SUBSCRIBED yet, phone locked, Realtime socket
+    // dropped — the customer sat on "Request sent"/"Ringing…" until the timer ran out while the
+    // astrologer was already in the room. Emitting from here makes the notification a property
+    // of the acceptance itself rather than of which button the astrologer happened to press.
+    //
+    // The vendor's own emit is kept (it is a no-op duplicate: every customer-side handler is
+    // idempotent, guarded by navigatedRef / channel teardown).
+    try {
+      const acceptedPayload = {
+        customer_id: realCallerId,
+        requestId: resolvedRequestId,
+        sessionId,
+        callType: reqBody.callType || 'chat',
+        perMinuteCharge,
+        isFree: isFreeCall,
+      };
+      // `call_accepted` is what the call screens already listen for; chat has never had a
+      // socket path at all, so it gets its own event name rather than being squeezed into
+      // one that means "a call was accepted".
+      io.to(realCallerId).emit(
+        targetTable === 'call_requests' ? 'call_accepted' : 'chat_accepted',
+        acceptedPayload,
+      );
+    } catch (emitErr) {
+      // Never fail an accepted call over a notification: the request row is already
+      // 'accepted' and the customer's polling fallback will pick it up regardless.
+      console.warn('[session/accept] could not emit acceptance to customer:', emitErr.message);
+    }
+
     return res.status(200).json({
       ok: true,
       resolvedRequestId,
       sessionId,
       perMinuteCharge,
+      isFree: isFreeCall,
       navigationParams: {
         requestId: resolvedRequestId,
         sessionId,
@@ -4681,6 +4856,12 @@ app.post('/api/session/accept', async (req, res) => {
         perMinuteCharge,
         token: reqBody.token,
         callType: reqBody.callType,
+        isFree: isFreeCall,
+        // The astrologer's call screen runs the same free-call mode the customer's does
+        // (countdown + auto-end). Without these it showed a plain elapsed timer and the
+        // astrologer could not see how long the free period had left.
+        freeCall: isFreeCall,
+        freeCallSeconds: isFreeCall ? await freeCallRoutes.freeCallDurationSeconds() : 0,
       },
     });
   } catch (error) {
@@ -4704,6 +4885,20 @@ app.post('/api/session/reject', async (req, res) => {
       .update({ status: 'rejected', responded_at: new Date().toISOString() })
       .eq('id', ownedRow.id);
 
+    // Same reasoning as the accept emit above: the vendor app never emitted anything on
+    // reject, so a customer whose Realtime message was missed kept waiting out the full
+    // ring timer on a request that had already been declined.
+    try {
+      if (ownedRow.callerId) {
+        io.to(ownedRow.callerId).emit(
+          targetTable === 'call_requests' ? 'call_rejected' : 'chat_rejected',
+          { customer_id: ownedRow.callerId, requestId: ownedRow.id, callType: reqBody.callType || 'chat' },
+        );
+      }
+    } catch (emitErr) {
+      console.warn('[session/reject] could not emit rejection to customer:', emitErr.message);
+    }
+
     return res.status(200).json({ ok: true, resolvedRequestId: ownedRow.id });
   } catch (error) {
     console.error('[session/reject] error:', error.message);
@@ -4718,6 +4913,74 @@ app.post('/api/session/reject', async (req, res) => {
 // active, still-being-billed session early. Not a fund-theft path on its own, but a griefing/
 // availability gap sitting directly next to billing logic. Now requires the caller's JWT to
 // resolve to either the session's caller_id or its vendor_id before anything is terminated.
+// Is this session still alive? Asked by BOTH call screens while they are still trying to
+// connect, and it is the only thing that can un-stick them.
+//
+// WHY (2026-09-30, reported from the field): between "the astrologer accepted" and "media is
+// flowing" there is a window of a few seconds, and if either side hangs up inside it the
+// other side used to sit on "Connecting…" indefinitely with no explanation. terminateSession
+// does emit `session_ended` to both personal rooms and the session room — but a socket that
+// has not finished joining yet is in none of them, and Socket.io does not replay to a room
+// you join later. The astrologer's call screen is the worse case: it deliberately joins the
+// session room only (HomeScreen owns the personal room) and HomeScreen has no session_ended
+// listener, so a customer hanging up early reached nobody at all. On top of that the
+// customer's 30s countdown only starts once it reaches the 'ringing' state, so a call stuck
+// in 'connecting' had no deadline whatsoever — which is exactly the "connecting, connecting,
+// connecting…" the user saw.
+//
+// So the screens poll this while unconnected. It is a plain read, scoped to the two
+// participants — a session id alone must not reveal whether somebody else's call is live.
+app.get('/api/session/:id/state', async (req, res) => {
+  try {
+    const sessionId = req.params.id;
+    const { data: sessionRow, error } = await supabaseService
+      .from('chat_sessions')
+      .select('id, caller_id, vendor_id, is_active, started_at, ended_at')
+      .eq('id', sessionId)
+      .maybeSingle();
+    if (error && error.code === '22P02') {
+      return res.status(400).json({ success: false, message: 'Invalid session id' });
+    }
+    // Reported as a 200 so the poller can act on it: a session row that has been removed is,
+    // for the caller's purposes, a session that is over.
+    if (!sessionRow) {
+      return res.status(200).json({ success: true, exists: false, ended: true, active: false });
+    }
+
+    const customer = await resolveCustomerFromReq(req);
+    const vendorId = await resolveVendorIdFromReq(req);
+    const isCaller = customer?.id && String(customer.id) === String(sessionRow.caller_id);
+    const isVendor = vendorId && String(vendorId) === String(sessionRow.vendor_id);
+    if (!isCaller && !isVendor) {
+      return res.status(403).json({ success: false, message: 'Not a participant of this session' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      exists: true,
+      ended: !!sessionRow.ended_at,
+      endedAt: sessionRow.ended_at || null,
+      active: sessionRow.is_active === true,
+      startedAt: sessionRow.started_at || null,
+      // Which side is asking, so the screen can name the OTHER one in its message rather
+      // than showing a vague "call ended". Read from the token's own claims first, because
+      // one phone number can be both a customer and an astrologer (the store-reviewer
+      // account is) and then both checks above are true.
+      viewer: (() => {
+        const tk = (req.headers.authorization || '').split(' ')[1];
+        try {
+          const d = tk ? jwt.verify(tk, process.env.JWT_SECRET) : null;
+          if (d && (d.role === 'astrologer' || d.astroId || d.vendorId)) return 'astrologer';
+        } catch (_) {}
+        return isVendor && !isCaller ? 'astrologer' : 'customer';
+      })(),
+    });
+  } catch (e) {
+    console.error('GET /api/session/:id/state error:', e.message);
+    return res.status(500).json({ success: false, message: 'Could not read the session' });
+  }
+});
+
 app.post('/api/call/end', async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -4739,7 +5002,14 @@ app.post('/api/call/end', async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not a participant of this session' });
     }
 
-    await sessionManager.terminateSession(sessionId, 'Call ended by user');
+    // WHICH SIDE hung up decides what the customer sees next on a free intro call:
+    // the astrologer dropping out early hands the customer back to the list to pick
+    // somebody else (and does not spend their free call), whereas the customer hanging
+    // up early simply ends it. Taken from the verified token, never the request body.
+    const endedBy = (vendorId && String(vendorId) === String(sessionRow.vendor_id))
+      ? 'astrologer'
+      : 'customer';
+    await sessionManager.terminateSession(sessionId, 'Call ended by user', { endedBy });
 
     return res.status(200).json({ success: true, message: 'Session ended' });
   } catch (error) {
@@ -4850,15 +5120,15 @@ app.get('/api/wallet', async (req, res) => {
  * is billed 60s after connect, and sessionManager PAUSES billing while a participant
  * is absent (resumeAfterPause pushes next_billing_at forward by the gap). A 10-minute
  * call that billed 8 minutes showed "Charged Rs500" next to a wallet that had lost
- * Rs400 -- the app telling the customer it took more of their money than it did.
+ * Rs400 — the app telling the customer it took more of their money than it did.
  *
  * So the amount now comes from the same wallet_transactions rows the wallet screen
  * shows, and a session with no resolvable charge reports null so the app can render
- * a dash rather than invent a number. The app cannot read wallet_transactions itself:
+ * "—" rather than invent a number. The app cannot read wallet_transactions itself:
  * anon has no SELECT on it (sql/hardening_02_access_control.sql), which is why this
  * is an endpoint and not a client-side query.
  *
- * Scoped to the customer in the verified JWT -- there is deliberately no id parameter.
+ * Scoped to the customer in the verified JWT — there is deliberately no id parameter.
  */
 app.get('/api/sessions/charges', async (req, res) => {
   try {
@@ -4886,6 +5156,7 @@ app.get('/api/sessions/charges', async (req, res) => {
     const minutes = {};
     for (const r of rows || []) {
       const amt = Number(r.amount) || 0;
+      // A refund against a session nets off rather than adding to what was charged.
       charges[r.session_id] = (charges[r.session_id] || 0) + (r.type === 'debit' ? amt : -amt);
       if (r.type === 'debit') minutes[r.session_id] = (minutes[r.session_id] || 0) + 1;
     }
@@ -5835,7 +6106,7 @@ app.get('/api/vendor/wallet', async (req, res) => {
       .single();
     if (error) throw error;
 
-    // ONE entry per consultation, not one per billed minute -- an astrologer who took a
+    // ONE entry per consultation, not one per billed minute — an astrologer who took a
     // single 10-minute call used to see eight "+Rs25" rows, and with a 20-row cap three
     // calls filled the entire visible history. See src/sessionFolding.js. Fetched in full
     // (bounded) because folding after a cut would split one call across the boundary.
@@ -6530,10 +6801,10 @@ app.post('/api/gift/send', async (req, res) => {
     }
 
     // Round to PAISE (2 decimals), not to the nearest whole rupee. Math.round(amount *
-    // GIFT_VENDOR_SHARE) used to round to an integer -- a Rs21 gift split 10.5/10.5 became
+    // GIFT_VENDOR_SHARE) used to round to an integer — a Rs21 gift split 10.5/10.5 became
     // Math.round(10.5) = 11 for the astrologer and a shorted Rs10 for the platform, instead
     // of Rs10.50 each. Same rounding convention as the 50/50 session-billing split
-    // (sql/process_session_billing.sql's `ROUND(v_charge * 0.5, 2)`) -- the astrologer's
+    // (sql/process_session_billing.sql's `ROUND(v_charge * 0.5, 2)`) — the astrologer's
     // half rounds, the platform takes the exact remainder, so the two always sum to
     // exactly what the customer paid.
     const vendorCredit = Math.round(amount * GIFT_VENDOR_SHARE * 100) / 100;
@@ -6728,6 +6999,12 @@ server.listen(PORT, () => {
     table: 'remedy_items', eventName: 'remedy_items_changed',
     onChange: () => contentCache.invalidate('remedies:'),
   });
+
+  // Telling clients a session ended is NOT a billing concern: attach the socket server
+  // unconditionally, before the gate below. terminateSession's `session_ended` emits are
+  // all behind `if (this.io)`, so leaving this inside start() meant any process without
+  // ENABLE_SESSION_MANAGER ended sessions silently and left the other side's screen hanging.
+  sessionManager.attachIo(io);
 
   // Gates only the loops that WRITE (billing, earnings resets, stale-request sweep).
   if (process.env.ENABLE_SESSION_MANAGER === 'true') {

@@ -631,6 +631,9 @@ export default function FreeCallBookings() {
               {sorted.map((r) => {
                 const isToday = istDayKey(r.slot_start) === todayKey;
                 const isPast = new Date(r.slot_start).getTime() < Date.now();
+                // `kind` only exists after sql/free_call_instant.sql; every pre-existing
+                // row is scheduled, so a missing value means scheduled.
+                const isInstant = r.kind === 'instant';
 
                 return (
                   <tr key={r.id}>
@@ -641,7 +644,16 @@ export default function FreeCallBookings() {
                           {fmtSlot(r.slot_start)}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                          {isToday && (
+                          {/* An INSTANT call has no slot — slot_start is simply when the
+                              customer tapped. Labelling it stops "Slot Passed" and the
+                              reschedule button reading as problems on a call that was
+                              always meant to happen there and then. */}
+                          {isInstant && (
+                            <span className="pill-badge blue" style={{ fontWeight: 700, fontSize: 10 }}>
+                              ⚡ INSTANT
+                            </span>
+                          )}
+                          {isToday && !isInstant && (
                             <span className="pill-badge green" style={{ fontWeight: 700 }}>
                               ● TODAY
                             </span>
@@ -649,7 +661,15 @@ export default function FreeCallBookings() {
                           <span className="muted" style={{ fontSize: 11.5 }}>
                             {formatRelativeTime(r.slot_start)} · {r.duration_minutes || 12} min
                           </span>
-                          {isPast && r.status === 'booked' && (
+                          {isInstant && r.call_attempts > 1 && (
+                            // How many astrologers they had to try before one answered.
+                            // A run of high numbers is the signal that the pool is not
+                            // picking up, which is invisible anywhere else.
+                            <span className="pill-badge amber" style={{ fontSize: 10 }}>
+                              {r.call_attempts} tries
+                            </span>
+                          )}
+                          {isPast && r.status === 'booked' && !isInstant && (
                             <span className="pill-badge amber" style={{ fontSize: 10 }}>
                               Slot Passed
                             </span>

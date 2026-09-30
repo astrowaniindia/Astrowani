@@ -34,6 +34,8 @@ import { showStatusPopup } from '../components/StatusPopup';
 import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
 import {createIceRecovery} from './iceRecovery';
+import {joinSessionWithRetry} from './sessionRoom';
+import {createPreConnectWatchdog} from './preConnectWatchdog';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 
 interface Props {
@@ -86,6 +88,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const callDurationRef = useRef(0);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const sessionJoinRef = useRef<any>(null);
+  const watchdogRef = useRef<any>(null);
   const iceRecoveryRef = useRef<any>(null);
   const localStreamRef = useRef<any>(null);
   const iceCandidateBufferRef = useRef<any[]>([]);
@@ -145,6 +149,8 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
 
   // ─── WebRTC cleanup ─────────────────────────────────────────────────────────
   const cleanupWebRTC = useCallback(() => {
+    if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
+    if (watchdogRef.current) { watchdogRef.current.stop(); watchdogRef.current = null; }
     if (readyRetryRef.current) { clearInterval(readyRetryRef.current); readyRetryRef.current = null; }
     if (iceRecoveryRef.current) {
       iceRecoveryRef.current.dispose();
@@ -340,17 +346,20 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       const socket = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current = socket;
 
-      // Join session room only — HomeScreen socket owns the personal room
-      if (sessionId) socket.emit('join_session', sessionId);
+      // Join session room only — HomeScreen socket owns the personal room.
+      //
+      // Retried until the server acks (see utils/sessionRoom.js): this room is the media
+      // path — `webrtc_ready` out, `webrtc_offer` in, `webrtc_answer` back — so a join that
+      // silently failed meant the customer rang out and the session was never even
+      // activated, with nothing logged to say why.
+      if (sessionId) {
+        sessionJoinRef.current = joinSessionWithRetry(socket, sessionId, {label: 'Vendor/Voice'});
+      }
 
-      // Re-join on every reconnect (brief network drop, app quickly backgrounded then
-      // resumed), not just the initial connect — the backend's session-abandon grace
-      // timer (index.js) only cancels once this fires, so without it a real reconnect
-      // would still get treated as an abandoned session and end a perfectly live call.
+      // Re-state foreground/background on every reconnect: a reconnect while the app is in
+      // another app must keep the 5-minute background allowance, not lose it. (Re-joining
+      // the room on reconnect is handled inside joinSessionWithRetry.)
       socket.on('connect', () => {
-        if (sessionId) socket.emit('join_session', sessionId);
-        // Also re-state foreground/background: a reconnect while the app is in another
-        // app must keep the 5-minute background allowance, not lose it.
         reportSessionAppState(socket, sessionId);
       });
 
@@ -415,6 +424,27 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       );
     });
     setupSocket();
+
+    // Nothing may sit on "Connecting…" forever. This screen is the WORSE of the two sides:
+    // it joins the session room only (HomeScreen owns the personal room) and HomeScreen has
+    // no session_ended listener, so a customer hanging up before media started reached this
+    // app nowhere at all. See utils/preConnectWatchdog.js.
+    watchdogRef.current = createPreConnectWatchdog({
+      label: 'Vendor/Voice',
+      getSessionId: () => sessionId,
+      isConnected: () => isConnectedRef.current,
+      isEnding: () => isEndingRef.current,
+      onGiveUp: ({reason}) => {
+        if (isEndingRef.current) return;
+        isEndingRef.current = true;
+        showStatusPopup({
+          variant: 'info',
+          title: t('call.notConnectedTitle'),
+          message: reason === 'ended_by_other' ? t('call.customerEndedBeforeConnect') : t('call.couldNotConnect'),
+        });
+        doEndCall();
+      },
+    });
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
       confirmEnd();

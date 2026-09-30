@@ -34,6 +34,7 @@ import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
 import SessionIntroBanner from '../components/SessionIntroBanner';
 import { LanguageContext } from '../context/LanguageContext';
+import { joinSessionWithRetry } from '../utils/sessionRoom';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
@@ -63,6 +64,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const pollRef = useRef(null);
   const pollEndRef = useRef(null);
   const socketRef = useRef(null);
+  const sessionJoinRef = useRef(null);
 
   const pad = (n) => n.toString().padStart(2, '0');
 
@@ -431,9 +433,17 @@ const ChatSessionScreen = ({ route, navigation }) => {
       // resumed), not just the initial join below — the backend's session-abandon grace
       // timer (index.js) only cancels once this fires, so without it a real reconnect
       // would still get treated as an abandoned session and end a perfectly live chat.
+      // Live messages, typing and session_ended all travel through the session room, so a
+      // join that silently failed left the chat looking connected while nothing arrived.
+      // joinSessionWithRetry keeps trying until the server acks and re-joins on reconnect.
+      const joinRoom = (sid) => {
+        if (!sid) return;
+        if (sessionJoinRef.current) sessionJoinRef.current.stop();
+        sessionJoinRef.current = joinSessionWithRetry(socketRef.current, sid, { label: 'Customer/Chat' });
+      };
+
       socketRef.current.on('connect', () => {
         if (!sessionRef.current) return;
-        socketRef.current.emit('join_session', sessionRef.current.id);
         // Pick up anything sent while we were disconnected.
         refetchMessages();
       });
@@ -446,11 +456,14 @@ const ChatSessionScreen = ({ route, navigation }) => {
         pollCount++;
         
         try {
-          const { data, error } = await supabase
-            .from('chat_sessions')
-            .select('*')
-            .eq('request_id', requestId)
-            .single();
+          // Resolved by request_id, or straight by id when the waiting popup already
+          // learned it (the accept response / socket / poll now all carry the session id,
+          // so the chat screen no longer has to discover it for itself).
+          let query = supabase.from('chat_sessions').select('*');
+          query = initialSessionId
+            ? query.or(`id.eq.${initialSessionId},request_id.eq.${requestId}`)
+            : query.eq('request_id', requestId);
+          const { data, error } = await query.limit(1).maybeSingle();
 
           if (data && !error && !sessionRef.current) {
             clearInterval(pollRef.current);
@@ -459,7 +472,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
             setConnecting(false);
 
             // Socket signaling
-            socketRef.current.emit('join_session', data.id);
+            joinRoom(data.id);
             socketRef.current.emit('signal_connection', { sessionId: data.id });
             
             socketRef.current.on('session_ended', (termData) => {
@@ -589,6 +602,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
       hideActiveSessionNotification(); // safety net — harmless no-op if already hidden
       if (pollRef.current) clearInterval(pollRef.current);
       if (pollEndRef.current) clearInterval(pollEndRef.current);
+      if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
       // Leaving this screen any other way than the explicit End button (hardware back,
       // swipe-back gesture, navigating elsewhere) used to just disconnect the socket
       // without telling the backend — the session stayed active server-side and kept

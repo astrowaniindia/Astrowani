@@ -37,6 +37,7 @@ import {useModalPresence} from '../utils/modalPresentation';
 import { captureEvent } from '../utils/Analytics';
 import ShineButton from './ShineButton';
 import { requestUserPermission } from '../utils/PushNotification';
+import { navigationRef } from '../utils/NavigationService';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -104,7 +105,7 @@ function LiveBookedBadge({ count }) {
  * No Animated, no timers, no featuredIndex: this renders once and holds still.
  * Deliberately so — the brief was to remove the animation completely.
  */
-const AstrologerCluster = ({ list, t }) => {
+const AstrologerCluster = ({ list, t, instant }) => {
   const faces = (list || []).slice(0, CLUSTER_MAX);
   const tr = (k) => (typeof t === 'function' ? t(k) : k);
   if (!faces.length) return null;
@@ -130,7 +131,14 @@ const AstrologerCluster = ({ list, t }) => {
       <Text style={styles.clusterLabel} numberOfLines={2}>
         {tr('freeCall.byVerifiedAstrologers')}
       </Text>
-      <Text style={styles.clusterDetail}>{tr('freeCall.callsOnYourNumber')}</Text>
+      {/* The promise under the faces has to match the flow that is actually running.
+          In INSTANT mode nobody calls the customer — they pick somebody and we connect
+          them — so the scheduled line ("our astrologer calls you on your number") is
+          simply untrue, and it is the first thing they read. Caught on two emulators,
+          2026-09-27. */}
+      <Text style={styles.clusterDetail}>
+        {tr(instant ? 'freeCall.connectRightAway' : 'freeCall.callsOnYourNumber')}
+      </Text>
     </View>
   );
 };
@@ -300,6 +308,16 @@ const FreeCallOffer = ({
   useEffect(() => { if (onStepChange) onStepChange(step); }, [step, onStepChange]);
 
   const goToSlots = async () => {
+    // INSTANT MODE: there are no slots to show. The server says which flow this offer
+    // is running (offer.mode), and the card hands over to the pick-an-astrologer screen
+    // instead of loading a grid. Everything else about this component — the intro copy,
+    // the face cluster, the dismissal analytics — is shared by both.
+    if (offer?.mode === 'instant') {
+      captureEvent('free_call_instant_opened_from_card', { source });
+      if (onClose) onClose();
+      navigationRef.navigate('InstantAstrologers');
+      return;
+    }
     captureEvent('free_call_slots_opened', { source });
     setStep('slots');
     loadSlots(null);
@@ -428,7 +446,7 @@ const FreeCallOffer = ({
                 {/* Kept deliberately sparse: faces, the button, one trust line, one link.
                     The divider and the admin bodyText were dropped (2026-09-19); the
                     button's own small line already says when the call comes. */}
-                {cluster.length > 0 && <AstrologerCluster list={cluster} t={t} />}
+                {cluster.length > 0 && <AstrologerCluster list={cluster} t={t} instant={offer?.mode === 'instant'} />}
 
                 {/* Claim opens the time slots inside this same card; nothing is booked
                     until a time is tapped (2026-09-20). */}

@@ -26,10 +26,10 @@ Emulator Verification & Testing
 - Verified and tested on `emulator-5554`.
 - Generated updated Standalone Release APK (`Astrowani_Vendor.apk`, 110.7 MB).
 - Incremented vendor app version to `versionCode 32`, `versionName "6.7"`, configured production signing (`my-upload-key.keystore`), and successfully compiled signed Google Play Store **Android App Bundle** at native build path: `astrowani_vendors-main\android\app\build\outputs\bundle\release\app-release.aab`.
+- Incremented customer app version to `versionCode 50`, `versionName "24.2"`, configured production signing (`astrowani-release-key.keystore`), and successfully compiled signed Google Play Store **Android App Bundle** at native build path: `astrowani_customer-main\android\app\build\outputs\bundle\release\app-release.aab`.
 
 ## Next Recommended Action
-1. User uploads `app-release.aab` from `astrowani_vendors-main\android\app\build\outputs\bundle\release\app-release.aab` to Google Play Console.
-2. Confirm commit & push strategy for backend, admin, and customer apps.
+1. User uploads vendor app `app-release.aab` (`versionCode 32`) and customer app `app-release.aab` (`versionCode 50`) to Google Play Console.
 
 ## Open Issues
 - None.

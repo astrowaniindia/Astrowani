@@ -52,6 +52,7 @@ import {
 import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
+import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 
 const { width } = Dimensions.get('window');
 
@@ -139,6 +140,10 @@ const AstrologerInfo = ({route, navigation}) => {
   const callSocketRef = useRef(null);
   // Tracks the in-flight call request so cancel/back can tell the vendor to dismiss its popup
   const activeCallRef = useRef(null);
+  // Server-polled outcome for the in-flight request — the backstop behind the socket and
+  // Realtime paths. See utils/awaitRequestOutcome.js. It stops itself as soon as the
+  // request row leaves 'pending'; this ref exists so leaving the screen stops it too.
+  const outcomePollerRef = useRef(null);
   const isCallInitiatingRef = useRef(false);
 
   const { requesting, requestAstro, sendChatRequest, cancelRequest } = useChatRequest(navigation);
@@ -173,6 +178,7 @@ const AstrologerInfo = ({route, navigation}) => {
   // pending, notify the vendor so their incoming-call popup doesn't linger.
   useEffect(() => {
     return () => {
+      if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
       if (activeCallRef.current) {
         notifyVendorCancelled();
         if (callSocketRef.current) {
@@ -267,9 +273,13 @@ const AstrologerInfo = ({route, navigation}) => {
       });
 
       let navigated = false;
+      const stopOutcomePoller = () => {
+        if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
+      };
       const goToCall = dbSessionId => {
         if (navigated) return;
         navigated = true;
+        stopOutcomePoller();
         activeCallRef.current = null; // accepted → don't cancel
         supabase.removeChannel(channel);
         sock.removeAllListeners();
@@ -332,6 +342,30 @@ const AstrologerInfo = ({route, navigation}) => {
           },
         )
         .subscribe();
+
+      // Third path: poll the server. Covers a missed socket/Realtime message and the
+      // astrologer accepting from the notification or the draw-over-other-apps overlay.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: requestData.id,
+        label: 'profile audio call',
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => {
+          if (navigated || (status !== 'rejected' && status !== 'missed')) return;
+          navigated = true;
+          activeCallRef.current = null;
+          supabase.removeChannel(channel);
+          sock.removeAllListeners();
+          sock.disconnect();
+          callSocketRef.current = null;
+          setIsCallWaiting(false);
+          if (status === 'rejected') {
+            showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+          } else {
+            showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('alerts.notPickedUpAudio') });
+          }
+        },
+      });
 
       // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {
@@ -448,9 +482,13 @@ const AstrologerInfo = ({route, navigation}) => {
       });
 
       let navigated = false;
+      const stopOutcomePoller = () => {
+        if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
+      };
       const goToCall = dbSessionId => {
         if (navigated) return;
         navigated = true;
+        stopOutcomePoller();
         activeCallRef.current = null; // accepted → don't cancel
         supabase.removeChannel(channel);
         sock.removeAllListeners();
@@ -513,6 +551,30 @@ const AstrologerInfo = ({route, navigation}) => {
           },
         )
         .subscribe();
+
+      // Third path: poll the server. Covers a missed socket/Realtime message and the
+      // astrologer accepting from the notification or the draw-over-other-apps overlay.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: requestData.id,
+        label: 'profile video call',
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => {
+          if (navigated || (status !== 'rejected' && status !== 'missed')) return;
+          navigated = true;
+          activeCallRef.current = null;
+          supabase.removeChannel(channel);
+          sock.removeAllListeners();
+          sock.disconnect();
+          callSocketRef.current = null;
+          setIsCallWaiting(false);
+          if (status === 'rejected') {
+            showStatusPopup({ variant: 'busy', title: t('status.astrologerBusyTitle'), message: t('alerts.astrologerBusy') });
+          } else {
+            showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('alerts.notPickedUpVideo') });
+          }
+        },
+      });
 
       // Auto-cancel after REQUEST_RING_TIMEOUT_MS (5 min) if nobody responds → missed call
       setTimeout(() => {

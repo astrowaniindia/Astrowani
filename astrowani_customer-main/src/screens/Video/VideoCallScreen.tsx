@@ -37,6 +37,8 @@ import SessionIntroBanner from '../../components/SessionIntroBanner';
 import {LanguageContext} from '../../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from '../../utils/callRecording';
 import {createIceRecovery} from '../../utils/iceRecovery';
+import {joinSessionWithRetry} from '../../utils/sessionRoom';
+import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -96,6 +98,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const isEndingRef = useRef(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const sessionJoinRef = useRef<any>(null);
+  const watchdogRef = useRef<any>(null);
   const iceRecoveryRef = useRef<any>(null);
   const localStreamRef = useRef<any>(null);
   const iceCandidateBufferRef = useRef<any[]>([]);
@@ -158,6 +162,8 @@ const VideoCallScreen = ({route, navigation}: any) => {
 
   // ─── WebRTC cleanup ─────────────────────────────────────────────────────────
   const cleanupWebRTC = useCallback(() => {
+    if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
+    if (watchdogRef.current) { watchdogRef.current.stop(); watchdogRef.current = null; }
     if (iceRecoveryRef.current) {
       iceRecoveryRef.current.dispose();
       iceRecoveryRef.current = null;
@@ -378,20 +384,20 @@ const VideoCallScreen = ({route, navigation}: any) => {
       const userStr = await AsyncStorage.getItem('userData');
       const user = userStr ? JSON.parse(userStr) : null;
       if (user?.id) socket.emit('join_room', user.id);
-      if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
 
-      // Re-join on every reconnect (brief network drop, app quickly backgrounded then
-      // resumed), not just the initial connect — the backend's session-abandon grace
-      // timer (index.js) only cancels once this fires, so without it a real reconnect
-      // would still get treated as an abandoned session and end a perfectly live call.
-      socket.on('connect', () => {
-        if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
-      });
+      // THE SESSION ROOM IS THE MEDIA PATH — see the same comment in VoiceCallScreen.tsx.
+      // Retried until the server acks, and re-armed on every reconnect.
+      const joinRoom = (sid: string) => {
+        if (!sid) return;
+        if (sessionJoinRef.current) sessionJoinRef.current.stop();
+        sessionJoinRef.current = joinSessionWithRetry(socket, sid, {label: 'Customer/Video'});
+      };
+      if (sessionIdRef.current) joinRoom(sessionIdRef.current);
 
       socket.once('call_accepted', (data: any) => {
         if (data.sessionId && !sessionIdRef.current) {
           sessionIdRef.current = data.sessionId;
-          socket.emit('join_session', data.sessionId);
+          joinRoom(data.sessionId);
         }
       });
 
@@ -464,6 +470,24 @@ const VideoCallScreen = ({route, navigation}: any) => {
       );
     });
     setupSocket();
+
+    // Nothing may sit on "Connecting…" forever — see utils/preConnectWatchdog.js.
+    watchdogRef.current = createPreConnectWatchdog({
+      label: 'Customer/Video',
+      getSessionId: () => sessionIdRef.current,
+      isConnected: () => isConnectedRef.current,
+      isEnding: () => isEndingRef.current,
+      onGiveUp: ({reason}) => {
+        if (isEndingRef.current) return;
+        isEndingRef.current = true;
+        showStatusPopup({
+          variant: 'info',
+          title: t('call.notConnectedTitle'),
+          message: reason === 'ended_by_other' ? t('call.astrologerEndedBeforeConnect') : t('call.couldNotConnect'),
+        });
+        doEndCall();
+      },
+    });
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
       showStatusPopup({

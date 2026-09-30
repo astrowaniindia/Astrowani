@@ -2,7 +2,7 @@
 // Shared hook — use this in ANY screen that has a "Chat" button
 // Handles the full request flow: create request → show popup → listen for response → navigate
 
-import { useState, useRef, useContext } from 'react';
+import { useState, useRef, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/SupabaseClient';
@@ -14,6 +14,9 @@ import { ensureProfileComplete } from '../utils/profileGate';
 import { LanguageContext } from '../context/LanguageContext';
 import { captureEvent } from '../utils/Analytics';
 import { REQUEST_RING_TIMEOUT_MS } from '../utils/requestTimeouts';
+import { awaitRequestOutcome } from '../utils/awaitRequestOutcome';
+import { SOCKET_URL } from '../config/api';
+import io from 'socket.io-client';
 
 const useChatRequest = (navigation) => {
   const { t } = useContext(LanguageContext);
@@ -33,6 +36,14 @@ const useChatRequest = (navigation) => {
   const timeoutRef = useRef(null);
   const requestIdRef = useRef(null);
   const callerIdRef = useRef(null);
+  // Chat acceptance used to have exactly ONE delivery path — a single Supabase Realtime
+  // UPDATE — and no recovery if it was missed, which is how the astrologer ended up alone
+  // in the chat room while the customer stared at "Request sent". There are now three, all
+  // funnelling into the same `resolveAccepted`/`resolveClosed` below so whichever arrives
+  // first wins and the others are no-ops.
+  const pollerRef = useRef(null);
+  const socketRef = useRef(null);
+  const resolvedRef = useRef(false);
 
   // Tell the vendor's app to dismiss its heads-up "New Chat Request" notification — it
   // otherwise sits there (with working Accept/Reject) long after we've stopped waiting.
@@ -194,9 +205,53 @@ const useChatRequest = (navigation) => {
       setPendingRequestId(requestId);
       setRequesting(true);
 
-      // Listen for vendor response
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      // ── Listen for the astrologer's response, three independent ways ──────────
+      // Every one of them ends here, and `resolvedRef` makes the first one to arrive the
+      // only one that acts.
+      resolvedRef.current = false;
 
+      const teardownListeners = () => {
+        if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+        if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
+        if (pollerRef.current) { pollerRef.current.stop(); pollerRef.current = null; }
+        if (socketRef.current) { try { socketRef.current.disconnect(); } catch (_) {} socketRef.current = null; }
+      };
+
+      const resolveAccepted = (sessionId) => {
+        if (resolvedRef.current) return;
+        resolvedRef.current = true;
+        teardownListeners();
+        setRequesting(false);
+        setPendingRequestId(null);
+        navigation.navigate('ChatSessionScreen', {
+          requestId,
+          person: astroRef.current,
+          // Passed through when we have it so the chat screen can join the session room
+          // straight away instead of polling chat_sessions for it.
+          sessionId: sessionId || undefined,
+        });
+      };
+
+      const resolveClosed = (status) => {
+        if (resolvedRef.current) return;
+        resolvedRef.current = true;
+        teardownListeners();
+        setRequesting(false);
+        setPendingRequestId(null);
+        if (status === 'missed') {
+          showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('chat.notPickedUp') });
+        } else if (status === 'rejected') {
+          showStatusPopup({
+            variant: 'busy',
+            title: t('status.astrologerBusyTitle'),
+            message: t('alerts.astrologerBusy'),
+          });
+        }
+        // 'cancelled' is us — say nothing.
+      };
+
+      // 1. Supabase Realtime (the original path).
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
       channelRef.current = supabase.channel(`req_status_${requestId}`);
       channelRef.current
         .on(
@@ -209,41 +264,61 @@ const useChatRequest = (navigation) => {
           },
           (payload) => {
             const updated = payload.new;
-            if (updated.status === 'accepted') {
-              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-              setRequesting(false);
-              setPendingRequestId(null);
-              if (channelRef.current) supabase.removeChannel(channelRef.current);
-              navigation.navigate('ChatSessionScreen', {
-                requestId,
-                person: astroRef.current,
-              });
-            } else if (updated.status === 'rejected') {
-              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-              setRequesting(false);
-              setPendingRequestId(null);
-              if (channelRef.current) supabase.removeChannel(channelRef.current);
-              showStatusPopup({
-                variant: 'busy',
-                title: t('status.astrologerBusyTitle'),
-                message: t('alerts.astrologerBusy'),
-              });
-            }
+            if (updated.status === 'accepted') resolveAccepted(null);
+            else if (updated.status && updated.status !== 'pending') resolveClosed(updated.status);
           }
         )
         .subscribe();
 
-      // Auto-mark MISSED after 1 minute if the astrologer doesn't answer.
+      // 2. Socket — new in 2026-09-30. Chat had no socket path at all; the backend's
+      //    /api/session/accept now emits `chat_accepted` to the customer's own room itself,
+      //    so this works no matter which button the astrologer pressed (in-app card,
+      //    notification action, or the draw-over-other-apps overlay).
+      try {
+        const sock = io(SOCKET_URL, { auth: { token } });
+        socketRef.current = sock;
+        const joinOwnRoom = () => { if (callerIdRef.current) sock.emit('join_room', callerIdRef.current); };
+        sock.on('connect', joinOwnRoom);
+        joinOwnRoom();
+        sock.on('chat_accepted', (d) => resolveAccepted(d?.sessionId || null));
+        sock.on('chat_rejected', () => resolveClosed('rejected'));
+        sock.on('connect_error', (e) => console.log('[chat request] socket error:', e.message));
+      } catch (e) {
+        console.log('[chat request] socket setup skipped:', e.message);
+      }
+
+      // 3. Polling — the backstop that cannot miss an edge. See awaitRequestOutcome.js.
+      pollerRef.current = awaitRequestOutcome({
+        kind: 'chat',
+        requestId,
+        label: 'chat request',
+        onAccepted: resolveAccepted,
+        onClosed: resolveClosed,
+      });
+
+      // Auto-mark MISSED after the ring timeout if the astrologer doesn't answer.
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(async () => {
         timeoutRef.current = null;
+        if (resolvedRef.current) return;
+        // Ask the server ONE more time before writing this off. The astrologer may have
+        // accepted in the last couple of seconds, and marking an accepted request 'missed'
+        // would strand them in a session the customer has just abandoned.
+        try {
+          const finalCheck = await Instance.get(`/api/requests/chat/${requestIdRef.current}/status`, {
+            headers: { Authorization: `Bearer ${await AsyncStorage.getItem('token')}` },
+          });
+          if (finalCheck?.data?.status === 'accepted') { resolveAccepted(finalCheck.data.sessionId || null); return; }
+        } catch (_) {}
+        if (resolvedRef.current) return;
+        resolvedRef.current = true;
         try {
           await markRequestStatus('chat', requestIdRef.current, 'missed');
         } catch (_) {}
         notifyVendorRequestCancelled();
+        teardownListeners();
         setRequesting(false);
         setPendingRequestId(null);
-        if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
         showStatusPopup({ variant: 'missed', title: t('status.notAnsweredTitle'), message: t('chat.notPickedUp') });
       }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
@@ -260,7 +335,10 @@ const useChatRequest = (navigation) => {
   };
 
   const cancelRequest = async () => {
+    resolvedRef.current = true; // stop every listener from acting on a late acceptance
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    if (pollerRef.current) { pollerRef.current.stop(); pollerRef.current = null; }
+    if (socketRef.current) { try { socketRef.current.disconnect(); } catch (_) {} socketRef.current = null; }
     if (pendingRequestId) {
       await markRequestStatus('chat', pendingRequestId, 'cancelled');
     }
@@ -273,6 +351,15 @@ const useChatRequest = (navigation) => {
       channelRef.current = null;
     }
   };
+
+  // Leaving the screen while a request is in flight must not leave a 2s poll loop and a
+  // socket running for the rest of the session.
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (pollerRef.current) pollerRef.current.stop();
+    if (socketRef.current) { try { socketRef.current.disconnect(); } catch (_) {} }
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+  }, []);
 
   return { requesting, requestAstro, sendChatRequest, cancelRequest, submitting };
 };

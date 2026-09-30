@@ -25,6 +25,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
 import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
+import {showFreeCallContinue} from '../../components/FreeCallContinue';
+import {showDakshina} from '../../components/DakshinaPrompt';
+import {showCallFeedback} from '../../components/CallFeedbackPrompt';
+import {showRateAstrowani} from '../../components/RateAstrowaniPrompt';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
 import SessionIntroBanner from '../../components/SessionIntroBanner';
@@ -35,8 +39,15 @@ import {captureEvent} from '../../utils/Analytics';
 import {LanguageContext} from '../../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from '../../utils/callRecording';
 import {createIceRecovery} from '../../utils/iceRecovery';
+import {joinSessionWithRetry} from '../../utils/sessionRoom';
+import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
+
+
+// Matches MIN_UPSELL_SECONDS in astrowani-backend/src/sessionManager.js.
+const MIN_UPSELL_SECONDS = 540;   // 9 min - the "buy more minutes" line
+const MIN_DAKSHINA_SECONDS = 180; // 3 min - below this nothing is offered at all
 
 const AVATAR_SIZE = 140;
 const RING_BASE = AVATAR_SIZE + 40;
@@ -90,8 +101,14 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const isConnectedRef = useRef(false);
   const callDurationRef = useRef(0);
   const isEndingRef = useRef(false);
+  // Set when the END came from the other side rather than our own hang-up button.
+  // Only read for free intro calls, where an astrologer dropping out early has to send
+  // the customer back to pick somebody else instead of just closing the screen.
+  const endedRemotelyRef = useRef(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const sessionJoinRef = useRef<any>(null);
+  const watchdogRef = useRef<any>(null);
   const iceRecoveryRef = useRef<any>(null);
   const localStreamRef = useRef<any>(null);
   const iceCandidateBufferRef = useRef<any[]>([]);
@@ -157,6 +174,8 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
   // ─── WebRTC cleanup ─────────────────────────────────────────────────────────
   const cleanupWebRTC = useCallback(() => {
+    if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
+    if (watchdogRef.current) { watchdogRef.current.stop(); watchdogRef.current = null; }
     if (iceRecoveryRef.current) {
       iceRecoveryRef.current.dispose();
       iceRecoveryRef.current = null;
@@ -203,16 +222,90 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     // Return to whatever the customer started from (astrologer profile, a list tab, Home)
     // instead of always resetting to Home. Home is only the fallback when there is no
     // screen underneath (e.g. the app was reopened straight into the call).
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.replace('DrawerNavigator');
+    // ── WHAT HAPPENS AFTER A FREE INTRO CALL ───────────────────────────────────
+    //
+    // Three duration bands, and within the middle one it also matters WHO hung up.
+    // Every path ends on Home; none returns to the free-call grid except the one case
+    // where the customer's free call was not actually spent.
+    //
+    //  < 3 min   customer cut   -> Home. Nothing else. Nothing was discussed, so there
+    //                              is nothing to sell, thank or rate.
+    //  < 3 min   astrologer cut -> back to the grid, "they were busy, pick another".
+    //                              Their free call is NOT spent (the server unlinks the
+    //                              booking for exactly this case).
+    //  3-9 min   customer cut   -> Dakshina straight away. They chose the moment to
+    //                              stop, which is answer enough about how it went.
+    //  3-9 min   astrologer cut -> ask "did you like it?" first. We do not know how it
+    //                              went, and a tip request is the wrong thing to put in
+    //                              front of somebody who was cut off.
+    //  >= 9 min  either         -> "more minutes" first (the astrologer is reserved for
+    //                              ~90s, so it must be the very next thing). Dismissed:
+    //                              "did you like it?" -> Dakshina -> rating.
+    //
+    // Only ONE root modal may be on screen at a time (utils/modalPresentation — two at
+    // once freezes iOS), which is why these chain through callbacks rather than being
+    // raised together.
+    const freeSeconds = callDurationRef.current;
+    const astrologerCut = endedRemotelyRef.current;
+
+    if (freeCall) {
+      const goHome = () => navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
+
+      const askRating = () => showRateAstrowani({
+        context: 'free_call',
+        sessionId: sid,
+        // Armed on BEHAVIOUR, not on the stars tapped: a call that ran most of its
+        // length is the happiness signal.
+        ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
+      });
+
+      const askDakshina = () => showDakshina({
+        astrologerId: recieverId,
+        astrologerName: recieverName,
+        sessionId: sid,
+        // Runs whether they gave, dismissed, or the payment failed.
+        onDone: askRating,
+      });
+
+      // Yes -> Dakshina. No -> a short apology and nothing further.
+      const askLiked = () => showCallFeedback({onYes: askDakshina, onNo: () => {}});
+
+      if (freeSeconds < MIN_DAKSHINA_SECONDS) {
+        if (astrologerCut) {
+          navigation.replace('InstantAstrologers', {astrologerBusy: true});
+        } else {
+          goHome();
+        }
+        return;
+      }
+
+      goHome();
+
+      if (freeSeconds >= MIN_UPSELL_SECONDS) {
+        showFreeCallContinue({
+          astrologerId: recieverId,
+          astrologerName: recieverName,
+          astrologerImage: recieverImage,
+          sessionId: sid,
+          durationSeconds: freeSeconds,
+          ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
+          // Dismissed without buying -> ask how it went, then thank/rate. Buying
+          // instead reconnects them and none of this runs.
+          onDeclined: askLiked,
+        });
+      } else if (astrologerCut) {
+        askLiked();
+      } else {
+        askDakshina();
+      }
+      return;
     }
+
     // Prompt for a review only if the session actually connected.
     if (recieverId && callDurationRef.current > 0) {
       showReviewPrompt({ astrologerId: recieverId, name: recieverName, image: recieverImage });
     }
-  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, recieverId, recieverName, recieverImage]);
+  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, recieverId, recieverName, recieverImage, freeCall, freeCallSeconds]);
 
   const startRingCountdown = useCallback(() => {
     ringTimerRef.current = setInterval(() => {
@@ -373,20 +466,22 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       const userStr = await AsyncStorage.getItem('userData');
       const user = userStr ? JSON.parse(userStr) : null;
       if (user?.id) socket.emit('join_room', user.id);
-      if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
 
-      // Re-join on every reconnect (brief network drop, app quickly backgrounded then
-      // resumed), not just the initial connect — the backend's session-abandon grace
-      // timer (index.js) only cancels once this fires, so without it a real reconnect
-      // would still get treated as an abandoned session and end a perfectly live call.
-      socket.on('connect', () => {
-        if (sessionIdRef.current) socket.emit('join_session', sessionIdRef.current);
-      });
+      // THE SESSION ROOM IS THE MEDIA PATH. `webrtc_ready` -> `webrtc_offer` ->
+      // `webrtc_answer` all travel through it, so a join that silently failed meant the
+      // call could never connect — the screen just rang out. It is now retried until the
+      // server acks, and re-armed on every reconnect. See utils/sessionRoom.js.
+      const joinRoom = (sid: string) => {
+        if (!sid) return;
+        if (sessionJoinRef.current) sessionJoinRef.current.stop();
+        sessionJoinRef.current = joinSessionWithRetry(socket, sid, {label: 'Customer/Voice'});
+      };
+      if (sessionIdRef.current) joinRoom(sessionIdRef.current);
 
       socket.once('call_accepted', (data: any) => {
         if (data.sessionId && !sessionIdRef.current) {
           sessionIdRef.current = data.sessionId;
-          socket.emit('join_session', data.sessionId);
+          joinRoom(data.sessionId);
         }
       });
 
@@ -434,6 +529,9 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         if (data.sessionId && sessionIdRef.current && data.sessionId !== sessionIdRef.current) return;
         if (!isEndingRef.current) {
           console.log('[Customer/Voice] session_ended:', data.reason);
+          // We did not hang up — the astrologer (or the server) did. On a free intro
+          // call that changes where the customer lands afterwards.
+          endedRemotelyRef.current = true;
           isEndingRef.current = true;
           doEndCall();
         }
@@ -458,6 +556,28 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       );
     });
     setupSocket();
+
+    // Nothing may sit on "Connecting…" forever. If the astrologer hangs up inside the gap
+    // between accepting and media flowing, `session_ended` can miss this screen entirely
+    // (its socket may not have joined any room yet), and the 30s countdown does not even
+    // start until the 'ringing' state — so this used to hang with no message at all.
+    // See utils/preConnectWatchdog.js.
+    watchdogRef.current = createPreConnectWatchdog({
+      label: 'Customer/Voice',
+      getSessionId: () => sessionIdRef.current,
+      isConnected: () => isConnectedRef.current,
+      isEnding: () => isEndingRef.current,
+      onGiveUp: ({reason}) => {
+        if (isEndingRef.current) return;
+        isEndingRef.current = true;
+        showStatusPopup({
+          variant: 'info',
+          title: t('call.notConnectedTitle'),
+          message: reason === 'ended_by_other' ? t('call.astrologerEndedBeforeConnect') : t('call.couldNotConnect'),
+        });
+        doEndCall();
+      },
+    });
 
     const bh = BackHandler.addEventListener('hardwareBackPress', () => {
       showStatusPopup({

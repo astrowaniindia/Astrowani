@@ -6,19 +6,38 @@
 // (to gate new requests) and sessionManager.js (to know when to notify the
 // "notify me" waitlist) so the two can never disagree about what "busy" means.
 
+const holds = require('./astrologerHolds');
+
 // Single-astrologer check — used right before creating a new call/chat request.
 //
 // LIVE STREAMING (2026-08-08): an astrologer broadcasting live used to remain fully
 // reachable for chat/call/video — they could accept an incoming call mid-broadcast without
 // the live session ever ending, which is exactly the "busy" scenario this module exists to
 // prevent for ordinary sessions. Checked first since it's the most user-visible state.
-async function checkAstrologerBusy(supabase, astrologerId) {
+//
+// HOLDS (2026-09-27): after a free introductory call ends, the astrologer is reserved for
+// a moment so that customer can buy more minutes with the same person — see
+// src/astrologerHolds.js. Whether a hold counts as "busy" depends on WHO is asking, which
+// is what `opts` is for:
+//
+//   opts.customerId   the customer trying to reach the astrologer. Their OWN hold never
+//                     blocks them — that is the whole point of reserving somebody.
+//   opts.isFreeCall   true only for a free introductory call. A 'decision'-phase hold
+//                     blocks those but lets a PAYING customer through, because real
+//                     revenue beats a maybe.
+//
+// The defaults ({} -> customerId null, isFreeCall false) are deliberately the right
+// answer for every pre-existing caller: a payment-phase hold blocks them (somebody is
+// mid-Razorpay for this astrologer), a decision-phase one does not.
+async function checkAstrologerBusy(supabase, astrologerId, opts = {}) {
+  const { customerId = null, isFreeCall = false } = opts;
   try {
-    const [{ data: liveSession }, { data: activeSession }, { data: pendingCall }, { data: pendingChat }] = await Promise.all([
+    const [{ data: liveSession }, { data: activeSession }, { data: pendingCall }, { data: pendingChat }, hold] = await Promise.all([
       supabase.from('live_sessions').select('id, started_at').eq('astrologer_id', astrologerId).eq('is_active', true).limit(1),
       supabase.from('chat_sessions').select('started_at').eq('vendor_id', astrologerId).eq('is_active', true).limit(1),
       supabase.from('call_requests').select('created_at').eq('astrologer_id', astrologerId).eq('status', 'pending').limit(1),
       supabase.from('chat_requests').select('created_at').eq('receiver_id', astrologerId).eq('status', 'pending').limit(1),
+      holds.getHold(supabase, astrologerId),
     ]);
     if (liveSession && liveSession.length) {
       return { busy: true, busySince: liveSession[0].started_at, reason: 'live', liveSessionId: liveSession[0].id };
@@ -26,6 +45,15 @@ async function checkAstrologerBusy(supabase, astrologerId) {
     if (activeSession && activeSession.length) return { busy: true, busySince: activeSession[0].started_at, reason: 'session' };
     if (pendingCall && pendingCall.length) return { busy: true, busySince: pendingCall[0].created_at, reason: 'session' };
     if (pendingChat && pendingChat.length) return { busy: true, busySince: pendingChat[0].created_at, reason: 'session' };
+    if (holds.holdBlocks(hold, { customerId, isFreeCall })) {
+      return {
+        busy: true,
+        busySince: hold.created_at,
+        reason: 'hold',
+        holdPhase: hold.phase,
+        holdCustomerId: hold.customer_id,
+      };
+    }
     return { busy: false, busySince: null, reason: null };
   } catch (e) {
     console.error('[busyStatus] checkAstrologerBusy error:', e.message);
@@ -39,11 +67,12 @@ async function checkAstrologerBusy(supabase, astrologerId) {
 async function buildBusyMap(supabase) {
   const busyMap = {};
   try {
-    const [{ data: liveSessions }, { data: activeSessions }, { data: pendingCalls }, { data: pendingChats }] = await Promise.all([
+    const [{ data: liveSessions }, { data: activeSessions }, { data: pendingCalls }, { data: pendingChats }, holdMap] = await Promise.all([
       supabase.from('live_sessions').select('id, astrologer_id, started_at').eq('is_active', true),
       supabase.from('chat_sessions').select('vendor_id, started_at').eq('is_active', true),
       supabase.from('call_requests').select('astrologer_id, created_at').eq('status', 'pending'),
       supabase.from('chat_requests').select('receiver_id, created_at').eq('status', 'pending'),
+      holds.buildHoldMap(supabase),
     ]);
     (liveSessions || []).forEach((s) => {
       if (s.astrologer_id) busyMap[s.astrologer_id] = { isBusy: true, busySince: s.started_at, reason: 'live', liveSessionId: s.id };
@@ -56,6 +85,21 @@ async function buildBusyMap(supabase) {
     });
     (pendingChats || []).forEach((r) => {
       if (r.receiver_id && !busyMap[r.receiver_id]) busyMap[r.receiver_id] = { isBusy: true, busySince: r.created_at, reason: 'session' };
+    });
+    // A reserved astrologer is unavailable to everyone browsing a list, whatever the
+    // hold's phase — the held customer reaches them through their own upsell sheet, not
+    // by finding them here. `holdCustomerId` is carried so a caller that cares (the
+    // instant free-call list) can still tell whose reservation it is.
+    Object.values(holdMap || {}).forEach((h) => {
+      if (h.astrologer_id && !busyMap[h.astrologer_id]) {
+        busyMap[h.astrologer_id] = {
+          isBusy: true,
+          busySince: h.created_at,
+          reason: 'hold',
+          holdPhase: h.phase,
+          holdCustomerId: h.customer_id,
+        };
+      }
     });
   } catch (e) {
     console.error('[busyStatus] buildBusyMap error:', e.message);

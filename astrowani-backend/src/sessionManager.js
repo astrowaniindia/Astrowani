@@ -7,6 +7,9 @@ const { notifyWaitlistIfFree } = require('./waitlist');
 const { logError } = require('./errorLogger');
 const wallet = require('./wallet');
 const vendorDevices = require('./vendorDevices');
+const holds = require('./astrologerHolds');
+const localTest = require('./freeCallLocalTest');
+const { freeCallPayout, normaliseMilestones } = require('./freeCallPayout');
 
 // Initialize Supabase Client with Service Role Key for administrative access
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -26,6 +29,47 @@ let freeColumnAvailable = true;
 const isMissingFreeColumn = (error) =>
   !!error && (error.code === '42703' || error.code === 'PGRST204'
     || /is_free/.test(error.message || ''));
+
+// Same idea for free_call_bookings.kind (sql/free_call_instant.sql), latching per
+// process for the same reason — restart the backend after applying that file.
+// How long an instant free-call booking may sit without ever reaching a call before it
+// is handed back to the customer. Long enough that somebody who rings, gets no answer
+// and wanders off for a few minutes still resumes the same attempt; short enough that
+// they can try again the same evening.
+const STALE_INSTANT_BOOKING_MS = 30 * 60 * 1000;
+
+// The line between "a call happened" and "a connection was attempted". Below this the
+// booking is not completed, the astrologer is not held, nobody is paid, and an instant
+// attempt is handed back to the customer rather than counted as their free call. One
+// constant for all four, because if they ever disagree somebody is charged, paid or
+// blocked for a conversation that did not take place.
+const MIN_REAL_CALL_SECONDS = 30;
+/**
+ * A free call must run this long before the customer is offered paid minutes, and
+ * before the astrologer is reserved while they decide.
+ *
+ * Below it there is nothing to upsell: a call that lasted ninety seconds did not answer
+ * anybody's question, and following it with a price list reads as a shakedown. It is
+ * also the line for the rating prompt — asking "how was Astrowani?" after a call that
+ * barely happened collects noise and annoys people.
+ *
+ * Reserving the astrologer is gated on the same number on purpose: a hold placed after
+ * a call nobody had takes a working astrologer off the market for ninety seconds for an
+ * offer that will never be shown.
+ */
+const MIN_UPSELL_SECONDS = 540;
+/**
+ * Above this, but below MIN_UPSELL_SECONDS, the customer is not offered more minutes —
+ * they are offered the chance to give a Dakshina instead. A six-minute conversation was
+ * worth something but was not cut short mid-flow, so "buy more time" is the wrong ask
+ * and "thank them if you want to" is the right one.
+ */
+const MIN_DAKSHINA_SECONDS = 180;
+
+let bookingKindAvailable = true;
+const isMissingColumn = (error, column) =>
+  !!error && (error.code === '42703' || error.code === 'PGRST204' || error.code === '42P10'
+    || new RegExp(column).test(error.message || ''));
 
 class SessionManager {
   // Longest a billed consultation may run before it is treated as abandoned.
@@ -90,6 +134,20 @@ class SessionManager {
     console.log('SessionManager Instance Created.');
   }
 
+  // Attaching the socket server is SEPARATE from starting the billing worker.
+  //
+  // `this.io` used to be set only inside start(), which is gated on
+  // ENABLE_SESSION_MANAGER. Every client notification terminateSession sends — the
+  // `session_ended` that tells the other side a call is over — is behind `if (this.io)`,
+  // so on any process where that flag is not 'true' a session could be ended with NOBODY
+  // told, and the other side would sit on "Connecting…" / a live-looking call forever.
+  // Production does set the flag, so this never bit a real customer, but tying "can we
+  // tell people the call ended" to "do we run billing here" is the wrong dependency and
+  // it hid the bug during local testing.
+  attachIo(io) {
+    this.io = io;
+  }
+
   start(io) {
     this.io = io;
     if (this.timer) return;
@@ -98,7 +156,10 @@ class SessionManager {
       this.checkActiveSessions();
       this.markStaleRequestsMissed();
       this.endStaleBilledSessions();
+      this.endAbandonedFreeCalls();
       this.endOverdueFreeCalls();
+      this.sweepExpiredHolds();
+      this.cancelStaleInstantBookings();
       this.chaseWhatsAppEscalations();
     }, this.pollingInterval);
     // Run earnings reset check hourly, and immediately on startup
@@ -646,7 +707,8 @@ class SessionManager {
             console.warn(`[SessionManager] Session ${session.id}: astrologer in background ${Math.round((nowMs - bgSince) / 1000)}s — ending session.`);
             this.absentSince.delete(`${session.id}:caller`);
             this.vendorBackgroundSince.delete(`${session.id}:${id}`);
-            await this.terminateSession(session.id, 'Astrologer left the app during the session');
+            await this.terminateSession(session.id, 'Astrologer left the app during the session',
+              { endedAtMs: bgSince });
             return false;
           }
           continue;
@@ -671,7 +733,10 @@ class SessionManager {
         console.warn(`[SessionManager] Session ${session.id}: ${role} away ${Math.round((nowMs - since) / 1000)}s (grace ${Math.round(graceMs / 1000)}s) — ending session.`);
         this.absentSince.delete(`${session.id}:caller`);
         this.absentSince.delete(`${session.id}:vendor`);
-        await this.terminateSession(session.id, `${who} left the session (app closed or lost connection)`);
+        // `since` is when they were first seen missing — the last moment this was still
+        // a two-person call, and therefore the honest end of a free introductory one.
+        await this.terminateSession(session.id, `${who} left the session (app closed or lost connection)`,
+          { endedAtMs: since });
         return false;
       }
     }
@@ -798,7 +863,18 @@ class SessionManager {
   /**
    * Terminates a session (sets is_active=false)
    */
-  async terminateSession(sessionId, reason = 'Normal termination') {
+  /**
+   * @param {object} [opts]
+   * @param {number} [opts.endedAtMs] When the call REALLY stopped, if that is earlier
+   *   than now. Used only to measure a free introductory call's length — see
+   *   closeFreeCallBooking. A session ended because both apps vanished stopped when they
+   *   vanished, not when the 30-second sweep happened to notice, and the difference is
+   *   the platform paying a milestone that was never reached. Deliberately NOT applied
+   *   to chat_sessions.ended_at: that is the moment the session was actually closed, and
+   *   rewriting it would change paid-session records and every analytics figure built on
+   *   them for a problem that only exists on the free path.
+   */
+  async terminateSession(sessionId, reason = 'Normal termination', opts = {}) {
     console.log(`[SessionManager] Terminating session ${sessionId}. Reason: ${reason}`);
     this.absentSince.delete(`${sessionId}:caller`);
     this.absentSince.delete(`${sessionId}:vendor`);
@@ -859,10 +935,36 @@ class SessionManager {
     // being just another ended session. Identified by the booking that points at
     // this session, so it does not depend on chat_sessions.is_free having been
     // migrated yet.
-    const freeBooking = await this.closeFreeCallBooking(sessionId);
+    const freeBooking = await this.closeFreeCallBooking(sessionId, opts.endedAtMs, opts.endedBy || null);
 
     if (sessionRow.caller_id && !freeBooking) {
       await this.maybeRewardReferral(sessionRow.caller_id);
+    }
+
+    // ORDER MATTERS FOR THE NEXT THREE BLOCKS.
+    //
+    // The hold goes FIRST, before the waitlist check at the bottom. A held astrologer
+    // is not free, and telling five waiting customers "they're available now" while the
+    // person who just spoke to them is inside Razorpay buying more minutes is exactly
+    // the race the hold exists to prevent. Because checkAstrologerBusy now reads holds,
+    // placing it here makes the waitlist block below stay quiet on its own.
+    //
+    // `callHappened` gates it: a connection that died in the first seconds shows the
+    // customer no offer at all (the call screen only raises the sheet when the call had
+    // a duration), so holding the astrologer would reserve them for ninety seconds, and
+    // show them busy to everyone else, for a customer who is never coming.
+    if (freeBooking && freeBooking.kind === 'instant' && freeBooking.callHappened
+      && sessionRow.vendor_id && sessionRow.caller_id) {
+      // Gated on the 3-minute line, not merely "a call happened": holding an astrologer
+      // for an offer that will never be shown is pure lost availability.
+      if (freeBooking.qualifiesForUpsell) {
+        await this.holdAstrologerForUpsell(sessionId, sessionRow, freeBooking);
+      }
+    }
+
+    // Then pay the astrologer for the free minutes they just gave.
+    if (freeBooking) {
+      await this.payFreeCallAstrologer(sessionId, sessionRow, freeBooking);
     }
 
     // If this was the astrologer's only busy-source, let anyone waiting for them know.
@@ -875,26 +977,212 @@ class SessionManager {
   }
 
   /**
+   * Reserve the astrologer for the customer who was just on the free call, so they can
+   * buy more minutes with the same person. Phase 'decision' — see astrologerHolds.js
+   * for why that blocks a new free call but not a paying one.
+   *
+   * Never throws. A missed reservation costs an upsell; a thrown one would stop a call
+   * from ending.
+   */
+  async holdAstrologerForUpsell(sessionId, sessionRow, booking) {
+    try {
+      const seconds = await this.freeCallOfferNumbers();
+      const held = await holds.placeHold(supabase, {
+        astrologerId: sessionRow.vendor_id,
+        customerId: sessionRow.caller_id,
+        sessionId,
+        seconds: seconds.holdDecisionSeconds,
+      });
+      // Tell the astrologer WHY they have just gone unavailable. Without this they end
+      // a free call, see themselves stop receiving requests for a minute and a half,
+      // and have no idea it is deliberate — which reads as the app being broken and is
+      // exactly the sort of thing that makes an astrologer switch themselves offline.
+      if (held && this.io && sessionRow.vendor_id) {
+        this.io.to(sessionRow.vendor_id).emit('astrologer_hold_started', {
+          seconds: seconds.holdDecisionSeconds,
+          sessionId,
+        });
+      }
+    } catch (err) {
+      console.error('[SessionManager] holdAstrologerForUpsell failed:', err.message);
+    }
+  }
+
+  /**
+   * Pay the astrologer for a free introductory call, out of the PLATFORM's pocket.
+   *
+   * The customer is never charged for this (chat_sessions.is_free keeps the billing loop
+   * away from the row entirely), so the money comes from admin_wallet — the same shape as
+   * the remedy referral commission: credit the astrologer, debit the platform by the
+   * identical figure.
+   *
+   * RULES, all deliberate:
+   *   * MILESTONES, not per-minute: ₹5 for reaching 3 minutes and ₹5 more for reaching 9
+   *     (₹10 on a full call). See freeCallPayout.js for why — in short, the astrologer is
+   *     paid for holding a conversation, not for picking up, so a time-waster costs the
+   *     platform nothing. A call that ends at 2:59 pays zero.
+   *   * settled once, from the final duration, rather than credited as each mark passes.
+   *     Free sessions are kept out of the billing poll on purpose and there is no worker
+   *     watching them; the money and the idempotency are identical either way.
+   *   * countEarnings: true — this is real earned income and belongs in today's/total
+   *     earnings, unlike a withdrawal.
+   *   * idempotent on the SESSION id, so the several callers of terminateSession and any
+   *     re-run of a sweep cannot pay twice.
+   *
+   * Never throws: the astrologer has already done the work and the call must still end.
+   * A failure here leaves the ledger short and is logged loudly for an admin to fix.
+   */
+  async payFreeCallAstrologer(sessionId, sessionRow, booking) {
+    try {
+      if (!sessionRow.vendor_id) return;
+      // Local test mode: the payout moves real rupees between an astrologer's balance
+      // and admin_wallet in the shared production ledger, and an interactive UI test
+      // should not need a teardown script to put money back. The money path has its own
+      // dedicated verification; what is being exercised here is the screen flow.
+      // Inert in every environment except a developer's own machine.
+      if (localTest.skipPayout()) {
+        console.warn(`[FreeCall] LOCAL TEST MODE — payout suppressed for session ${sessionId}. `
+          + 'No wallet or admin_wallet write was made.');
+        return;
+      }
+      const seconds = Number(booking.call_duration_seconds);
+      const elapsed = Number.isFinite(seconds) && seconds > 0
+        ? seconds
+        : (booking.call_started_at
+          ? Math.max(0, Math.round((Date.now() - new Date(booking.call_started_at).getTime()) / 1000))
+          : 0);
+      const { payoutMilestones } = await this.freeCallOfferNumbers();
+      const { amount, label } = freeCallPayout(elapsed, payoutMilestones);
+      if (amount <= 0) return;
+
+      const key = `freecall-payout:${sessionId}`;
+      const description = `Free intro call payout (${label} reached)`;
+
+      await wallet.adjustVendorWallet(sessionRow.vendor_id, amount, {
+        description,
+        sessionId,
+        idempotencyKey: key,
+        countEarnings: true,
+      });
+
+      // The platform side. Logged, never thrown: the astrologer has already been paid by
+      // this point and a ledger failure must not undo that. Same posture as the remedy
+      // commission's admin_wallet leg.
+      try {
+        await wallet.adjustAdminWallet(-amount, {
+          description: `${description} — session ${sessionId}`,
+          serviceKey: 'free_call_payout',
+          customerId: sessionRow.caller_id || null,
+          idempotencyKey: key,
+        });
+      } catch (adminErr) {
+        console.error(`[SessionManager] free-call payout: astrologer ${sessionRow.vendor_id} was PAID ${amount} `
+          + `but admin_wallet was not debited (session ${sessionId}):`, adminErr.message);
+      }
+
+      // "settled", not "paid": the wallet RPC is keyed on the session id, so a repeat
+      // call for the same session is a no-op that still reaches this line. Claiming a
+      // fresh payment here would send someone chasing a double credit that never
+      // happened — the ledger is the record, not this log.
+      console.log(`[SessionManager] Free call ${sessionId}: settled ${amount} for ${sessionRow.vendor_id} (${label} of ${elapsed}s).`);
+    } catch (err) {
+      console.error(`[SessionManager] free-call payout FAILED for session ${sessionId} — `
+        + 'the astrologer has not been paid for this call:', err.message);
+    }
+  }
+
+  /**
+   * The payout and hold numbers off the free_call_offer blob, clamped.
+   *
+   * Cached for 60s: terminateSession runs on every call end, and these values change
+   * about once a month. Every field falls back to a safe default, so an admin typing
+   * nonsense into the settings form cannot mint money or hold an astrologer for an hour.
+   */
+  async freeCallOfferNumbers() {
+    const now = Date.now();
+    if (this._freeCallNumbers && this._freeCallNumbersAt && now - this._freeCallNumbersAt < 60_000) {
+      return this._freeCallNumbers;
+    }
+    const clamp = (v, lo, hi, dflt) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= lo && n <= hi ? n : dflt;
+    };
+    let offer = {};
+    try {
+      const { data } = await supabase.from('app_settings').select('value').eq('key', 'free_call_offer').limit(1);
+      const raw = data && data[0] ? data[0].value : null;
+      offer = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+    } catch (_) { offer = {}; }
+
+    const numbers = {
+      payoutMilestones: normaliseMilestones(offer.payoutMilestones),
+      holdDecisionSeconds: clamp(offer.holdDecisionSeconds, 10, 600, 90),
+      holdPaymentSeconds: clamp(offer.holdPaymentSeconds, 30, 900, 180),
+    };
+    this._freeCallNumbers = numbers;
+    this._freeCallNumbersAt = now;
+    return numbers;
+  }
+
+  /**
    * If this session was a free introductory call, stamp its booking with what
    * happened and return it. Returns null for an ordinary paid session.
    *
    * Never throws: a booking that fails to update must not stop a call from ending,
    * and must not leave is_active true. Worst case the admin marks it by hand.
    */
-  async closeFreeCallBooking(sessionId) {
+  async closeFreeCallBooking(sessionId, endedAtMs = null, endedBy = null) {
     try {
-      const { data: booking, error } = await supabase
+      const read = (columns) => supabase
         .from('free_call_bookings')
-        .select('id, status, call_started_at')
+        .select(columns)
         .eq('call_session_id', sessionId)
         .maybeSingle();
+
+      // `kind` only exists once sql/free_call_instant.sql has run. Naming a missing
+      // column makes PostgREST 400 the whole query, which would look identical to
+      // "this was not a free call" and silently stop every payout — so fall back to
+      // the pre-migration column list and treat the booking as 'scheduled'.
+      let { data: booking, error } = await read('id, status, call_started_at, kind');
+      if (error && !bookingKindAvailable) booking = null;
+      if (error) {
+        if (bookingKindAvailable && isMissingColumn(error, 'kind')) {
+          bookingKindAvailable = false;
+          console.warn('[SessionManager] free_call_bookings.kind is missing — run sql/free_call_instant.sql. '
+            + 'Free calls are treated as scheduled until then (no upsell hold).');
+        }
+        ({ data: booking, error } = await read('id, status, call_started_at'));
+      }
       // Includes the not-yet-migrated case (no call_session_id column) — treated
       // as "not a free call", which is correct for every pre-existing session.
       if (error || !booking) return null;
+      if (!booking.kind) booking.kind = 'scheduled';
 
-      const endedAt = new Date();
       const startedAt = booking.call_started_at ? new Date(booking.call_started_at) : null;
+
+      // Measure to when the call actually stopped, which is NOT always now. A session
+      // ended because both apps vanished stopped at the last moment both were present;
+      // one ended by the overrun backstop stopped at its allotted end. Clamped between
+      // the start and now, so a bad clock or a stale caller cannot invent a longer call
+      // than really happened — this number decides what the platform pays.
+      const caller = Number(endedAtMs);
+      const endedAt = (Number.isFinite(caller) && caller > 0)
+        ? new Date(Math.min(Date.now(), Math.max(caller, startedAt ? startedAt.getTime() : caller)))
+        : new Date();
       const seconds = startedAt ? Math.max(0, Math.round((endedAt - startedAt) / 1000)) : null;
+
+      const happened = seconds !== null && seconds >= MIN_REAL_CALL_SECONDS;
+      // Long enough to be worth continuing — drives BOTH the hold and the app's
+      // post-call screen, so the reservation and the offer can never disagree.
+      const qualifiesForUpsell = seconds !== null && seconds >= MIN_UPSELL_SECONDS;
+      const qualifiesForDakshina = seconds !== null && seconds >= MIN_DAKSHINA_SECONDS;
+      // The astrologer hung up on a call that had barely started. From the customer's
+      // side that is not their free call spent, it is an astrologer who could not take
+      // it — so the booking goes back to being retryable with somebody else.
+      // "The astrologer bailed before it was really a call" — the case that must not
+      // spend the customer's free call. Keyed on the DAKSHINA line (3 min), not the
+      // upsell line (9 min): a seven-minute conversation happened, whoever ended it.
+      const abandonedByAstrologer = endedBy === 'astrologer' && !qualifiesForDakshina;
 
       const patch = {
         call_ended_at: endedAt.toISOString(),
@@ -903,12 +1191,45 @@ class SessionManager {
       // Only a call that actually carried some conversation counts as done. A ring
       // nobody answered stays 'booked' so it still shows in the astrologer's list
       // to try again, rather than silently disappearing as completed.
-      if (booking.status === 'booked' && seconds !== null && seconds >= 30) {
+      if (booking.status === 'booked' && happened && !abandonedByAstrologer) {
         patch.status = 'completed';
         patch.completed_at = endedAt.toISOString();
       }
+
+      // A CONNECTION THAT DIED BEFORE IT WAS A CONVERSATION MUST NOT BURN THE FREE CALL.
+      //
+      // Media failing to establish, the astrologer's phone dropping the instant they
+      // accepted, a customer whose battery died at "hello" — all of these ended a session
+      // after a handful of seconds, and the customer got nothing. Until 2026-09-28 the
+      // booking kept its call_session_id, which makes resumableInstantAttempt() false, so
+      // instantGate answered ALREADY_USED forever: one failed connection silently cost
+      // them the whole offer. (CLAUDE.md's edge-case table claimed "they can retry" — it
+      // was wrong, and this is the fix rather than the claim being true.)
+      //
+      // Unlinking the session returns the row to exactly the shape it had while the pool
+      // was still being rung, so the customer can try somebody else. The ring attempt was
+      // already counted at ring time, so maxRingAttempts still caps this, and
+      // cancelStaleInstantBookings still releases the row entirely if they give up.
+      if (booking.kind === 'instant' && booking.status === 'booked' && (!happened || abandonedByAstrologer)) {
+        patch.call_session_id = null;
+        patch.call_ended_at = null;
+        patch.call_duration_seconds = null;
+        console.log(`[SessionManager] Free call ${sessionId} lasted ${seconds ?? 'no'}s — `
+          + `under ${MIN_REAL_CALL_SECONDS}s, so booking ${booking.id} is released to be retried.`);
+      }
+
       await supabase.from('free_call_bookings').update(patch).eq('id', booking.id);
-      return booking;
+      // The caller needs the measured length to work out the payout, and `booking` is
+      // the row as it was BEFORE this update. `callHappened` is carried so the hold and
+      // the payout cannot disagree with the decision made here.
+      return {
+        ...booking,
+        call_duration_seconds: seconds,
+        callHappened: happened,
+        qualifiesForUpsell,
+        qualifiesForDakshina,
+        abandonedByAstrologer,
+      };
     } catch (err) {
       console.error('[SessionManager] closeFreeCallBooking failed:', err.message);
       return null;
@@ -938,6 +1259,95 @@ class SessionManager {
     }
   }
 
+  /**
+   * Drop reservations whose time is up.
+   *
+   * holdBlocks() already ignores an expired row, so this is housekeeping rather than
+   * correctness — but without it the table grows forever and every busy check reads
+   * more rows than it needs.
+   */
+  async sweepExpiredHolds() {
+    try {
+      await holds.sweepExpired(supabase);
+    } catch (err) {
+      console.error('[SessionManager] sweepExpiredHolds failed:', err.message);
+    }
+  }
+
+  /**
+   * Give back a free call that was never taken.
+   *
+   * An instant booking is created the moment the customer rings their first astrologer,
+   * and one-free-call-per-customer is enforced by an index on that row. So a customer
+   * who rings a few people, gets no answer and closes the app would otherwise have burnt
+   * their free call without ever speaking to anybody. Cancelling the booking releases
+   * the index (it is partial on status <> 'cancelled') and lets them come back.
+   *
+   * Only rows that never reached a call are touched: call_session_id IS NULL. A booking
+   * that connected is closed by closeFreeCallBooking instead.
+   */
+  async cancelStaleInstantBookings() {
+    if (!bookingKindAvailable) return;
+    try {
+      const cutoff = new Date(Date.now() - STALE_INSTANT_BOOKING_MS).toISOString();
+      const { error } = await supabase
+        .from('free_call_bookings')
+        .update({ status: 'cancelled' })
+        .eq('kind', 'instant')
+        .eq('status', 'booked')
+        .is('call_session_id', null)
+        .lt('created_at', cutoff);
+      if (error) {
+        if (isMissingColumn(error, 'kind')) {
+          bookingKindAvailable = false;
+          return;
+        }
+        console.error('[SessionManager] cancelStaleInstantBookings failed:', error.message);
+      }
+    } catch (err) {
+      console.error('[SessionManager] cancelStaleInstantBookings threw:', err.message);
+    }
+  }
+
+  /**
+   * End a free introductory call whose participants are gone.
+   *
+   * THE HOLE THIS FILLS: `chat_sessions.is_free` keeps free calls out of
+   * checkActiveSessions — correctly, because there is nothing to bill — but that poll is
+   * also where bothParticipantsPresent() runs, so free calls were the one kind of session
+   * nobody was watching. If both phones died at minute two, the session stayed open until
+   * endOverdueFreeCalls noticed at minute fourteen: the astrologer showed busy for twelve
+   * minutes they were not working, and the call was measured to the sweep, so the
+   * platform paid every milestone the customer never reached.
+   *
+   * Presence, not billing. bothParticipantsPresent() ends the session itself and carries
+   * the last-seen-together timestamp into terminateSession, so the call is measured to
+   * when it really stopped. The graces are the same ones paid calls use (2 min for a
+   * customer, 5 for an astrologer, 5 for a backgrounded astrologer app) — a free call
+   * must not die on a network blip that a paid call would survive.
+   *
+   * Without socket.io (scripts, tests) presence is unknowable, so this does nothing and
+   * endOverdueFreeCalls stays the backstop.
+   */
+  async endAbandonedFreeCalls() {
+    if (!this.io || typeof this.io.in !== 'function') return;
+    try {
+      const { data: rows, error } = await supabase
+        .from('chat_sessions')
+        .select('id, caller_id, vendor_id')
+        .eq('is_active', true)
+        .eq('is_free', true);
+      // is_free arrives with sql/free_call_instant.sql; before that there is nothing
+      // here to watch and endOverdueFreeCalls already covers the overrun case.
+      if (error || !rows || !rows.length) return;
+      for (const session of rows) {
+        await this.bothParticipantsPresent(session);
+      }
+    } catch (err) {
+      console.error('[SessionManager] endAbandonedFreeCalls failed:', err.message);
+    }
+  }
+
   async endOverdueFreeCalls() {
     try {
       const { data: rows, error } = await supabase
@@ -950,10 +1360,15 @@ class SessionManager {
       const now = Date.now();
       for (const row of rows) {
         if (!row.call_started_at) continue;
-        const allowedMs = ((row.duration_minutes || 12) * 60 + 120) * 1000;
-        if (now - new Date(row.call_started_at).getTime() < allowedMs) continue;
+        const startedMs = new Date(row.call_started_at).getTime();
+        const promisedMs = (row.duration_minutes || 12) * 60 * 1000;
+        if (now - startedMs < promisedMs + 120_000) continue;
         console.log(`[SessionManager] Free call ${row.call_session_id} overran — ending it.`);
-        await this.terminateSession(row.call_session_id, 'Free call time is up');
+        // Recorded as exactly the minutes that were promised, not the extra two of slack
+        // plus however long this sweep took to come round. The offer was 12 minutes; a
+        // call closed by the backstop did not earn a thirteenth.
+        await this.terminateSession(row.call_session_id, 'Free call time is up',
+          { endedAtMs: startedMs + promisedMs });
       }
     } catch (err) {
       console.error('[SessionManager] endOverdueFreeCalls failed:', err.message);
