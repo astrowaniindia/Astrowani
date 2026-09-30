@@ -263,6 +263,24 @@ const VideoCallScreen = ({route, navigation}: any) => {
     doEndCall();
   }, [doEndCall, leaveCallScreen]);
 
+  // Red End button: confirm first, so a mis-tap does not drop a live call.
+  const confirmDisconnect = useCallback(() => {
+    // Already tearing down: this press is the customer trying to get off a dead
+    // screen, so it must go straight through rather than behind a dialog.
+    if (isEndingRef.current) {
+      onPressDisconnect();
+      return;
+    }
+    showStatusPopup({
+      variant: 'endCall',
+      title: t('call.endCallTitle'),
+      message: t('call.endCallMsg'),
+      confirmText: t('call.end'),
+      cancelText: t('common.cancel'),
+      onConfirm: onPressDisconnect,
+    });
+  }, [onPressDisconnect, t]);
+
   // ─── Controls ───────────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {
     const next = !audioMuted;
@@ -701,7 +719,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
           <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.endBtn} onPress={confirmDisconnect} activeOpacity={0.8}>
           <VectorIcon name="call-end" type="MaterialIcons" size={32} color="#fff" />
         </TouchableOpacity>
 

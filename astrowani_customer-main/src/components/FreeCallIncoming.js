@@ -56,6 +56,11 @@ export const FreeCallIncomingHost = () => {
   // Guards against the socket event and the recovery fetch both raising the same
   // call, and against a second ring arriving while one is already on screen.
   const shownRef = useRef(null);
+  // Sessions this customer has already answered or declined. clearRing() resets
+  // shownRef, so without this the foreground re-check below (which still sees the
+  // call as "incoming" server-side until it ends) raises the Answer screen again on
+  // top of the call that is already running.
+  const handledRef = useRef(new Set());
 
   const clearRing = useCallback(() => {
     if (timeoutRef.current) {
@@ -71,6 +76,7 @@ export const FreeCallIncomingHost = () => {
   const show = useCallback((data) => {
     if (!data?.sessionId || !data?.bookingId) return;
     if (shownRef.current === data.sessionId) return;
+    if (handledRef.current.has(String(data.sessionId))) return;
     shownRef.current = data.sessionId;
     setCall({
       bookingId: String(data.bookingId),
@@ -178,6 +184,7 @@ export const FreeCallIncomingHost = () => {
       astrologer_id: target.astrologerId,
       duration_minutes: target.durationMinutes,
     });
+    handledRef.current.add(String(target.sessionId));
     clearRing();
     // Same screen the paid calls use. freeCall only changes what is displayed and
     // adds the hard stop — the session is already priced at 0 server-side.
@@ -201,6 +208,7 @@ export const FreeCallIncomingHost = () => {
       booking_id: target.bookingId,
       astrologer_id: target.astrologerId,
     });
+    handledRef.current.add(String(target.sessionId));
     // Dismiss immediately — the customer said no, so the UI should not sit there
     // waiting on a network round trip to agree with them.
     clearRing();

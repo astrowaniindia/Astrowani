@@ -383,6 +383,25 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     doEndCall();
   }, [doEndCall, leaveCallScreen]);
 
+  // Red End button: confirm first. A mis-tap on a free call cannot be undone --
+  // the offer is one per customer -- so the press has to be deliberate.
+  const confirmDisconnect = useCallback(() => {
+    // Already tearing down: this press is the customer trying to get off a dead
+    // screen, so it must go straight through rather than behind a dialog.
+    if (isEndingRef.current) {
+      onPressDisconnect();
+      return;
+    }
+    showStatusPopup({
+      variant: 'endCall',
+      title: t('call.endCallTitle'),
+      message: freeCall ? t('call.endFreeCallMsg') : t('call.endCallMsg'),
+      confirmText: t('call.end'),
+      cancelText: t('common.cancel'),
+      onConfirm: onPressDisconnect,
+    });
+  }, [onPressDisconnect, freeCall, t]);
+
   // ─── Controls ───────────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {
     const next = !audioMuted;
@@ -636,7 +655,9 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       showStatusPopup({
         variant: 'endCall',
         title: t('call.endCallTitle'),
-        message: t('call.endCallMsg'),
+        // Same warning the red End button gives: a mis-pressed back must not be the
+        // thing that silently burns a one-per-customer free call.
+        message: freeCall ? t('call.endFreeCallMsg') : t('call.endCallMsg'),
         confirmText: t('call.end'),
         cancelText: t('common.cancel'),
         onConfirm: onPressDisconnect,
@@ -764,7 +785,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           <View style={styles.freeBadge}>
             <VectorIcon name="timer" type="MaterialIcons" size={13} color="#FFD700" />
             <Text style={styles.freeBadgeText}>
-              {formatTime(freeRemaining)} left · this call is free
+              Enjoy your free call · {formatTime(freeRemaining)} left
             </Text>
           </View>
         )}
@@ -778,7 +799,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           </View>
         )}
 
-        <SessionIntroBanner visible={isActive} style={{marginHorizontal: 0, marginTop: 14}} />
+        {/* Paid sessions only. The free intro call already says "this call is free"
+            above, and a "your first minute is free" line on top of a 12-minute free
+            call reads as nonsense. */}
+        <SessionIntroBanner visible={isActive && !freeCall} style={{marginHorizontal: 0, marginTop: 14}} />
 
       </View>
 
@@ -788,7 +812,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           <Text style={[styles.ctrlLabel, audioMuted && styles.ctrlLabelRed]}>{audioMuted ? t('call.unmute') : t('call.mute')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.endBtn} onPress={onPressDisconnect} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.endBtn} onPress={confirmDisconnect} activeOpacity={0.8}>
           <VectorIcon name="call-end" type="MaterialIcons" size={34} color="#fff" />
         </TouchableOpacity>
 
