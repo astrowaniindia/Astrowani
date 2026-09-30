@@ -78,8 +78,8 @@ const ALL_GROUPS = [
     items: [
       { to: '/sessions', label: 'Live Consultations' },
       { to: '/astro-services', label: 'Astro Services Rates' },
-      { to: '/free-call-bookings', label: 'Free Call Bookings' },
-      { to: '/free-call-settings', label: 'Free Call Settings' },
+      { to: '/free-call-bookings', label: 'Free Call Booking Offer' },
+      { to: '/free-call-instant', label: 'Free Instant Call Offer' },
       { to: '/live', label: 'Live Video Streams' },
       { to: '/moderation', label: 'Moderation (Reports)' },
       { to: '/session-flags', label: 'Off-platform Contact Flags' },

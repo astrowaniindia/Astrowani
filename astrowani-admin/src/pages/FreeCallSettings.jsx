@@ -70,7 +70,27 @@ const milestoneSummary = (list) => {
   }).join(', then ')}.`;
 };
 
-export default function FreeCallSettings() {
+/**
+ * The settings panel for ONE of the two free-call offers.
+ *
+ * `flow` picks which offer this instance is presenting:
+ *   'booking' — the scheduled "book a slot, we call you later" offer
+ *   'instant' — the "ring an astrologer now" offer
+ *
+ * Both edit the SAME underlying free_call_offer blob, because the two flows are
+ * mutually exclusive (offer.mode decides which one customers actually reach) and the
+ * backend reads one config. So a setting that applies to both is deliberately shown in
+ * BOTH panels rather than parked in a third place — you should never have to leave the
+ * offer you are editing to finish a change. Only the slot/operating-hours card is
+ * hidden from instant, which genuinely has no slots, lead time or calendar.
+ *
+ * Collapsed by default: this panel sits on top of the bookings list, and the list is
+ * what an admin opens that page to look at day to day.
+ */
+export default function FreeCallSettings({ flow = 'booking' }) {
+  const isInstant = flow === 'instant';
+  const [panelOpen, setPanelOpen] = useState(false);
+
   const [offer, setOffer] = useState(OFFER_DEFAULTS);
   const [offerLoaded, setOfferLoaded] = useState(false);
   const [savingOffer, setSavingOffer] = useState(false);
@@ -270,47 +290,60 @@ export default function FreeCallSettings() {
 
   return (
     <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-      {/* ── Page Header ── */}
-      <div className="page-header">
-        <div>
-          <div
+      {/* ── The big button. Everything below it is hidden until it is pressed. ── */}
+      <button
+        type="button"
+        onClick={() => setPanelOpen((v) => !v)}
+        className="card"
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          marginBottom: panelOpen ? 20 : 0,
+          padding: '20px 24px',
+          cursor: 'pointer',
+          textAlign: 'left',
+          border: '2px solid var(--maroon)',
+          background: panelOpen ? 'var(--maroon-50)' : 'var(--surface)',
+        }}
+      >
+        <span>
+          <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 11.5,
-              fontWeight: 700,
+              display: 'block',
+              fontSize: 20,
+              fontWeight: 800,
               color: 'var(--maroon)',
-              background: 'var(--maroon-50)',
-              padding: '3px 10px',
-              borderRadius: 20,
-              marginBottom: 8,
+              letterSpacing: '-0.01em',
             }}
           >
-            <span>⚙️</span> PROMOTION CONFIGURATION
-          </div>
-          <h1 className="page-title" style={{ margin: '0 0 6px' }}>
-            Free Call Settings
-          </h1>
-          <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-            Control the introductory free call promotion, operating hours, slot generation, and astrologer assignment.
-          </p>
-        </div>
-        <div className="btn-group">
-          <Link to="/free-call-bookings" className="btn secondary sm" title="View customer bookings">
-            <span>📅</span> View Bookings
-          </Link>
-          <button
-            className="btn sm"
-            disabled={savingOffer || !offerLoaded}
-            onClick={() => saveOffer(offer)}
-            style={{ minWidth: 140 }}
+            ⚙️ {isInstant ? 'Free Instant Call Offer Settings' : 'Free Call Booking Offer Settings'}
+          </span>
+          <span style={{ display: 'block', marginTop: 4, fontSize: 13, color: 'var(--text-muted)' }}>
+            {panelOpen
+              ? 'Change what you need, then press Save Offer Settings at the bottom.'
+              : 'Click here to change the settings for this offer.'}
+          </span>
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          <span
+            className="badge"
+            style={{
+              background: offer.enabled ? '#dcfce7' : '#f1f5f9',
+              color: offer.enabled ? '#166534' : '#475569',
+              fontWeight: 700,
+            }}
           >
-            {savingOffer ? 'Saving…' : 'Save Offer Settings'}
-          </button>
-        </div>
-      </div>
+            {offer.enabled ? 'LIVE' : 'OFF'}
+          </span>
+          <span style={{ fontSize: 22, color: 'var(--maroon)' }}>{panelOpen ? '▲' : '▼'}</span>
+        </span>
+      </button>
 
+      {!panelOpen ? null : (
+       <>
       {savedSuccess && (
         <div
           className="card"
@@ -929,6 +962,9 @@ export default function FreeCallSettings() {
       </div>
 
       {/* ── Card 4: Slot Generation & Operating Hours (IST) ── */}
+      {/* Instant has no slots, no lead time and no calendar, so this card is the one
+          thing that genuinely does not belong in that panel. */}
+      {isInstant ? null : (
       <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
           Scheduling & Slot Generation (IST)
@@ -1027,6 +1063,8 @@ export default function FreeCallSettings() {
           </div>
         </div>
       </div>
+
+      )}
 
       {/* ── Card 5: Marketing & Customer Copy ── */}
       <div className="card" style={{ marginBottom: 28 }}>
@@ -1220,6 +1258,8 @@ export default function FreeCallSettings() {
           </button>
         </div>
       </div>
+       </>
+      )}
     </div>
   );
 }

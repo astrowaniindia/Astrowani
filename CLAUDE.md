@@ -6474,3 +6474,105 @@ clean on both backend files. Lint on every changed file is back to exactly the p
    its uses at HEAD, so it appears already fixed — but if the astrologer dashboard ever shows
    the error fallback again, that crash also disables HomeScreen's socket listeners, its
    Realtime channel and the ringtone teardown.
+
+---
+
+## Session 2026-10-01: the two free-call offers are now separate, and audience-targeted
+
+### DI. Audience Targeting — what it is (it was never written down here)
+
+`astrowani-backend/src/audience.js` + admin **Audience Targeting** (`pages/Audience.jsx`).
+It answers one question: **is THIS customer allowed THIS welcome offer**, based on where
+they came from.
+
+- Reads `customers.acquisition_source`, written at signup by `src/acquisition.js` (the QR
+  poster / install-referrer work, subsystem CV). It never writes anything.
+- Config lives in `app_settings.audience_rules`:
+  `{segments: [{id, label, match: {kind, value}}], features: {<key>: {mode, segments}}}`.
+  `kind` is `prefix` | `exact` | `raw_contains` | `null`. `mode` is `block` ("everyone
+  except these") or `only` ("only these"); anything else means everyone.
+- Default segments: QR posters (`qr_`), tracked ad links (`ad_`), Google Ads / Play
+  (`google`), and **`unknown`** — no source at all, which is every iPhone customer, every
+  sideload, and everyone who signed up before the referrer build.
+
+**The three guarantees, and do not weaken them:**
+1. Every feature defaults to `everyone`. The module changes nothing until an admin
+   writes a rule.
+2. `unknown` is only ever affected by a rule that NAMES it. A rule about "google" cannot
+   silently catch the 700-odd customers with a null source.
+3. It **fails OPEN** — missing key, bad JSON, unreachable DB all answer "allowed". This
+   is deliberately the opposite of `freeCallRoutes.isNewCustomer()`, which fails closed.
+   A wrongly-granted free call is one astrologer hour; a wrongly-WITHHELD offer is a
+   customer who bounced. This layer can only ever take an offer away, so its failure
+   direction is "take nothing away".
+
+Two safeguards inside `normalizeRules` worth knowing: a `prefix` rule with an empty
+value is dropped (it would match everyone), and an `only` rule with an empty segment
+list degrades to `everyone` (it would block everyone).
+
+### DJ. The booking offer and the instant offer are now separately targetable
+
+**What was wrong:** the two free-call flows were marketed as separate offers but the code
+had no idea. All three paths asked the SAME audience key — `/api/free-call/offer` (960),
+the instant ring (1065) and the booking write (1659) all called
+`isAllowed(customer, 'free_call')`. So a rule written for one flow silently governed both.
+
+Now `FEATURES = ['free_call', 'free_call_instant', 'free_chat']`, and each path asks for
+the flow it is actually serving (`audienceFeatureFor(offer)` on the shared `/offer`
+endpoint, which keys off `offer.mode`).
+
+> **The compatibility rule that makes this safe — `FEATURE_FALLBACKS`.** Instant had no
+> key of its own until today, so any existing `free_call` rule was written with BOTH
+> flows in mind. Dropping it off the instant path would have LOOSENED an admin's
+> restriction without anybody asking. So instant uses its own rule when one exists and
+> **falls back to `free_call`'s when it does not**. Adding the key therefore changed
+> nothing on its own, and from the moment an instant rule is written it is the only one
+> that applies to instant. Verified 13/13, including that exact case.
+
+### DK. Admin: two offers, two sections, settings behind a big button
+
+`FreeCallSettings.jsx` is no longer a page. It is a **panel** taking `flow="booking" |
+"instant"`, collapsed behind a full-width button ("⚙️ Free Call Booking Offer Settings —
+click here to change") that also shows LIVE/OFF at a glance.
+
+- **`/free-call-bookings` — "Free Call Booking Offer"**: the panel plus the bookings
+  list, merged onto one page. Collapsed by default, because the list is what an admin
+  opens that page for.
+- **`/free-call-instant` — "Free Instant Call Offer"** (new): the same panel with
+  `flow="instant"`.
+- `/free-call-settings` is now a redirect to `/free-call-bookings`, so old links land.
+
+**Both panels edit the SAME `free_call_offer` blob**, because the flows are mutually
+exclusive — `offer.mode` (`scheduled` | `instant` | `off`) decides which one customers
+reach, and the backend reads one config. So every shared setting is deliberately shown in
+BOTH panels rather than parked in a third place; only the slot/operating-hours card is
+hidden from instant, which genuinely has no slots, lead time or calendar.
+
+**There is no bookings list on the instant page on purpose:** an instant call produces the
+same `free_call_bookings` row as a booked one, so it already appears in the list on the
+booking page. Two lists over one table disagree the moment one is filtered.
+
+### THREE WAYS THE FREE CALL CAN BE LIVE WHEN YOU THINK IT IS NOT (2026-10-01 incident)
+
+An astrologer's phone rang with a real free intro call while the feature was believed to
+be off. It was not off: `free_call_offer.enabled` was `true` with `mode: 'instant'`.
+
+1. **`enabled` is the only real kill switch.** It gates all three paths
+   (`/offer`, `/book` → 403 `OFFER_CLOSED`, `/instant/ring` → 403 `OFFER_CLOSED`).
+   Switch it off and both flows stop within the 60s config cache.
+2. **Emptying the instant pool does NOT stop it.** With instant mode on and an empty
+   pool, `loadOffer` logs a warning and **falls back to `scheduled`** — it does not turn
+   anything off.
+3. **Invites bypass `enabled` entirely.** A customer holding an active
+   `free_call_invites` row sees the offer and can ring astrologers with the offer
+   switched off — deliberate (subsystem CR), and the one route by which a phone can still
+   ring after the master switch is off. Check the invite card before concluding it is
+   closed.
+
+Also: `mode` survives the master switch. Turning `enabled` back on resumes whichever flow
+was last selected — so set the flow first, then enable.
+
+### Still to verify
+The two admin sections build clean (`npm run build`) but were **not driven in a browser**
+this session. The audience split is unit-tested (13/13) but was **not exercised over HTTP**
+against a real customer row.

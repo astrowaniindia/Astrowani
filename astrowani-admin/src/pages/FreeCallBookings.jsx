@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import Modal from '../components/Modal';
 import FreeCallInviteCard from '../components/FreeCallInviteCard';
+import FreeCallSettings from './FreeCallSettings';
 import { prettyClock } from '../utils/freeCallClock';
 
 // The free introductory call: list and management of bookings.
@@ -334,15 +335,13 @@ export default function FreeCallBookings() {
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--maroon)', background: 'var(--maroon-50)', padding: '3px 10px', borderRadius: 20, marginBottom: 8 }}>
             <span>📞</span> INTRODUCTORY CALL SESSIONS
           </div>
-          <h1 className="page-title" style={{ margin: '0 0 6px' }}>Free Call Bookings</h1>
+          <h1 className="page-title" style={{ margin: '0 0 6px' }}>Free Call Booking Offer</h1>
           <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-            Track and manage all scheduled introductory consultation calls booked by new app customers.
+            The “book a slot, we call you later” offer — its settings and every booking made on it.
+            The “ring an astrologer now” offer lives in Free Instant Call Offer.
           </p>
         </div>
         <div className="btn-group">
-          <Link to="/free-call-settings" className="btn secondary sm" title="Configure offer settings, duration, and astrologer pool">
-            <span>⚙️</span> Free Call Settings
-          </Link>
           <button className="btn ghost sm" onClick={exportCSV} title="Export current bookings to CSV">
             <span>📥</span> Export CSV
           </button>
@@ -351,6 +350,10 @@ export default function FreeCallBookings() {
           </button>
         </div>
       </div>
+
+      {/* The settings for THIS offer, collapsed behind its own big button, so the
+          bookings list below stays the first thing an admin sees. */}
+      <FreeCallSettings flow="booking" />
 
       <FreeCallInviteCard />
 

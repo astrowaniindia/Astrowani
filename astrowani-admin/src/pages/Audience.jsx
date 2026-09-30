@@ -17,12 +17,16 @@ import client from '../api/client';
 const SETTINGS_KEY = 'audience_rules';
 
 const FEATURE_LABELS = {
-  free_call: 'Free 12-minute call',
+  free_call: 'Free call — booking offer',
+  free_call_instant: 'Free call — instant offer',
   free_chat: 'Free 5-minute chat',
 };
 
 const FEATURE_NOTES = {
-  free_call: 'Costs a real astrologer’s time.',
+  free_call: 'The “book a slot, we call you later” flow. Costs a real astrologer’s time.',
+  free_call_instant:
+    'The “ring an astrologer now” flow. Until you set a rule here it follows the booking '
+    + 'rule above, so adding this control on its own changed nothing.',
   free_chat: 'Costs Gemini API spend per conversation.',
 };
 

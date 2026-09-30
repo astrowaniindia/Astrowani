@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -37,7 +37,7 @@ import Support from './pages/Support';
 import SupportInbox from './pages/SupportInbox';
 import FreeBotChat from './pages/FreeBotChat';
 import FreeCallBookings from './pages/FreeCallBookings';
-import FreeCallSettings from './pages/FreeCallSettings';
+import FreeCallInstant from './pages/FreeCallInstant';
 import GuideAvatar from './pages/GuideAvatar';
 import QrCodes from './pages/QrCodes';
 import Audience from './pages/Audience';
@@ -84,7 +84,10 @@ export default function App() {
         <Route path="sessions" element={<Sessions />} />
         <Route path="free-bot-chat" element={<FreeBotChat />} />
         <Route path="free-call-bookings" element={<FreeCallBookings />} />
-        <Route path="free-call-settings" element={<FreeCallSettings />} />
+        <Route path="free-call-instant" element={<FreeCallInstant />} />
+        {/* The settings used to be their own page; they now live inside the offer they
+            belong to. Kept as a redirect so old links and bookmarks still land. */}
+        <Route path="free-call-settings" element={<Navigate to="/free-call-bookings" replace />} />
         <Route path="guide-avatar" element={<GuideAvatar />} />
         <Route path="qr-codes" element={<QrCodes />} />
         <Route path="audience" element={<Audience />} />

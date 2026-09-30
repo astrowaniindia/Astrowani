@@ -44,7 +44,24 @@ const SETTINGS_KEY = 'audience_rules';
 
 // The features that can be gated. A featureKey not in here is always allowed, so a
 // typo in the stored config can never block anything.
-const FEATURES = ['free_call', 'free_chat'];
+//
+// `free_call` and `free_call_instant` are the two halves of the same offer: the
+// scheduled "book a slot, we call you later" flow and the "ring somebody now" flow.
+// They are separate keys because they are marketed to different people -- a QR poster
+// audience is worth a booked slot, a paid-ad audience may be worth an instant call, or
+// neither. Which flow a customer actually sees is still free_call_offer.mode, and the
+// two are mutually exclusive there.
+const FEATURES = ['free_call', 'free_call_instant', 'free_chat'];
+
+// Instant had no key of its own until 2026-10-01: every free-call path asked
+// `free_call`. So an existing rule written when that was the only key was written with
+// BOTH flows in mind, and quietly dropping it off the instant path would have LOOSENED
+// an admin's restriction without anybody asking for that.
+//
+// Hence: instant uses its own rule when one exists, and falls back to free_call's when
+// it does not. Adding this key therefore changes nothing until an admin sets an instant
+// rule, and from that moment the instant rule is the only one that applies to instant.
+const FEATURE_FALLBACKS = Object.freeze({ free_call_instant: 'free_call' });
 
 // Reserved segment id for "we never learned where they came from". Not a match rule —
 // it is the answer when acquisition_source is null.
@@ -171,13 +188,13 @@ function segmentOf(segments, source, raw) {
 
 /**
  * Decide the whole picture for one customer in a single pass.
- * Returns { segment, features: { free_call: bool, free_chat: bool } }.
+ * Returns { segment, features: { <every key in FEATURES>: bool } }.
  */
 function decideWith(rules, source, raw) {
   const segment = segmentOf(rules.segments, source, raw);
   const features = {};
   for (const key of FEATURES) {
-    const rule = rules.features[key];
+    const rule = rules.features[key] || rules.features[FEATURE_FALLBACKS[key]];
     if (!rule) { features[key] = true; continue; }
     const listed = rule.segments.includes(segment);
     features[key] = rule.mode === 'only' ? listed : !listed;

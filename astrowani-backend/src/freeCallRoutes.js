@@ -309,6 +309,18 @@ async function loadIntroVisibility() {
   return value;
 }
 
+/**
+ * Which audience rule governs the flow this offer is currently running.
+ *
+ * The two flows are marketed to different people (src/audience.js FEATURES), and
+ * `mode` is what decides which one a customer can actually reach, so the rule that
+ * applies is the one for the live flow. Instant falls back to `free_call`'s rule when
+ * no instant rule has been written, so adding the key changed nothing on its own.
+ */
+function audienceFeatureFor(offer) {
+  return offer && offer.mode === 'instant' ? 'free_call_instant' : 'free_call';
+}
+
 async function loadOffer() {
   let raw = null;
   try {
@@ -957,7 +969,7 @@ module.exports = function registerFreeCallRoutes(app) {
     //
     // An invite deliberately bypasses the audience rule, exactly as it already bypasses
     // offer.enabled and isNewCustomer: an admin who hand-picked this customer means it.
-    const audienceOk = !!invite || (await audienceRules.isAllowed(customer, 'free_call'));
+    const audienceOk = !!invite || (await audienceRules.isAllowed(customer, audienceFeatureFor(offer)));
     // An earlier, now-deleted account on this number already used the offer (or was a real
     // customer). Fails closed: a free call is a real astrologer's time.
     const usedBefore = await usedByEarlierAccount(customer, !!invite);
@@ -1062,7 +1074,8 @@ module.exports = function registerFreeCallRoutes(app) {
     // single-use: the first run consumes the offer and every run after it answers
     // NOT_ELIGIBLE, which looks identical to the feature being broken.
     if (!localTest.bypassEligibility()) {
-      const audienceOk = !!invite || (await audienceRules.isAllowed(customer, 'free_call'));
+      // Instant by definition: this helper has already refused NOT_INSTANT above.
+      const audienceOk = !!invite || (await audienceRules.isAllowed(customer, 'free_call_instant'));
       if (!audienceOk) {
         return { ok: false, status: 403, code: 'NOT_ELIGIBLE', message: 'This offer is not available for your account.', offer, customer };
       }
@@ -1656,6 +1669,7 @@ module.exports = function registerFreeCallRoutes(app) {
     // Re-checked here and not just in /offer: the offer response is advisory, this is
     // the write. Same NOT_ELIGIBLE code on purpose — FreeCallOffer.js already handles
     // it, so no app release is needed for the refusal path.
+    // The booking flow, so always the scheduled rule — never the instant one.
     if (!invite && !(await audienceRules.isAllowed(customer, 'free_call'))) {
       return res.status(403).json({
         success: false, code: 'NOT_ELIGIBLE',
