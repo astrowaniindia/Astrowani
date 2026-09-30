@@ -82,3 +82,24 @@ astrowani-shop/assets/gifts.png
 astrowani-shop/assets/handicrafts.png
 astrowani-shop/assets/pyramids.png
 astrowani-shop/assets/vastu enhancer.png
+
+# Ad creative working directory (~257 MB, 131 files): generated hero/banner/icon art and
+# campaign exports for Meta and Google Ads. Nothing in the repo builds from it and the
+# campaigns are managed in the ad dashboards, so keep the masters backed up outside git.
+ad-assets/
+
+# Built APKs/AABs. Release artifacts live in D:\Astrowani-Releases\ (see CLAUDE.md "CE"),
+# deliberately outside the repo so a 50-100 MB binary cannot be committed by a stray
+# `git add -A`. Debug builds are disposable.
+*.apk
+*.aab
+
+# Loose screenshots dropped in the repo root while driving the emulator or the admin in a
+# browser. They are scratch: put anything worth keeping in the session scratchpad instead.
+/screen.png
+/emulator_screen.png
+/current_emulator.png
+/customer_screen.png
+/customer_live.png
+/login_screen.png
+/android12_screen.png
