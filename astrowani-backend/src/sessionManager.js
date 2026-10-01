@@ -66,6 +66,19 @@ const MIN_UPSELL_SECONDS = 540;
  */
 const MIN_DAKSHINA_SECONDS = 180;
 
+/**
+ * The lowest a customer wallet is allowed to go. Mirrors the schema's
+ * chk_customers_balance_floor (sql/hardening_23_wallet_debt_persistence.sql) — keep the
+ * two in step; debtGuard.applyCarriedDebt caps a carried-forward debt to the same number.
+ *
+ * Since hardening_23 a negative balance is a SUPPORTED state, not a corruption: billing a
+ * customer for service they already received can legitimately put them below zero, and
+ * debtGuard carries that debt onto a later account on the same number. So only a balance
+ * past this floor is an anomaly — reaching it means the CHECK constraint was bypassed or
+ * dropped, i.e. the deliberate hard stop against unbounded debt is no longer holding.
+ */
+const CUSTOMER_BALANCE_FLOOR = -2000;
+
 let bookingKindAvailable = true;
 const isMissingColumn = (error, column) =>
   !!error && (error.code === '42703' || error.code === 'PGRST204' || error.code === '42P10'
@@ -185,6 +198,14 @@ class SessionManager {
    * (/api/bug-agent/errors) and, once SENTRY_DSN is configured, the backend Sentry project —
    * a human always makes the actual correction by hand. Runs on startup and hourly
    * (same cadence as the earnings-reset check).
+   *
+   * KEEP IDS OUT OF THE Error MESSAGE — pass them as logError's third argument instead.
+   * src/sentryWebhookRoutes.js copies a Sentry issue's title (which IS this message)
+   * verbatim into a GitHub issue title, and THAT REPOSITORY IS PUBLIC. logError's third
+   * argument is only written to logs/errors.log (served by /api/bug-agent/errors, which
+   * needs a token), so an operator can still resolve exactly which rows are affected.
+   * captureError does not forward it to Sentry at all. endStaleBilledSessions already
+   * reports its ids this way.
    */
   async checkWalletHealth() {
     try {
@@ -198,24 +219,35 @@ class SessionManager {
           .lt('next_billing_at', staleBillingCutoff),
       ]);
 
-      if (negCustomers && negCustomers.length) {
-        logError('wallet-reconciliation', new Error(
-          `${negCustomers.length} customer(s) with negative wallet_balance: ` +
-          negCustomers.map((c) => `${c.id}=${c.wallet_balance}`).join(', ')
-        ));
+      // Ordinary debt is expected (see CUSTOMER_BALANCE_FLOOR) and must not page anybody;
+      // only a balance past the floor means the schema's hard stop has failed. The debt is
+      // still worth seeing, so it goes to the log as a count and a total.
+      const inDebt = negCustomers || [];
+      const belowFloor = inDebt.filter((c) => Number(c.wallet_balance) < CUSTOMER_BALANCE_FLOOR);
+      if (inDebt.length) {
+        const owed = inDebt.reduce((sum, c) => sum + Math.abs(Number(c.wallet_balance) || 0), 0);
+        console.log(`[SessionManager] ${inDebt.length} customer(s) carrying a negative balance, ${Math.round(owed * 100) / 100} owed in total (expected since hardening_23).`);
       }
+      if (belowFloor.length) {
+        logError('wallet-reconciliation', new Error(
+          `${belowFloor.length} customer wallet(s) below the ${CUSTOMER_BALANCE_FLOOR} floor ` +
+          `— chk_customers_balance_floor should make this impossible, so the constraint is ` +
+          `missing or something is writing around it. Ids in the server error log.`
+        ), { customerIds: belowFloor.map((c) => c.id), balances: belowFloor.map((c) => c.wallet_balance) });
+      }
+      // An astrologer wallet has no debt mechanism — theirs only ever goes up by earnings and
+      // down by a withdrawal they asked for, so any negative is still a real anomaly.
       if (negAstros && negAstros.length) {
         logError('wallet-reconciliation', new Error(
-          `${negAstros.length} astrologer(s) with negative wallet_balance: ` +
-          negAstros.map((a) => `${a.id}=${a.wallet_balance}`).join(', ')
-        ));
+          `${negAstros.length} astrologer(s) with negative wallet_balance. Ids in the server error log.`
+        ), { astrologerIds: negAstros.map((a) => a.id), balances: negAstros.map((a) => a.wallet_balance) });
       }
       if (stuckSessions && stuckSessions.length) {
         logError('wallet-reconciliation', new Error(
           `${stuckSessions.length} chat_session(s) still is_active=true with next_billing_at ` +
-          `more than 5 minutes overdue — the 30s billing poll should never let this happen: ` +
-          stuckSessions.map((s) => s.id).join(', ')
-        ));
+          `more than 5 minutes overdue — the 30s billing poll should never let this happen. ` +
+          `Ids in the server error log.`
+        ), { sessionIds: stuckSessions.map((s) => s.id) });
       }
     } catch (err) {
       console.error('[SessionManager] checkWalletHealth error:', err.message);
