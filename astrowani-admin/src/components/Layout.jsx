@@ -76,7 +76,7 @@ const ALL_GROUPS = [
     workspace: 'astrology',
     title: 'Consultations & Live',
     items: [
-      { to: '/sessions', label: 'Live Consultations' },
+      { to: '/sessions', label: 'Consultations & Chats' },
       { to: '/astro-services', label: 'Astro Services Rates' },
       { to: '/free-call-bookings', label: 'Free Call Booking Offer' },
       { to: '/free-call-instant', label: 'Free Instant Call Offer' },

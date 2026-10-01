@@ -974,6 +974,7 @@ require('./src/adminRoutes')(app);
 contactLeak(app); // off-platform contact flags: admin review queue
 require('./src/offerGuardRoutes')(app); // offer abuse guard: admin view
 require('./src/callRecordingRoutes')(app); // call audio: upload authorisation, transcription, flags
+require('./src/consultationRoutes')(app); // consultation record: per-session earnings, transcripts, chat retention
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
 require('./src/sentryRoutes')(app);
