@@ -402,10 +402,69 @@ async function resolveSocketIdentity(token) {
 // socket reconnect, see VoiceCallScreen.tsx/VideoCallScreen.tsx/ChatSessionScreen.js);
 // only a participant that never comes back within it gets the session force-ended, on
 // both sides, via the same terminateSession() used by every other end-of-call path.
-// 2 min (was 25s): a customer locking their phone or switching apps drops the socket for
-// ~40-60s and used to kill a paid chat for both sides. Billing is paused while they are
-// away (sessionManager.bothParticipantsPresent), so the wait costs the customer nothing.
-const SESSION_ABANDON_GRACE_MS = 2 * 60 * 1000;
+// 30s (owner's decision 2026-10-02, was 2 min, and 25s before that). THE TRADE-OFF IS REAL
+// AND WAS HIT BEFORE: a phone lock or app switch drops the socket for ~40-60s, so a customer
+// who takes an incoming call mid-reading now returns to a closed session and must start — and
+// pay for — a new one. That is precisely why this was raised to 2 min. Recorded here so the
+// next person does not "fix" it blind.
+//
+// It is NOT the anti-abuse control. SERVICE_PRESENCE_GRACE_MS below is: it refuses to carry a
+// disconnected participant's messages after 20s, so the free-consultation loop (drop the
+// websocket, keep chatting over HTTP, let the session die, open a new one) yields nothing at
+// all. Nothing is served or billed during this window either way.
+const SESSION_ABANDON_GRACE_MS = 30 * 1000;
+
+// THE ANTI-ABUSE CONTROL. How long after a participant leaves the session room the server will
+// still carry their messages.
+//
+// Chat send is HTTP (POST /api/chat/message) while BILLING presence is a websocket room — two
+// different signals for "is this person here". That mismatch is both the exploit (keep HTTP,
+// kill the websocket, consult for free in 30-second slices) and the reason the 2026-10-01
+// regression cost a whole evening silently: service kept working perfectly while billing had
+// already stopped. Gating both on the same signal means a presence bug now breaks the chat
+// loudly within 20s instead of quietly draining money.
+//
+// The rule: if you cannot be billed, you cannot be served. The decision itself lives in
+// src/servicePresence.js so it can be tested without booting this file (which would start
+// sessionManager's billing worker against the production database).
+const { mayBeServed } = require('./src/servicePresence');
+
+// `${sessionId}:${participantId}` -> ms when they were last seen in the session room.
+const lastPresentInSession = new Map();
+function markPresentInSession(sessionId, participantId) {
+  if (sessionId && participantId) lastPresentInSession.set(`${sessionId}:${participantId}`, Date.now());
+}
+// Bounded: entries are only read inside the grace, so anything far older is dead weight.
+setInterval(() => {
+  const cutoff = Date.now() - (30 * 60 * 1000);
+  for (const [k, v] of lastPresentInSession) if (v < cutoff) lastPresentInSession.delete(k);
+}, 10 * 60 * 1000).unref();
+
+/**
+ * May this sender's message still be carried? True while they are in the session room, and for
+ * SERVICE_PRESENCE_GRACE_MS after they left it, so an ordinary blip never bounces a message.
+ *
+ * Fails OPEN on our own error: a chat that is genuinely connected must not break because a
+ * presence lookup threw. Billing stays independently gated by bothParticipantsPresent(), so
+ * failing open here can never cause an unbilled session to be charged for.
+ */
+async function senderMayBeServed(sessionId, senderId, startedAt) {
+  try {
+    const live = await io.in(sessionId).fetchSockets();
+    if (live.some((sk) => String(sk.data?.participantId || '') === String(senderId))) {
+      markPresentInSession(sessionId, senderId);
+      return true;
+    }
+  } catch (e) {
+    console.error(`[chat] presence lookup failed for ${sessionId}: ${e.message} — carrying the message.`);
+    return true;
+  }
+  return mayBeServed({
+    inRoom: false,
+    lastSeenMs: lastPresentInSession.get(`${sessionId}:${senderId}`) || 0,
+    startedAt,
+  });
+}
 const pendingSessionTerminations = new Map(); // "sessionId:participantId" -> Timeout
 
 function cancelPendingSessionTermination(sessionId, participantId) {
@@ -573,6 +632,7 @@ io.on('connection', (socket) => {
     socket.data.sessionId = sessionId;
     socket.data.participantId = realId;
     socket.data.isVendorParticipant = String(sessionRow.vendor_id) === String(realId);
+    markPresentInSession(sessionId, realId);
     cancelPendingSessionTermination(sessionId, realId);
   });
 
@@ -4547,11 +4607,25 @@ app.post('/api/chat/message', async (req, res) => {
     let flagSession = null;
     if (sessionId) {
       const { data: sessionRow } = await supabaseService
-        .from('chat_sessions').select('id, caller_id, vendor_id').eq('id', sessionId).maybeSingle();
+        .from('chat_sessions').select('id, caller_id, vendor_id, started_at, is_active, ended_at')
+        .eq('id', sessionId).maybeSingle();
       flagSession = sessionRow;
       if (!sessionRow
         || (String(sessionRow.caller_id) !== String(senderId) && String(sessionRow.vendor_id) !== String(senderId))) {
         return res.status(403).json({ success: false, message: 'Not a participant of this session' });
+      }
+      // An ended session is not a channel. Nothing checked this before, so messages could be
+      // posted into a consultation that had already been closed and billed.
+      if (sessionRow.ended_at || sessionRow.is_active === false) {
+        return res.status(409).json({ success: false, code: 'SESSION_ENDED', message: 'This session has ended.' });
+      }
+      // THE SERVICE GATE — see SERVICE_PRESENCE_GRACE_MS.
+      if (!(await senderMayBeServed(sessionId, senderId, sessionRow.started_at))) {
+        return res.status(409).json({
+          success: false,
+          code: 'NOT_CONNECTED',
+          message: 'You are not connected to this session. Check your network and try again.',
+        });
       }
     }
 

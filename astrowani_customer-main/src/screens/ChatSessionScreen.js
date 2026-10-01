@@ -33,6 +33,7 @@ import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
 import SessionIntroBanner from '../components/SessionIntroBanner';
+import SessionConnectionNotice, { useSessionConnection } from '../components/SessionConnectionNotice';
 import { LanguageContext } from '../context/LanguageContext';
 import { joinSessionWithRetry } from '../utils/sessionRoom';
 
@@ -45,6 +46,20 @@ const ChatSessionScreen = ({ route, navigation }) => {
   // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
   // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
   const [sessionStartMs, setSessionStartMs] = useState(null);
+  // Live connection state for the in-chat notice. Reads the socket created in init() below
+  // (the hook waits for it) and the server's participant_absent/back events.
+  const conn = useSessionConnection(socketRef, session?.id);
+
+  // The server's end reasons are plain English strings written for logs
+  // ("Customer left the session (app closed or lost connection)"). Show the person a
+  // translated sentence instead of leaking one of those into a dialog.
+  const endReasonText = (reason) => {
+    if (reason === 'insufficient_balance') return t('chatSession.lowBalanceEnded');
+    if (typeof reason === 'string' && /lost connection|disconnected/i.test(reason)) {
+      return t('chatSession.connEndedMsg');
+    }
+    return reason;
+  };
   const [chatActive, setChatActive] = useState(false);
   const seconds = useElapsedSeconds(sessionStartMs, chatActive);
   const [wallet, setWallet] = useState(0);
@@ -315,6 +330,18 @@ const ChatSessionScreen = ({ route, navigation }) => {
   // ─── Send message ─────────────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!text.trim() || !sessionRef.current || !myId) return;
+    // The server refuses a disconnected participant's message (SERVICE_PRESENCE_GRACE_MS),
+    // so stop here and leave what they typed in the box. The notice above the input is
+    // already saying why — a send that silently did nothing is what made the 2026-10-01
+    // outage invisible for an entire evening.
+    if (conn.blocked) {
+      showStatusPopup({
+        variant: 'error',
+        title: t('chatSession.connSendBlockedTitle'),
+        message: t('chatSession.connSendBlockedMsg'),
+      });
+      return;
+    }
     const msg = text.trim();
     // .clear() (not just setText('')) because Android's predictive-text keyboards keep
     // an internal "composing" span for the word just typed; clearing only the JS-side
@@ -360,10 +387,14 @@ const ChatSessionScreen = ({ route, navigation }) => {
       console.warn('chat message send error:', e?.message);
       // Don't overwrite anything typed since.
       setText((current) => (current ? current : msg));
+      // 409 NOT_CONNECTED is the service gate, not a network failure — say the true reason
+      // rather than "check your internet", which is wrong when the OTHER side dropped.
+      const code = e?.response?.data?.code;
+      const gated = code === 'NOT_CONNECTED' || code === 'SESSION_ENDED';
       showStatusPopup({
         variant: 'error',
-        title: t('chatSession.sendFailedTitle'),
-        message: t('chatSession.sendFailedMsg'),
+        title: gated ? t('chatSession.connSendBlockedTitle') : t('chatSession.sendFailedTitle'),
+        message: gated ? t('chatSession.connSendBlockedMsg') : t('chatSession.sendFailedMsg'),
       });
     }
   };
@@ -546,7 +577,7 @@ const ChatSessionScreen = ({ route, navigation }) => {
               console.log('Session terminated via socket:', termData.reason);
               // Server codes are not customer copy: show a proper message for the one a customer
               // can act on (low wallet), pass anything else through.
-              endSession(termData.reason === 'insufficient_balance' ? t('chatSession.lowBalanceEnded') : termData.reason);
+              endSession(endReasonText(termData.reason));
             });
 
             // Start timer — anchored to the session's real start time so it can't drift.
@@ -807,6 +838,9 @@ const ChatSessionScreen = ({ route, navigation }) => {
         </ImageBackground>
       )}
 
+      {/* Connection notice — in the chat, above the input, never a popup. */}
+      {!connecting && <SessionConnectionNotice conn={conn} t={t} />}
+
       {/* ── Input ─────────────────────────────── */}
       {!connecting && (
         <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
@@ -819,7 +853,11 @@ const ChatSessionScreen = ({ route, navigation }) => {
             placeholderTextColor="#aaa"
             multiline
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+          <TouchableOpacity
+            style={[styles.sendBtn, conn.blocked && { opacity: 0.45 }]}
+            onPress={sendMessage}
+            disabled={conn.blocked}
+          >
             <Ionicons name="send" size={22} color="#fff" />
           </TouchableOpacity>
         </View>

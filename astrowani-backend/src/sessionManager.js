@@ -78,20 +78,38 @@ class SessionManager {
   // customer. See endStaleBilledSessions().
   static MAX_BILLED_SESSION_MS = 2 * 60 * 60 * 1000;
 
-  // How long a CUSTOMER may be disconnected from a billed session before it is ended
-  // (2 min, was 45s — a phone lock / app switch drops the socket ~40-60s).
-  // Covers a brief network drop or a backend restart (clients rejoin on reconnect);
-  // nothing is billed during it. See bothParticipantsPresent().
-  static SESSION_PRESENCE_GRACE_MS = 2 * 60 * 1000;
+  // How long a CUSTOMER may be disconnected from a billed session before it is ended.
+  //
+  // 30s (owner's decision 2026-10-02, was 2 min). NOTE THE TRADE-OFF THIS REOPENS: a phone
+  // lock or app switch drops the socket for ~40-60s, which is why this was raised from 45s
+  // to 2 min in the first place. A customer who takes an incoming call mid-reading will now
+  // come back to a closed session and must start (and pay for) a new one.
+  //
+  // It is NOT what stops someone farming free consultation — SERVICE_PRESENCE_GRACE_MS in
+  // index.js does that, by refusing to carry their messages after 20s. Nothing is served or
+  // billed during this window either way, so shortening it buys no extra protection.
+  //
+  // Accurate only to one polling interval (30s): absence is noticed by checkActiveSessions,
+  // so the real time-to-end via THIS path is 30-60s. The socket-disconnect path in index.js
+  // (SESSION_ABANDON_GRACE_MS) is event-driven and hits the 30s exactly; it is also the path
+  // that fires in practice.
+  static SESSION_PRESENCE_GRACE_MS = 30 * 1000;
 
   // How long the ASTROLOGER may be disconnected from a billed session (socket gone —
-  // network blip, elevator, tunnel) before it is ended. Product decision 2026-09-24:
-  // same 5-minute allowance as the background grace — a call must not die because the
-  // astrologer's connection hiccuped for a few seconds. Billing is paused while absent,
-  // so the customer is not charged for the gap. A 10-second Wi-Fi cut on 2026-09-24 took
-  // ~50s to reconnect (Wi-Fi re-association + socket.io backoff) and this 45s grace
-  // killed a live call mid-consultation.
-  static VENDOR_ABSENT_GRACE_MS = 5 * 60 * 1000;
+  // network blip, elevator, tunnel) before it is ended.
+  //
+  // 30s (owner's decision 2026-10-02), matching the customer so both countdowns read the
+  // same. THIS REVERSES THE 2026-09-24 PRODUCT DECISION and the 5-minute allowance that
+  // replaced it, so do not "restore" either without asking: the reason they existed is that
+  // a 10-second Wi-Fi cut measured on 2026-09-24 took ~50s to reconnect (Wi-Fi
+  // re-association + socket.io backoff), and the 45s grace in place then killed a live call
+  // mid-consultation. At 30s that outcome is expected rather than exceptional — the
+  // astrologer loses the remaining earnings and the customer must re-open and pay from
+  // minute one. Both sides are now TOLD what is happening and see the countdown, which is
+  // what makes this acceptable; the silent version of it was not.
+  //
+  // Billing is paused while absent, so the customer is never charged for the gap.
+  static VENDOR_ABSENT_GRACE_MS = 30 * 1000;
 
   // How long an ASTROLOGER may keep a billed session open while their app is in the
   // background (pressed Home / switched apps) before it is ended. Billing continues
@@ -715,18 +733,24 @@ class SessionManager {
         }
       }
       if (id && ids.has(String(id))) {
-        this.absentSince.delete(key);
+        if (this.absentSince.delete(key)) this.emitPresence(session.id, 'participant_back', role, 0);
         continue;
       }
       allPresent = false;
       const since = this.absentSince.get(key);
-      // The astrologer gets the 5-minute allowance here too (VENDOR_ABSENT_GRACE_MS);
-      // the customer keeps the short one so a vanished customer stops the billing clock.
       const graceMs = role === 'vendor'
         ? SessionManager.VENDOR_ABSENT_GRACE_MS
         : SessionManager.SESSION_PRESENCE_GRACE_MS;
+      // The astrologer gets the 5-minute allowance here too (VENDOR_ABSENT_GRACE_MS);
+      // the customer keeps the short one so a vanished customer stops the billing clock.
       if (!since) {
         this.absentSince.set(key, nowMs);
+        // Tell whoever IS still in the room who dropped, so their app can say so instead of
+        // leaving them typing into a session the server has already stopped billing. The
+        // absent side cannot be told — they are not in the room — so their own app detects
+        // its own disconnection locally. Between them the warning is always side-aware:
+        // nobody is ever told to fix a connection that is not theirs.
+        this.emitPresence(session.id, 'participant_absent', role, graceMs);
         console.warn(`[SessionManager] Session ${session.id}: ${role} not connected — billing paused.`);
       } else if (nowMs - since >= graceMs) {
         const who = role === 'caller' ? 'Customer' : 'Astrologer';
@@ -741,6 +765,22 @@ class SessionManager {
       }
     }
     return allPresent;
+  }
+
+  // Best-effort notice to the session room that one side dropped or came back. Never
+  // allowed to affect billing or session lifetime — it is presentational only.
+  emitPresence(sessionId, event, role, graceMs) {
+    if (!this.io) return;
+    try {
+      this.io.to(sessionId).emit(event, {
+        sessionId,
+        role,                                   // 'caller' | 'vendor'
+        who: role === 'vendor' ? 'astrologer' : 'customer',
+        graceMs: graceMs || 0,
+      });
+    } catch (e) {
+      console.error('[SessionManager] presence notice failed:', e.message);
+    }
   }
 
   // Astrologer app went to the background (true) or came back (false). Only the

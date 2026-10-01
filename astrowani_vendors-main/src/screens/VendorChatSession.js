@@ -32,6 +32,7 @@ import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
 import { joinSessionWithRetry } from '../utils/sessionRoom';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
+import SessionConnectionNotice, { useSessionConnection } from '../components/SessionConnectionNotice';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
@@ -71,6 +72,19 @@ const VendorChatSession = ({ route, navigation }) => {
   const pollMsgRef = useRef(null);
   const pollEndRef = useRef(null);
   const socketRef = useRef(null);
+  // Live connection state for the in-chat notice (the hook waits for socketRef to be
+  // filled in by init() below) plus the server's participant_absent/back events.
+  const conn = useSessionConnection(socketRef, sessionId);
+
+  // The server's end reasons are plain English log strings; translate the ones a person
+  // will actually be shown rather than leaking them into a dialog.
+  const endReasonText = (reason) => {
+    if (reason === 'insufficient_balance') return t('call.customerBalanceEnded');
+    if (typeof reason === 'string' && /lost connection|disconnected/i.test(reason)) {
+      return t('call.connEndedMsg');
+    }
+    return reason;
+  };
   const sessionJoinRef = useRef(null);
   const isEndingRef = useRef(false);
   const startMsRef = useRef(null);
@@ -260,7 +274,7 @@ const VendorChatSession = ({ route, navigation }) => {
 
         socketRef.current.on('session_ended', (data) => {
           console.log('Session terminated via socket:', data.reason);
-          endSessionLocal(data.reason === 'insufficient_balance' ? t('call.customerBalanceEnded') : data.reason);
+          endSessionLocal(endReasonText(data.reason));
         });
 
         // Load existing messages.
@@ -436,6 +450,19 @@ const VendorChatSession = ({ route, navigation }) => {
     if (!raw.trim() || !sessionIdRef.current || !astroIdRef.current) return;
     const msg = raw.trim();
 
+    // The server refuses a disconnected participant's message (SERVICE_PRESENCE_GRACE_MS in
+    // index.js), so stop here rather than letting a scripted chip or a typed line vanish.
+    // The notice above the input already says why.
+    if (conn.blocked) {
+      showStatusPopup({
+        variant: 'error',
+        title: t('call.connSendBlockedTitle'),
+        message: t('call.connSendBlockedMsg'),
+      });
+      if (typeof overrideText !== 'string') setNewMessage((current) => (current ? current : msg));
+      return;
+    }
+
     // Scripted chips give no "sent" state, so a vendor unsure whether the tap registered
     // will tap again — guard against the same chip text firing twice in quick succession.
     const now = Date.now();
@@ -491,7 +518,15 @@ const VendorChatSession = ({ route, navigation }) => {
       lastSentRef.current = { text: null, time: 0 };
       // Typed text goes back in the box; a scripted chip can simply be tapped again.
       if (typeof overrideText !== 'string') setNewMessage((current) => (current ? current : msg));
-      showStatusPopup({ variant: 'error', title: t('call.sendFailedTitle'), message: t('call.sendFailedMsg') });
+      // 409 NOT_CONNECTED is the service gate, not a network failure — "check your internet"
+      // is the wrong thing to say when it was the CUSTOMER's connection that dropped.
+      const code = e?.response?.data?.code;
+      const gated = code === 'NOT_CONNECTED' || code === 'SESSION_ENDED';
+      showStatusPopup({
+        variant: 'error',
+        title: gated ? t('call.connSendBlockedTitle') : t('call.sendFailedTitle'),
+        message: gated ? t('call.connSendBlockedMsg') : t('call.sendFailedMsg'),
+      });
       return; // no push for a message that was never saved
     }
 
@@ -668,6 +703,9 @@ const VendorChatSession = ({ route, navigation }) => {
           ))}
         </ScrollView>
 
+        {/* Connection notice — in the chat, above the input, never a popup. */}
+        <SessionConnectionNotice conn={conn} t={t} />
+
         <View
           style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
           <TextInput
@@ -680,7 +718,11 @@ const VendorChatSession = ({ route, navigation }) => {
             multiline
             maxLength={500}
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+          <TouchableOpacity
+            style={[styles.sendBtn, conn.blocked && { opacity: 0.45 }]}
+            onPress={sendMessage}
+            disabled={conn.blocked}
+          >
             <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
