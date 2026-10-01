@@ -633,6 +633,13 @@ io.on('connection', (socket) => {
     socket.data.participantId = realId;
     socket.data.isVendorParticipant = String(sessionRow.vendor_id) === String(realId);
     markPresentInSession(sessionId, realId);
+    // Clear the other side's warning straight away — same reasoning as the disconnect emit.
+    try {
+      socket.to(sessionId).emit('participant_back', {
+        sessionId,
+        role: String(sessionRow.vendor_id) === String(realId) ? 'vendor' : 'caller',
+      });
+    } catch (_) {}
     cancelPendingSessionTermination(sessionId, realId);
   });
 
@@ -892,6 +899,29 @@ io.on('connection', (socket) => {
     const { sessionId, participantId, isVendorParticipant } = socket.data || {};
     if (sessionId && participantId) {
       scheduleSessionAbandonCheck(sessionId, participantId, isVendorParticipant);
+      // Tell whoever is still in the room IMMEDIATELY. sessionManager also emits this, but
+      // only from the 30s billing poll — so the person still online could sit for up to 45s
+      // (15s for socket.io to declare the peer dead, then up to 30s for the next poll)
+      // before being told, on a session that is killed 30s after the drop. By then the
+      // countdown they are shown would already be meaningless.
+      //
+      // Only the OTHER side can receive this; the one who dropped is not in the room, which
+      // is the whole problem. Their own app shows the same notice off its own 'disconnect'.
+      try {
+        const graceMs = sessionManager.isVendorBackground(sessionId, participantId)
+          ? sessionManager.constructor.VENDOR_BACKGROUND_GRACE_MS
+          : isVendorParticipant
+            ? sessionManager.constructor.VENDOR_ABSENT_GRACE_MS
+            : SESSION_ABANDON_GRACE_MS;
+        io.to(sessionId).emit('participant_absent', {
+          sessionId,
+          role: isVendorParticipant ? 'vendor' : 'caller',
+          who: isVendorParticipant ? 'astrologer' : 'customer',
+          graceMs,
+        });
+      } catch (e) {
+        console.error('[socket] immediate participant_absent failed:', e.message);
+      }
     }
   });
 });

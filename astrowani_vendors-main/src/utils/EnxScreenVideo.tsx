@@ -36,6 +36,7 @@ import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
 import {createIceRecovery} from './iceRecovery';
 import {joinSessionWithRetry} from './sessionRoom';
+import SessionConnectionNotice, {useSessionConnection} from '../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from './preConnectWatchdog';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 import {getIceServers} from './iceServers';
@@ -89,6 +90,9 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const readyRetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const socketRef = useRef<any>(null);
+  // Connection state for the on-screen notice. No sessionId filter is needed: these events
+  // are only ever emitted into the session room this socket is in.
+  const conn = useSessionConnection(socketRef);
   // 5-minute background allowance — see sessionAppState.js.
   useSessionAppState(sessionId, socketRef, isEndingRef);
 
@@ -532,6 +536,15 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+
+      {/* Call media is peer-to-peer, so the server cannot cut it — the 30s timer is the only
+          control here. The least we can do is say what is happening and who dropped. */}
+      <SessionConnectionNotice
+        conn={conn}
+        t={t}
+        mode="call"
+        style={{position: 'absolute', top: 96, left: 10, right: 10, zIndex: 50}}
+      />
 
       {/* Remote video full-screen background */}
       {isConnected && remoteStreamURL && !remoteVideoPaused ? (

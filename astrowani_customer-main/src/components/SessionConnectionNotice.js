@@ -98,24 +98,35 @@ export function useSessionConnection(socketRef, sessionId) {
   };
 }
 
-export default function SessionConnectionNotice({ conn, t }) {
+// mode: 'chat' sits in the message list above the input; 'call' floats over the call UI,
+// where there are no messages to withhold — the media is peer-to-peer and the server cannot
+// stop it, so the honest line there is simply that the call will end.
+export default function SessionConnectionNotice({ conn, t, mode = 'chat', style }) {
   if (!conn) return null;
   if (conn.showReconnected) {
     return (
-      <View style={[styles.box, styles.okBox]}>
+      <View style={[styles.box, styles.okBox, style]}>
         <Text style={styles.okText}>{t('chatSession.connReconnected')}</Text>
       </View>
     );
   }
   if (!conn.absence) return null;
   return (
-    <View style={styles.box}>
+    <View style={[styles.box, style]}>
       <Text style={styles.title}>
         {conn.absence.mine ? t('chatSession.connYouOffline') : t('chatSession.connOtherOffline')}
       </Text>
-      <Text style={styles.line}>{t('chatSession.connWaiting', { secs: conn.secsLeft })}</Text>
-      <Text style={styles.line}>{t('chatSession.connBillingPaused')}</Text>
-      <Text style={styles.line}>{t('chatSession.connNoDelivery')}</Text>
+      {/* The wallet line goes FIRST and in bold: it is the only line that is about money,
+          and it is the thing neither side knew during the 2026-10-01 incident. */}
+      <Text style={styles.money}>{t('chatSession.connBillingPaused')}</Text>
+      <Text style={styles.line}>
+        {mode === 'call'
+          ? t('chatSession.connCallEnding', { secs: conn.secsLeft })
+          : t('chatSession.connWaiting', { secs: conn.secsLeft })}
+      </Text>
+      {mode !== 'call' && (
+        <Text style={styles.line}>{t('chatSession.connNoDelivery')}</Text>
+      )}
     </View>
   );
 }
@@ -134,5 +145,6 @@ const styles = StyleSheet.create({
   okBox: { backgroundColor: 'rgba(6, 95, 70, 0.96)', borderLeftColor: '#34d399' },
   title: { color: '#fde68a', fontSize: 13, fontWeight: '700', marginBottom: 3 },
   line: { color: '#fef3c7', fontSize: 12, lineHeight: 17 },
+  money: { color: '#fff', fontSize: 13, fontWeight: '700', marginBottom: 2 },
   okText: { color: '#d1fae5', fontSize: 13, fontWeight: '600' },
 });
