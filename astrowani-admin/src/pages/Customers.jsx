@@ -2,14 +2,22 @@ import { useEffect, useState, useMemo } from 'react';
 import client from '../api/client';
 import Modal from '../components/Modal';
 
-// Date-range filter options
+// Date-range filter options. `week` and `month` keep their original keys because the
+// stat cards above the table toggle them by key; everything else here is additive.
+// `custom` is not in this list — it is rendered separately, because it is the only one
+// that needs two date inputs and it must not appear in the per-chip counts.
 const DATE_FILTERS = [
-  { key: 'all', label: 'All Customers' },
-  { key: 'today', label: 'Joined Today' },
+  { key: 'all', label: 'Any Time' },
+  { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
-  { key: 'week', label: 'This Week' },
+  { key: 'week', label: 'Last 7 Days' },
+  { key: 'last30', label: 'Last 30 Days' },
+  { key: 'last90', label: 'Last 90 Days' },
   { key: 'month', label: 'This Month' },
+  { key: 'lastMonth', label: 'Last Month' },
 ];
+
+const EMPTY_RANGE = { from: '', to: '' };
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -17,28 +25,180 @@ function startOfDay(d) {
   return x;
 }
 
-function inRange(created, filter) {
+function endOfDay(d) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+// `range` is only consulted for the 'custom' key. A custom range with neither end set
+// filters nothing rather than everything — picking "Custom" and then typing a date
+// should narrow the list, never blank it out before you have finished typing.
+function inRange(created, filter, range) {
   if (filter === 'all') return true;
   if (!created) return false;
   const c = new Date(created);
+
+  if (filter === 'custom') {
+    const from = range?.from ? startOfDay(new Date(range.from)) : null;
+    const to = range?.to ? endOfDay(new Date(range.to)) : null;
+    if (!from && !to) return true;
+    if (from && c < from) return false;
+    if (to && c > to) return false;
+    return true;
+  }
+
   const now = new Date();
   const today = startOfDay(now);
+  const daysAgo = (n) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - n);
+    return d;
+  };
+
   if (filter === 'today') return c >= today;
-  if (filter === 'yesterday') {
-    const y = new Date(today);
-    y.setDate(y.getDate() - 1);
-    return c >= y && c < today;
-  }
-  if (filter === 'week') {
-    const w = new Date(today);
-    w.setDate(w.getDate() - 6); // last 7 days incl. today
-    return c >= w;
-  }
-  if (filter === 'month') {
-    const m = new Date(now.getFullYear(), now.getMonth(), 1);
-    return c >= m;
+  if (filter === 'yesterday') return c >= daysAgo(1) && c < today;
+  if (filter === 'week') return c >= daysAgo(6); // last 7 days incl. today
+  if (filter === 'last30') return c >= daysAgo(29);
+  if (filter === 'last90') return c >= daysAgo(89);
+  if (filter === 'month') return c >= new Date(now.getFullYear(), now.getMonth(), 1);
+  if (filter === 'lastMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 1);
+    return c >= start && c < end;
   }
   return true;
+}
+
+const chipStyle = (active) => ({
+  borderRadius: 20,
+  fontWeight: active ? 700 : 500,
+  background: active ? 'var(--maroon)' : undefined,
+  color: active ? '#fff' : undefined,
+});
+
+const dateInputStyle = { padding: '4px 8px', borderRadius: 8, fontSize: 12.5 };
+const numInputStyle = { width: 94, padding: '5px 8px', borderRadius: 8, fontSize: 12.5 };
+
+// One row of mutually-exclusive chips. Used for every yes/no-ish filter on this page so
+// they all look and behave the same way.
+function ChipGroup({ label, options, value, onChange, counts }) {
+  return (
+    <>
+      {label && <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</span>}
+      <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+        {options.map((o) => (
+          <button
+            key={o.key}
+            className={`btn sm ${value === o.key ? '' : 'ghost'}`}
+            style={chipStyle(value === o.key)}
+            onClick={() => onChange(o.key)}
+            title={o.title || undefined}
+          >
+            {o.label}{counts ? ` (${(counts[o.key] ?? 0).toLocaleString('en-IN')})` : ''}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// Date chips + the custom from/to pair. `counts` is optional.
+function DateRangeChips({ value, onChange, range, onRangeChange, counts }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+      <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+        {DATE_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={`btn sm ${value === f.key ? '' : 'ghost'}`}
+            style={chipStyle(value === f.key)}
+            onClick={() => onChange(f.key)}
+          >
+            {f.label}{counts ? ` (${(counts[f.key] ?? 0).toLocaleString('en-IN')})` : ''}
+          </button>
+        ))}
+        <button
+          className={`btn sm ${value === 'custom' ? '' : 'ghost'}`}
+          style={chipStyle(value === 'custom')}
+          onClick={() => onChange('custom')}
+          title="Pick an exact date range"
+        >
+          📅 Custom
+        </button>
+      </div>
+
+      {value === 'custom' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <input
+            type="date"
+            value={range.from || ''}
+            max={range.to || undefined}
+            onChange={(e) => onRangeChange({ ...range, from: e.target.value })}
+            style={dateInputStyle}
+            title="From (inclusive)"
+          />
+          <span className="muted" style={{ fontSize: 12 }}>to</span>
+          <input
+            type="date"
+            value={range.to || ''}
+            min={range.from || undefined}
+            onChange={(e) => onRangeChange({ ...range, to: e.target.value })}
+            style={dateInputStyle}
+            title="To (inclusive)"
+          />
+          {(range.from || range.to) && (
+            <button className="btn ghost sm" onClick={() => onRangeChange({ ...EMPTY_RANGE })}>Clear dates</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Clickable column header. Clicking an inactive column starts it in its natural
+// direction (biggest-first for numbers and dates, A-Z for text); clicking the active
+// one flips it.
+function SortableTh({ label, sortKey, sort, setSort, numeric, align, title }) {
+  const active = sort.key === sortKey;
+  const toggle = () =>
+    setSort(
+      active
+        ? { key: sortKey, dir: sort.dir === 'asc' ? 'desc' : 'asc' }
+        : { key: sortKey, dir: numeric ? 'desc' : 'asc' },
+    );
+  return (
+    <th
+      onClick={toggle}
+      style={{ textAlign: align || 'left', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      title={title || `Sort by ${label}`}
+    >
+      {label}{' '}
+      <span style={{ opacity: active ? 1 : 0.32, fontSize: 10 }}>
+        {active ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </th>
+  );
+}
+
+// Blanks sort last whichever way the column is pointing — a row with no last-recharge
+// date is "no answer", not "the smallest date", and floating those to the top of an
+// ascending sort buries the rows you actually asked for.
+function sortRows(rows, sort, accessors) {
+  const acc = accessors[sort.key];
+  if (!acc) return rows;
+  const dir = sort.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = acc(a);
+    const vb = acc(b);
+    const aEmpty = va === null || va === undefined || va === '';
+    const bEmpty = vb === null || vb === undefined || vb === '';
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    if (typeof va === 'string' && typeof vb === 'string') return va.localeCompare(vb) * dir;
+    return (va - vb) * dir;
+  });
 }
 
 function isRecent(created, hours = 48) {
@@ -104,10 +264,49 @@ const APP_FILTERS = [
   { key: 'nopush', label: 'Unknown (no push)' },
 ];
 
+const LIST_SORT = {
+  name: (r) => (r.name || '').toLowerCase(),
+  mobile: (r) => (r.mobile || '').toLowerCase(),
+  email: (r) => (r.email || '').toLowerCase(),
+  wallet_balance: (r) => Number(r.wallet_balance || 0),
+  created_at: (r) => (r.created_at ? new Date(r.created_at).getTime() : null),
+};
+
 function formatDateTime(dateStr) {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
+const RECHARGE_COUNT_FILTERS = [
+  { key: 'all', label: 'Any' },
+  { key: 'one', label: 'First-timers (1)', title: 'Recharged exactly once' },
+  { key: 'few', label: 'Repeat (2-4)' },
+  { key: 'many', label: 'Loyal (5+)' },
+];
+
+const SPEND_FILTERS = [
+  { key: 'all', label: 'Any' },
+  { key: 'spent', label: 'Has spent' },
+  { key: 'unspent', label: 'Spent nothing', title: 'Recharged but never used the money' },
+];
+
+// Which date the date chips apply to. "Last recharge" is the default because the usual
+// question on this tab is "who paid us recently", but "who did we acquire in October"
+// needs the signup date and "when did they first convert" needs the first recharge.
+const RECHARGE_DATE_BASIS = [
+  { key: 'last', label: 'Last recharge' },
+  { key: 'first', label: 'First recharge' },
+  { key: 'joined', label: 'Signup date' },
+];
+
+const RECHARGE_SORT = {
+  name: (r) => (r.name || '').toLowerCase(),
+  totalRecharged: (r) => r.totalRecharged,
+  rechargeCount: (r) => r.rechargeCount,
+  lastRechargeAt: (r) => (r.lastRechargeAt ? new Date(r.lastRechargeAt).getTime() : null),
+  walletBalance: (r) => r.walletBalance,
+  totalSpent: (r) => r.totalSpent,
+};
 
 // "Recharge Activity" section: customers who have ever completed a paid recharge,
 // with a running total of what they've actually spent since, broken down by category.
@@ -118,9 +317,16 @@ function RechargeActivitySection() {
   const [categoryLabels, setCategoryLabels] = useState({});
   const [truncated, setTruncated] = useState(false);
   const [timeline, setTimeline] = useState(null); // { customer, loading, error, events }
-  const [rechargeTimeFilter, setRechargeTimeFilter] = useState('all'); // filters by lastRechargeAt
+  const [rechargeTimeFilter, setRechargeTimeFilter] = useState('all');
+  const [rechargeRange, setRechargeRange] = useState({ ...EMPTY_RANGE }); // used when the filter is 'custom'
+  const [dateBasis, setDateBasis] = useState('last'); // which date the chips above apply to
   const [rechargeWalletFilter, setRechargeWalletFilter] = useState('all'); // reuses WALLET_FILTERS
   const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' or a spend category key
+  const [countFilter, setCountFilter] = useState('all'); // how many times they recharged
+  const [spendFilter, setSpendFilter] = useState('all'); // have they spent any of it
+  const [minRecharged, setMinRecharged] = useState('');
+  const [maxRecharged, setMaxRecharged] = useState('');
+  const [sort, setSort] = useState({ key: 'totalRecharged', dir: 'desc' });
 
   const load = async () => {
     setLoading(true);
@@ -149,21 +355,88 @@ function RechargeActivitySection() {
   }, [rows, categoryLabels]);
 
   const filtered = useMemo(() => {
+    // Blank or non-numeric bounds are simply absent bounds, so a half-typed "1" in the
+    // max box narrows the list instead of emptying it the moment it is cleared again.
+    const min = minRecharged.trim() === '' ? null : Number(minRecharged);
+    const max = maxRecharged.trim() === '' ? null : Number(maxRecharged);
+    const q = search.trim().toLowerCase();
+
     return rows.filter((r) => {
-      if (!inRange(r.lastRechargeAt, rechargeTimeFilter)) return false;
+      const basisDate = dateBasis === 'joined' ? r.createdAt : dateBasis === 'first' ? r.firstRechargeAt : r.lastRechargeAt;
+      if (!inRange(basisDate, rechargeTimeFilter, rechargeRange)) return false;
+
       const wallet = Number(r.walletBalance || 0);
       if (rechargeWalletFilter === 'has' && !(wallet > 0)) return false;
       if (rechargeWalletFilter === 'zero' && !(wallet <= 0)) return false;
+
       if (categoryFilter !== 'all' && !((r.spend || {})[categoryFilter] > 0)) return false;
-      if (!search.trim()) return true;
-      const q = search.toLowerCase().trim();
+
+      const n = Number(r.rechargeCount || 0);
+      if (countFilter === 'one' && n !== 1) return false;
+      if (countFilter === 'few' && !(n >= 2 && n <= 4)) return false;
+      if (countFilter === 'many' && !(n >= 5)) return false;
+
+      if (spendFilter === 'spent' && !(r.totalSpent > 0)) return false;
+      if (spendFilter === 'unspent' && r.totalSpent > 0) return false;
+
+      if (min !== null && Number.isFinite(min) && r.totalRecharged < min) return false;
+      if (max !== null && Number.isFinite(max) && r.totalRecharged > max) return false;
+
+      if (!q) return true;
       return (
         (r.name || '').toLowerCase().includes(q) ||
         (r.mobile || '').toLowerCase().includes(q) ||
         (r.email || '').toLowerCase().includes(q)
       );
     });
-  }, [rows, search, rechargeTimeFilter, rechargeWalletFilter, categoryFilter]);
+  }, [rows, search, rechargeTimeFilter, rechargeRange, dateBasis, rechargeWalletFilter, categoryFilter, countFilter, spendFilter, minRecharged, maxRecharged]);
+
+  const sorted = useMemo(() => sortRows(filtered, sort, RECHARGE_SORT), [filtered, sort]);
+
+  const filtersActive =
+    rechargeTimeFilter !== 'all' || dateBasis !== 'last' || rechargeWalletFilter !== 'all' ||
+    categoryFilter !== 'all' || countFilter !== 'all' || spendFilter !== 'all' ||
+    minRecharged !== '' || maxRecharged !== '' || search !== '';
+
+  const clearFilters = () => {
+    setRechargeTimeFilter('all');
+    setRechargeRange({ ...EMPTY_RANGE });
+    setDateBasis('last');
+    setRechargeWalletFilter('all');
+    setCategoryFilter('all');
+    setCountFilter('all');
+    setSpendFilter('all');
+    setMinRecharged('');
+    setMaxRecharged('');
+    setSearch('');
+  };
+
+  // Exports exactly what is on screen, in the order it is on screen — an export that
+  // silently ignored the filters would be the one number nobody could reconcile.
+  const exportCSV = () => {
+    const cats = categoriesPresent;
+    const headers = ['Name', 'Mobile', 'Email', 'Total Recharged (INR)', 'Recharges', 'First Recharge', 'Last Recharge', 'Current Balance (INR)', 'Total Spent (INR)', ...cats.map((c) => `${categoryLabels[c] || c} (INR)`)];
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = sorted.map((r) => [
+      esc(r.name || ''),
+      esc(r.isDeleted ? 'Freed' : r.mobile || ''),
+      esc(r.email || ''),
+      r.totalRecharged,
+      r.rechargeCount,
+      r.firstRechargeAt || '',
+      r.lastRechargeAt || '',
+      r.walletBalance,
+      r.totalSpent,
+      ...cats.map((c) => (r.spend || {})[c] || 0),
+    ].join(','));
+    const blob = new Blob([[headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `astrowani-recharges-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   // Reset to a sane state whenever the underlying dataset changes shape so a stale
   // category filter (e.g. picked before a reload) can't silently hide everything.
@@ -210,30 +483,17 @@ function RechargeActivitySection() {
       </div>
 
       <div className="card" style={{ padding: '14px 18px', marginBottom: 20 }}>
+        {/* Row 1 — date range + what the dates mean + search */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Last-recharge date filter chips */}
-          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
-            {DATE_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`btn sm ${rechargeTimeFilter === f.key ? '' : 'ghost'}`}
-                style={{
-                  borderRadius: 20,
-                  fontWeight: rechargeTimeFilter === f.key ? 700 : 500,
-                  background: rechargeTimeFilter === f.key ? 'var(--maroon)' : undefined,
-                  color: rechargeTimeFilter === f.key ? '#fff' : undefined,
-                }}
-                onClick={() => setRechargeTimeFilter(f.key)}
-                title={f.key === 'all' ? 'Any last-recharge date' : `Last recharged: ${f.label}`}
-              >
-                {f.key === 'all' ? 'Any Time' : f.label.replace('Joined ', '')}
-              </button>
-            ))}
-          </div>
+          <DateRangeChips
+            value={rechargeTimeFilter}
+            onChange={setRechargeTimeFilter}
+            range={rechargeRange}
+            onRangeChange={setRechargeRange}
+          />
 
-          {/* Search box */}
           <div className="search-bar-wrap">
-            <span className="search-bar-icon">🔍</span>
+            <span className="search-bar-icon">&#128269;</span>
             <input
               type="text"
               placeholder="Search recharged customers by name, phone, or email..."
@@ -245,38 +505,54 @@ function RechargeActivitySection() {
                 onClick={() => setSearch('')}
                 style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', fontSize: 14 }}
               >
-                ✕
+                &#10005;
               </button>
             )}
           </div>
         </div>
 
-        {/* Wallet balance + spend category filters */}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Dates above apply to:</span>
+          <ChipGroup options={RECHARGE_DATE_BASIS} value={dateBasis} onChange={setDateBasis} />
+        </div>
+
+        {/* Row 2 — how often they recharged, how much, and what they did with it */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Wallet:</span>
-          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
-            {WALLET_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`btn sm ${rechargeWalletFilter === f.key ? '' : 'ghost'}`}
-                style={{
-                  borderRadius: 20,
-                  fontWeight: rechargeWalletFilter === f.key ? 700 : 500,
-                  background: rechargeWalletFilter === f.key ? 'var(--maroon)' : undefined,
-                  color: rechargeWalletFilter === f.key ? '#fff' : undefined,
-                }}
-                onClick={() => setRechargeWalletFilter(f.key)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <ChipGroup label="Recharges:" options={RECHARGE_COUNT_FILTERS} value={countFilter} onChange={setCountFilter} />
+
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>Recharged &#8377;:</span>
+          <input
+            type="number"
+            min="0"
+            placeholder="min"
+            value={minRecharged}
+            onChange={(e) => setMinRecharged(e.target.value)}
+            style={numInputStyle}
+            title="Lowest total recharged"
+          />
+          <span className="muted" style={{ fontSize: 12 }}>&ndash;</span>
+          <input
+            type="number"
+            min="0"
+            placeholder="max"
+            value={maxRecharged}
+            onChange={(e) => setMaxRecharged(e.target.value)}
+            style={numInputStyle}
+            title="Highest total recharged"
+          />
+        </div>
+
+        {/* Row 3 — wallet state and spending */}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <ChipGroup label="Wallet:" options={WALLET_FILTERS} value={rechargeWalletFilter} onChange={setRechargeWalletFilter} />
+
+          <ChipGroup label="Spending:" options={SPEND_FILTERS} value={spendFilter} onChange={setSpendFilter} />
 
           <span className="muted" style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>Spent on:</span>
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            style={{ padding: '5px 10px', borderRadius: 20, fontSize: 12.5 }}
+            style={{ padding: '5px 10px', borderRadius: 20, fontSize: 12.5, maxWidth: 240 }}
           >
             <option value="all">Any category</option>
             {categoriesPresent.map((cat) => (
@@ -285,9 +561,27 @@ function RechargeActivitySection() {
           </select>
         </div>
 
+        {/* Row 4 — what the filters left, and the way back out of them */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            Showing <strong style={{ color: 'var(--text-primary)' }}>{filtered.length.toLocaleString('en-IN')}</strong>
+            {filtered.length !== rows.length ? ` of ${rows.length.toLocaleString('en-IN')}` : ''} customers
+          </span>
+          <div className="btn-group">
+            {filtersActive && (
+              <button className="btn ghost sm" onClick={clearFilters} title="Reset every filter on this tab">
+                &#10005; Clear filters
+              </button>
+            )}
+            <button className="btn ghost sm" onClick={exportCSV} disabled={!filtered.length} title="Download the rows currently shown">
+              &#128229; Export CSV
+            </button>
+          </div>
+        </div>
+
         {truncated && (
           <div className="muted" style={{ marginTop: 10, fontSize: 12, color: 'var(--red, #c0392b)' }}>
-            ⚠️ This dataset is large enough that some rows may be missing from the totals above — treat these as a lower bound.
+            &#9888;&#65039; This dataset is large enough that some rows may be missing from the totals above &mdash; treat these as a lower bound.
           </div>
         )}
       </div>
@@ -296,12 +590,12 @@ function RechargeActivitySection() {
         <table>
           <thead>
             <tr>
-              <th>Customer</th>
-              <th>Recharged</th>
-              <th>Recharges</th>
-              <th>Last Recharge</th>
-              <th>Current Balance</th>
-              <th>Spent Since (by category)</th>
+              <SortableTh label="Customer" sortKey="name" sort={sort} setSort={setSort} />
+              <SortableTh label="Recharged" sortKey="totalRecharged" sort={sort} setSort={setSort} numeric />
+              <SortableTh label="Recharges" sortKey="rechargeCount" sort={sort} setSort={setSort} numeric />
+              <SortableTh label="Last Recharge" sortKey="lastRechargeAt" sort={sort} setSort={setSort} numeric />
+              <SortableTh label="Current Balance" sortKey="walletBalance" sort={sort} setSort={setSort} numeric />
+              <SortableTh label="Spent Since (by category)" sortKey="totalSpent" sort={sort} setSort={setSort} numeric title="Sort by total spent" />
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
@@ -314,10 +608,15 @@ function RechargeActivitySection() {
             {!loading && filtered.length === 0 && (
               <tr><td colSpan={7} className="empty" style={{ padding: '48px 20px', textAlign: 'center' }}>
                 <div style={{ fontSize: 36, marginBottom: 10 }}>💳</div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>No customers have recharged their wallet yet</div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>
+                  {rows.length ? 'No customer matches these filters' : 'No customers have recharged their wallet yet'}
+                </div>
+                {rows.length > 0 && (
+                  <button className="btn ghost sm" style={{ marginTop: 12 }} onClick={clearFilters}>Clear filters</button>
+                )}
               </td></tr>
             )}
-            {!loading && filtered.map((r) => (
+            {!loading && sorted.map((r) => (
               <tr key={r.id}>
                 <td>
                   <div style={{ fontWeight: 700 }}>{r.name || 'Anonymous User'}{r.isDeleted ? ' (deleted)' : ''}</div>
@@ -495,7 +794,9 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
+  const [dateRange, setDateRange] = useState({ ...EMPTY_RANGE }); // used when timeFilter is 'custom'
   const [walletFilter, setWalletFilter] = useState('all');
+  const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' });
   const [appFilter, setAppFilter] = useState('all'); // 'all' | 'removed' | 'push' | 'nopush'
   const [view, setView] = useState('list'); // 'list' | 'recharges'
   const [topup, setTopup] = useState(null); // customer being topped up
@@ -586,7 +887,7 @@ export default function Customers() {
 
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {
-      if (!inRange(r.created_at, timeFilter)) return false;
+      if (!inRange(r.created_at, timeFilter, dateRange)) return false;
       const wallet = Number(r.wallet_balance || 0);
       if (walletFilter === 'has' && !(wallet > 0)) return false;
       if (walletFilter === 'zero' && !(wallet <= 0)) return false;
@@ -601,14 +902,27 @@ export default function Customers() {
       const id = String(r.id || '').toLowerCase();
       return name.includes(q) || mobile.includes(q) || email.includes(q) || id.includes(q);
     });
-  }, [rows, timeFilter, walletFilter, appFilter, search]);
+  }, [rows, timeFilter, dateRange, walletFilter, appFilter, search]);
+
+  const sortedRows = useMemo(() => sortRows(filteredRows, sort, LIST_SORT), [filteredRows, sort]);
+
+  const filtersActive =
+    timeFilter !== 'all' || walletFilter !== 'all' || appFilter !== 'all' || search !== '';
+
+  const clearFilters = () => {
+    setTimeFilter('all');
+    setDateRange({ ...EMPTY_RANGE });
+    setWalletFilter('all');
+    setAppFilter('all');
+    setSearch('');
+  };
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
 
   // Any change to what is being filtered puts you back on page 1. Without this you can
   // search from page 9 and land on an empty table that looks like "no results" when the
   // matches are all sitting on page 1.
-  useEffect(() => { setPage(1); }, [timeFilter, walletFilter, appFilter, search, showDeleted, pageSize]);
+  useEffect(() => { setPage(1); }, [timeFilter, dateRange, walletFilter, appFilter, search, showDeleted, pageSize, sort]);
 
   // Clamped at RENDER time, not in an effect. A clamping effect raced the reset above:
   // both run in the same commit, the clamp still sees the pre-reset `page`, and its
@@ -620,8 +934,8 @@ export default function Customers() {
 
   const pageStart = (safePage - 1) * pageSize;
   const pagedRows = useMemo(
-    () => filteredRows.slice(pageStart, pageStart + pageSize),
-    [filteredRows, pageStart, pageSize],
+    () => sortedRows.slice(pageStart, pageStart + pageSize),
+    [sortedRows, pageStart, pageSize],
   );
 
   const closeTopup = () => {
@@ -685,7 +999,7 @@ export default function Customers() {
 
   const exportCSV = () => {
     const headers = ['ID', 'Name', 'Mobile', 'Email', 'Wallet Balance (INR)', 'Joined At', 'Status'];
-    const lines = filteredRows.map((r) => [
+    const lines = sortedRows.map((r) => [
       r.id,
       `"${(r.name || '').replace(/"/g, '""')}"`,
       `"${r.isDeleted ? 'Freed' : r.mobile || ''}"`,
@@ -828,24 +1142,14 @@ export default function Customers() {
       {/* ── Filter Bar & Search ── */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 20 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Time filter chips */}
-          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
-            {DATE_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`btn sm ${timeFilter === f.key ? '' : 'ghost'}`}
-                style={{
-                  borderRadius: 20,
-                  fontWeight: timeFilter === f.key ? 700 : 500,
-                  background: timeFilter === f.key ? 'var(--maroon)' : undefined,
-                  color: timeFilter === f.key ? '#fff' : undefined,
-                }}
-                onClick={() => setTimeFilter(f.key)}
-              >
-                {f.label} ({tabCounts[f.key] ?? 0})
-              </button>
-            ))}
-          </div>
+          {/* Signup-date filter chips, each carrying how many customers it would show */}
+          <DateRangeChips
+            value={timeFilter}
+            onChange={setTimeFilter}
+            range={dateRange}
+            onRangeChange={setDateRange}
+            counts={tabCounts}
+          />
 
           {/* Search box */}
           <div className="search-bar-wrap">
@@ -879,43 +1183,15 @@ export default function Customers() {
 
         {/* Wallet balance filter chips */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Wallet:</span>
-          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
-            {WALLET_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`btn sm ${walletFilter === f.key ? '' : 'ghost'}`}
-                style={{
-                  borderRadius: 20,
-                  fontWeight: walletFilter === f.key ? 700 : 500,
-                  background: walletFilter === f.key ? 'var(--maroon)' : undefined,
-                  color: walletFilter === f.key ? '#fff' : undefined,
-                }}
-                onClick={() => setWalletFilter(f.key)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <ChipGroup label="Wallet:" options={WALLET_FILTERS} value={walletFilter} onChange={setWalletFilter} />
 
-          <span className="muted" style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>App:</span>
-          <div className="btn-group" style={{ flexWrap: 'wrap' }}>
-            {APP_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`btn sm ${appFilter === f.key ? '' : 'ghost'}`}
-                style={{
-                  borderRadius: 20,
-                  fontWeight: appFilter === f.key ? 700 : 500,
-                  background: appFilter === f.key ? 'var(--maroon)' : undefined,
-                  color: appFilter === f.key ? '#fff' : undefined,
-                }}
-                onClick={() => setAppFilter(f.key)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <ChipGroup label="App:" options={APP_FILTERS} value={appFilter} onChange={setAppFilter} />
+
+          {filtersActive && (
+            <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={clearFilters} title="Reset every filter on this tab">
+              &#10005; Clear filters
+            </button>
+          )}
         </div>
 
         {/* Deleted accounts toggle */}
@@ -938,11 +1214,11 @@ export default function Customers() {
         <table>
           <thead>
             <tr>
-              <th>Customer</th>
-              <th>Mobile</th>
-              <th>Email</th>
-              <th>Wallet</th>
-              <th>Joined Date</th>
+              <SortableTh label="Customer" sortKey="name" sort={sort} setSort={setSort} />
+              <SortableTh label="Mobile" sortKey="mobile" sort={sort} setSort={setSort} />
+              <SortableTh label="Email" sortKey="email" sort={sort} setSort={setSort} />
+              <SortableTh label="Wallet" sortKey="wallet_balance" sort={sort} setSort={setSort} numeric />
+              <SortableTh label="Joined Date" sortKey="created_at" sort={sort} setSort={setSort} numeric />
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
@@ -967,7 +1243,7 @@ export default function Customers() {
                   <div className="muted" style={{ fontSize: 13, maxWidth: 380, margin: '0 auto' }}>
                     {search
                       ? `No customer matches the search term "${search}". Try checking the spelling or selecting "All Customers".`
-                      : `No customer signups recorded for the selected period (${DATE_FILTERS.find((f) => f.key === timeFilter)?.label}).`}
+                      : `No customer signups recorded for the selected period (${DATE_FILTERS.find((f) => f.key === timeFilter)?.label || 'custom range'}).`}
                   </div>
                 </td>
               </tr>
