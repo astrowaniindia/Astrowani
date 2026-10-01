@@ -38,7 +38,7 @@ import {LanguageContext} from '../../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from '../../utils/callRecording';
 import {createIceRecovery} from '../../utils/iceRecovery';
 import {joinSessionWithRetry} from '../../utils/sessionRoom';
-import SessionConnectionNotice, {useSessionConnection} from '../../components/SessionConnectionNotice';
+import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 import {getIceServers} from '../../utils/iceServers';
 
@@ -587,7 +587,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const statusLabel =
     callState === 'connecting' ? t('call.connecting') :
     callState === 'ringing' ? t('call.ringing', {seconds: ringCountdown}) :
-    formatTime(callDuration);
+    formatTime(billableSeconds(callStartMs, conn));
 
   const avatarInitial = recieverName.charAt(0).toUpperCase();
   const isActive = callState === 'in_call';

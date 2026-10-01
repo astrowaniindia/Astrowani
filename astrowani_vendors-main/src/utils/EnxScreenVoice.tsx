@@ -35,7 +35,7 @@ import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
 import {createIceRecovery} from './iceRecovery';
 import {joinSessionWithRetry} from './sessionRoom';
-import SessionConnectionNotice, {useSessionConnection} from '../components/SessionConnectionNotice';
+import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from './preConnectWatchdog';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 import {getIceServers} from './iceServers';
@@ -493,7 +493,9 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
   const freeRemaining = freeCall && freeCallSeconds
     ? Math.max(0, freeCallSeconds - callDuration)
     : 0;
-  const statusLabel = isConnected ? formatTime(callDuration) : t('call.connecting');
+  // Frozen while either side is disconnected — see billableSeconds(). Display only; the
+  // raw callDuration still drives the free-call cutoff, duration_seconds and call history.
+  const statusLabel = isConnected ? formatTime(billableSeconds(callStartMs, conn)) : t('call.connecting');
   const avatarInitial = callerName.charAt(0).toUpperCase();
 
   // ─── Render ─────────────────────────────────────────────────────────────────

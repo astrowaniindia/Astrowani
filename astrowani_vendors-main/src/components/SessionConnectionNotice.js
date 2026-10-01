@@ -27,31 +27,56 @@ const RECONNECTED_VISIBLE_MS = 4000;
 export function useSessionConnection(socketRef, sessionId) {
   const [absence, setAbsence] = useState(null); // { mine, startedAt, graceMs }
   const [reconnectedAt, setReconnectedAt] = useState(0);
+  // Milliseconds of COMPLETED pauses. The pause currently running is not in here — see
+  // billableSeconds(), which freezes on absence.startedAt instead, so the number on screen
+  // cannot drift while it is stopped.
+  const [completedExcludedMs, setCompletedExcludedMs] = useState(0);
   const [, tick] = useState(0);
   const absenceRef = useRef(null);
   absenceRef.current = absence;
+  const excludedRef = useRef(0);
+
+  // Close the running pause and bank it.
+  const endPause = () => {
+    const a = absenceRef.current;
+    if (!a || !a.startedAt) return;
+    excludedRef.current += Math.max(0, Date.now() - a.startedAt);
+    setCompletedExcludedMs(excludedRef.current);
+  };
 
   useEffect(() => {
     let detach = null;
     let poll = null;
 
     const attach = (sock) => {
-      const onDisconnect = () => setAbsence((a) => a || { mine: true, startedAt: Date.now(), graceMs: CONNECTION_GRACE_MS });
-      const onConnect = () => setAbsence((a) => {
-        if (a && a.mine) { setReconnectedAt(Date.now()); return null; }
-        return a;
-      });
+      const onDisconnect = () => {
+        if (absenceRef.current) return; // already paused — do not restart the clock
+        setAbsence({ mine: true, startedAt: Date.now(), graceMs: CONNECTION_GRACE_MS });
+      };
+      const onConnect = () => {
+        const a = absenceRef.current;
+        if (!a || !a.mine) return;
+        endPause();
+        setReconnectedAt(Date.now());
+        setAbsence(null);
+      };
       const sameSession = (d) => !sessionId || !d || !d.sessionId || String(d.sessionId) === String(sessionId);
       const onAbsent = (d) => {
         if (!sameSession(d)) return;
+        // The server sends this TWICE for one drop — immediately from its disconnect
+        // handler, then again from the 30s billing poll. Taking the second one would
+        // restart the countdown and throw away the pause already accrued, so the timer
+        // would jump and the grace would silently double.
+        if (absenceRef.current) return;
         setAbsence({ mine: false, startedAt: Date.now(), graceMs: (d && d.graceMs) || CONNECTION_GRACE_MS });
       };
       const onBack = (d) => {
         if (!sameSession(d)) return;
-        setAbsence((a) => {
-          if (a && !a.mine) { setReconnectedAt(Date.now()); return null; }
-          return a;
-        });
+        const a = absenceRef.current;
+        if (!a || a.mine) return;
+        endPause();
+        setReconnectedAt(Date.now());
+        setAbsence(null);
       };
       sock.on('disconnect', onDisconnect);
       sock.on('connect', onConnect);
@@ -91,6 +116,7 @@ export function useSessionConnection(socketRef, sessionId) {
   return {
     absence,
     secsLeft,
+    completedExcludedMs,
     // Send is blocked while absent: the server would refuse it anyway, and a silent
     // failure is exactly what made the 2026-10-01 outage invisible.
     blocked: !!absence,
@@ -101,6 +127,31 @@ export function useSessionConnection(socketRef, sessionId) {
 // mode: 'chat' sits in the message list above the input; 'call' floats over the call UI,
 // where there are no messages to withhold — the media is peer-to-peer and the server cannot
 // stop it, so the honest line there is simply that the call will end.
+/**
+ * Seconds to SHOW on a timer the person reads as money, with disconnected time taken out.
+ *
+ * WHY THIS EXISTS (owner, 2026-10-02, after watching it on a device): billing pauses while
+ * someone is disconnected, but the header clock kept counting. A chat that read 01:33 had
+ * only ~01:03 of billable time behind it, so the customer's "I was charged for less than
+ * the timer showed" and the astrologer's "I wasn't credited for all of it" are the SAME
+ * gap, argued from opposite ends. Freezing the clock while the wallet is frozen removes
+ * the argument.
+ *
+ * Computed from timestamps, never by subtracting one ticking counter from another: while
+ * paused it measures up to absence.startedAt, a fixed point, so the display is exactly
+ * still rather than flickering between two values as two intervals race.
+ *
+ * DISPLAY ONLY. The raw useElapsedSeconds value is deliberately left alone — it feeds the
+ * free-call cutoff, duration_seconds and call history, and quietly redefining those is how
+ * a timer tweak turns into a money bug.
+ */
+export function billableSeconds(startMs, conn) {
+  if (!startMs) return 0;
+  const completed = (conn && conn.completedExcludedMs) || 0;
+  const upTo = conn && conn.absence ? conn.absence.startedAt : Date.now();
+  return Math.max(0, Math.floor((upTo - startMs - completed) / 1000));
+}
+
 export default function SessionConnectionNotice({ conn, t, mode = 'chat', style }) {
   if (!conn) return null;
   if (conn.showReconnected) {

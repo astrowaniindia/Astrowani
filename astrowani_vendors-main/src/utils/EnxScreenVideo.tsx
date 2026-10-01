@@ -36,7 +36,7 @@ import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
 import {createIceRecovery} from './iceRecovery';
 import {joinSessionWithRetry} from './sessionRoom';
-import SessionConnectionNotice, {useSessionConnection} from '../components/SessionConnectionNotice';
+import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from './preConnectWatchdog';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 import {getIceServers} from './iceServers';
@@ -606,7 +606,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
           <Text style={styles.connectedName}>{callerName}</Text>
           <View style={styles.statusPillSmall}>
             <View style={styles.statusDotGreen} />
-            <Text style={styles.statusTextSmall}>{formatTime(callDuration)}</Text>
+            <Text style={styles.statusTextSmall}>{formatTime(billableSeconds(callStartMs, conn))}</Text>
           </View>
           {perMinuteCharge > 0 && (
             <View style={styles.billingBadge}>

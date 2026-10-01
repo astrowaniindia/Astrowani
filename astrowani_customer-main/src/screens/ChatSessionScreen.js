@@ -33,7 +33,7 @@ import useElapsedSeconds from '../hooks/useElapsedSeconds';
 import { captureEvent } from '../utils/Analytics';
 import { showActiveSessionNotification, hideActiveSessionNotification } from '../utils/activeSessionNotification';
 import SessionIntroBanner from '../components/SessionIntroBanner';
-import SessionConnectionNotice, { useSessionConnection } from '../components/SessionConnectionNotice';
+import SessionConnectionNotice, { useSessionConnection, billableSeconds } from '../components/SessionConnectionNotice';
 import { LanguageContext } from '../context/LanguageContext';
 import { joinSessionWithRetry } from '../utils/sessionRoom';
 
@@ -58,7 +58,10 @@ const ChatSessionScreen = ({ route, navigation }) => {
     return reason;
   };
   const [chatActive, setChatActive] = useState(false);
-  const seconds = useElapsedSeconds(sessionStartMs, chatActive);
+  // Kept as a bare call: nothing on this screen reads the raw elapsed value any more
+  // (the header shows billableSeconds() below, which freezes while billing is paused), but
+  // this hook is what re-renders the screen once a second so that frozen value stays live.
+  useElapsedSeconds(sessionStartMs, chatActive);
   const [wallet, setWallet] = useState(0);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -742,8 +745,12 @@ const ChatSessionScreen = ({ route, navigation }) => {
     }
   };
 
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  // Frozen while either side is disconnected, so the clock the person reads as money
+  // stops when the wallet does. See billableSeconds() — display only; the raw value above
+  // still drives the free-call cutoff, duration_seconds and call history.
+  const shownSeconds = billableSeconds(sessionStartMs, conn);
+  const minutes = Math.floor(shownSeconds / 60);
+  const secs = shownSeconds % 60;
 
   const renderMessage = ({ item }) => {
     const isMine = String(item.sender_id) === String(myId);

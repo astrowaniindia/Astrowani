@@ -32,7 +32,7 @@ import { showStatusPopup } from '../components/StatusPopup';
 import { LanguageContext } from '../context/LanguageContext';
 import { joinSessionWithRetry } from '../utils/sessionRoom';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
-import SessionConnectionNotice, { useSessionConnection } from '../components/SessionConnectionNotice';
+import SessionConnectionNotice, { useSessionConnection, billableSeconds } from '../components/SessionConnectionNotice';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
@@ -59,7 +59,10 @@ const VendorChatSession = ({ route, navigation }) => {
   // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
   const [sessionStartMs, setSessionStartMs] = useState(null);
   const [timerActive, setTimerActive] = useState(false);
-  const seconds = useElapsedSeconds(sessionStartMs, timerActive);
+  // Kept as a bare call: nothing on this screen reads the raw elapsed value any more
+  // (the header shows billableSeconds() below, which freezes while billing is paused), but
+  // this hook is what re-renders the screen once a second so that frozen value stays live.
+  useElapsedSeconds(sessionStartMs, timerActive);
   const [customerTyping, setCustomerTyping] = useState(false);
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [astroId, setAstroId] = useState(null);
@@ -91,8 +94,12 @@ const VendorChatSession = ({ route, navigation }) => {
   const typingTimerRef = useRef(null);
 
   const pad = (n) => n.toString().padStart(2, '0');
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  // Frozen while either side is disconnected, so the clock the person reads as money
+  // stops when the wallet does. See billableSeconds() — display only; the raw value above
+  // still drives the free-call cutoff, duration_seconds and call history.
+  const shownSeconds = billableSeconds(sessionStartMs, conn);
+  const minutes = Math.floor(shownSeconds / 60);
+  const secs = shownSeconds % 60;
 
   // ─── Keyboard height (Android) ───────────────────────────────────────────
   // targetSdk 36 is edge-to-edge, so on Android 15+ the OS ignores adjustResize and the
