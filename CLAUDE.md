@@ -1888,3 +1888,88 @@ first**, or workers cannot see each other's rooms and calls/chat break.
    database backups, which still do not exist.
 5. Rotate the TURN credential once `TURN_STATIC_AUTH_SECRET` is set (the old static pair is in
    both shipped APKs and in git history).
+
+---
+
+## Session 2026-10-01 (evening): the 60-second cap that made 12 consultations free
+
+### DO. One stale variable paused billing and killed live chats mid-sentence
+
+Astrologer **Astro Soni** and one customer had **12 consecutive chats** between 15:49 and
+17:54 IST. Every one was cut off by the backend after 2-4 minutes. **Every one billed ₹0.**
+The owner paid Soni out of pocket for work the server had already written off.
+
+**The defect, in `utils/sessionRoom.js` (BOTH apps), introduced the previous evening in
+`9122d6a` and OTA'd at 21:03 UTC:**
+
+```js
+const startedAt = Date.now();                        // captured ONCE, at screen mount
+...
+if (Date.now() - startedAt > MAX_WAIT_MS) return;    // 60s, and a SILENT return
+```
+
+Sixty seconds after a chat/call screen mounted, `joinSessionWithRetry` was dead. Its
+`onConnect` handler still fired on every reconnect, still reset `joined = false`, then called
+`attempt()` — which tripped the cap and **returned without emitting anything**. The socket was
+healthy and kept rejoining its personal room; only the SESSION room was never re-entered.
+
+Server-side that is indistinguishable from the customer having left:
+`bothParticipantsPresent()` logged `caller not connected — billing paused`, and ~2 min later
+`scheduleSessionAbandonCheck`'s timer force-ended the consultation.
+
+> **WHY NOBODY NOTICED FOR A WHOLE EVENING, and the lesson worth keeping: the chat kept
+> working perfectly.** `ChatSessionScreen` sends over HTTP (`POST /api/chat/message`) and
+> re-fetches history on every `connect`, so neither person saw a thing. The production
+> transcript has the customer typing at 10:23:08, 10:23:14 and 10:23:20 UTC — a full minute
+> AFTER the server had already concluded they were gone. **Socket-room membership is not a
+> proxy for "the user is here" when the product also works over HTTP.** Any future presence
+> guard must assume the app can be alive, visible and in active use while holding no socket.
+
+### DP. How it was actually proven (reusable method)
+
+Theorising from `CLAUDE.md` would have landed on the pm2-cluster/Redis-adapter theory. It was
+wrong. What settled it, in order:
+
+1. **DB first, from the repo's own `.env`** — `chat_sessions` for the 12 rows. `next_billing_at`
+   sat 76-123s in the PAST at `ended_at` on every one, and several had been shifted forward by
+   `resumeAfterPause` — proving presence FLAPPED rather than simply failing.
+2. **`chat_messages`** — both people replying to each other within seconds throughout. This is
+   what killed every "the customer's app died" theory.
+3. **VPS pm2 logs** (`/root/.pm2/logs/astrowani-backend-{out,error}.log`, grep the session id).
+   This gave the answer in one screen: it was the **warn** branch, not the `catch` — so
+   `fetchSockets()` was fine — and the kill came from the socket abandon timer, not the
+   presence grace.
+4. **The decisive grep**: the customer id in the out log. `User <CUST> joined their personal
+   room (verified)` appeared **five more times** after their last `joined session room` line.
+   The app was online the whole time and simply never re-joined the session room.
+5. `pm2 describe` → `fork_mode`, and nginx's error log had **one** unrelated line in the whole
+   two-hour window. Infrastructure was never involved.
+
+**Hostinger VPS access for this:** hPanel → VPS → Manage → Browser console. The terminal is
+xterm.js, so **`get_page_text` reads it cleanly** — screenshots are not needed and `grep`
+output comes back as text. The terminal tab drops out of the browser tool-group after a few
+minutes; re-open it from the overview page.
+
+### DQ. The fix
+
+- **`sessionRoom.js` (both apps):** the fast-retry budget is now **per connection and reset in
+  `onConnect`**. Past it the helper slows to 15s rather than stopping. **Never give up while
+  the screen is open** — being out of the session room is not cosmetic, it is the server
+  concluding this participant left, which pauses billing and ends the consultation.
+- **`index.js` `scheduleSessionAbandonCheck`:** before force-ending, it now **asks the room**
+  (`io.in(sessionId).fetchSockets()`) whether the participant is really missing, instead of
+  trusting that `cancelPendingSessionTermination` must have run. That trust was misplaced
+  twice over — a dead socket's `disconnect` can be processed AFTER its replacement has already
+  joined (so the cancel runs before there is anything to cancel, and the timer is then
+  unstoppable), and any client-side join bug reaches that line with both people mid-chat.
+  **This does not weaken the money-leak guard**: billing stays gated continuously by
+  `bothParticipantsPresent()`, so someone genuinely gone is still never charged for. If the
+  re-check itself throws, the kill is SKIPPED rather than guessed at.
+
+**Verified** by running the regression against the actual shipped code: with `HEAD`'s version
+a reconnect 90s after mount emits **nothing**; with the fix it re-joins. Both apps lint clean
+(0 errors). Deployed in `ca8e2f7` — backend auto-deploy green, then OTA to both apps.
+
+**Still worth doing:** a real two-device test — start a chat, leave it running past 60 seconds,
+drop and restore the phone's network, and confirm billing keeps ticking and the session is NOT
+killed. The unit-level proof is solid but nothing has exercised this on a handset.
