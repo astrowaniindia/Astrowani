@@ -440,6 +440,35 @@ function scheduleSessionAbandonCheck(sessionId, participantId, isVendor) {
         .eq('id', sessionId)
         .maybeSingle();
       if (!session || !session.is_active) return; // already ended some other way — nothing to do
+
+      // LAST LOOK BEFORE KILLING A LIVE CONSULTATION (2026-10-01).
+      //
+      // Until now this timer fired on nothing but "the session is still active", trusting
+      // cancelPendingSessionTermination() to have been called if the participant came back.
+      // That trust is misplaced twice over: (1) a dead socket's disconnect can be processed
+      // AFTER the replacement socket has already joined, so the cancel runs before there is
+      // anything to cancel and the doomed timer is then unstoppable; and (2) any client bug
+      // that stops re-emitting join_session - exactly the sessionRoom.js regression that cost
+      // 12 consecutive unbilled consultations on 2026-10-01 - reaches this line with the app
+      // alive and both people mid-conversation.
+      //
+      // So ask the room directly instead of inferring. This does NOT weaken the money-leak
+      // guard: billing is gated separately and continuously by bothParticipantsPresent(), so
+      // a participant who is genuinely gone still gets no minute charged. It only stops this
+      // timer ending a session for someone who is demonstrably still here. If the check
+      // itself fails we skip the kill rather than guess - the presence grace in
+      // sessionManager ends a truly abandoned session anyway.
+      try {
+        const live = await io.in(sessionId).fetchSockets();
+        if (live.some((s) => String(s.data?.participantId || '') === String(participantId))) {
+          console.log(`[socket] ${participantId} is back in session ${sessionId} - abandon check cancelled.`);
+          return;
+        }
+      } catch (e) {
+        console.error(`[socket] abandon presence re-check failed for ${sessionId}: ${e.message} - not ending the session.`);
+        return;
+      }
+
       console.warn(`[socket] Participant ${participantId} did not reconnect to session ${sessionId} within ${graceMs}ms — force-ending session (money-leak guard).`);
       await sessionManager.terminateSession(sessionId, 'Participant disconnected (app closed or lost connection)');
     } catch (e) {

@@ -22,7 +22,14 @@
 // would just be noise.
 
 const RETRY_MS = 1500;
-const MAX_WAIT_MS = 60000;
+// How long the FAST retries run — per connection, not for the life of the screen. See the
+// deadline note in attempt() below.
+const FAST_RETRY_MS = 60000;
+// After that, keep trying forever, just slowly. Never give up while the screen is open:
+// being out of the session room is not a cosmetic failure, it is the backend concluding
+// this participant has left (sessionManager.bothParticipantsPresent), which pauses billing
+// and then force-ends the consultation.
+const SLOW_RETRY_MS = 15000;
 
 /**
  * @param {object} socket        a connected/connecting socket.io client
@@ -38,16 +45,31 @@ export function joinSessionWithRetry(socket, sessionId, opts = {}) {
   let stopped = false;
   let joined = false;
   let timer = null;
-  const startedAt = Date.now();
+  // THE DEADLINE IS PER CONNECTION, AND RESET ON EVERY RECONNECT (see onConnect below).
+  //
+  // REGRESSION FIXED 2026-10-01 — this was a single `startedAt` captured when the helper
+  // was created, compared against a hard 60s cap inside attempt(). Sixty seconds after the
+  // chat/call screen mounted, every later reconnect ran attempt(), tripped the cap and
+  // returned WITHOUT EMITTING ANYTHING — silently, with joined already reset to false. The
+  // socket was healthy and rejoining its personal room fine; only the session room was
+  // never re-entered. The backend then saw the participant as gone: billing paused
+  // (sessionManager.bothParticipantsPresent) and the session was force-ended ~2 min later
+  // by the abandon guard in index.js, mid-conversation.
+  //
+  // Measured in production on 2026-10-01: one astrologer and one customer, 12 consecutive
+  // chats over two hours, every one cut off after 2-4 minutes, EVERY ONE BILLED ZERO, while
+  // both people were visibly typing to each other the whole time. The chat itself kept
+  // working — the screen re-fetches history on 'connect' and sends over HTTP — so nothing
+  // looked wrong to either of them. The astrologer was paid out of the platform's pocket.
+  let deadlineAt = Date.now() + FAST_RETRY_MS;
 
   const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
 
   const attempt = () => {
     if (stopped || joined || !socket || !sessionId) return;
-    if (Date.now() - startedAt > MAX_WAIT_MS) {
-      console.warn(`[${label}] gave up joining session room ${sessionId} after ${MAX_WAIT_MS}ms`);
-      return;
-    }
+    // Past the fast window we slow down, but we do NOT stop: a join that is still failing
+    // after a minute is a problem to keep working at, not one to abandon the session over.
+    const slow = Date.now() > deadlineAt;
     // The ack is the whole point. An older backend ignores the extra argument and never
     // calls it, in which case this falls back to re-emitting every RETRY_MS — which is
     // exactly what the old code effectively needed and never did, so it is still an
@@ -69,7 +91,7 @@ export function joinSessionWithRetry(socket, sessionId, opts = {}) {
       // Anything else (including no ack at all) falls through to the scheduled retry.
     });
     clear();
-    timer = setTimeout(attempt, RETRY_MS);
+    timer = setTimeout(attempt, slow ? SLOW_RETRY_MS : RETRY_MS);
   };
 
   attempt();
@@ -79,6 +101,9 @@ export function joinSessionWithRetry(socket, sessionId, opts = {}) {
   const onConnect = () => {
     if (stopped) return;
     joined = false;
+    // A fresh connection gets a fresh fast-retry budget. Without this reset the helper is
+    // dead on arrival for every reconnect after the first minute — the regression above.
+    deadlineAt = Date.now() + FAST_RETRY_MS;
     attempt();
   };
   socket.on('connect', onConnect);
