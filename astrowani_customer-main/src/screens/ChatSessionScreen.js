@@ -46,9 +46,6 @@ const ChatSessionScreen = ({ route, navigation }) => {
   // Elapsed time is computed from a fixed start timestamp (not accumulated tick-by-tick)
   // so it can't drift/stick if the JS thread is throttled — see useElapsedSeconds.
   const [sessionStartMs, setSessionStartMs] = useState(null);
-  // Live connection state for the in-chat notice. Reads the socket created in init() below
-  // (the hook waits for it) and the server's participant_absent/back events.
-  const conn = useSessionConnection(socketRef, session?.id);
 
   // The server's end reasons are plain English strings written for logs
   // ("Customer left the session (app closed or lost connection)"). Show the person a
@@ -80,6 +77,13 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const pollEndRef = useRef(null);
   const socketRef = useRef(null);
   const sessionJoinRef = useRef(null);
+
+  // Live connection state for the in-chat notice. Reads the socket created in init() below
+  // (the hook waits for it) and the server's participant_absent/back events. Must come AFTER
+  // socketRef's declaration above — referencing a const before its own declaration line
+  // crashed every mount with "Cannot read property 'current' of undefined" (caught live on
+  // the emulator 2026-10-02, 3 render errors logged before any chat screen could open).
+  const conn = useSessionConnection(socketRef, session?.id);
 
   const pad = (n) => n.toString().padStart(2, '0');
 
