@@ -113,7 +113,9 @@ const translations = {
     'sessionHistory.completed': 'Completed',
     'sessionHistory.duration': 'Duration',
     'sessionHistory.rate': 'Rate',
+    'sessionHistory.customerRate': 'Customer rate',
     'sessionHistory.earned': 'Earned',
+    'sessionHistory.partiallyBilled': 'Partially billed',
     'sessionHistory.noHistory': 'No history yet',
     'sessionHistory.noHistorySub': 'Sessions will appear here after calls end',
 
@@ -677,7 +679,9 @@ const translations = {
     'sessionHistory.completed': 'पूर्ण',
     'sessionHistory.duration': 'अवधि',
     'sessionHistory.rate': 'दर',
+    'sessionHistory.customerRate': 'ग्राहक दर',
     'sessionHistory.earned': 'कमाया',
+    'sessionHistory.partiallyBilled': 'आंशिक रूप से बिल हुआ',
     'sessionHistory.noHistory': 'अभी तक कोई इतिहास नहीं',
     'sessionHistory.noHistorySub': 'कॉल समाप्त होने के बाद सत्र यहां दिखाई देंगे',
 

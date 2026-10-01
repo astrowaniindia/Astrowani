@@ -951,6 +951,7 @@ const CallsList = ({navigation}) => {
         renderItem={renderItem}
         keyExtractor={item => item._id}
         contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
       />
     );
   };

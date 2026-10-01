@@ -37,6 +37,83 @@ const { createClient } = require('@supabase/supabase-js');
 // rather than dozens.
 const COALESCE_MS = 3000;
 
+// Columns whose value NO customer-facing list or profile ever renders.
+//
+// WHY THIS LIST EXISTS (2026-10-01). process_session_billing does
+//   UPDATE astrologers SET wallet_balance=…, today_earnings=…, total_earnings=…
+// once per billed minute PER ACTIVE SESSION. This fanout watches '*' on the
+// table, so in production — where some session is essentially always billing —
+// every one of those writes used to:
+//
+//   1. call onChange(), dropping the server's astrologer-list cache IMMEDIATELY
+//      (per change, not coalesced), leaving that cache permanently cold, and
+//   2. feed a broadcast to EVERY connected socket every <=3s, after which every
+//      client with a list screen focused refetched /api/astrologers.
+//
+// So a few hundred idle users generated a continuous refetch storm triggered by
+// nothing any user did. Measured 2026-10-01: the list is 64KB raw / 9.4KB
+// gzipped, so ~1,000 connected users is ~200+ req/s and ~16Mbps of pure noise,
+// against a single-core Node process and a free-tier database.
+//
+// Earnings resets are the same shape but worse in bursts: checkEarningsResets()
+// zeroes today_earnings across EVERY astrologer row at once.
+//
+// This is deliberately an IGNORE list, not an allow list. A column added later
+// is treated as customer-visible until someone decides otherwise — the failure
+// direction is "broadcast something harmless", never "silently stop telling
+// customers an astrologer came online".
+const NON_DISPLAY_COLUMNS = new Set([
+  // Money. The entire reason this filter exists.
+  'wallet_balance', 'today_earnings', 'total_earnings',
+  // Push plumbing — rewritten on every login, token refresh and logout.
+  'fcm_token', 'voip_token', 'voip_platform',
+  // Payout details. Customers must never see these and nothing renders them.
+  'bank_account_holder', 'bank_account_number', 'bank_ifsc', 'bank_name', 'upi_id',
+  // Internal bookkeeping.
+  'admin_notes', 'charges_locked_at', 'logged_out_at',
+  'terms_accepted_at', 'terms_version', 'terms_accepted_source',
+]);
+
+/**
+ * True when this change cannot possibly alter what a customer sees, so it is
+ * safe to drop entirely.
+ *
+ * FAILS SAFE in every direction: anything that is not provably a
+ * non-display-only UPDATE returns false and is treated as a real change.
+ * That covers INSERT/DELETE, a payload without `old` (REPLICA IDENTITY not
+ * FULL, so the diff is impossible), and any error while diffing.
+ *
+ * `astrologers` is REPLICA IDENTITY FULL (verified against production
+ * 2026-10-01, set by sql/enable_realtime_astrologers.sql), which is what makes
+ * `old` carry every column rather than just the primary key.
+ */
+function isNonDisplayChange(payload) {
+  try {
+    if (!payload || payload.eventType !== 'UPDATE') return false;
+    const before = payload.old;
+    const after = payload.new;
+    if (!before || !after) return false;
+    const beforeKeys = Object.keys(before);
+    // REPLICA IDENTITY DEFAULT gives us only the key columns — not enough to
+    // tell what actually changed, so never skip on that basis.
+    if (beforeKeys.length <= 1) return false;
+
+    let changed = 0;
+    for (const key of Object.keys(after)) {
+      // Compare stringified: numerics arrive as strings or numbers depending on
+      // the column type, and a false "changed" only costs a harmless broadcast.
+      if (String(before[key]) !== String(after[key])) {
+        if (!NON_DISPLAY_COLUMNS.has(key)) return false;
+        changed++;
+      }
+    }
+    // changed === 0 is a no-op write (same values) — equally safe to drop.
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function startAstrologerFanout({ io, supabaseUrl, supabaseKey, onChange }) {
   if (!io) throw new Error('startAstrologerFanout requires io');
 
@@ -49,6 +126,10 @@ function startAstrologerFanout({ io, supabaseUrl, supabaseKey, onChange }) {
 
   let pending = null;
   let changesSeen = 0;
+  // Observability: without these, "the fanout went quiet" and "the filter is
+  // eating real changes" look identical from the outside.
+  let skipped = 0;
+  let relayed = 0;
 
   const flush = () => {
     pending = null;
@@ -58,7 +139,15 @@ function startAstrologerFanout({ io, supabaseUrl, supabaseKey, onChange }) {
     io.emit('astrologers_changed', { at: Date.now(), changes: count });
   };
 
-  const schedule = () => {
+  const schedule = (payload) => {
+    // Billing and push-token writes cannot change what a customer sees, and in
+    // production they are the overwhelming majority of writes to this table.
+    // Dropping them here is what keeps the server-side list cache warm.
+    if (isNonDisplayChange(payload)) {
+      skipped++;
+      return;
+    }
+    relayed++;
     changesSeen++;
     if (onChange) {
       // Drop the server's own cached copy immediately — it must never serve a
@@ -67,6 +156,17 @@ function startAstrologerFanout({ io, supabaseUrl, supabaseKey, onChange }) {
     }
     if (!pending) pending = setTimeout(flush, COALESCE_MS);
   };
+
+  // Periodic one-liner rather than per-event logging, which at billing volume
+  // would itself be a load problem.
+  const statsTimer = setInterval(() => {
+    if (skipped || relayed) {
+      console.log(`[astrologerFanout] 5m: relayed ${relayed}, skipped ${skipped} non-display write(s)`);
+      skipped = 0;
+      relayed = 0;
+    }
+  }, 5 * 60 * 1000);
+  if (statsTimer.unref) statsTimer.unref();
 
   const channel = rt
     .channel(`backend-astrologers-fanout-${Date.now()}`)
@@ -84,9 +184,16 @@ function startAstrologerFanout({ io, supabaseUrl, supabaseKey, onChange }) {
   return {
     stop() {
       if (pending) clearTimeout(pending);
+      clearInterval(statsTimer);
       try { rt.removeChannel(channel); } catch (_) {}
     },
   };
 }
 
-module.exports = { startAstrologerFanout, COALESCE_MS };
+module.exports = {
+  startAstrologerFanout,
+  COALESCE_MS,
+  // Exported for tests — see scripts/testFanoutFilter.js.
+  isNonDisplayChange,
+  NON_DISPLAY_COLUMNS,
+};

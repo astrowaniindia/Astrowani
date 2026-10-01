@@ -24,6 +24,7 @@
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const offerGuard = require('./offerGuard');
+const debtGuard = require('./debtGuard');
 const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
 const { recordDeletedCustomer } = require('./analyticsExclusions');
 
@@ -332,6 +333,9 @@ module.exports = (app) => {
       // BEFORE anything is erased: remember which new-customer offers this number already
       // used, so deleting and re-registering cannot claim them again. Never throws.
       await offerGuard.snapshotCustomer(id);
+      // Same reasoning for money: a negative balance must survive the delete, or re-signing
+      // up on the same number erases a real debt. Never throws.
+      await debtGuard.recordDebt(customer.mobile, customer.wallet_balance, id);
       await purgeCustomerPersonalData(id);
       // Keeps their past events out of the admin's Analytics once the row is gone.
       await recordDeletedCustomer(id);

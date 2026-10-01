@@ -41,6 +41,7 @@ import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} f
 import {createIceRecovery} from '../../utils/iceRecovery';
 import {joinSessionWithRetry} from '../../utils/sessionRoom';
 import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
+import {getIceServers} from '../../utils/iceServers';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -52,20 +53,15 @@ const MIN_DAKSHINA_SECONDS = 180; // 3 min - below this nothing is offered at al
 const AVATAR_SIZE = 140;
 const RING_BASE = AVATAR_SIZE + 40;
 
-// Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
-// is now the primary relay; OpenRelay's free public servers are kept only as a
-// secondary fallback in case the VPS's coturn is ever unreachable.
-const ICE_SERVERS = {
-  iceServers: [
-    {urls: 'stun:stun.l.google.com:19302'},
-    {urls: 'stun:stun1.l.google.com:19302'},
-    {urls: 'turn:76.13.243.165:3478', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
-    {urls: 'turn:76.13.243.165:3478?transport=tcp', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
-    {urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject'},
-    {urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject'},
-    {urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject'},
-  ],
-};
+// The relay list now comes from the backend (utils/iceServers.js) so a TURN
+// server can be repaired, rotated or added without a store release. It falls
+// back to a bundled list whenever the backend cannot be reached, so call setup
+// is never blocked by that fetch.
+//
+// The OpenRelay entries that used to sit here were removed on 2026-10-01: that
+// service is dead (its ports accept a connection but it never answers the
+// STUN/TURN protocol — the free `openrelayproject` credentials are no longer
+// served), so they only added ICE gathering latency while looking like a backup.
 
 const VoiceCallScreen = ({route, navigation}: any) => {
   const {t} = useContext(LanguageContext);
@@ -458,7 +454,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       if (cancelled) { stream.getTracks().forEach((t: any) => t.stop()); return; }
       localStreamRef.current = stream;
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
+      const pc = new RTCPeerConnection(await getIceServers());
       pcRef.current = pc;
       stream.getTracks().forEach((track: any) => (pc as any).addTrack(track, stream));
 

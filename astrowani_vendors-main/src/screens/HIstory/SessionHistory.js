@@ -14,6 +14,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {supabase} from '../../api/SupabaseClient';
 import {resolveCustomerNames} from '../../utils/customerNames';
+import {resolveSessionEarnings} from '../../utils/sessionEarnings';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 import {LanguageContext} from '../../context/LanguageContext';
@@ -55,7 +56,21 @@ const SessionCard = ({item, tabKey}) => {
   const durationMins = item.ended_at
     ? Math.max(1, Math.round((new Date(item.ended_at) - new Date(item.started_at)) / 60000))
     : 0;
-  const earnings = Math.round(durationMins * (item.per_minute_charge || 0));
+  // NEVER compute this from duration x rate (the bug this replaces, 2026-10-01): that is the
+  // CUSTOMER's rate, not this astrologer's half, times minutes that may never have been
+  // billed — billing pauses while a participant is missing from the session room. `earnings`
+  // is the summed ledger credit for this session; `undefined` means the lookup failed and we
+  // show a dash instead of inventing a figure. See utils/sessionEarnings.js.
+  const earnings = item.earnings;
+  // Deliberately NOT "X min billed" derived from counting ledger rows: live billing writes
+  // one row per minute, so a count is normally accurate, but a manual correction (see the
+  // 2026-10-01 Soni payout) can legitimately write one lump-sum row for several minutes —
+  // showing "1 min billed" on a session that was actually made right for 4 would be exactly
+  // the kind of number this screen was rebuilt to stop showing. The only claim made here is
+  // "this card's full duration was not covered by what's in the ledger", with no invented
+  // minute count attached to it.
+  const expectedFull = Math.round(durationMins * (item.per_minute_charge || 0) * 0.5 * 100) / 100;
+  const partiallyBilled = typeof earnings === 'number' && expectedFull > 0 && earnings < expectedFull;
 
   return (
     <View style={styles.card}>
@@ -85,14 +100,19 @@ const SessionCard = ({item, tabKey}) => {
         <View style={styles.statDivider} />
         <View style={styles.stat}>
           <MaterialIcons name="currency-rupee" size={15} color="#888" />
-          <Text style={styles.statLabel}>{t('sessionHistory.rate')}</Text>
+          <Text style={styles.statLabel}>{t('sessionHistory.customerRate')}</Text>
           <Text style={styles.statValue}>₹{item.per_minute_charge || 0}{t('common.perMin')}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
           <Ionicons name="wallet-outline" size={15} color="#888" />
           <Text style={styles.statLabel}>{t('sessionHistory.earned')}</Text>
-          <Text style={[styles.statValue, styles.earnedValue]}>₹{earnings}</Text>
+          <Text style={[styles.statValue, styles.earnedValue]}>
+            {typeof earnings === 'number' ? `₹${earnings}` : '—'}
+          </Text>
+          {partiallyBilled && (
+            <Text style={styles.billedNote}>{t('sessionHistory.partiallyBilled')}</Text>
+          )}
         </View>
       </View>
     </View>
@@ -137,9 +157,16 @@ const TabContent = ({tabKey, types, astroId}) => {
       });
     }
 
+    // The real payout per session, from the ledger. A failed lookup returns {} and every
+    // card shows "—": better than the figure this screen used to invent from the customer's
+    // rate (see the comment on `earnings` in SessionCard).
+    const earningsMap = await resolveSessionEarnings(data.map(s => s.id));
+
     const enriched = data.map(s => ({
       ...s,
       customerName: custMapRef.current[s.caller_id] || 'Customer',
+      earnings: earningsMap[s.id]?.earned,
+      minutesBilled: earningsMap[s.id]?.minutesBilled,
     }));
 
     if (active.current) setSessions(enriched);
@@ -205,14 +232,26 @@ const TabContent = ({tabKey, types, astroId}) => {
                 table: 'chat_sessions',
                 filter: `vendor_id=eq.${id}`,
               },
-              (payload) => {
+              async (payload) => {
                 const row = payload.new;
                 if (!row || !types.includes(row.call_type)) return;
+                if (!active) return;
+                // The ledger is only complete once the session has ended, so that is when
+                // the payout is worth reading. `...row` must not clobber the figures we
+                // already hold — chat_sessions carries no earnings column.
+                const ended = row.ended_at;
+                const fresh = ended ? (await resolveSessionEarnings([row.id]))[row.id] : null;
                 if (!active) return;
                 setSessions(prev =>
                   prev.map(s =>
                     s.id === row.id
-                      ? {...s, ...row, customerName: s.customerName}
+                      ? {
+                          ...s,
+                          ...row,
+                          customerName: s.customerName,
+                          earnings: fresh ? fresh.earned : s.earnings,
+                          minutesBilled: fresh ? fresh.minutesBilled : s.minutesBilled,
+                        }
                       : s,
                   ),
                 );
@@ -445,6 +484,12 @@ const styles = StyleSheet.create({
   },
   earnedValue: {
     color: '#2E7D32',
+  },
+  billedNote: {
+    fontSize: moderateScale(9),
+    color: '#999',
+    marginTop: verticalScale(2),
+    textAlign: 'center',
   },
 
   // ── States ───────────────────────────────────────────────────────────────────

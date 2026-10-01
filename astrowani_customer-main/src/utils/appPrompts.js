@@ -43,6 +43,12 @@ function buildParams() {
  * Resolves to null on ANY failure or when there is nothing to show.
  */
 export async function fetchUpdateStatus() {
+  // ⚠️ TEMPORARY LOCAL-ONLY DEV BYPASS — REMOVE BEFORE COMMIT/OTA.
+  // This Metro debug client's baked-in versionCode predates the 24.1/51 bump, so the
+  // real server now correctly walls it. Skipping it here only, on this dev machine,
+  // so the emulator stays usable without touching the live app_update_config an
+  // admin just set for real customers.
+  if (__DEV__) return null;
   try {
     const res = await Instance.get('/api/app/update-check', { params: buildParams() });
     const d = res?.data;

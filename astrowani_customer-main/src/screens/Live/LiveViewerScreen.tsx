@@ -31,21 +31,15 @@ import {captureEvent} from '../../utils/Analytics';
 import {DIGITAL_PURCHASES_ENABLED} from '../../utils/payments';
 import LiveReportSheet from '../../components/LiveReportSheet';
 import {getLiveBlocked, addLiveBlocked} from '../../utils/liveBlockList';
+import {getIceServers} from '../../utils/iceServers';
 
-// Self-hosted TURN on the Astrowani VPS (76.13.243.165, coturn — set up 2026-08-14)
-// is now the primary relay; OpenRelay's free public servers are kept only as a
-// secondary fallback in case the VPS's coturn is ever unreachable.
-const ICE_SERVERS = {
-  iceServers: [
-    {urls: 'stun:stun.l.google.com:19302'},
-    {urls: 'stun:stun1.l.google.com:19302'},
-    {urls: 'turn:76.13.243.165:3478', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
-    {urls: 'turn:76.13.243.165:3478?transport=tcp', username: 'astrowani', credential: '23fc84a011212f5bc729bf9752961d2e'},
-    {urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject'},
-    {urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject'},
-    {urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject'},
-  ],
-};
+// The relay list comes from the backend (utils/iceServers.js) so a TURN server
+// can be repaired, rotated or added without a store release; it falls back to a
+// bundled list whenever the backend cannot be reached, so call setup is never
+// blocked by that fetch. The OpenRelay entries that used to be hardcoded here
+// were removed on 2026-10-01 — that service is dead (its ports accept a
+// connection but it never answers the STUN/TURN protocol), so they only added
+// ICE gathering latency while looking like a backup relay.
 
 // Customer live viewer — one peer connection to the broadcaster (mesh node).
 const LiveViewerScreen = ({route, navigation}: any) => {
@@ -97,7 +91,7 @@ const LiveViewerScreen = ({route, navigation}: any) => {
       getLiveBlocked(customerIdRef.current).then(set => { if (!cancelled) setBlocked(set); });
       if (cancelled) return;
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
+      const pc = new RTCPeerConnection(await getIceServers());
       pcRef.current = pc;
       (pc as any).ontrack = (e: any) => {
         if (e.streams && e.streams[0]) {

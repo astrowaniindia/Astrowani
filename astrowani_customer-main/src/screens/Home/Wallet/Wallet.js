@@ -20,6 +20,7 @@ import { showStatusPopup } from '../../../components/StatusPopup';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import {moderateScale, scale, verticalScale} from '../../../utils/Scaling';
 import { COLORS } from '../../../Theme/Colors';
 import { LanguageContext } from '../../../context/LanguageContext';
@@ -27,7 +28,65 @@ import { SOCKET_URL } from '../../../config/api';
 import { captureEvent } from '../../../utils/Analytics';
 import { razorpayPrefill } from '../../../utils/customerIdentity';
 
-const presetAmounts = [50, 100, 200, 500, 1000, 2000];
+// Real card/wallet network marks only -- FontAwesome5's bundled Brands font has
+// genuine Visa/Mastercard/Google Pay glyphs (single-color simplified renditions, not
+// the full official multi-color logo artwork, but the standard way apps show "these
+// payment methods are accepted"). UPI has no logo asset anywhere in this project or
+// any bundled font, so it is the plain word "UPI" -- a label, not a fabricated logo.
+const TRUST_BADGES = [
+  { key: 'visa', kind: 'icon', name: 'cc-visa', color: '#1A1F71' },
+  { key: 'mastercard', kind: 'icon', name: 'cc-mastercard', color: '#EB001B' },
+  { key: 'gpay', kind: 'icon', name: 'google-pay', color: '#4285F4' },
+  { key: 'amex', kind: 'icon', name: 'cc-amex', color: '#006FCF' },
+  { key: 'paypal', kind: 'icon', name: 'cc-paypal', color: '#003087' },
+  { key: 'upi', kind: 'text', label: 'UPI', color: COLORS.AstroMaroon },
+  // Trailing "+ more" -- Razorpay's own checkout sheet supports netbanking,
+  // wallets and every major bank beyond what fits in six small circles here;
+  // this says so honestly without naming a specific count we cannot guarantee.
+  { key: 'more', kind: 'more' },
+];
+
+// Auspicious "ending in 1" amounts (shagun-style -- ₹51, ₹101, ₹501... is the
+// culturally familiar gifting pattern), replacing the plain round numbers.
+const presetAmounts = [51, 101, 251, 501, 1001, 2001];
+
+const EDGE_FADE_W = scale(28);
+
+// Stepped opacity bands approximating a left-to-right fade, each the page's own
+// background colour (#F8F9FA) at increasing opacity. Plain Views rather than an
+// SVG gradient: an absolutely-positioned (top:0/bottom:0, no explicit height)
+// parent is exactly the case where react-native-svg's percentage-height canvas
+// has historically failed to resolve, rendering nothing -- a flat View's height
+// stretches reliably in that same layout, with no such edge case.
+const FADE_BANDS = [0.08, 0.22, 0.4, 0.62, 0.85, 1];
+
+/**
+ * A soft right-edge fade over a horizontally-scrollable row, so the last chip
+ * being cut off at the screen edge reads as "swipe for more" rather than as a
+ * rendering glitch.
+ */
+function EdgeFade() {
+  const bandW = EDGE_FADE_W / FADE_BANDS.length;
+  return (
+    <View pointerEvents="none" style={styles.edgeFade}>
+      {FADE_BANDS.map((o, i) => (
+        <View
+          // eslint-disable-next-line react/no-array-index-key
+          key={i}
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: i * bandW,
+            width: bandW + 1, // +1 so adjacent bands overlap, no hairline gaps
+            backgroundColor: '#F8F9FA',
+            opacity: o,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
 
 // iOS's number-pad has NO return key, so a numeric field there has no way to
 // dismiss its own keyboard — the amount field would trap the user with Proceed
@@ -258,8 +317,50 @@ const Wallet = ({navigation, route}) => {
         </View>
       </View>
 
+      <View>
+        <FlatList
+          data={TRUST_BADGES}
+          keyExtractor={(b) => b.key}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.trustRow}
+          // Horizontal, not a fixed row of 4: more marks can be added to
+          // TRUST_BADGES above without ever forcing the Wallet screen itself to
+          // scroll vertically -- only this one strip scrolls, same pattern as the
+          // preset-amount chips below it.
+          renderItem={({item: b, index}) => (
+            <View
+              style={[
+                styles.trustBadgeOuter,
+                // Each badge after the first overlaps the one before it, like a
+                // stacked avatar group. zIndex increasing left-to-right so a later
+                // (overlapping) badge always paints over the one it covers, on
+                // both platforms -- elevation can otherwise reorder Android's
+                // paint order away from simple DOM order.
+                index > 0 && styles.trustBadgeOverlap,
+                {zIndex: index},
+              ]}>
+              <View style={[styles.trustBadge, b.kind === 'more' && styles.trustMoreBadge]}>
+                {b.kind === 'icon' ? (
+                  <FontAwesome5 name={b.name} brand size={moderateScale(24)} color={b.color} />
+                ) : b.kind === 'more' ? (
+                  <>
+                    <Text style={styles.trustMorePlus}>+</Text>
+                    <Text style={styles.trustMoreLabel}>more</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.trustBadgeText, {color: b.color}]}>{b.label}</Text>
+                )}
+              </View>
+            </View>
+          )}
+        />
+        <EdgeFade />
+      </View>
+
       <View style={styles.presetSection}>
         <Text style={styles.presetLabel}>{t('wallet.recommendedAmounts')}</Text>
+        <View>
         <FlatList
           data={presetAmounts}
           renderItem={renderPreset}
@@ -268,6 +369,8 @@ const Wallet = ({navigation, route}) => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.presetList}
         />
+        <EdgeFade />
+        </View>
       </View>
 
       {offer?.enabled && (offer.slabs || []).length > 0 && (
@@ -430,6 +533,81 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     padding: 0,
   },
+  edgeFade: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: scale(28),
+  },
+  trustRow: {
+    paddingHorizontal: scale(20),
+    // Vertical room for the badges' own elevation shadow -- Android clips a
+    // FlatList's content to its measured viewport, and with zero vertical
+    // padding that viewport is exactly 48px tall (the circle itself), so the
+    // shadow drawn just below each circle was being cut off in a flat line.
+    paddingVertical: scale(8),
+    marginTop: verticalScale(10),
+    // Centres the row when its content (7 overlapping circles) is narrower
+    // than the screen -- flexGrow:1 lets contentContainerStyle claim the full
+    // FlatList width so justifyContent has room to actually centre within.
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  trustBadgeOuter: {
+    // No marginRight here on purpose -- spacing between badges comes ONLY from
+    // trustBadgeOverlap's negative marginLeft below. A positive marginRight here
+    // would partly cancel that negative margin, which is exactly what made the
+    // first attempt at "overlap" barely move the circles at all.
+    //
+    // No ring/halo background either (tried and explicitly removed, owner's
+    // call) -- plain overlapping circles, nothing behind them.
+    padding: 0,
+    borderRadius: scale(27),
+    backgroundColor: 'transparent',
+  },
+  // Pulls each badge after the first back under its predecessor -- a stacked,
+  // overlapping group rather than a row with gaps. -24 against a ~53px circle
+  // (48 + the 2.5*2 ring padding) is a genuine, visible overlap, not just a
+  // reduced gap.
+  trustBadgeOverlap: {
+    // -24 (half the circle) hid most of each logo behind its neighbour,
+    // defeating the point of showing real recognisable marks. -10 keeps the
+    // circles visibly touching/overlapping without obscuring the brand itself.
+    marginLeft: -scale(10),
+  },
+  trustMoreBadge: {
+    backgroundColor: '#fff',
+  },
+  trustMorePlus: {
+    fontSize: moderateScale(15),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+    lineHeight: moderateScale(16),
+  },
+  trustMoreLabel: {
+    fontSize: moderateScale(9),
+    fontFamily: 'Lato-Bold',
+    color: COLORS.AstroMaroon,
+    letterSpacing: 0.2,
+  },
+  trustBadge: {
+    width: scale(48),
+    height: scale(48),
+    borderRadius: scale(24),
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+  },
+  trustBadgeText: {
+    fontSize: moderateScale(11.5),
+    fontFamily: 'Lato-Bold',
+  },
   presetSection: {
     marginTop: verticalScale(25),
     paddingLeft: scale(20),
@@ -447,7 +625,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    paddingHorizontal: scale(20),
+    // Narrower than before so FOUR chips fit fully across the screen instead of
+    // three-and-a-bit -- the half-cut fourth chip read as a rendering bug. The
+    // remaining amounts still scroll in from the right.
+    paddingHorizontal: scale(14),
     paddingVertical: verticalScale(10),
     borderRadius: moderateScale(20),
     marginRight: scale(12),
@@ -513,9 +694,15 @@ const styles = StyleSheet.create({
     color: '#1E7A3C',
     fontFamily: 'Lato-Bold',
   },
-  billDetails: {
-    flex: 1,
-  },
+  // No flex -- this should hug its own short text content, not compete with the
+  // pill for width. It HAD flex:1 before, which is what let the pill's lack of
+  // its own flex go unnoticed: the pill fell back to hugging the Label's own
+  // padded content width inside SwipeToConfirm (track has no explicit width),
+  // and that happened to look full-width only because the label's original
+  // generous symmetric padding made that hugged width large. Centering the
+  // label's text (asymmetric, smaller total padding) shrank that hugged width
+  // directly -- the real fix is swipeWrap owning flex:1 below, not this.
+  billDetails: {},
   billText: {
     fontSize: moderateScale(12),
     color: '#666',
@@ -527,5 +714,8 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     marginTop: verticalScale(2),
   },
-  swipeWrap: {marginTop: verticalScale(4)},
+  // flex:1 so the pill reliably fills whatever space is left after the compact
+  // "Total Payable" label, regardless of the label's own text/padding -- see
+  // the comment on billDetails above for why this was the missing piece.
+  swipeWrap: {marginTop: verticalScale(4), flex: 1, marginLeft: scale(16)},
 });

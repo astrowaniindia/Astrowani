@@ -1599,6 +1599,10 @@ const Home = ({navigation}) => {
         // iOS. Giving the content container flexGrow: 1 gives it a definite height
         // to distribute, so flex: 1 means what it looks like it means.
         contentContainerStyle={{flexGrow: 1}}
+        // Android draws a scrollbar track down the right edge by default; iOS fades
+        // one in while scrolling. Neither belongs on a feed like this -- it reads as
+        // a stray grey line over the cream section.
+        showsVerticalScrollIndicator={false}
         onScroll={handleHomeScroll}
         onScrollEndDrag={syncConsultBarTappable}
         onMomentumScrollEnd={syncConsultBarTappable}

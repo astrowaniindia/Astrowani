@@ -1222,11 +1222,13 @@ module.exports = function registerAdminRoutes(app) {
   app.delete('/api/admin/customers/:id', requireAdmin, h(async (req, res) => {
     const id = req.params.id;
 
-    const { data: customer } = await db.from('customers').select('id, name, mobile').eq('id', id).single();
+    const { data: customer } = await db.from('customers').select('id, name, mobile, wallet_balance').eq('id', id).single();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
 
     // Remember which new-customer offers this number already used (src/offerGuard.js).
     await require('./offerGuard').snapshotCustomer(id);
+    // Same for a negative balance — must survive the delete (src/debtGuard.js).
+    await require('./debtGuard').recordDebt(customer.mobile, customer.wallet_balance, id);
 
     // Keeps their past events out of Analytics once the row is gone.
     await recordDeletedCustomer(id);

@@ -38,6 +38,7 @@ const liveModeration = require('./src/liveModeration');
 const contactLeak = require('./src/contactLeakRoutes');
 const contactLeakDetector = require('./src/contactLeakDetector');
 const offerGuard = require('./src/offerGuard');
+const debtGuard = require('./src/debtGuard');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
 const coins = require('./src/coins');
@@ -898,6 +899,11 @@ require('./src/orderRoutes')(app);
 // Razorpay -> us, for payments whose app died before verify-payment landed.
 require('./src/razorpayWebhookRoutes')(app);
 require('./src/sentryWebhookRoutes')(app);
+// WebRTC relay list. Lets a TURN server be added, replaced or repaired for every
+// installed app in one backend deploy instead of a store release — see
+// src/iceServers.js. The apps keep their bundled list as a fallback, so this
+// endpoint can only improve a call's chances, never block one.
+require('./src/iceServers').registerIceServerRoutes(app, { jwtSecret: JWT_SECRET });
 // Astrologer referral commission on remedy orders. Registered after orderRoutes
 // because it requires adminRoutes' requireAdmin, which is exported there.
 require('./src/remedyReferralRoutes')(app);
@@ -2184,6 +2190,11 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         // A number that used the welcome chat (or was a real customer) before deleting its
         // account must not get it again. Best-effort; see src/offerGuard.js.
         if (supabaseCustomerId) await offerGuard.stampFreeChatForReturningNumber(supabaseCustomerId, phoneNumber);
+
+        // A number that left the platform owing money cannot erase that by deleting and
+        // re-registering — carries any unapplied negative balance onto this new row.
+        // Best-effort; see src/debtGuard.js.
+        if (supabaseCustomerId) await debtGuard.applyCarriedDebt(supabaseCustomerId, phoneNumber);
 
         // Where they came from — stamped ONLY here, on the branch that creates the
         // account, and never on the existing-customer branch above. A returning
@@ -6273,6 +6284,62 @@ app.get('/api/vendor/wallet', async (req, res) => {
   } catch (err) {
     console.error('GET /api/vendor/wallet error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch vendor wallet' });
+  }
+});
+
+// What a set of sessions ACTUALLY paid this astrologer, from the ledger.
+//
+// WHY THIS EXISTS (bug found 2026-10-01). Session History computed its "Earned" column in
+// the app as `wallet-clock minutes x per_minute_charge`. Both halves of that are wrong:
+// `per_minute_charge` is what the CUSTOMER pays and the astrologer has earned half of it
+// since the 50/50 split (subsystem DB), and wall-clock minutes are not billed minutes —
+// billing pauses whenever a participant is missing from the session room, and a session can
+// run for minutes while charging nothing. On 2026-10-01 eleven chats that paid out exactly
+// Rs 0 were each displayed as "3 min / Rs 10/min / Rs 30", so the screen showed Rs 330 of
+// earnings that do not exist while the Report screen (which reads this ledger) showed Rs 0.
+//
+// vendor_wallet_transactions is the only honest source: one row per billed minute, written
+// inside the same transaction that debited the customer. So earned = SUM(amount) and
+// minutesBilled = COUNT(rows), and a session that was never billed answers 0 rather than a
+// plausible-looking number. Never recompute this in a client.
+//
+// Scoped to the caller's own vendor_id, so an astrologer cannot read anyone else's earnings
+// by posting their session ids.
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+app.post('/api/vendor/sessions/earnings', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    if (!vendorId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+      .filter((id) => typeof id === 'string' && SESSION_ID_RE.test(id)))].slice(0, 100);
+    if (!ids.length) return res.status(200).json({ success: true, data: {} });
+
+    const { data: rows, error } = await supabaseService
+      .from('vendor_wallet_transactions')
+      .select('session_id, amount')
+      .eq('vendor_id', vendorId)
+      .eq('type', 'credit')
+      .in('session_id', ids);
+    if (error) throw error;
+
+    const data = {};
+    for (const id of ids) data[id] = { earned: 0, minutesBilled: 0 };
+    for (const row of rows || []) {
+      const entry = data[row.session_id];
+      if (!entry) continue;
+      entry.earned += Number(row.amount) || 0;
+      entry.minutesBilled += 1;
+    }
+    for (const id of ids) data[id].earned = Math.round(data[id].earned * 100) / 100;
+
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('POST /api/vendor/sessions/earnings error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch session earnings' });
   }
 });
 

@@ -116,6 +116,7 @@ const Live = ({ navigation }) => {
         data={filteredData}
         renderItem={renderItem}
         keyExtractor={item => String(item.sessionId || item._id)}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={{paddingBottom: verticalScale(85), paddingTop: verticalScale(5)}}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.AstroMaroon]} />
