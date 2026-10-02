@@ -27,6 +27,17 @@ const db = createClient(
 
 const isMissingTable = (e) => ['PGRST205', '42P01'].includes(String(e?.code || ''));
 
+// The Apple/Play Store reviewer logs into BOTH apps with this one fixed phone number
+// (PLAY_STORE_REVIEWER_PHONE in index.js, memory: store-reviewer-accounts) -- "Test User"
+// on the customer side, "Play Store Reviewer" on the astrologer side. Their test sessions
+// are real rows in chat_sessions and the ledgers, so they show up here exactly like a real
+// consultation unless explicitly filtered out. Default behaviour is to hide them; the admin
+// page has a toggle (?includeTest=1) for the rare case of checking the reviewer account
+// itself isn't misbehaving.
+const REVIEWER_PHONE = '9999999999';
+const isTestParticipant = (astro, cust) =>
+  String(astro?.phone_number || '') === REVIEWER_PHONE || String(cust?.mobile || '') === REVIEWER_PHONE;
+
 // A session whose `ended_at` is more than this after `started_at` never really ran that
 // long — it is a zombie row the abandon sweep did not close. Same 12-hour cutoff the
 // analytics session-volume route uses, so the two pages cannot disagree.
@@ -251,7 +262,13 @@ module.exports = function registerConsultationRoutes(app) {
       for (const u of data || []) custs.set(u.id, u);
     }
 
-    const data = rows.map((s) => {
+    const includeTest = req.query.includeTest === '1';
+    const visibleRows = includeTest
+      ? rows
+      : rows.filter((s) => !isTestParticipant(astros.get(s.vendor_id), custs.get(s.caller_id)));
+    const testCount = rows.length - visibleRows.length;
+
+    const data = visibleRows.map((s) => {
       const a = astros.get(s.vendor_id);
       const u = custs.get(s.caller_id);
       const m = msgs.get(s.id) || { count: 0, lastAt: null };
@@ -277,7 +294,7 @@ module.exports = function registerConsultationRoutes(app) {
       };
     });
 
-    return res.json({ success: true, data, windowDays: days, truncated: rows.length >= limit });
+    return res.json({ success: true, data, windowDays: days, truncated: rows.length >= limit, testCount, includeTest });
   }));
 
   // ── Per-astrologer earnings + current balance ────────────────────────────────
@@ -287,6 +304,7 @@ module.exports = function registerConsultationRoutes(app) {
   app.get('/api/admin/consultations/astrologer-earnings', requireAdmin, h(async (req, res) => {
     const days = req.query.days === 'all' ? null : Math.min(Number(req.query.days) || 30, 365);
     const since = days ? new Date(Date.now() - days * 86400000).toISOString() : null;
+    const includeTest = req.query.includeTest === '1';
 
     const { data: astrologers, error } = await db
       .from('astrologers')
@@ -317,7 +335,12 @@ module.exports = function registerConsultationRoutes(app) {
     }
     const round2 = (n) => Math.round(n * 100) / 100;
 
-    const data = (astrologers || []).map((a) => {
+    const visibleAstrologers = includeTest
+      ? (astrologers || [])
+      : (astrologers || []).filter((a) => String(a.phone_number || '') !== REVIEWER_PHONE);
+    const testCount = (astrologers || []).length - visibleAstrologers.length;
+
+    const data = visibleAstrologers.map((a) => {
       const e = agg.get(a.id);
       return {
         id: a.id,
@@ -338,7 +361,7 @@ module.exports = function registerConsultationRoutes(app) {
       };
     });
 
-    return res.json({ success: true, data, windowDays: days });
+    return res.json({ success: true, data, windowDays: days, testCount, includeTest });
   }));
 
   // ── One session: transcript + its money ──────────────────────────────────────

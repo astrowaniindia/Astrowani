@@ -398,6 +398,11 @@ function IntroBannerPanel() {
 export default function Sessions() {
   const [view, setView] = useState('sessions'); // 'sessions' | 'earnings' | 'retention'
   const [windowKey, setWindowKey] = useState('30');
+  // Off by default: the Apple/Play reviewer account runs real test sessions against
+  // production (memory: store-reviewer-accounts), and those are not consultations
+  // anyone should be counted on, paid for, or compared against in a report.
+  const [includeTest, setIncludeTest] = useState(false);
+  const [testCount, setTestCount] = useState(0);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -417,8 +422,9 @@ export default function Sessions() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await client.get('/api/admin/consultations', { params: { days: windowKey } });
+      const { data } = await client.get('/api/admin/consultations', { params: { days: windowKey, includeTest: includeTest ? '1' : undefined } });
       setRows(data.data || []);
+      setTestCount(data.testCount || 0);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
     } finally { setLoading(false); }
@@ -427,15 +433,16 @@ export default function Sessions() {
   const loadEarnings = async () => {
     setEarningsLoading(true);
     try {
-      const { data } = await client.get('/api/admin/consultations/astrologer-earnings', { params: { days: windowKey } });
+      const { data } = await client.get('/api/admin/consultations/astrologer-earnings', { params: { days: windowKey, includeTest: includeTest ? '1' : undefined } });
       setEarnings(data.data || []);
+      setTestCount(data.testCount || 0);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
     } finally { setEarningsLoading(false); }
   };
 
-  useEffect(() => { if (view === 'sessions') loadSessions(); }, [windowKey, view]);
-  useEffect(() => { if (view === 'earnings') loadEarnings(); }, [windowKey, view]);
+  useEffect(() => { if (view === 'sessions') loadSessions(); }, [windowKey, view, includeTest]);
+  useEffect(() => { if (view === 'earnings') loadEarnings(); }, [windowKey, view, includeTest]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -534,6 +541,25 @@ export default function Sessions() {
                 <ChipGroup label="Show:" options={STATUS_FILTERS} value={statusFilter} onChange={setStatusFilter} />
               </div>
             )}
+
+            {/* The Apple/Play reviewer account (memory: store-reviewer-accounts) runs real
+                test sessions against production under a fixed phone number. They are hidden
+                by default on both tabs so they never get averaged into a real report. */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <label className="checkbox-row" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={includeTest}
+                  onChange={(e) => setIncludeTest(e.target.checked)}
+                />
+                {' '}Include Play Store / App Store reviewer test sessions
+              </label>
+              {!includeTest && testCount > 0 && (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  — hiding {testCount.toLocaleString('en-IN')} test {view === 'earnings' ? (testCount === 1 ? 'account' : 'accounts') : (testCount === 1 ? 'session' : 'sessions')}
+                </span>
+              )}
+            </div>
           </div>
 
           {error && <div className="card" style={{ color: 'var(--red, #c0392b)', marginBottom: 16 }}>{error}</div>}
