@@ -170,12 +170,17 @@ function CustomDrawer(props) {
           )}
           onPress={() => props.navigation.navigate('HomeScreen')}
         />
+        {/* Order below is the owner's explicit choice, 2026-10-02: Session History and
+            Chat History first — the screens checked most often — then My Customers.
+            WhatsApp Customers removed from the menu entirely (route/screen untouched,
+            just not linked here); Free Calls hidden the same way. Neither was deleted:
+            un-hiding either is a one-item revert, not a rebuild. */}
         <DrawerItem
-          label={t('drawer.myCustomers')}
+          label={t('drawer.sessionHistory')}
           icon={() => (
-            <Icon name="group" size={24} color={COLORS.AstroMaroon} />
+            <Icon name="history" size={24} color={COLORS.AstroMaroon} />
           )}
-          onPress={() => props.navigation.navigate('MyCustomers')}
+          onPress={() => props.navigation.navigate('SessionHistory')}
         />
         <DrawerItem
           label={t('drawer.chatHistory')}
@@ -183,41 +188,6 @@ function CustomDrawer(props) {
             <Icon name="chat-bubble-outline" size={24} color={COLORS.AstroMaroon} />
           )}
           onPress={() => props.navigation.navigate('ChatHistoryList')}
-        />
-        <DrawerItem
-          label={t('drawer.profile')}
-          icon={() => (
-            <EvilIcons name="user" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('Profile')}
-        />
-        <DrawerItem
-          label={t('drawer.whatsapp')}
-          icon={() => (
-            <Icon name="chat" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('WhatsAppChats')}
-        />
-        <DrawerItem
-          label={t('drawer.freeCalls')}
-          icon={() => (
-            <Icon name="event-available" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('FreeCalls')}
-        />
-        <DrawerItem
-          label={t('drawer.referrals')}
-          icon={() => (
-            <Icon name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('RemedyReferrals')}
-        />
-        <DrawerItem
-          label={t('drawer.sessionHistory')}
-          icon={() => (
-            <Icon name="history" size={24} color={COLORS.AstroMaroon} />
-          )}
-          onPress={() => props.navigation.navigate('SessionHistory')}
         />
         <DrawerItem
           label={() => (
@@ -237,6 +207,27 @@ function CustomDrawer(props) {
             setMissedCount(0);
             props.navigation.navigate('MissedSessions');
           }}
+        />
+        <DrawerItem
+          label={t('drawer.myCustomers')}
+          icon={() => (
+            <Icon name="group" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => props.navigation.navigate('MyCustomers')}
+        />
+        <DrawerItem
+          label={t('drawer.profile')}
+          icon={() => (
+            <EvilIcons name="user" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => props.navigation.navigate('Profile')}
+        />
+        <DrawerItem
+          label={t('drawer.referrals')}
+          icon={() => (
+            <Icon name="card-giftcard" size={24} color={COLORS.AstroMaroon} />
+          )}
+          onPress={() => props.navigation.navigate('RemedyReferrals')}
         />
         <DrawerItem
           label={t('drawer.support')}
