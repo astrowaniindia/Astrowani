@@ -4,6 +4,13 @@
     <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- The window behind React's own views. AppCompat.Light defaults this to
+             WHITE, and this theme takes over the moment the native splash is
+             dismissed (postSplashScreenTheme below) — so until React paints its
+             first frame, a white screen showed between the brand splash and the
+             app. Brown keeps boot one continuous colour: native splash ->
+             this window -> IntroSplash.js, all #592a19. -->
+        <item name="android:windowBackground">@color/splash_background</item>
     </style>
 
     <!-- Cold-start splash theme (androidx.core:core-splashscreen — a compat wrapper around

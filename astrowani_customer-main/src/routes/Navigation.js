@@ -110,7 +110,7 @@ const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
 
-export default function Navigation({ initialRoute }) {
+export default function Navigation({ initialRoute, onReady }) {
   useEffect(() => {
     applySessionReplaySetting();
     loadAnalyticsEnvironment();
@@ -173,7 +173,15 @@ export default function Navigation({ initialRoute }) {
         on navigation, and mounting it here means it survives every navigation reset (login,
         logout, deep link) instead of being rebuilt. */}
     <CartProvider>
-    <NavigationContainer ref={navigationRef} onReady={() => consumePendingSessionNavigationWithRetry()}>
+    {/* onReady also tells App.js the navigator has mounted, so the intro splash can
+        stay up until there is a real screen behind it. Mounting this tree (and Home's
+        first paint) takes seconds on a slow device — that gap used to be uncovered. */}
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        consumePendingSessionNavigationWithRetry();
+        if (onReady) onReady();
+      }}>
       {/* Must be inside NavigationContainer — PostHog's screen-autocapture hook reads
           navigation state via @react-navigation/native's own hooks, which only work
           for descendants of NavigationContainer. */}
@@ -185,7 +193,12 @@ export default function Navigation({ initialRoute }) {
           navigation: { routeToProperties: (name, params) => ({ app: 'customer', environment: getAnalyticsEnvironment() }) },
         }}
       >
-      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right' }}>
+      {/* contentStyle here is the app-wide default background for every screen that
+          doesn't set its own — React Navigation's native-stack otherwise defaults to
+          plain white, which is what showed as a brief "white screen" during any
+          loading gap (navigator mount, data fetch) instead of the brand's cream.
+          Individual screens below still override it (e.g. Login/VerifyOtp -> maroon). */}
+      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
         {/* contentStyle pins react-native-screens' native container background to
             match the screen's own root color. Without it, on iOS, a screen whose
@@ -791,7 +804,10 @@ function DrawerNavigator({ navigation }) {
         // profile line were cut off ("Update your pr…", "Chat With Astrol…").
         // The header's close button is the way back.
         drawerStyle: { width: '100%' },
-      }}>
+      }}
+      // Cream, not the library's default white — same reasoning as the root
+      // Stack.Navigator's contentStyle above.
+      sceneContainerStyle={{ backgroundColor: COLORS.AstroSoftOrange }}>
       <Drawer.Screen
         name="BottomTabs"
         component={BottomTabNavigator}
@@ -887,6 +903,9 @@ function BottomTabNavigator() {
   };
   return (
     <Tab.Navigator
+      // Cream, not the library's default white — same reasoning as the root
+      // Stack.Navigator's contentStyle above.
+      sceneContainerStyle={{ backgroundColor: COLORS.AstroSoftOrange }}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
@@ -1008,7 +1027,7 @@ function BottomTabNavigator() {
 
 function HomeStack({ navigation }) {
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="HomeScreen"
         component={Home}
@@ -1065,7 +1084,7 @@ function HomeStack({ navigation }) {
 
 function ChatStack({ route }) {
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="ChatScreen"
         component={Chat}
@@ -1079,7 +1098,7 @@ function ChatStack({ route }) {
 }
 function VideoStack() {
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="VideoScreen"
         component={Video}
@@ -1092,7 +1111,7 @@ function VideoStack() {
 }
 function CallStack() {
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="CallScreen"
         component={Call}
@@ -1105,7 +1124,7 @@ function CallStack() {
 }
 function LiveStack() {
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="LiveScreen"
         component={Live}
@@ -1139,7 +1158,7 @@ function RemediesStack() {
   // is a routing change only — nothing was deleted and it can be pointed back by swapping
   // `component` here.
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="RemediesScreen"
         component={StoreWebView}
@@ -1153,7 +1172,7 @@ function RemediesStack() {
 
 function SessionStack() {
   return (
-    <Stack.Navigator screenOptions={{ animation: 'slide_from_right' }}>
+    <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="SessionScreen"
         component={MySessionScreen}

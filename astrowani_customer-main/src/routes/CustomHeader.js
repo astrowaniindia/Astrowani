@@ -34,7 +34,12 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
   // at once. refreshWalletBalance() below still forces an immediate refetch on
   // focus without starting a second timer.
   const walletBalanceValue = useWalletBalance();
-  const walletBalance = walletBalanceValue === null ? 0 : walletBalanceValue;
+  // "…" while genuinely unknown, never 0. A customer with money in their wallet
+  // being shown ₹0 for a moment reads as "my balance is gone", which is a far
+  // worse first impression than an obvious placeholder (2026-10-02). In practice
+  // this is only the first-ever launch: hydrateWalletBalance() seeds the last
+  // known balance before this mounts on every later open.
+  const walletBalance = walletBalanceValue === null ? '…' : walletBalanceValue;
   const [unreadCount, setUnreadCount] = useState(0);
   const [customerId, setCustomerId] = useState(null);
   const { language, changeLanguage } = React.useContext(LanguageContext);

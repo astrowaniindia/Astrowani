@@ -1,9 +1,10 @@
-// Post-cold-start intro animation ("Rise & Settle") — shown by App.js while the
-// AsyncStorage token bootstrap runs, in place of the old plain ActivityIndicator.
-// Timeline is a 1:1 port of the confirmed web preview so the shipped animation
-// matches exactly: pop past 100% scale, settle back to 100%, hold, fade out.
-// App.js guarantees the full TOTAL_DURATION plays even if the bootstrap check
-// finishes first — see the `isLoading || !introDone` gate there.
+// Stage 1 of the cold-start sequence: the brand animation ("Rise & Settle").
+// Pop past 100% scale, settle back, hold, fade out — then it is DONE and hands
+// over to PreparingScreen (stage 2) if the app behind still isn't drawn.
+//
+// It deliberately does not wait for anything. Splitting the wait across two
+// screens is the point: one screen sitting there for five seconds reads as
+// frozen, whereas logo -> avatar reads as progress (owner's call, 2026-10-02).
 import React, { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
@@ -19,8 +20,10 @@ const STAR_LOGO = require('../../assets/images/brandStarLogo.png');
 
 const POP_DURATION = 500;
 const SETTLE_DURATION = 250;
-const HOLD_DURATION = 1500;
-const FADE_OUT_DURATION = 400;
+// Short hold: the whole cold start is budgeted at ~5s (App.js MAX_SPLASH_MS), and
+// this screen is only the first of two, so it must not eat the budget on its own.
+const HOLD_DURATION = 700;
+const FADE_OUT_DURATION = 350;
 export const INTRO_DURATION_MS = POP_DURATION + SETTLE_DURATION + HOLD_DURATION + FADE_OUT_DURATION;
 
 export default function IntroSplash({ onFinish }) {
@@ -54,7 +57,10 @@ export default function IntroSplash({ onFinish }) {
     textTranslateY.value = withTiming(0, { duration: POP_DURATION, easing: easeOut });
 
     const fadeOutTimer = setTimeout(() => {
-      screenOpacity.value = withTiming(
+      // Only the logo and wordmark fade. The brown stays put, so the handover to
+      // stage 2 (same brown) is invisible — one continuous background throughout.
+      opacity.value = withTiming(0, { duration: FADE_OUT_DURATION, easing: Easing.in(Easing.cubic) });
+      textOpacity.value = withTiming(
         0,
         { duration: FADE_OUT_DURATION, easing: Easing.in(Easing.cubic) },
         (finished) => {
@@ -91,10 +97,10 @@ export default function IntroSplash({ onFinish }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // Matches values/colors.xml's splash_background and the launcher icon's
-    // plate, so the native splash hands over to this animation with no colour
-    // flash. Hardcoded rather than COLORS.AstroMaroon to keep this screen free
-    // of imports that run before the app has bootstrapped.
+    // Matches values/colors.xml's splash_background, AppTheme's windowBackground
+    // and PreparingScreen, so the whole boot is one continuous brown. Hardcoded
+    // rather than COLORS.AstroMaroon to keep this screen free of imports that run
+    // before the app has bootstrapped.
     backgroundColor: '#592a19',
     alignItems: 'center',
     justifyContent: 'center',

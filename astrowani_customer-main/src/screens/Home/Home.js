@@ -51,6 +51,7 @@ import { LanguageContext, translate } from '../../context/LanguageContext';
 import { SOCKET_URL } from '../../config/api';
 import { readCache } from '../../utils/cacheFetch';
 import { getHomeMemory, saveHomeData, pickNextGreeting, HOME_KEYS } from '../../utils/homePreload';
+import { markHomeReady } from '../../utils/appReady';
 import MascotTip from '../../components/MascotTip';
 import {
   canShowTip, tipText, trackTipShown, trackTipAction, dismissTip, turnOffTips, markTipSeen, TIP_IDS,
@@ -306,6 +307,16 @@ const Home = ({navigation}) => {
   const [thought, setThought] = useState(() => pickNextGreeting(getHomeMemory(HOME_KEYS.thoughts)));
   const [user, setUser] = useState(null);
   const [astroServices, setAstroServices] = useState(() => getHomeMemory(HOME_KEYS.astroServices) || []);
+  // Lifts the intro splash (utils/appReady.js). The two sections that visibly
+  // build themselves are the astrologer carousel and the category circles, so the
+  // splash stays up until both are settled and Home can be revealed already drawn
+  // rather than assembling in front of the customer. markHomeReady is one-shot, so
+  // later refreshes don't re-trigger anything; App.js also caps the wait, so a
+  // section that never resolves cannot strand the splash.
+  useEffect(() => {
+    if (!loadingAstrologer && !loading) markHomeReady();
+  }, [loadingAstrologer, loading]);
+
   const [freeChatOfferVisible, setFreeChatOfferVisible] = useState(false);
   // True only while the customer can still claim the free chat AND the admin has it
   // switched on. Drives which banners show and what tapping one does.
