@@ -37,6 +37,7 @@ import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} f
 import {createIceRecovery} from './iceRecovery';
 import {joinSessionWithRetry} from './sessionRoom';
 import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../components/SessionConnectionNotice';
+import SessionIntroBanner from '../components/SessionIntroBanner';
 import {createPreConnectWatchdog} from './preConnectWatchdog';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 import {getIceServers} from './iceServers';
@@ -545,6 +546,10 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
         mode="call"
         style={{position: 'absolute', top: 96, left: 10, right: 10, zIndex: 50}}
       />
+
+      {/* Self-hides after 25s. Deliberately BELOW the network notice's slot so the two
+          overlays can never sit on top of each other. */}
+      <SessionIntroBanner style={{position: 'absolute', top: 170, left: 0, right: 0, zIndex: 40}} />
 
       {/* Remote video full-screen background */}
       {isConnected && remoteStreamURL && !remoteVideoPaused ? (

@@ -62,15 +62,16 @@ const SessionCard = ({item, tabKey}) => {
   // is the summed ledger credit for this session; `undefined` means the lookup failed and we
   // show a dash instead of inventing a figure. See utils/sessionEarnings.js.
   const earnings = item.earnings;
-  // Deliberately NOT "X min billed" derived from counting ledger rows: live billing writes
-  // one row per minute, so a count is normally accurate, but a manual correction (see the
-  // 2026-10-01 Soni payout) can legitimately write one lump-sum row for several minutes —
-  // showing "1 min billed" on a session that was actually made right for 4 would be exactly
-  // the kind of number this screen was rebuilt to stop showing. The only claim made here is
-  // "this card's full duration was not covered by what's in the ledger", with no invented
-  // minute count attached to it.
-  const expectedFull = Math.round(durationMins * (item.per_minute_charge || 0) * 0.5 * 100) / 100;
-  const partiallyBilled = typeof earnings === 'number' && expectedFull > 0 && earnings < expectedFull;
+  // "4 min (3 billed)" — the same thing the customer's own card shows, so the two sides can
+  // never read differently about the same session (owner's call 2026-10-02). minutesBilled is
+  // a COUNT OF LEDGER ROWS in vendor_wallet_transactions, one per billed minute, never
+  // duration x rate. It replaces the older vague "Partially billed" note, which said a gap
+  // existed without saying how big.
+  //
+  // Known edge, accepted: a manual lump-sum correction row (see the 2026-10-01 Soni payout)
+  // counts as one minute, so a hand-fixed session can under-report its billed count. The
+  // number still comes from money that actually moved, and matching the customer's card is
+  // worth more than hedging against a rare manual correction.
 
   return (
     <View style={styles.card}>
@@ -95,7 +96,13 @@ const SessionCard = ({item, tabKey}) => {
         <View style={styles.stat}>
           <MaterialIcons name="timer" size={15} color="#888" />
           <Text style={styles.statLabel}>{t('sessionHistory.duration')}</Text>
-          <Text style={styles.statValue}>{item.is_active ? t('sessionHistory.active') : formatDuration(durationMins)}</Text>
+          <Text style={styles.statValue}>
+            {item.is_active
+              ? t('sessionHistory.active')
+              : typeof item.minutesBilled === 'number'
+              ? t('sessionHistory.durationBilled', {duration: formatDuration(durationMins), billed: item.minutesBilled})
+              : formatDuration(durationMins)}
+          </Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
@@ -110,9 +117,6 @@ const SessionCard = ({item, tabKey}) => {
           <Text style={[styles.statValue, styles.earnedValue]}>
             {typeof earnings === 'number' ? `₹${earnings}` : '—'}
           </Text>
-          {partiallyBilled && (
-            <Text style={styles.billedNote}>{t('sessionHistory.partiallyBilled')}</Text>
-          )}
         </View>
       </View>
 

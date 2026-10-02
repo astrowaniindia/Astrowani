@@ -33,6 +33,7 @@ import { LanguageContext } from '../context/LanguageContext';
 import { joinSessionWithRetry } from '../utils/sessionRoom';
 import ReportCustomerSheet from '../components/ReportCustomerSheet';
 import SessionConnectionNotice, { useSessionConnection, billableSeconds } from '../components/SessionConnectionNotice';
+import SessionIntroBanner from '../components/SessionIntroBanner';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
@@ -677,6 +678,9 @@ const VendorChatSession = ({ route, navigation }) => {
           style={{ flex: 1 }}
           imageStyle={{ opacity: 0.15 }}
         >
+          {/* Sits above the first message — which is the customer's birth details — so the
+              opening greeting doesn't feel like wasted billable time. Presentational only. */}
+          <SessionIntroBanner />
           <FlatList
             ref={flatListRef}
             data={messages}
