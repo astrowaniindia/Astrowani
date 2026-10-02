@@ -230,7 +230,7 @@ module.exports = function registerConsultationRoutes(app) {
 
     let q = db
       .from('chat_sessions')
-      .select('id, call_type, vendor_id, caller_id, per_minute_charge, started_at, ended_at, is_active, is_free')
+      .select('id, call_type, vendor_id, caller_id, per_minute_charge, started_at, ended_at, is_active, is_free, had_connectivity_issue')
       .order('started_at', { ascending: false })
       .limit(limit);
     if (days) q = q.gte('started_at', new Date(Date.now() - days * 86400000).toISOString());
@@ -277,6 +277,7 @@ module.exports = function registerConsultationRoutes(app) {
         type: s.call_type || 'chat',
         isActive: !!s.is_active,
         isFree: !!s.is_free,
+        hadConnectivityIssue: !!s.had_connectivity_issue,
         startedAt: s.started_at,
         endedAt: s.ended_at,
         durationMinutes: durationMinutes(s.started_at, s.ended_at),

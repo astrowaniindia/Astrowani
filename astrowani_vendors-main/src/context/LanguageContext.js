@@ -116,6 +116,7 @@ const translations = {
     'sessionHistory.customerRate': 'Customer rate',
     'sessionHistory.earned': 'Earned',
     'sessionHistory.partiallyBilled': 'Partially billed',
+    'sessionHistory.connectivityIssue': 'Connection dropped during this session — time/earnings may look short',
     'sessionHistory.noHistory': 'No history yet',
     'sessionHistory.noHistorySub': 'Sessions will appear here after calls end',
 
@@ -692,6 +693,7 @@ const translations = {
     'sessionHistory.customerRate': 'ग्राहक दर',
     'sessionHistory.earned': 'कमाया',
     'sessionHistory.partiallyBilled': 'आंशिक रूप से बिल हुआ',
+    'sessionHistory.connectivityIssue': 'नेटवर्क में रुकावट आई थी — इसलिए समय/कमाई कम दिख सकती है',
     'sessionHistory.noHistory': 'अभी तक कोई इतिहास नहीं',
     'sessionHistory.noHistorySub': 'कॉल समाप्त होने के बाद सत्र यहां दिखाई देंगे',
 

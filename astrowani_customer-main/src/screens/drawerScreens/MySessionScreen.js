@@ -87,6 +87,7 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
         duration: durationMins,
         deduction,
         billedMinutes,
+        hadConnectivityIssue: !!item.had_connectivity_issue,
         image,
         isActive: item.is_active || false,
         // Minimal person object so the card's "View Profile" can open AstrologerInfo.

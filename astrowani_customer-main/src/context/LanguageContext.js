@@ -1032,6 +1032,7 @@ const translations = {
     'session.duration': 'Duration',
     'session.charged': 'Charged',
     'session.rateThisSession': 'Rate this session',
+    'session.connectivityIssue': 'Connection dropped during this session — time/charge may look short',
     'notifications.none': 'No new notifications',
 
     // Search screen
@@ -2424,6 +2425,7 @@ const translations = {
     'session.duration': 'अवधि',
     'session.charged': 'शुल्क लिया गया',
     'session.rateThisSession': 'इस सत्र को रेट करें',
+    'session.connectivityIssue': 'इस सत्र के दौरान कनेक्शन में रुकावट आई थी — समय/शुल्क कम दिख सकता है',
     'notifications.none': 'कोई नई सूचना नहीं',
 
     // Search screen

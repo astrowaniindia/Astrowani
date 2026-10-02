@@ -115,6 +115,18 @@ const SessionCard = ({item, tabKey}) => {
           )}
         </View>
       </View>
+
+      {/* Written once, by sessionManager, the moment either side was first noticed absent
+          — never about THIS astrologer's own connection specifically, since the server
+          cannot always tell which side actually dropped. Shown so a short duration or a
+          below-expected earning on an otherwise ordinary-looking card has an explanation
+          instead of reading as a billing mistake. */}
+      {item.had_connectivity_issue && (
+        <View style={styles.connectivityNote}>
+          <Ionicons name="wifi-outline" size={12} color="#B8860B" />
+          <Text style={styles.connectivityNoteText}>{t('sessionHistory.connectivityIssue')}</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -490,6 +502,21 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: verticalScale(2),
     textAlign: 'center',
+  },
+  connectivityNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(5),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(6),
+    backgroundColor: '#FFF8E1',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  connectivityNoteText: {
+    fontSize: moderateScale(10.5),
+    color: '#8A6D00',
+    flexShrink: 1,
   },
 
   // ── States ───────────────────────────────────────────────────────────────────

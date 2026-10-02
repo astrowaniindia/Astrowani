@@ -100,6 +100,17 @@ const SessionDetails = ({session, handleprofile}) => {
         </View>
       </View>
 
+      {/* Written once, by the backend, the moment either side was first noticed absent
+          during this session. Shown so a short duration or a lower-than-expected charge
+          on an otherwise ordinary-looking card has an explanation instead of reading as
+          a billing mistake. */}
+      {session.hadConnectivityIssue && (
+        <View style={styles.connectivityNote}>
+          <FontAwesome name="wifi" size={11} color="#8A6D00" />
+          <Text style={styles.connectivityNoteText}>{t('session.connectivityIssue')}</Text>
+        </View>
+      )}
+
       {/* Rate button — opens the shared review prompt (real submission + eligibility). */}
       <TouchableOpacity
         style={styles.ratingBtn}
@@ -196,6 +207,23 @@ const styles = StyleSheet.create({
   statLabel: {fontSize: moderateScale(10), color: '#888', fontWeight: '500'},
   statValue: {fontSize: moderateScale(13), fontWeight: '700', color: '#222'},
   chargedValue: {color: COLORS.AstroMaroon},
+
+  // ── Connectivity note ───────────────────────────────────────────────────────
+  connectivityNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+    backgroundColor: '#FFF8E1',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  connectivityNoteText: {
+    fontSize: moderateScale(10.5),
+    color: '#8A6D00',
+    flexShrink: 1,
+  },
 
   // ── Rate button ──────────────────────────────────────────────────────────────
   ratingBtn: {

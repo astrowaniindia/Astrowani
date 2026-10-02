@@ -34,6 +34,7 @@ const STATUS_FILTERS = [
   { key: 'paid', label: 'Earned > ₹0' },
   { key: 'zero', label: 'Earned ₹0', title: 'Connected but never billed — free, abandoned or a billing failure' },
   { key: 'flagged', label: '🚩 Flagged' },
+  { key: 'connectivity', label: '📶⚠️ Connectivity issue' },
 ];
 
 const SESSION_SORT = {
@@ -456,6 +457,7 @@ export default function Sessions() {
       if (statusFilter === 'paid' && !(r.astrologerEarned > 0)) return false;
       if (statusFilter === 'zero' && r.astrologerEarned > 0) return false;
       if (statusFilter === 'flagged' && !r.flagged) return false;
+      if (statusFilter === 'connectivity' && !r.hadConnectivityIssue) return false;
       if (!q) return true;
       return (
         (r.astrologer?.name || '').toLowerCase().includes(q) ||
@@ -616,6 +618,9 @@ export default function Sessions() {
                           {r.isActive && <span className="pill-badge green">Live</span>}
                           {r.isFree && <span className="pill-badge">Free</span>}
                           {r.flagged && <span className="pill-badge" title="Off-platform contact flag">🚩</span>}
+                          {r.hadConnectivityIssue && (
+                            <span className="pill-badge" title="One side's connection dropped during this session — duration/earnings may look short because billing paused">📶⚠️</span>
+                          )}
                         </td>
                         <td>
                           <div style={{ fontWeight: 700 }}>{r.astrologer.name}</div>

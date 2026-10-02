@@ -751,6 +751,16 @@ class SessionManager {
         // its own disconnection locally. Between them the warning is always side-aware:
         // nobody is ever told to fix a connection that is not theirs.
         this.emitPresence(session.id, 'participant_absent', role, graceMs);
+        // Write it down (2026-10-02, owner's request after a live test). The live notice and
+        // the frozen timer explain a drop WHILE it happens; this is what's left of that once
+        // the session is over and someone is reading the history card. Fire-and-forget and
+        // never awaited — a failed write here must not affect billing or presence detection.
+        // One place only: cleared never, so "did this session ever have a gap" stays a fact
+        // about the session rather than something that can flip back and forth.
+        supabase.from('chat_sessions').update({ had_connectivity_issue: true }).eq('id', session.id)
+          .then(({ error }) => {
+            if (error) console.error(`[SessionManager] could not flag connectivity issue for ${session.id}:`, error.message);
+          });
         console.warn(`[SessionManager] Session ${session.id}: ${role} not connected — billing paused.`);
       } else if (nowMs - since >= graceMs) {
         const who = role === 'caller' ? 'Customer' : 'Astrologer';
