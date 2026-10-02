@@ -23,6 +23,7 @@ const vendorDevices = require('./vendorDevices');
 const { checkAstrologerBusy, checkCustomerBusy, buildBusyMap } = require('./busyStatus');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
 const holds = require('./astrologerHolds');
+const { quoteLikePattern } = require('./pgrstFilter');
 // Local-only overrides. Inert unless FREE_CALL_LOCAL_TEST=true AND this process is
 // not the billing host — see the interlock in that file.
 const localTest = require('./freeCallLocalTest');
@@ -1979,7 +1980,11 @@ module.exports = function registerFreeCallRoutes(app) {
       query = query.lte('slot_start', end.toISOString());
     }
     if (q) {
-      const term = `%${String(q).trim()}%`;
+      // Quoted so a search term's punctuation stays a search term. Admin-authed, so
+      // this is hygiene rather than a privilege hole — but an unquoted term also 400s
+      // the whole query on anything containing a comma or bracket, which reads to the
+      // admin as the page being broken. See src/pgrstFilter.js.
+      const term = quoteLikePattern(q);
       query = query.or(`customer_name.ilike.${term},customer_phone.ilike.${term},astrologer_name.ilike.${term},admin_note.ilike.${term}`);
     }
 

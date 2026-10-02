@@ -21,6 +21,7 @@
 // not worth the risk.
 
 const { pagedSelect, chunkIds } = require('./pagedSelect');
+const { safeInValues } = require('./pgrstFilter');
 const audienceRules = require('./audience');
 
 /** Columns every caller needs, plus whatever extra a caller asks for. */
@@ -55,7 +56,10 @@ async function buildRecipients(db, table, opts = {}) {
   if (Array.isArray(targetIds) && targetIds.length) {
     // .in() with ~1000 uuids builds a ~37 KB query string and 414s, hence chunkIds.
     for (const ids of chunkIds([...new Set(targetIds.map(String))])) {
-      const { data, error } = await db.from(table).select(cols).in('id', ids);
+      // `targetIds` is request-supplied (a personal send names its recipients), so it
+      // goes through safeInValues(). The column is uuid, so a malformed value errors out
+      // rather than matching — this is defence in depth, and a no-op for real uuids.
+      const { data, error } = await db.from(table).select(cols).in('id', safeInValues(ids));
       if (error) throw error;
       rows.push(...(data || []));
     }

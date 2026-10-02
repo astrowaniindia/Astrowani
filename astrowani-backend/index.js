@@ -13,6 +13,7 @@ const { noteReadFailure, getDegradation } = require('./src/degradation');
 // normalization carries a raw claim that no longer exact-matches the migrated
 // customers.mobile column; see src/customerLookup.js for the full failure mode.
 const { findCustomerByPhone, findAstrologerByPhone, isDeletedCustomer } = require('./src/customerLookup');
+const { isUuid } = require('./src/pgrstFilter');
 // iOS PushKit/CallKit ring for the vendor app. Degrades to a logged no-op when APNs
 // credentials are absent, so this require is safe on an unconfigured deployment.
 const { sendVoipPush, isVoipReady } = require('./src/voipPush');
@@ -6692,6 +6693,10 @@ app.get('/api/vendor/chat-threads', async (req, res) => {
     if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
     const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
+    // Interpolated into the .or() below. The id comes from a token we signed, so this
+    // is belt-and-braces rather than a live hole — but the cost of being wrong about
+    // that is the whole chat_messages table (see src/pgrstFilter.js).
+    if (!isUuid(vendorId)) return res.status(400).json({ success: false, message: 'Invalid id' });
 
     // A recent page, not the whole table — enough to build "who did I last talk
     // to"; a conversation with nothing said in months simply won't be near the
@@ -6757,6 +6762,14 @@ app.get('/api/vendor/chat-threads/:customerId', async (req, res) => {
     const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
     const { customerId } = req.params;
     if (!customerId) return res.status(400).json({ success: false, message: 'customerId is required' });
+    // Both ids are interpolated into the .or() logic tree below, so a non-uuid must be
+    // refused OUTRIGHT rather than passed through. A `customerId` carrying `)` and `,`
+    // closes the and() group it lands in and appends predicates of its own — measured
+    // 2026-10-02, a crafted value turned this correctly-scoped query into "every row in
+    // chat_messages", on the service-role client that bypasses RLS. See src/pgrstFilter.js.
+    if (!isUuid(customerId) || !isUuid(vendorId)) {
+      return res.status(400).json({ success: false, message: 'Invalid id' });
+    }
 
     const { data: rows, error } = await supabaseService
       .from('chat_messages')

@@ -473,6 +473,20 @@ vestigial. Live streaming reuses this same WebRTC stack as a **mesh** (see below
   `EnxScreenVoice.tsx` — those are historical names for WebRTC implementations. EnableX env
   vars exist but are unused in the live path. Live streaming reuses the same WebRTC stack as a
   mesh (~5 viewers before an SFU would be needed).
+- **Never interpolate a request value into a `.or()` string or a `.in()` array** without
+  `src/pgrstFilter.js`. This is NOT SQL injection (PostgREST parameterises the SQL it
+  generates) — it is the FILTER LOGIC TREE, and it changes which rows come back.
+  `.or()`: a value carrying `)` and `,` closes the `and()` group it lands in and appends
+  its own predicates; this is how `GET /api/vendor/chat-threads/:customerId` let any
+  astrologer read all of `chat_messages` on the service-role client (fixed 2026-10-02).
+  `.in()`: postgrest-js 2.108.2 quotes a value only when it contains `[,()]` and never
+  escapes a `"` inside it, so a value with both breaks out into several values. Use
+  `isUuid()` for a uuid column (reject with a 400 — don't sanitise), `quoteLikePattern()`
+  for a text search box, `safeInValues()` for an `.in()` array. All three are no-ops for
+  ordinary values. Everything else is clean as of the 2026-10-02 audit: no raw SQL
+  anywhere, every SECURITY DEFINER function pins `search_path`, and HogQL's interpolations
+  are all regex/whitelist/clamp-bounded (`ISO_DATE`, `clampDays`, the UUID guard in
+  `analyticsExclusions.parseIds`) — keep them that way.
 - **Supabase Realtime channel names must be unique per mount** — suffix with
   `_${Date.now()}_${Math.floor(Math.random()*1e6)}`, or a fixed name returns the
   already-subscribed channel and any further `.on()` throws.

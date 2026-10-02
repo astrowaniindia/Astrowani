@@ -35,6 +35,8 @@
 // digits; it is the same handset either way. It cannot match a different person's
 // account, because two different numbers never share a canonical form.
 
+const { safeInValues } = require('./pgrstFilter');
+
 /** Bare 10 digits, or null. Mirrors normalizePhone() in index.js. */
 function canonicalDigits(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
@@ -75,8 +77,12 @@ async function findCustomerByPhone(db, phone, columns = 'id, name') {
   if (!variants.length) return null;
   const { data, error } = await db
     .from('customers')
+    // `mobile` is a TEXT column and phoneVariants() falls back to the raw string when it
+    // cannot parse ten digits, so a value here is not guaranteed to be digits-only. See
+    // safeInValues() for why an unescaped quote+comma in an .in() list matches extra
+    // rows. A no-op for every digit/+91 variant this actually passes.
     .select(columns)
-    .in('mobile', variants)
+    .in('mobile', safeInValues(variants))
     .limit(1);
   if (error || !data || !data.length) return null;
   return data[0];
@@ -89,7 +95,7 @@ async function findAstrologerByPhone(db, phone, columns = 'id') {
   const { data, error } = await db
     .from('astrologers')
     .select(columns)
-    .in('phone_number', variants)
+    .in('phone_number', safeInValues(variants)) // text column — see findCustomerByPhone
     .limit(1);
   if (error || !data || !data.length) return null;
   return data[0];

@@ -17,6 +17,7 @@
 // a human handoff message rather than silence.
 
 const { createClient } = require('@supabase/supabase-js');
+const { quoteLikePattern } = require('./pgrstFilter');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -159,7 +160,13 @@ async function searchCatalogue({ query, type }) {
   if (type) q = q.eq('type', type);
   // Match the customer's wording against title OR description — people say
   // "blue sapphire" for an item titled "Neelam".
-  if (query) q = q.or(`title.ilike.%${query}%,description.ilike.%${query}%`);
+  // Quoted, because `query` is whatever the model passed through from a WhatsApp
+  // message — i.e. attacker-chosen text. Raw, its punctuation would be parsed as part
+  // of the .or() logic tree rather than as a search term (src/pgrstFilter.js).
+  if (query) {
+    const pat = quoteLikePattern(query);
+    q = q.or(`title.ilike.${pat},description.ilike.${pat}`);
+  }
 
   const { data, error } = await q;
   if (error) return { error: 'catalogue unavailable' };
