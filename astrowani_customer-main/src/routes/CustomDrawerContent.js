@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Share, StatusBar, Platform,
-  Animated, Easing,
+  Animated, Easing, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,6 @@ import { DrawerContentScrollView, useDrawerStatus } from '@react-navigation/draw
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
-import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
@@ -18,7 +17,17 @@ import { LanguageContext } from '../context/LanguageContext';
 import { resetAnalyticsIdentity, captureEvent } from '../utils/Analytics';
 import { clearViewerSegment } from '../utils/viewerSegment';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
-import { PLAY_STORE_URL } from '../config/api';
+import { PLAY_STORE_URL, SOCIAL_LINKS } from '../config/api';
+
+// Opening a social profile must never be able to crash the drawer. Linking
+// rejects when no app or browser can handle the URL (a stripped-down device, or
+// a work profile that blocks it), so the failure is swallowed — the worst case
+// is the tap doing nothing, which is exactly what every one of these icons did
+// before 2026-10-02 anyway.
+const openSocial = (url) => {
+  if (!url) return;
+  Linking.openURL(url).catch(() => {});
+};
 
 // The sidebar is full-screen, so the close button gently grows and shrinks to
 // show it is the way out. Only animates while the sidebar is open.
@@ -161,23 +170,23 @@ function CustomDrawerContent(props, navigation) {
     { trackKey: 'my_sessions', iconName: 'phone-in-talk', label: t('drawer.mySessions'), onPress: () => props.navigation.navigate('SessionStack') },
     { trackKey: 'favorites', iconName: 'favorite', label: t('drawer.myFavorites'), onPress: () => props.navigation.navigate('FavoriteScreen') },
     { trackKey: 'my_orders', iconName: 'shopping-bag', label: t('drawer.myOrders'), onPress: () => props.navigation.navigate('MyOrders') },
+    { trackKey: 'voice_notes', iconName: 'mic', label: t('drawer.voiceNotes'), onPress: () => props.navigation.navigate('VoiceNotes') },
   ];
   const exploreRows = [
     { trackKey: 'remedies', iconName: 'spa', label: t('drawer.remedies'), onPress: () => props.navigation.navigate('Store') },
     { trackKey: 'chat_with_astrologer', iconName: 'question-answer', label: t('drawer.chatWithAstrologer'), onPress: () => props.navigation.navigate('DrawerChat') },
     { trackKey: 'blogs', iconName: 'menu-book', label: t('drawer.blogs'), onPress: () => props.navigation.navigate('BlogList') },
-    { trackKey: 'voice_notes', iconName: 'mic', label: t('drawer.voiceNotes'), onPress: () => props.navigation.navigate('VoiceNotes') },
-  ];
-  const moreRows = [
     { trackKey: 'refer_friend', iconName: 'card-giftcard', label: t('drawer.referFriend'), onPress: () => props.navigation.navigate('ReferFriend') },
-    { trackKey: 'settings', iconName: 'settings', label: t('drawer.settings'), onPress: () => props.navigation.navigate('Settings') },
-    { trackKey: 'support', iconName: 'support-agent', label: t('drawer.support'), onPress: () => props.navigation.navigate('SupportScreen') },
-    { trackKey: 'share_app', iconName: 'share', label: t('drawer.shareApp'), onPress: handleShareApp },
     // Hidden on iOS for now — it only leads to "coming soon" demos, which App Store
     // review rejects as incomplete content (Guideline 2.1). Android keeps it.
     ...(Platform.OS === 'ios' ? [] : [
       { trackKey: 'whats_coming', iconName: 'rocket-launch', label: "What's coming", onPress: () => props.navigation.navigate('GamificationHub') },
     ]),
+  ];
+  const moreRows = [
+    { trackKey: 'settings', iconName: 'settings', label: t('drawer.settings'), onPress: () => props.navigation.navigate('Settings') },
+    { trackKey: 'support', iconName: 'support-agent', label: t('drawer.support'), onPress: () => props.navigation.navigate('SupportScreen') },
+    { trackKey: 'share_app', iconName: 'share', label: t('drawer.shareApp'), onPress: handleShareApp },
   ];
 
   return (
@@ -262,21 +271,16 @@ function CustomDrawerContent(props, navigation) {
         <View style={styles.socialContainer}>
           <Text style={styles.socialHeading}>{t('drawer.connectWithUs')}</Text>
           <View style={styles.socialIconsRow}>
-            <TouchableOpacity style={styles.socialBtn}>
-              <FontAwesome name="facebook" size={moderateScale(20)} color="#3b5998" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
-              <FontAwesome name="twitter" size={moderateScale(20)} color="#00acee" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
-              <FontAwesome name="instagram" size={moderateScale(20)} color="#C13584" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
-              <FontAwesome name="whatsapp" size={moderateScale(20)} color="#25D366" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
-              <FontAwesome name="youtube-play" size={moderateScale(20)} color="#FF0000" />
-            </TouchableOpacity>
+            {SOCIAL_LINKS.map((s) => (
+              <TouchableOpacity
+                key={s.key}
+                style={styles.socialBtn}
+                onPress={() => openSocial(s.url)}
+                accessibilityRole="link"
+                accessibilityLabel={s.label}>
+                <FontAwesome6 name={s.icon} iconStyle="brand" size={moderateScale(20)} color={s.color} />
+              </TouchableOpacity>
+            ))}
           </View>
           <Text style={styles.tagline}>✦ Guidance for every step of your journey ✦</Text>
         </View>

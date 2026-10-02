@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   StatusBar,
   Platform,
+  Linking,
 } from 'react-native';
 import {DrawerContentScrollView, DrawerItem} from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
@@ -24,6 +25,18 @@ import {resetAnalyticsIdentity} from '../utils/Analytics';
 import { supabase } from '../api/SupabaseClient';
 import { fetchAstrologerRow } from '../utils/vendorProfile';
 import { LanguageContext } from '../context/LanguageContext';
+import { SOCIAL_LINKS } from '../config/api';
+
+// Opening a social profile must never be able to crash the drawer. Linking
+// rejects when nothing on the device can handle the URL, so the failure is
+// swallowed — the worst case is the tap doing nothing, which is what every one
+// of these icons did before 2026-10-02 (they were bare icons with no touchable
+// around them at all).
+const openSocial = url => {
+  if (!url) return;
+  Linking.openURL(url).catch(() => {});
+};
+
 function CustomDrawer(props) {
   const insets = useSafeAreaInsets();
   // ⚠ Do NOT rely on insets.top alone here. Inside a drawer, react-navigation can
@@ -297,11 +310,16 @@ function CustomDrawer(props) {
       <View style={styles.socialSection}>
         <Text style={styles.socialHeading}>{t('drawer.followUs')}</Text>
         <View style={styles.socialIcons}>
-          <FontAwesome name="facebook-square" size={28} color="#3b5998" />
-          <FontAwesome name="twitter-square" size={28} color="#00acee" />
-          <FontAwesome name="instagram" size={28} color="#C13584" />
-          <FontAwesome name="whatsapp" size={28} color="#25D366" />
-          <FontAwesome name="youtube-square" size={28} color="#FF0000" />
+          {SOCIAL_LINKS.map(s => (
+            <TouchableOpacity
+              key={s.key}
+              onPress={() => openSocial(s.url)}
+              accessibilityRole="link"
+              accessibilityLabel={s.label}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <FontAwesome6 name={s.icon} iconStyle="brand" size={28} color={s.color} />
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     </DrawerContentScrollView>
@@ -409,7 +427,11 @@ const styles = StyleSheet.create({
   },
   socialIcons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    // space-evenly, not space-between: the row is driven by SOCIAL_LINKS now, so
+    // its length changes (YouTube appears once its URL is filled in) and
+    // space-between pins the first and last to the edges, which looks stretched
+    // at four icons.
+    justifyContent: 'space-evenly',
     width: '100%',
     paddingHorizontal: scale(10),
   },
