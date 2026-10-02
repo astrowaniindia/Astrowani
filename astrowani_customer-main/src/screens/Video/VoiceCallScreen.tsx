@@ -41,7 +41,6 @@ import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} f
 import {createIceRecovery} from '../../utils/iceRecovery';
 import {joinSessionWithRetry} from '../../utils/sessionRoom';
 import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../../components/SessionConnectionNotice';
-import SessionIntroBanner from '../../components/SessionIntroBanner';
 import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 import {getIceServers} from '../../utils/iceServers';
 
@@ -744,10 +743,6 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         mode="call"
         style={{position: 'absolute', top: 96, left: 10, right: 10, zIndex: 50}}
       />
-
-      {/* Self-hides after 25s. Deliberately BELOW the network notice's slot so the two
-          overlays can never sit on top of each other. */}
-      <SessionIntroBanner style={{position: 'absolute', top: 170, left: 0, right: 0, zIndex: 40}} />
 
       {recieverImage ? (
         <Image source={{uri: recieverImage}} style={StyleSheet.absoluteFillObject} blurRadius={22} />
