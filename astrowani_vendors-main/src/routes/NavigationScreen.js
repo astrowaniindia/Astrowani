@@ -38,6 +38,8 @@ import Profile from '../screens/Profile/Profile';
 import EditProfile from '../screens/Profile/EditProfile';
 import Notification from '../screens/Notification/Notification';
 import Wallet from '../screens/Home/Report';
+import WithdrawReview from '../screens/Wallet/WithdrawReview';
+import WithdrawSuccess from '../screens/Wallet/WithdrawSuccess';
 import EnxScreenVoice from '../utils/EnxScreenVoice';
 import Support from '../screens/Support';
 import SessionHistory from '../screens/HIstory/SessionHistory';
@@ -415,6 +417,28 @@ function NavigationScreen() {
           name="Wallet"
           component={Wallet}
           options={{ headerShown: true, title: t('nav.myWallet'), headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }}
+        />
+        {/* The two withdrawal steps live in this ROOT stack, not beside one of the
+            three Wallet registrations (root, drawer, HomeStack) — navigation
+            bubbles up to here from whichever Wallet the astrologer opened. */}
+        <Stack.Screen
+          name="WithdrawReview"
+          component={WithdrawReview}
+          options={{ headerShown: true, title: t('wallet.reviewHeader'), headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }}
+        />
+        <Stack.Screen
+          name="WithdrawSuccess"
+          component={WithdrawSuccess}
+          options={{
+            headerShown: true,
+            title: t('wallet.successHeader'),
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            // No back arrow: the request is already in. The screen's own Done
+            // button (and the hardware back) go to the wallet instead.
+            headerLeft: () => null,
+            gestureEnabled: false,
+          }}
         />
         <Stack.Screen
           name="VendorChatSession"

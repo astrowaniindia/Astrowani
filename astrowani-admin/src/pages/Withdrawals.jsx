@@ -39,24 +39,41 @@ export default function Withdrawals() {
     <div>
       <h1 className="page-title">Withdrawal Requests</h1>
       <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
-        Vendor payout requests. Amount is already deducted from the vendor's wallet on request —
-        rejecting refunds it automatically.
+        Vendor payout requests. The <b>requested</b> amount is already deducted from the vendor's
+        wallet on request — rejecting refunds it in full, automatically.
+      </p>
+      <p style={{
+        marginTop: -6, marginBottom: 16, padding: '8px 12px', borderRadius: 8,
+        background: 'rgba(192,57,43,0.08)', color: '#8d2b20', fontSize: 13,
+      }}>
+        <b>Transfer the “Net payable” figure, not the requested amount.</b> TDS is withheld at
+        source, and the astrologer has already been shown the net amount in their app. Rows from
+        before TDS was introduced show no deduction, so their net equals the requested amount.
       </p>
       <div className="table-wrap">
         <table>
           <thead><tr>
-            <th>Astrologer</th><th>Phone</th><th>Amount (₹)</th><th>Payout To</th><th>Status</th>
+            <th>Astrologer</th><th>Phone</th><th>Requested (₹)</th><th>TDS (₹)</th>
+            <th>Net payable (₹)</th><th>Payout To</th><th>Status</th>
             <th>Requested</th><th>Note</th><th>Actions</th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
-            {!loading && error && <tr><td colSpan={8} className="empty" style={{ color: '#c0392b' }}>{error}</td></tr>}
-            {!loading && !error && rows.length === 0 && <tr><td colSpan={8} className="empty">No withdrawal requests yet.</td></tr>}
+            {loading && <tr><td colSpan={10} className="empty">Loading…</td></tr>}
+            {!loading && error && <tr><td colSpan={10} className="empty" style={{ color: '#c0392b' }}>{error}</td></tr>}
+            {!loading && !error && rows.length === 0 && <tr><td colSpan={10} className="empty">No withdrawal requests yet.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.astrologers ? `${r.astrologers.first_name || ''} ${r.astrologers.last_name || ''}`.trim() : '—'}</td>
                 <td className="muted">{r.astrologers?.phone_number || '—'}</td>
-                <td><b>{r.amount}</b></td>
+                <td className="muted">{r.amount}</td>
+                <td className="muted">
+                  {Number(r.tds_amount) > 0
+                    ? `−${r.tds_amount}${r.tds_percent ? ` (${r.tds_percent}%)` : ''}`
+                    : '—'}
+                </td>
+                {/* The figure to actually transfer. Falls back to the gross for rows
+                    written before sql/withdrawal_tds.sql, which had no deduction. */}
+                <td><b>{r.net_amount ?? r.amount}</b></td>
                 <td className="muted">
                   {r.bank_account_number ? (
                     <div>

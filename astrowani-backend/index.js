@@ -6016,6 +6016,31 @@ app.post('/api/vendor/logout', async (req, res) => {
   }
 });
 
+// Payout policy: a withdrawal has to be worth the admin's manual transfer, so very
+// small requests are refused rather than queued. The vendor app checks the same
+// number before it posts (its own MIN_WITHDRAWAL_AMOUNT) purely so the astrologer
+// gets an instant popup instead of a round trip — THIS is the enforcement, and the
+// `minimum` field is returned so an older bundle carrying a stale number still
+// shows the right figure from the message below.
+const MIN_WITHDRAWAL_AMOUNT = 2000;
+
+// TDS withheld from a payout. The astrologer's wallet is debited the GROSS they
+// asked for; this much is held back as tax and the remainder is what the admin
+// actually transfers. The rate is stored on each withdrawal row (sql/withdrawal_tds.sql)
+// rather than assumed at read time, so changing it here can never reinterpret
+// withdrawals that were already settled under the old rate.
+const WITHDRAWAL_TDS_PERCENT = 10;
+
+/**
+ * Split a gross withdrawal into tax withheld and net payable.
+ * `net` is the REMAINDER, never an independently rounded figure, so the two parts
+ * always add back to exactly the gross (same rule as the 50/50 billing split).
+ */
+function withdrawalBreakdown(gross) {
+  const tds = Math.round(gross * WITHDRAWAL_TDS_PERCENT) / 100;
+  return { gross, tds, net: Math.round((gross - tds) * 100) / 100, percent: WITHDRAWAL_TDS_PERCENT };
+}
+
 app.post('/vendor/wallet/withdraw', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -6028,6 +6053,19 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
     const amount = Number(req.body.amount);
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Enter a valid amount' });
+    }
+
+    // Checked BEFORE the balance test on purpose: an astrologer holding ₹500 who
+    // asks for ₹500 is blocked by the policy, not by their balance, and telling
+    // them "amount exceeds wallet balance" would send them chasing the wrong
+    // thing. The real reason they cannot withdraw yet is the minimum.
+    if (amount < MIN_WITHDRAWAL_AMOUNT) {
+      return res.status(400).json({
+        success: false,
+        code: 'BELOW_MINIMUM_WITHDRAWAL',
+        minimum: MIN_WITHDRAWAL_AMOUNT,
+        message: `The minimum withdrawal amount is ₹${MIN_WITHDRAWAL_AMOUNT}. Please request ₹${MIN_WITHDRAWAL_AMOUNT} or more.`,
+      });
     }
 
     // Service-role client — this endpoint is its own authorization boundary (JWT verified
@@ -6057,6 +6095,11 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Amount exceeds wallet balance' });
     }
 
+    // Tax withheld at source. Stored on the row because the admin pays these out by
+    // hand from the dashboard — it must show the NET, or every payout is over by the
+    // TDS while the app has already promised the astrologer the net figure.
+    const breakdown = withdrawalBreakdown(amount);
+
     // Create the request row FIRST, before touching the balance — if this fails (as it did
     // under RLS), nothing has moved yet. Deducting first and inserting second left a prior
     // test run with money silently gone from wallet_balance and no request row to show for it.
@@ -6065,6 +6108,9 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       .insert([{
         astrologer_id: vendorId,
         amount,
+        tds_percent: breakdown.percent,
+        tds_amount: breakdown.tds,
+        net_amount: breakdown.net,
         status: 'pending',
         bank_account_holder: astroRow.bank_account_holder || null,
         bank_account_number: astroRow.bank_account_number || null,
@@ -6099,7 +6145,19 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
       throw holdErr;
     }
 
-    return res.status(200).json({ success: true, newBalance, withdrawal });
+    // The breakdown is echoed back so the app's confirmation screen shows the
+    // figures the SERVER actually stored, not the ones it previewed locally — if a
+    // rate change ever lands here before the apps are updated, the astrologer still
+    // sees the true deduction on the screen that confirms it.
+    return res.status(200).json({
+      success: true,
+      newBalance,
+      withdrawal,
+      amount: breakdown.gross,
+      tdsPercent: breakdown.percent,
+      tdsAmount: breakdown.tds,
+      netAmount: breakdown.net,
+    });
   } catch (err) {
     console.error('POST /vendor/wallet/withdraw error:', err.message, err.details, err.hint);
     // A broken wallet function is our problem, not the astrologer's. Saying

@@ -6,6 +6,11 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import { LanguageContext } from '../../context/LanguageContext';
+import { showStatusPopup } from '../../components/StatusPopup';
+
+// Payout policy, mirrored from the backend's own MIN_WITHDRAWAL_AMOUNT
+// (POST /vendor/wallet/withdraw), which is the actual enforcement.
+const MIN_WITHDRAWAL_AMOUNT = 2000;
 
 const STATUS_COLORS = {
   pending: '#F5A623',
@@ -44,7 +49,6 @@ export default function Wallet() {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   // Recent Transactions used to sit BELOW the entire Withdrawal Requests list — with
   // enough withdrawal history that pushed it far down the screen, hard to find (reported
   // 2026-08-08). Split into tabs so each list gets its own dedicated scroll area instead
@@ -138,30 +142,32 @@ export default function Wallet() {
       Alert.alert(t('wallet.invalidAmount'));
       return;
     }
+    // Checked before the balance test, matching the backend's order: someone with
+    // ₹500 asking for ₹500 is stopped by the policy, not by their balance, and
+    // "exceeds your balance" would point them at the wrong problem.
+    //
+    // The backend enforces this same minimum (POST /vendor/wallet/withdraw) — this
+    // is only so the astrologer gets the explanation instantly instead of after a
+    // round trip. If the policy ever changes server-side, the server's own refusal
+    // message is what the catch below shows, so a stale bundle still reads right.
+    if (value < MIN_WITHDRAWAL_AMOUNT) {
+      showStatusPopup({
+        variant: 'info',
+        title: t('wallet.minWithdrawTitle'),
+        message: t('wallet.minWithdrawBody', { amount: MIN_WITHDRAWAL_AMOUNT }),
+      });
+      return;
+    }
     if (value > (balance ?? 0)) {
       Alert.alert(t('wallet.exceedsBalance'));
       return;
     }
-    setSubmitting(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await Instance.post(
-        '/vendor/wallet/withdraw',
-        { amount: value },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (res.data?.success) {
-        setModalVisible(false);
-        Alert.alert(t('wallet.withdrawRequestedTitle'), t('wallet.withdrawRequestedBody'));
-        fetchWallet();
-      } else {
-        Alert.alert(t('wallet.withdrawFailed'), res.data?.message || t('common.tryAgain'));
-      }
-    } catch (e) {
-      Alert.alert(t('wallet.withdrawFailed'), e.response?.data?.message || t('common.tryAgain'));
-    } finally {
-      setSubmitting(false);
-    }
+    // Nothing is requested here any more. The amount goes to a review screen that
+    // shows the TDS deduction and what will actually arrive, and THAT screen is
+    // what calls the API — so no money moves until the astrologer has seen the
+    // net figure and confirmed it.
+    setModalVisible(false);
+    navigation.navigate('WithdrawReview', { amount: value });
   };
 
   const renderWithdrawal = ({ item: w }) => (
@@ -172,6 +178,14 @@ export default function Wallet() {
           <Text style={styles.statusPillText}>{w.status.toUpperCase()}</Text>
         </View>
       </View>
+      {/* Only for rows that actually had tax withheld. Requests made before TDS
+          existed have tds_amount 0 and are shown exactly as before, rather than
+          being relabelled after the fact. */}
+      {Number(w.tds_amount) > 0 ? (
+        <Text style={styles.withdrawalBreakdown}>
+          {t('wallet.tdsLine', { percent: w.tds_percent || 10, tds: w.tds_amount, net: w.net_amount })}
+        </Text>
+      ) : null}
       <Text style={styles.transactionDate}>
         {t('wallet.requested')} {new Date(w.requested_at).toLocaleDateString('en-IN')}
       </Text>
@@ -292,9 +306,17 @@ export default function Wallet() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{t('wallet.requestWithdrawal')}</Text>
             <Text style={styles.modalSubtitle}>{t('wallet.walletBalance')}: ₹{balance}</Text>
+            {/* States the policy up front, so the popup on submit is a reminder
+                rather than the first they hear of it. */}
+            <Text style={styles.modalMinNotice}>
+              {t('wallet.minWithdrawNotice', { amount: MIN_WITHDRAWAL_AMOUNT })}
+            </Text>
             <TextInput
               style={styles.modalInput}
               placeholder={t('wallet.enterAmount')}
+              // Also unset before: the placeholder inherited the same DayNight
+              // default as the value did.
+              placeholderTextColor={COLORS.lightGrey}
               keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}
@@ -303,15 +325,10 @@ export default function Wallet() {
               <TouchableOpacity style={styles.modalCancelButton} onPress={() => setModalVisible(false)}>
                 <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalSubmitButton}
-                onPress={submitWithdrawal}
-                disabled={submitting}>
-                {submitting ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={styles.modalSubmitText}>{t('common.submit')}</Text>
-                )}
+              {/* No spinner: this only validates and opens the review screen now —
+                  the request itself is sent from there. */}
+              <TouchableOpacity style={styles.modalSubmitButton} onPress={submitWithdrawal}>
+                <Text style={styles.modalSubmitText}>{t('wallet.continue')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -408,6 +425,7 @@ const styles = StyleSheet.create({
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   statusPillText: { fontSize: 11, fontWeight: 'bold', color: '#FFF' },
   withdrawalNote: { fontSize: 13, color: '#D32F2F', marginTop: 6, fontStyle: 'italic' },
+  withdrawalBreakdown: { fontSize: 12.5, color: '#6B5C55', marginBottom: 2 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -421,7 +439,8 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 4 },
-  modalSubtitle: { fontSize: 14, color: '#777', marginBottom: 16 },
+  modalSubtitle: { fontSize: 14, color: '#777', marginBottom: 8 },
+  modalMinNotice: { fontSize: 13, color: COLORS.AstroMaroon, fontWeight: '600', marginBottom: 14 },
   modalInput: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -430,6 +449,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     marginBottom: 20,
+    // An explicit colour is REQUIRED, not cosmetic. With none, the text falls back
+    // to the native theme's default, and this app's theme is Theme.AppCompat.DayNight
+    // (android/app/src/main/res/values/styles.xml) — so on a device in system dark
+    // mode the typed amount rendered white on this white modal and was invisible.
+    // Same trap as Registration.js's gender dropdown.
+    color: COLORS.black,
+    backgroundColor: '#fff',
   },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end' },
   modalCancelButton: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 },
