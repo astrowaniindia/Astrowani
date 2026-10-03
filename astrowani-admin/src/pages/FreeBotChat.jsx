@@ -261,9 +261,15 @@ function AiReplies() {
         </span>
         <span
           className={`badge ${status?.wasteee006KeyConfigured ? 'green' : 'gray'}`}
-          title="Last in the chain: used only once the startup key is used up too, with the same models in the same order. After this one runs out the chat falls back to the scripted replies."
+          title="Used only once the startup key is used up too, with the same models in the same order."
         >
           <span className="badge-dot" />wasteee006 key {status?.wasteee006KeyConfigured ? 'set on server' : 'not set'}
+        </span>
+        <span
+          className={`badge ${status?.priyaKeyConfigured ? 'green' : 'gray'}`}
+          title="Last in the chain: used only once the wasteee006 key is used up too, with the same models in the same order. After this one runs out the chat falls back to the scripted replies."
+        >
+          <span className="badge-dot" />priya key {status?.priyaKeyConfigured ? 'set on server' : 'not set'}
         </span>
         <span className="badge blue"><span className="badge-dot" />Today: {today.aiReplies || 0} AI replies</span>
         <span className="badge gray"><span className="badge-dot" />{fallbackTotal} scripted fallbacks</span>
@@ -423,6 +429,9 @@ function AiReplies() {
             </option>
             <option value="wasteee006" disabled={!status?.wasteee006KeyConfigured}>
               wasteee006 key only{status?.wasteee006KeyConfigured ? '' : ' (not set on server)'}
+            </option>
+            <option value="priya" disabled={!status?.priyaKeyConfigured}>
+              priya key only{status?.priyaKeyConfigured ? '' : ' (not set on server)'}
             </option>
           </select>
         </div>

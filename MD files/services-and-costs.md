@@ -53,7 +53,7 @@ working, and a few need a manual step from you before they'll bill at all.
 
 | Service | Used for | Where | Free tier / limit | If you exceed it | Checked |
 |---|---|---|---|---|---|
-| **Google Gemini** | The free 5-minute AI astrology chat (customer app, Android only for now) + call-recording transcription | Backend | **Free tier**, multiple models walked in order, across **4 keys in a fallback chain** (free → consult → product → startup, see `freeChatAi.js`): ~500 requests/day per model per key | Hits `fallback: quota` and the app silently drops to the old scripted engine for that chat — **no error, no charge, just a worse reply** — only once ALL 4 keys are exhausted. Moving to paid billing on any key needs no code change, just flipping billing on in AI Studio. Watch the admin's AI stats card for how often fallback fires | 2026-10-02 |
+| **Google Gemini** | The free 5-minute AI astrology chat (customer app, Android only for now) + call-recording transcription | Backend | **Free tier**, multiple models walked in order, across **6 keys in a fallback chain** (free → consult → product → startup → wasteee006 → priya, see `freeChatAi.js`): ~500 requests/day per model per key | Hits `fallback: quota` and the app silently drops to the old scripted engine for that chat — **no error, no charge, just a worse reply** — only once ALL 6 keys are exhausted. Moving to paid billing on any key needs no code change, just flipping billing on in AI Studio. Watch the admin's AI stats card for how often fallback fires | 2026-10-03 |
 | **Anthropic (Claude API)** | The WhatsApp shop assistant's model access | Backend (`ANTHROPIC_API_KEY`) | Pay-as-you-go, no free tier — billed per token from the first request | This is a metered API key: cost scales directly with WhatsApp assistant usage. No hard cap unless you set spending limits in the Anthropic console | 2026-09 |
 | **MyMemory** | Free machine translation, admin blog English→Hindi (one-time per blog, result is saved) | Backend | Free, no key needed. ~5,000 chars/day anonymous, ~50,000/day if `MYMEMORY_EMAIL` is set | Fails soft — returns null, the Hindi column just stays empty and the app falls back to English. Never called per-request, only once per blog, so this ceiling is not realistically reachable | 2026-09 |
 
@@ -89,10 +89,11 @@ working, and a few need a manual step from you before they'll bill at all.
   (`GEMINI_API_KEY_STARTUP`, "Gemini Startup") was added as a failover, same
   as the existing product key — the owner confirmed it is a paid account run
   as free tier day-to-day, not another free account created to multiply
-  quota. A 5th key (`GEMINI_API_KEY_WASTEEE006`) was added the same day, the
-  owner describing it as the same kind of account as the startup key. Both
+  quota. A 5th key (`GEMINI_API_KEY_WASTEEE006`) was added the same day, and
+  a 6th (`GEMINI_API_KEY_PRIYA`) the next day, 2026-10-03 — the owner
+  describing both as the same kind of account as the startup key. All three
   are tried only after every key before them is used up, same rules as the
-  rest of the chain. **Do not add a 6th key without the same confirmation**
+  rest of the chain. **Do not add a 7th key without the same confirmation**
   (a real paid/separate account, not another free account to multiply
   quota) — that confirmation, not the key count, is what keeps this chain
   the right side of Google's terms.
