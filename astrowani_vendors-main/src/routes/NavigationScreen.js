@@ -50,7 +50,8 @@ import VendorChatSession from '../screens/VendorChatSession';
 import Settings from '../screens/Settings';
 import ReferralPopupHost from '../components/ReferralPopupHost';
 import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
-import { RateAppPromptHost } from '../components/RateAppPrompt';
+// RateAppPromptHost is intentionally not imported/mounted — see the comment
+// where AppUpdatePromptHost is rendered below.
 import useAppPromptSync from '../utils/useAppPromptSync';
 import { StatusPopupHost } from '../components/StatusPopup';
 import { ToastHost } from '../components/ToastHost';
@@ -456,11 +457,18 @@ function NavigationScreen() {
       </Stack.Navigator>
       </PostHogProvider>
       <ReferralPopupHost />
-      {/* Store-facing prompts. Both run their own launch check and stay silent
-          unless the admin has configured them; the update prompt suppresses the
-          review one so they can never stack. */}
+      {/* Store-facing update prompt. Runs its own launch check and stays silent
+          unless the admin has configured it. */}
       <AppUpdatePromptHost />
-      <RateAppPromptHost />
+      {/* RateAppPromptHost (the "Enjoying Astrowani? Rate on Play Store" popup) is
+          deliberately NOT mounted here — owner decision 2026-10-03: no rating
+          popup in the vendor app, for every astrologer, in production. The
+          component/i18n strings are left in place rather than deleted in case
+          this is revisited, but with no host mounted, showRateAppPrompt() is a
+          silent no-op (its module-level `listener` is only set while a host is
+          mounted — see RateAppPrompt.js) — including the admin's own
+          "show_review_popup" socket push (useAppPromptSync.js), which no longer
+          has any listener to reach. Do not re-add this without being asked. */}
       <StatusPopupHost />
       <ToastHost />
     </NavigationContainer>

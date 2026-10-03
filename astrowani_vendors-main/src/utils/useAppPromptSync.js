@@ -7,7 +7,6 @@
 import { useEffect, useRef } from 'react';
 import { acquireSharedSocket, releaseSharedSocket } from './useSharedSocket';
 import { showAppUpdatePrompt } from '../components/AppUpdatePrompt';
-import { showRateAppPrompt } from '../components/RateAppPrompt';
 
 export default function useAppPromptSync(astroId) {
   const astroIdRef = useRef(astroId);
@@ -24,11 +23,12 @@ export default function useAppPromptSync(astroId) {
     const onUpdate = ({ title, body } = {}) => {
       showAppUpdatePrompt({ title, message: body });
     };
-    // force: an admin asking explicitly skips the "used it enough yet" gates — but
-    // not the "already rated" rule, which is honoured in every path.
-    const onReview = ({ title, body } = {}) => {
-      showRateAppPrompt({ title, message: body }, { force: true, trigger: 'admin' });
-    };
+    // 'show_review_popup' (astrowani-backend's src/appPromptRoutes.js, the admin's
+    // "push a rating prompt" button) is deliberately NOT listened for here —
+    // owner decision 2026-10-03: no rating popup in the vendor app at all. Not
+    // subscribing is clearer than subscribing to a handler that calls a no-op
+    // (RateAppPromptHost is unmounted in NavigationScreen.js, which is what
+    // actually disables it — this is just not pretending to listen for nothing).
 
     (async () => {
       const socket = await acquireSharedSocket();
@@ -36,14 +36,12 @@ export default function useAppPromptSync(astroId) {
       socketInstance = socket;
       socket.emit('join_room', astroId);
       socket.on('show_update_popup', onUpdate);
-      socket.on('show_review_popup', onReview);
     })();
 
     return () => {
       cancelled = true;
       if (socketInstance) {
         socketInstance.off('show_update_popup', onUpdate);
-        socketInstance.off('show_review_popup', onReview);
         releaseSharedSocket();
       }
     };
