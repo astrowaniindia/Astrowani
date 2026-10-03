@@ -7,7 +7,7 @@ import client from '../api/client';
 // the same offers. This page shows how many numbers are remembered and what was blocked.
 
 const OFFER_LABEL = {
-  free_call: 'Free 12-minute call',
+  free_call: 'Free 11-minute call',
   free_chat: 'Free 5-minute chat',
   welcome_session: 'Already a real customer (no new-customer offers)',
 };

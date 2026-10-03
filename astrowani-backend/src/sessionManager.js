@@ -66,6 +66,19 @@ const MIN_UPSELL_SECONDS = 540;
  */
 const MIN_DAKSHINA_SECONDS = 180;
 
+/**
+ * The "5 / 10 / 15 more minutes" sheet is HIDDEN in the app (owner, 2026-10-03), along
+ * with the Dakshina ask, the "how was your call?" question and the post-call rating card.
+ *
+ * This flag must track that, because the hold is not cosmetic: placing it takes the
+ * astrologer off the market for holdDecisionSeconds (90s) and shows them busy to
+ * everyone else, so reserving them for a sheet that will never be drawn is pure lost
+ * availability on every single free call. Nothing else is removed — the continue
+ * endpoints, astrologerHolds and the whole sheet stay exactly where they are, so turning
+ * this back to `true` and un-hiding the sheet in the app restores the flow intact.
+ */
+const UPSELL_SHEET_ENABLED = false;
+
 let bookingKindAvailable = true;
 const isMissingColumn = (error, column) =>
   !!error && (error.code === '42703' || error.code === 'PGRST204' || error.code === '42P10'
@@ -612,7 +625,7 @@ class SessionManager {
       // ALL active billed sessions, not only the ones due: presence is checked on
       // every tick (see below), so a participant who left is caught within a tick
       // instead of only when their next minute comes due.
-      // is_free excludes the free 12-minute introductory calls (see
+      // is_free excludes the free 11-minute introductory calls (see
       // sql/free_call_in_app.sql). Those run on a real chat_sessions row so the
       // WebRTC screens' membership checks work, but they must never be billed —
       // this filter is the single place that guarantees it.
@@ -1007,7 +1020,7 @@ class SessionManager {
       && sessionRow.vendor_id && sessionRow.caller_id) {
       // Gated on the 3-minute line, not merely "a call happened": holding an astrologer
       // for an offer that will never be shown is pure lost availability.
-      if (freeBooking.qualifiesForUpsell) {
+      if (UPSELL_SHEET_ENABLED && freeBooking.qualifiesForUpsell) {
         await this.holdAstrologerForUpsell(sessionId, sessionRow, freeBooking);
       }
     }
@@ -1067,10 +1080,10 @@ class SessionManager {
    * identical figure.
    *
    * RULES, all deliberate:
-   *   * MILESTONES, not per-minute: ₹5 for reaching 3 minutes and ₹5 more for reaching 9
-   *     (₹10 on a full call). See freeCallPayout.js for why — in short, the astrologer is
+   *   * A MILESTONE, not per-minute: ₹5 for reaching 4 minutes, flat, however much longer
+   *     the call then runs. See freeCallPayout.js for why — in short, the astrologer is
    *     paid for holding a conversation, not for picking up, so a time-waster costs the
-   *     platform nothing. A call that ends at 2:59 pays zero.
+   *     platform nothing. A call that ends at 3:59 pays zero.
    *   * settled once, from the final duration, rather than credited as each mark passes.
    *     Free sessions are kept out of the billing poll on purpose and there is no worker
    *     watching them; the money and the idempotency are identical either way.
@@ -1289,7 +1302,7 @@ class SessionManager {
   /**
    * Ends free introductory calls that have overrun their allotted minutes.
    *
-   * The 12 minutes is the whole promise of the offer, so it is enforced here and
+   * The 11 minutes is the whole promise of the offer, so it is enforced here and
    * not only in the two call screens — a killed app, a lost socket or a phone that
    * slept must not leave the astrologer marked busy indefinitely (the zombie-session
    * shape called out in CLAUDE.md's data-layer audit). Two minutes of slack is
@@ -1411,11 +1424,11 @@ class SessionManager {
       for (const row of rows) {
         if (!row.call_started_at) continue;
         const startedMs = new Date(row.call_started_at).getTime();
-        const promisedMs = (row.duration_minutes || 12) * 60 * 1000;
+        const promisedMs = (row.duration_minutes || 11) * 60 * 1000;
         if (now - startedMs < promisedMs + 120_000) continue;
         console.log(`[SessionManager] Free call ${row.call_session_id} overran — ending it.`);
         // Recorded as exactly the minutes that were promised, not the extra two of slack
-        // plus however long this sweep took to come round. The offer was 12 minutes; a
+        // plus however long this sweep took to come round. The offer was 11 minutes; a
         // call closed by the backstop did not earn a thirteenth.
         await this.terminateSession(row.call_session_id, 'Free call time is up',
           { endedAtMs: startedMs + promisedMs });

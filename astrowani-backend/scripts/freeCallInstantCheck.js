@@ -29,27 +29,27 @@ let fail = 0;
 const ok = (c, m) => { if (c) { pass++; } else { fail++; console.log('  FAIL:', m); } };
 
 /* ── 1. Payout arithmetic — MILESTONES, not per-minute ─────────────────────── */
-const M = DEFAULT_MILESTONES;                          // 3 min -> ₹5, 9 min -> ₹5 more
+const M = DEFAULT_MILESTONES;                          // 4 min -> ₹5, and that is all
 const pay = (s, steps = M) => freeCallPayout(s, steps).amount;
 
 ok(pay(0) === 0, 'a call of 0s pays nothing');
 ok(pay(30) === 0, '30s pays nothing — picking up is not the work, got ' + pay(30));
-ok(pay(179) === 0, '2:59 misses the first mark entirely, got ' + pay(179));
-ok(pay(180) === 5, 'exactly 3:00 reaches the first mark and pays 5, got ' + pay(180));
-ok(pay(181) === 5, '3:01 still pays 5 — nothing accrues between marks');
-ok(pay(300) === 5, '5 minutes still pays only the first mark, got ' + pay(300));
-ok(pay(539) === 5, '8:59 misses the second mark, got ' + pay(539));
-ok(pay(540) === 10, 'exactly 9:00 reaches the second mark and pays 10, got ' + pay(540));
-ok(pay(720) === 10, 'a full 12-minute call pays 10, got ' + pay(720));
-ok(pay(7200) === 10, 'an absurd 2-hour value still pays only 10, got ' + pay(7200));
+ok(pay(180) === 0, '3:00 is below the mark now and pays nothing, got ' + pay(180));
+ok(pay(239) === 0, '3:59 misses the mark entirely, got ' + pay(239));
+ok(pay(240) === 5, 'exactly 4:00 reaches the mark and pays 5, got ' + pay(240));
+ok(pay(241) === 5, '4:01 still pays 5 — nothing accrues past the mark');
+ok(pay(300) === 5, '5 minutes pays 5, got ' + pay(300));
+ok(pay(600) === 5, '10 minutes still pays 5 — the payout is FLAT, got ' + pay(600));
+ok(pay(660) === 5, 'a full 11-minute call pays 5, not more, got ' + pay(660));
+ok(pay(7200) === 5, 'an absurd 2-hour value still pays only 5, got ' + pay(7200));
 
 // The ledger note has to name what was actually reached, or an astrologer querying a
 // ₹5 credit has no way to see which mark it was for.
-ok(freeCallPayout(540, M).label === '3m + 9m', 'the label lists every mark reached, got ' + freeCallPayout(540, M).label);
-ok(freeCallPayout(180, M).label === '3m', 'a single mark labels itself, got ' + freeCallPayout(180, M).label);
+ok(freeCallPayout(660, M).label === '4m', 'the label names the mark reached, got ' + freeCallPayout(660, M).label);
+ok(freeCallPayout(240, M).label === '4m', 'a single mark labels itself, got ' + freeCallPayout(240, M).label);
 ok(freeCallPayout(60, M).label === '', 'an unpaid call has no label');
-ok(freeCallPayout(540, M).reached.join(',') === '3,9', 'reached marks are reported for the log');
-ok(maxFreeCallPayout(M) === 10, 'the advertised maximum is 10, got ' + maxFreeCallPayout(M));
+ok(freeCallPayout(660, M).reached.join(',') === '4', 'reached marks are reported for the log');
+ok(maxFreeCallPayout(M) === 5, 'the advertised maximum is 5, got ' + maxFreeCallPayout(M));
 
 // Nonsense must pay nothing rather than NaN — a NaN would reach adjustVendorWallet.
 ok(pay(null) === 0, 'null seconds pays nothing');
@@ -68,19 +68,22 @@ ok(pay(600, custom) === 15, 'custom ladder: 10:00 pays all three, got ' + pay(60
 
 /* ── 1b. Milestone normalising — the settings form is admin free text ──────── */
 const norm = normaliseMilestones;
-ok(norm(undefined).length === 2, 'a missing list falls back to the two defaults');
-ok(norm([]).length === 2, 'an empty list falls back rather than paying nobody');
-ok(norm('nonsense').length === 2, 'a non-array falls back');
+const DEF_LEN = DEFAULT_MILESTONES.length;             // 1 today; the assertions below
+                                                       // are about FALLING BACK, not the
+                                                       // size of the default ladder.
+ok(norm(undefined).length === DEF_LEN, 'a missing list falls back to the defaults');
+ok(norm([]).length === DEF_LEN, 'an empty list falls back rather than paying nobody');
+ok(norm('nonsense').length === DEF_LEN, 'a non-array falls back');
 ok(norm([{ minutes: 9, amount: 5 }, { minutes: 3, amount: 5 }])[0].minutes === 3,
   'marks are sorted, so an out-of-order entry still pays cumulatively');
 ok(norm([{ minutes: 3, amount: 5 }, { minutes: 3, amount: 99 }]).length === 1,
   'a duplicated mark is collapsed — it must never pay twice at the same second');
 ok(norm([{ minutes: 0, amount: 5 }, { minutes: 3, amount: 5 }]).length === 1,
   'a zero-minute mark is dropped (it would pay the instant a call connects)');
-ok(norm([{ minutes: 3, amount: 0 }]).length === 2, 'a zero amount is not a milestone, so it falls back');
+ok(norm([{ minutes: 3, amount: 0 }]).length === DEF_LEN, 'a zero amount is not a milestone, so it falls back');
 ok(norm([{ minutes: 3, amount: 99999 }])[0].amount === 5,
   'an absurd amount is refused and the defaults stand, protecting admin_wallet');
-ok(norm([{ minutes: 99999, amount: 5 }]).length === 2, 'an absurd minute mark is refused');
+ok(norm([{ minutes: 99999, amount: 5 }]).length === DEF_LEN, 'an absurd minute mark is refused');
 ok(norm(Array.from({ length: 20 }, (_, i) => ({ minutes: i + 1, amount: 1 }))).length === MAX_MILESTONES,
   `the ladder is capped at ${MAX_MILESTONES} rungs`);
 ok(norm([{ minutes: '3', amount: '5' }])[0].amount === 5, 'numeric strings from a form input are accepted');

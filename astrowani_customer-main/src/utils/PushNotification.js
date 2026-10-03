@@ -226,7 +226,7 @@ function handleNotificationTap(remoteMessage) {
   if (type === 'admin_broadcast' || type === 'admin_personal') {
     navigate('NotificationScreen');
   } else if (type === 'free_call_invite') {
-    // Admin invite to the free 12-minute call: open the booking on Home.
+    // Admin invite to the free 11-minute call: open the booking on Home.
     openFreeCallFromInvite();
   } else if (type === 'astrologer_free') {
     // "They're free now!" from the notify-me waitlist (src/waitlist.js). This push has

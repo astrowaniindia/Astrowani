@@ -378,7 +378,7 @@ export default function FreeCallBookings() {
                 <span className="pill-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>○ Offer Disabled</span>
               )}
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                <strong>{offer.durationMinutes || 12} min</strong> calls · Slots {prettyClock(offer.openTime ?? offer.openHour ?? 10)}–{prettyClock(offer.closeTime ?? offer.closeHour ?? 20)} IST ·
+                <strong>{offer.durationMinutes || 11} min</strong> calls · Slots {prettyClock(offer.openTime ?? offer.openHour ?? 10)}–{prettyClock(offer.closeTime ?? offer.closeHour ?? 20)} IST ·
                 {' '}{offer.assignmentMode === 'pool' ? `Smart Pool (${(offer.poolAstrologerIds || []).length} astrologers)` : offer.assignmentMode === 'single' ? 'Single Astrologer' : 'Manual Assignment'}
               </span>
             </div>
@@ -662,7 +662,7 @@ export default function FreeCallBookings() {
                             </span>
                           )}
                           <span className="muted" style={{ fontSize: 11.5 }}>
-                            {formatRelativeTime(r.slot_start)} · {r.duration_minutes || 12} min
+                            {formatRelativeTime(r.slot_start)} · {r.duration_minutes || 11} min
                           </span>
                           {isInstant && r.call_attempts > 1 && (
                             // How many astrologers they had to try before one answered.

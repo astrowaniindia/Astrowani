@@ -1,4 +1,4 @@
-// Free 12-minute introductory call — the offer popup and the booking flow.
+// Free 11-minute introductory call — the offer popup and the booking flow.
 //
 // Replaces FreeChatOfferPopup (the free 5-minute scripted bot chat, switched off
 // 2026-08-31). Unlike that one this books a real astrologer's time, so:
@@ -429,7 +429,7 @@ const FreeCallOffer = ({
               {/* Reading order (2026-09-19): a large limited-offer tag, what the offer
                   is, then the button, whose "Claim my FREE call" is the one place FREE
                   appears. The faces and the admin's body text come last and smaller.
-                  The admin headerText ("Your first 12-minute call is on us") is not
+                  The admin headerText ("Your first 11-minute call is on us") is not
                   shown: it repeated the headline. */}
               <View style={[styles.header, styles.headerCentered]}>
                 {showBookedBadge && <LiveBookedBadge count={bookedCount} />}

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
 
-// Send the free 12-minute call to customers as a push + in-app notification.
+// Send the free 11-minute call to customers as a push + in-app notification.
 // Works whether the public offer is on or off: the invite itself lets these
 // customers book (backend: /api/admin/free-call-invites/*). Anyone without a live
 // free-call booking can be invited; people who already booked are skipped.
 
-const DEFAULT_TITLE = 'A free 12-minute call is waiting for you';
-const DEFAULT_BODY = 'Talk to a verified astrologer for 12 minutes, free. Tap to pick a time, and our astrologer will call you.';
+const DEFAULT_TITLE = 'A free 11-minute call is waiting for you';
+const DEFAULT_BODY = 'Talk to a verified astrologer for 11 minutes, free. Tap to pick a time, and our astrologer will call you.';
 
 const customerLabel = (c) => `${c.name || 'Customer'} (${c.mobile || c.phone || '—'})`;
 

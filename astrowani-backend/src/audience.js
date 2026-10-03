@@ -2,7 +2,7 @@
 //
 // Who gets which welcome offer, based on where the customer came from.
 //
-// The free 12-minute call and the free 5-minute chat both cost real money — an
+// The free 11-minute call and the free 5-minute chat both cost real money — an
 // astrologer's time, and Gemini API spend. Traffic that already cost money to acquire
 // (a paid ad) does not always deserve a second subsidy, while cheap traffic (a printed
 // QR poster) is exactly where the nudge pays for itself. This module is the one place

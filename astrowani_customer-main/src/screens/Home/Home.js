@@ -352,7 +352,7 @@ const Home = ({navigation}) => {
     return true;
   }, [freeChatEligible, freeChatPersona]);
   const [freeChatPersona, setFreeChatPersona] = useState(null);
-  // Free 12-minute intro call. `freeCall` is the server's answer in full
+  // Free 11-minute intro call. `freeCall` is the server's answer in full
   // ({enabled, eligible, offer, booking}); the client never decides eligibility.
   const [freeCall, setFreeCall] = useState(null);
   const [freeCallVisible, setFreeCallVisible] = useState(false);
@@ -1205,7 +1205,7 @@ const Home = ({navigation}) => {
       }
     };
 
-  // Free 12-minute intro call — the offer that replaced the bot chat. ONE call
+  // Free 11-minute intro call — the offer that replaced the bot chat. ONE call
   // answers "is it on", "is this customer eligible" and "have they already
   // booked", all decided server-side. The popup auto-opens once; after that the
   // floating gift bubble is the way back to it (see the render), which is why the

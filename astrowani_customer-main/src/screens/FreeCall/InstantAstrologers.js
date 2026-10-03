@@ -57,7 +57,7 @@ export default function InstantAstrologers({ navigation, route }) {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [data, setData] = useState({ astrologers: [], durationMinutes: 12 });
+  const [data, setData] = useState({ astrologers: [], durationMinutes: 11 });
   const [blocked, setBlocked] = useState(null); // { code, message } when the server refuses
   const [notified, setNotified] = useState({}); // astrologerId -> true
 
@@ -148,7 +148,7 @@ export default function InstantAstrologers({ navigation, route }) {
       setRinging({ astrologerId: astro.id, name: astro.name, image: astro.image });
       captureEvent('free_call_instant_ring', { astrologer_id: astro.id });
 
-      const freeSeconds = (Number(res.durationMinutes) || 12) * 60;
+      const freeSeconds = (Number(res.durationMinutes) || 11) * 60;
 
       // Accepted → straight into the same call screen the paid flow uses. `freeCall`
       // and `freeCallSeconds` are what put it in free mode and start its countdown.
@@ -389,7 +389,7 @@ export default function InstantAstrologers({ navigation, route }) {
           <Icon name="arrow-back" size={moderateScale(22)} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {t('freeCallInstant.title', { minutes: data.durationMinutes || 12 })}
+          {t('freeCallInstant.title', { minutes: data.durationMinutes || 11 })}
         </Text>
       </View>
 
@@ -419,7 +419,7 @@ export default function InstantAstrologers({ navigation, route }) {
                   undersells it. It also pairs with the minutes figure beside it. */}
               <Icon name="timer" size={moderateScale(14)} color={COLORS.AstroMaroon} />
               <Text style={styles.heroBadgeTxt}>
-                {t('freeCallInstant.minutesOnUs', { minutes: data.durationMinutes || 12 })}
+                {t('freeCallInstant.minutesOnUs', { minutes: data.durationMinutes || 11 })}
               </Text>
             </View>
             <Text style={styles.heroLine}>

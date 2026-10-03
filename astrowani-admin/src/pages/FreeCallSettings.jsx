@@ -13,7 +13,7 @@ const VISIBILITY_KEY = 'free_intro_call_visibility';
 
 const OFFER_DEFAULTS = {
   enabled: false,
-  durationMinutes: 12,
+  durationMinutes: 11,
   slotMinutes: 30,
   openTime: '10:00',
   closeTime: '20:00',
@@ -41,7 +41,7 @@ const OFFER_DEFAULTS = {
   mode: 'scheduled',
   instantPoolAstrologerIds: [],
   // Marks reached, not minutes elapsed — see the card in the form for why.
-  payoutMilestones: [{ minutes: 3, amount: 5 }, { minutes: 9, amount: 5 }],
+  payoutMilestones: [{ minutes: 4, amount: 5 }],
   minFreeCallsBeforeOptOut: 10,
   holdDecisionSeconds: 90,
   holdPaymentSeconds: 180,
@@ -984,7 +984,7 @@ export default function FreeCallSettings({ flow = 'booking' }) {
               onChange={(e) => setOffer((p) => ({ ...p, durationMinutes: e.target.value }))}
             />
             <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-              How long the free introductory consultation lasts (e.g. 12 minutes).
+              How long the free introductory consultation lasts (e.g. 11 minutes).
             </span>
           </div>
 

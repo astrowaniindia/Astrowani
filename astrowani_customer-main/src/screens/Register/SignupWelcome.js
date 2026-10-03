@@ -1,7 +1,7 @@
 // Sign-up, step 3 of 3: the guide avatar welcomes the customer by name, and a
 // single "Hi" button takes them to Home.
 //
-// GIFT MODE (2026-09-19): when the free 12-minute call is on and this customer is
+// GIFT MODE (2026-09-19): when the free 11-minute call is on and this customer is
 // eligible, the screen instead shows "Namaste <name> ji" and the free-call card
 // itself (inline, not a popup), with the guide avatar greeting them. Nobody drops
 // between the OTP and Home, so this is the moment the offer is most likely to land;
@@ -270,7 +270,7 @@ export default function SignupWelcome({ navigation, route }) {
     showStatusPopup({
       variant: 'confirmPay',
       title: t('freeCall.leaveTitle'),
-      message: t('freeCall.leaveMessage', { count: gift?.offer?.durationMinutes || 12 }),
+      message: t('freeCall.leaveMessage', { count: gift?.offer?.durationMinutes || 11 }),
       // Staying is the primary action: the offer is free, so leaving should not be
       // the easiest thing to hit (same reasoning as hooks/useConfirmLeaveReport.js).
       confirmText: t('freeCall.leaveStay'),

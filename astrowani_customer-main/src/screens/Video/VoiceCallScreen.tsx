@@ -27,6 +27,7 @@ import {SOCKET_URL} from '../../config/api';
 import {showReviewPrompt} from '../../components/ReviewPrompt';
 import {showFreeCallContinue} from '../../components/FreeCallContinue';
 import {showDakshina} from '../../components/DakshinaPrompt';
+import {showShagunRecharge} from '../../components/ShagunRechargePrompt';
 import {showCallFeedback} from '../../components/CallFeedbackPrompt';
 import {showRateAstrowani} from '../../components/RateAstrowaniPrompt';
 import {showStatusPopup} from '../../components/StatusPopup';
@@ -43,6 +44,13 @@ import {joinSessionWithRetry} from '../../utils/sessionRoom';
 import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 import {getIceServers} from '../../utils/iceServers';
+import {
+  FREE_CALL_CONTINUE_ENABLED,
+  CALL_FEEDBACK_PROMPT_ENABLED,
+  DAKSHINA_PROMPT_ENABLED,
+  SHAGUN_RECHARGE_ENABLED,
+  FREE_CALL_RATING_PROMPT_ENABLED,
+} from '../../utils/featureFlags';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -71,7 +79,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     recieverName = 'Astrologer',
     recieverImage = '',
     recieverId = '',
-    // Free 12-minute introductory call, answered from FreeCallIncoming. The session
+    // Free 11-minute introductory call, answered from FreeCallIncoming. The session
     // is created is_free with per_minute_charge 0 server-side, so this flag only
     // changes what is shown and adds the hard stop -- it does not gate any billing.
     freeCall = false,
@@ -285,24 +293,48 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       };
 
-      const askRating = () => showRateAstrowani({
-        context: 'free_call',
-        sessionId: sid,
-        // Armed on BEHAVIOUR, not on the stars tapped: a call that ran most of its
-        // length is the happiness signal.
-        ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
-      });
+      const askRating = () => {
+        if (!FREE_CALL_RATING_PROMPT_ENABLED) return;
+        showRateAstrowani({
+          context: 'free_call',
+          sessionId: sid,
+          // Armed on BEHAVIOUR, not on the stars tapped: a call that ran most of its
+          // length is the happiness signal.
+          ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
+        });
+      };
 
-      const askDakshina = () => showDakshina({
-        astrologerId: recieverId,
-        astrologerName: recieverName,
-        sessionId: sid,
-        // Runs whether they gave, dismissed, or the payment failed.
-        onDone: askRating,
-      });
+      // "Shagun Recharge" (owner, 2026-10-03) superseded the old Dakshina sheet for this
+      // moment, but both call the same /api/dakshina/* backend — see
+      // components/ShagunRechargePrompt.js. SHAGUN_RECHARGE_ENABLED is checked first;
+      // DAKSHINA_PROMPT_ENABLED is the fallback so turning Shagun off alone still shows
+      // the older sheet rather than silently skipping the ask.
+      const askDakshina = () => {
+        if (SHAGUN_RECHARGE_ENABLED) {
+          showShagunRecharge({
+            astrologerId: recieverId,
+            astrologerName: recieverName,
+            astrologerImage: recieverImage,
+            sessionId: sid,
+            // Runs whether they gave, dismissed, or the payment failed.
+            onDone: askRating,
+          });
+          return;
+        }
+        if (!DAKSHINA_PROMPT_ENABLED) { askRating(); return; }
+        showDakshina({
+          astrologerId: recieverId,
+          astrologerName: recieverName,
+          sessionId: sid,
+          onDone: askRating,
+        });
+      };
 
-      // Yes -> Dakshina. No -> a short apology and nothing further.
-      const askLiked = () => showCallFeedback({onYes: askDakshina, onNo: () => {}});
+      // Yes -> Shagun/Dakshina. No -> a short apology and nothing further.
+      const askLiked = () => {
+        if (!CALL_FEEDBACK_PROMPT_ENABLED) { askDakshina(); return; }
+        showCallFeedback({onYes: askDakshina, onNo: () => {}});
+      };
 
       if (freeSeconds < MIN_DAKSHINA_SECONDS) {
         if (astrologerCut) {
@@ -316,7 +348,12 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
       goHome();
 
-      if (freeSeconds >= MIN_UPSELL_SECONDS) {
+      // EACH STEP FALLS THROUGH TO THE NEXT WHEN IT IS SWITCHED OFF (utils/featureFlags),
+      // rather than one flag short-circuiting the whole chain. With every flag off — which
+      // is the state the owner asked for on 2026-10-03 — this reaches goHome() above and
+      // then does nothing at all, so the call simply ends. Flip any single flag back on and
+      // only that step reappears, in its original place in the order.
+      if (freeSeconds >= MIN_UPSELL_SECONDS && FREE_CALL_CONTINUE_ENABLED) {
         showFreeCallContinue({
           astrologerId: recieverId,
           astrologerName: recieverName,
@@ -809,7 +846,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         )}
 
         {/* Paid sessions only. The free intro call already says "this call is free"
-            above, and a "your first minute is free" line on top of a 12-minute free
+            above, and a "your first minute is free" line on top of an 11-minute free
             call reads as nonsense. */}
         <SessionIntroBanner visible={isActive && !freeCall} style={{marginHorizontal: 0, marginTop: 14}} />
 

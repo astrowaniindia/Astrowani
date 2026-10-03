@@ -39,7 +39,7 @@ export const markFreeBotChatOfferSeen = async (customerId) => {
   } catch (e) {}
 };
 
-// Same "show the popup once" pattern for the free 12-minute intro CALL that
+// Same "show the popup once" pattern for the free 11-minute intro CALL that
 // replaced the bot chat. Note this only suppresses the automatic POPUP — the
 // floating gift bubble stays until the customer actually books, which is the
 // whole point of it. Eligibility itself is decided server-side, never here.

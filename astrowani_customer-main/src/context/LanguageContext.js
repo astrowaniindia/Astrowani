@@ -630,6 +630,18 @@ const translations = {
     'dakshina.thanksBody': 'Your dakshina of ₹{{amount}} has been sent with our gratitude.',
     'dakshina.failedTitle': 'Payment failed',
     'dakshina.failedBody': 'Your dakshina could not be completed. You have not been charged.',
+    // "Shagun Recharge" (2026-10-03) — the sheet shown after the free 11-minute call.
+    // Hinglish on purpose, like the welcome/signup screens. PLACEHOLDER COPY: every
+    // string below is a stand-in until the owner supplies the real wording — see
+    // components/ShagunRechargePrompt.js.
+    'shagun.title': 'Shagun Recharge 🙏',
+    'shagun.subtitle': '{{name}} ji ko shagun bhejein, bilkul aapki marzi se.',
+    'shagun.astrologerNote': 'Aapka shagun mere liye bahut mayne rakhta hai, dhanyavaad! 🙏',
+    'shagun.rzpDescription': 'Shagun for your astrologer',
+    'shagun.thanksTitle': 'Dhanyavaad',
+    'shagun.thanksBody': 'Aapka ₹{{amount}} ka shagun bhej diya gaya hai.',
+    'shagun.failedTitle': 'Payment failed',
+    'shagun.failedBody': 'Aapka shagun poora nahi ho paaya. Aapse koi shulk nahi liya gaya hai.',
 
     // "Want more minutes?" — the astrologer is held for ~90s while the customer decides,
     // so the countdown copy has to make the urgency honest rather than pushy.
@@ -1395,7 +1407,7 @@ const translations = {
     'report.sub': 'Sub',
     'report.subSub': 'Sub-sub',
     'report.significatorsSub': 'Planets signifying each house',
-    // Free 12-minute intro call. The heading/body/CTA/confirmation copy is
+    // Free 11-minute intro call. The heading/body/CTA/confirmation copy is
     // admin-authored (app_settings key free_call_offer) and arrives from the
     // API, so only the structural labels live here.
     'freeCall.pickDate': 'Pick a date',
@@ -2054,6 +2066,16 @@ const translations = {
     'dakshina.thanksBody': 'आपकी ₹{{amount}} की दक्षिणा आभार सहित भेज दी गई है।',
     'dakshina.failedTitle': 'भुगतान विफल',
     'dakshina.failedBody': 'आपकी दक्षिणा पूरी नहीं हो सकी। आपसे कोई शुल्क नहीं लिया गया है।',
+    // "Shagun Recharge" — structural labels only (see the English/Hinglish block above
+    // for why this screen's copy is Hinglish, not formal Hindi). PLACEHOLDER COPY.
+    'shagun.title': 'शगुन रीचार्ज 🙏',
+    'shagun.subtitle': '{{name}} जी को शगुन भेजें, पूरी तरह आपकी इच्छा से।',
+    'shagun.astrologerNote': 'आपका शगुन मेरे लिए बहुत मायने रखता है, धन्यवाद! 🙏',
+    'shagun.rzpDescription': 'आपके ज्योतिषी के लिए शगुन',
+    'shagun.thanksTitle': 'धन्यवाद',
+    'shagun.thanksBody': 'आपका ₹{{amount}} का शगुन भेज दिया गया है।',
+    'shagun.failedTitle': 'भुगतान विफल',
+    'shagun.failedBody': 'आपका शगुन पूरा नहीं हो सका। आपसे कोई शुल्क नहीं लिया गया है।',
 
     'freeCallContinue.title': 'क्या आप बात जारी रखना चाहेंगे?',
     'freeCallContinue.subtitle': '{{name}} अभी भी उपलब्ध हैं — हमने कुछ देर के लिए आपकी जगह रोक रखी है।',
@@ -2799,7 +2821,7 @@ const translations = {
     'report.sub': 'उप',
     'report.subSub': 'उप-उप',
     'report.significatorsSub': 'प्रत्येक भाव के कारक ग्रह',
-    // Free 12-minute intro call — structural labels only (see the English block).
+    // Free 11-minute intro call — structural labels only (see the English block).
     'freeCall.pickDate': 'तारीख चुनें',
     'freeCall.pickTime': 'समय चुनें',
     'freeCall.noSlots': 'इस दिन कोई समय उपलब्ध नहीं है। दूसरी तारीख चुनें।',

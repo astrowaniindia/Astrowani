@@ -53,12 +53,17 @@ async function resolveCustomer(req) {
 // step — if one changes, change both.
 const DAKSHINA_VENDOR_SHARE = 0.5;
 
+// Amount ladder redesigned 2026-10-03 (owner) as "Shagun Recharge" — a voluntary
+// thank-you shown after the free 11-minute call, nine fixed buttons rather than three
+// plus a custom field. allowCustom is kept OFF by default to match: a grid of nine
+// already covers the range the owner wants offered, and a tenth free-text box would
+// crowd the sheet. Admin can still flip allowCustom back on; nothing here forbids it.
 const DEFAULTS = {
   enabled: true,
-  amounts: [21, 51, 101],
-  allowCustom: true,
+  amounts: [11, 21, 51, 101, 251, 501, 1100, 2100, 5100],
+  allowCustom: false,
   minAmount: 11,
-  maxAmount: 5000,
+  maxAmount: 5100,
 };
 
 const clampInt = (v, lo, hi, dflt) => {
@@ -84,7 +89,10 @@ async function loadConfig() {
     .filter((a) => a > 0)
     .filter((a, i, arr) => arr.indexOf(a) === i)
     .sort((a, b) => a - b)
-    .slice(0, 4);
+    // Was capped at 4 for the old three-row sheet. The Shagun grid shows up to 12 in a
+    // 3-wide layout, i.e. four rows — comfortably more than the 9 buttons the owner
+    // asked for, with headroom for admin to add a couple more later.
+    .slice(0, 12);
   if (!merged.amounts.length) merged.amounts = DEFAULTS.amounts.slice();
   return merged;
 }

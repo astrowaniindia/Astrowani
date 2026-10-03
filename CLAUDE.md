@@ -1987,3 +1987,158 @@ a reconnect 90s after mount emits **nothing**; with the fix it re-joins. Both ap
 **Still worth doing:** a real two-device test — start a chat, leave it running past 60 seconds,
 drop and restore the phone's network, and confirm billing keeps ticking and the session is NOT
 killed. The unit-level proof is solid but nothing has exercised this on a handset.
+
+---
+
+## Session 2026-10-03: the free intro call is 11 minutes, pays a flat ₹5, and ends silently
+
+### DR. Three changes, and the one that is NOT in the code
+
+Owner's decision, all three applied together:
+
+| | Before | Now |
+|---|---|---|
+| Call length | 12 minutes | **11 minutes** |
+| Astrologer payout | ₹5 at 3 min, ₹5 more at 9 (₹10 max) | **one mark: ₹5 at 4 min, flat** |
+| After the call | up to four modals in a row | **nothing — straight Home** |
+
+> **THE LIVE VALUES ARE IN THE DATABASE, NOT IN `DEFAULTS`.** `loadOffer()` is
+> `{...DEFAULTS, ...parsed}` over `app_settings.free_call_offer`, and that blob already
+> carried `durationMinutes: 12` and `payoutMilestones: [{3,5},{9,5}]` — so editing
+> `freeCallRoutes.DEFAULTS` or `freeCallPayout.DEFAULT_MILESTONES` alone would have
+> changed **nothing in production**. The row was updated in the same session
+> (`durationMinutes: 11`, `payoutMilestones: [{"minutes":4,"amount":5}]`,
+> `headerText: 'Your first 11-minute call is on us'`). The code defaults were changed too,
+> so a fresh database and the live one agree — but **the database is the authority, and
+> any future change to either of these numbers has to be made there as well.**
+> Rollback value for the three keys is `12` / `[{3,5},{9,5}]` / `'Your first 12-minute
+> call is on us'`. The offer was `enabled: false, mode: 'instant'` throughout.
+
+**The payout is FLAT above the mark, which is the part worth not misreading.** ₹5 at 4:00,
+₹5 at 10:00, ₹5 on a call that runs the full 11 — nothing accrues with length. 3:59 pays
+zero. The milestone *machinery* is untouched and still cumulative, so making it tiered
+again is one more row in the admin's "What the astrologer earns" card; there is simply one
+row in it today. `MIN_DAKSHINA_SECONDS` (180) was deliberately **left alone**: it is not
+the payout line, it is the line that decides whether an astrologer hanging up early burns
+the customer's one free call (`abandonedByAstrologer`), and moving it would change who
+loses their offer.
+
+### DS. The four post-call modals are hidden — and the server-side hold with them
+
+`FREE_CALL_CONTINUE_ENABLED`, `CALL_FEEDBACK_PROMPT_ENABLED`, `DAKSHINA_PROMPT_ENABLED`
+and `FREE_CALL_RATING_PROMPT_ENABLED` in customer `src/utils/featureFlags.js`, all `false`,
+both platforms (a product decision, unlike `FREE_BOT_CHAT_ENABLED` above them). Hidden,
+not deleted: every component, endpoint and route stays put and each flag flips back on its
+own.
+
+Three things about how it is wired that are load-bearing:
+
+- **The three hosts are NOT MOUNTED, rather than mounted-and-silent.**
+  `FreeCallContinueHost` re-offers itself: on every app resume it asks the server whether a
+  live `decision`-phase hold exists and raises the sheet if so, precisely so a customer
+  whose phone died mid-call still sees it. A mounted host would therefore keep showing the
+  sheet no matter what the call screen does. `RateAstrowaniPromptHost` **stays mounted** —
+  only its free-call trigger is gone; the admin dashboard (`show_review_popup`) and a
+  tapped review push still need a host listening.
+- **Each step in `VoiceCallScreen.doEndCall` falls through to the next when switched off**,
+  instead of one flag short-circuiting the chain. All four off reaches `goHome()` and then
+  does nothing; any one back on reappears in its original place in the order.
+- **`sessionManager.UPSELL_SHEET_ENABLED = false` must track the app flag.** The hold is
+  not cosmetic — `holdAstrologerForUpsell` takes the astrologer off the market for
+  `holdDecisionSeconds` (90s) and shows them busy to everyone else. Reserving them for a
+  sheet that is never drawn is pure lost availability **on every single free call**.
+
+### Verified 2026-10-03
+- Payout boundaries against the real module: 0 / 59 / 180 / **239s → ₹0**, **240s → ₹5**,
+  and 241 / 300 / 600 / 660s → **₹5**, never more. 12/12. **660s (11 min) is the real
+  ceiling** — the screens' countdown ends it there, and if the app dies instead,
+  `endOverdueFreeCalls` records the duration as exactly `start + durationMinutes`, not the
+  two minutes of slack plus however long the sweep took. The suite's 3600s case is a
+  PROPERTY test, not a scenario: `freeCallPayout` is pure and pays out whatever
+  second-count it is handed, so that case asserts there is no per-minute term in it that
+  could run away on a clock skew or a bad `endedAtMs`. Do not read it as an hour-long
+  free call being possible.
+- `scripts/freeCallInstantCheck.js` rewritten to the new scheme and green (**51/51**);
+  `freeCallSlotCheck.js` **23/23** (needs `node --env-file=.env`; it does slot arithmetic
+  only and `index.js` is never booted). Its 12-minute fixture passes its own duration in
+  and is unaffected.
+- Customer app bundles for Android (8,067,176 bytes); eslint on every changed app file
+  reports **0 errors** (pre-existing warnings only); `astrowani-admin` `npm run build` OK;
+  `node --check` clean on all changed backend files.
+- Live `app_settings` row re-read after the write: `11`, `[{"minutes":4,"amount":5}]`.
+
+**Not exercised on a device.** The test worth doing: ring a free call, hang up at ~2 min
+(astrologer paid ₹0), then again past 4 min (₹5 exactly, one
+`vendor_wallet_transactions` row, `admin_wallet` down ₹5), and confirm the call screen
+goes straight Home both times with no sheet, no "how was your call?", no Dakshina and no
+stars — and that the astrologer is immediately available again rather than busy for 90s.
+
+### DT. A paid session DOES show the astrologer busy on the free screen (verified, not assumed)
+
+Asked 2026-10-03 and worth not re-deriving: `src/busyStatus.js` is the single definition of
+busy for **both** the paid lists and the free 11-minute instant screen, and its
+`chat_sessions` query filters on `is_active = true` with **no `is_free` filter**. A paid
+chat / audio / video session, a still-ringing request, and a live stream all mark the
+astrologer busy on the free screen exactly as a free call does.
+
+The stale-list race is covered separately and is the part that actually matters:
+`POST /api/free-call/instant/ring` re-runs `checkAstrologerBusy` at the moment of the tap
+and answers **409 `ASTROLOGER_BUSY`**, so a list rendered a minute ago cannot ring somebody
+who has since accepted a paid call. The list is a hint; the ring is the authority.
+
+**Verified against production** by inserting a synthetic `is_free = false` active session
+for the reviewer astrologer and running the real module against it — `buildBusyMap` →
+`{isBusy: true, reason: 'session'}`, and the ring guard refused for a third customer, for
+the session's own customer, and with `isFreeCall: true`. 5/5, then the row was deleted
+(0 remaining, 0 active sessions, 0 vendor ledger rows). The probe set
+`per_minute_charge = 0` and `next_billing_at = now() + 1 day` **on purpose**: the live
+sessionManager polls this table every 30s, so a synthetic active session with a due
+billing time would have been billed for real.
+
+### DU. "Shagun Recharge" — a new skin on the Dakshina payment, not a new payment system
+
+Owner, 2026-10-03: replace the post-free-call thank-you sheet with a 3x3 grid of nine
+fixed amounts (₹11, 21, 51, 101, 251, 501, 1100, 2100, 5100), the astrologer's avatar +
+a Hinglish note underneath, and a RED circular ✕ top-right (every other sheet in the app
+uses a cream one).
+
+**Built as a new component calling the SAME backend**, deliberately: `ShagunRechargePrompt.js`
+(customer app) calls the exact same `/api/dakshina/*` endpoints Dakshina always did
+(`getDakshinaOptions` / `createDakshinaOrder` / `verifyDakshinaPayment`) — same server-side
+pricing, same Razorpay-signature-before-credit rule, same 50/50 split
+(`DAKSHINA_VENDOR_SHARE`), same `dakshina_payments` ledger table. Building a second payment
+pipeline for the same "say thank you" flow would have been needless duplication; only the
+amounts offered and the layout changed.
+
+- **The live config row IS the authority**, same lesson as the free-call offer (DR above):
+  `app_settings.dakshina_config` already held `amounts: [21,51,101]` from before, so it was
+  updated directly (`amounts: [11,21,51,101,251,501,1100,2100,5100]`, `allowCustom: false`,
+  `maxAmount: 5100`), not just the code `DEFAULTS`. Verified by calling the real
+  `loadDakshinaConfig()` against production afterward — all nine amounts came back in
+  order, nothing clamped.
+- **The old 4-amount cap in `normaliseMilestones`-style clamping (`.slice(0, 4)`) was
+  raised to 12.** Missing this would have silently dropped the 6th–9th buttons no matter
+  what the admin config said — exactly the kind of clamp worth checking before assuming a
+  config change takes effect.
+- **`SHAGUN_RECHARGE_ENABLED = true`, `DAKSHINA_PROMPT_ENABLED` stays `false`** in customer
+  `utils/featureFlags.js`. The post-call chain in `VoiceCallScreen.tsx` checks Shagun first
+  and falls back to the old Dakshina sheet only if Shagun is ever switched off — so turning
+  one flag off doesn't silently skip the ask entirely, it falls back a step, matching the
+  fall-through pattern the rest of the chain already uses (DS above).
+- **No admin page edits the Dakshina amounts** — none exists; the only way to change this
+  ladder is the two places above (`DEFAULTS` in `dakshinaRoutes.js`, and the live
+  `app_settings` row). Worth building a real admin page if this changes often.
+- **PLACEHOLDER COPY, not final.** `shagun.title`, `shagun.subtitle` and, most
+  importantly, `shagun.astrologerNote` (the text in the speech-bubble next to the
+  astrologer's avatar) are stand-ins pending the owner's actual Hinglish wording — see the
+  file header comment in `ShagunRechargePrompt.js` and the `'en'`/`'hi'` blocks in
+  `context/LanguageContext.js`. Nothing else needs to change once the real text arrives.
+
+**Verified:** `loadDakshinaConfig()` against the live DB returns the nine amounts in order,
+`maxAmount: 5100`, `enabled: true`. Customer app bundles clean for Android with the new
+component wired through Navigation and VoiceCallScreen. `eslint` 0 errors on every changed
+file (warnings only, matching the pre-existing codebase style). No duplicate i18n keys.
+
+**Not exercised on a device**, and the astrologer-note/title copy is not final. The owner
+still needs to supply: (1) the popup's heading/subtitle text, and (2) what the astrologer's
+speech bubble says.

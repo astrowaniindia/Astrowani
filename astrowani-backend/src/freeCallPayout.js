@@ -9,15 +9,17 @@
 // A free intro call attracts people who are never going to become customers: they answer,
 // waste a few seconds, and hang up. Paying ₹1 for every minute that happened to elapse
 // rewarded that, and produced awkward ₹2 and ₹3 ledger entries that meant nothing to
-// anybody. The payout is now two fixed steps:
+// anybody. The payout is ONE fixed step (owner, 2026-10-03):
 //
-//     crossed 3 minutes  -> ₹5
-//     crossed 9 minutes  -> ₹5 more   (₹10 total on a full 12-minute call)
+//     crossed 4 minutes  -> ₹5, and that is the whole payout
 //
-// So the astrologer is paid for HOLDING a conversation, not for picking up. A call that
-// ends at 2:59 pays nothing at all; one that reaches 9:00 pays the lot. The thresholds and
-// the amounts are admin-configurable (free_call_offer.payoutMilestones), so the shape can
-// change without a deploy — but the shape is always "reach this mark, earn this amount".
+// FLAT ABOVE THE MARK, on purpose. ₹5 at 4:00, ₹5 at 10:00, ₹5 on a call that runs the
+// full 11 minutes — there is no second step and nothing accrues with length. So the
+// astrologer is paid for HOLDING a conversation past the four-minute line, not for picking
+// up and not for stretching it out. A call that ends at 3:59 pays nothing at all. The
+// thresholds and the amounts are admin-configurable (free_call_offer.payoutMilestones), so
+// the shape can change without a deploy — adding a second row there is all it would take
+// to make it tiered again — but the shape is always "reach this mark, earn this amount".
 //
 // THIS APPLIES ONLY TO THE FREE INTRO CALL. Ordinary paid consultations are billed per
 // minute by process_session_billing and are not affected by anything in this file.
@@ -29,10 +31,9 @@
 // money, stays idempotent on the session id, and still works when the call dies without a
 // clean hangup (endOverdueFreeCalls closes it and the same arithmetic runs).
 
-/** Two steps, ₹5 each. Mirrored in freeCallRoutes.DEFAULTS and clamped there too. */
+/** One step: ₹5 at four minutes. Mirrored in freeCallRoutes.DEFAULTS and clamped there too. */
 const DEFAULT_MILESTONES = [
-  { minutes: 3, amount: 5 },
-  { minutes: 9, amount: 5 },
+  { minutes: 4, amount: 5 },
 ];
 
 const MAX_MILESTONES = 6;
@@ -77,9 +78,9 @@ function freeCallPayout(seconds, milestones) {
   const steps = normaliseMilestones(milestones);
   if (!Number.isFinite(secs) || secs <= 0) return { amount: 0, reached: [], label: '' };
 
-  // Crossing the mark means reaching it exactly: a call of exactly 180s HAS hit three
-  // minutes. Comparing in seconds (not ceil'd minutes) is deliberate — rounding 2:31 up
-  // to "3 minutes" would pay for a conversation that never got there.
+  // Crossing the mark means reaching it exactly: a call of exactly 240s HAS hit four
+  // minutes. Comparing in seconds (not ceil'd minutes) is deliberate — rounding 3:31 up
+  // to "4 minutes" would pay for a conversation that never got there.
   const reached = steps.filter((m) => secs >= m.minutes * 60);
   const amount = reached.reduce((sum, m) => sum + m.amount, 0);
 

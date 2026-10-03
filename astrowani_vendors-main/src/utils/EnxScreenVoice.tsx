@@ -63,7 +63,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     sessionId = '',
     callerName = 'Customer',
     perMinuteCharge = 0,
-    // Free 12-minute introductory call (see freeCallRoutes.js). The session is
+    // Free 11-minute introductory call (see freeCallRoutes.js). The session is
     // real, but marked is_free server-side and priced at 0 -- nothing about this
     // screen bills anyone, it only changes what is shown and adds the hard stop.
     freeCall = false,
@@ -201,7 +201,7 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
     }
   }, [sessionId, stopCallTimer, stopRipple, cleanupWebRTC, navigation]);
 
-  // The 12 minutes is the entire promise of the offer, so it ends itself rather
+  // The 11 minutes is the entire promise of the offer, so it ends itself rather
   // than relying on either person to watch a clock. The backend sweeps overdue free
   // sessions too (sessionManager.endOverdueFreeCalls) -- this is the clean path, that
   // is the backstop for a killed app.

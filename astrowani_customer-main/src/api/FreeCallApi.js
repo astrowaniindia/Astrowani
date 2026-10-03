@@ -1,4 +1,4 @@
-// Free 12-minute introductory call — every network call for the offer.
+// Free 11-minute introductory call — every network call for the offer.
 //
 // The server is the only authority on which slots exist and which are free (see
 // astrowani-backend/src/freeCallRoutes.js). Nothing here computes a slot, checks
@@ -150,7 +150,7 @@ export async function bookFreeCall(slotStart) {
  * the customer has to be told about).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-const NO_ASTROLOGERS = { astrologers: [], durationMinutes: 12, attemptsLeft: 0 };
+const NO_ASTROLOGERS = { astrologers: [], durationMinutes: 11, attemptsLeft: 0 };
 
 /**
  * Who can be called right now. Busy astrologers are included WITH an `isBusy` flag
@@ -190,7 +190,7 @@ export async function getInstantAstrologers() {
  * precisely because the interesting case is the app dying before it can be shown.
  */
 export const FREE_CALL_HOLD_WINDOW_KEY = 'freeCallHoldPossibleUntil';
-const HOLD_WINDOW_MS = 45 * 60 * 1000; // a 12-minute call, a long ring, and slack
+const HOLD_WINDOW_MS = 45 * 60 * 1000; // an 11-minute call, a long ring, and slack
 
 export async function ringInstantAstrologer(astrologerId) {
   lastOffer = null; // eligibility changes the moment this succeeds

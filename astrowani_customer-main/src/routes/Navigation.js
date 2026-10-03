@@ -45,7 +45,12 @@ import { AppUpdatePromptHost } from '../components/AppUpdatePrompt';
 import { FreeCallContinueHost } from '../components/FreeCallContinue';
 import { RateAstrowaniPromptHost } from '../components/RateAstrowaniPrompt';
 import { DakshinaPromptHost } from '../components/DakshinaPrompt';
+import { ShagunRechargePromptHost } from '../components/ShagunRechargePrompt';
 import { CallFeedbackPromptHost } from '../components/CallFeedbackPrompt';
+import {
+  FREE_CALL_CONTINUE_ENABLED, CALL_FEEDBACK_PROMPT_ENABLED, DAKSHINA_PROMPT_ENABLED,
+  SHAGUN_RECHARGE_ENABLED,
+} from '../utils/featureFlags';
 import InstantAstrologers from '../screens/FreeCall/InstantAstrologers';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -785,11 +790,25 @@ export default function Navigation({ initialRoute, onReady }) {
     {/* The free call's "5 / 10 / 15 more minutes" offer, and the "how was Astrowani?"
         stars it raises once it closes. At the root because the call screen has already
         unmounted by the time either is shown. They are strictly sequential: two root
-        modals at once freeze iOS (utils/modalPresentation). */}
-    <FreeCallContinueHost />
+        modals at once freeze iOS (utils/modalPresentation).
+
+        Three of the four are switched off (utils/featureFlags, owner 2026-10-03) and are
+        NOT MERELY HIDDEN BEHIND A RETURN — they are not mounted at all, because
+        FreeCallContinueHost re-offers itself on its own: it asks the server for a live
+        hold whenever the app comes back, so a mounted-but-silent host would still raise
+        the sheet for a customer whose app was killed mid-call.
+
+        RateAstrowaniPromptHost stays mounted on purpose. Only its free-call trigger is
+        gone (see VoiceCallScreen); an admin raising it from the dashboard, or a customer
+        tapping a review push, must still find a host listening. */}
+    {FREE_CALL_CONTINUE_ENABLED && <FreeCallContinueHost />}
     <RateAstrowaniPromptHost />
-      <CallFeedbackPromptHost />
-      <DakshinaPromptHost />
+      {CALL_FEEDBACK_PROMPT_ENABLED && <CallFeedbackPromptHost />}
+      {DAKSHINA_PROMPT_ENABLED && <DakshinaPromptHost />}
+      {/* "Shagun Recharge" (owner, 2026-10-03) — the post-free-call thank-you ask that
+          replaced Dakshina's sheet for this moment. Same sequencing rule as the three
+          above: only one root modal at a time. */}
+      {SHAGUN_RECHARGE_ENABLED && <ShagunRechargePromptHost />}
     {/* Store-facing prompt. Runs its own launch check and stays silent unless the
         admin has configured it.
         RateAppPromptHost was removed deliberately: "How are we doing?"

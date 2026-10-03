@@ -1,5 +1,5 @@
 // The floating gift box on Home, shown to a customer who is still eligible for
-// the free 12-minute call but has closed the popup without booking.
+// the free 11-minute call but has closed the popup without booking.
 //
 // WHY IT EXISTS: the popup shows once. A customer who swipes past it would
 // otherwise lose the offer with no way back to it, so this is the way back —
