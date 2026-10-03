@@ -140,7 +140,26 @@ export function ShagunRechargePromptHost() {
         amount: Math.round(Number(order.amount) * 100),
         order_id: order.orderId,
         name: 'Astrowani',
-        prefill,
+        // UPI ONLY, so tapping an amount goes as near as the gateway allows to
+        // "their UPI app opens with that figure already in it" (owner, 2026-10-03).
+        // Razorpay then shows the installed UPI apps rather than a method menu, and
+        // picking one launches it with the amount locked to the order — the figure is
+        // the server's, so it can never be edited on the way through.
+        //
+        // The amount was ALWAYS fixed; what changed is that cards, netbanking, wallets,
+        // pay-later and EMI are gone from this sheet. Deliberate, and only on this
+        // sheet: a shagun is a small UPI-shaped gesture, and the method menu was one
+        // more screen between the tap and the payment. Wallet top-ups, remedy orders
+        // and the continue-call purchase are untouched and still offer every method —
+        // narrowing those would cost real sales.
+        method: {
+          upi: true,
+          card: false,
+          netbanking: false,
+          wallet: false,
+          paylater: false,
+          emi: false,
+        },
         theme: { color: RED },
       });
 
@@ -291,7 +310,7 @@ const styles = StyleSheet.create({
   // Three to a row: a percentage width rather than a fixed one, so nine buttons stay in
   // a tidy 3x3 on a small phone and on a tablet alike.
   amountBtn: {
-    width: '31.5%', height: verticalScale(34),
+    width: '29.5%', height: verticalScale(34),
     backgroundColor: SKIN,
     borderRadius: moderateScale(9),
     borderWidth: 1, borderColor: COLORS.AstroMaroon,
