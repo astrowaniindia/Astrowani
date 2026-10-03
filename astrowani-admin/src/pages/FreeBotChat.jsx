@@ -249,9 +249,21 @@ function AiReplies() {
         </span>
         <span
           className={`badge ${status?.productKeyConfigured ? 'green' : 'gray'}`}
-          title="Last in the chain: used only once the consult key is used up too, with the same models in the same order. After this one runs out the chat falls back to the scripted replies."
+          title="Used only once the consult key is used up too, with the same models in the same order."
         >
           <span className="badge-dot" />Product key {status?.productKeyConfigured ? 'set on server' : 'not set'}
+        </span>
+        <span
+          className={`badge ${status?.startupKeyConfigured ? 'green' : 'gray'}`}
+          title="Used only once the product key is used up too, with the same models in the same order."
+        >
+          <span className="badge-dot" />Startup key {status?.startupKeyConfigured ? 'set on server' : 'not set'}
+        </span>
+        <span
+          className={`badge ${status?.wasteee006KeyConfigured ? 'green' : 'gray'}`}
+          title="Last in the chain: used only once the startup key is used up too, with the same models in the same order. After this one runs out the chat falls back to the scripted replies."
+        >
+          <span className="badge-dot" />wasteee006 key {status?.wasteee006KeyConfigured ? 'set on server' : 'not set'}
         </span>
         <span className="badge blue"><span className="badge-dot" />Today: {today.aiReplies || 0} AI replies</span>
         <span className="badge gray"><span className="badge-dot" />{fallbackTotal} scripted fallbacks</span>
@@ -405,6 +417,12 @@ function AiReplies() {
             </option>
             <option value="product" disabled={!status?.productKeyConfigured}>
               Product key only{status?.productKeyConfigured ? '' : ' (not set on server)'}
+            </option>
+            <option value="startup" disabled={!status?.startupKeyConfigured}>
+              Startup key only{status?.startupKeyConfigured ? '' : ' (not set on server)'}
+            </option>
+            <option value="wasteee006" disabled={!status?.wasteee006KeyConfigured}>
+              wasteee006 key only{status?.wasteee006KeyConfigured ? '' : ' (not set on server)'}
             </option>
           </select>
         </div>

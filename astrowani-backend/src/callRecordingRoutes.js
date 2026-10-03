@@ -71,7 +71,8 @@ async function identify(req) {
 // ── Transcription ──────────────────────────────────────────────────────────────
 function geminiKeys() {
   const ks = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_CONSULT || process.env.GEMINI_API_KEY_PAID,
-    process.env.GEMINI_API_KEY_PRODUCT || process.env.GEMINI_API_KEY_3];
+    process.env.GEMINI_API_KEY_PRODUCT || process.env.GEMINI_API_KEY_3, process.env.GEMINI_API_KEY_STARTUP,
+    process.env.GEMINI_API_KEY_WASTEEE006];
   return ks.filter(Boolean);
 }
 

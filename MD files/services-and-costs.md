@@ -53,7 +53,7 @@ working, and a few need a manual step from you before they'll bill at all.
 
 | Service | Used for | Where | Free tier / limit | If you exceed it | Checked |
 |---|---|---|---|---|---|
-| **Google Gemini** | The free 5-minute AI astrology chat (customer app, Android only for now) | Backend | **Free tier**, multiple models walked in order for capacity: ~500 requests/day per model, ~15K total/day across the list (~1,000+ AI chats/day) | Hits `fallback: quota` and the app silently drops to the old scripted engine for that chat — **no error, no charge, just a worse reply**. Moving to paid billing on the same key needs no code change, just flipping billing on in AI Studio. Watch the admin's AI stats card for how often fallback fires | 2026-09-13 |
+| **Google Gemini** | The free 5-minute AI astrology chat (customer app, Android only for now) + call-recording transcription | Backend | **Free tier**, multiple models walked in order, across **4 keys in a fallback chain** (free → consult → product → startup, see `freeChatAi.js`): ~500 requests/day per model per key | Hits `fallback: quota` and the app silently drops to the old scripted engine for that chat — **no error, no charge, just a worse reply** — only once ALL 4 keys are exhausted. Moving to paid billing on any key needs no code change, just flipping billing on in AI Studio. Watch the admin's AI stats card for how often fallback fires | 2026-10-02 |
 | **Anthropic (Claude API)** | The WhatsApp shop assistant's model access | Backend (`ANTHROPIC_API_KEY`) | Pay-as-you-go, no free tier — billed per token from the first request | This is a metered API key: cost scales directly with WhatsApp assistant usage. No hard cap unless you set spending limits in the Anthropic console | 2026-09 |
 | **MyMemory** | Free machine translation, admin blog English→Hindi (one-time per blog, result is saved) | Backend | Free, no key needed. ~5,000 chars/day anonymous, ~50,000/day if `MYMEMORY_EMAIL` is set | Fails soft — returns null, the Hindi column just stays empty and the app falls back to English. Never called per-request, only once per blog, so this ceiling is not realistically reachable | 2026-09 |
 
@@ -85,7 +85,17 @@ working, and a few need a manual step from you before they'll bill at all.
 - **The Gemini API key rotation trick was explicitly declined** — see
   `CLAUDE.md` "Traps hit while building this" under §CD. Do not multiply free
   quota across several Google accounts; it's against Google's terms and the
-  owner already said no to it.
+  owner already said no to it. **Exception, 2026-10-02:** a 4th key
+  (`GEMINI_API_KEY_STARTUP`, "Gemini Startup") was added as a failover, same
+  as the existing product key — the owner confirmed it is a paid account run
+  as free tier day-to-day, not another free account created to multiply
+  quota. A 5th key (`GEMINI_API_KEY_WASTEEE006`) was added the same day, the
+  owner describing it as the same kind of account as the startup key. Both
+  are tried only after every key before them is used up, same rules as the
+  rest of the chain. **Do not add a 6th key without the same confirmation**
+  (a real paid/separate account, not another free account to multiply
+  quota) — that confirmation, not the key count, is what keeps this chain
+  the right side of Google's terms.
 - **`react-native-iap` / Apple IAP only activates on iOS.** Android wallet
   recharge and remedy orders go through Razorpay as before — no double
   taxation, no code path where both take a cut of the same rupee.
