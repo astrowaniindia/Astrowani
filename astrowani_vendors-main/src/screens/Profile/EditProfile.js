@@ -12,6 +12,8 @@ import {
   ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { MultiSelect } from 'react-native-element-dropdown';
 import ImageCropPicker from 'react-native-image-crop-picker';
 import { COLORS } from '../../Theme/Colors'; // Replace with your color scheme
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling'; // Replace with your scaling utils
@@ -24,7 +26,9 @@ import { LanguageContext } from '../../context/LanguageContext';
 import showToast from '../../utils/showToast';
 export default function EditProfile() {
   const Navigation=useNavigation()
-  const { t } = useContext(LanguageContext);
+  // Aliased: this screen already has its own `language` state (the spoken-languages
+  // text field), which would otherwise shadow the app's UI language.
+  const { t, language: appLanguage } = useContext(LanguageContext);
   const [name, setName] = useState('');
   const [data, setData] = useState(null);
   const [email, setEmail] = useState('');
@@ -35,6 +39,12 @@ export default function EditProfile() {
   const [callCharge, setCallCharge] = useState('');
   const [videoCharge, setVideoCharge] = useState('');
   const [language, setLanguage] = useState('');
+  // Skills/expertise, asked during signup (Registration.js) but with no way to
+  // change them afterwards until 2026-10-03 — an astrologer was stuck for good
+  // with whatever they picked while registering. `specialties` is uuid[] holding
+  // `categories.id`; skillsOptions is that table, loaded for the picker.
+  const [specialties, setSpecialties] = useState([]);
+  const [skillsOptions, setSkillsOptions] = useState([]);
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
@@ -108,6 +118,29 @@ export default function EditProfile() {
       console.log(e);
     }
   };
+  // The skills picker's options. Read through the backend's own /api/categories
+  // (the same list Home shows customers) rather than a direct `categories` read,
+  // so this screen needs no Supabase client of its own. Failing is non-fatal: the
+  // picker then shows the astrologer's saved skills as ids-less chips rather than
+  // blocking the rest of the profile, and the save still round-trips them.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await Instance.get('/api/categories');
+        if (cancelled) return;
+        const options = (res.data?.categories || []).map((c) => ({
+          label: appLanguage === 'Hindi' ? (c.hindi?.name || c.name) : c.name,
+          value: String(c._id),
+        }));
+        setSkillsOptions(options);
+      } catch (e) {
+        console.log('[EditProfile] categories fetch failed:', e.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [appLanguage]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -135,6 +168,9 @@ export default function EditProfile() {
         setVideoCharge(astroData.video_charge_per_minute == null ? '' : astroData.video_charge_per_minute.toString());
         setChargesLocked(!!astroData.charges_locked_at);
         setLanguage(Array.isArray(astroData.languages) ? astroData.languages.join(', ') : (astroData.languages || ''));
+        // Stringified because MultiSelect compares option values by identity and
+        // the picker's own values are strings.
+        setSpecialties(Array.isArray(astroData.specialties) ? astroData.specialties.map(String) : []);
         setBio(astroData.bio || '');
         setProfileImage(astroData.profile_pic_url || astroData.profile_image || null);
         setBankAccountHolder(astroData.bank_account_holder || '');
@@ -201,6 +237,7 @@ export default function EditProfile() {
           call_charge_per_minute: parseInt(callCharge) || 0,
           video_charge_per_minute: parseInt(videoCharge) || 0,
           languages: langArray,
+          specialties: specialties,
           bio: bio,
           profile_pic_url: profilePicUrlToSave,
           bank_account_holder: bankAccountHolder.trim() || null,
@@ -398,6 +435,34 @@ fetchData()
           placeholder="e.g. English, Hindi"
         />
 
+        {/* Skills — picked at signup, editable here since 2026-10-03. Customers see
+            these on the astrologer's card and profile, so they are worth keeping
+            current as an astrologer adds practices. */}
+        <Text style={styles.label}>{t('editProfile.skills')} <Text style={styles.requiredStar}>★</Text></Text>
+        <Text style={styles.skillsHint}>{t('editProfile.skillsHint')}</Text>
+        <MultiSelect
+          style={styles.dropdown}
+          containerStyle={styles.dropdownList}
+          data={skillsOptions}
+          labelField="label"
+          valueField="value"
+          placeholder={t('editProfile.skillsPlaceholder')}
+          placeholderStyle={styles.dropdownPlaceholder}
+          selectedTextStyle={styles.dropdownSelectedText}
+          // Without an explicit colour the open option list falls back to the
+          // NATIVE theme's default text colour, and this app's theme is
+          // DayNight — in system dark mode that is white text on the list's own
+          // white background, i.e. invisible. Same trap as Registration.js's
+          // gender Dropdown.
+          itemTextStyle={styles.dropdownItemText}
+          activeColor={COLORS.AstroSoftOrange || '#FDF1E7'}
+          value={specialties}
+          onChange={setSpecialties}
+          renderRightIcon={() => (
+            <Ionicons name="chevron-down-outline" color={COLORS.orange} size={moderateScale(20)} />
+          )}
+        />
+
         <View style={styles.divider} />
         <Text style={styles.sectionTitle}>{t('editProfile.payoutDetails')}</Text>
         <Text style={styles.payoutHint}>
@@ -553,6 +618,30 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     backgroundColor: '#FAFAFA',
   },
+  skillsHint: {
+    fontSize: moderateScale(12),
+    color: '#888',
+    marginTop: verticalScale(-4),
+    marginBottom: verticalScale(8),
+  },
+  // Matches `input` above so the picker does not read as a different kind of
+  // control from every other field on this screen.
+  dropdown: {
+    borderWidth: 1.5,
+    borderColor: '#EEEEEE',
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(15),
+    marginBottom: verticalScale(20),
+    backgroundColor: '#FAFAFA',
+  },
+  dropdownList: {
+    borderRadius: moderateScale(12),
+    backgroundColor: '#fff',
+  },
+  dropdownPlaceholder: { fontSize: moderateScale(15), color: COLORS.lightGrey },
+  dropdownSelectedText: { fontSize: moderateScale(13), color: COLORS.AstroMaroon },
+  dropdownItemText: { fontSize: moderateScale(14), color: COLORS.black },
   textArea: {
     height: verticalScale(110),
     paddingTop: verticalScale(12),

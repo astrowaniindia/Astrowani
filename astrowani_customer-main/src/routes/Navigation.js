@@ -91,6 +91,8 @@ import MyOrdersScreen from '../screens/drawerScreens/MyOrdersScreen';
 import GamificationHub from '../screens/Gamification/GamificationHub';
 import FeatureIntroScreen from '../screens/Gamification/FeatureIntroScreen';
 import VoiceNotesScreen from '../screens/drawerScreens/VoiceNotesScreen';
+import ChatHistoryScreen from '../screens/drawerScreens/ChatHistoryScreen';
+import ChatHistoryThreadScreen from '../screens/drawerScreens/ChatHistoryThreadScreen';
 import Settings from '../screens/drawerScreens/Settings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
 import FaqScreen from '../screens/drawerScreens/FaqScreen';
@@ -353,6 +355,29 @@ export default function Navigation({ initialRoute, onReady }) {
           component={VoiceNotesScreen}
           options={{
             title: 'Voice Notes',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(18) },
+          }}
+        />
+        <Stack.Screen
+          name="ChatHistory"
+          component={ChatHistoryScreen}
+          options={{
+            title: 'Chat History',
+            headerStyle: { backgroundColor: COLORS.AstroMaroon },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontSize: moderateScale(18) },
+          }}
+        />
+        {/* Title is set by the screen itself (navigation.setOptions) — it is the
+            astrologer's current name, or "Free Chat", neither of which is known
+            until the thread has loaded. */}
+        <Stack.Screen
+          name="ChatHistoryThread"
+          component={ChatHistoryThreadScreen}
+          options={{
+            title: 'Chat History',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
             headerTintColor: '#fff',
             headerTitleStyle: { fontSize: moderateScale(18) },

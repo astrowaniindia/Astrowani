@@ -179,6 +179,7 @@ const translations = {
     // Drawer
     'drawer.myWallet': 'My Wallet',
     'drawer.mySessions': 'My Sessions',
+    'drawer.chatHistory': 'Chat History',
     'drawer.remedies': 'Wani Shop',
     'drawer.chatWithAstrologer': 'Chat With Astrologer',
     'drawer.blogs': 'Astrowani Blogs',
@@ -193,6 +194,17 @@ const translations = {
     'drawer.connectWithUs': 'Connect With Us',
     'drawer.welcome': 'Welcome!',
     'drawer.updateProfile': 'Update your profile',
+
+    // Chat History (drawerScreens/ChatHistoryScreen.js + ChatHistoryThreadScreen.js)
+    'chatHistory.title': 'Chat History',
+    'chatHistory.freeChat': 'Free Chat',
+    'chatHistory.freeTag': 'FREE',
+    'chatHistory.you': 'You: ',
+    'chatHistory.empty': 'No chats yet.\nYour conversations with astrologers will appear here.',
+    'chatHistory.noMessages': 'No messages in this conversation yet.',
+    'chatHistory.loadFailed': 'Could not load your chat history. Pull down to try again.',
+    'chatHistory.readOnlyHint': 'This is a record of your past chats. To talk again, start a new chat with the astrologer.',
+    'chatHistory.freeChatHint': 'This was your free welcome chat.',
 
     // Settings
     'settings.aboutUs': 'About Us',
@@ -1600,6 +1612,7 @@ const translations = {
     // Drawer
     'drawer.myWallet': 'मेरा वॉलेट',
     'drawer.mySessions': 'मेरे सत्र',
+    'drawer.chatHistory': 'चैट हिस्ट्री',
     'drawer.remedies': 'वाणी शॉप',
     'drawer.chatWithAstrologer': 'ज्योतिषी से चैट करें',
     'drawer.blogs': 'एस्ट्रोवाणी ब्लॉग',
@@ -1614,6 +1627,17 @@ const translations = {
     'drawer.connectWithUs': 'हमसे जुड़ें',
     'drawer.welcome': 'स्वागत है!',
     'drawer.updateProfile': 'अपनी प्रोफ़ाइल अपडेट करें',
+
+    // Chat History (drawerScreens/ChatHistoryScreen.js + ChatHistoryThreadScreen.js)
+    'chatHistory.title': 'चैट हिस्ट्री',
+    'chatHistory.freeChat': 'फ्री चैट',
+    'chatHistory.freeTag': 'फ्री',
+    'chatHistory.you': 'आप: ',
+    'chatHistory.empty': 'अभी कोई चैट नहीं है।\nज्योतिषियों के साथ आपकी बातचीत यहाँ दिखेगी।',
+    'chatHistory.noMessages': 'इस बातचीत में अभी कोई संदेश नहीं है।',
+    'chatHistory.loadFailed': 'आपकी चैट हिस्ट्री लोड नहीं हो सकी। फिर से कोशिश करने के लिए नीचे खींचें।',
+    'chatHistory.readOnlyHint': 'यह आपकी पिछली चैट का रिकॉर्ड है। दोबारा बात करने के लिए ज्योतिषी से नई चैट शुरू करें।',
+    'chatHistory.freeChatHint': 'यह आपकी फ्री वेलकम चैट थी।',
 
     // Settings
     'settings.aboutUs': 'हमारे बारे में',

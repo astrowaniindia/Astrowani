@@ -168,6 +168,7 @@ function CustomDrawerContent(props, navigation) {
   const accountRows = [
     { trackKey: 'wallet', iconName: 'account-balance-wallet', label: t('drawer.myWallet'), onPress: () => props.navigation.navigate('Wallet') },
     { trackKey: 'my_sessions', iconName: 'phone-in-talk', label: t('drawer.mySessions'), onPress: () => props.navigation.navigate('SessionStack') },
+    { trackKey: 'chat_history', iconName: 'forum', label: t('drawer.chatHistory'), onPress: () => props.navigation.navigate('ChatHistory') },
     { trackKey: 'favorites', iconName: 'favorite', label: t('drawer.myFavorites'), onPress: () => props.navigation.navigate('FavoriteScreen') },
     { trackKey: 'my_orders', iconName: 'shopping-bag', label: t('drawer.myOrders'), onPress: () => props.navigation.navigate('MyOrders') },
     { trackKey: 'voice_notes', iconName: 'mic', label: t('drawer.voiceNotes'), onPress: () => props.navigation.navigate('VoiceNotes') },

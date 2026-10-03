@@ -122,6 +122,43 @@ const FreeBotChatScreen = ({ navigation, route }) => {
     captureEvent('free_bot_chat_ai_fallback', { reason });
   };
 
+  // Persist the transcript so Chat History (drawerScreens/ChatHistoryScreen.js) can
+  // show it afterwards. Until this existed, these messages lived only in component
+  // state and died with the screen — there was nothing to show.
+  //
+  // The WHOLE transcript is posted after each message rather than just the new one.
+  // The endpoint is idempotent on (customer, chatId + message id), so a post lost
+  // to a flaky connection is repaired by the next message instead of leaving a hole
+  // in the middle of the conversation — which also means no flush is needed on the
+  // way out, and the app being killed mid-chat still keeps everything said so far.
+  //
+  // Fire-and-forget, and deliberately silent on failure: a chat must never stall or
+  // show an error because of history bookkeeping.
+  const chatIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  useEffect(() => {
+    if (!messages.length) return;
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        await Instance.post(
+          '/api/free-bot-chat/messages',
+          {
+            chatId: chatIdRef.current,
+            messages: messages.map((m) => ({
+              clientId: m.id,
+              sender: m.sender === 'me' ? 'customer' : 'bot',
+              message: m.message,
+              created_at: m.created_at,
+            })),
+          },
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+      } catch (_) {
+        // Self-correcting: the next message re-posts everything.
+      }
+    })();
+  }, [messages]);
+
   useEffect(() => {
     captureEvent('free_bot_chat_started');
     // The engine keeps per-conversation memory (which topics it has already

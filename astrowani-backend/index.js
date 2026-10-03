@@ -6288,11 +6288,38 @@ app.put('/api/vendor/profile', async (req, res) => {
     const allowed = [
       'first_name', 'last_name', 'email', 'phone_number', 'gender', 'experience',
       'chat_charge_per_minute', 'call_charge_per_minute', 'video_charge_per_minute',
-      'languages', 'bio', 'profile_pic_url',
+      // `specialties` (the skills picked at signup) was missing here until
+      // 2026-10-03, so EditProfile had no way to offer them: anything the vendor
+      // app sent was silently dropped by this whitelist and the astrologer was
+      // stuck for good with whatever they chose during registration.
+      'languages', 'specialties', 'bio', 'profile_pic_url',
       'bank_account_holder', 'bank_account_number', 'bank_ifsc', 'bank_name', 'upi_id',
     ];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+
+    // astrologers.specialties is uuid[] referencing categories.id. A non-uuid
+    // member would make Postgres reject the whole UPDATE, losing every other
+    // field in the same save — so bad members are refused up front with a reason
+    // instead of taking the rest of the profile down with them.
+    if ('specialties' in body) {
+      if (!Array.isArray(body.specialties)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_SPECIALTIES',
+          message: 'Skills must be a list.',
+        });
+      }
+      const specialties = body.specialties.map((s) => String(s));
+      if (specialties.some((s) => !isUuid(s))) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_SPECIALTIES',
+          message: 'One of the selected skills is not valid. Please re-pick your skills.',
+        });
+      }
+      body.specialties = [...new Set(specialties)];
+    }
 
     if ('email' in body) {
       if (!isValidEmail(body.email)) {
@@ -6794,6 +6821,283 @@ app.get('/api/vendor/chat-threads/:customerId', async (req, res) => {
   } catch (err) {
     console.error('GET /api/vendor/chat-threads/:customerId error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch chat history' });
+  }
+});
+
+// ── Customer chat history ───────────────────────────────────────────────────
+//
+// The customer-side mirror of /api/vendor/chat-threads above, built the same way:
+// from `chat_messages` keyed by sender/receiver rather than session_id, so every
+// session the customer has ever had with one astrologer merges into a single
+// thread. Alongside it, the free welcome chat, which lives in its own table
+// (sql/free_bot_chat_messages.sql) because the bot has no astrologers row and
+// therefore no participant uuid to key `chat_messages` on.
+//
+// Every endpoint below refuses an ASTROLOGER token outright instead of letting
+// resolveCustomerFromReq find a customer row by phone. One phone number can be
+// both a customer and an astrologer — the store-reviewer account 9999999999 is
+// exactly that — and resolveCustomerFromReq works by phone, so a vendor token
+// would otherwise be served the private transcripts of the customer who shares
+// the number. Same trap, same fix, as GET /api/requests/:kind/:id/status.
+
+/** null when the caller is a customer; an error string otherwise. */
+function astrologerTokenRefusal(req) {
+  const authToken = (req.headers.authorization || '').split(' ')[1];
+  let decoded = null;
+  try { decoded = authToken ? jwt.verify(authToken, process.env.JWT_SECRET) : null; } catch (_) { decoded = null; }
+  if (!decoded) return 'unauthenticated';
+  if (decoded.role === 'astrologer' || decoded.astroId || decoded.vendorId) return 'astrologer';
+  return null;
+}
+
+// A photo column can legitimately hold a base64 data URI on legacy rows (see
+// formatAstrologer) — those must not be shipped inside a list payload.
+const httpPhotoOnly = (url) => (typeof url === 'string' && url.startsWith('http') ? url : null);
+
+app.get('/api/customer/chat-threads', async (req, res) => {
+  try {
+    const refusal = astrologerTokenRefusal(req);
+    if (refusal) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    // Interpolated into the .or() logic tree below. The id comes from our own
+    // reconciliation, not the request body, so this is belt-and-braces — but the
+    // cost of being wrong is the whole chat_messages table (src/pgrstFilter.js).
+    if (!isUuid(customer.id)) return res.status(400).json({ success: false, message: 'Invalid id' });
+
+    const [{ data: rows, error }, { data: freeRows }] = await Promise.all([
+      supabaseService
+        .from('chat_messages')
+        .select('id, sender_id, receiver_id, message, created_at')
+        .or(`sender_id.eq.${customer.id},receiver_id.eq.${customer.id}`)
+        .order('created_at', { ascending: false })
+        .limit(3000),
+      // The free chat is one merged thread regardless of how many times it was
+      // granted, so only its newest message is needed for the list row.
+      supabaseService
+        .from('free_bot_chat_messages')
+        .select('message, created_at, sender')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+        .limit(1),
+    ]);
+    if (error) throw error;
+
+    // One row per astrologer: the FIRST sighting of each id, since rows are already
+    // newest-first — that first sighting is the last message in that thread.
+    const byAstrologer = {};
+    (rows || []).forEach((m) => {
+      const otherId = String(m.sender_id) === String(customer.id) ? m.receiver_id : m.sender_id;
+      if (!otherId || String(otherId) === String(customer.id)) return;
+      if (!byAstrologer[otherId]) {
+        byAstrologer[otherId] = {
+          astrologerId: otherId,
+          lastMessage: m.message,
+          lastMessageAt: m.created_at,
+          lastMessageFromMe: String(m.sender_id) === String(customer.id),
+        };
+      }
+    });
+
+    const astroIds = Object.keys(byAstrologer);
+    let threads = [];
+    if (astroIds.length) {
+      const { data: astrologers } = await supabaseService
+        .from('astrologers').select('id, first_name, last_name, profile_pic_url').in('id', astroIds);
+      const byId = {};
+      (astrologers || []).forEach((a) => { byId[a.id] = a; });
+      threads = astroIds.map((id) => {
+        const a = byId[id];
+        const name = a ? `${a.first_name || ''} ${a.last_name || ''}`.trim() : '';
+        return {
+          ...byAstrologer[id],
+          kind: 'astrologer',
+          name: name || 'Astrologer',
+          profileImage: httpPhotoOnly(a?.profile_pic_url),
+        };
+      });
+    }
+
+    // The free chat is returned as a thread of its own, flagged so the app can
+    // label it rather than having to recognise a magic id. The app supplies its
+    // own title ("Free Chat") and icon — no persona name is stored, because the
+    // admin can change the persona at any time and a stale name would be worse
+    // than none.
+    if (freeRows && freeRows.length) {
+      threads.push({
+        kind: 'free_chat',
+        astrologerId: 'free_chat',
+        name: null,
+        profileImage: null,
+        lastMessage: freeRows[0].message,
+        lastMessageAt: freeRows[0].created_at,
+        lastMessageFromMe: freeRows[0].sender === 'customer',
+      });
+    }
+
+    threads.sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+    return res.status(200).json({ success: true, data: threads });
+  } catch (err) {
+    console.error('GET /api/customer/chat-threads error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch chat history' });
+  }
+});
+
+// Every message ever exchanged between this customer and ONE astrologer, across
+// every session they have had. Oldest first, capped at the most recent 1000.
+app.get('/api/customer/chat-threads/:astrologerId', async (req, res) => {
+  try {
+    const refusal = astrologerTokenRefusal(req);
+    if (refusal) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { astrologerId } = req.params;
+    // Both ids land in the .or() logic tree below, so a non-uuid is refused
+    // OUTRIGHT rather than sanitised: a value carrying `)` and `,` closes the
+    // and() group it sits in and appends predicates of its own, which turns this
+    // correctly-scoped query into "every row in chat_messages" on the
+    // service-role client that bypasses RLS. See src/pgrstFilter.js.
+    if (!isUuid(astrologerId) || !isUuid(customer.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid id' });
+    }
+
+    const { data: rows, error } = await supabaseService
+      .from('chat_messages')
+      .select('id, sender_id, receiver_id, message, created_at, session_id')
+      .or(`and(sender_id.eq.${customer.id},receiver_id.eq.${astrologerId}),and(sender_id.eq.${astrologerId},receiver_id.eq.${customer.id})`)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+
+    const { data: astrologer } = await supabaseService
+      .from('astrologers').select('id, first_name, last_name, profile_pic_url')
+      .eq('id', astrologerId).maybeSingle();
+    const name = astrologer
+      ? `${astrologer.first_name || ''} ${astrologer.last_name || ''}`.trim()
+      : '';
+
+    return res.status(200).json({
+      success: true,
+      astrologer: {
+        id: astrologerId,
+        name: name || 'Astrologer',
+        profileImage: httpPhotoOnly(astrologer?.profile_pic_url),
+      },
+      // Fetched newest-first so the LIMIT keeps the most recent 1000, then
+      // reversed back to oldest-first for display.
+      data: (rows || []).reverse().map((m) => ({
+        id: m.id,
+        message: m.message,
+        created_at: m.created_at,
+        fromMe: String(m.sender_id) === String(customer.id),
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/customer/chat-threads/:astrologerId error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch chat history' });
+  }
+});
+
+// The free welcome chat's transcript, in the same message shape as the astrologer
+// thread above so one screen renders both.
+app.get('/api/customer/free-chat-thread', async (req, res) => {
+  try {
+    const refusal = astrologerTokenRefusal(req);
+    if (refusal) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { data, error } = await supabaseService
+      .from('free_bot_chat_messages')
+      .select('id, sender, message, created_at')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: true })
+      .limit(1000);
+    // A missing table (migration not applied) degrades to an empty transcript
+    // rather than a 500. PostgREST reports it as PGRST205, not 42P01.
+    if (error) {
+      if (['PGRST205', '42P01'].includes(String(error.code || ''))) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+      throw error;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: (data || []).map((m) => ({
+        id: m.id,
+        message: m.message,
+        created_at: m.created_at,
+        fromMe: m.sender === 'customer',
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/customer/free-chat-thread error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch chat history' });
+  }
+});
+
+// Saves the free chat's transcript so it can be read back in Chat History.
+//
+// The app posts the WHOLE accumulated transcript after each message, not one
+// append per message, so a request lost to a flaky connection self-heals on the
+// next one instead of leaving a hole in the middle of the conversation. That is
+// only safe because (customer_id, client_id) is UNIQUE and this insert ignores
+// duplicates — see sql/free_bot_chat_messages.sql for why client_id must carry
+// the chat id as well as the per-chat message index.
+//
+// Best-effort by design: the chat itself must never fail or stall over history
+// bookkeeping, so the app fires this without awaiting it.
+app.post('/api/free-bot-chat/messages', async (req, res) => {
+  try {
+    const refusal = astrologerTokenRefusal(req);
+    if (refusal) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { chatId, messages } = req.body || {};
+    if (!chatId || typeof chatId !== 'string' || !Array.isArray(messages)) {
+      return res.status(400).json({ success: false, message: 'chatId and messages are required' });
+    }
+
+    // Caps, because this is client-supplied: a free chat is 5 minutes of typing,
+    // so anything beyond these is not a real transcript.
+    const rows = messages
+      .slice(0, 200)
+      .filter((m) => m && typeof m.message === 'string' && m.message.trim()
+        && (m.sender === 'customer' || m.sender === 'bot')
+        && (typeof m.clientId === 'string' || typeof m.id === 'string'))
+      .map((m) => ({
+        customer_id: customer.id,
+        chat_id: String(chatId).slice(0, 100),
+        client_id: `${String(chatId).slice(0, 100)}:${String(m.clientId || m.id).slice(0, 60)}`,
+        sender: m.sender,
+        message: m.message.slice(0, 2000),
+        // The client's own timestamp keeps the transcript in the order it was
+        // actually said; a server stamp would collapse a re-post of ten messages
+        // into one instant.
+        created_at: m.created_at && !Number.isNaN(Date.parse(m.created_at))
+          ? new Date(m.created_at).toISOString()
+          : new Date().toISOString(),
+      }));
+
+    if (!rows.length) return res.status(200).json({ success: true, saved: 0 });
+
+    const { error } = await supabaseService
+      .from('free_bot_chat_messages')
+      .upsert(rows, { onConflict: 'customer_id,client_id', ignoreDuplicates: true });
+    if (error) {
+      if (['PGRST205', '42P01'].includes(String(error.code || ''))) {
+        return res.status(200).json({ success: true, saved: 0 });
+      }
+      throw error;
+    }
+
+    return res.status(200).json({ success: true, saved: rows.length });
+  } catch (err) {
+    console.error('POST /api/free-bot-chat/messages error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not save chat history' });
   }
 });
 
