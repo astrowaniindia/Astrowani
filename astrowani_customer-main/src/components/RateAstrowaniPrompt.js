@@ -83,9 +83,21 @@ async function readTs(key) {
   try { return Number(await AsyncStorage.getItem(key)) || 0; } catch (_) { return 0; }
 }
 
-/** Should the card be raised at all? Fails OPEN -- a broken read must not silence it. */
+/**
+ * Should the card be raised at all? Fails OPEN -- a broken read must not silence it.
+ *
+ * ── WHY THIS SILENTLY SWALLOWS THE CARD WHILE TESTING (2026-10-04) ──────────────
+ * Every gate below is a persisted AsyncStorage stamp, so the FIRST run of a post-call
+ * test arms a cooldown that suppresses every run after it: 90 days for an answer, 7 for
+ * a dismissal, and `hasReviewed()` is forever. From the outside that is indistinguishable
+ * from the prompt being broken -- the chain runs, showRateAstrowani fires, and nothing
+ * appears. It cost a debugging session to find, so: in a DEV build the gates are off and
+ * the card always shows. Release builds are completely unaffected; the cooldowns above
+ * are the real product behaviour and are deliberately not weakened.
+ */
 async function mayAsk(context) {
   try {
+    if (__DEV__) return true;
     if (await hasReviewed()) return false;
     if (FORCING_CONTEXTS.includes(context)) return true;
     const now = Date.now();
