@@ -1254,3 +1254,4 @@ function UserProfileStack() {
 function WalletStack({ navigation }) {
   return <Stack.Navigator></Stack.Navigator>;
 }
+

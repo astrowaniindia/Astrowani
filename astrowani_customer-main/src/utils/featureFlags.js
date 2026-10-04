@@ -12,25 +12,35 @@ import { Platform } from 'react-native';
  */
 export const FREE_BOT_CHAT_ENABLED = Platform.OS !== 'ios';
 
-// ── Post-free-call prompts, all switched OFF (owner, 2026-10-03) ───────────────
+// ── Post-free-call prompts (owner, rewritten 2026-10-04) ──────────────────────
 //
-// When an 11-minute free intro call ends, the customer used to be walked through up to
-// four modals in a row: "want to keep talking?" (with a 90-second countdown, then the
-// priced 5 / 10 / 15 minute options), "did you like the call?", the Dakshina ask, and
-// finally "would you rate us?". The owner wants the moment the call ends to be the end
-// of it — the customer goes straight Home and nothing is asked of them.
+// THE ORDER AFTER AN 11-MINUTE FREE CALL, and it is deliberate:
 //
-// HIDDEN, NOT DELETED. Every component, endpoint and backend route stays exactly where
-// it is; these flags are the only thing in the way, so each one can be brought back on
-// its own. The server-side reservation that backs the continue sheet is turned off to
-// match, in sessionManager's UPSELL_SHEET_ENABLED — leaving it on would hold the
-// astrologer busy for ninety seconds after every free call for a sheet nobody sees.
+//     Shagun Arpan  ->  [ more minutes, ONLY if the call ran >= 9 min ]  ->  rate us
+//
+// Shagun is ALWAYS first, whatever the call's length and whoever hung up. Paying ends
+// with a thank-you the customer dismisses themselves; pressing ✕ moves straight on. The
+// "more minutes" sheet is the only conditional step. Rating is always last, and 1-3
+// stars apologises while 4-5 offers the Play Store (components/RateAstrowaniPrompt).
+//
+// These were all switched off on 2026-10-03 — the owner wanted the call simply to end —
+// and brought back in this order on 2026-10-04. "Did you like the call?" was NOT brought
+// back: it used to gate the Dakshina ask, and Shagun now comes first unconditionally, so
+// it has no place left in the chain.
 //
 // Platform-independent: unlike the flag above, this is a product decision, not an App
 // Review one, so it applies on Android and iOS alike.
 
-/** The "5 / 10 / 15 more minutes" sheet, and its "we've held your place" countdown. */
-export const FREE_CALL_CONTINUE_ENABLED = false;
+/**
+ * The "5 / 10 / 15 more minutes" sheet, and its decision countdown.
+ *
+ * Shown ONLY after a call of MIN_UPSELL_SECONDS (9 min) or more — see VoiceCallScreen.
+ * The countdown is a real server-side reservation, not decoration: it takes the
+ * astrologer off the market. Because Shagun now runs first and can take a minute of
+ * Razorpay, that hold is created when THIS sheet opens rather than when the call ends
+ * (owner's decision, 2026-10-04) — see /api/free-call/continue/options.
+ */
+export const FREE_CALL_CONTINUE_ENABLED = true;
 
 /** "Did you like the free call?" — the yes/no gate in front of the Dakshina ask. */
 export const CALL_FEEDBACK_PROMPT_ENABLED = false;
@@ -55,5 +65,8 @@ export const SHAGUN_RECHARGE_ENABLED = true;
  * The "thanks — would you share a review?" star card, AFTER A FREE CALL ONLY.
  * The prompt itself is untouched elsewhere: an admin can still raise it deliberately
  * from the dashboard (socket `show_review_popup`) or by a push the customer taps.
+ *
+ * ALWAYS THE LAST STEP of the post-call chain, reached from Shagun (paid or dismissed)
+ * or from the "more minutes" sheet being declined.
  */
-export const FREE_CALL_RATING_PROMPT_ENABLED = false;
+export const FREE_CALL_RATING_PROMPT_ENABLED = true;

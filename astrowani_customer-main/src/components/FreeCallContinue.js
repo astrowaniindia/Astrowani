@@ -94,10 +94,24 @@ export function FreeCallContinueHost() {
   const [deadlineAt, setDeadlineAt] = useState(null);
   const deadlineRef = useRef(null);           // absolute ms, so a late tick cannot drift
 
-  const visible = useDeferredPresent(!!req);
+  // ── THE SHEET IS NOT SHOWN UNTIL IT IS COMPLETE (owner, 2026-10-04) ────────────
+  // It used to appear the instant it was asked for and then assemble itself in front of
+  // the customer: avatar and title first, a spinner where the buttons go, and the
+  // countdown pill popping in afterwards. Presentation now waits for the options, so it
+  // arrives in one frame, fully drawn.
+  //
+  // `ready` is a FLOOR, not a promise of data: the safety timer below raises the sheet
+  // even if the request never answers, because the rating step hangs off this sheet
+  // closing and a dead fetch must not swallow the rest of the chain.
+  const [ready, setReady] = useState(false);
+
+  const visible = useDeferredPresent(!!req && ready);
   useModalPresence(visible);
 
-  useEffect(() => { listener = (o) => setReq(o); return () => { listener = null; }; }, []);
+  useEffect(() => {
+    listener = (o) => { setReady(false); setReq(o); };
+    return () => { listener = null; };
+  }, []);
 
   // ── Recovering an offer the customer never got to see ──────────────────────
   //
@@ -155,7 +169,7 @@ export function FreeCallContinueHost() {
   }, []);
 
   const close = useCallback(() => {
-    setRevealed(false);
+    setRevealed(false); setReady(false);
     setReq(null); setData(null); setPaying(false); payingRef.current = false;
     setSecondsLeft(null); deadlineRef.current = null; setDeadlineAt(null);
     // This offer is settled one way or the other, so stop the foreground recovery above
@@ -202,19 +216,46 @@ export function FreeCallContinueHost() {
     }
   }, [req, close]);
 
-  // Load the options as soon as the sheet is asked for. If the hold is already gone
-  // (the astrologer was taken during the decision window by a paying customer —
-  // deliberate, see astrologerHolds.js) there is nothing to sell, so say so instead of
-  // showing buttons that cannot work.
+  // Read through a ref from inside the load effect below. `finish` is recreated whenever
+  // `req` changes, so depending on it directly there would re-run the fetch — and the
+  // fetch is what opens the server-side hold.
+  const finishRef = useRef(null);
+  finishRef.current = finish;
+
+  // Load the options as soon as the sheet is asked for. The prices are shown whatever
+  // the astrologer is doing — busy is never surfaced before payment (owner, 2026-10-04)
+  // — so the only reason this finds nothing to sell is an astrologer with no rate at
+  // all, which skips the sheet entirely rather than drawing an empty one.
   useEffect(() => {
     if (!req) return;
     let cancelled = false;
     setLoading(true);
+    // Never let an unanswered request mean no sheet at all. getContinueOptions resolves
+    // rather than throwing, but `Instance` has no timeout, so a hung socket would
+    // otherwise leave this pending forever and the customer would never be rated.
+    const floor = setTimeout(() => { if (!cancelled) setReady(true); }, 3500);
     (async () => {
       const res = await getContinueOptions();
       if (cancelled) return;
+
+      // NOTHING PRICED -> DO NOT SHOW A SHEET AT ALL, and carry the chain straight on to
+      // the rating. The server prices from the astrologer's own rate and no longer
+      // withholds options for a busy astrologer, so this is now only reachable when
+      // there is genuinely no rate to sell at. There is deliberately no "they have moved
+      // on" card here any more: an empty sheet and a busy-state explanation are both
+      // worse than simply moving on (owner, 2026-10-04).
+      if (!(res?.options || []).length) {
+        captureEvent('free_call_continue_nothing_to_sell', {
+          astrologer_id: req.astrologerId || null,
+          active: !!res?.active,
+        });
+        finishRef.current?.();
+        return;
+      }
+
       setData(res);
       setLoading(false);
+      setReady(true);
       // The server's own remaining seconds, turned into an absolute deadline once. If
       // the app was backgrounded between the call ending and this opening, that number
       // is already smaller — which is correct, the reservation has been running.
@@ -231,7 +272,7 @@ export function FreeCallContinueHost() {
         options: (res.options || []).length,
       });
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(floor); };
   }, [req]);
 
   /** The ✕ — let the astrologer go now rather than at the end of the hold. */
@@ -312,18 +353,19 @@ export function FreeCallContinueHost() {
     // the sheet out from under a payment in flight.
   }, [req, paying, deadlineAt]);
 
-  /** They are busy now: offer the waitlist rather than a dead end. */
-  const offerWaitlist = useCallback((astrologerId) => {
-    finish();
-    showStatusPopup({
-      variant: 'busy',
-      title: t('freeCallContinue.goneTitle'),
-      message: t('freeCallContinue.goneBody'),
-      confirmText: t('freeCallContinue.notifyMe'),
-      cancelText: t('common.close'),
-      onConfirm: () => { if (astrologerId) requestNotifyMe(astrologerId, 'audio', { t }); },
-    });
-  }, [finish, t]);
+  // ── "They have moved on" IS GONE, DELIBERATELY AND COMPLETELY (owner, 2026-10-04) ──
+  //
+  // There used to be an `offerWaitlist()` here that raised a "this astrologer has
+  // started another consultation / Notify me" popup, from two places: the ✕-less
+  // fallback body of this sheet, and a HOLD_EXPIRED refusal from /continue/start.
+  //
+  // NOTHING about the astrologer being busy may be shown BEFORE payment. The 5 / 10 /
+  // 15 minute prices are offered unconditionally — a busy astrologer is not a reason to
+  // withhold them, because the decision window no longer reserves the astrologer at all.
+  // It is 60 seconds for the CUSTOMER to decide, nothing more; if the astrologer happens
+  // to be free when the paid call rings, it connects, and if not, the customer is told
+  // AFTER paying, by the paidBusy popup in `choose()` below — which is the single place
+  // busy is ever mentioned, and the money is already safe in their own wallet by then.
 
   const choose = useCallback(async (option) => {
     // Set the latch BEFORE the first await. Every await yields the event loop, so a
@@ -374,6 +416,58 @@ export function FreeCallContinueHost() {
       captureEvent('wallet_recharged', { amount: start.amount });
       captureEvent('free_call_continue_paid', { minutes: option.minutes, amount: start.amount });
 
+      // PAID — but they may have been taken while the gateway was open. The hold blocks
+      // other FREE calls, not paid ones, and the customer was away in Razorpay for
+      // however long it took them.
+      //
+      // THEIR MONEY IS NOT STUCK, which is why this is a message and not a refund path:
+      // /continue/start deliberately creates an ordinary wallet recharge, so the amount
+      // is already sitting in their wallet and will pay for this astrologer whenever they
+      // do connect. Say that plainly and put them on the waitlist, instead of dropping
+      // them onto a profile whose Call button will just fail.
+      // `after.busy` / `after.offline` are the signals now, not an empty options list.
+      // The server stopped withholding options (that is what used to put the "started
+      // another consultation" card in front of customers BEFORE they paid), so an
+      // unreachable astrologer still prices normally and has to be detected explicitly.
+      //
+      // TWO DIFFERENT MESSAGES, because they are two different facts (owner, 2026-10-04):
+      //   offline -> they switched calls off, or were suspended. "Back online" is the
+      //              thing to promise.
+      //   busy    -> they are simply on another call right now. "Free" is the thing to
+      //              promise.
+      // The server makes them mutually exclusive, so this never has to rank them.
+      const after = await getContinueOptions();
+      const unreachable = !after?.active || !(after.options || []).length
+        || after.busy || after.offline;
+      if (unreachable) {
+        const wentOffline = !!after?.offline;
+        captureEvent('free_call_continue_paid_but_busy', {
+          astrologer_id: astrologerId || null,
+          minutes: option.minutes,
+          reason: wentOffline ? 'offline' : 'busy',
+        });
+        // Carry the chain ourselves rather than calling finish(): finish() raises the
+        // next step on a timer, which would put the rating card on screen underneath
+        // this popup — two root modals at once, the shape that freezes iOS.
+        const ctx = req;
+        close();
+        // ONE button, and it reads "Notify me" (owner, 2026-10-04). requestNotifyMe is
+        // fired from the button rather than the moment this appears: being put on a
+        // waitlist is something the customer agrees to, and a single-button popup whose
+        // action already happened silently is just an OK button wearing a label.
+        showStatusPopup({
+          variant: 'busy',
+          title: t(wentOffline ? 'freeCallContinue.paidOfflineTitle' : 'freeCallContinue.paidBusyTitle'),
+          message: t(wentOffline ? 'freeCallContinue.paidOfflineBody' : 'freeCallContinue.paidBusyBody'),
+          buttonText: t('freeCallContinue.notifyMe'),
+          onClose: () => {
+            if (astrologerId) requestNotifyMe(astrologerId, 'audio', { t });
+            if (typeof ctx?.onDeclined === 'function') setTimeout(() => ctx.onDeclined(), 450);
+          },
+        });
+        return;
+      }
+
       close();
       // Hand off to the ORDINARY paid call flow rather than reimplementing ringing,
       // acceptance and the Realtime backup a third time. AstrologerInfo's `autoAction`
@@ -403,8 +497,10 @@ export function FreeCallContinueHost() {
       // purchase that did not happen. Fire and forget: this is already an error path.
       abandonContinuePayment();
 
-      if (err?.code === 'HOLD_EXPIRED') { offerWaitlist(astrologerId); return; }
-
+      // HOLD_EXPIRED used to be special-cased into the "they have moved on" waitlist
+      // popup. That popup is gone (see above) and the server no longer refuses a
+      // purchase because the astrologer is busy, so anything landing here now is an
+      // ordinary failure — reported as one, with no mention of the astrologer's state.
       const rz = describeRazorpayError(err);
       // A cancelled payment is not a failure. Nothing was charged and they know they
       // pressed back; a red "Payment failed" only implies their money is in limbo.
@@ -415,14 +511,18 @@ export function FreeCallContinueHost() {
         message: rz.message || err?.message || t('freeCallContinue.payFailedBody'),
       });
     }
-  }, [data, req, close, offerWaitlist, t]);
+  }, [data, req, close, t]);
 
   if (!req) return null;
 
   const name = data?.astrologerName || req.astrologerName || t('common.astrologer');
   const image = data?.astrologerImage || req.astrologerImage || '';
   const options = data?.options || [];
-  const canBuy = !!data?.active && options.length > 0;
+  // Only governs whether the countdown pill and the two-step reveal are drawn. It is NOT
+  // a gate on the prices any more — those render unconditionally, busy or not. A sheet
+  // with nothing priced is never presented at all (see the load effect), so by the time
+  // anything renders there is always something to buy.
+  const canBuy = options.length > 0;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={dismiss}>
@@ -435,13 +535,35 @@ export function FreeCallContinueHost() {
             <MaterialIcons name="close" size={moderateScale(18)} color={COLORS.AstroMaroon} />
           </TouchableOpacity>
 
-          {image ? (
-            <Image source={{ uri: image }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarFallback]}>
-              <MaterialIcons name="person" size={moderateScale(32)} color={COLORS.AstroMaroon} />
+          {/* Their photo, a dashed arrow, and a call icon — one row across the top of the
+              card (owner's sketch, 2026-10-04). It says "you → back on a call with them"
+              before a word is read, which is the whole job of this card. Decorative, so
+              the row takes no touches at all. */}
+          <View style={styles.headerRow} pointerEvents="none">
+            {image ? (
+              <Image source={{ uri: image }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <MaterialIcons name="person" size={moderateScale(32)} color={COLORS.AstroMaroon} />
+              </View>
+            )}
+
+            <View style={styles.headerArrow}>
+              <View style={styles.headerDot} />
+              <View style={styles.headerDot} />
+              <View style={styles.headerDot} />
+              <MaterialIcons
+                name="arrow-forward-ios"
+                size={moderateScale(13)}
+                color={COLORS.AstroMaroon}
+                style={styles.headerArrowHead}
+              />
             </View>
-          )}
+
+            <View style={styles.callCircle}>
+              <MaterialIcons name="call" size={moderateScale(27)} color={COLORS.AstroMaroon} />
+            </View>
+          </View>
 
           <Text style={styles.title}>{t('freeCallContinue.title')}</Text>
           <Text style={styles.subtitle}>{t('freeCallContinue.subtitle', { name })}</Text>
@@ -465,17 +587,15 @@ export function FreeCallContinueHost() {
           {loading ? (
             <ActivityIndicator color={COLORS.AstroMaroon} style={{ marginVertical: verticalScale(18) }} />
           ) : canBuy && !revealed ? (
-            /* Step one: the question, and nothing priced. ✕ (above) is the other answer. */
-            <>
-              <TouchableOpacity style={styles.revealBtn} onPress={reveal} activeOpacity={0.85}>
-                <MaterialIcons name="add-circle-outline" size={moderateScale(18)} color={COLORS.white} />
-                <Text style={styles.revealTxt}>{t('freeCallContinue.wantMore')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={dismiss} activeOpacity={0.7} style={styles.noThanks}>
-                <Text style={styles.noThanksTxt}>{t('freeCallContinue.noThanks')}</Text>
-              </TouchableOpacity>
-            </>
-          ) : canBuy ? (
+            /* Step one: the question, and nothing priced. The ✕ in the corner is the
+               ONLY way to say no (owner, 2026-10-04) — the "No thanks" text button under
+               this was removed, because two declines on one card is one too many and the
+               ✕ already releases the astrologer immediately. */
+            <TouchableOpacity style={styles.revealBtn} onPress={reveal} activeOpacity={0.85}>
+              <MaterialIcons name="add-circle-outline" size={moderateScale(18)} color={COLORS.white} />
+              <Text style={styles.revealTxt}>{t('freeCallContinue.wantMore')}</Text>
+            </TouchableOpacity>
+          ) : (
             <>
               {options.map((o) => (
                 <TouchableOpacity
@@ -500,17 +620,6 @@ export function FreeCallContinueHost() {
                 <Text style={styles.note}>{t('freeCallContinue.walletNote')}</Text>
               )}
             </>
-          ) : (
-            <>
-              <Text style={styles.note}>{t('freeCallContinue.goneBody')}</Text>
-              <TouchableOpacity
-                style={styles.notifyBtn}
-                onPress={() => offerWaitlist(data?.astrologerId || req.astrologerId)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.notifyTxt}>{t('freeCallContinue.notifyMe')}</Text>
-              </TouchableOpacity>
-            </>
           )}
         </View>
       </View>
@@ -532,6 +641,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0E2D4', borderWidth: 1, borderColor: BORDER,
     zIndex: 2,
   },
+  // [ photo ]  · · ·›  [ call ]
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  headerArrow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: scale(10),
+  },
+  headerDot: {
+    width: scale(4), height: scale(4), borderRadius: scale(2),
+    backgroundColor: COLORS.AstroMaroon, opacity: 0.45, marginRight: scale(4),
+  },
+  headerArrowHead: { marginLeft: scale(-1), opacity: 0.75 },
+  // Same diameter as the avatar so the two sit on one optical line.
+  callCircle: {
+    width: scale(62), height: scale(62), borderRadius: scale(31),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#F6E9DC', borderWidth: 1, borderColor: BORDER,
+  },
   avatar: { width: scale(62), height: scale(62), borderRadius: scale(31), backgroundColor: COLORS.AstroSoftOrange },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: moderateScale(17), fontWeight: '800', color: COLORS.AstroMaroon, marginTop: verticalScale(10) },
@@ -549,14 +675,12 @@ const styles = StyleSheet.create({
     color: COLORS.white, fontWeight: '800', fontSize: moderateScale(14),
     marginLeft: scale(8), includeFontPadding: false,
   },
-  noThanks: { marginTop: verticalScale(12), paddingVertical: verticalScale(4) },
-  noThanksTxt: { color: '#8a7668', fontSize: moderateScale(12.5), fontWeight: '600' },
   timerPill: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#F6E9DC', borderWidth: 1, borderColor: BORDER,
     borderRadius: moderateScale(20),
     paddingHorizontal: scale(12), paddingVertical: verticalScale(5),
-    marginBottom: verticalScale(14),
+    marginTop: verticalScale(14), marginBottom: verticalScale(14),
   },
   timerPillUrgent: { backgroundColor: '#FBE3DA', borderColor: '#E9BBA8' },
   timerTxt: {
@@ -579,9 +703,4 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(10.5), color: '#7a6a5e', textAlign: 'center',
     marginTop: verticalScale(4), lineHeight: moderateScale(16),
   },
-  notifyBtn: {
-    marginTop: verticalScale(14), backgroundColor: COLORS.AstroMaroon,
-    borderRadius: moderateScale(22), paddingHorizontal: scale(24), paddingVertical: verticalScale(10),
-  },
-  notifyTxt: { color: COLORS.white, fontWeight: '700', fontSize: moderateScale(13) },
 });
