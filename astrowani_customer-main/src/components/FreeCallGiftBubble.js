@@ -13,7 +13,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 
-const FreeCallGiftBubble = ({ visible, label, onPress }) => {
+const FreeCallGiftBubble = ({ visible, label, onPress, liftStyle }) => {
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -37,7 +37,10 @@ const FreeCallGiftBubble = ({ visible, label, onPress }) => {
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] });
 
   return (
-    <View style={styles.wrap} pointerEvents="box-none">
+    // `liftStyle` (an Animated transform, from Home) slides this up out of the way of
+    // ConsultBar's "Chat with Astrologer" / "Talk To Astrologer" pills, which occupy the
+    // same bottom-right-ish band once they slide into view — see Home.js.
+    <Animated.View style={[styles.wrap, liftStyle]} pointerEvents="box-none">
       <Animated.View
         pointerEvents="none"
         style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
@@ -52,7 +55,7 @@ const FreeCallGiftBubble = ({ visible, label, onPress }) => {
           <Text style={styles.label} numberOfLines={1}>{label}</Text>
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 };
 

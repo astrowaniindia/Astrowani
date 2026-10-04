@@ -93,6 +93,10 @@ import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 
+// The Om that sits either side of the thought of the day on the dark header. One
+// source, rendered twice — the pair is symmetrical, so there is nothing to keep in step.
+const OM_SYMBOL = require('../../assets/images/om_white.png');
+
 // Bundled fallback banners — shown until the admin adds a home_primary banner in the dashboard.
 const FALLBACK_BANNERS = [
   require('../../assets/images/banner.jpeg'),
@@ -237,6 +241,14 @@ const MARQUEE_SPEED_PX_PER_SEC = 26; // roughly the old 1px-per-16ms drift
 const CONSULT_BAR_HIDDEN_UNTIL = 30;
 const CONSULT_BAR_SHOW_AT = 110;
 
+// How far the free-call gift bubble slides up, in lockstep with ConsultBar's own
+// slide-in (same scroll thresholds below), so the two never occupy the same band in
+// the bottom-right corner once ConsultBar appears. Matches ConsultBar's rendered
+// height (fixedBtn padding + text + its own vertical margins) with a little extra
+// clearance, not just half of it — a label under the gift icon pushes its own
+// footprint taller than the bubble alone.
+const GIFT_BUBBLE_LIFT = 78;
+
 // Once per app launch, Home checks whether the customer has a chat that is still
 // running (their app was closed or restarted mid-chat) and takes them back into it.
 let resumeChatChecked = false;
@@ -323,6 +335,34 @@ const Home = ({navigation}) => {
   const [freeChatEligible, setFreeChatEligible] = useState(false);
   const [freeChatOfferDismissed, setFreeChatOfferDismissed] = useState(false);
 
+  // Whether this customer has already spent their free 5-minute chat. The SECOND Home
+  // banner advertises that offer, so it is on screen only until they use it (owner,
+  // 2026-10-04) — after that the slot disappears rather than carrying other content.
+  //
+  // DELIBERATELY NOT `freeChatEligible`, even though it looks like the same question.
+  // That one starts false and only turns true after three sequential network calls
+  // (profile -> consultation check -> persona), because it also gates what TAPPING a
+  // banner does and so must fail closed. Hanging the banner's visibility on it would
+  // make a new customer watch the banner pop in and shove the astrologer list down,
+  // seconds after Home had finished painting. This flag answers the narrower, purely
+  // cosmetic question, starts from the profile the app already persisted, and is only
+  // ever corrected towards "used" — so the first frame is right for both cohorts and
+  // the slot never appears late.
+  const [freeChatUsed, setFreeChatUsed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    // The same `userData` blob fetchUserProfile writes below, so this is last launch's
+    // answer. A miss or a parse failure leaves it showing, which is the safe side: an
+    // extra banner is a cosmetic cost, a missing one loses the offer its only route in.
+    AsyncStorage.getItem('userData')
+      .then((raw) => {
+        if (!alive || !raw) return;
+        if (JSON.parse(raw)?.freeBotChatCredited) setFreeChatUsed(true);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   // Returns true when it has handled the tap, which stops PlacementBanner
   // following the banner's own action. Only claims the tap while the customer is
   // genuinely still eligible AND the persona actually loaded — otherwise the
@@ -339,7 +379,10 @@ const Home = ({navigation}) => {
       const res = await Instance.get('/api/users/profile', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.data?.data?.freeBotChatCredited) setFreeChatEligible(false);
+      if (res.data?.data?.freeBotChatCredited) {
+        setFreeChatEligible(false);
+        setFreeChatUsed(true);
+      }
     } catch (_) {
       // Leave it as-is: a failed check must not hand out a second free chat, and
       // must not wrongly withdraw one either.
@@ -384,6 +427,18 @@ const Home = ({navigation}) => {
   const homeTipVisibleRef = useRef(false);
 
   const homeScrollY = useRef(new Animated.Value(0)).current;
+  // Drives the gift bubble's own slide-up, same inputRange as ConsultBar's slideStyle
+  // below, so the two move together instead of one appearing already-overlapped for a
+  // frame before the other catches up.
+  const giftLiftStyle = React.useMemo(() => ({
+    transform: [{
+      translateY: homeScrollY.interpolate({
+        inputRange: [CONSULT_BAR_HIDDEN_UNTIL, CONSULT_BAR_SHOW_AT],
+        outputRange: [0, -GIFT_BUBBLE_LIFT],
+        extrapolate: 'clamp',
+      }),
+    }],
+  }), [homeScrollY]);
   const consultBarRef = useRef(null);
   const consultBarShownRef = useRef(false);
   const syncConsultBarTappable = useCallback((e) => {
@@ -992,6 +1047,10 @@ const Home = ({navigation}) => {
       // Cache the acquisition group for banner targeting on every screen —
       // see utils/viewerSegment.js.
       setViewerSegment(userData.segment);
+      // The authoritative answer for the second banner, replacing whatever last
+      // launch's cached profile said. Set both ways: a customer who used the offer on
+      // another device must lose the banner here too.
+      setFreeChatUsed(!!userData.freeBotChatCredited);
       // Store user data in AsyncStorage for chat screens
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
 
@@ -1629,29 +1688,28 @@ const Home = ({navigation}) => {
           </TouchableOpacity>
         </View>
 
-        <VoiceNotesBanner navigation={navigation} />
-        <View
-          style={{
-            backgroundColor: COLORS.AstroMaroon,
-            width: '100%',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingBottom: 40,
-            paddingTop: 5,
-            paddingHorizontal: '5%',
-          }}>
-          {/* Shop entry points on the brown header; the thought of the day opens the
-              cream section below instead. */}
-          <ShopCategoryCircles navigation={navigation} onDark />
+        {/* Thought of the day, on the dark header, framed by an Om either side (owner,
+            2026-10-04). The greeting itself changes on every app open; the two symbols
+            are fixed, so the line always reads as the same ornament whatever is between
+            them. The Text keeps flexShrink so a long greeting shortens itself rather
+            than pushing either symbol off the screen edge. */}
+        <View style={styles.thoughtRowOnDark}>
+          <Image source={OM_SYMBOL} style={styles.thoughtOm} resizeMode="contain" />
+          <Text style={styles.thoughtOnDark}>
+            {(language === 'Hindi' ? thought?.hindi?.thoughtText : thought?.thoughtText) || t('home.welcome')}
+          </Text>
+          <Image source={OM_SYMBOL} style={styles.thoughtOm} resizeMode="contain" />
         </View>
 
+        <VoiceNotesBanner navigation={navigation} />
+
         <View style={{
-          backgroundColor: COLORS.AstroSoftOrange, 
-          flex: 1, 
+          backgroundColor: COLORS.AstroSoftOrange,
+          flex: 1,
           paddingBottom: 50,
           borderTopLeftRadius: 30,
           borderTopRightRadius: 30,
-          marginTop: -25,
+          marginTop: 12,
           paddingTop: 20,
           elevation: 10,
           shadowColor: '#000',
@@ -1664,13 +1722,6 @@ const Home = ({navigation}) => {
               Reports — that row opened the NATIVE RemedyShop while the bottom tab
               called "Wani Shop" opened the web storefront, so the app had two
               differently-named shops. Everything now points at the one shop. */}
-          {/* Thought of the day as a bold heading — plain regular text at the old
-              size was hard to read on the cream. */}
-          <View style={styles.thoughtRow}>
-            <Text style={styles.thoughtOnCream}>
-              {(language === 'Hindi' ? thought?.hindi?.thoughtText : thought?.thoughtText) || t('home.welcome')}
-            </Text>
-          </View>
 
           {/* Both Home banners are the way into the free 5-minute chat while the
               customer can still claim it: tapping one opens the offer instead of
@@ -1688,14 +1739,22 @@ const Home = ({navigation}) => {
             onPressIntercept={openFreeChatFromBanner}
           />
 
-          <PlacementBanner
-            placement="home_secondary"
-            navigation={navigation}
-            height={110}
-            style={{ marginHorizontal: 15, marginTop: 12 }}
-            audience={freeChatEligible ? 'new' : 'returning'}
-            onPressIntercept={openFreeChatFromBanner}
-          />
+          {/* The second banner belongs to the free 5-minute chat: a customer sees both
+              banners until they use it, then this slot disappears for good (owner,
+              2026-10-04). See `freeChatUsed` for why it is not gated on
+              `freeChatEligible`. Note this now overrides the audience switch for this
+              slot — a 'returning' banner uploaded for home_secondary will no longer be
+              reachable, by design; home_primary still carries that journey. */}
+          {!freeChatUsed && (
+            <PlacementBanner
+              placement="home_secondary"
+              navigation={navigation}
+              height={110}
+              style={{ marginHorizontal: 15, marginTop: 12 }}
+              audience={freeChatEligible ? 'new' : 'returning'}
+              onPressIntercept={openFreeChatFromBanner}
+            />
+          )}
 
           <View style={styles.topAstrologers}>
             <Text style={styles.topAstrologerTxt}>{t('home.bestAstrologers')}</Text>
@@ -1737,6 +1796,14 @@ const Home = ({navigation}) => {
             ))}
           </Animated.View>
         )}
+
+        {/* Shop entry points — moved below the "Chat & Call with Astrologer" cards
+            (owner, preview request). Cream background here, so no `onDark`. A separator
+            line both above and below sets this off as its own section, distinct from
+            the astrologer cards above it (the one below already existed, ahead of
+            "Video Call With Astrologers"). */}
+        <View style={styles.separator} />
+        <ShopCategoryCircles navigation={navigation} />
 
         {/* Video Call With Astrologers — moved up here (directly under "India's
             Best Astrologers", above "Astrowani's Categories") at the user's
@@ -2136,6 +2203,9 @@ const Home = ({navigation}) => {
           // seconds tap the banner straight back into another free chat, over and
           // over.
           setFreeChatEligible(false);
+          // Same moment, same reason: the second banner advertises this offer, and the
+          // offer is now spent. Gone by the time they come back to Home.
+          setFreeChatUsed(true);
           navigation.navigate('FreeBotChatScreen', { persona: freeChatPersona });
         }}
       />
@@ -2180,6 +2250,7 @@ const Home = ({navigation}) => {
       <FreeCallGiftBubble
         visible={!!freeCall?.enabled && !!freeCall?.eligible && !freeCallVisible}
         label={t('freeCall.giftHint')}
+        liftStyle={giftLiftStyle}
         onPress={() => {
           captureEvent('free_call_gift_bubble_tapped');
           setFreeCallStartAtSlots(false);
@@ -2267,7 +2338,47 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: moderateScale(15),
     letterSpacing: 0.3,
-  },  boxedHeader: {
+  },
+  // Thought of the day moved onto the dark maroon header (preview request) — cream-
+  // colored text so it reads against the dark background, same sizing as the cream
+  // version it replaces up there.
+  thoughtRowOnDark: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // The two Om symbols sit out at the edges with the greeting centred between them.
+    // They are the same image at the same size, so the middle item lands dead centre on
+    // its own — no spacer views needed. The padding below is the inset, matched to the
+    // banners' own 15dp gutter so the symbols line up with the content beneath them.
+    // Centred rather than `space-between`, so the gap either side of the greeting is a
+    // FIXED distance (thoughtOm's marginHorizontal) instead of whatever is left over.
+    // The greeting is admin-editable and changes on every app open, and under
+    // space-between that made a short line sit miles from its symbols and a long one
+    // almost touch them. Centring also means a long greeting simply shrinks the row
+    // rather than being squeezed into a wrap by a large fixed padding.
+    justifyContent: 'center',
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(10),
+  },
+  // Matched to the greeting's own type size (thoughtOnDark below), so the three sit on
+  // one line as a single ornament rather than the symbols reading as separate icons.
+  // This margin IS the gap between each symbol and the greeting, and it is the only
+  // number to change to move them in or out — the row above is centred, so the pair
+  // tracks the text's own width instead of the screen edges.
+  thoughtOm: {
+    width: moderateScale(21),
+    height: moderateScale(21),
+    marginHorizontal: scale(24),
+  },
+  thoughtOnDark: {
+    flexShrink: 1,
+    color: '#FFF9F0',
+    textAlign: 'center',
+    fontFamily: 'Lato-Bold',
+    fontWeight: '700',
+    fontSize: moderateScale(15),
+    letterSpacing: 0.3,
+  },
+  boxedHeader: {
     borderWidth: 1.5,
     borderColor: COLORS.AstroMaroon,
     borderRadius: moderateScale(16),
