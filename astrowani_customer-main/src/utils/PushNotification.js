@@ -124,6 +124,37 @@ async function askNotificationPermission() {
   }
 }
 
+/**
+ * Has the OS already been asked, with no further dialog to show? Never prompts.
+ *
+ * Added 2026-10-04 because `requestUserPermission()` doing exactly what it should —
+ * `PermissionsAndroid.request()` resolving instantly with the existing answer, with
+ * no dialog, whenever Android has already decided — read from the outside as a
+ * broken button: tap "Yes, notify me" and nothing visibly happens. Callers that show
+ * their own explainer before asking (notifyMe.js) check this FIRST, so that explainer
+ * only appears when there is an OS prompt left for it to lead into.
+ */
+export async function hasNotificationPermission() {
+  try {
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 33) {
+        return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+      }
+      // Pre-13 Android has no runtime notification permission to ask for — notifications
+      // just work once the FCM token exists, so there is never an OS dialog to lead into.
+      return true;
+    }
+    const status = await messaging().hasPermission();
+    return status === messaging.AuthorizationStatus.AUTHORIZED
+      || status === messaging.AuthorizationStatus.PROVISIONAL;
+  } catch (_) {
+    // Unknown fails toward "not granted" — worst case we show an explainer for a
+    // permission that turns out already settled, which is harmless. The opposite
+    // failure (silently skipping a real ask) is the one worth avoiding.
+    return false;
+  }
+}
+
 export async function requestUserPermission() {
   const isAndroidPrompt = Platform.OS == 'android' && Platform.Version >= 33;
   // A permission dialog needs a foreground Activity. Don't even try from the

@@ -18,7 +18,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
-import { requestUserPermission } from './PushNotification';
+import { requestUserPermission, hasNotificationPermission } from './PushNotification';
 import { showStatusPopup } from '../components/StatusPopup';
 
 // Once per app run. Somebody tapping "notify me" on four busy astrologers in a row
@@ -26,13 +26,29 @@ import { showStatusPopup } from '../components/StatusPopup';
 let explainedThisSession = false;
 
 /**
- * Show the "why we need this" popup and then the OS prompt.
- * Resolves when the customer has answered ours — we never block on the OS one.
+ * Show the "why we need this" popup and then the OS prompt — but ONLY when there is
+ * an actual OS prompt for it to lead into (owner, 2026-10-04).
+ *
+ * Android's `PermissionsAndroid.request()` resolves INSTANTLY, with no dialog, the
+ * moment a decision already exists — granted or denied. So a customer who had already
+ * answered Android's own prompt (at any earlier point in the app) would tap our
+ * "Yes, notify me" and watch nothing happen: that looked like a dead button, not like
+ * "you already said yes". `hasNotificationPermission()` is checked FIRST and never
+ * prompts, so this explainer is skipped entirely once permission is already granted —
+ * the waitlist join below still runs regardless.
+ *
+ * Single button, no decline (owner, 2026-10-04): the customer already asked to be put
+ * on the waitlist by tapping "Notify me" one screen up, so this is confirming how,
+ * not asking again whether. Declining the explainer never skipped the waitlist join
+ * anyway — the join always ran — so a second way to say no was two buttons for one
+ * decision already made.
  */
-function explainThenAsk(t) {
+async function explainThenAsk(t) {
+  if (await hasNotificationPermission()) return;
+
   if (explainedThisSession) {
     requestUserPermission().catch(() => {});
-    return Promise.resolve();
+    return;
   }
   explainedThisSession = true;
   return new Promise((resolve) => {
@@ -40,9 +56,8 @@ function explainThenAsk(t) {
       variant: 'info',
       title: t ? t('notifyMe.permTitle') : 'Shall we ping you?',
       message: t ? t('notifyMe.permBody') : "They're usually free again within a few minutes. Allow notifications and we'll tell you the moment they are.",
-      confirmText: t ? t('notifyMe.permAllow') : 'Yes, notify me',
-      cancelText: t ? t('notifyMe.permSkip') : 'Not now',
-      onConfirm: () => {
+      buttonText: t ? t('notifyMe.permAllow') : 'Yes, notify me',
+      onClose: () => {
         // Fire the OS prompt, but do not wait on it — requestUserPermission
         // deliberately never throws and can defer itself until the app is active
         // (see PushNotification.js). Blocking the waitlist join on it would strand
@@ -50,8 +65,6 @@ function explainThenAsk(t) {
         requestUserPermission().catch(() => {});
         resolve();
       },
-      onCancel: () => resolve(),
-      onClose: () => resolve(),
     });
   });
 }
