@@ -36,6 +36,11 @@ const { normaliseMilestones, DEFAULT_MILESTONES } = require('./freeCallPayout');
 // reference inside that function would be a silent trap for whoever edits it next.
 const audienceRules = require('./audience');
 
+// Socket.io handle, for telling an astrologer why they have just been made unavailable
+// (see openDecisionHold). Assigned by attachIo() from index.js; everything that uses it
+// is guarded, so routes work exactly as before on a process that never attaches one.
+let io = null;
+
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
 const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -134,7 +139,10 @@ const DEFAULTS = {
   // holdDecisionSeconds IS THE COUNTDOWN THE CUSTOMER SEES. The continue sheet counts
   // down the hold's real remaining seconds, so changing this changes the on-screen timer
   // and how long the astrologer looks busy — the two can never drift apart.
-  holdDecisionSeconds: 90,
+  // 60s (owner, 2026-10-04; was 90). Also note WHEN this window now starts: the hold is
+  // created when the continue sheet is opened, not when the call ends, because Shagun
+  // Arpan now runs in front of it and a Razorpay round trip would have eaten most of it.
+  holdDecisionSeconds: 60,
   holdPaymentSeconds: 180,
   // How long one astrologer is allowed to ring before the app offers the others.
   ringTimeoutSeconds: 60,
@@ -747,6 +755,121 @@ async function findActiveInvite(customerId) {
     if (error) return null;
     return data && data.length ? data[0] : null;
   } catch (_) {
+    return null;
+  }
+}
+
+/** A free call must have run at least this long to earn a "more minutes" offer.
+ *  Matches MIN_UPSELL_SECONDS in sessionManager.js and VoiceCallScreen.tsx. */
+const MIN_UPSELL_SECONDS = 540; // 9 minutes
+
+/** How long after a call ends the continue offer can still be opened. */
+const UPSELL_OPEN_WINDOW_MS = 10 * 60 * 1000;
+
+/** How far back to look for the free call this offer follows. Generous, because the
+ *  call itself can run 11 minutes and Shagun Arpan runs before the sheet opens. */
+const SESSION_LOOKBACK_MS = 40 * 60 * 1000;
+
+/**
+ * Is this astrologer tied up with ANYBODY OTHER THAN this customer?
+ *
+ * Deliberately not checkAstrologerBusy(). That helper reports busy on any active
+ * chat_session for the astrologer, and the session we are reacting to — the free call
+ * that just ended with THIS customer — is very often still flagged active for a moment
+ * after the sheet opens. The customer was then told "this astrologer has started another
+ * consultation" about their own call, which is how this was first seen. Its `customerId`
+ * option does not help: that exempts the customer's own HOLD, not their own session.
+ *
+ * Fails OPEN (returns false) on a database error, matching busyStatus: a blip should cost
+ * nobody their upsell. The worst case is an offer that cannot be completed, which the
+ * payment path already handles by refunding to wallet and offering the waitlist.
+ */
+async function busyWithSomeoneElse(astrologerId, customerId) {
+  try {
+    const [{ data: live }, { data: active }, { data: pendingCall }, { data: pendingChat }] = await Promise.all([
+      db.from('live_sessions').select('id').eq('astrologer_id', astrologerId).eq('is_active', true).limit(1),
+      db.from('chat_sessions').select('caller_id').eq('vendor_id', astrologerId).eq('is_active', true),
+      db.from('call_requests').select('customer_id').eq('astrologer_id', astrologerId).eq('status', 'pending'),
+      db.from('chat_requests').select('caller_id').eq('receiver_id', astrologerId).eq('status', 'pending'),
+    ]);
+    if ((live || []).length) return true;
+    const mine = String(customerId);
+    return (active || []).some((r) => String(r.caller_id) !== mine)
+      || (pendingCall || []).some((r) => String(r.customer_id) !== mine)
+      || (pendingChat || []).some((r) => String(r.caller_id) !== mine);
+  } catch (err) {
+    console.error('[freeCallRoutes] busyWithSomeoneElse failed:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Reserve the astrologer for the "more minutes" decision, at the moment the sheet opens.
+ *
+ * Returns a hold-shaped object, or null when there is nothing to offer. Never throws: a
+ * failure here costs an upsell, and must not turn the sheet into an error.
+ *
+ * THE CHECKS ARE THE POINT, since this is reachable by anyone with a token:
+ *   - there must be a real free call by THIS customer that ended in the last few minutes
+ *     and ran >= MIN_UPSELL_SECONDS. Without the time window, an old call could be used
+ *     to pull an astrologer off the market at any point in the future.
+ *   - the astrologer must not be busy right now. placeHold itself refuses to steal a live
+ *     hold from another customer, but it knows nothing about calls in progress.
+ */
+async function openDecisionHold(customer) {
+  try {
+    // Selected by started_at, NOT by ended_at. The sheet opens within a second of the
+    // call finishing, so it can easily arrive before terminateSession's `ended_at` write
+    // has landed — keying off ended_at meant the row was simply not found yet and the
+    // customer was told the astrologer had moved on. A still-open row is treated as
+    // running until now, which is the truth at the moment we are asked.
+    const windowStart = new Date(Date.now() - SESSION_LOOKBACK_MS).toISOString();
+    const { data: sessions } = await db
+      .from('chat_sessions')
+      .select('id, vendor_id, started_at, ended_at')
+      .eq('caller_id', customer.id)
+      .eq('is_free', true)
+      .gte('started_at', windowStart)
+      .order('started_at', { ascending: false })
+      .limit(1);
+
+    const s = (sessions || [])[0];
+    if (!s || !s.vendor_id || !s.started_at) return null;
+
+    const endedMs = s.ended_at ? new Date(s.ended_at).getTime() : Date.now();
+    const ranSeconds = Math.round((endedMs - new Date(s.started_at).getTime()) / 1000);
+    if (!Number.isFinite(ranSeconds) || ranSeconds < MIN_UPSELL_SECONDS) return null;
+    // The offer belongs to the moment the call ends, not to any call that ever happened.
+    if (Date.now() - endedMs > UPSELL_OPEN_WINDOW_MS) return null;
+
+    if (await busyWithSomeoneElse(s.vendor_id, customer.id)) return null;
+
+    const offer = await loadOffer();
+    const seconds = offer.holdDecisionSeconds;
+    const placed = await holds.placeHold(db, {
+      astrologerId: s.vendor_id,
+      customerId: customer.id,
+      sessionId: s.id,
+      seconds,
+    });
+    if (!placed) return null;
+
+    // Tell the astrologer WHY they just went unavailable. Without it they stop receiving
+    // requests for a minute with no explanation, which reads as the app being broken.
+    if (io) {
+      try {
+        io.to(s.vendor_id).emit('astrologer_hold_started', { seconds, sessionId: s.id });
+      } catch (_) { /* the hold stands whether or not the notice lands */ }
+    }
+
+    return {
+      astrologer_id: s.vendor_id,
+      session_id: s.id,
+      phase: holds.PHASE_DECISION,
+      expires_at: new Date(Date.now() + seconds * 1000).toISOString(),
+    };
+  } catch (err) {
+    console.error('[freeCallRoutes] openDecisionHold failed:', err.message);
     return null;
   }
 }
@@ -1390,7 +1513,20 @@ module.exports = function registerFreeCallRoutes(app) {
     const customer = await resolveCustomer(req);
     if (!customer) return res.status(401).json({ success: false, message: 'Please log in.' });
 
-    const hold = await holds.getHoldForCustomer(db, customer.id);
+    // THE HOLD IS CREATED HERE, not when the call ended (owner, 2026-10-04).
+    //
+    // It used to be placed by sessionManager the moment a qualifying free call finished,
+    // which was right while the continue sheet was the very next thing on screen. Shagun
+    // Arpan now runs in front of it, and that can take a minute of Razorpay — so a hold
+    // started at call end would be spent before the customer ever saw the offer, and the
+    // astrologer would have been shown busy through a sheet nobody was looking at.
+    //
+    // Creating it on first open costs one thing, deliberately accepted: between the call
+    // ending and the sheet opening the astrologer is free, so they may take another call.
+    // Then there is simply nothing to sell, which `sellable` below already handles by
+    // returning no options — and the sheet offers the waitlist instead.
+    let hold = await holds.getHoldForCustomer(db, customer.id);
+    if (!hold) hold = await openDecisionHold(customer);
     if (!hold) {
       return res.status(200).json({ success: true, active: false, options: [] });
     }
@@ -1408,12 +1544,15 @@ module.exports = function registerFreeCallRoutes(app) {
     const offer = await loadOffer();
 
     // Nothing coherent to sell: a zero rate, an astrologer who has switched calls off
-    // since the free call ended, or one who has already been taken by a paying customer
-    // (a decision-phase hold blocks free calls only — that is deliberate). Their own
-    // hold must not count against them, hence customerId. Fails OPEN on a database
-    // error, matching busyStatus: a blip should cost nobody their upsell.
+    // since the free call ended, or one who has already been taken by somebody else.
+    //
+    // busyWithSomeoneElse, NOT checkAstrologerBusy: the free call this offer follows is
+    // frequently still flagged active for a moment after the sheet opens, and that helper
+    // counts it — so the customer was shown "this astrologer has started another
+    // consultation" about their own just-ended call. Excluding this customer's own rows
+    // is the whole difference.
     const sellable = rate > 0 && canTakePaidCall(astro)
-      && !(await checkAstrologerBusy(db, hold.astrologer_id, { customerId: customer.id })).busy;
+      && !(await busyWithSomeoneElse(hold.astrologer_id, customer.id));
     const options = sellable
       ? offer.continueOptions.map((minutes) => ({ minutes, amount: Math.round(rate * minutes) }))
       : [];
@@ -1484,8 +1623,11 @@ module.exports = function registerFreeCallRoutes(app) {
     // wallet — they paid to talk to a specific person, and would meet a 409 on the way
     // to the call. Refused as HOLD_EXPIRED so the sheet offers the waitlist, which is
     // the useful answer.
+    // busyWithSomeoneElse for the same reason as /continue/options: this customer's own
+    // just-ended free call must not read as "the astrologer has been taken", or the
+    // payment is refused for a conflict that does not exist.
     if (!canTakePaidCall(astro)
-      || (await checkAstrologerBusy(db, hold.astrologer_id, { customerId: customer.id })).busy) {
+      || (await busyWithSomeoneElse(hold.astrologer_id, customer.id))) {
       return res.status(409).json({
         success: false, code: 'HOLD_EXPIRED',
         message: 'That astrologer has just been taken. We can tell you when they are free.',
@@ -2795,6 +2937,13 @@ async function linkInstantBookingToSession(customerId, sessionId) {
     return false;
   }
 }
+
+/**
+ * Hand this module the Socket.io server. Separate from registerFreeCallRoutes so that
+ * mounting the routes never depends on having a socket server — the same reason
+ * sessionManager.attachIo exists.
+ */
+module.exports.attachIo = (server) => { io = server; };
 
 module.exports.linkInstantBookingToSession = linkInstantBookingToSession;
 

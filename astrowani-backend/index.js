@@ -1042,6 +1042,10 @@ require('./src/appleNotificationRoutes')(app);
 // Also needs adminRoutes' requireAdmin, so it registers after it.
 const freeCallRoutes = require('./src/freeCallRoutes');
 freeCallRoutes(app);
+// Lets it tell an astrologer why they have just been reserved for a "more minutes"
+// offer. Unconditional, like sessionManager.attachIo — notifying people must not be
+// tied to whether this process also runs billing.
+freeCallRoutes.attachIo(io);
 require('./src/whatsappRoutes')(app);
 // Dakshina — the voluntary thank-you after a free intro call. Needs adminRoutes'
 // requireAdmin, so it registers after it.

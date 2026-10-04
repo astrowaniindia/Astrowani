@@ -67,15 +67,19 @@ const MIN_UPSELL_SECONDS = 540;
 const MIN_DAKSHINA_SECONDS = 180;
 
 /**
- * The "5 / 10 / 15 more minutes" sheet is HIDDEN in the app (owner, 2026-10-03), along
- * with the Dakshina ask, the "how was your call?" question and the post-call rating card.
+ * Whether ENDING a free call should immediately reserve the astrologer for the
+ * "5 / 10 / 15 more minutes" sheet.
  *
- * This flag must track that, because the hold is not cosmetic: placing it takes the
- * astrologer off the market for holdDecisionSeconds (90s) and shows them busy to
- * everyone else, so reserving them for a sheet that will never be drawn is pure lost
- * availability on every single free call. Nothing else is removed — the continue
- * endpoints, astrologerHolds and the whole sheet stay exactly where they are, so turning
- * this back to `true` and un-hiding the sheet in the app restores the flow intact.
+ * FALSE, and no longer because the sheet is hidden — the sheet is back on since
+ * 2026-10-04. It is false because the hold MOVED: Shagun Arpan now runs in front of the
+ * continue sheet, and a Razorpay round trip would have burned most of a 60-second
+ * reservation before the customer ever saw the offer. The hold is created when the sheet
+ * actually opens instead — see openDecisionHold() in src/freeCallRoutes.js, which does
+ * the same placeHold with the same holdDecisionSeconds and sends the same
+ * `astrologer_hold_started` notice.
+ *
+ * So turning this back to `true` would not restore anything missing; it would reserve
+ * every astrologer twice, once at call end and once on open.
  */
 const UPSELL_SHEET_ENABLED = false;
 
@@ -1179,7 +1183,7 @@ class SessionManager {
 
     const numbers = {
       payoutMilestones: normaliseMilestones(offer.payoutMilestones),
-      holdDecisionSeconds: clamp(offer.holdDecisionSeconds, 10, 600, 90),
+      holdDecisionSeconds: clamp(offer.holdDecisionSeconds, 10, 600, 60),
       holdPaymentSeconds: clamp(offer.holdPaymentSeconds, 30, 900, 180),
     };
     this._freeCallNumbers = numbers;
