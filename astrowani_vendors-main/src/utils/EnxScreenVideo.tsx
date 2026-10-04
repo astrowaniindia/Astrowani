@@ -186,18 +186,21 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       duration_seconds: callDurationRef.current,
       connected: callDurationRef.current > 0,
     });
-    try {
-      const jwt = await AsyncStorage.getItem('token');
-      await axios.post(
-        `${SOCKET_URL}/api/call/end`,
-        {sessionId, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
-        {headers: {Authorization: `Bearer ${jwt}`}},
-      );
-    } catch (e) {
-      console.log('[Vendor/Video] doEndCall error:', e);
-    } finally {
-      navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
-    }
+    // FIRE AND FORGET, then leave at once — see EnxScreenVoice for why this must not be
+    // awaited, and why not waiting does not delay the customer.
+    (async () => {
+      try {
+        const jwt = await AsyncStorage.getItem('token');
+        await axios.post(
+          `${SOCKET_URL}/api/call/end`,
+          {sessionId, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
+          {headers: {Authorization: `Bearer ${jwt}`}, timeout: 15000},
+        );
+      } catch (e) {
+        console.log('[Vendor/Video] doEndCall error:', e);
+      }
+    })();
+    navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
   }, [sessionId, stopCallTimer, stopRipple, cleanupWebRTC, navigation]);
 
   const onPressDisconnect = useCallback(() => {

@@ -213,14 +213,21 @@ const VideoCallScreen = ({route, navigation}: any) => {
       connected: callDurationRef.current > 0,
     });
     if (sid) {
-      try {
-        const jwt = await AsyncStorage.getItem('token');
-        await axios.post(
-          `${SOCKET_URL}/api/call/end`,
-          {sessionId: sid, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
-          {headers: {Authorization: `Bearer ${jwt}`}},
-        );
-      } catch (e) { console.log('[VideoCallScreen] doEndCall error:', e); }
+      // FIRE AND FORGET — never await this before navigating. Awaiting it kept the
+      // customer on a dead call screen for the whole round trip, which against an origin
+      // behind Cloudflare is seconds, not milliseconds. The request still completes after
+      // we leave (the promise is not tied to the component), billing is finalised server
+      // side either way, and terminateSession is idempotent. See VoiceCallScreen.
+      (async () => {
+        try {
+          const jwt = await AsyncStorage.getItem('token');
+          await axios.post(
+            `${SOCKET_URL}/api/call/end`,
+            {sessionId: sid, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
+            {headers: {Authorization: `Bearer ${jwt}`}, timeout: 15000},
+          );
+        } catch (e) { console.log('[VideoCallScreen] doEndCall error:', e); }
+      })();
     }
     // Return to whatever the customer started from (astrologer profile, a list tab, Home)
     // instead of always resetting to Home. Home is only the fallback when there is no

@@ -187,18 +187,24 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       duration_seconds: callDurationRef.current,
       connected: callDurationRef.current > 0,
     });
-    try {
-      const jwt = await AsyncStorage.getItem('token');
-      await axios.post(
-        `${SOCKET_URL}/api/call/end`,
-        {sessionId, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
-        {headers: {Authorization: `Bearer ${jwt}`}},
-      );
-    } catch (e) {
-      console.log('[Vendor/Voice] doEndCall error:', e);
-    } finally {
-      navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
-    }
+    // FIRE AND FORGET, then leave at once. Awaiting this held the astrologer on a dead
+    // call screen for the whole round trip. It does NOT delay the customer either way:
+    // the server ends the session (and notifies them) when it HANDLES this request, not
+    // when we finish reading the response — so not waiting costs nothing and the
+    // astrologer is back on their dashboard, available, immediately.
+    (async () => {
+      try {
+        const jwt = await AsyncStorage.getItem('token');
+        await axios.post(
+          `${SOCKET_URL}/api/call/end`,
+          {sessionId, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
+          {headers: {Authorization: `Bearer ${jwt}`}, timeout: 15000},
+        );
+      } catch (e) {
+        console.log('[Vendor/Voice] doEndCall error:', e);
+      }
+    })();
+    navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
   }, [sessionId, stopCallTimer, stopRipple, cleanupWebRTC, navigation]);
 
   // The 11 minutes is the entire promise of the offer, so it ends itself rather
@@ -514,8 +520,15 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       />
 
       {/* Self-hides after 25s. Deliberately BELOW the network notice's slot so the two
-          overlays can never sit on top of each other. */}
-      <SessionIntroBanner style={{position: 'absolute', top: 170, left: 0, right: 0, zIndex: 40}} />
+          overlays can never sit on top of each other.
+
+          PAID SESSIONS ONLY. It explains when the customer's billing starts ("you will
+          not be credited for the first minute"), which is meaningless on a free intro
+          call — nobody is billed and the astrologer's payout is a flat milestone, not
+          per-minute. On a free call it is just a confusing claim about money. */}
+      {!freeCall && (
+        <SessionIntroBanner style={{position: 'absolute', top: 170, left: 0, right: 0, zIndex: 40}} />
+      )}
       <View style={[StyleSheet.absoluteFillObject, styles.bgOverlay]} />
 
       <View style={styles.header}>

@@ -28,7 +28,9 @@ import {showReviewPrompt} from '../../components/ReviewPrompt';
 import {showFreeCallContinue} from '../../components/FreeCallContinue';
 import {showDakshina} from '../../components/DakshinaPrompt';
 import {showShagunRecharge} from '../../components/ShagunRechargePrompt';
-import {showCallFeedback} from '../../components/CallFeedbackPrompt';
+// CallFeedbackPrompt ("did you like the call?") is no longer in this chain — Shagun now
+// runs first unconditionally, so the gate it used to sit in front of is gone. The
+// component and its host stay in the app for any future use.
 import {showRateAstrowani} from '../../components/RateAstrowaniPrompt';
 import {showStatusPopup} from '../../components/StatusPopup';
 import {showActiveSessionNotification, hideActiveSessionNotification} from '../../utils/activeSessionNotification';
@@ -46,7 +48,6 @@ import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 import {getIceServers} from '../../utils/iceServers';
 import {
   FREE_CALL_CONTINUE_ENABLED,
-  CALL_FEEDBACK_PROMPT_ENABLED,
   DAKSHINA_PROMPT_ENABLED,
   SHAGUN_RECHARGE_ENABLED,
   FREE_CALL_RATING_PROMPT_ENABLED,
@@ -57,7 +58,26 @@ type CallState = 'connecting' | 'ringing' | 'in_call';
 
 // Matches MIN_UPSELL_SECONDS in astrowani-backend/src/sessionManager.js.
 const MIN_UPSELL_SECONDS = 540;   // 9 min - the "buy more minutes" line
-const MIN_DAKSHINA_SECONDS = 180; // 3 min - below this nothing is offered at all
+
+/**
+ * Below this, the call ends and NOTHING is asked — no Shagun, no rating (owner,
+ * 2026-10-04; was 3 min). It is also where the astrologer first earns from a free call:
+ * the payout milestone is ₹5 at 4 minutes, so this is the point at which there is
+ * genuinely something to thank them for.
+ */
+const MIN_SHAGUN_SECONDS = 240;   // 4 min
+
+/**
+ * DIFFERENT LINE, DIFFERENT JOB — do not merge this with the one above.
+ *
+ * This is the server's `abandonedByAstrologer` rule (MIN_DAKSHINA_SECONDS in
+ * sessionManager.js, same 180). An astrologer who hangs up before it has bailed early,
+ * so the customer is sent back to the grid and their one free call is NOT spent — the
+ * backend unlinks the booking for exactly this case. Moving it would change who loses
+ * their free call, which is a money/eligibility decision, not a presentation one, and
+ * the two sides would silently disagree.
+ */
+const MIN_ABANDON_SECONDS = 180;  // 3 min
 
 const AVATAR_SIZE = 140;
 const RING_BASE = AVATAR_SIZE + 40;
@@ -110,6 +130,11 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   // Only read for free intro calls, where an astrologer dropping out early has to send
   // the customer back to pick somebody else instead of just closing the screen.
   const endedRemotelyRef = useRef(false);
+
+  // The in-flight POST /api/call/end. We deliberately do not await it before leaving the
+  // call screen (see doEndCall), so anything that genuinely depends on the session being
+  // closed server-side waits on this instead of the customer waiting on it.
+  const endRequestRef = useRef<Promise<void> | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const sessionJoinRef = useRef<any>(null);
@@ -247,16 +272,35 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       connected: callDurationRef.current > 0,
     });
     if (sid) {
-      try {
-        const jwt = await AsyncStorage.getItem('token');
-        await axios.post(
-          `${SOCKET_URL}/api/call/end`,
-          {sessionId: sid, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
-          {headers: {Authorization: `Bearer ${jwt}`}},
-        );
-      } catch (e) {
-        console.log('[VoiceCallScreen] doEndCall error:', e);
-      }
+      // ── FIRE AND FORGET. NEVER AWAIT THIS BEFORE NAVIGATING (owner, 2026-10-04) ──
+      //
+      // This used to be awaited, so the customer stared at a dead call screen for the
+      // whole round trip. That is not a fast request: the origin sits behind Cloudflare
+      // and this project's own measurements (CLAUDE.md, 2026-09-25) put roughly 1 request
+      // in 6 over a second, with spikes past 20s. When the ASTROLOGER hangs up it is
+      // worse, because their POST and ours run back to back — which is exactly the
+      // "it takes 10 more seconds to leave the call screen" report.
+      //
+      // Nothing is lost by not waiting: an axios promise is not tied to the component, so
+      // it still completes after we navigate, and terminateSession is idempotent — when
+      // the astrologer ended the call the session is already closed and this is a no-op.
+      // The timeout only stops a dead socket holding it open forever.
+      //
+      // One real ordering dependency survives: the "more minutes" hold is keyed on this
+      // session's `ended_at`, which this POST writes. `settleEndRequest` below is how the
+      // continue step waits for it instead of the UI doing the waiting.
+      endRequestRef.current = (async () => {
+        try {
+          const jwt = await AsyncStorage.getItem('token');
+          await axios.post(
+            `${SOCKET_URL}/api/call/end`,
+            {sessionId: sid, duration: Math.ceil(callDurationRef.current / 60), rating: 5, feedback: 'Call ended'},
+            {headers: {Authorization: `Bearer ${jwt}`}, timeout: 15000},
+          );
+        } catch (e) {
+          console.log('[VoiceCallScreen] doEndCall error:', e);
+        }
+      })();
     }
     // Return to whatever the customer started from (astrologer profile, a list tab, Home)
     // instead of always resetting to Home. Home is only the fallback when there is no
@@ -304,6 +348,42 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         });
       };
 
+      // "More minutes" — the ONLY conditional step in the chain, and it sits between
+      // Shagun and the rating (owner, 2026-10-04). A call that ran less than
+      // MIN_UPSELL_SECONDS goes straight from Shagun to the rating.
+      //
+      // Note this now runs AFTER Shagun rather than before it. The sheet's countdown is a
+      // real reservation on the astrologer, so it used to have to be the very next thing;
+      // the hold is now created when the sheet opens instead of when the call ends, which
+      // is what makes it safe to put a payment flow in front of it.
+      const askContinue = async () => {
+        if (freeSeconds < MIN_UPSELL_SECONDS || !FREE_CALL_CONTINUE_ENABLED) {
+          askRating();
+          return;
+        }
+        // The server builds this offer from the just-ended session's `ended_at`, which
+        // POST /api/call/end writes. We no longer block the SCREEN on that request, so
+        // the wait happens here, where nobody is looking at a spinner. Bounded, and the
+        // sheet opens either way — a slow end request must never swallow the chain.
+        if (endRequestRef.current) {
+          await Promise.race([
+            endRequestRef.current,
+            new Promise((r) => setTimeout(r, 5000)),
+          ]).catch(() => {});
+        }
+        showFreeCallContinue({
+          astrologerId: recieverId,
+          astrologerName: recieverName,
+          astrologerImage: recieverImage,
+          sessionId: sid,
+          durationSeconds: freeSeconds,
+          ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
+          // Dismissed, expired, or they joined the waitlist -> rate us. Buying instead
+          // reconnects them to a paid call and none of this runs.
+          onDeclined: askRating,
+        });
+      };
+
       // "Shagun Recharge" (owner, 2026-10-03) superseded the old Dakshina sheet for this
       // moment, but both call the same /api/dakshina/* backend — see
       // components/ShagunRechargePrompt.js. SHAGUN_RECHARGE_ENABLED is checked first;
@@ -316,60 +396,39 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             astrologerName: recieverName,
             astrologerImage: recieverImage,
             sessionId: sid,
-            // Runs whether they gave, dismissed, or the payment failed.
-            onDone: askRating,
+            // Runs whether they gave, dismissed, or the payment failed. When they DID
+            // pay, it runs only once they have dismissed the thank-you themselves.
+            onDone: askContinue,
           });
           return;
         }
-        if (!DAKSHINA_PROMPT_ENABLED) { askRating(); return; }
+        if (!DAKSHINA_PROMPT_ENABLED) { askContinue(); return; }
         showDakshina({
           astrologerId: recieverId,
           astrologerName: recieverName,
           sessionId: sid,
-          onDone: askRating,
+          onDone: askContinue,
         });
       };
 
-      // Yes -> Shagun/Dakshina. No -> a short apology and nothing further.
-      const askLiked = () => {
-        if (!CALL_FEEDBACK_PROMPT_ENABLED) { askDakshina(); return; }
-        showCallFeedback({onYes: askDakshina, onNo: () => {}});
-      };
-
-      if (freeSeconds < MIN_DAKSHINA_SECONDS) {
-        if (astrologerCut) {
-          leftScreenRef.current = true;
-          navigation.replace('InstantAstrologers', {astrologerBusy: true});
-        } else {
-          goHome();
-        }
+      // The astrologer bailed early: back to the grid to pick somebody else. Their free
+      // call is not spent, so there is nothing to thank anyone for and nothing to rate.
+      if (freeSeconds < MIN_ABANDON_SECONDS && astrologerCut) {
+        leftScreenRef.current = true;
+        navigation.replace('InstantAstrologers', {astrologerBusy: true});
         return;
       }
 
       goHome();
 
+      // Too short to ask anything of them. Checked AFTER goHome so the call still ends
+      // normally — this only decides whether the chain below runs.
+      if (freeSeconds < MIN_SHAGUN_SECONDS) return;
+
       // EACH STEP FALLS THROUGH TO THE NEXT WHEN IT IS SWITCHED OFF (utils/featureFlags),
-      // rather than one flag short-circuiting the whole chain. With every flag off — which
-      // is the state the owner asked for on 2026-10-03 — this reaches goHome() above and
-      // then does nothing at all, so the call simply ends. Flip any single flag back on and
-      // only that step reappears, in its original place in the order.
-      if (freeSeconds >= MIN_UPSELL_SECONDS && FREE_CALL_CONTINUE_ENABLED) {
-        showFreeCallContinue({
-          astrologerId: recieverId,
-          astrologerName: recieverName,
-          astrologerImage: recieverImage,
-          sessionId: sid,
-          durationSeconds: freeSeconds,
-          ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
-          // Dismissed without buying -> ask how it went, then thank/rate. Buying
-          // instead reconnects them and none of this runs.
-          onDeclined: askLiked,
-        });
-      } else if (astrologerCut) {
-        askLiked();
-      } else {
-        askDakshina();
-      }
+      // rather than one flag short-circuiting the whole chain, so any single step can be
+      // taken out without stranding the ones after it.
+      askDakshina();
       return;
     }
 
