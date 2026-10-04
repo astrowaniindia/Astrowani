@@ -1543,19 +1543,56 @@ module.exports = function registerFreeCallRoutes(app) {
     const rate = Number(astro?.call_charge_per_minute ?? astro?.audio_price ?? 0);
     const offer = await loadOffer();
 
-    // Nothing coherent to sell: a zero rate, an astrologer who has switched calls off
-    // since the free call ended, or one who has already been taken by somebody else.
+    // Nothing coherent to sell: a zero rate, or an astrologer who has switched calls off
+    // since the free call ended. Those are states no amount of waiting fixes.
     //
-    // busyWithSomeoneElse, NOT checkAstrologerBusy: the free call this offer follows is
-    // frequently still flagged active for a moment after the sheet opens, and that helper
-    // counts it — so the customer was shown "this astrologer has started another
-    // consultation" about their own just-ended call. Excluding this customer's own rows
-    // is the whole difference.
-    const sellable = rate > 0 && canTakePaidCall(astro)
-      && !(await busyWithSomeoneElse(hold.astrologer_id, customer.id));
+    // ── BUSY IS DELIBERATELY *NOT* ONE OF THEM (owner, 2026-10-04) ─────────────────
+    // It used to be. `sellable` included busyWithSomeoneElse, so an astrologer who had
+    // picked up another call in the seconds after the free one ended produced an empty
+    // options list, and the sheet opened straight onto "this astrologer has started
+    // another consultation / Notify me" — before the customer had even seen the offer.
+    //
+    // The rule is now that NOTHING about busy is shown before payment. The decision hold
+    // only ever blocked other FREE calls, so an astrologer taking a paid call inside that
+    // window is expected and harmless; and whatever the customer pays lands in their own
+    // wallet either way, so letting the purchase go through costs them nothing. The offer
+    // is therefore priced from the astrologer's rate alone.
+    //
+    // `busy` is still measured and reported — just alongside the options rather than in
+    // place of them, for the one caller that legitimately needs it: the client's
+    // post-payment re-check, which is where the "they have taken another call, your money
+    // is safe in your wallet, we will tell you when they are free" message belongs.
+    // A RATE IS THE ONLY REQUIREMENT. Not busy, and not `canTakePaidCall` either: both
+    // produced an empty options list, and an empty list is what used to put the "they
+    // have moved on / Notify me" card in front of the customer instead of the prices.
+    // That card is gone (owner, 2026-10-04) and the prices are now unconditional, so the
+    // only thing that can still stop them is having no price to quote at all.
+    const sellable = rate > 0;
     const options = sellable
       ? offer.continueOptions.map((minutes) => ({ minutes, amount: Math.round(rate * minutes) }))
       : [];
+    // TWO SEPARATE REASONS A PAID CALL CANNOT HAPPEN, reported separately because the
+    // customer is told a different thing for each (owner, 2026-10-04). Both are read by
+    // the client ONLY after a verified payment; neither is ever surfaced before it.
+    //
+    //   offline — the astrologer cannot take a paid call AT ALL right now: they switched
+    //             calls off, or they are suspended / not approved. "They have gone
+    //             offline, we will tell you when they are back."
+    //   busy    — they are available in principle but mid-consultation right this second.
+    //             "They are on another call, we will tell you when they are free."
+    //
+    // Checked in that order and made mutually exclusive, so a suspended astrologer who
+    // also happens to have a live session reads as offline rather than merely busy —
+    // offline is the more durable fact and the more honest thing to say.
+    //
+    // busyWithSomeoneElse, NOT checkAstrologerBusy: the free call this offer follows is
+    // frequently still flagged active for a moment after the sheet opens, and that helper
+    // counts it — so the customer was told their OWN just-ended call had made the
+    // astrologer busy. Excluding this customer's own rows is the whole difference.
+    const offline = sellable ? !canTakePaidCall(astro) : false;
+    const busy = sellable && !offline
+      ? await busyWithSomeoneElse(hold.astrologer_id, customer.id)
+      : false;
 
     return res.status(200).json({
       success: true,
@@ -1565,6 +1602,11 @@ module.exports = function registerFreeCallRoutes(app) {
       astrologerImage: astro?.profile_pic_url || '',
       ratePerMinute: rate,
       options,
+      // Reported, never acted on BEFORE payment — see the comment on `sellable` above.
+      // The client reads these only when re-checking after a verified payment, and they
+      // are mutually exclusive: at most one of the two is ever true.
+      busy,
+      offline,
       phase: hold.phase,
       // The call this offer follows. Carried so an app that was killed mid-offer and
       // reopens can still raise the "how was Astrowani?" prompt against the right
@@ -1616,23 +1658,25 @@ module.exports = function registerFreeCallRoutes(app) {
       return res.status(409).json({ success: false, code: 'NO_RATE', message: 'This astrologer is not taking paid calls right now.' });
     }
 
-    // LAST CHECK BEFORE THE GATEWAY OPENS. The options were priced up to ninety seconds
-    // ago and a decision-phase hold deliberately lets a PAYING customer through, so the
-    // astrologer may have been taken, or have ended their shift, in the meantime. Taking
-    // the money anyway is not harmless just because it lands in the customer's own
-    // wallet — they paid to talk to a specific person, and would meet a 409 on the way
-    // to the call. Refused as HOLD_EXPIRED so the sheet offers the waitlist, which is
-    // the useful answer.
-    // busyWithSomeoneElse for the same reason as /continue/options: this customer's own
-    // just-ended free call must not read as "the astrologer has been taken", or the
-    // payment is refused for a conflict that does not exist.
-    if (!canTakePaidCall(astro)
-      || (await busyWithSomeoneElse(hold.astrologer_id, customer.id))) {
-      return res.status(409).json({
-        success: false, code: 'HOLD_EXPIRED',
-        message: 'That astrologer has just been taken. We can tell you when they are free.',
-      });
-    }
+    // NO LAST-MINUTE REFUSAL HERE AT ALL — not for busy, and not for eligibility either.
+    //
+    // This used to refuse whenever the astrologer had been taken by somebody else, and
+    // then (briefly) whenever they were suspended / calls-disabled. Either way it was a
+    // second place where a customer who had tapped "Yes, I want more time" and picked an
+    // amount met a refusal instead of a gateway — which the app turned into the "that
+    // astrologer has just been taken" card. The owner's rule (2026-10-04) is that the
+    // customer is never told anything about the astrologer's state before paying, so the
+    // refusal is gone rather than just reworded.
+    //
+    // Allowing it is safe BECAUSE OF WHAT THE MONEY DOES: /continue/start creates an
+    // ORDINARY WALLET RECHARGE. The amount lands in the customer's own wallet and buys
+    // time with this astrologer whenever they do connect, so a purchase that cannot be
+    // used immediately costs them nothing — it is not a payment to an unavailable person.
+    // The client re-checks after the payment verifies and says so plainly there, which is
+    // the single place busy is ever mentioned.
+    //
+    // `rate > 0` above remains the one hard requirement: with no rate there is no amount
+    // to charge, so there is nothing coherent to open a gateway for.
 
     const amount = Math.round(rate * minutes);
 
