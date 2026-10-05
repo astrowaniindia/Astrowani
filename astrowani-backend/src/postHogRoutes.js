@@ -1166,3 +1166,17 @@ module.exports = function registerPostHogRoutes(app) {
     ? '[postHogRoutes] Analytics routes registered under /api/admin/analytics'
     : '[postHogRoutes] Analytics routes registered but POSTHOG_* env vars are unset — will 503 until configured');
 };
+
+/**
+ * Shared with the free-call analytics routes, which need to ask PostHog the same kind of
+ * question about a different set of events.
+ *
+ * Exported rather than copied ON PURPOSE: ENV_FILTER is what keeps every card honest —
+ * production events only, from the admin's chosen start date, with excluded customers
+ * removed (src/analyticsExclusions.js). A second module writing its own WHERE clause is
+ * how one page quietly starts counting test traffic and excluded people while the rest
+ * does not. Any new HogQL query must interpolate ${ENV_FILTER} for the same reason.
+ */
+module.exports.runHogQL = runHogQL;
+module.exports.isConfigured = isConfigured;
+module.exports.ENV_FILTER = ENV_FILTER;

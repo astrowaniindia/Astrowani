@@ -10,6 +10,7 @@ const vendorDevices = require('./vendorDevices');
 const holds = require('./astrologerHolds');
 const localTest = require('./freeCallLocalTest');
 const { freeCallPayout, normaliseMilestones } = require('./freeCallPayout');
+const freeCallAttempts = require('./freeCallAttempts');
 
 // Initialize Supabase Client with Service Role Key for administrative access
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1151,6 +1152,10 @@ class SessionManager {
       // call for the same session is a no-op that still reaches this line. Claiming a
       // fresh payment here would send someone chasing a double credit that never
       // happened — the ledger is the record, not this log.
+      // Analytics: what this attempt actually cost the platform. Written after the wallet
+      // moves, so the number recorded is one that was really settled.
+      freeCallAttempts.recordPayout(sessionId, amount);
+
       console.log(`[SessionManager] Free call ${sessionId}: settled ${amount} for ${sessionRow.vendor_id} (${label} of ${elapsed}s).`);
     } catch (err) {
       console.error(`[SessionManager] free-call payout FAILED for session ${sessionId} — `
@@ -1284,6 +1289,17 @@ class SessionManager {
         console.log(`[SessionManager] Free call ${sessionId} lasted ${seconds ?? 'no'}s — `
           + `under ${MIN_REAL_CALL_SECONDS}s, so booking ${booking.id} is released to be retried.`);
       }
+
+      // ANALYTICS, RECORDED HERE ON PURPOSE: this is the only place that knows both who
+      // hung up and how the attempt was classified, and the patch above is about to erase
+      // the evidence for a released attempt (call_ended_at / call_duration_seconds are
+      // NULLed so the customer can retry). Fire-and-forget; never blocks the end of a call.
+      freeCallAttempts.markEnded({
+        sessionId,
+        outcome: abandonedByAstrologer ? 'abandoned_by_astrologer' : (happened ? 'completed' : 'too_short'),
+        endedBy,
+        durationSeconds: seconds,
+      });
 
       await supabase.from('free_call_bookings').update(patch).eq('id', booking.id);
       // The caller needs the measured length to work out the payout, and `booking` is

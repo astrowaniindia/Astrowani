@@ -978,6 +978,9 @@ require('./src/callRecordingRoutes')(app); // call audio: upload authorisation, 
 require('./src/consultationRoutes')(app); // consultation record: per-session earnings, transcripts, chat retention
 require('./src/bugAgentRoutes')(app);
 require('./src/postHogRoutes')(app);
+// The free instant call offer's own analytics, read by its own admin page. Registered
+// after postHogRoutes because it reuses that module's ENV_FILTER and runHogQL.
+require('./src/freeCallAnalyticsRoutes')(app);
 require('./src/sentryRoutes')(app);
 // Offline QR poster attribution (/api/admin/qr/*). Needs adminRoutes' requireAdmin,
 // which is exported there, so it registers after it.

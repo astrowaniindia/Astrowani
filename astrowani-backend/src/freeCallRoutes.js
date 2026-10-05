@@ -35,6 +35,7 @@ const { normaliseMilestones, DEFAULT_MILESTONES } = require('./freeCallPayout');
 // already uses that identifier for its own string parameter, and a shadowed module
 // reference inside that function would be a silent trap for whoever edits it next.
 const audienceRules = require('./audience');
+const freeCallAttempts = require('./freeCallAttempts');
 
 // Socket.io handle, for telling an astrologer why they have just been made unavailable
 // (see openDecisionHold). Assigned by attachIo() from index.js; everything that uses it
@@ -1506,6 +1507,18 @@ module.exports = function registerFreeCallRoutes(app) {
       freeMinutes: durationMinutes,
     });
 
+    // Analytics, fire-and-forget: one row per ring, so an attempt nobody answers is still
+    // visible later. Deliberately NOT awaited — the customer's phone should never wait on
+    // a stats write, and freeCallAttempts never throws.
+    freeCallAttempts.recordRing({
+      bookingId: booking.id,
+      customerId: customer.id,
+      astrologerId,
+      requestId: requestRow.id,
+      sessionId,
+      attemptNo: (booking.call_attempts || 0) + 1,
+    });
+
     console.log(`[FreeCall] instant: customer ${customer.id} ringing astrologer ${astrologerId} (session ${sessionId})`);
     return res.status(200).json({
       success: true,
@@ -1569,6 +1582,9 @@ module.exports = function registerFreeCallRoutes(app) {
         sessionId: row.session_id,
       });
     }
+    // Analytics: this ring is over. 'missed' (rang out) and 'cancelled' (they moved on to
+    // somebody else) are the two things the owner most wants told apart.
+    if (changed) freeCallAttempts.closeRing(data[0].id, status);
     return res.status(200).json({ success: true, changed });
   }));
 
@@ -3021,6 +3037,10 @@ function dateLabel(dateKey) {
  */
 async function linkInstantBookingToSession(customerId, sessionId) {
   if (!customerId || !sessionId) return false;
+  // The astrologer picked up. Recorded here rather than in the accept route because this
+  // is the one point every accept path funnels through — in-app card, heads-up
+  // notification and the draw-over overlay all reach it.
+  freeCallAttempts.markAnswered(sessionId);
   try {
     const { data, error } = await db
       .from('free_call_bookings')

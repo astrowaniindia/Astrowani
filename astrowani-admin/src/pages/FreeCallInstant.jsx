@@ -1,4 +1,5 @@
 import FreeCallSettings from './FreeCallSettings';
+import FreeCallAnalytics from '../components/FreeCallAnalytics';
 
 /**
  * The "ring an astrologer now" offer.
@@ -43,6 +44,12 @@ export default function FreeCallInstant() {
       </div>
 
       <FreeCallSettings flow="instant" />
+
+      {/* The offer's analytics live HERE, under its own settings, rather than on the
+          Analytics page (owner, 2026-10-05): this is read while tuning the offer, and
+          having to walk to another page to see the result is how a setting gets changed
+          and never checked. */}
+      <FreeCallAnalytics />
     </div>
   );
 }
