@@ -233,7 +233,22 @@ export async function giveUpInstantRing(requestId, status = 'cancelled') {
  */
 export async function getContinueOptions() {
   try {
-    const res = await Instance.get('/api/free-call/continue/options', await authHeader());
+    // 8s, not the 20s default. This one request is the ONLY thing standing between the
+    // customer and the next sheet, and it is the one post-call fetch that genuinely
+    // cannot be prefetched: hitting it is what CREATES the decision hold server-side
+    // (see the comment on /api/free-call/continue/options), so warming it early would
+    // burn the customer's 60s window before they ever saw the offer.
+    //
+    // The origin leg through Cloudflare is documented to spike to 15-22s (the 2026-09-25
+    // slowness investigation), so the 20s default meant a customer could watch a spinner
+    // for most of half a minute immediately after a call. Past 8s we give up and resolve
+    // to "nothing to sell", which the caller already handles by skipping the sheet
+    // entirely and carrying straight on to the rating — a dropped upsell on a bad
+    // connection is a far cheaper mistake than a half-minute spinner.
+    const res = await Instance.get(
+      '/api/free-call/continue/options',
+      { ...(await authHeader()), timeout: 8000 },
+    );
     return res.data?.success ? res.data : { active: false, options: [] };
   } catch (_) {
     return { active: false, options: [] };

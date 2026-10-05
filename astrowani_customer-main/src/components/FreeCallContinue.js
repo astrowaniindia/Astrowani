@@ -231,8 +231,9 @@ export function FreeCallContinueHost() {
     let cancelled = false;
     setLoading(true);
     // Never let an unanswered request mean no sheet at all. getContinueOptions resolves
-    // rather than throwing, but `Instance` has no timeout, so a hung socket would
-    // otherwise leave this pending forever and the customer would never be rated.
+    // rather than throwing, and caps itself at 8s (see the note there), so the worst
+    // case is this floor firing and the request landing shortly after — not the
+    // customer watching a spinner and never being rated.
     const floor = setTimeout(() => { if (!cancelled) setReady(true); }, 3500);
     (async () => {
       const res = await getContinueOptions();
