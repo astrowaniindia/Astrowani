@@ -459,7 +459,13 @@ export default function FreeCallSettings({ flow = 'booking' }) {
         </div>
       </div>
 
-      {/* ── Card 2: Assignment Mode ── */}
+      {/* ── Card 2: Assignment Mode — BOOKING FLOW ONLY ───────────────────
+          assignmentMode / assignedAstrologerId / poolAstrologerIds are read only by
+          slotCapacity() and assigneeCandidates(), which run when a SLOT is booked. The
+          instant flow never calls either: the customer picks whoever is free from the
+          allowlisted pool and rings them directly. Showing this on the instant page was
+          asking the admin to configure something that could not apply. */}
+      {!isInstant && (
       <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
           Astrologer Assignment Strategy
@@ -615,6 +621,7 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Card 2b: Instant calls ──
           Kept in its own card rather than mixed into the slot settings above, because
@@ -781,98 +788,32 @@ export default function FreeCallSettings({ flow = 'booking' }) {
         )}
       </div>
 
-      {/* ── Card 3: Featured Astrologer (Shown to Customer) ── */}
+      {/* ── Card 3: the faces shown on the customer's free-call card ──
+          This used to be "Featured Astrologer (Customer Popup Face)": a reel that stopped on
+          one astrologer, backed by displayFeaturedAstrologerId + a typed
+          astrologerName/Image/Experience/Specialities persona. The BACKEND dropped all of
+          that on 2026-09-05 (see the DEFAULTS comment in freeCallRoutes.js: the card shows
+          the panel as a group, because the offer is not a promise about a particular
+          person) — but this form was never cleaned up, so it kept offering fields the server
+          ignores. Removed 2026-10-05. `displayAstrologerIds` below is the one field here
+          that is still read. */}
       <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
-          Featured Astrologer (Customer Popup Face)
+          Faces shown on the customer&apos;s card
         </h3>
         <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
-          The mobile popup shuffles astrologer faces and stops on this profile. This is visual only — who actually takes the call is determined by the assignment strategy above.
+          A cluster of astrologer photos shown under &ldquo;By verified &amp; certified
+          astrologers&rdquo;. Purely presentational — it does not decide who takes the call.
         </p>
-
-        <div className="field">
-          <label style={{ fontWeight: 600 }}>Pick from Approved Astrologers</label>
-          <select
-            value={offer.displayFeaturedAstrologerId || ''}
-            onChange={(e) => setOffer((p) => ({ ...p, displayFeaturedAstrologerId: e.target.value }))}
-            style={{ maxWidth: 450 }}
-          >
-            <option value="">— Enter a custom name and photo by hand instead —</option>
-            {astrologers.map((a) => (
-              <option key={a.id} value={a.id}>
-                {astroName(a)}
-              </option>
-            ))}
-          </select>
-          <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
-            Their name and photo are read directly from their profile, keeping it automatically up to date.
-          </p>
-        </div>
-
-        {offer.displayFeaturedAstrologerId ? (
-          <div
-            style={{
-              padding: '12px 16px',
-              background: 'var(--surface-muted)',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 10,
-              marginTop: 4,
-            }}
-          >
-            <span style={{ fontSize: 18 }}>⭐</span>
-            <span style={{ fontSize: 13 }}>
-              Currently featured: <strong>{shownAstrologerName}</strong>
-            </span>
-          </div>
-        ) : (
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-            <ImageField
-              label="Custom Astrologer Photo (URL or upload)"
-              value={offer.astrologerImage || ''}
-              onChange={(v) => setOffer((p) => ({ ...p, astrologerImage: v }))}
-            />
-            <div className="two-col" style={{ marginTop: 12 }}>
-              <div className="field">
-                <label>Custom Name</label>
-                <input
-                  type="text"
-                  value={offer.astrologerName || ''}
-                  onChange={(e) => setOffer((p) => ({ ...p, astrologerName: e.target.value }))}
-                  placeholder="e.g. Acharya Sharma"
-                />
-              </div>
-              <div className="field">
-                <label>Experience</label>
-                <input
-                  type="text"
-                  value={offer.astrologerExperience || ''}
-                  placeholder="e.g. 15+ years"
-                  onChange={(e) => setOffer((p) => ({ ...p, astrologerExperience: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="field">
-              <label>Specialities</label>
-              <input
-                type="text"
-                value={offer.astrologerSpecialities || ''}
-                placeholder="e.g. Vedic Astrology, Kundali, Marriage"
-                onChange={(e) => setOffer((p) => ({ ...p, astrologerSpecialities: e.target.value }))}
-              />
-            </div>
-          </div>
-        )}
 
         {/* Faces shown on the popup carousel */}
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
           <h4 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 700 }}>
-            Companion Faces Shown on the Card
+            Pick which faces appear
           </h4>
           <p className="muted" style={{ margin: '0 0 10px', fontSize: 12.5 }}>
-            The customer popup shuffles a small set of avatars before landing on the featured astrologer. Leave empty to automatically use all approved astrologers.
+            Leave empty to automatically use approved astrologers, which is the usual choice —
+            the server tops the cluster up either way so it never renders a lonely photo.
           </p>
           <div
             style={{
@@ -1022,7 +963,15 @@ export default function FreeCallSettings({ flow = 'booking' }) {
 
       )}
 
-      {/* ── Card 5: Marketing & Customer Copy ── */}
+      {/* ── Card 5: Marketing copy — BOOKING FLOW ONLY ───────────────────
+          headerText / bodyText / ctaText are the SCHEDULED card's wording, and successText is
+          the message returned when a slot is booked. Instant has its own instantHeaderText /
+          instantBodyText and never books a slot, so none of this applied there.
+          NOTE for whoever edits this next: the customer app stopped rendering headerText and
+          bodyText on 2026-09-19 (see the comment in FreeCallOffer.js) and reads neither
+          ctaText nor the instant pair, so of these four only successText still reaches
+          anyone. Worth deleting outright once someone confirms nothing wants them back. */}
+      {!isInstant && (
       <div className="card" style={{ marginBottom: 28 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
           Marketing & Customer App Copy
@@ -1073,6 +1022,7 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── Card: who sees the astrologer's own Free Introductory Calls card ──
           Separate Save button on purpose — this writes a different app_settings key from
