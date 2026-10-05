@@ -1541,12 +1541,33 @@ module.exports = function registerFreeCallRoutes(app) {
       .eq('id', requestId)
       .eq('customer_id', customer.id)
       .eq('status', 'pending')
-      .select('id, astrologer_id');
+      // room_id / session_id / customer_id are selected so the cancel below can be
+      // ADDRESSED — see the comment there. Selecting only the id was the bug.
+      .select('id, astrologer_id, customer_id, room_id, session_id');
 
     const changed = !!(data && data.length);
     // Let the astrologer's popup dismiss itself, same as the paid cancel path.
+    //
+    // EVERY ONE OF THESE FIELDS IS LOAD-BEARING, and sending only `requestId` is why a
+    // cancelled free call used to go on ringing (fixed 2026-10-05). The vendor's
+    // dismissPopupIfMatches matches a queued popup on requestId | roomId | callerId —
+    // but `ringAstrologer`'s `incoming_call` payload carries NO requestId, so the popup
+    // stores `requestId: null` and the one key we were sending is the one key it can
+    // never match. The customer rang somebody else while the first astrologer's phone
+    // kept ringing a call nobody could answer.
+    //
+    // roomId is what actually matches here (it is in both payloads); callerId is a
+    // second chance; sessionId is for iOS, where endCallKitCallForRequest needs the
+    // CallKit UUID and that UUID *is* the sessionId (see ringAstrologer's VoIP push).
+    // The paid path emits roomId too, which is exactly why it never had this bug.
     if (changed && app.locals.io) {
-      app.locals.io.to(String(data[0].astrologer_id)).emit('call_cancelled', { requestId });
+      const row = data[0];
+      app.locals.io.to(String(row.astrologer_id)).emit('call_cancelled', {
+        requestId: row.id,
+        roomId: row.room_id,
+        callerId: row.customer_id,
+        sessionId: row.session_id,
+      });
     }
     return res.status(200).json({ success: true, changed });
   }));
