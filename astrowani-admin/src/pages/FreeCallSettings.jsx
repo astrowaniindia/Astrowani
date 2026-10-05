@@ -100,7 +100,9 @@ export default function FreeCallSettings({ flow = 'booking' }) {
   // Who can SEE the "Free Introductory Calls" card on their vendor dashboard. Its own
   // app_settings key and its own Save button, deliberately kept off the offer form's
   // payload above — the two are unrelated and that form rewrites its blob wholesale.
-  const [visibility, setVisibility] = useState({ hiddenForAll: false, hiddenAstrologerIds: [] });
+  const [visibility, setVisibility] = useState({
+    hiddenForAll: false, hiddenAstrologerIds: [], mode: 'everyone', allowedAstrologerIds: [],
+  });
   const [visibilityLoaded, setVisibilityLoaded] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [visibilitySaved, setVisibilitySaved] = useState(false);
@@ -123,9 +125,15 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           hiddenAstrologerIds: Array.isArray(parsed.hiddenAstrologerIds)
             ? parsed.hiddenAstrologerIds.filter((id) => typeof id === 'string' && id)
             : [],
+          mode: parsed.mode === 'selected' ? 'selected' : 'everyone',
+          allowedAstrologerIds: Array.isArray(parsed.allowedAstrologerIds)
+            ? parsed.allowedAstrologerIds.filter((id) => typeof id === 'string' && id)
+            : [],
         });
       } catch (_) {
-        setVisibility({ hiddenForAll: false, hiddenAstrologerIds: [] });
+        setVisibility({
+          hiddenForAll: false, hiddenAstrologerIds: [], mode: 'everyone', allowedAstrologerIds: [],
+        });
       }
       setVisibilityLoaded(true);
 
@@ -187,6 +195,11 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           // Kept even while "hide from everyone" is on, so unticking that restores the
           // per-astrologer choices instead of silently clearing them.
           hiddenAstrologerIds: (visibility.hiddenAstrologerIds || []).filter(Boolean),
+          mode: visibility.mode === 'selected' ? 'selected' : 'everyone',
+          // Kept while the mode is "everyone" too, for the same reason as the hide list:
+          // switching back to "only selected" must restore the names, not an empty list
+          // that would read as "nobody" and quietly drain the pool.
+          allowedAstrologerIds: (visibility.allowedAstrologerIds || []).filter(Boolean),
         }),
       });
       setVisibilitySaved(true);
@@ -1127,9 +1140,95 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           Astrologer&apos;s &ldquo;Free Introductory Calls&rdquo; card
         </h3>
         <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
-          Controls whether astrologers see the opt-in card on their dashboard. Hiding it
-          takes effect the next time they open the app — no app update needed.
+          Controls which astrologers are part of the free introductory call feature, and who
+          sees the opt-in card on their dashboard. Changes take effect the next time they open
+          the app — no app update needed.
         </p>
+
+        {/* ── The allowlist ──────────────────────────────────────────────────
+            Unlike the hide control below it, this governs POOL MEMBERSHIP as well as the
+            card: de-selecting someone stops them receiving free intro calls even if they
+            had already switched themselves on. */}
+        <label style={{ display: 'block', marginBottom: 8, fontWeight: 700, fontSize: 14 }}>
+          Who gets the free introductory call feature?
+        </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14 }}>
+            <input
+              type="radio"
+              name="introMode"
+              checked={visibility.mode !== 'selected'}
+              onChange={() => setVisibility((p) => ({ ...p, mode: 'everyone' }))}
+            />
+            Every astrologer (they opt in themselves)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14 }}>
+            <input
+              type="radio"
+              name="introMode"
+              checked={visibility.mode === 'selected'}
+              onChange={() => setVisibility((p) => ({ ...p, mode: 'selected' }))}
+            />
+            Only the astrologers I select below
+          </label>
+        </div>
+
+        {visibility.mode === 'selected' && (
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+              Selected astrologers ({(visibility.allowedAstrologerIds || []).length})
+            </label>
+            <div
+              style={{
+                display: 'flex', flexWrap: 'wrap', gap: '10px 18px', padding: 12,
+                border: '1px solid var(--border)', borderRadius: 8, maxHeight: 260, overflowY: 'auto',
+              }}
+            >
+              {astrologers.length === 0 && (
+                <span className="muted" style={{ fontSize: 12 }}>No approved astrologers found.</span>
+              )}
+              {astrologers.map((a) => {
+                const on = (visibility.allowedAstrologerIds || []).includes(a.id);
+                return (
+                  <label
+                    key={a.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer', fontSize: 13 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) =>
+                        setVisibility((p) => {
+                          const cur = p.allowedAstrologerIds || [];
+                          return {
+                            ...p,
+                            allowedAstrologerIds: e.target.checked
+                              ? [...cur, a.id]
+                              : cur.filter((id) => id !== a.id),
+                          };
+                        })
+                      }
+                    />
+                    <span style={{ fontWeight: on ? 600 : 400 }}>{astroName(a)}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {(visibility.allowedAstrologerIds || []).length === 0 && (
+              <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--danger, #c0392b)', fontWeight: 600 }}>
+                Nobody is selected, so no astrologer can take a free introductory call and the
+                instant offer will fall back to the scheduled flow. Select at least one.
+              </p>
+            )}
+            <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>
+              Selected astrologers see the toggle on their dashboard and switch it on themselves.
+              Removing someone here takes the toggle off their dashboard and stops them receiving
+              free introductory calls, even if they had already switched it on.
+            </p>
+          </div>
+        )}
+
+        <div style={{ borderTop: '1px solid var(--border)', margin: '0 0 16px' }} />
 
         <label
           style={{
@@ -1197,9 +1296,10 @@ export default function FreeCallSettings({ flow = 'booking' }) {
         {/* Says plainly what this does not do, because the obvious reading of "hidden" is
             "switched off", and it is not. */}
         <p className="muted" style={{ margin: '14px 0 0', fontSize: 12 }}>
-          This hides the switch only. An astrologer who already opted in keeps receiving free
-          intro calls — they just cannot see or change the setting. To stop the calls
-          themselves, turn the offer off at the top of this page.
+          The two hide options above hide the switch only. An astrologer who already opted in
+          keeps receiving free intro calls — they just cannot see or change the setting. To take
+          somebody out of the pool, un-select them from the list at the top of this card; to
+          stop the calls altogether, turn the offer off at the top of this page.
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>

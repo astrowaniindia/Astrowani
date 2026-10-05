@@ -2142,3 +2142,88 @@ file (warnings only, matching the pre-existing codebase style). No duplicate i18
 **Not exercised on a device**, and the astrologer-note/title copy is not final. The owner
 still needs to supply: (1) the popup's heading/subtitle text, and (2) what the astrologer's
 speech bubble says.
+
+
+---
+
+## Session 2026-10-05: the free intro call is now an admin ALLOWLIST
+
+### DV. Only selected astrologers get the feature — and that gates the pool, not just the card
+
+Owner, 2026-10-05: "only the selected astrologers should get the free instant call, and the
+toggle should only appear on their dashboard." Most of the machinery already existed and was
+simply inverted — `free_intro_call_visibility` was a BLOCKLIST (`hiddenForAll` +
+`hiddenAstrologerIds`), so every approved astrologer saw the opt-in card by default and 41 of
+the 82 had already switched themselves on.
+
+**The same `app_settings.free_intro_call_visibility` key now carries two different controls,
+and the difference is the thing to not forget:**
+
+| | What it gates |
+|---|---|
+| `mode: 'selected'` + `allowedAstrologerIds` (NEW) | **Membership.** The only astrologers who see the switch AND the only ones who can be in `effectiveInstantPool`. |
+| `hiddenForAll` / `hiddenAstrologerIds` (unchanged) | **The card only.** Someone already opted in keeps receiving free calls, they just cannot see or change the setting. |
+
+- **The allowlist is applied inside `loadOffer`, over the top of BOTH the self-opt-in list and
+  the admin pin list (`instantPoolAstrologerIds`), and BEFORE the empty-pool fallback.** So
+  de-selecting somebody removes them from the pool even though `free_intro_call_enabled` is
+  still true on their row — which is what an admin taking a name off a list actually means. An
+  allowlist that leaves nobody eligible therefore degrades instant mode to `scheduled` (logged)
+  rather than showing customers a screen with nobody on it.
+- **Selection is not opt-in.** A selected astrologer sees the switch OFF and still has to turn
+  it on themselves. That is the point of the toggle; pinning somebody into the pool regardless
+  is the older, separate `instantPoolAstrologerIds` (which also sets `managedByAdmin` and takes
+  their switch away).
+- **An empty allowlist in `selected` mode means NOBODY, deliberately** — unlike
+  `src/audience.js`, where an empty `only` list degrades to everyone. Degrading here would hand
+  the feature to all 82 astrologers at the moment an admin was half-way through curating the
+  list. The admin card shows a red warning when the selection is empty.
+- **THE TWO HALVES OF THIS KEY FAIL IN OPPOSITE DIRECTIONS, on purpose.** A failed read of the
+  key still hides the card (fail closed — re-showing a switch an admin hid is the worse
+  mistake) but reports `mode: 'everyone'` (fail OPEN), because the allowlist now gates pool
+  membership and a transient DB blip that emptied the pool would take the whole instant offer
+  down for every customer.
+- **`mode` is only ever `'selected'` when it is that literal string.** An older row, a typo or
+  a half-written blob reads as `everyone`, so nothing can silently restrict the feature.
+
+**The 10-call lock stays** (`minFreeCallsBeforeOptOut: 10`, owner's choice when asked): a
+selected astrologer who switches the toggle ON still cannot switch it off until they have
+completed 10 free calls. Worth knowing because it is NOT "toggle on and off as they like" —
+if that is ever wanted, the value is one admin field.
+
+**Admin:** the "Astrologer's Free Introductory Calls card" panel in `FreeCallSettings.jsx`
+gained a radio pair (Every astrologer / Only the astrologers I select) plus a checkbox list,
+saving to the same key with the same dedicated Save button. **No app release and no OTA** —
+the vendor app already renders nothing for `available: false`, so this takes effect on the next
+dashboard load.
+
+**Applied to production the same day:** `free_intro_call_enabled` reset to false for all **42**
+rows that had it (41 active + 1 suspended), and the visibility key written as `mode: 'selected'`
+with an empty list — a clean slate, so nobody is in the pool until the owner picks names and
+those astrologers switch themselves on. The offer was `enabled: false` throughout, so no
+customer was affected. Rollback list of the 42 ids: the scratchpad file
+`free-intro-optin-rollback-2026-10-05.sql` from that session.
+
+### Verified 2026-10-05 — 26/26 against the live database
+A bare Express harness (**`index.js` never booted**) mounting only `freeCallRoutes`, driving
+the real `GET/POST /api/vendor/free-intro-call` with locally signed vendor JWTs and calling the
+real exported `loadOffer()`, writing and then restoring only the visibility key (teardown
+asserted the row went back to absent).
+
+Covers: **a positive control first** (`mode: 'everyone'` — all three test astrologers see the
+card and the two opted-in ones are in the pool, so the later exclusions prove something); an
+allowlist of one dropping an opted-in astrologer out of the pool and refusing their
+`POST .../free-intro-call` with `503 NOT_CONFIGURED`; a selected-but-not-opted-in astrologer
+seeing the card while staying out of the pool; an empty allowlist meaning nobody plus the
+fallback to `scheduled`; a legacy row with no `mode` field meaning everyone; and the old hide
+control still hiding the card while keeping the astrologer in the pool.
+
+> **A local `.env` can invalidate an assertion and look like a code bug.** The first run failed
+> exactly one case — "instant degrades to scheduled" — because `FREE_CALL_LOCAL_TEST=true` in
+> the local `.env` arms `freeCallLocalTest`, which forces `mode = 'instant'` *after* every
+> clamp and fallback by design. The fallback had fired (its warning was in the log). Re-running
+> with `FREE_CALL_LOCAL_TEST=false`, which is how production runs, gave 26/26.
+
+**Not exercised on a device.** The test worth doing: select one astrologer, confirm the card
+appears on their dashboard and not on another's, switch it on, then de-select them in the admin
+and confirm the card disappears and they stop being offered for free calls.

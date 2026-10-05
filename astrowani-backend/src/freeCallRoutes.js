@@ -274,10 +274,22 @@ function invalidateOptedInCache() { optedInCache = { ids: optedInCache.ids, at: 
  * freeIntroToggleState hides the card — the vendor dashboard renders nothing for it —
  * so this takes effect on the next dashboard load, with no OTA.
  *
- * NOTE what this does NOT do: it hides the astrologer's own switch, it does not take
- * them out of the instant pool. Someone already opted in keeps receiving free intro
- * calls, they just cannot see or change the setting. Turning the offer off for
- * customers entirely is a different control — `free_call_offer.enabled`.
+ * TWO SEPARATE CONTROLS LIVE IN THIS KEY, and they are not the same thing:
+ *
+ *   `mode: 'selected'` + `allowedAstrologerIds` — the ALLOWLIST. Only the named
+ *      astrologers are part of this feature at all: they are the only ones who see the
+ *      switch, AND the only ones who can be in the instant pool. De-selecting somebody
+ *      removes them from the pool even if they had already switched themselves on, which
+ *      is the whole point — an admin who takes a name off the list expects them to stop
+ *      receiving free calls, not just to lose a toggle. `mode: 'everyone'` (the default,
+ *      and the behaviour this feature had before the allowlist existed) gates nothing.
+ *
+ *   `hiddenForAll` / `hiddenAstrologerIds` — the older HIDE control, kept as-is. It hides
+ *      the astrologer's own switch and nothing more: someone already opted in keeps
+ *      receiving free intro calls, they just cannot see or change the setting.
+ *
+ * Turning the offer off for customers entirely is a different control again —
+ * `free_call_offer.enabled`.
  */
 const INTRO_VISIBILITY_KEY = 'free_intro_call_visibility';
 const INTRO_VISIBILITY_TTL_MS = 15 * 1000;
@@ -300,7 +312,14 @@ async function loadIntroVisibility() {
     // something an admin switched off is the worse of the two failures, and it corrects
     // itself on the next successful read 15s later.
     if (introVisibilityCache.value) return introVisibilityCache.value;
-    return { hiddenForAll: true, hiddenAstrologerIds: [] };
+    // The two halves of this key fail in OPPOSITE directions, deliberately. Hiding the
+    // card fails CLOSED (re-showing a switch an admin hid is the worse mistake, and it
+    // corrects itself on the next read). The allowlist fails OPEN — `mode: 'everyone'` —
+    // because it now gates pool membership, and a transient read failure that emptied the
+    // pool would take the whole instant offer down for every customer.
+    return {
+      hiddenForAll: true, hiddenAstrologerIds: [], mode: 'everyone', allowedAstrologerIds: [],
+    };
   }
 
   // No row yet = never configured = nothing hidden. Deliberately NOT the same as a failed
@@ -314,7 +333,19 @@ async function loadIntroVisibility() {
     hiddenAstrologerIds: Array.isArray(parsed.hiddenAstrologerIds)
       ? parsed.hiddenAstrologerIds.filter((id) => typeof id === 'string' && id)
       : [],
+    // Anything that is not the literal 'selected' means everyone, so an older row, a
+    // typo, or a half-written blob can never silently restrict the feature.
+    mode: parsed.mode === 'selected' ? 'selected' : 'everyone',
+    allowedAstrologerIds: Array.isArray(parsed.allowedAstrologerIds)
+      ? parsed.allowedAstrologerIds.filter((id) => typeof id === 'string' && id)
+      : [],
   };
+  // An EMPTY allowlist in 'selected' mode means nobody, and it is left meaning nobody on
+  // purpose — the opposite choice (degrade to everyone) would hand the feature to all 80+
+  // astrologers at the exact moment an admin was mid-way through curating the list. The
+  // visible symptom is the instant offer falling back to scheduled, which is recoverable
+  // and logged; silently opening it up is neither.
+  
   introVisibilityCache = { value, at: Date.now() };
   return value;
 }
@@ -414,6 +445,20 @@ async function loadOffer() {
     ...merged.instantPoolAstrologerIds,
     ...(await selfOptedInAstrologerIds()),
   ])];
+  // THE ALLOWLIST IS APPLIED HERE, over the top of both of those lists, so de-selecting
+  // an astrologer pulls them out of the pool even if they had already switched themselves
+  // on or had been pinned. It is applied BEFORE the empty-pool fallback below, so an
+  // allowlist that leaves nobody eligible degrades to the scheduled flow rather than
+  // showing customers a screen with nobody on it. The SCHEDULED pool
+  // (`poolAstrologerIds`) is left alone — those are bookings an admin assigns directly,
+  // not the opt-in supply this list governs.
+  {
+    const introVisibility = await loadIntroVisibility();
+    if (introVisibility.mode === 'selected') {
+      const allowed = new Set(introVisibility.allowedAstrologerIds);
+      merged.effectiveInstantPool = merged.effectiveInstantPool.filter((id) => allowed.has(id));
+    }
+  }
   merged.payoutMilestones = normaliseMilestones(merged.payoutMilestones);
   merged.holdDecisionSeconds = clampInt(merged.holdDecisionSeconds, 10, 600, DEFAULTS.holdDecisionSeconds);
   merged.holdPaymentSeconds = clampInt(merged.holdPaymentSeconds, 30, 900, DEFAULTS.holdPaymentSeconds);
@@ -2331,6 +2376,11 @@ module.exports = function registerFreeCallRoutes(app) {
     // booking count or the astrologer row query behind it. `available:false` is the same
     // answer the vendor app already handles, so nothing app-side needs to know about this.
     const visibility = await loadIntroVisibility();
+    // The allowlist first: an astrologer outside it is not part of this feature at all,
+    // so there is nothing to show and nothing to count.
+    if (visibility.mode === 'selected' && !visibility.allowedAstrologerIds.includes(astrologerId)) {
+      return { available: false };
+    }
     if (visibility.hiddenForAll || visibility.hiddenAstrologerIds.includes(astrologerId)) {
       return { available: false };
     }
