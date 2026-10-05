@@ -26,6 +26,7 @@ import {showInsufficientBalanceAlert} from '../../utils/insufficientBalanceAlert
 import io from 'socket.io-client';
 import {LanguageContext} from '../../context/LanguageContext';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
+import { sortReachableFirst } from '../../utils/astrologerAvailability';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
@@ -104,7 +105,7 @@ const Video = ({navigation}) => {
       const response = await Instance.get('/api/astrologers', {
         headers: {Authorization: token},
       });
-      setAstrologer(response.data.data);
+      setAstrologer(sortReachableFirst(response.data.data));
       setError(null); // clear any stale error from a prior failed attempt
     } catch (err) {
       setError(err.message);

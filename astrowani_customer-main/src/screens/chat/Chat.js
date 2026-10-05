@@ -11,6 +11,7 @@ import RequestingPopup from '../../components/RequestingPopup';
 import PlacementBanner from '../../components/PlacementBanner';
 import { LanguageContext } from '../../context/LanguageContext';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
+import { sortReachableFirst } from '../../utils/astrologerAvailability';
 
 const Chat = ({ navigation }) => {
   const { t } = React.useContext(LanguageContext);
@@ -27,7 +28,7 @@ const Chat = ({ navigation }) => {
       // Show ALL astrologers — the Chat button reflects is_chat_enabled per card
       // (red "Unavailable" when off) rather than hiding the astrologer.
       const response = await Instance.get(`/api/astrologers`);
-      setSpecialAstro(response.data.data || []);
+      setSpecialAstro(sortReachableFirst(response.data.data || []));
       setError(null); // clear any stale error from a prior failed attempt
     } catch (err) {
       console.log('getAllAstrologers error:', err);

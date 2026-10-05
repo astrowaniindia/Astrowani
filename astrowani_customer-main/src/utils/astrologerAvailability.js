@@ -60,3 +60,29 @@ export function unreachableAlertKey(state) {
 export function unreachableReason(state) {
   return state === UNREACHABLE_LOGGED_OUT ? 'astrologer_logged_out' : 'astrologer_offline';
 }
+
+/**
+ * Reachable astrologers first, unreachable ones (offline or logged out, per
+ * unreachableState() above) pushed to the bottom as one block — not interleaved, not
+ * re-sorted within each group. Used by the three "pick an astrologer" list screens
+ * (Chat, Talk-to-Experts/Call, Video) so a customer scrolling sees everyone who can
+ * actually be reached before reaching the people who cannot.
+ *
+ * Deliberately NOT a busy-first sort too: a busy astrologer is online and will be
+ * free again shortly, which is a different situation from offline/logged-out and the
+ * owner only asked to sink the second kind.
+ *
+ * Implemented as two filter passes rather than a custom Array.sort comparator, so the
+ * relative order WITHIN each group is exactly the order the backend returned — a sort
+ * comparator that returns 0 for "same group" relies on the engine's sort being stable,
+ * and nothing here needs to depend on that.
+ */
+export function sortReachableFirst(list) {
+  if (!Array.isArray(list)) return list;
+  const reachable = [];
+  const unreachable = [];
+  for (const item of list) {
+    (unreachableState(item) ? unreachable : reachable).push(item);
+  }
+  return [...reachable, ...unreachable];
+}

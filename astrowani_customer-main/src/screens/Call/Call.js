@@ -530,6 +530,7 @@ import useAstrologerListSync from '../../hooks/useAstrologerListSync';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
+import { sortReachableFirst } from '../../utils/astrologerAvailability';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -823,7 +824,7 @@ const CallsList = ({navigation}) => {
       // (red "Unavailable" when off) rather than hiding the astrologer.
       const response = await Instance.get('/api/astrologers');
       if (response?.data.data) {
-        setCalls(response.data.data);
+        setCalls(sortReachableFirst(response.data.data));
       }
     } catch (error) {
       console.error('Error fetching calls:', error);
