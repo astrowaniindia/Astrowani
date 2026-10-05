@@ -288,11 +288,6 @@ export default function FreeCallSettings({ flow = 'booking' }) {
     payoutMilestones: (p.payoutMilestones || []).filter((_, i) => i !== index),
   }));
 
-  const instantPoolCount = useMemo(() => {
-    const explicit = (offer.instantPoolAstrologerIds || []).filter((id) => astrologers.some((a) => a.id === id));
-    return explicit.length || poolCount;
-  }, [offer.instantPoolAstrologerIds, astrologers, poolCount]);
-
   const shownAstrologerName = useMemo(() => {
     if (offer.displayFeaturedAstrologerId) {
       const a = astrologers.find((x) => x.id === offer.displayFeaturedAstrologerId);
@@ -647,65 +642,13 @@ export default function FreeCallSettings({ flow = 'booking' }) {
 
         {offer.mode === 'instant' && (
           <>
-            <div style={{ marginTop: 20 }}>
-              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
-                Always include these astrologers
-              </label>
-              <p className="muted" style={{ margin: '0 0 10px', fontSize: 12.5 }}>
-                Astrologers now <strong>opt themselves in</strong> from a toggle on their own
-                dashboard, and anyone who switches it on appears on the free-call screen.
-                Ticking someone here <strong>pins</strong> them into the pool whether they
-                switched it on or not — their own toggle then shows as locked, with a note to
-                contact support. Leave this empty to let supply be entirely opt-in.
-                Everyone else is completely unaffected and keeps taking paid calls only.
-              </p>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                  gap: 8,
-                  maxHeight: 220,
-                  overflowY: 'auto',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: 12,
-                  background: 'var(--surface)',
-                }}
-              >
-                {astrologers.length === 0 && (
-                  <span className="muted" style={{ fontSize: 12 }}>No approved astrologers found.</span>
-                )}
-                {astrologers.map((a) => {
-                  const on = (offer.instantPoolAstrologerIds || []).includes(a.id);
-                  return (
-                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer', fontSize: 13 }}>
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={(e) =>
-                          setOffer((p) => {
-                            const cur = p.instantPoolAstrologerIds || [];
-                            return {
-                              ...p,
-                              instantPoolAstrologerIds: e.target.checked
-                                ? [...cur, a.id]
-                                : cur.filter((id) => id !== a.id),
-                            };
-                          })
-                        }
-                      />
-                      <span style={{ fontWeight: on ? 600 : 400 }}>{astroName(a)}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              {instantPoolCount === 0 && (
-                <p className="muted" style={{ margin: '8px 0 0', color: '#c0392b', fontSize: 12 }}>
-                  ⚠️ Nobody selected, and the Smart Pool above is empty too. Instant mode cannot
-                  run without at least one astrologer, so the app will fall back to the scheduled flow.
-                </p>
-              )}
-            </div>
+            {/* The old "Always include these astrologers" pin list used to sit here. It was
+                removed 2026-10-05: two lists governing the same pool, one of which silently
+                LOCKED the astrologer's own toggle, was the confusing part of this page. Who
+                is in the feature is now decided in one place — the allowlist at the bottom of
+                this page — and the astrologer switches themselves on. The backend still reads
+                `instantPoolAstrologerIds` (and this form still round-trips whatever is saved
+                in it), so nothing breaks; there is simply no UI to set it. */}
 
             <div style={{ marginTop: 20 }}>
               <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
