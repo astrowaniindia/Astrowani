@@ -261,7 +261,7 @@ const FreeCallOffer = ({
         loadSlots(null);
       } else {
         setStep('intro');
-        if (offer) captureEvent('free_call_offer_shown', { source });
+        if (offer) captureEvent('free_call_offer_shown', { source, mode: offer?.mode || null });
       }
     } else if (autoNextRef.current) {
       // Closed before the automatic hop to birth details: do not open it anyway.
@@ -299,7 +299,7 @@ const FreeCallOffer = ({
     autoNextRef.current = setTimeout(() => {
       autoNextRef.current = null;
       if (!visibleRef.current) return;
-      captureEvent('free_call_birth_details_auto_opened', { source });
+      captureEvent('free_call_birth_details_auto_opened', { source, mode: offer?.mode || null });
       onAddBirthDetails();
     }, wait);
   };
@@ -327,7 +327,7 @@ const FreeCallOffer = ({
   // the whole point: leaving on 'intro' means the offer did not land, leaving on 'slots'
   // means it did and the times on offer did not.
   const dismiss = () => {
-    captureEvent('free_call_offer_dismissed', { source, step, had_slot_picked: !!picked });
+    captureEvent('free_call_offer_dismissed', { source, step, had_slot_picked: !!picked, mode: offer?.mode || null });
     if (onClose) onClose();
   };
 
@@ -453,7 +453,7 @@ const FreeCallOffer = ({
                 <ShineButton
                   style={[styles.cta, styles.ctaBig]}
                   onPress={() => {
-                    captureEvent('free_call_claim_tapped', { source });
+                    captureEvent('free_call_claim_tapped', { source, mode: offer?.mode || null });
                     goToSlots();
                   }}>
                   <Text style={[styles.ctaText, styles.ctaBigText]}>{tr('freeCall.claimFree')}</Text>

@@ -2252,7 +2252,7 @@ const Home = ({navigation}) => {
         label={t('freeCall.giftHint')}
         liftStyle={giftLiftStyle}
         onPress={() => {
-          captureEvent('free_call_gift_bubble_tapped');
+          captureEvent('free_call_gift_bubble_tapped', { mode: freeCall?.mode || null });
           setFreeCallStartAtSlots(false);
           setFreeCallSource('gift_bubble');
           setFreeCallVisible(true);
