@@ -1080,18 +1080,20 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           something you did not mean to. */}
       <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
-          Astrologer&apos;s &ldquo;Free Introductory Calls&rdquo; card
+          Who gets the Free Introductory Call
         </h3>
         <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
-          Controls which astrologers are part of the free introductory call feature, and who
-          sees the opt-in card on their dashboard. Changes take effect the next time they open
-          the app — no app update needed.
+          The astrologers you choose here get the &ldquo;Free Introductory Calls&rdquo; toggle on
+          their own dashboard and switch it on themselves. Everyone else never sees it and keeps
+          taking paid calls only. Changes take effect the next time they open the app — no app
+          update needed.
         </p>
 
         {/* ── The allowlist ──────────────────────────────────────────────────
-            Unlike the hide control below it, this governs POOL MEMBERSHIP as well as the
-            card: de-selecting someone stops them receiving free intro calls even if they
-            had already switched themselves on. */}
+            This governs POOL MEMBERSHIP as well as the card: de-selecting someone stops them
+            receiving free intro calls even if they had already switched themselves on. It is
+            deliberately the ONLY control on this page for that — a second list pointing the
+            other way (the old hide list) is what made this page confusing. */}
         <label style={{ display: 'block', marginBottom: 8, fontWeight: 700, fontSize: 14 }}>
           Who gets the free introductory call feature?
         </label>
@@ -1164,86 +1166,21 @@ export default function FreeCallSettings({ flow = 'booking' }) {
               </p>
             )}
             <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>
-              Selected astrologers see the toggle on their dashboard and switch it on themselves.
-              Removing someone here takes the toggle off their dashboard and stops them receiving
-              free introductory calls, even if they had already switched it on.
+              Ticked = that astrologer GETS the free introductory call. They see the toggle on
+              their dashboard and switch it on themselves. Un-ticking someone takes the toggle off
+              their dashboard and stops them receiving free introductory calls, even if they had
+              already switched it on. Remember to press Save below.
             </p>
           </div>
         )}
 
-        <div style={{ borderTop: '1px solid var(--border)', margin: '0 0 16px' }} />
-
-        <label
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-            fontSize: 14, fontWeight: 600, marginBottom: 4,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={!!visibility.hiddenForAll}
-            onChange={(e) => setVisibility((p) => ({ ...p, hiddenForAll: e.target.checked }))}
-          />
-          Hide it from every astrologer
-        </label>
-        <p className="muted" style={{ margin: '0 0 18px 26px', fontSize: 12 }}>
-          Use this to switch the card off across the board while the feature is being worked on.
-        </p>
-
-        <div style={{ opacity: visibility.hiddenForAll ? 0.45 : 1 }}>
-          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
-            Or hide it only for specific astrologers
-          </label>
-          <div
-            style={{
-              display: 'flex', flexWrap: 'wrap', gap: '10px 18px', padding: 12,
-              border: '1px solid var(--border)', borderRadius: 8, maxHeight: 220, overflowY: 'auto',
-            }}
-          >
-            {astrologers.length === 0 && (
-              <span className="muted" style={{ fontSize: 12 }}>No approved astrologers found.</span>
-            )}
-            {astrologers.map((a) => {
-              const on = (visibility.hiddenAstrologerIds || []).includes(a.id);
-              return (
-                <label
-                  key={a.id}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, margin: 0,
-                    cursor: visibility.hiddenForAll ? 'not-allowed' : 'pointer', fontSize: 13,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={!!visibility.hiddenForAll}
-                    onChange={(e) =>
-                      setVisibility((p) => {
-                        const cur = p.hiddenAstrologerIds || [];
-                        return {
-                          ...p,
-                          hiddenAstrologerIds: e.target.checked
-                            ? [...cur, a.id]
-                            : cur.filter((id) => id !== a.id),
-                        };
-                      })
-                    }
-                  />
-                  <span style={{ fontWeight: on ? 600 : 400 }}>{astroName(a)}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Says plainly what this does not do, because the obvious reading of "hidden" is
-            "switched off", and it is not. */}
-        <p className="muted" style={{ margin: '14px 0 0', fontSize: 12 }}>
-          The two hide options above hide the switch only. An astrologer who already opted in
-          keeps receiving free intro calls — they just cannot see or change the setting. To take
-          somebody out of the pool, un-select them from the list at the top of this card; to
-          stop the calls altogether, turn the offer off at the top of this page.
-        </p>
+        {/* The legacy HIDE control ("Hide it from every astrologer" / "Or hide it only for
+            specific astrologers") used to sit here. Removed 2026-10-05: one card offering
+            both a show-these list and a hide-these list, pointing in opposite directions,
+            is the confusing part. Who gets the feature is now the single question above.
+            `hiddenForAll` / `hiddenAstrologerIds` are still read by the backend and still
+            round-tripped by this form, so any value already saved keeps working — there is
+            simply no UI to set them. */}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
           <button
@@ -1252,7 +1189,7 @@ export default function FreeCallSettings({ flow = 'booking' }) {
             onClick={saveVisibility}
             style={{ minWidth: 150, fontWeight: 700 }}
           >
-            {savingVisibility ? 'Saving…' : 'Save card visibility'}
+            {savingVisibility ? 'Saving…' : 'Save astrologer list'}
           </button>
           {visibilitySaved && (
             <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>Saved</span>
