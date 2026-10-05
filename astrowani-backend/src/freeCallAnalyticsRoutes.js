@@ -46,28 +46,44 @@ function rangeFrom(req) {
  * Each entry is one PostHog event. `step` groups them into the tree; `label` is what
  * the admin reads. Kept as DATA rather than a hand-written query per card so adding a
  * new event to the app means adding one line here, not a new endpoint.
+ *
+ * `sharedWithScheduled: true` marks an event the APP fires for both the scheduled
+ * booking offer and the instant offer from the same component (FreeCallOffer.js /
+ * Home.js) — these events only started carrying a `mode` property on 2026-10-05
+ * (this fix). Without the filter below, a card shown during the OLD scheduled-only
+ * era (419 real bookings between 2026-08-31 and 2026-09-27) counts as "instant"
+ * activity on an offer no real customer has ever actually seen in instant mode —
+ * which is exactly the inflated numbers this list used to produce. Untagged
+ * (pre-fix) events have no `mode` property and correctly fall out of the filter.
+ *
+ * TWO EVENTS WERE REMOVED OUTRIGHT, not filtered, because they were never the
+ * instant offer's event at all:
+ *   - `free_call_answered` is fired ONLY by FreeCallIncoming.js, the customer-side
+ *     screen for the astrologer calling the customer BACK at a booked slot — that is
+ *     the SCHEDULED flow, not instant. The instant flow has no client-side "answered"
+ *     capture; its real answer count is `tree.answered`, from the database.
+ *   - `rate_app_prompt_shown` / `rate_app_prompt_accepted` are the GENERAL app-review
+ *     prompt (fires on ordinary app launches, unrelated recharges, admin pushes…).
+ *     It is not scoped to any free call and should never have been on this page.
+ *
+ * `shagun_dakshina_*` / `free_call_continue_*` (the post-call "more minutes" and
+ * Shagun Arpan sheets) are ALSO shared with the scheduled flow, but nothing threads
+ * the offer mode through VoiceCallScreen into those sheets yet, so they cannot be
+ * safely tagged or filtered — they are left off this list entirely rather than
+ * guess. Re-add them once that wiring exists.
  */
 const CLICK_EVENTS = [
-  { event: 'free_call_offer_shown', label: 'Offer shown', step: 'see' },
-  { event: 'free_call_claim_tapped', label: 'Tapped "Claim my free call"', step: 'claim' },
-  { event: 'free_call_offer_dismissed', label: 'Closed the offer card', step: 'claim', drop: true },
-  { event: 'free_call_gift_bubble_tapped', label: 'Tapped the gift box on Home', step: 'claim' },
+  { event: 'free_call_offer_shown', label: 'Offer shown', step: 'see', sharedWithScheduled: true },
+  { event: 'free_call_claim_tapped', label: 'Tapped "Claim my free call"', step: 'claim', sharedWithScheduled: true },
+  { event: 'free_call_offer_dismissed', label: 'Closed the offer card', step: 'claim', drop: true, sharedWithScheduled: true },
+  { event: 'free_call_gift_bubble_tapped', label: 'Tapped the gift box on Home', step: 'claim', sharedWithScheduled: true },
   { event: 'free_call_instant_opened', label: 'Opened the astrologer list', step: 'open' },
   { event: 'free_call_instant_opened_from_card', label: 'Opened list from the offer card', step: 'open' },
-  { event: 'free_call_birth_details_auto_opened', label: 'Asked for birth details', step: 'open' },
+  { event: 'free_call_birth_details_auto_opened', label: 'Asked for birth details', step: 'open', sharedWithScheduled: true },
   { event: 'free_call_instant_ring', label: 'Rang an astrologer', step: 'ring' },
   { event: 'free_call_instant_no_answer', label: 'Nobody answered', step: 'ring', drop: true },
   { event: 'free_call_instant_rejected', label: 'Astrologer declined', step: 'ring', drop: true },
   { event: 'free_call_instant_notify_me', label: 'Joined the waitlist instead', step: 'ring', drop: true },
-  { event: 'free_call_answered', label: 'Call answered', step: 'talk' },
-  { event: 'free_call_continue_shown', label: '"More minutes" sheet shown', step: 'after' },
-  { event: 'free_call_continue_paid', label: 'Bought more minutes', step: 'after' },
-  { event: 'free_call_continue_dismissed', label: 'Closed "more minutes"', step: 'after', drop: true },
-  { event: 'shagun_dakshina_shown', label: 'Shagun Arpan shown', step: 'after' },
-  { event: 'shagun_dakshina_paid', label: 'Shagun Arpan paid', step: 'after' },
-  { event: 'shagun_dakshina_skipped', label: 'Shagun Arpan skipped', step: 'after', drop: true },
-  { event: 'rate_app_prompt_shown', label: 'Rating asked', step: 'after' },
-  { event: 'rate_app_prompt_accepted', label: 'Rated the app', step: 'after' },
 ];
 
 /**
@@ -80,13 +96,20 @@ const CLICK_EVENTS = [
  */
 async function clickCounts(sinceIso) {
   if (!postHog.isConfigured()) return { available: false, reason: 'PostHog is not configured', events: [] };
-  const names = CLICK_EVENTS.map((e) => `'${e.event}'`).join(', ');
+  // Events shared with the scheduled booking offer need `properties.mode = 'instant'` or
+  // they pick up the scheduled flow's real-customer history too — see CLICK_EVENTS' header
+  // comment. Events the app only ever fires from the instant flow need no such filter.
+  const soloNames = CLICK_EVENTS.filter((e) => !e.sharedWithScheduled).map((e) => `'${e.event}'`);
+  const sharedNames = CLICK_EVENTS.filter((e) => e.sharedWithScheduled).map((e) => `'${e.event}'`);
+  const clauses = [];
+  if (soloNames.length) clauses.push(`event IN (${soloNames.join(', ')})`);
+  if (sharedNames.length) clauses.push(`(event IN (${sharedNames.join(', ')}) AND properties.mode = 'instant')`);
   // ${postHog.ENV_FILTER} is mandatory — production only, from the admin's analytics
   // start date, minus excluded customers. See the note where it is exported.
   const sql = `
     SELECT event, count() AS total, count(DISTINCT person_id) AS people
     FROM events
-    WHERE event IN (${names})
+    WHERE (${clauses.join(' OR ')})
       AND ${postHog.ENV_FILTER}
       AND timestamp >= toDateTime('${sinceIso.slice(0, 19).replace('T', ' ')}')
     GROUP BY event
