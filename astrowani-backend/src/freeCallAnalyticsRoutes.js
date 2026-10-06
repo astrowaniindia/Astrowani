@@ -42,6 +42,31 @@ function rangeFrom(req) {
   return { days, sinceIso: since.toISOString() };
 }
 
+/**
+ * "Switch to production" (2026-10-06) — everything recorded before this page's own
+ * feature went live is building/testing data (the owner's own test rings, Shagun taps
+ * on a test account, …), and should read as "nothing has happened yet", not as the
+ * offer's real performance. Same pattern as app_settings.analytics_since
+ * (src/analyticsSince.js) for the main Analytics page, but scoped to just this feature
+ * rather than the whole app: this page has its own launch moment, separate from when
+ * the app itself went live.
+ *
+ * Stored in app_settings.free_call_instant_since (ISO timestamp, or unset). Read fresh
+ * per request rather than cached in memory — this is a low-traffic admin-only page, not
+ * a per-request public path, so there is no reason to add a refresh-on-save cache here.
+ *
+ * Deliberately a FILTER, not a delete: every row stays in the database. Unset entirely
+ * (the pre-launch state) means "hide everything" — the page reports `ready: false` with
+ * its own message rather than a zeroed-out funnel, so "no production data yet" never
+ * looks identical to "the feature is broken".
+ */
+const INSTANT_SINCE_KEY = 'free_call_instant_since';
+async function loadInstantSince() {
+  const { data } = await db.from('app_settings').select('value').eq('key', INSTANT_SINCE_KEY).maybeSingle();
+  const d = data?.value ? new Date(data.value) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
+}
+
 /* ── Every clickable thing in the offer, in the order a customer meets them. ──────
  * Each entry is one PostHog event. `step` groups them into the tree; `label` is what
  * the admin reads. Kept as DATA rather than a hand-written query per card so adding a
@@ -179,27 +204,38 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
   /* ── The whole picture for the offer, in one call ─────────────────────────── */
   app.get('/api/admin/free-call/analytics', requireAdmin, h(async (req, res) => {
     const { days, sinceIso } = rangeFrom(req);
+    const instantSince = await loadInstantSince();
 
     if (!freeCallAttempts.isAvailable()) {
       return res.status(200).json({
-        success: true, days, ready: false,
+        success: true, days, ready: false, instantSince,
         message: 'Run sql/free_call_attempts.sql to start recording free call attempts.',
       });
     }
+    if (!instantSince) {
+      return res.status(200).json({
+        success: true, days, ready: false, instantSince: null,
+        message: 'Not in production yet — everything recorded so far is test data from '
+          + 'building the feature. Switch to production below once you launch it.',
+      });
+    }
+    // The LATER of the requested range and the feature's own launch moment — a 90-day
+    // range on a feature that went live last week must not reach back into its test data.
+    const effectiveSinceIso = new Date(instantSince) > new Date(sinceIso) ? instantSince : sinceIso;
 
     const [{ data: attempts }, { data: bookings }, clicks] = await Promise.all([
       db.from(freeCallAttempts.TABLE)
         .select('id, booking_id, customer_id, astrologer_id, session_id, attempt_no, outcome, '
           + 'ended_by, rang_at, answered_at, ended_at, duration_seconds, payout_amount')
-        .gte('rang_at', sinceIso)
+        .gte('rang_at', effectiveSinceIso)
         .order('rang_at', { ascending: false })
         .limit(5000),
       db.from('free_call_bookings')
         .select('id, customer_id, status, call_attempts, created_at, kind')
         .eq('kind', 'instant')
-        .gte('created_at', sinceIso)
+        .gte('created_at', effectiveSinceIso)
         .limit(5000),
-      clickCounts(sinceIso),
+      clickCounts(effectiveSinceIso),
     ]);
 
     const rows = attempts || [];
@@ -290,6 +326,7 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
       success: true,
       ready: true,
       days,
+      instantSince,
       // The DATABASE branch of the tree — everything here really happened.
       tree: {
         bookingsStarted: books.length,
@@ -338,15 +375,20 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
   /* ── One row per customer, with their own attempt timeline ────────────────── */
   app.get('/api/admin/free-call/analytics/customers', requireAdmin, h(async (req, res) => {
     const { days, sinceIso } = rangeFrom(req);
+    const instantSince = await loadInstantSince();
     if (!freeCallAttempts.isAvailable()) {
-      return res.status(200).json({ success: true, days, ready: false, customers: [] });
+      return res.status(200).json({ success: true, days, ready: false, customers: [], instantSince });
     }
+    if (!instantSince) {
+      return res.status(200).json({ success: true, days, ready: false, customers: [], instantSince: null });
+    }
+    const effectiveSinceIso = new Date(instantSince) > new Date(sinceIso) ? instantSince : sinceIso;
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
     const { data: attempts } = await db.from(freeCallAttempts.TABLE)
       .select('id, customer_id, astrologer_id, session_id, attempt_no, outcome, ended_by, '
         + 'rang_at, answered_at, ended_at, duration_seconds, payout_amount')
-      .gte('rang_at', sinceIso)
+      .gte('rang_at', effectiveSinceIso)
       .order('rang_at', { ascending: false })
       .limit(3000);
 
@@ -406,7 +448,7 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
       };
     }).sort((a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0)).slice(0, limit);
 
-    return res.status(200).json({ success: true, ready: true, days, customers });
+    return res.status(200).json({ success: true, ready: true, days, customers, instantSince });
   }));
 
   console.log('[freeCallAnalytics] routes registered under /api/admin/free-call/analytics');

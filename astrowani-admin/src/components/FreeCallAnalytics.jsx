@@ -120,6 +120,7 @@ export default function FreeCallAnalytics() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [open, setOpen] = useState(null); // expanded customer timeline
+  const [switching, setSwitching] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,6 +141,29 @@ export default function FreeCallAnalytics() {
 
   useEffect(() => { load(); }, [load]);
 
+  // "Switch to production" (2026-10-06) — same idea as the main Analytics page's
+  // analytics_since switch, but scoped to just this feature: everything recorded
+  // before this moment is test data from building it, and the backend hides it
+  // entirely (`ready: false`) until this is set. One-way by design, same as the
+  // main page's environment switch — there is no "switch back to test" button,
+  // because going backwards would start mixing real customer data with test data.
+  const switchToProduction = async () => {
+    if (!window.confirm(
+      'Switch Free Instant Call to production? Everything recorded up to right now '
+      + '(test rings, test Shagun payments) will stop counting, and every real ring '
+      + 'from this moment on starts being measured.'
+    )) return;
+    setSwitching(true);
+    try {
+      await client.patch('/api/admin/settings', { key: 'free_call_instant_since', value: new Date().toISOString() });
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setSwitching(false);
+    }
+  };
+
   const t = data?.tree || {};
   const clicks = data?.clicks || {};
   const clickBy = (name) => (clicks.events || []).find((e) => e.event === name) || { total: 0, people: 0 };
@@ -148,6 +172,15 @@ export default function FreeCallAnalytics() {
     <div className="card" style={{ marginBottom: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Free Instant Call — Analytics</h3>
+        {data?.instantSince && (
+          <span
+            className="muted"
+            style={{ fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'var(--border)' }}
+            title="Everything before this moment was test data and is not counted."
+          >
+            🟢 Live since {new Date(data.instantSince).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+          </span>
+        )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           {RANGES.map((r) => (
             <button
@@ -177,7 +210,27 @@ export default function FreeCallAnalytics() {
         <p style={{ color: 'var(--danger, #c0392b)', fontSize: 13, fontWeight: 600 }}>{err}</p>
       )}
 
-      {data && data.ready === false && (
+      {data && data.ready === false && data.instantSince === null && !data.message?.startsWith('Run sql/') && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+            padding: '14px 16px', border: '1px solid var(--border)', borderRadius: 10,
+            background: 'var(--surface)',
+          }}
+        >
+          <div style={{ flex: '1 1 320px' }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 2 }}>🧪 Still in testing</div>
+            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+              {data.message}
+            </p>
+          </div>
+          <button className="btn" onClick={switchToProduction} disabled={switching}>
+            {switching ? 'Switching…' : 'Switch to production'}
+          </button>
+        </div>
+      )}
+
+      {data && data.ready === false && (data.instantSince !== null || data.message?.startsWith('Run sql/')) && (
         <p className="muted" style={{ fontSize: 13 }}>
           {data.message || 'Not recording yet.'}
         </p>
