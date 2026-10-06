@@ -17,9 +17,21 @@
 // WHAT IS NEVER FOLDED
 //   * A row with no session_id (recharges, withdrawals, refunds, admin corrections).
 //   * A row whose session_id does not resolve to a real chat_sessions row. Gifts are
-//     the reason this matters: a live gift's session_id points at live_sessions, not
-//     chat_sessions, so it must stay its own entry rather than being merged into some
+//     part of the reason this matters: a live gift's session_id points at live_sessions,
+//     not chat_sessions, so it must stay its own entry rather than being merged into some
 //     unrelated consultation. Resolution is by lookup, never by assuming.
+//   * A row that carries an idempotency_key (2026-10-06). The genuine per-minute
+//     INSERT in process_session_billing.sql never sets one — it doesn't need to, each
+//     RPC call is itself gated by advancing next_billing_at. Every one-off credit that
+//     ALSO happens to carry the free call's own session_id — the free-call milestone
+//     payout ("freecall-payout:<id>"), a Dakshina/Shagun thank-you ("dakshina:<id>"),
+//     a withdrawal, a referral bonus — sets one precisely because it must never be
+//     double-applied on a retry. Before this, a ₹5 free-call payout and a customer's
+//     ₹6 Dakshina share (both correctly split, both tagged with the same chat_sessions
+//     id) were being summed into one ₹11 line and relabelled "Call with <customer>" —
+//     reading exactly like the whole gift had gone to the astrologer with no split at
+//     all. The underlying wallet balance was always right; only this display grouping
+//     was wrong.
 //   * Anything one-shot (astro reports, ₹1 free services, remedy orders) — those are
 //     already a single row and are passed straight through.
 //
@@ -125,7 +137,10 @@ function foldBySession(rows, sessionMap, describe) {
 
   for (const r of rows || []) {
     const session = r.session_id ? sessionMap[r.session_id] : null;
-    if (!session) { singles.push({ ...r, folded: false }); continue; }
+    // A row with its own idempotency_key is a one-off credit/debit (a payout, a gift
+    // share, a withdrawal, a correction) that happens to carry a real session_id, not
+    // a per-minute billing tick — never fold it in with the rest of that session.
+    if (!session || r.idempotency_key) { singles.push({ ...r, folded: false }); continue; }
 
     const amount = Number(r.amount) || 0;
     const existing = groups.get(r.session_id);

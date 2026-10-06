@@ -223,11 +223,15 @@ async function transferCustomerToVendor(customerId, astrologerId, amount, opts =
 
   warnFallback('transferCustomerToVendor');
   // Debit first so a failure here cannot credit an astrologer for free.
+  // idempotencyKey must be forwarded here too (2026-10-06) — a gift credit that lands
+  // in this fallback without one would both risk a double-credit on retry AND lose the
+  // one signal sessionFolding.js uses to keep a one-off credit from being folded into
+  // the consultation sharing its session_id.
   const customerBalance = await adjustCustomerWallet(customerId, -amount, {
-    description, sessionId, requestId,
+    description, sessionId, requestId, idempotencyKey,
   });
   const vendorBalance = await adjustVendorWallet(astrologerId, vendorAmount ?? amount, {
-    description, sessionId, requestId,
+    description, sessionId, requestId, idempotencyKey,
   });
   return { customerBalance, vendorBalance };
 }
