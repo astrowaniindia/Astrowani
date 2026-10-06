@@ -1133,20 +1133,14 @@ class SessionManager {
         countEarnings: true,
       });
 
-      // The platform side. Logged, never thrown: the astrologer has already been paid by
-      // this point and a ledger failure must not undo that. Same posture as the remedy
-      // commission's admin_wallet leg.
-      try {
-        await wallet.adjustAdminWallet(-amount, {
-          description: `${description} — session ${sessionId}`,
-          serviceKey: 'free_call_payout',
-          customerId: sessionRow.caller_id || null,
-          idempotencyKey: key,
-        });
-      } catch (adminErr) {
-        console.error(`[SessionManager] free-call payout: astrologer ${sessionRow.vendor_id} was PAID ${amount} `
-          + `but admin_wallet was not debited (session ${sessionId}):`, adminErr.message);
-      }
+      // admin_wallet is deliberately NOT debited for this (owner, 2026-10-06).
+      // Platform Wallet is meant to read as revenue the platform has actually taken
+      // in — it only ever moves on a credit (a session's platform-share leg, a gift's
+      // platform-share leg, a paid report, …). A free-call payout is a real cost, not
+      // a reversal of revenue the platform collected (a free call takes ₹0 from the
+      // customer), so it is paid to the astrologer without ever touching this ledger.
+      // free_call_attempts.payout_amount (read by GET /api/admin/free-call/analytics'
+      // "Paid to astrologers" figure) remains the place this cost is actually visible.
 
       // "settled", not "paid": the wallet RPC is keyed on the session id, so a repeat
       // call for the same session is a no-op that still reaches this line. Claiming a
