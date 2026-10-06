@@ -162,7 +162,15 @@ module.exports = function registerDakshinaRoutes(app) {
     }
 
     const order = await razorpay.createOrder(amount, `dk_${Date.now()}`);
-    const vendorAmount = Math.round(amount * DAKSHINA_VENDOR_SHARE);
+    // Round to PAISE (2 decimals), not to the nearest whole rupee (2026-10-06).
+    // Math.round(amount * DAKSHINA_VENDOR_SHARE) rounds to an integer — an ₹11 gift
+    // split 5.5/5.5 became Math.round(5.5) = 6 for the astrologer and a shorted ₹5
+    // for the platform, instead of ₹5.50 each. Same fix as the profile/live gift path
+    // (index.js GIFT_VENDOR_SHARE) and the same convention as the 50/50 session-billing
+    // split (sql/process_session_billing.sql's `ROUND(v_charge * 0.5, 2)`): the
+    // astrologer's half rounds to paise, the platform takes the exact remainder, so the
+    // two always sum to exactly what the customer paid.
+    const vendorAmount = Math.round(amount * DAKSHINA_VENDOR_SHARE * 100) / 100;
 
     const { data: row, error } = await db.from('dakshina_payments').insert([{
       customer_id: customer.id,
