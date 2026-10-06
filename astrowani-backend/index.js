@@ -6500,7 +6500,13 @@ app.get('/api/vendor/wallet', async (req, res) => {
         || (t.customer_id && directNameMap[t.customer_id])
         || sessionMap[t.session_id]?.customerName
         || null,
-      callType: t.callType || sessionMap[t.session_id]?.callType || null,
+      // The session's callType is only backfilled onto a FOLDED row (an actual
+      // consultation). An unfolded single (idempotency_key set — see
+      // sessionFolding.js) is a one-off credit/debit that merely shares that
+      // consultation's session_id — a Dakshina/Shagun share or a free-call payout
+      // is not itself "a call", and backfilling callType onto it made the app show
+      // a phone icon and "Call with <customer>" for a gift (2026-10-06).
+      callType: t.folded ? (t.callType || sessionMap[t.session_id]?.callType || null) : (t.callType || null),
       minutesBilled: t.ticks || null,
     }));
 
@@ -6547,7 +6553,7 @@ app.post('/api/vendor/sessions/earnings', async (req, res) => {
 
     const { data: rows, error } = await supabaseService
       .from('vendor_wallet_transactions')
-      .select('session_id, amount')
+      .select('session_id, amount, idempotency_key')
       .eq('vendor_id', vendorId)
       .eq('type', 'credit')
       .in('session_id', ids);
@@ -6558,8 +6564,22 @@ app.post('/api/vendor/sessions/earnings', async (req, res) => {
     for (const row of rows || []) {
       const entry = data[row.session_id];
       if (!entry) continue;
+      const key = row.idempotency_key || '';
+      // What the CALL earned, not everything money-shaped that ever touched this
+      // session_id (2026-10-06). The real per-minute billing INSERT in
+      // process_session_billing.sql never sets idempotency_key; a free call's own
+      // flat milestone payout ("freecall-payout:<id>") is still part of what the call
+      // itself earned. A Dakshina/Shagun tip or a profile/live gift sent afterward
+      // ("dakshina:<id>", "gift:<id>") is a voluntary extra from the customer, not the
+      // session's earning — a free call that paid out its ₹5 milestone and then
+      // received a ₹6 thank-you tip earned ₹5, not ₹11. Anything else with its own
+      // idempotency_key (a withdrawal refund, an admin correction, a referral bonus)
+      // is equally not this session's earning and is excluded the same way.
+      const isGiftOrTip = key.startsWith('dakshina:') || key.startsWith('gift:');
+      const isRealEarning = !key || key.startsWith('freecall-payout:');
+      if (isGiftOrTip || !isRealEarning) continue;
       entry.earned += Number(row.amount) || 0;
-      entry.minutesBilled += 1;
+      if (!key) entry.minutesBilled += 1; // only an actual per-minute tick is a "minute"
     }
     for (const id of ids) data[id].earned = Math.round(data[id].earned * 100) / 100;
 
