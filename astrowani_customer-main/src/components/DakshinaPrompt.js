@@ -94,19 +94,19 @@ export function DakshinaPromptHost() {
       if (cancelled) return;
       setLoading(false);
       if (!res?.enabled || !res?.paymentsAvailable || !(res.amounts || []).length) {
-        captureEvent('dakshina_skipped', { reason: res?.enabled ? 'payments_unavailable' : 'disabled' });
+        captureEvent('dakshina_skipped', { reason: res?.enabled ? 'payments_unavailable' : 'disabled', mode: req.mode || null });
         finish();
         return;
       }
       setCfg(res);
-      captureEvent('dakshina_shown', { astrologer_id: req.astrologerId || null });
+      captureEvent('dakshina_shown', { astrologer_id: req.astrologerId || null, mode: req.mode || null });
     })();
     return () => { cancelled = true; };
   }, [req, finish]);
 
   const dismiss = useCallback(() => {
     if (paying) return;
-    captureEvent('dakshina_dismissed', { astrologer_id: req?.astrologerId || null });
+    captureEvent('dakshina_dismissed', { astrologer_id: req?.astrologerId || null, mode: req?.mode || null });
     finish();
   }, [paying, req, finish]);
 
@@ -138,7 +138,7 @@ export function DakshinaPromptHost() {
         paymentId: rzp.razorpay_payment_id,
         signature: rzp.razorpay_signature,
       });
-      captureEvent('dakshina_paid', { amount: amt, astrologer_id: req.astrologerId || null });
+      captureEvent('dakshina_paid', { amount: amt, astrologer_id: req.astrologerId || null, mode: req.mode || null });
       finish();
       // Said after the sheet closes, so the thank-you is not competing with it.
       showStatusPopup({
@@ -152,7 +152,7 @@ export function DakshinaPromptHost() {
       // Backing out of the gateway is not a failure and nothing was charged. Leave the
       // sheet open so they can pick a different amount; say nothing.
       if (rz.cancelled) return;
-      captureEvent('dakshina_failed', { amount: amt, reason: rz.message || err?.message || 'unknown' });
+      captureEvent('dakshina_failed', { amount: amt, reason: rz.message || err?.message || 'unknown', mode: req.mode || null });
       showStatusPopup({
         variant: 'error',
         title: t('dakshina.failedTitle'),

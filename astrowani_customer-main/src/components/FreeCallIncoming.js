@@ -196,6 +196,7 @@ export const FreeCallIncomingHost = () => {
         recieverId: target.astrologerId,
         freeCall: true,
         freeCallSeconds: target.durationMinutes * 60,
+        freeCallMode: 'scheduled',
       });
     }
   }, [call, clearRing]);

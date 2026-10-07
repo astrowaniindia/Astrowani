@@ -292,7 +292,7 @@ export function ShagunRechargePromptHost() {
       setTiles(buildTiles(memCache.options.amounts, memCache.art || {}));
       setCfg(memCache.options);
       setLoading(false);
-      captureEvent('shagun_dakshina_shown', { astrologer_id: req.astrologerId || null, from_cache: true });
+      captureEvent('shagun_dakshina_shown', { astrologer_id: req.astrologerId || null, from_cache: true, mode: req.mode || null });
       // Correct it quietly behind the open sheet, same as the slow path below.
       prefetchShagunArpan({ force: true }).then((fresh) => {
         if (cancelled || !fresh?.options?.amounts?.length) return;
@@ -318,6 +318,7 @@ export function ShagunRechargePromptHost() {
         captureEvent('shagun_dakshina_shown', {
           astrologer_id: req.astrologerId || null,
           from_cache: true,
+          mode: req.mode || null,
         });
         // Correct it quietly behind the open sheet. An admin who changed the ladder an
         // hour ago is reflected without anybody watching a reload; if the amounts did
@@ -334,20 +335,20 @@ export function ShagunRechargePromptHost() {
       const res = warm?.options;
       setLoading(false);
       if (!res?.enabled || !res?.paymentsAvailable || !(res.amounts || []).length) {
-        captureEvent('shagun_dakshina_skipped', { reason: res?.enabled ? 'payments_unavailable' : 'disabled' });
+        captureEvent('shagun_dakshina_skipped', { reason: res?.enabled ? 'payments_unavailable' : 'disabled', mode: req.mode || null });
         finish();
         return;
       }
       setTiles(buildTiles(res.amounts, warm.art || {}));
       setCfg(res);
-      captureEvent('shagun_dakshina_shown', { astrologer_id: req.astrologerId || null, from_cache: false });
+      captureEvent('shagun_dakshina_shown', { astrologer_id: req.astrologerId || null, from_cache: false, mode: req.mode || null });
     })();
     return () => { cancelled = true; };
   }, [req, finish]);
 
   const dismiss = useCallback(() => {
     if (paying) return;
-    captureEvent('shagun_dakshina_dismissed', { astrologer_id: req?.astrologerId || null });
+    captureEvent('shagun_dakshina_dismissed', { astrologer_id: req?.astrologerId || null, mode: req?.mode || null });
     finish();
   }, [paying, req, finish]);
 
@@ -405,7 +406,7 @@ export function ShagunRechargePromptHost() {
         paymentId: rzp.razorpay_payment_id,
         signature: rzp.razorpay_signature,
       });
-      captureEvent('shagun_dakshina_paid', { amount: amt, gift: tile.name || null, astrologer_id: req.astrologerId || null });
+      captureEvent('shagun_dakshina_paid', { amount: amt, gift: tile.name || null, astrologer_id: req.astrologerId || null, mode: req.mode || null });
       // The thank-you is a STEP, not a notification (owner, 2026-10-04): whatever comes
       // next in the post-call chain waits behind it until the customer taps "That's OK".
       // Raising the next sheet on top of a thank-you for money just given would read as
@@ -426,7 +427,7 @@ export function ShagunRechargePromptHost() {
       // Backing out of the gateway is not a failure and nothing was charged. Leave the
       // sheet open so they can pick a different amount; say nothing.
       if (rz.cancelled) return;
-      captureEvent('shagun_dakshina_failed', { amount: amt, gift: tile.name || null, reason: rz.message || err?.message || 'unknown' });
+      captureEvent('shagun_dakshina_failed', { amount: amt, gift: tile.name || null, reason: rz.message || err?.message || 'unknown', mode: req.mode || null });
       showStatusPopup({
         variant: 'error',
         title: t('shagun.failedTitle'),

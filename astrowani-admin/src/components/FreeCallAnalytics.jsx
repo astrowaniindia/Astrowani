@@ -459,32 +459,60 @@ export default function FreeCallAnalytics() {
           {/* ── Everything clickable ── */}
           <h4 style={{ margin: '18px 0 2px', fontSize: 14, fontWeight: 700 }}>Every tap in the offer</h4>
           <p className="muted" style={{ margin: '0 0 8px', fontSize: 12 }}>
-            Tracked in the app. &ldquo;People&rdquo; counts individuals; &ldquo;times&rdquo; counts every tap,
-            so one person trying three astrologers shows as one person and three taps.
+            Tracked in the app (subject to analytics consent — a customer who declined tracking
+            is invisible here even though the call itself still happened and is counted above).
+            &ldquo;People&rdquo; counts individuals; &ldquo;times&rdquo; counts every occurrence,
+            so one person trying three astrologers shows as one person and three rings. Each row's
+            own wording says exactly what it is counting — read the row, not just its number.
           </p>
           {clicks.available === false ? (
             <p className="muted" style={{ fontSize: 12.5 }}>Not available — {clicks.reason}.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)' }}>
-                    <th style={{ padding: 6 }}>What they did</th>
-                    <th style={{ padding: 6 }}>People</th>
-                    <th style={{ padding: 6 }}>Times</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(clicks.events || []).map((e) => (
-                    <tr key={e.event} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: 6, color: e.drop ? '#c0392b' : 'inherit' }}>{e.label}</td>
-                      <td style={{ padding: 6, fontWeight: 600 }}>{e.people}</td>
-                      <td style={{ padding: 6 }} className="muted">{e.total}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {[
+                { key: 'see', title: 'Before any call exists — the offer card' },
+                { key: 'claim', title: null },
+                { key: 'open', title: null },
+                { key: 'ring', title: null },
+                { key: 'after_shagun', title: 'After the call ends — the Shagun Arpan thank-you pop-up' },
+                { key: 'after_continue', title: 'After the call ends — the "buy more minutes" pop-up' },
+                { key: 'after_rating', title: 'After the call ends — the star-rating pop-up' },
+              ].map(({ key, title }) => {
+                const rows = (clicks.events || []).filter((e) => e.step === key);
+                if (!rows.length) return null;
+                return (
+                  <div key={key} style={{ marginBottom: 14 }}>
+                    {title && (
+                      <div className="muted" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, margin: '6px 0 4px' }}>
+                        {title.toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)' }}>
+                            <th style={{ padding: 6, width: '62%' }}>What this row is counting, exactly</th>
+                            <th style={{ padding: 6 }}>People</th>
+                            <th style={{ padding: 6 }}>Times</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((e) => (
+                            <tr key={e.event} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: 6, color: e.drop ? '#c0392b' : 'inherit', lineHeight: 1.4 }}>
+                                {e.label}
+                              </td>
+                              <td style={{ padding: 6, fontWeight: 600, verticalAlign: 'top' }}>{e.people}</td>
+                              <td style={{ padding: 6, verticalAlign: 'top' }} className="muted">{e.total}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
           )}
         </>
       )}

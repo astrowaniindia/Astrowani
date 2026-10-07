@@ -104,6 +104,13 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     // changes what is shown and adds the hard stop -- it does not gate any billing.
     freeCall = false,
     freeCallSeconds = 0,
+    // 'instant' (InstantAstrologers.js) or 'scheduled' (FreeCallIncoming.js) — threaded
+    // into the post-call sheets' analytics events so the admin's Instant Call analytics
+    // page can tell "this Shagun Arpan tap happened after an instant free call" apart
+    // from the same sheet firing after a scheduled one. Untagged (older app builds) means
+    // no `mode` property is sent at all, which the backend's filter already treats as
+    // neither — see freeCallAnalyticsRoutes.js's CLICK_EVENTS header comment.
+    freeCallMode = 'scheduled',
     // The customer is the side actually paying, yet the rate and the
     // billing-active badge existed only on the vendor's screen. Display only —
     // billing is server-side and unchanged.
@@ -341,6 +348,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         if (!FREE_CALL_RATING_PROMPT_ENABLED) return;
         showRateAstrowani({
           context: 'free_call',
+          mode: freeCallMode,
           sessionId: sid,
           // Armed on BEHAVIOUR, not on the stars tapped: a call that ran most of its
           // length is the happiness signal.
@@ -376,6 +384,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           astrologerName: recieverName,
           astrologerImage: recieverImage,
           sessionId: sid,
+          mode: freeCallMode,
           durationSeconds: freeSeconds,
           ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
           // Dismissed, expired, or they joined the waitlist -> rate us. Buying instead
@@ -396,6 +405,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             astrologerName: recieverName,
             astrologerImage: recieverImage,
             sessionId: sid,
+            mode: freeCallMode,
             // Runs whether they gave, dismissed, or the payment failed. When they DID
             // pay, it runs only once they have dismissed the thank-you themselves.
             onDone: askContinue,
@@ -407,6 +417,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           astrologerId: recieverId,
           astrologerName: recieverName,
           sessionId: sid,
+          mode: freeCallMode,
           onDone: askContinue,
         });
       };
@@ -446,7 +457,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
      // call screen. Idempotent, so the branches that already navigated are a no-op.
      leaveCallScreen();
    }
-  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, leaveCallScreen, recieverId, recieverName, recieverImage, freeCall, freeCallSeconds]);
+  }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, leaveCallScreen, recieverId, recieverName, recieverImage, freeCall, freeCallSeconds, freeCallMode]);
 
   const startRingCountdown = useCallback(() => {
     ringTimerRef.current = setInterval(() => {

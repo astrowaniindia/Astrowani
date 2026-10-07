@@ -125,6 +125,11 @@ export function RateAstrowaniPromptHost() {
   const visible = useDeferredPresent(!!req);
   useModalPresence(visible);
 
+  // Read through a ref, not the `req` state: close() needs the request that is actually
+  // being dismissed, and a ref survives into the setReq(null) below without a stale
+  // closure problem.
+  const reqRef = useRef(null);
+
   useEffect(() => {
     listener = (o) => {
       // Async, so the caller never waits on storage: showRateAstrowani stays
@@ -133,7 +138,12 @@ export function RateAstrowaniPromptHost() {
         if (!ok) return;
         openRef.current = true;
         pickedRef.current = 0;
+        reqRef.current = o;
         setReq(o); setPicked(0); setDone(false);
+        // Shown — the admin's "after the call" analytics otherwise has no way to tell
+        // "the rating popup appeared and was dismissed with no tap" apart from "it was
+        // never raised at all for this call" (see close() below for the dismissal half).
+        captureEvent('rate_astrowani_shown', { context: o?.context || 'unknown', mode: o?.mode || null });
       });
     };
     return () => { listener = null; };
@@ -147,7 +157,13 @@ export function RateAstrowaniPromptHost() {
 
   const close = useCallback(() => {
     // Walked away without answering -> short cooldown. An answer stamps its own key.
-    if (openRef.current && !pickedRef.current) stamp(DISMISSED_AT_KEY);
+    if (openRef.current && !pickedRef.current) {
+      stamp(DISMISSED_AT_KEY);
+      captureEvent('rate_astrowani_dismissed', {
+        context: reqRef.current?.context || 'unknown',
+        mode: reqRef.current?.mode || null,
+      });
+    }
     openRef.current = false;
     pickedRef.current = 0;
     setReq(null); setPicked(0); setDone(false);
@@ -161,7 +177,7 @@ export function RateAstrowaniPromptHost() {
   }, [done, close]);
 
   const goToStore = useCallback((rating) => {
-    captureEvent('app_rating_store_opened', { rating: rating ?? picked });
+    captureEvent('app_rating_store_opened', { rating: rating ?? picked, context: req?.context || 'unknown', mode: req?.mode || null });
     // market:// opens the Play app straight on the listing where the review box is;
     // the https URL is the fallback for a device with no Play app (and for iOS later).
     // Never let a failed open leave them staring at a dead button — close either way.
@@ -172,13 +188,13 @@ export function RateAstrowaniPromptHost() {
       Linking.openURL(PLAY_STORE_URL).catch(() => {});
     });
     close();
-  }, [picked, close]);
+  }, [picked, close, req]);
 
   const pick = useCallback((rating) => {
     if (pickedRef.current) return; // one answer only; re-tapping must not file a second
     pickedRef.current = rating;
     setPicked(rating);
-    captureEvent('app_rated', { rating, context: req?.context || 'unknown' });
+    captureEvent('app_rated', { rating, context: req?.context || 'unknown', mode: req?.mode || null });
     // Fire and forget — submitAppRating resolves on failure. They did us a favour by
     // answering and must never see an error for it.
     submitAppRating({ rating, context: req?.context, sessionId: req?.sessionId });

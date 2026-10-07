@@ -170,6 +170,7 @@ export default function InstantAstrologers({ navigation, route }) {
           perMinuteCharge: 0,
           freeCall: true,
           freeCallSeconds: freeSeconds,
+          freeCallMode: 'instant',
         });
       };
 

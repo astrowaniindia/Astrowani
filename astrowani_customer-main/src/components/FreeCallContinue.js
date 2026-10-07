@@ -249,6 +249,7 @@ export function FreeCallContinueHost() {
         captureEvent('free_call_continue_nothing_to_sell', {
           astrologer_id: req.astrologerId || null,
           active: !!res?.active,
+          mode: req.mode || null,
         });
         finishRef.current?.();
         return;
@@ -271,6 +272,7 @@ export function FreeCallContinueHost() {
         astrologer_id: req.astrologerId || null,
         active: !!res.active,
         options: (res.options || []).length,
+        mode: req.mode || null,
       });
     })();
     return () => { cancelled = true; clearTimeout(floor); };
@@ -281,6 +283,7 @@ export function FreeCallContinueHost() {
     captureEvent('free_call_continue_dismissed', {
       astrologer_id: req?.astrologerId || null,
       seconds_left: secondsLeft,
+      mode: req?.mode || null,
     });
     releaseContinueHold();
     finish();
@@ -315,6 +318,7 @@ export function FreeCallContinueHost() {
     captureEvent('free_call_continue_options_opened', {
       astrologer_id: req?.astrologerId || null,
       seconds_left: secondsLeft,
+      mode: req?.mode || null,
     });
     setRevealed(true);
   }, [req, secondsLeft]);
@@ -323,7 +327,7 @@ export function FreeCallContinueHost() {
   // rebuilt as the handler's identity changes — a restarted interval drops a tick.
   const expireRef = useRef(null);
   expireRef.current = () => {
-    captureEvent('free_call_continue_expired', { astrologer_id: req?.astrologerId || null });
+    captureEvent('free_call_continue_expired', { astrologer_id: req?.astrologerId || null, mode: req?.mode || null });
     releaseContinueHold();
     finish();
   };
@@ -388,7 +392,7 @@ export function FreeCallContinueHost() {
     const astrologerId = data?.astrologerId || req?.astrologerId;
     try {
       const start = await startContinuePayment(option.minutes);
-      captureEvent('free_call_continue_started', { minutes: option.minutes, amount: start.amount });
+      captureEvent('free_call_continue_started', { minutes: option.minutes, amount: start.amount, mode: req?.mode || null });
 
       const prefill = await razorpayPrefill();
       const rzp = await RazorpayCheckout.open({
@@ -415,7 +419,7 @@ export function FreeCallContinueHost() {
       if (!verify.data?.success) throw new Error(t('freeCallContinue.verifyFailed'));
 
       captureEvent('wallet_recharged', { amount: start.amount });
-      captureEvent('free_call_continue_paid', { minutes: option.minutes, amount: start.amount });
+      captureEvent('free_call_continue_paid', { minutes: option.minutes, amount: start.amount, mode: req?.mode || null });
 
       // PAID — but they may have been taken while the gateway was open. The hold blocks
       // other FREE calls, not paid ones, and the customer was away in Razorpay for
@@ -446,6 +450,7 @@ export function FreeCallContinueHost() {
           astrologer_id: astrologerId || null,
           minutes: option.minutes,
           reason: wentOffline ? 'offline' : 'busy',
+          mode: req?.mode || null,
         });
         // Carry the chain ourselves rather than calling finish(): finish() raises the
         // next step on a timer, which would put the rating card on screen underneath

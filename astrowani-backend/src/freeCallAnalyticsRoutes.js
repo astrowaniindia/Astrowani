@@ -91,24 +91,138 @@ async function loadInstantSince() {
  *     prompt (fires on ordinary app launches, unrelated recharges, admin pushes…).
  *     It is not scoped to any free call and should never have been on this page.
  *
- * `shagun_dakshina_*` / `free_call_continue_*` (the post-call "more minutes" and
- * Shagun Arpan sheets) are ALSO shared with the scheduled flow, but nothing threads
- * the offer mode through VoiceCallScreen into those sheets yet, so they cannot be
- * safely tagged or filtered — they are left off this list entirely rather than
- * guess. Re-add them once that wiring exists.
+ * `shagun_dakshina_*` / `free_call_continue_*` / `rate_astrowani_*` / `app_rating_*`
+ * (the post-call "Shagun Arpan" thank-you sheet, the "buy more minutes" sheet, and the
+ * star-rating sheet) are ALSO shared with the scheduled flow — the same three sheets
+ * run after a scheduled free call too. As of 2026-10-07 `VoiceCallScreen.tsx` threads a
+ * `freeCallMode` ('instant' from InstantAstrologers.js, 'scheduled' from
+ * FreeCallIncoming.js) into each one as a `mode` property, so they can now be filtered
+ * the same way the other `sharedWithScheduled` rows already are. An event fired by an
+ * app build from BEFORE this date carries no `mode` property at all and correctly
+ * falls out of the filter below, the same as any other untagged legacy event — it is
+ * never miscounted as instant activity.
  */
 const CLICK_EVENTS = [
-  { event: 'free_call_offer_shown', label: 'Offer shown', step: 'see', sharedWithScheduled: true },
-  { event: 'free_call_claim_tapped', label: 'Tapped "Claim my free call"', step: 'claim', sharedWithScheduled: true },
-  { event: 'free_call_offer_dismissed', label: 'Closed the offer card', step: 'claim', drop: true, sharedWithScheduled: true },
-  { event: 'free_call_gift_bubble_tapped', label: 'Tapped the gift box on Home', step: 'claim', sharedWithScheduled: true },
-  { event: 'free_call_instant_opened', label: 'Opened the astrologer list', step: 'open' },
-  { event: 'free_call_instant_opened_from_card', label: 'Opened list from the offer card', step: 'open' },
-  { event: 'free_call_birth_details_auto_opened', label: 'Asked for birth details', step: 'open', sharedWithScheduled: true },
-  { event: 'free_call_instant_ring', label: 'Rang an astrologer', step: 'ring' },
-  { event: 'free_call_instant_no_answer', label: 'Nobody answered', step: 'ring', drop: true },
-  { event: 'free_call_instant_rejected', label: 'Astrologer declined', step: 'ring', drop: true },
-  { event: 'free_call_instant_notify_me', label: 'Joined the waitlist instead', step: 'ring', drop: true },
+  {
+    event: 'free_call_offer_shown', step: 'see', sharedWithScheduled: true,
+    label: 'Saw the free-call offer card somewhere in the app (Home or the "Talk to experts" tab)',
+  },
+  {
+    event: 'free_call_claim_tapped', step: 'claim', sharedWithScheduled: true,
+    label: 'Tapped the "Claim my free call" button on the offer card',
+  },
+  {
+    event: 'free_call_offer_dismissed', step: 'claim', drop: true, sharedWithScheduled: true,
+    label: 'Closed the offer card without claiming the free call',
+  },
+  {
+    event: 'free_call_gift_bubble_tapped', step: 'claim', sharedWithScheduled: true,
+    label: 'Tapped the gift-box bubble on Home that also opens this offer',
+  },
+  {
+    event: 'free_call_instant_opened', step: 'open',
+    label: 'Opened the list of astrologers to ring for the free call',
+  },
+  {
+    event: 'free_call_instant_opened_from_card', step: 'open',
+    label: 'Opened the astrologer list directly from the offer card (one tap, skipping the list screen)',
+  },
+  {
+    event: 'free_call_birth_details_auto_opened', step: 'open', sharedWithScheduled: true,
+    label: 'Was asked to fill in birth details before the free call could start',
+  },
+  {
+    event: 'free_call_instant_ring', step: 'ring',
+    label: 'Rang an astrologer\'s phone for the free call',
+  },
+  {
+    event: 'free_call_instant_no_answer', step: 'ring', drop: true,
+    label: 'Rang an astrologer and nobody answered before the ring timed out',
+  },
+  {
+    event: 'free_call_instant_rejected', step: 'ring', drop: true,
+    label: 'Rang an astrologer and the astrologer declined the call',
+  },
+  {
+    event: 'free_call_instant_notify_me', step: 'ring', drop: true,
+    label: 'Gave up ringing and joined the "notify me" waitlist instead',
+  },
+  // ── After the call ends: the Shagun Arpan thank-you sheet ──────────────────────
+  // This is a VOLUNTARY tip sheet shown after a free call that ran 4+ minutes. It is
+  // NOT a wallet recharge — tapping an amount pays the astrologer directly through
+  // Razorpay (see ShagunRechargePrompt.js). "People" below counts customers; "Times"
+  // counts how often each thing happened (a shown event fires once per call that
+  // qualifies, so one customer who gets two qualifying free calls shows up as 2).
+  {
+    event: 'shagun_dakshina_shown', step: 'after_shagun', sharedWithScheduled: true,
+    label: 'The Shagun Arpan thank-you pop-up (the one offering ₹11/51/101/... tip amounts) appeared on screen after the call ended',
+  },
+  {
+    event: 'shagun_dakshina_dismissed', step: 'after_shagun', drop: true, sharedWithScheduled: true,
+    label: 'Tapped the red ✕ to close the Shagun Arpan pop-up without paying anything',
+  },
+  {
+    event: 'shagun_dakshina_paid', step: 'after_shagun', sharedWithScheduled: true,
+    label: 'Tapped an amount on the Shagun Arpan pop-up and the payment went through — the astrologer was paid',
+  },
+  {
+    event: 'shagun_dakshina_failed', step: 'after_shagun', drop: true, sharedWithScheduled: true,
+    label: 'Tapped an amount on the Shagun Arpan pop-up but the Razorpay payment failed (cancelling at the gateway is NOT counted here)',
+  },
+  {
+    event: 'shagun_dakshina_skipped', step: 'after_shagun', drop: true, sharedWithScheduled: true,
+    label: 'The Shagun Arpan pop-up was skipped automatically without the customer seeing it (payments were unavailable, or the ladder was switched off in settings)',
+  },
+  // ── After the call ends: "buy more minutes" (FreeCallContinue.js) ──────────────
+  // Only reachable when the free call ran 9+ minutes, and only after Shagun Arpan is
+  // answered one way or another. Offers paid extra minutes with the same astrologer.
+  {
+    event: 'free_call_continue_shown', step: 'after_continue', sharedWithScheduled: true,
+    label: 'The "buy more minutes with this astrologer" pop-up appeared on screen, with prices already loaded',
+  },
+  {
+    event: 'free_call_continue_options_opened', step: 'after_continue', sharedWithScheduled: true,
+    label: 'Tapped "Yes, I want more time" on the "buy more minutes" pop-up to see the prices',
+  },
+  {
+    event: 'free_call_continue_dismissed', step: 'after_continue', drop: true, sharedWithScheduled: true,
+    label: 'Closed the "buy more minutes" pop-up with the ✕ without buying any extra minutes',
+  },
+  {
+    event: 'free_call_continue_expired', step: 'after_continue', drop: true, sharedWithScheduled: true,
+    label: 'Left the "buy more minutes" pop-up open until its own countdown ran out, without deciding',
+  },
+  {
+    event: 'free_call_continue_started', step: 'after_continue', sharedWithScheduled: true,
+    label: 'Picked a "buy more minutes" price and opened the Razorpay payment screen for it',
+  },
+  {
+    event: 'free_call_continue_paid', step: 'after_continue', sharedWithScheduled: true,
+    label: 'Paid successfully for extra minutes with the same astrologer on the "buy more minutes" pop-up',
+  },
+  {
+    event: 'free_call_continue_paid_but_busy', step: 'after_continue', sharedWithScheduled: true,
+    label: 'Paid for extra minutes, but by the time payment finished the astrologer had gone offline or taken another call — money stayed safely in the wallet, customer was put on the waitlist',
+  },
+  // ── After the call ends: the star-rating pop-up (RateAstrowaniPrompt.js) ───────
+  // The very last thing shown. 4-5 stars opens the Play Store listing; 1-3 stars shows
+  // an apology instead and never links to the store.
+  {
+    event: 'rate_astrowani_shown', step: 'after_rating', sharedWithScheduled: true,
+    label: 'The "How was Astrowani?" star-rating pop-up appeared on screen',
+  },
+  {
+    event: 'rate_astrowani_dismissed', step: 'after_rating', drop: true, sharedWithScheduled: true,
+    label: 'Closed the star-rating pop-up (back button, tapped outside it, or left the app) without tapping any star',
+  },
+  {
+    event: 'app_rated', step: 'after_rating', sharedWithScheduled: true,
+    label: 'Tapped a star rating inside the pop-up (any number of stars, 1 through 5)',
+  },
+  {
+    event: 'app_rating_store_opened', step: 'after_rating', sharedWithScheduled: true,
+    label: 'Rated 4 or 5 stars and was sent on to leave a public review on the Play Store listing',
+  },
 ];
 
 /**
