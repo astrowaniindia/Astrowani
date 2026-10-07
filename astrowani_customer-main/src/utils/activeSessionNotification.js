@@ -9,7 +9,7 @@
 // rather than adding a new notification library. `ongoing: true` + `autoCancel: false` means
 // it can't be swiped away — only cancelLocalNotification() (called when the session actually
 // ends) removes it, so it can't be dismissed by accident and leave the customer unaware.
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import { startCallForegroundService, stopCallForegroundService } from './callForegroundService';
 
@@ -44,7 +44,14 @@ const NOTIFICATION_ID = 'active-session';
 // The microphone half of the problem is already solved differently on iOS, by
 // `UIBackgroundModes: audio` in Info.plist, so iOS only needs the notification.
 export function showActiveSessionNotification({ title, message, screen, params, kind = 'chat' }) {
-  if (kind === 'call' && Platform.OS === 'android') {
+  // `AppState.currentState === 'active'` is load-bearing, not a nicety. Android forbids
+  // STARTING a microphone-type foreground service from the background, and a call reports
+  // itself connected whenever ICE completes — which can be seconds after the customer
+  // pressed Home. Asking for the service then made Android throw inside the service
+  // itself and killed the app mid-call. Backgrounded, the mic is already gagged and the
+  // service cannot change that, so take the notification path: the billing reminder this
+  // module exists for still shows, which is what matters while the customer is away.
+  if (kind === 'call' && Platform.OS === 'android' && AppState.currentState === 'active') {
     // Android: the service posts its OWN ongoing notification, so returning here
     // keeps it to exactly one notification while the mic stays alive.
     startCallForegroundService(title, message);
