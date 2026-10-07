@@ -9,6 +9,11 @@ const { sendPush, clearAppRemovedMark } = require('./src/push');
 // Records failures that endpoints deliberately swallow, so a silent mass
 // outage still reaches Sentry and /health. See src/degradation.js.
 const { noteReadFailure, getDegradation } = require('./src/degradation');
+// Rides out transient network blips to Supabase's gateway (observed Cloudflare
+// 522/525 against gateway.supabase.co, 2026-10-06/07 — see the module for why
+// this isn't a Supabase-side or connection-pool issue). Used where handing out
+// a broken response is worse than a 400ms wait — see mobile-otp-verify.
+const { withSupabaseRetry } = require('./src/supabaseRetry');
 // Tolerant phone->account resolution. A JWT minted before the Aug-2026 phone
 // normalization carries a raw claim that no longer exact-matches the migrated
 // customers.mobile column; see src/customerLookup.js for the full failure mode.
@@ -2215,16 +2220,24 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // an existing customer who came in through the signup screen (the first screen
   // since 2026-09-20) straight to Home instead of the name step.
   let isNewAccount = false;
+  // True when a Supabase call in the CUSTOMER lookup/create path below failed
+  // even after a retry — meaning we genuinely don't know whether this phone
+  // now has an account, not just "it doesn't". Scoped to customers because
+  // that's the path the 2026-10-07 signup-drop investigation traced this to
+  // (see src/supabaseRetry.js for why a short retry is safe here and why this
+  // isn't a Supabase-side outage or this project hitting its connection cap).
+  // The vendor branch's existing behaviour on error is unchanged.
+  let accountLookupFailed = false;
   try {
     if (isVendor) {
       // Vendors are never auto-created here — an astrologer account needs the full
       // Registration form (specialties, experience, etc.), which runs *after* this verify
       // succeeds for a brand-new number. Login-time verify just looks up the existing row.
-      const { data: astroList, error } = await supabaseService
+      const { data: astroList, error } = await withSupabaseRetry(() => supabaseService
         .from('astrologers')
         .select('id')
         .eq('phone_number', phoneNumber)
-        .limit(1);
+        .limit(1));
       if (error) throw error;
       if (astroList && astroList.length > 0) {
         supabaseCustomerId = astroList[0].id;
@@ -2264,13 +2277,16 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     } else {
       // Look up or create the customer in Supabase to get the real UUID.
       // Uses the service-role client so this write can't be silently blocked by RLS.
-      const { data: customersList, error } = await supabaseService
+      const { data: customersList, error } = await withSupabaseRetry(() => supabaseService
         .from('customers')
         .select('id, name')
         .eq('mobile', phoneNumber)
-        .limit(1);
+        .limit(1));
 
-      if (error) throw error;
+      if (error) {
+        accountLookupFailed = true;
+        throw error;
+      }
 
       if (customersList && customersList.length > 0) {
         supabaseCustomerId = customersList[0].id;
@@ -2301,7 +2317,7 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         // signing up, you agree…" notice above the button) lead here. The source
         // column keeps the two distinguishable, because they are not equally
         // strong evidence.
-        const { data: newCustomer, error: insertError } = await insertAccountRow(
+        const { data: newCustomer, error: insertError } = await withSupabaseRetry(() => insertAccountRow(
           'customers',
           {
             mobile: phoneNumber,
@@ -2310,10 +2326,28 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
             referral_code: generateReferralCode(),
           },
           termsAccepted ? 'signup_form' : 'login_notice',
-        );
-        if (insertError) throw insertError;
-        supabaseCustomerId = newCustomer?.id;
-        isNewAccount = !!newCustomer?.id;
+        ));
+        if (insertError) {
+          // A retry on a genuine network blip (the Cloudflare-522 case: Cloudflare
+          // connected to Supabase but the response never finished) can mean the
+          // FIRST attempt actually created the row and only its response was lost
+          // — customers.mobile is uniquely constrained (uq_customers_mobile), so a
+          // retry in that case comes back as a duplicate-key error, not a second
+          // row. Re-checking by phone tells these two cases apart instead of
+          // either creating a duplicate or discarding a real signup.
+          const { data: recheck, error: recheckError } = await supabaseService
+            .from('customers').select('id').eq('mobile', phoneNumber).limit(1);
+          if (!recheckError && recheck && recheck.length > 0) {
+            supabaseCustomerId = recheck[0].id;
+            isNewAccount = true; // this request's attempt is what created it
+          } else {
+            accountLookupFailed = true;
+            throw insertError;
+          }
+        } else {
+          supabaseCustomerId = newCustomer?.id;
+          isNewAccount = !!newCustomer?.id;
+        }
 
         // A number that used the welcome chat (or was a real customer) before deleting its
         // account must not get it again. Best-effort; see src/offerGuard.js.
@@ -2370,6 +2404,20 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
     }
   } catch (e) {
     console.error('Could not look up/create Supabase account:', e.message);
+    if (accountLookupFailed) noteReadFailure('otp-verify-account', e);
+  }
+
+  // Do NOT hand out a token when we can't tell whether this phone has an
+  // account — the old behaviour fell through to a JWT with a fake id and
+  // isNewAccount:false, which the app read as "welcome back" for someone who
+  // was never actually signed up. The OTP is already burned at this point, same
+  // as any other failure past that line, so the app has to ask for a fresh one.
+  if (accountLookupFailed) {
+    return res.status(503).json({
+      success: false,
+      code: 'ACCOUNT_LOOKUP_FAILED',
+      message: 'Could not complete sign in right now. Please try again in a few seconds.',
+    });
   }
 
   // Generate JWT token with the real Supabase UUID

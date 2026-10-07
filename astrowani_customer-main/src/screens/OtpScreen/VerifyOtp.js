@@ -201,12 +201,18 @@ const VerifyOtp = ({navigation, route}) => {
       captureEvent(isSignup ? 'signup_failed' : 'login_failed', {
         reason: apiFailureReason(error),
       });
-      // Past the attempt cap the server burns the code, so no further guess can
-      // ever succeed — the only way forward is a new OTP. Unlock Resend at once
-      // rather than leaving the customer waiting out a countdown for a code
-      // that is already dead.
+      // Past the attempt cap, or when the server couldn't reach Supabase to
+      // look up/create the account (ACCOUNT_LOOKUP_FAILED — see mobile-otp-verify,
+      // 2026-10-07), the code is already burned server-side before either failure
+      // can happen. Either way no further guess can ever succeed — the only way
+      // forward is a new OTP. Unlock Resend at once rather than leaving the
+      // customer waiting out a countdown for a code that is already dead.
       if (data?.code === 'OTP_ATTEMPTS_EXCEEDED') {
         captureEvent('otp_attempts_exceeded', { flow });
+        setCode('');
+        otpRef.current?.clear?.();
+        setTimer(0);
+      } else if (data?.code === 'ACCOUNT_LOOKUP_FAILED') {
         setCode('');
         otpRef.current?.clear?.();
         setTimer(0);
