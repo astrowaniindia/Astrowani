@@ -1474,6 +1474,7 @@ const translations = {
     'freeCall.matching': 'Finding your astrologer…',
     'freeCall.byVerifiedAstrologers': 'By verified & certified astrologers',
     'freeCall.callsOnYourNumber': 'Our astrologer calls you on your number. Nothing else to do.',
+    'freeCall.connectRightAway': 'Choose an astrologer and we connect you right away.',
   },
   Hindi: {
     // Home
@@ -2886,6 +2887,7 @@ const translations = {
     'freeCall.matching': 'आपका ज्योतिषी चुना जा रहा है…',
     'freeCall.byVerifiedAstrologers': 'प्रमाणित एवं सत्यापित ज्योतिषियों द्वारा',
     'freeCall.callsOnYourNumber': 'हमारे ज्योतिषी आपके नंबर पर कॉल करेंगे। आपको और कुछ नहीं करना है।',
+    'freeCall.connectRightAway': 'ज्योतिषी चुनें और हम आपको तुरंत जोड़ देंगे।',
   },
 };
 
