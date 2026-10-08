@@ -197,12 +197,17 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 .nav-item-drop > .nav-drop-trigger { display: inline-flex; align-items: center; gap: 4px; cursor: default; }
 .nav-item-drop .nav-caret { width: 9px; height: 9px; flex: 0 0 auto; transition: transform .2s ease; }
 .nav-item-drop:hover .nav-caret, .nav-item-drop.nav-drop-open .nav-caret { transform: rotate(180deg); }
+/* .nav-dropdown is the HOVERABLE hit-box: it starts flush against the trigger (top:100%,
+   no gap) and uses padding-top to push its visible content down instead of a margin/top
+   offset. A gap there — the previous "top: calc(100% + 16px)" — meant the mouse crossed a
+   dead zone with no hoverable element under it while moving from the trigger down to the
+   panel, which dropped :hover and closed the menu before the pointer ever got there. The
+   padding keeps that same visual spacing while staying part of the hoverable box the whole
+   way down. The actual visible panel (background/border/shadow) lives on the nested
+   .nav-dropdown-panel so the invisible padding area never paints anything. */
 .nav-dropdown {
-  position: absolute; top: calc(100% + 16px); left: 50%; transform: translateX(-50%) translateY(6px);
-  background: var(--paper); color: var(--maroon); border-radius: 16px;
-  padding: 10px; min-width: 220px;
-  box-shadow: 0 24px 48px -20px color-mix(in srgb, black 55%, transparent);
-  border: 1px solid var(--border-soft);
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%) translateY(6px);
+  padding-top: 16px;
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
   z-index: 60;
@@ -211,8 +216,14 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 .nav-item-drop.nav-drop-open .nav-dropdown {
   opacity: 1; visibility: visible; pointer-events: auto; transform: translateX(-50%) translateY(0);
 }
-.nav-dropdown.nav-dropdown-wide { min-width: 460px; }
-.nav-dropdown.nav-dropdown-xwide { min-width: 620px; }
+.nav-dropdown-panel {
+  background: var(--paper); color: var(--maroon); border-radius: 16px;
+  padding: 10px; min-width: 220px;
+  box-shadow: 0 24px 48px -20px color-mix(in srgb, black 55%, transparent);
+  border: 1px solid var(--border-soft);
+}
+.nav-dropdown.nav-dropdown-wide .nav-dropdown-panel { min-width: 460px; }
+.nav-dropdown.nav-dropdown-xwide .nav-dropdown-panel { min-width: 620px; }
 .nav-dropdown-cols { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 2px 10px; }
 .nav-dropdown-cols.nav-dropdown-cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .nav-dropdown a.nav-dropdown-item {
@@ -224,8 +235,8 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 .nav-dropdown a.nav-dropdown-item svg { flex: 0 0 auto; opacity: .55; }
 .nav-dropdown a.nav-dropdown-item:hover svg { opacity: 1; }
 @media (max-width: 1020px) {
-  .nav-dropdown.nav-dropdown-wide { min-width: 380px; }
-  .nav-dropdown.nav-dropdown-xwide { min-width: 460px; }
+  .nav-dropdown.nav-dropdown-wide .nav-dropdown-panel { min-width: 380px; }
+  .nav-dropdown.nav-dropdown-xwide .nav-dropdown-panel { min-width: 460px; }
   .nav-dropdown-cols.nav-dropdown-cols-3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 

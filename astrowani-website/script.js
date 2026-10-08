@@ -109,7 +109,7 @@ function injectNavDropdowns() {
       : itemsHtml;
     return `<div class="nav-item-drop">
       <span class="nav-drop-trigger ${linkClass}"><span class="i18n-t">${menu.label}</span>${ASTROWANI_NAV_CARET}</span>
-      <div class="nav-dropdown${wideClass}">${itemsWrap}</div>
+      <div class="nav-dropdown${wideClass}"><div class="nav-dropdown-panel">${itemsWrap}</div></div>
     </div>`;
   }).join('');
   // prepended, not appended — final order is Consultations, Horoscope, Free Services,
