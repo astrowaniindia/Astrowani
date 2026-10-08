@@ -636,14 +636,18 @@ const Home = ({navigation}) => {
   // stays comfortably wider than the screen (with only 2-3 astrologers two copies
   // can be narrower than the viewport, which makes the rewind visible and leaves
   // the list barely scrollable).
-  const MARQUEE_REPEAT = React.useMemo(() => {
-    const n = astrologerToShow?.length || 0;
-    return n > 0 ? Math.max(2, Math.ceil(12 / n)) : 2;
-  }, [astrologerToShow]);
-  const loopedAstrologers = React.useMemo(() => {
-    if (!astrologerToShow || astrologerToShow.length === 0) return [];
-    return Array(MARQUEE_REPEAT).fill(astrologerToShow).flat();
-  }, [astrologerToShow, MARQUEE_REPEAT]);
+  // How many DISTINCT astrologers one copy of the loop holds. Two copies are
+  // rendered below, so this row mounts at most 2x this many cards however many
+  // astrologers exist.
+  //
+  // MARQUEE_REPEAT and loopedAstrologers used to live here and applied exactly
+  // this bound — but nothing rendered them: the marquee below loops over the FULL
+  // list twice. Measured on an Android 12 device 2026-10-08 with 54 astrologers
+  // live, this row mounted 108 cards and the one in AnimatedAstrologerMarquee
+  // another 108, making Home's FIRST RENDER take 6.07 SECONDS. That is what wedged
+  // the JS thread for ~12s on cold start (App.js's 5s MAX_SPLASH_MS cap could not
+  // even fire — it ran 13s late), and it got worse with every astrologer added.
+  const MARQUEE_CARDS_PER_COPY = 12;
 
   // Measured native content width of the looped list (all MARQUEE_REPEAT copies).
   // Used to silently rewind by exactly one copy's width once we scroll into the
@@ -669,11 +673,18 @@ const Home = ({navigation}) => {
   // 3b67c270), and the reason iOS Home was dead on bundle 01a0634c.
   // Every other reader of this value already guards (see the `?.length` and the
   // `if (!astrologerToShow)` above); these two were the exceptions.
-  const marqueeItems = React.useMemo(
-    () => (astrologerToShow?.length ? [...astrologerToShow, ...astrologerToShow] : []),
+  const marqueeSet = React.useMemo(
+    () => (astrologerToShow?.length ? astrologerToShow.slice(0, MARQUEE_CARDS_PER_COPY) : []),
     [astrologerToShow],
   );
-  const marqueeSetWidth = (astrologerToShow?.length || 0) * MARQUEE_ITEM_WIDTH;
+  const marqueeItems = React.useMemo(
+    () => (marqueeSet.length ? [...marqueeSet, ...marqueeSet] : []),
+    [marqueeSet],
+  );
+  // Width of ONE copy, so it must follow marqueeSet and not the full list — this
+  // is the wrap distance, and the unbounded length would translate the row far
+  // past the end of what is actually rendered.
+  const marqueeSetWidth = marqueeSet.length * MARQUEE_ITEM_WIDTH;
 
   // Auto-glides at a constant speed AND can be dragged left/right by the
   // customer — still with no scroll events (see useDraggableMarquee).

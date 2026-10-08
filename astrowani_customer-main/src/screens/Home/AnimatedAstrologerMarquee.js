@@ -44,10 +44,19 @@ const ADVANCE_INTERVAL_MS = 2800;
 //   5 astrologers  -> 3 copies -> 15 cards
 //   10 astrologers -> 2 copies -> 20 cards
 //   20 astrologers -> 2 copies -> 40 cards
-const MIN_LOOP_COUNT = 2;
-const TARGET_TOTAL_CARDS = 12;
-const loopCountFor = (n) =>
-  n > 0 ? Math.max(MIN_LOOP_COUNT, Math.ceil(TARGET_TOTAL_CARDS / n)) : MIN_LOOP_COUNT;
+// How many DISTINCT astrologers one copy of the loop holds. Two copies are
+// rendered, so the row mounts at most 2x this many cards however many
+// astrologers exist.
+//
+// This bound is the whole point of the comment above, and for a while it was not
+// actually applied: when this marquee moved from a virtualized auto-scrolled
+// FlatList to the transform-driven row, the loop became a hardcoded
+// [...shuffled, ...shuffled] over the FULL list and the count logic here was left
+// orphaned. Measured on an Android 12 device 2026-10-08, with 54 astrologers
+// live: this row alone mounted 108 cards, Home's other marquee another 108, and
+// Home's FIRST RENDER took 6.07 SECONDS — which is what wedged the JS thread and
+// made the app take ~20s to open. It got worse with every astrologer signed up.
+const CARDS_PER_COPY = 12;
 
 function shuffledCopy(arr) {
   const a = [...arr];
@@ -185,8 +194,15 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, on
   // seamlessly, so the loop can reset to 0 with nothing visibly jumping. The
   // previous version needed loopCount copies because it advanced through a real
   // scroll offset and had to keep a safe runway ahead of itself.
-  const marqueeItems = useMemo(() => [...shuffled, ...shuffled], [shuffled]);
-  const setWidth = shuffled.length * ITEM_WIDTH;
+  // One copy of the loop, bounded — NOT the whole astrologer list. The shuffle
+  // above is re-rolled whenever the set of ids changes (so on each cold start),
+  // which is what keeps this from always being the same twelve astrologers.
+  const loopSet = useMemo(() => shuffled.slice(0, CARDS_PER_COPY), [shuffled]);
+  const marqueeItems = useMemo(() => [...loopSet, ...loopSet], [loopSet]);
+  // Must be the width of ONE copy, so it has to follow loopSet and not the full
+  // list — the wrap distance is this value, so using the unbounded length here
+  // would translate the row far past the end of what is rendered.
+  const setWidth = loopSet.length * ITEM_WIDTH;
 
   // One card every ADVANCE_INTERVAL_MS, gliding continuously — and draggable
   // left/right by the customer, with no scroll events (see useDraggableMarquee).

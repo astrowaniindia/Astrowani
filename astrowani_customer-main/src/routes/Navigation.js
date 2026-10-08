@@ -21,7 +21,9 @@ import { LanguageContext } from '../context/LanguageContext';
 import Chat from '../screens/chat/Chat';
 import CustomDrawerContent from './CustomDrawerContent'; // Your custom drawer content
 import ErrorBoundary from '../components/ErrorBoundary';
+import UserProfileScreen from '../screens/drawerScreens/UserProfileScreen';
 import ChatSessionScreen from '../screens/ChatSessionScreen';
+import FreeBotChatScreen from '../screens/FreeBotChat/FreeBotChatScreen';
 import Video from '../screens/Video/Video';
 import Call from '../screens/Call/Call';
 import Live from '../screens/Live/Live';
@@ -29,6 +31,13 @@ import LiveViewerScreen from '../screens/Live/LiveViewerScreen';
 import { StatusPopupHost } from '../components/StatusPopup';
 import { CartProvider } from '../context/CartContext';
 import CartButton from '../components/shop/CartButton';
+import StoreWebView from '../screens/Remedies/StoreWebView';
+import ProductDetail from '../screens/Remedies/ProductDetail';
+import CartScreen from '../screens/Remedies/CartScreen';
+import AddressList from '../screens/Remedies/AddressList';
+import AddressForm from '../screens/Remedies/AddressForm';
+import PaymentScreen from '../screens/Remedies/PaymentScreen';
+import OrderSuccess from '../screens/Remedies/OrderSuccess';
 import { ReviewPromptHost } from '../components/ReviewPrompt';
 import { ReferralPromptHost } from '../components/ReferralPromptHost';
 import { FreeCallIncomingHost } from '../components/FreeCallIncoming';
@@ -42,25 +51,61 @@ import {
   FREE_CALL_CONTINUE_ENABLED, CALL_FEEDBACK_PROMPT_ENABLED, DAKSHINA_PROMPT_ENABLED,
   SHAGUN_RECHARGE_ENABLED,
 } from '../utils/featureFlags';
+import InstantAstrologers from '../screens/FreeCall/InstantAstrologers';
 import Remedies from '../screens/Remedies/Remedies';
 import Icon from 'react-native-vector-icons/Ionicons';
+import Wallet from '../screens/Home/Wallet/Wallet';
+import CoinStore from '../screens/Coins/CoinStore';
 import { initIap } from '../utils/iap';
 import { DIGITAL_PURCHASES_ENABLED } from '../utils/payments';
 import { FREE_BOT_CHAT_ENABLED } from '../utils/featureFlags';
+import History from '../screens/Home/Wallet/History';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import AstrologerInfo from '../screens/Home/AstrologerInfo';
 
+import BlogList from '../screens/Home/BlogList';
+import BlogScreen from '../screens/Home/BlogScreen';
+import SearchScreen from '../screens/Home/SearchScreen';
+import NotificationScreen from '../screens/Home/NotificationScreen';
+import AddReview from '../screens/Home/AddReview';
+import RemedyShop from '../screens/Remedies/RemedyShop';
+import CategoryAstrologers from '../screens/Category/CategoryAstrologers';
+import MySessionScreen from '../screens/drawerScreens/MySessionScreen';
+import MyPackages from '../screens/drawerScreens/MyPackages';
+import FavoriteScreen from '../screens/drawerScreens/FavoriteScreen';
+import FreeServicesScreen from '../screens/drawerScreens/FreeSeviceScreen/FreeServicesScreen';
+import PanchangScreen from '../screens/drawerScreens/FreeSeviceScreen/PanchangScreen';
+import JanamKundaliScreen from '../screens/drawerScreens/FreeSeviceScreen/JanamKundaliScreen';
+import KundaliDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliDetails';
+import KundaliMatchScreen from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchScreen';
+import KundaliMatchingReport from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingReport';
+import Horoscope from '../screens/drawerScreens/FreeSeviceScreen/Horoscope';
+import HoroscopeDetails from '../screens/drawerScreens/FreeSeviceScreen/HoroscopeDetails';
+import ShubhMuhurat from '../screens/drawerScreens/FreeSeviceScreen/ShubhMuhurat';
 // These 18 astro-service report screens (9 input/result pairs + Tarot) are
 // deliberately NOT statically imported here — see the getComponent loop below
 // (2026-08-13 perf audit, finding H1). Each is only require()'d the first time
 // a customer actually navigates to it, instead of every one being evaluated
 // on cold start alongside the ~70 screens that are actually common paths.
 import Home from '../screens/Home/Home';
+import ReferAndEarnScreen from '../screens/drawerScreens/ReferAndEarnScreen';
+import MyOrdersScreen from '../screens/drawerScreens/MyOrdersScreen';
 // "What's coming to Astrowani" — the browsable tour of features being built. These are
 // informational screens, not live mechanics; see components/gamification/gamificationFeatures.js.
+import GamificationHub from '../screens/Gamification/GamificationHub';
+import FeatureIntroScreen from '../screens/Gamification/FeatureIntroScreen';
+import VoiceNotesScreen from '../screens/drawerScreens/VoiceNotesScreen';
+import ChatHistoryScreen from '../screens/drawerScreens/ChatHistoryScreen';
+import ChatHistoryThreadScreen from '../screens/drawerScreens/ChatHistoryThreadScreen';
+import Settings from '../screens/drawerScreens/Settings';
+import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
+import FaqScreen from '../screens/drawerScreens/FaqScreen';
+import SupportScreen from '../screens/drawerScreens/SupportScreen';
 // The support conversation itself (agent + handover to a real person). Its own
 // header is inside the screen, so it registers with headerShown: false.
+import SupportChatScreen from '../screens/Support/SupportChatScreen';
+import KundaliMatchingReportDetails from '../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails';
 
 import VoiceCallScreen from '../screens/Video/VoiceCallScreen';
 import VideoCallScreen from '../screens/Video/VideoCallScreen';
@@ -183,15 +228,15 @@ export default function Navigation({ initialRoute, onReady }) {
         <Stack.Screen options={{ title: 'Verify Email', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="EmailOtpScreen" component={EmailOtpScreen} />
         <Stack.Screen options={{ headerShown: false }} name="DrawerNavigator" component={DrawerNavigator} />
 
-        <Stack.Screen name="UserProfileScreen" getComponent={() => require('../screens/drawerScreens/UserProfileScreen').default} options={{ title: 'Profile', headerBackTitleVisible: true, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} />
+        <Stack.Screen name="UserProfileScreen" component={UserProfileScreen} options={{ title: 'Profile', headerBackTitleVisible: true, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} />
 
         <Stack.Screen name="AstrologerInfo" component={AstrologerInfo} options={({ route }) => ({ title: route.params?.person.name, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
-        <Stack.Screen name="AddReview" getComponent={() => require('../screens/Home/AddReview').default} options={{ title: 'Add Review', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }} />
-        <Stack.Screen name="Kundali Details" getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/KundaliDetails').default} options={({ route }) => ({ title: 'Kundali Details', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
-        <Stack.Screen name="KundaliMatchScreen" getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/KundaliMatchScreen').default} options={({ route }) => ({ title: 'Match Kundali', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
+        <Stack.Screen name="AddReview" component={AddReview} options={{ title: 'Add Review', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="Kundali Details" component={KundaliDetails} options={({ route }) => ({ title: 'Kundali Details', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
+        <Stack.Screen name="KundaliMatchScreen" component={KundaliMatchScreen} options={({ route }) => ({ title: 'Match Kundali', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
         <Stack.Screen
           name="KundaliMatchingReport"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingReport').default}
+          component={KundaliMatchingReport}
           options={({ route }) => ({
             title: 'Match Result',
             headerStyle: {
@@ -206,7 +251,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="KundaliMatchingDetailsResult"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/KundaliMatchingResultDetails').default}
+          component={KundaliMatchingReportDetails}
           options={({ route }) => ({
             title: 'Kundali Deatils',
             headerStyle: {
@@ -221,7 +266,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="Horoscope"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/Horoscope').default}
+          component={Horoscope}
           options={({ route }) => ({
             title: 'Horoscope',
             headerStyle: {
@@ -236,7 +281,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="HoroscopeDetails"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/HoroscopeDetails').default}
+          component={HoroscopeDetails}
           options={({ route }) => ({
             title: 'Horoscope Details',
             headerStyle: {
@@ -251,7 +296,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="ShubhMuhurat"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/ShubhMuhurat').default}
+          component={ShubhMuhurat}
           options={({ route }) => ({
             title: 'Shubh Muhurat',
             headerStyle: {
@@ -266,7 +311,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="ReferFriend"
-          getComponent={() => require('../screens/drawerScreens/ReferAndEarnScreen').default}
+          component={ReferAndEarnScreen}
           options={{
             title: 'Refer a friend',
 
@@ -282,7 +327,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="GamificationHub"
-          getComponent={() => require('../screens/Gamification/GamificationHub').default}
+          component={GamificationHub}
           options={{
             title: "What's coming",
             headerStyle: {backgroundColor: COLORS.AstroMaroon},
@@ -292,7 +337,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="FeatureIntro"
-          getComponent={() => require('../screens/Gamification/FeatureIntroScreen').default}
+          component={FeatureIntroScreen}
           options={{
             title: 'Coming soon',
             headerStyle: {backgroundColor: COLORS.AstroMaroon},
@@ -302,7 +347,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="MyOrders"
-          getComponent={() => require('../screens/drawerScreens/MyOrdersScreen').default}
+          component={MyOrdersScreen}
           options={{
             title: 'My Orders',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -312,7 +357,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="VoiceNotes"
-          getComponent={() => require('../screens/drawerScreens/VoiceNotesScreen').default}
+          component={VoiceNotesScreen}
           options={{
             title: 'Voice Notes',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -322,7 +367,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="ChatHistory"
-          getComponent={() => require('../screens/drawerScreens/ChatHistoryScreen').default}
+          component={ChatHistoryScreen}
           options={{
             title: 'Chat History',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -335,7 +380,7 @@ export default function Navigation({ initialRoute, onReady }) {
             until the thread has loaded. */}
         <Stack.Screen
           name="ChatHistoryThread"
-          getComponent={() => require('../screens/drawerScreens/ChatHistoryThreadScreen').default}
+          component={ChatHistoryThreadScreen}
           options={{
             title: 'Chat History',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -345,7 +390,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="Settings"
-          getComponent={() => require('../screens/drawerScreens/Settings').default}
+          component={Settings}
           options={({ route }) => ({
             title: 'Settings',
             headerStyle: {
@@ -360,7 +405,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="FreeService"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/FreeServicesScreen').default}
+          component={FreeServicesScreen}
           options={{
             title: 'Free Astrology ',
 
@@ -376,7 +421,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="PanchangScreen"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/PanchangScreen').default}
+          component={PanchangScreen}
           options={({ route }) => ({
             title: 'Punchang',
             headerStyle: {
@@ -391,7 +436,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="JanamKundaliScreen"
-          getComponent={() => require('../screens/drawerScreens/FreeSeviceScreen/JanamKundaliScreen').default}
+          component={JanamKundaliScreen}
           options={({ route }) => ({
             title: 'Janam Kundali',
             headerStyle: {
@@ -455,7 +500,7 @@ export default function Navigation({ initialRoute, onReady }) {
         ))}
         <Stack.Screen
           name="AboutUsScreen"
-          getComponent={() => require('../screens/drawerScreens/AboutUsScreen').default}
+          component={AboutUsScreen}
           options={({ route }) => ({
             title: 'About us',
             headerStyle: {
@@ -470,7 +515,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="FaqScreen"
-          getComponent={() => require('../screens/drawerScreens/FaqScreen').default}
+          component={FaqScreen}
           options={({ route }) => ({
             title: 'FAQs',
             headerStyle: {
@@ -485,12 +530,12 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="SupportChat"
-          getComponent={() => require('../screens/Support/SupportChatScreen').default}
+          component={SupportChatScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen
           name="SupportScreen"
-          getComponent={() => require('../screens/drawerScreens/SupportScreen').default}
+          component={SupportScreen}
           options={({ route }) => ({
             title: 'Support',
             headerStyle: {
@@ -505,7 +550,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="BlogScreen"
-          getComponent={() => require('../screens/Home/BlogScreen').default}
+          component={BlogScreen}
           options={({ route }) => ({
             title: route.params?.blog?.category?.name || 'Blog',
             headerStyle: {
@@ -525,7 +570,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="CategoryAstrologers"
-          getComponent={() => require('../screens/Category/CategoryAstrologers').default}
+          component={CategoryAstrologers}
           options={({ route }) => ({
             title: route?.params?.categoryName || 'Astrologers',
             headerStyle: {
@@ -554,13 +599,13 @@ export default function Navigation({ initialRoute, onReady }) {
             control lives inside StoreWebView. */}
         <Stack.Screen
           name="Store"
-          getComponent={() => require('../screens/Remedies/StoreWebView').default}
+          component={StoreWebView}
           options={{ headerShown: false }}
         />
 
         <Stack.Screen
           name="RemedyShop"
-          getComponent={() => require('../screens/Remedies/RemedyShop').default}
+          component={RemedyShop}
           options={({ route, navigation }) => ({
             title: route?.params?.title || 'Remedies',
             headerStyle: {
@@ -580,7 +625,7 @@ export default function Navigation({ initialRoute, onReady }) {
             the Remedies tab, the drawer, and the Home row alike. */}
         <Stack.Screen
           name="ProductDetail"
-          getComponent={() => require('../screens/Remedies/ProductDetail').default}
+          component={ProductDetail}
           options={({ route, navigation }) => ({
             title: route?.params?.item?.title || 'Product',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -592,7 +637,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="Cart"
-          getComponent={() => require('../screens/Remedies/CartScreen').default}
+          component={CartScreen}
           options={{
             title: 'Cart',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -603,7 +648,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="Addresses"
-          getComponent={() => require('../screens/Remedies/AddressList').default}
+          component={AddressList}
           options={{
             title: 'Delivery Address',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -614,7 +659,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="AddressForm"
-          getComponent={() => require('../screens/Remedies/AddressForm').default}
+          component={AddressForm}
           options={({ route }) => ({
             title: route?.params?.address ? 'Edit Address' : 'Add Address',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -625,7 +670,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="Payment"
-          getComponent={() => require('../screens/Remedies/PaymentScreen').default}
+          component={PaymentScreen}
           options={{
             title: 'Payment',
             headerStyle: { backgroundColor: COLORS.AstroMaroon },
@@ -636,7 +681,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="OrderSuccess"
-          getComponent={() => require('../screens/Remedies/OrderSuccess').default}
+          component={OrderSuccess}
           options={{
             // No header and no back button: the screen is reached with replace() after a
             // real payment, and its own two buttons are the only ways out.
@@ -646,7 +691,7 @@ export default function Navigation({ initialRoute, onReady }) {
         />
         <Stack.Screen
           name="FavoriteScreen"
-          getComponent={() => require('../screens/drawerScreens/FavoriteScreen').default}
+          component={FavoriteScreen}
           options={{
             title: 'My Favorites',
 
@@ -670,12 +715,12 @@ export default function Navigation({ initialRoute, onReady }) {
         */}
         <Stack.Screen
           name="CoinStore"
-          getComponent={() => require('../screens/Coins/CoinStore').default}
+          component={CoinStore}
           options={{headerShown: false}}
         />
         <Stack.Screen
           name="Wallet"
-          getComponent={() => require('../screens/Home/Wallet/Wallet').default}
+          component={Wallet}
           options={({ navigation }) => ({
             headerTitle: () => <WalletBalanceHeaderTitle />,
             headerRight: () => (
@@ -699,7 +744,7 @@ export default function Navigation({ initialRoute, onReady }) {
 
         <Stack.Screen
           name="History"
-          getComponent={() => require('../screens/Home/Wallet/History').default}
+          component={History}
           options={{
             title: 'Transaction History',
 
@@ -714,7 +759,7 @@ export default function Navigation({ initialRoute, onReady }) {
             the ROOT stack (not under the Remedies/Home tabs) so navigate('InstantAstrologers')
             resolves from the Home popup, the gift bubble, a push and the low-balance
             prompt alike. */}
-        <Stack.Screen name="InstantAstrologers" getComponent={() => require('../screens/FreeCall/InstantAstrologers').default} options={{ headerShown: false }} />
+        <Stack.Screen name="InstantAstrologers" component={InstantAstrologers} options={{ headerShown: false }} />
         <Stack.Screen name="VoiceCallScreen" component={VoiceCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="VideoCallScreen" component={VideoCallScreen} options={{ headerShown: false }} />
         <Stack.Screen
@@ -727,7 +772,7 @@ export default function Navigation({ initialRoute, onReady }) {
         {FREE_BOT_CHAT_ENABLED && (
           <Stack.Screen
             name="FreeBotChatScreen"
-            getComponent={() => require('../screens/FreeBotChat/FreeBotChatScreen').default}
+            component={FreeBotChatScreen}
             options={{ headerShown: false }}
           />
         )}
@@ -820,7 +865,7 @@ function DrawerNavigator({ navigation }) {
       <Drawer.Screen name="SessionStack" component={SessionStack} />
       <Drawer.Screen
         name="PackageStack"
-        getComponent={() => require('../screens/drawerScreens/MyPackages').default}
+        component={MyPackages}
         options={{ headerShown: false }}
       />
       {/* <Drawer.Screen
@@ -1036,7 +1081,7 @@ function HomeStack({ navigation }) {
       />
       <Stack.Screen
         name="NotificationScreen"
-        getComponent={() => require('../screens/Home/NotificationScreen').default}
+        component={NotificationScreen}
         options={{
           headerShown: true,
           title: 'Notifications',
@@ -1046,7 +1091,7 @@ function HomeStack({ navigation }) {
       />
       <Stack.Screen
         name="BlogList"
-        getComponent={() => require('../screens/Home/BlogList').default}
+        component={BlogList}
         options={{
           title: 'Our Blogs',
 
@@ -1063,7 +1108,7 @@ function HomeStack({ navigation }) {
 
       <Stack.Screen
         name="SearchScreen"
-        getComponent={() => require('../screens/Home/SearchScreen').default}
+        component={SearchScreen}
         // options={{headerShown: false}}
         options={({ route }) => ({
           title: 'Search Astrologer',
@@ -1160,7 +1205,7 @@ function RemediesStack() {
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="RemediesScreen"
-        getComponent={() => require('../screens/Remedies/StoreWebView').default}
+        component={StoreWebView}
         options={{
           header: () => <RemediesHeader />,
         }}
@@ -1174,7 +1219,7 @@ function SessionStack() {
     <Stack.Navigator screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
       <Stack.Screen
         name="SessionScreen"
-        getComponent={() => require('../screens/drawerScreens/MySessionScreen').default}
+        component={MySessionScreen}
         options={({ navigation }) => ({
           title: 'My Sessions',
           headerBackTitleVisible: true,
