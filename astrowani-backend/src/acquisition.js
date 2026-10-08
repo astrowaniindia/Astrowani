@@ -8,12 +8,37 @@
 //
 // THE CONVENTION, which everything here depends on:
 //   every QR poster's utm_source starts with `qr_`.
-// Google Ads and organic Play traffic set their own utm_source values and can never
-// begin with that prefix, so "is this a QR customer" is a prefix test. There is no
-// second channel column and none is needed.
-
-// The prefix that marks one of our offline QR posters.
+// Organic Play traffic and our own tagged links set a utm_source that can never begin
+// with that prefix, so "is this a QR customer" is a prefix test. There is no second
+// channel column and none is needed.
+//
+// GOOGLE ADS DOES NOT SEND A utm_source AT ALL, and the original version of this file
+// assumed it did ("Google Ads ... set their own utm_source values"). It does not. An
+// app-install referrer from Google Ads looks like:
+//   gclid=CjwKCAjww-3V...&gbraid=0AAAAB...&gad_source=3&gad_campaignid=24260607071
+// There is no utm_* parameter anywhere in it. So every paid install parsed to a NULL
+// acquisition_source, and attribution was silently blind for the one channel we pay
+// for — 94% of all installs as of 2026-10-08, reported as "unknown" alongside iOS and
+// sideloads. `acquisition_raw` kept the full string throughout, which is the only
+// reason this is fixable after the fact (see sql/acquisition_backfill_google_ads.sql).
+//
+// Those installs are now labelled `google_ads_<campaignId>`, which:
+//   - keeps channelOf()'s /^google/ test working, so the reporting channel is
+//     unchanged for anything that already grouped on it;
+//   - cannot collide with the `qr_` convention above;
+//   - carries the campaign id in the column itself, so every existing per-source
+//     screen (admin QR page, audience targeting, analytics exclusions) splits by
+//     campaign with no migration and no new column.
 const QR_PREFIX = 'qr_';
+
+// Marks a paid Google Ads install. `google_ads_<campaignId>` when the campaign id is
+// present, bare `google_ads` when only a click id came through.
+const GOOGLE_ADS_PREFIX = 'google_ads';
+
+// Parameters that identify a Google Ads click. `gclid` is the click id; `gbraid` is
+// its app/web-to-app equivalent; `gad_source`/`gad_campaignid` accompany both. Any one
+// of them is enough to call the install paid.
+const GOOGLE_ADS_MARKERS = ['gclid', 'gbraid', 'gad_source', 'gad_campaignid'];
 
 // Deliberately short. A utm_source is a label we choose ourselves and print on a
 // poster; anything approaching this length is a mistake or an injection attempt, not
@@ -63,7 +88,20 @@ function parseReferrer(referrer) {
 
   let source = null;
   try {
-    source = normalizeSource(new URLSearchParams(raw).get('utm_source'));
+    const params = new URLSearchParams(raw);
+    source = normalizeSource(params.get('utm_source'));
+
+    // No utm_source: this is where Google Ads lands. A utm_source, when present, still
+    // wins — it is either ours (a QR poster, an `ad_` link) or organic Play's
+    // `google-play`, and both are more specific statements than "came from an ad".
+    if (!source && GOOGLE_ADS_MARKERS.some((k) => params.get(k))) {
+      // Digits only, and bounded: the campaign id is concatenated into a value that is
+      // grouped on and printed in the admin, so it gets the same treatment as any
+      // other untrusted referrer field rather than being trusted because it came from
+      // a parameter Google happens to own.
+      const campaignId = (params.get('gad_campaignid') || '').replace(/[^0-9]/g, '').slice(0, 24);
+      source = normalizeSource(campaignId ? `${GOOGLE_ADS_PREFIX}_${campaignId}` : GOOGLE_ADS_PREFIX);
+    }
   } catch (_) {
     // URLSearchParams does not throw for malformed input in practice, but a referrer
     // is attacker-influenced and a parse failure must never cost someone their signup.
@@ -72,6 +110,22 @@ function parseReferrer(referrer) {
 
   return { source, raw };
 }
+
+/**
+ * The Google Ads campaign id carried by a stored source, or null.
+ *
+ * `google_ads_24260607071` -> '24260607071'; `google_ads` (click id only) -> null.
+ * Lets a report group by campaign without re-parsing the raw referrer.
+ */
+function campaignIdOf(source) {
+  if (typeof source !== 'string') return null;
+  const m = source.match(new RegExp(`^${GOOGLE_ADS_PREFIX}_([0-9]+)$`));
+  return m ? m[1] : null;
+}
+
+/** True for a paid Google Ads install. */
+const isGoogleAdsSource = (source) =>
+  typeof source === 'string' && source.startsWith(GOOGLE_ADS_PREFIX);
 
 /**
  * Accept what the app sent at signup.
@@ -108,20 +162,24 @@ const isQrSource = (source) => typeof source === 'string' && source.startsWith(Q
 function channelOf(source) {
   if (!source) return 'unknown';
   if (isQrSource(source)) return 'qr';
-  // Google Ads installs carry a referrer whose medium/campaign identify the ad, but
-  // whose source is Google's own. Organic Play browsing is 'google-play' with
-  // medium=organic. Neither is ours to attribute, and both are reported as-is.
+  // Both paid and organic Google traffic bucket to 'google': `google_ads_<id>` from a
+  // paid click (see GOOGLE_ADS_PREFIX above) and `google-play` from organic Play
+  // browsing. The prefix test covers both, which is why the paid label was chosen to
+  // start with 'google' — every existing consumer of this function keeps working.
   if (/^google/.test(source)) return 'google';
   return 'other';
 }
 
 module.exports = {
   QR_PREFIX,
+  GOOGLE_ADS_PREFIX,
   MAX_SOURCE_LEN,
   MAX_RAW_LEN,
   normalizeSource,
   parseReferrer,
   resolveFromRequest,
   isQrSource,
+  isGoogleAdsSource,
+  campaignIdOf,
   channelOf,
 };
