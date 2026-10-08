@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today's Panchang — Astrowani</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="scroll-progress"></div>
+
+<div id="site-nav">
+  <div class="nav-inner">
+    <a href="index.html" style="display:flex; align-items:center; gap:10px;">
+      <img class="logo-mark" src="assets/logo.png" alt="Astrowani">
+      <span class="serif" style="font-size:22px; font-weight:400; color:var(--cream);">Astrowani</span>
+    </a>
+    <div class="nav-links">
+      <a href="blog.html" class="nav-link i18n-t">Blog</a>
+      <a href="index.html#wanishop" class="nav-link i18n-t">Wani Shop</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="nav-login i18n-t">Login</a>
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="btn-gold magnetic i18n-t" style="font-size:14px; padding:11px 22px; border-radius:999px;">Sign up</a>
+    </div>
+  </div>
+</div>
+
+<div class="page-header">
+  <div class="crumb"><a href="index.html" style="color:var(--gold);">Home</a> · Panchang</div>
+  <h1 class="serif" id="pan-title">Today's Panchang</h1>
+  <p id="pan-date-label">—</p>
+</div>
+
+<div class="band">
+  <div class="block">
+
+    <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:28px;">
+      <a href="panchang.html#today" class="consult-mode-pill" data-day="today">Today</a>
+      <a href="panchang.html#tomorrow" class="consult-mode-pill" data-day="tomorrow">Tomorrow</a>
+    </div>
+
+    <div class="panchang-city-row">
+      <div class="calc-field" style="flex:0 0 220px;"><label style="font-size:12px; font-weight:700; color:var(--maroon); display:block; margin-bottom:6px;">City</label><select id="pan-city"></select></div>
+      <div style="font-size:12px; color:var(--ink-faint); max-width:420px; margin-top:20px;">Rahu Kaal, Hora and Choghadiya all depend on your city's sunrise/sunset — pick the nearest one.</div>
+    </div>
+
+    <div class="panchang-grid" id="pan-stats"></div>
+
+    <div class="calc-card" id="tithi">
+      <div class="calc-card-title">Tithi &amp; Karana</div>
+      <div id="pan-tithi-body"></div>
+    </div>
+
+    <div class="calc-card" id="vaar">
+      <div class="calc-card-title">Vaar (Weekday)</div>
+      <div id="pan-vaar-body"></div>
+    </div>
+
+    <div class="calc-card" id="rahu-kaal">
+      <div class="calc-card-title">Rahu Kaal</div>
+      <div class="calc-card-desc">The inauspicious window ruled by Rahu — best avoided for starting anything new.</div>
+      <div id="pan-rahu-body"></div>
+    </div>
+
+    <div class="calc-card" id="shubh-muhurat">
+      <div class="calc-card-title">Shubh Muhurat (Abhijit Muhurat)</div>
+      <div class="calc-card-desc">The most auspicious window of the day, centred on local solar noon.</div>
+      <div id="pan-muhurat-body"></div>
+    </div>
+
+    <div class="calc-card" id="choghadiya">
+      <div class="calc-card-title">Choghadiya</div>
+      <div class="calc-card-desc">Day and night divided into 8 auspicious/inauspicious windows each.</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
+        <div><div class="panchang-stat-label" style="margin-bottom:10px;">Day</div><table class="panchang-table" id="chogh-day"></table></div>
+        <div><div class="panchang-stat-label" style="margin-bottom:10px;">Night</div><table class="panchang-table" id="chogh-night"></table></div>
+      </div>
+    </div>
+
+    <div class="calc-card" id="hora">
+      <div class="calc-card-title">Hora (Planetary Hours)</div>
+      <div class="calc-card-desc">Each hour of the day and night is ruled by a different planet, in a fixed Chaldean sequence.</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
+        <div><div class="panchang-stat-label" style="margin-bottom:10px;">Day</div><table class="panchang-table" id="hora-day"></table></div>
+        <div><div class="panchang-stat-label" style="margin-bottom:10px;">Night</div><table class="panchang-table" id="hora-night"></table></div>
+      </div>
+    </div>
+
+    <div class="calc-card" id="numerology-panchang">
+      <div class="calc-card-title">Today's Numerology Number</div>
+      <div id="pan-numerology-body"></div>
+    </div>
+
+    <div class="calc-disclaimer" style="margin-top:12px;">Computed from a simplified solar/lunar model (not a professional ephemeris) and standard Rahu Kaal / Hora / Choghadiya rule tables. Timings can be off by a few minutes — for anything time-critical (muhurat for a ceremony, etc.), confirm with <a href="consult.html?mode=chat" style="color:var(--maroon); font-weight:700;">a verified astrologer</a>.</div>
+
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-top">
+    <div style="flex:1 1 260px; min-width:220px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <img src="assets/logo.png" alt="Astrowani" style="width:36px; height:36px; border-radius:50%;">
+        <span class="serif" style="font-size:19px; color:var(--cream);">Astrowani</span>
+      </div>
+      <div style="font-size:13.5px; line-height:1.7; max-width:280px;">India's astrology platform for real-time guidance from verified astrologers — chat, call and video, anytime.</div>
+    </div>
+    <div>
+      <div class="footer-col-title">Company</div>
+      <div class="footer-links"><a href="about.html">About us</a><a href="https://astrowani.com/astrologer-ragistration/">Astrologer registration</a><a href="blog.html">Blog</a><a href="book-call.html">Book a call</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Services</div>
+      <div class="footer-links"><a href="astrologers.html">All Astrologers</a><a href="index.html#services">Chat with astrologer</a><a href="marriage.html">Marriage matching</a><a href="courses.html">Courses</a><a href="index.html#wanishop">Wani Shop</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Legal</div>
+      <div class="footer-links"><a href="https://astrowani.com/privacy-policy/">Privacy policy</a><a href="https://astrowani.com/terms-and-conditions/">Terms &amp; conditions</a><a href="https://astrowani.com/refund-cancellation/">Refund policy</a><a href="https://astrowani.com/delete-your-account/">Delete account</a></div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div>&copy; 2026 Astrowani. All rights reserved.</div>
+    <div>Made with care in India</div>
+  </div>
+</footer>
+
+<script src="astro-engine.js"></script>
+<script src="astrologers-data.js"></script>
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const hash = (window.location.hash || '#today').replace('#', '');
+  const nonDayAnchors = ['tithi', 'vaar', 'rahu-kaal', 'shubh-muhurat', 'choghadiya', 'hora', 'numerology', 'karana'];
+  const day = hash === 'tomorrow' ? 'tomorrow' : 'today';
+  document.querySelectorAll('.consult-mode-pill').forEach((p) => p.classList.toggle('active', p.getAttribute('data-day') === day));
+
+  const citySel = document.getElementById('pan-city');
+  citySel.innerHTML = ASTRO_CITIES.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
+
+  function render() {
+    const city = ASTRO_CITIES.find((c) => c.name === citySel.value) || ASTRO_CITIES[0];
+    const date = new Date();
+    if (day === 'tomorrow') date.setDate(date.getDate() + 1);
+
+    document.getElementById('pan-title').textContent = day === 'tomorrow' ? "Tomorrow's Panchang" : "Today's Panchang";
+    document.getElementById('pan-date-label').textContent = `${date.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} · ${city.name}`;
+
+    const { sunrise, sunset } = astroSunriseSunset(date, city.lat, city.lon, 5.5);
+    const tithi = astroTithi(date);
+    const karana = astroKarana(tithi.diffDeg);
+    const rahu = astroRahuKaal(date, sunrise, sunset);
+    const muhurat = astroShubhMuhurat(sunrise, sunset);
+    const chogh = astroChoghadiyaSequence(date, sunrise, sunset);
+    const hora = astroHoraSequence(date, sunrise, sunset);
+    const nak = astroNakshatra(date, date.getFullYear());
+    const rashi = astroRashi(astroMoonLongitude(astroJulianDay(date)), date.getFullYear());
+    const dow = date.getDay();
+
+    document.getElementById('pan-stats').innerHTML = [
+      ['Sunrise', astroHoursToClock(sunrise)],
+      ['Sunset', astroHoursToClock(sunset)],
+      ['Tithi', tithi.name],
+      ['Paksha', tithi.paksha.split(' (')[0]],
+      ['Nakshatra', `${nak.name} (Pada ${nak.pada})`],
+      ['Moon Sign', rashi.name],
+    ].map(([label, value]) => `<div class="panchang-stat"><div class="panchang-stat-label">${label}</div><div class="panchang-stat-value">${value}</div></div>`).join('');
+
+    document.getElementById('pan-tithi-body').innerHTML = `<div class="panchang-stat-value" style="margin-bottom:8px;">${tithi.name} · ${tithi.paksha}</div><div class="calc-card-desc" style="margin-bottom:0;">Karana: <strong style="color:var(--maroon);">${karana}</strong></div>`;
+
+    document.getElementById('pan-vaar-body').innerHTML = `<div class="panchang-stat-value">${ASTRO_WEEKDAYS[dow]}</div><div class="calc-card-desc" style="margin-bottom:0;">Ruled by ${ASTRO_WEEKDAY_LORDS[dow]}</div>`;
+
+    document.getElementById('pan-rahu-body').innerHTML = `<div class="panchang-stat-value" style="font-size:22px;">${astroHoursToClock(rahu.start)} – ${astroHoursToClock(rahu.end)}</div>`;
+
+    document.getElementById('pan-muhurat-body').innerHTML = `<div class="panchang-stat-value" style="font-size:22px;">${astroHoursToClock(muhurat.start)} – ${astroHoursToClock(muhurat.end)}</div>`;
+
+    const choghRow = (c) => `<tr><td>${astroHoursToClock(c.start)} – ${astroHoursToClock(c.end)}</td><td>${c.name}</td><td><span class="panchang-tag ${c.quality.startsWith('Most') || c.quality.startsWith('Auspicious') ? 'good' : c.quality.startsWith('Neutral') ? 'neutral' : 'bad'}">${c.quality}</span></td></tr>`;
+    document.getElementById('chogh-day').innerHTML = `<tr><th>Time</th><th>Name</th><th>Quality</th></tr>` + chogh.day.map(choghRow).join('');
+    document.getElementById('chogh-night').innerHTML = `<tr><th>Time</th><th>Name</th><th>Quality</th></tr>` + chogh.night.map(choghRow).join('');
+
+    const horaRow = (h) => `<tr><td>${astroHoursToClock(h.start)} – ${astroHoursToClock(h.end)}</td><td>${h.lord}</td></tr>`;
+    document.getElementById('hora-day').innerHTML = `<tr><th>Time</th><th>Lord</th></tr>` + hora.filter((h) => h.period === 'Day').map(horaRow).join('');
+    document.getElementById('hora-night').innerHTML = `<tr><th>Time</th><th>Lord</th></tr>` + hora.filter((h) => h.period === 'Night').map(horaRow).join('');
+
+    const numDigit = astroReduceToSingle(date.getDate() + (date.getMonth() + 1) + date.getFullYear());
+    document.getElementById('pan-numerology-body').innerHTML = `<div class="panchang-stat-value" style="font-size:22px;">Number ${numDigit}</div><div class="calc-card-desc" style="margin-bottom:0;">${ASTRO_LIFE_PATH_MEANINGS[numDigit] || ''}</div>`;
+  }
+
+  citySel.addEventListener('change', render);
+  render();
+});
+</script>
+</body>
+</html>

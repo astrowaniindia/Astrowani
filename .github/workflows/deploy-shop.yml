@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'astrowani-shop/**'
+      - 'astrowani-website/**'
   workflow_dispatch: {}
 
 jobs:
@@ -70,6 +71,19 @@ jobs:
 
           nginx -t && systemctl reload nginx
           echo "shop deployed: $(ls -1 /var/www/astrowani/shop/assets | wc -l) assets"
+
+          # ---- astrowani-website preview, served at shop.astrowani.com/test-site/ ----
+          # NOT the real astrowani.com site — a work-in-progress marketing site nested
+          # under the shop's existing nginx block so it needs no DNS/nginx/cert changes of
+          # its own. Same copy-before-delete order as the shop above. Dev-only files
+          # (dev-server.js, the unused concept-hero.html) are left out on purpose.
+          mkdir -p /var/www/astrowani/shop/test-site
+          rsync -a --delete \
+            --exclude 'dev-server.js' \
+            --exclude 'concept-hero.html' \
+            astrowani-website/. /var/www/astrowani/shop/test-site/
+          chown -R www-data:www-data /var/www/astrowani/shop/test-site
+          echo "test-site deployed: $(find /var/www/astrowani/shop/test-site -type f | wc -l) files"
           REMOTE_SCRIPT
 
           attempt=1

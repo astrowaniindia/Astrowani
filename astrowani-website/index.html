@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astrowani — Talk to Verified Astrologers</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+</head>
+<body>
+
+<div id="scroll-progress"></div>
+
+<!-- ============ NAV + HERO (dark concept) ============ -->
+<div class="ch-wrap">
+  <div class="ch-nav-wrap">
+    <div class="ch-nav-pill">
+      <div class="ch-nav-brand"><img src="assets/logo.png" alt="Astrowani"><span class="serif">Astrowani</span></div>
+      <div class="ch-nav-links">
+        <a href="blog.html" class="i18n-t">Blog</a>
+        <a href="#wanishop" class="i18n-t">Wani Shop</a>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="ch-nav-login i18n-t">Login</a>
+        <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="btn-gold magnetic i18n-t" style="font-size:13.5px; padding:11px 22px; border-radius:999px;">Sign up</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="ch-hero">
+    <div class="ch-rings" id="ch-rings"></div>
+
+    <div class="ch-eyebrow hero-in-1"><span class="dot"></span><span class="i18n-t">India's Trusted Astrology Platform</span></div>
+
+    <h1 class="serif hero-in-2">Clarity from the stars,<br>guidance from real astrologers</h1>
+
+    <p class="hero-in-3 i18n-t">Chat, call or video with India's verified astrologers for love, career, marriage and family guidance — in your own language, available around the clock.</p>
+
+    <a href="#astrologers" class="ch-cta btn-gold magnetic hero-in-4 i18n-t">Talk to an Astrologer</a>
+
+    <div class="hero-stats hero-in-5" style="position:relative; z-index:1; justify-content:center; margin-bottom:40px;">
+      <div><div class="serif stat-num odo-number" data-text="50,000+" style="color:var(--ch-ink);"></div><div class="stat-label i18n-t" style="color:var(--ch-ink-soft);">Kundlis served</div></div>
+      <div><div class="serif stat-num odo-number" data-text="159+" style="color:var(--ch-ink);"></div><div class="stat-label i18n-t" style="color:var(--ch-ink-soft);">Verified astrologers</div></div>
+      <div><div class="serif stat-num odo-number" data-text="20+" style="color:var(--ch-ink);"></div><div class="stat-label i18n-t" style="color:var(--ch-ink-soft);">Years of experience</div></div>
+      <div><div class="serif stat-num odo-number" data-text="97+" style="color:var(--ch-ink);"></div><div class="stat-label i18n-t" style="color:var(--ch-ink-soft);">Countries reached</div></div>
+    </div>
+
+    <div class="ch-stage">
+      <div class="ch-phone">
+        <img src="assets/app-screenshot-home-2.webp" alt="Astrowani app home screen" class="ch-phone-screen">
+      </div>
+    </div>
+  </div>
+
+  <div class="ch-mascot hero-in-mascot">
+    <img src="assets/mascot.png" alt="Astrowani guide mascot">
+    <div class="ch-mascot-bubble">
+      <div class="ch-mascot-bubble-tag">First time in the astrology industry</div>
+      <div class="ch-mascot-bubble-text">Talk to verified &amp; certified astrologers free for 11 minutes</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TRUST STRIP ============ -->
+<div class="trust-strip">
+  <div class="wrap">
+    <div class="trust-item">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 3v6c0 5-3 8.5-7 10-4-1.5-7-5-7-10V5z"/><path d="M9 12l2 2 4-4"/></svg>
+      Verified astrologers
+    </div>
+    <div class="trust-item">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Private &amp; confidential
+    </div>
+    <div class="trust-item">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      Available 24×7
+    </div>
+    <div class="trust-item">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.2 4.6L19 8l-3.6 3.3L16.2 16 12 13.5 7.8 16l.8-4.7L5 8l4.8-1.4z"/></svg>
+      Secure payments
+    </div>
+  </div>
+</div>
+
+
+<!-- ============ TOP ASTROLOGERS ============ -->
+<div class="band band-tint">
+  <div id="astrologers" class="block">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:36px;">
+      <div>
+        <div class="eyebrow">Live Now · Call or Chat</div>
+        <h2 class="serif section-title">Talk to top rated astrologers</h2>
+      </div>
+      <a href="astrologers.html" class="magnetic" style="font-size:14.5px; font-weight:800; color:var(--maroon); border:1.5px solid var(--border-soft); padding:11px 20px; border-radius:999px;">View all astrologers →</a>
+    </div>
+  </div>
+
+  <!-- full-bleed: breaks out of the centered .block so the fade sits at the real screen edges -->
+  <div class="astro-marquee-wrap">
+    <div class="astro-marquee-track astro-marquee-track-ltr" id="astro-marquee-track">
+      <!-- astrologer cards (half the featured set) are injected twice by script.js for a seamless loop -->
+    </div>
+  </div>
+  <div class="astro-marquee-wrap" style="margin-top:20px;">
+    <div class="astro-marquee-track astro-marquee-track-rtl" id="astro-marquee-track-2">
+      <!-- the other half of the featured set, scrolling the opposite direction -->
+    </div>
+  </div>
+</div>
+
+<!-- ============ REVIEWS ============ -->
+<div class="band">
+  <div id="reviews" class="block">
+    <div style="text-align:center; margin-bottom:44px;">
+      <div class="eyebrow">Loved across India</div>
+      <h2 class="serif section-title">Real people. Real reviews.</h2>
+    </div>
+
+    <div class="review-grid">
+
+      <div class="review-card reveal reveal-wipe">
+        <div class="review-stars">
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+        </div>
+        <div class="review-quote">&ldquo;What amazed me was how the consultation combined traditional Indian wisdom with modern understanding of Tarot cards. I could relate to every prediction, and the guidance for my business launch worked wonders.&rdquo;</div>
+        <div class="review-person">
+          <img src="assets/testimonial-neha.jpg" alt="Neha Agarwal" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          <div><div style="font-size:13.5px; font-weight:800; color:var(--maroon);">Neha Agarwal</div><div style="font-size:11.5px; color:var(--ink-soft); font-weight:600;">Consulted with a Tarot Reader</div></div>
+        </div>
+      </div>
+
+      <div class="review-card reveal reveal-wipe">
+        <div class="review-stars">
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+        </div>
+        <div class="review-quote">&ldquo;I was going through a very confusing phase in life, unsure about my future. The astrology session not only gave me clarity but also the strength to move forward. The remedies have brought peace and prosperity into my life.&rdquo;</div>
+        <div class="review-person">
+          <img src="assets/testimonial-rohit.png" alt="Rohit Sharma" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          <div><div style="font-size:13.5px; font-weight:800; color:var(--maroon);">Rohit Sharma</div><div style="font-size:11.5px; color:var(--ink-soft); font-weight:600;">Consulted with a Vedic Astrologer</div></div>
+        </div>
+      </div>
+
+      <div class="review-card reveal reveal-wipe">
+        <div class="review-stars">
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+          <svg class="star" width="16" height="16" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>
+        </div>
+        <div class="review-quote">&ldquo;I always believed in destiny, but after consulting with a numerologist, I understood how numbers can guide our path. The insights about my career and relationships were so accurate that it felt like speaking to someone who truly knew me.&rdquo;</div>
+        <div class="review-person">
+          <img src="assets/testimonial-priya.jpg" alt="Priya Mehta" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          <div><div style="font-size:13.5px; font-weight:800; color:var(--maroon);">Priya Mehta</div><div style="font-size:11.5px; color:var(--ink-soft); font-weight:600;">Consulted with a Numerologist</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ WANI SHOP ============ -->
+<div class="band">
+  <div id="wanishop" class="block">
+    <div style="text-align:center; margin-bottom:44px;">
+      <div class="eyebrow">Certified gemstones, pujas &amp; vastu remedies</div>
+      <h2 class="serif section-title">Wani Shop</h2>
+      <p style="margin:14px auto 0; max-width:560px; font-size:15px; line-height:1.7; color:var(--ink-soft);">Certified stones chosen against your chart, verified against their lab report, and dispatched from our Delhi workshop.</p>
+    </div>
+
+    <div class="shop-grid">
+      <a href="https://shop.astrowani.com/gemstones/" class="shop-card reveal reveal-slide-left tilt-card" style="background-image:url('assets/shop-gemstones.jpg');">
+        <div class="shop-card-body">
+          <div class="shop-card-title">Gemstones</div>
+          <div class="shop-card-desc">Certified stones, chosen against your chart and verified before they reach you.</div>
+          <div class="shop-card-link">Shop gemstones &rarr;</div>
+        </div>
+      </a>
+
+      <a href="https://shop.astrowani.com/pujas/" class="shop-card reveal reveal-slide-right tilt-card" style="background-image:url('assets/shop-pujas.jpg');">
+        <div class="shop-card-body">
+          <div class="shop-card-title">Pujas</div>
+          <div class="shop-card-desc">Sixty-four pujas, paths and sanskars, performed with the full vidhi by our pandits.</div>
+          <div class="shop-card-link">Book a puja &rarr;</div>
+        </div>
+      </a>
+
+      <a href="https://shop.astrowani.com/vastu/" class="shop-card reveal reveal-slide-left tilt-card" style="background-image:url('assets/shop-vastu.jpg');">
+        <div class="shop-card-body">
+          <div class="shop-card-title">Vastu Remedies</div>
+          <div class="shop-card-desc">Crystals, pyramids, yantras and feng shui pieces, chosen for a direction and a dosh.</div>
+          <div class="shop-card-link">Shop vastu &rarr;</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DAILY HOROSCOPE ============ -->
+<div class="band band-tint">
+  <div id="horoscope" class="block">
+    <div style="text-align:center; margin-bottom:12px;">
+      <div class="eyebrow">Updated every morning</div>
+      <h2 class="serif section-title" style="margin-bottom:36px;">Your daily horoscope reading</h2>
+    </div>
+
+    <div class="zodiac-row">
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9800;&#xFE0E;</div><div class="z-name">Aries</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9801;&#xFE0E;</div><div class="z-name">Taurus</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9802;&#xFE0E;</div><div class="z-name">Gemini</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9803;&#xFE0E;</div><div class="z-name">Cancer</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9804;&#xFE0E;</div><div class="z-name">Leo</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9805;&#xFE0E;</div><div class="z-name">Virgo</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9806;&#xFE0E;</div><div class="z-name">Libra</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9807;&#xFE0E;</div><div class="z-name">Scorpio</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9808;&#xFE0E;</div><div class="z-name">Sagittarius</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9809;&#xFE0E;</div><div class="z-name">Capricorn</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9810;&#xFE0E;</div><div class="z-name">Aquarius</div></div>
+      <div class="z-chip reveal reveal-rotate"><div class="z-chip-inner">&#9811;&#xFE0E;</div><div class="z-name">Pisces</div></div>
+    </div>
+
+    <div class="horoscope-card reveal reveal-flip">
+      <div class="horoscope-sign">&#9800;&#xFE0E;</div>
+      <div style="flex:1 1 320px; min-width:0;">
+        <div style="font-size:12.5px; font-weight:800; color:var(--gold); letter-spacing:1px; text-transform:uppercase; margin-bottom:6px;">Aries · Mar 21 – Apr 19</div>
+        <div style="font-size:15.5px; line-height:1.7; color:var(--cream);">Today favours bold, clear communication. A long-pending conversation at work finally moves forward — trust your instincts and speak first.</div>
+      </div>
+      <div class="horoscope-meters">
+        <div><div class="meter-label">Love</div><div class="meter-track"><div class="meter-fill reveal" style="--w:70%;"></div></div></div>
+        <div><div class="meter-label">Career</div><div class="meter-track"><div class="meter-fill reveal" style="--w:85%;"></div></div></div>
+        <div><div class="meter-label">Health</div><div class="meter-track"><div class="meter-fill reveal" style="--w:55%;"></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP DOWNLOAD ============ -->
+<div class="band band-tint">
+  <div id="app" class="block">
+    <div class="app-panel reveal reveal-zoom">
+
+      <div style="flex:1 1 380px; min-width:0; position:relative; z-index:1;">
+        <h2 class="serif" style="margin:0 0 16px; font-size:34px; font-weight:400; color:var(--maroon); line-height:1.2;">Astrology made simple, available to you 24×7</h2>
+        <p style="margin:0 0 28px; font-size:15px; color:var(--maroon); opacity:.8; line-height:1.6; max-width:420px;">Connect with astrologers, read your chart and track remedies — right from your pocket.</p>
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+          <div class="store-badge" style="opacity:.55; cursor:default;" title="Coming soon on the App Store">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--cream)"><path d="M18.7 12.4c0-2.1 1.7-3.1 1.8-3.2-1-1.4-2.5-1.6-3-1.6-1.3-.1-2.5.7-3.1.7-.6 0-1.6-.7-2.7-.7-1.4 0-2.7.8-3.4 2-1.5 2.5-.4 6.3 1 8.3.7 1 1.5 2.1 2.6 2 1-.1 1.4-.7 2.7-.7s1.6.7 2.7.6c1.1 0 1.8-1 2.5-2 .8-1.1 1.1-2.2 1.1-2.3-.1 0-2.2-.8-2.2-3.1zM16.3 5.8c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 1.9-.5 2.5-1.2z"/></svg>
+            <div><div style="font-size:10px; opacity:0.75;">Coming soon on the</div><div style="font-size:15px; font-weight:800; line-height:1.2;">App Store</div></div>
+          </div>
+          <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="store-badge magnetic">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--cream)"><path d="M3.6 2.3c-.4.2-.6.6-.6 1.1v17.2c0 .5.2.9.6 1.1l10-9.7-10-9.7zm11.1 9.1l2.5-2.4-10-5.6 7.5 8zm1 2l-7.5 8 10-5.6-2.5-2.4zm1.1-1l3.2-1.8c.5-.3.5-1.1 0-1.4l-3.2-1.8-2.9 3 2.9 3z"/></svg>
+            <div><div style="font-size:10px; opacity:0.75;">GET IT ON</div><div style="font-size:15px; font-weight:800; line-height:1.2;">Google Play</div></div>
+          </a>
+        </div>
+      </div>
+
+      <div class="app-3d-stage">
+        <model-viewer
+          id="app-3d-model"
+          class="app-3d-model"
+          src="assets/models/astrologer-phone-screen.glb"
+          alt="3D model of an Astrowani astrologer"
+          camera-controls
+          interaction-prompt="none"
+          disable-zoom
+          shadow-intensity="0.9"
+          exposure="1.05"
+          camera-orbit="0deg 78deg 105%"
+          field-of-view="28deg"
+          loading="eager">
+        </model-viewer>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CATEGORIES ============ -->
+<div class="band">
+  <div class="block">
+    <div style="text-align:center; margin-bottom:40px;">
+      <div class="eyebrow">Browse by concern</div>
+      <h2 class="serif section-title">Find the right astrologer for you</h2>
+    </div>
+
+    <div class="cat-grid" id="home-cat-grid">
+      <!-- rendered by script.js from the real app categories in astrologers-data.js -->
+    </div>
+  </div>
+</div>
+
+<!-- ============ SERVICES ============ -->
+<div class="band band-tint">
+  <div id="services" class="block svc-section">
+
+    <div style="text-align:center; margin-bottom:16px; position:relative; z-index:1;">
+      <div class="eyebrow">What we offer</div>
+      <h2 class="serif section-title">Our Services</h2>
+      <p style="margin:12px auto 0; max-width:520px; font-size:14.5px; color:var(--ink-soft);">Ancient wisdom. Modern guidance. Everything you need for a better tomorrow.</p>
+    </div>
+
+    <div class="svc-grid">
+
+      <div class="svc-tile reveal reveal-slide-left tilt-card">
+        <div class="svc-tile-top">
+          <div class="svc-title">Chat with Astrologer</div>
+          <div class="svc-desc">Private, unlimited text chat with a verified astrologer — your first few minutes are on us.</div>
+          <div class="svc-arrow">&rarr;</div>
+        </div>
+        <img src="assets/svc-chat.png" alt="" class="svc-illus-img" aria-hidden="true">
+      </div>
+
+      <div class="svc-tile reveal reveal-slide-right tilt-card">
+        <div class="svc-tile-top">
+          <div class="svc-title">Call an Astrologer</div>
+          <div class="svc-desc">Pick up the phone for a real-time voice consultation whenever you need answers.</div>
+          <div class="svc-arrow">&rarr;</div>
+        </div>
+        <img src="assets/svc-call.png" alt="" class="svc-illus-img" aria-hidden="true">
+      </div>
+
+      <div class="svc-tile reveal reveal-slide-left tilt-card">
+        <div class="svc-tile-top">
+          <div class="svc-title">Video Consultation</div>
+          <div class="svc-desc">Face-to-face video sessions for palm reading, pooja guidance and deeper readings.</div>
+          <div class="svc-arrow">&rarr;</div>
+        </div>
+        <img src="assets/svc-video.png" alt="" class="svc-illus-img" aria-hidden="true">
+      </div>
+
+      <div class="svc-tile reveal reveal-slide-right tilt-card">
+        <div class="svc-tile-top">
+          <div class="svc-title">Daily Horoscope</div>
+          <div class="svc-desc">Free, personalised daily predictions for love, career, health and money.</div>
+          <div class="svc-arrow">&rarr;</div>
+        </div>
+        <img src="assets/svc-horoscope.png" alt="" class="svc-illus-img" aria-hidden="true">
+      </div>
+
+      <div class="svc-tile reveal reveal-slide-left tilt-card">
+        <div class="svc-tile-top">
+          <div class="svc-title">Free Kundli</div>
+          <div class="svc-desc">Generate a detailed birth chart in seconds, with planet positions and dashas.</div>
+          <div class="svc-arrow">&rarr;</div>
+        </div>
+        <img src="assets/svc-kundli.png" alt="" class="svc-illus-img" aria-hidden="true">
+      </div>
+
+      <div class="svc-tile reveal reveal-slide-right tilt-card">
+        <div class="svc-tile-top">
+          <div class="svc-title">Wani Shop</div>
+          <div class="svc-desc">Gemstones, rudraksha and puja essentials, recommended for your chart and shipped home.</div>
+          <div class="svc-arrow">&rarr;</div>
+        </div>
+        <img src="assets/svc-waniShop.png" alt="" class="svc-illus-img" aria-hidden="true">
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ MORE ASTROLOGERS ============ -->
+<div class="band band-tint">
+  <div class="block">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:36px;">
+      <div>
+        <div class="eyebrow">Meet more experts</div>
+        <h2 class="serif section-title">More astrologers you can talk to</h2>
+      </div>
+      <a href="astrologers.html" class="magnetic" style="font-size:14.5px; font-weight:800; color:var(--maroon); border:1.5px solid var(--border-soft); padding:11px 20px; border-radius:999px;">View all astrologers →</a>
+    </div>
+    <div id="home-more-astrologers" class="astro-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
+      <!-- rendered by script.js from astrologers-data.js, a fresh batch not shown in the marquee -->
+    </div>
+  </div>
+</div>
+<style>
+  @media (max-width:900px){ #home-more-astrologers{ grid-template-columns:repeat(2, minmax(0,1fr)) !important; } }
+  @media (max-width:560px){ #home-more-astrologers{ grid-template-columns:1fr !important; } }
+</style>
+
+<!-- ============ WHY ASTROLOGY ============ -->
+<div class="band">
+  <div style="max-width:880px; margin:0 auto; padding:0 24px; text-align:center;">
+    <div class="eyebrow">Frequently asked</div>
+    <h2 class="serif" style="margin:0 0 36px; font-size:34px; font-weight:400; color:var(--maroon);">Why do you need astrology?</h2>
+
+    <div style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+      <div class="faq-item reveal reveal-slide-left">
+        <div class="faq-q">How does an online astrology consultation work?</div>
+        <div class="faq-a">Share your date, time and place of birth, choose an astrologer and start a chat, call or video session in minutes.</div>
+      </div>
+      <div class="faq-item reveal reveal-slide-left">
+        <div class="faq-q">Are the astrologers on Astrowani verified?</div>
+        <div class="faq-a">Every astrologer goes through a review before they can take consultations, so you always talk to a genuine expert.</div>
+      </div>
+      <div class="faq-item reveal reveal-slide-left">
+        <div class="faq-q">Is my first consultation really free?</div>
+        <div class="faq-a">New users get a free introductory call so you can experience a reading before adding money to your wallet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FOOTER ============ -->
+<footer class="site-footer">
+  <div class="footer-top">
+    <div style="flex:1 1 260px; min-width:220px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <img src="assets/logo.png" alt="Astrowani" style="width:36px; height:36px; border-radius:50%;">
+        <span class="serif" style="font-size:19px; color:var(--cream);">Astrowani</span>
+      </div>
+      <div style="font-size:13.5px; line-height:1.7; max-width:280px;">India's astrology platform for real-time guidance from verified astrologers — chat, call and video, anytime.</div>
+    </div>
+    <div>
+      <div class="footer-col-title">Company</div>
+      <div class="footer-links"><a href="about.html">About us</a><a href="https://astrowani.com/astrologer-ragistration/">Astrologer registration</a><a href="blog.html">Blog</a><a href="book-call.html">Book a call</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Services</div>
+      <div class="footer-links"><a href="astrologers.html">All Astrologers</a><a href="marriage.html">Marriage</a><a href="#services">Services</a><a href="#wanishop">Wani Shop</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Legal</div>
+      <div class="footer-links"><a href="https://astrowani.com/privacy-policy/">Privacy policy</a><a href="https://astrowani.com/terms-and-conditions/">Terms &amp; conditions</a><a href="https://astrowani.com/refund-cancellation/">Refund policy</a><a href="https://astrowani.com/delete-your-account/">Delete account</a></div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div>&copy; 2026 Astrowani. All rights reserved.</div>
+    <div>Made with care in India</div>
+  </div>
+</footer>
+
+<script src="astrologers-data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

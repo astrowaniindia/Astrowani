@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Astrology Calculators — Astrowani</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="scroll-progress"></div>
+
+<div id="site-nav">
+  <div class="nav-inner">
+    <a href="index.html" style="display:flex; align-items:center; gap:10px;">
+      <img class="logo-mark" src="assets/logo.png" alt="Astrowani">
+      <span class="serif" style="font-size:22px; font-weight:400; color:var(--cream);">Astrowani</span>
+    </a>
+    <div class="nav-links">
+      <a href="blog.html" class="nav-link i18n-t">Blog</a>
+      <a href="index.html#wanishop" class="nav-link i18n-t">Wani Shop</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="nav-login i18n-t">Login</a>
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="btn-gold magnetic i18n-t" style="font-size:14px; padding:11px 22px; border-radius:999px;">Sign up</a>
+    </div>
+  </div>
+</div>
+
+<div class="page-header">
+  <div class="crumb"><a href="index.html" style="color:var(--gold);">Home</a> · Calculators</div>
+  <h1 class="serif">Free astrology calculators</h1>
+  <p>Instant, real calculations for the ones that don't need a full birth chart — and an honest note on the ones that do.</p>
+</div>
+
+<div class="band">
+  <div class="block">
+
+    <div class="tool-index-grid" id="calc-index"></div>
+
+    <h2 class="section-title serif" style="margin-bottom:24px;">Instant calculators</h2>
+
+    <!-- ===== Love Calculator ===== -->
+    <div class="calc-card" id="love">
+      <div class="calc-card-title">Love Calculator</div>
+      <div class="calc-card-desc">The classic name-based love-percentage calculator — enter two names and see your score.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Your name</label><input type="text" id="love-name1" placeholder="e.g. Rahul"></div>
+        <div class="calc-field"><label>Partner's name</label><input type="text" id="love-name2" placeholder="e.g. Priya"></div>
+      </div>
+      <button class="calc-btn" id="love-btn">Calculate love score</button>
+      <div class="calc-result" id="love-result">
+        <div class="calc-result-big" id="love-pct"></div>
+        <div class="calc-result-sub" id="love-sub"></div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="love-bar" style="width:0%;"></div></div>
+      </div>
+      <div class="calc-disclaimer">For entertainment — a fun, deterministic formula, not a professional compatibility reading. For real compatibility guidance, <a href="consult.html?mode=chat" style="color:var(--maroon); font-weight:700;">talk to an astrologer</a>.</div>
+    </div>
+
+    <!-- ===== Flames Calculator ===== -->
+    <div class="calc-card" id="flames">
+      <div class="calc-card-title">Flames Calculator</div>
+      <div class="calc-card-desc">The classic F-L-A-M-E-S elimination game — Friends, Love, Affection, Marriage, Enemies, Siblings.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Your name</label><input type="text" id="flames-name1" placeholder="e.g. Rahul"></div>
+        <div class="calc-field"><label>Their name</label><input type="text" id="flames-name2" placeholder="e.g. Priya"></div>
+      </div>
+      <button class="calc-btn" id="flames-btn">Play FLAMES</button>
+      <div class="calc-result" id="flames-result">
+        <div class="flames-letters" id="flames-letters"></div>
+        <div class="calc-result-big" id="flames-label" style="text-align:center;"></div>
+      </div>
+      <div class="calc-disclaimer">For entertainment only.</div>
+    </div>
+
+    <!-- ===== Friendship Calculator ===== -->
+    <div class="calc-card" id="friendship">
+      <div class="calc-card-title">Friendship Calculator</div>
+      <div class="calc-card-desc">A different name-based formula focused on friendship compatibility, not romance.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Your name</label><input type="text" id="friend-name1" placeholder="e.g. Aman"></div>
+        <div class="calc-field"><label>Friend's name</label><input type="text" id="friend-name2" placeholder="e.g. Rohit"></div>
+      </div>
+      <button class="calc-btn" id="friend-btn">Calculate friendship score</button>
+      <div class="calc-result" id="friend-result">
+        <div class="calc-result-big" id="friend-pct"></div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="friend-bar" style="width:0%;"></div></div>
+      </div>
+      <div class="calc-disclaimer">For entertainment only.</div>
+    </div>
+
+    <!-- ===== Name Compatibility Calculator ===== -->
+    <div class="calc-card" id="name-compatibility">
+      <div class="calc-card-title">Name Compatibility Calculator</div>
+      <div class="calc-card-desc">Uses Chaldean name-numerology to compare the hidden numeric value of two names.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>First name</label><input type="text" id="nc-name1" placeholder="e.g. Arjun"></div>
+        <div class="calc-field"><label>Second name</label><input type="text" id="nc-name2" placeholder="e.g. Kavya"></div>
+      </div>
+      <button class="calc-btn" id="nc-btn">Check compatibility</button>
+      <div class="calc-result" id="nc-result">
+        <div class="calc-result-big" id="nc-pct"></div>
+        <div class="calc-result-sub" id="nc-sub"></div>
+      </div>
+      <div class="calc-disclaimer">Chaldean numerology, a classic alternate numbering system to Pythagorean numerology. For entertainment only.</div>
+    </div>
+
+    <!-- ===== Numerology Calculator ===== -->
+    <div class="calc-card" id="numerology">
+      <div class="calc-card-title">Numerology Calculator</div>
+      <div class="calc-card-desc">Your Life Path Number — the core number in numerology, calculated from your date of birth.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="num-dob"></div>
+      </div>
+      <button class="calc-btn" id="num-btn">Calculate my Life Path Number</button>
+      <div class="calc-result" id="num-result">
+        <div class="calc-result-big" id="num-value"></div>
+        <div class="calc-result-sub" id="num-sub"></div>
+      </div>
+    </div>
+
+    <!-- ===== Lo Shu Grid Calculator ===== -->
+    <div class="calc-card" id="lo-shu-grid">
+      <div class="calc-card-title">Lo Shu Grid Calculator</div>
+      <div class="calc-card-desc">Places the digits of your date of birth onto the classic 3×3 Lo Shu magic square.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="loshu-dob"></div>
+      </div>
+      <button class="calc-btn" id="loshu-btn">Build my Lo Shu Grid</button>
+      <div class="calc-result" id="loshu-result">
+        <table class="lo-shu-table" id="loshu-table" style="background:var(--cream);"></table>
+        <div class="calc-result-sub" id="loshu-missing" style="margin-top:14px;"></div>
+      </div>
+    </div>
+
+    <!-- ===== Sun Sign Calculator ===== -->
+    <div class="calc-card" id="sun-sign">
+      <div class="calc-card-title">Sun Sign Calculator</div>
+      <div class="calc-card-desc">Your Western zodiac sign — exact, from your date of birth alone.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="sun-dob"></div>
+      </div>
+      <button class="calc-btn" id="sun-btn">Find my Sun Sign</button>
+      <div class="calc-result" id="sun-result">
+        <div class="calc-result-big" id="sun-value"></div>
+        <div class="calc-result-sub" id="sun-sub"></div>
+      </div>
+    </div>
+
+    <!-- ===== Moon Phase Calculator ===== -->
+    <div class="calc-card" id="moon-phase">
+      <div class="calc-card-title">Moon Phase Calculator</div>
+      <div class="calc-card-desc">The Moon's phase and illumination on any date, computed astronomically.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date</label><input type="date" id="moon-date"></div>
+      </div>
+      <button class="calc-btn" id="moon-btn">Find the Moon phase</button>
+      <div class="calc-result" id="moon-result">
+        <div class="calc-result-big" id="moon-value"></div>
+        <div class="calc-result-sub" id="moon-sub"></div>
+      </div>
+    </div>
+
+    <!-- ===== Lucky Vehicle Number Calculator ===== -->
+    <div class="calc-card" id="lucky-vehicle">
+      <div class="calc-card-title">Lucky Vehicle Number Calculator</div>
+      <div class="calc-card-desc">Numerology-friendly digits for your vehicle registration, based on your Life Path Number.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="lucky-dob"></div>
+      </div>
+      <button class="calc-btn" id="lucky-btn">Find my lucky digits</button>
+      <div class="calc-result" id="lucky-result">
+        <div class="calc-result-big" id="lucky-value"></div>
+        <div class="calc-result-sub" id="lucky-sub"></div>
+      </div>
+    </div>
+
+    <!-- ===== Rising Sign Calculator ===== -->
+    <div class="calc-card" id="rising-sign">
+      <div class="calc-card-title">Rising Sign (Ascendant) Calculator</div>
+      <div class="calc-card-desc">Your Ascendant — genuinely computed from your exact birth date, time and place, not a canned lookup.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="asc-dob"></div>
+        <div class="calc-field"><label>Time of birth</label><input type="time" id="asc-time" value="12:00"></div>
+        <div class="calc-field"><label>Birth city</label><select id="asc-city"></select></div>
+      </div>
+      <button class="calc-btn" id="asc-btn">Calculate my Ascendant</button>
+      <div class="calc-result" id="asc-result">
+        <div class="calc-result-big" id="asc-value"></div>
+        <div class="calc-result-sub" id="asc-sub"></div>
+      </div>
+      <div class="calc-disclaimer">Uses your exact birth time, so the result is only as accurate as the time you enter — even a few minutes' difference can shift the Ascendant.</div>
+    </div>
+
+    <!-- ===== Rashi Calculator ===== -->
+    <div class="calc-card" id="rashi">
+      <div class="calc-card-title">Rashi (Moon Sign) Calculator</div>
+      <div class="calc-card-desc">Your Vedic Moon sign, from your date and approximate time of birth.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="rashi-dob"></div>
+        <div class="calc-field"><label>Time of birth</label><input type="time" id="rashi-time" value="12:00"></div>
+      </div>
+      <button class="calc-btn" id="rashi-btn">Find my Rashi</button>
+      <div class="calc-result" id="rashi-result">
+        <div class="calc-result-big" id="rashi-value"></div>
+        <div class="calc-result-sub" id="rashi-sub"></div>
+      </div>
+      <div class="calc-disclaimer">Approximate: the Moon changes sign roughly every 2¼ days, so this uses a simplified lunar-position formula (not a full ephemeris). If your birth time is near a sign change, confirm with <a href="consult.html?mode=chat" style="color:var(--maroon); font-weight:700;">an astrologer</a>.</div>
+    </div>
+
+    <!-- ===== Nakshatra Calculator ===== -->
+    <div class="calc-card" id="nakshatra">
+      <div class="calc-card-title">Nakshatra Calculator</div>
+      <div class="calc-card-desc">Your birth star (Nakshatra) and pada, from your date and time of birth.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="nak-dob"></div>
+        <div class="calc-field"><label>Time of birth</label><input type="time" id="nak-time" value="12:00"></div>
+      </div>
+      <button class="calc-btn" id="nak-btn">Find my Nakshatra</button>
+      <div class="calc-result" id="nak-result">
+        <div class="calc-result-big" id="nak-value"></div>
+        <div class="calc-result-sub" id="nak-sub"></div>
+      </div>
+      <div class="calc-disclaimer">Approximate, same simplified lunar formula as the Rashi calculator above — treat a result near a boundary as indicative, not final.</div>
+    </div>
+
+    <h2 class="section-title serif" style="margin:56px 0 24px;">Needs a full birth chart</h2>
+    <p style="font-size:14px; color:var(--ink-soft); max-width:680px; margin-bottom:28px; line-height:1.7;">
+      These need the precise position of every planet at the moment you were born — Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu and Ketu — computed from a professional ephemeris. Getting any one of them wrong by even a degree can flip the reading, so rather than show you an approximate number that might be wrong, Astrowani's verified astrologers calculate these precisely with proper astrology software during a live consultation.
+    </p>
+
+    <div class="svc-grid" id="advanced-calc-grid" style="grid-template-columns:repeat(2, minmax(0,1fr));"></div>
+
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-top">
+    <div style="flex:1 1 260px; min-width:220px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <img src="assets/logo.png" alt="Astrowani" style="width:36px; height:36px; border-radius:50%;">
+        <span class="serif" style="font-size:19px; color:var(--cream);">Astrowani</span>
+      </div>
+      <div style="font-size:13.5px; line-height:1.7; max-width:280px;">India's astrology platform for real-time guidance from verified astrologers — chat, call and video, anytime.</div>
+    </div>
+    <div>
+      <div class="footer-col-title">Company</div>
+      <div class="footer-links"><a href="about.html">About us</a><a href="https://astrowani.com/astrologer-ragistration/">Astrologer registration</a><a href="blog.html">Blog</a><a href="book-call.html">Book a call</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Services</div>
+      <div class="footer-links"><a href="astrologers.html">All Astrologers</a><a href="index.html#services">Chat with astrologer</a><a href="marriage.html">Marriage matching</a><a href="courses.html">Courses</a><a href="index.html#wanishop">Wani Shop</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Legal</div>
+      <div class="footer-links"><a href="https://astrowani.com/privacy-policy/">Privacy policy</a><a href="https://astrowani.com/terms-and-conditions/">Terms &amp; conditions</a><a href="https://astrowani.com/refund-cancellation/">Refund policy</a><a href="https://astrowani.com/delete-your-account/">Delete account</a></div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div>&copy; 2026 Astrowani. All rights reserved.</div>
+    <div>Made with care in India</div>
+  </div>
+</footer>
+
+<script src="astro-engine.js"></script>
+<script src="astrologers-data.js"></script>
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  const CALC_LIST = [
+    ['Love Calculator', '#love'], ['Numerology Calculator', '#numerology'], ['Rising Sign Calculator', '#rising-sign'],
+    ['Dasha Calculator', '#dasha'], ['Mangal Dosha Calculator', '#mangal-dosha'], ['Moon Phase Calculator', '#moon-phase'],
+    ['Flames Calculator', '#flames'], ['Friendship Calculator', '#friendship'], ['Ishta Devata Calculator', '#ishta-devata'],
+    ['Transit Chart Calculator', '#transit-chart'], ['Atmakaraka & Darakaraka', '#atmakaraka'], ['Sun Sign Calculator', '#sun-sign'],
+    ['Rashi Calculator', '#rashi'], ['Nakshatra Calculator', '#nakshatra'], ['Shani Sade Sati Calculator', '#sade-sati'],
+    ['Birth/Natal Chart', '#natal-chart'], ['Lucky Vehicle Number', '#lucky-vehicle'], ['Kaal Sarp Dosh Calculator', '#kaal-sarp'],
+    ['Lo Shu Grid Calculator', '#lo-shu-grid'], ['Name Compatibility', '#name-compatibility'],
+  ];
+  document.getElementById('calc-index').innerHTML = CALC_LIST.map(([label, href]) =>
+    `<a class="tool-index-chip" href="${href}">${label}${ASTROWANI_NAV_ARROW}</a>`).join('');
+
+  const ADVANCED = [
+    ['Dasha Calculator', 'dasha', 'Your Vimshottari Dasha timeline (which planet rules which years of your life) depends on the Moon\'s exact nakshatra position at birth.'],
+    ['Mangal Dosha Calculator', 'mangal-dosha', 'Checking for Mangal Dosha needs Mars\'s exact house placement in your precise birth chart.'],
+    ['Ishta Devata Calculator', 'ishta-devata', 'Your Ishta Devata (guiding deity) is derived from the Atmakaraka and the full strength of every planet in your chart.'],
+    ['Transit Chart Calculator', 'transit-chart', 'A transit chart compares today\'s real planetary positions against your natal chart — both need a live ephemeris.'],
+    ['Atmakaraka & Darakaraka Calculator', 'atmakaraka', 'These are found by ranking every planet\'s degree within its sign — it needs all nine graha positions at once.'],
+    ['Shani Sade Sati Calculator', 'sade-sati', 'Sade Sati timing depends on precisely where Saturn transits relative to your natal Moon sign.'],
+    ['Birth/Natal Chart', 'natal-chart', 'A full birth chart plots all nine planets across all twelve houses — the complete picture, not a single number.'],
+    ['Kaal Sarp Dosh Calculator', 'kaal-sarp', 'This checks whether every planet falls between Rahu and Ketu — it needs all nine positions calculated together.'],
+  ];
+  document.getElementById('advanced-calc-grid').innerHTML = ADVANCED.map(([title, id, desc]) => `
+    <div class="svc-tile" id="${id}" style="min-height:0;">
+      <div class="svc-tile-top" style="max-width:100%;">
+        <div class="svc-title">${title}</div>
+        <div class="svc-desc" style="margin-bottom:16px;">${desc}</div>
+        <div class="calc-advanced-note">Get this calculated precisely, live, by a verified astrologer.<br><a href="consult.html?mode=chat">Chat with an astrologer &rarr;</a></div>
+      </div>
+    </div>`).join('');
+
+  // ---------- wiring ----------
+  const $ = (id) => document.getElementById(id);
+  const show = (id) => $(id).classList.add('is-visible');
+
+  $('love-btn').addEventListener('click', () => {
+    const n1 = $('love-name1').value.trim(), n2 = $('love-name2').value.trim();
+    if (!n1 || !n2) return;
+    const pct = astroLoveScore(n1, n2);
+    $('love-pct').textContent = pct + '% match';
+    $('love-sub').textContent = `${n1} & ${n2} — ${pct >= 75 ? 'a strong connection!' : pct >= 45 ? 'a promising spark.' : 'opposites finding their rhythm.'}`;
+    $('love-bar').style.width = pct + '%';
+    show('love-result');
+  });
+
+  $('flames-btn').addEventListener('click', () => {
+    const n1 = $('flames-name1').value.trim(), n2 = $('flames-name2').value.trim();
+    if (!n1 || !n2) return;
+    const { letter, label } = astroFlames(n1, n2);
+    $('flames-letters').innerHTML = ['F', 'L', 'A', 'M', 'E', 'S'].map((l) =>
+      `<div class="flames-letter${l === letter ? ' is-winner' : ''}">${l}</div>`).join('');
+    $('flames-label').textContent = label;
+    show('flames-result');
+  });
+
+  $('friend-btn').addEventListener('click', () => {
+    const n1 = $('friend-name1').value.trim(), n2 = $('friend-name2').value.trim();
+    if (!n1 || !n2) return;
+    const pct = astroFriendshipScore(n1, n2);
+    $('friend-pct').textContent = pct + '% friendship score';
+    $('friend-bar').style.width = pct + '%';
+    show('friend-result');
+  });
+
+  $('nc-btn').addEventListener('click', () => {
+    const n1 = $('nc-name1').value.trim(), n2 = $('nc-name2').value.trim();
+    if (!n1 || !n2) return;
+    const { n1: a, n2: b, pct } = astroNameCompatibility(n1, n2);
+    $('nc-pct').textContent = pct + '% harmony';
+    $('nc-sub').textContent = `${n1} (number ${a}) & ${n2} (number ${b})`;
+    show('nc-result');
+  });
+
+  $('num-btn').addEventListener('click', () => {
+    const dob = $('num-dob').value; if (!dob) return;
+    const lp = astroLifePathNumber(dob); if (!lp) return;
+    $('num-value').textContent = `Life Path Number ${lp}`;
+    $('num-sub').textContent = ASTRO_LIFE_PATH_MEANINGS[lp] || '';
+    show('num-result');
+  });
+
+  $('loshu-btn').addEventListener('click', () => {
+    const dob = $('loshu-dob').value; if (!dob) return;
+    const r = astroLoShuGrid(dob); if (!r) return;
+    $('loshu-table').innerHTML = r.grid.map((row) => `<tr>${row.map((c) => `<td>${c || '&nbsp;'}</td>`).join('')}</tr>`).join('');
+    $('loshu-missing').textContent = r.missing.length ? `Missing numbers: ${r.missing.join(', ')}` : 'No missing numbers — a complete grid!';
+    show('loshu-result');
+  });
+
+  $('sun-btn').addEventListener('click', () => {
+    const dob = $('sun-dob').value; if (!dob) return;
+    const d = new Date(dob + 'T12:00:00');
+    const z = astroSunSign(d.getMonth() + 1, d.getDate());
+    $('sun-value').textContent = `${z.symbol} ${z.name}`;
+    $('sun-sub').textContent = `${z.element} sign, ruled by ${z.lord}.`;
+    show('sun-result');
+  });
+
+  $('moon-btn').addEventListener('click', () => {
+    const dateStr = $('moon-date').value; if (!dateStr) return;
+    const r = astroMoonPhase(new Date(dateStr + 'T12:00:00'));
+    $('moon-value').textContent = `${r.icon} ${r.name}`;
+    $('moon-sub').textContent = `${r.illumination}% illuminated, day ${r.days} of the lunar cycle.`;
+    show('moon-result');
+  });
+
+  $('lucky-btn').addEventListener('click', () => {
+    const dob = $('lucky-dob').value; if (!dob) return;
+    const r = astroLuckyVehicleNumbers(dob); if (!r) return;
+    $('lucky-value').textContent = r.digits.join(', ');
+    $('lucky-sub').textContent = `Based on Life Path Number ${r.lifePath} — these digits are considered most harmonious for you.`;
+    show('lucky-result');
+  });
+
+  const citySel = $('asc-city');
+  citySel.innerHTML = ASTRO_CITIES.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
+  $('asc-btn').addEventListener('click', () => {
+    const dob = $('asc-dob').value, time = $('asc-time').value || '12:00'; if (!dob) return;
+    const city = ASTRO_CITIES.find((c) => c.name === citySel.value) || ASTRO_CITIES[0];
+    const d = new Date(dob + 'T00:00:00');
+    const r = astroAscendant(d, time, city.lat, city.lon, 5.5);
+    $('asc-value').textContent = r.siderealSign;
+    $('asc-sub').textContent = `Tropical Ascendant: ${r.tropicalSign} (${r.tropicalDeg.toFixed(1)}°) · Sidereal degree: ${r.siderealDeg.toFixed(1)}° · Birth place: ${city.name}`;
+    show('asc-result');
+  });
+
+  $('rashi-btn').addEventListener('click', () => {
+    const dob = $('rashi-dob').value, time = $('rashi-time').value || '12:00'; if (!dob) return;
+    const [hh, mm] = time.split(':').map(Number);
+    const d = new Date(dob + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+    const jd = astroJulianDay(d);
+    const r = astroRashi(astroMoonLongitude(jd), d.getFullYear());
+    $('rashi-value').textContent = r.name;
+    $('rashi-sub').textContent = 'Computed from an approximate Moon position for your birth date and time (IST assumed).';
+    show('rashi-result');
+  });
+
+  $('nak-btn').addEventListener('click', () => {
+    const dob = $('nak-dob').value, time = $('nak-time').value || '12:00'; if (!dob) return;
+    const [hh, mm] = time.split(':').map(Number);
+    const d = new Date(dob + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+    const r = astroNakshatra(d, d.getFullYear());
+    $('nak-value').textContent = `${r.name}, Pada ${r.pada}`;
+    $('nak-sub').textContent = 'Computed from an approximate Moon position for your birth date and time (IST assumed).';
+    show('nak-result');
+  });
+
+});
+</script>
+</body>
+</html>

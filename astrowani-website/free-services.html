@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Astrology Services — Astrowani</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="scroll-progress"></div>
+
+<div id="site-nav">
+  <div class="nav-inner">
+    <a href="index.html" style="display:flex; align-items:center; gap:10px;">
+      <img class="logo-mark" src="assets/logo.png" alt="Astrowani">
+      <span class="serif" style="font-size:22px; font-weight:400; color:var(--cream);">Astrowani</span>
+    </a>
+    <div class="nav-links">
+      <a href="blog.html" class="nav-link i18n-t">Blog</a>
+      <a href="index.html#wanishop" class="nav-link i18n-t">Wani Shop</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="nav-login i18n-t">Login</a>
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="btn-gold magnetic i18n-t" style="font-size:14px; padding:11px 22px; border-radius:999px;">Sign up</a>
+    </div>
+  </div>
+</div>
+
+<div class="page-header">
+  <div class="crumb"><a href="index.html" style="color:var(--gold);">Home</a> · Free Services</div>
+  <h1 class="serif">Free astrology services</h1>
+  <p>In the app, these services are offered at just ₹1 — on the website, try the quick versions below for free.</p>
+</div>
+
+<div class="band">
+  <div class="block">
+
+    <!-- ===== Free Kundli ===== -->
+    <div class="calc-card" id="kundli">
+      <div class="calc-card-title">Free Kundli (Basic Birth Chart Summary)</div>
+      <div class="calc-card-desc">Enter your birth details for an instant summary — Sun sign, Moon sign, Nakshatra and Ascendant.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Date of birth</label><input type="date" id="kundli-dob"></div>
+        <div class="calc-field"><label>Time of birth</label><input type="time" id="kundli-time" value="12:00"></div>
+        <div class="calc-field"><label>Birth city</label><select id="kundli-city"></select></div>
+      </div>
+      <button class="calc-btn" id="kundli-btn">Generate my free Kundli summary</button>
+      <div class="calc-result" id="kundli-result">
+        <div class="panchang-grid" id="kundli-grid" style="margin-top:4px; margin-bottom:0;"></div>
+      </div>
+      <div class="calc-disclaimer">A quick summary, not a full birth chart with houses and planetary strengths — for that, <a href="consult.html?mode=chat" style="color:var(--maroon); font-weight:700;">talk to a verified astrologer</a> in the app.</div>
+    </div>
+
+    <!-- ===== Free Horoscope Matching ===== -->
+    <div class="calc-card" id="matching">
+      <div class="calc-card-title">Free Horoscope Matching (Simplified)</div>
+      <div class="calc-card-desc">A quick element-based compatibility check between two Moon signs — not the full 36-point Ashtakoot Milan used for marriage matching.</div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Partner A — date of birth</label><input type="date" id="match-dob1"></div>
+        <div class="calc-field"><label>Partner A — time of birth</label><input type="time" id="match-time1" value="12:00"></div>
+      </div>
+      <div class="calc-form-row">
+        <div class="calc-field"><label>Partner B — date of birth</label><input type="date" id="match-dob2"></div>
+        <div class="calc-field"><label>Partner B — time of birth</label><input type="time" id="match-time2" value="12:00"></div>
+      </div>
+      <button class="calc-btn" id="match-btn">Check compatibility</button>
+      <div class="calc-result" id="match-result">
+        <div class="calc-result-big" id="match-value"></div>
+        <div class="calc-result-sub" id="match-sub"></div>
+      </div>
+      <div class="calc-disclaimer">For a full 36-point Guna Milan before marriage, <a href="marriage.html" style="color:var(--maroon); font-weight:700;">see our Marriage Matching service</a> or talk to an astrologer.</div>
+    </div>
+
+    <!-- ===== Free Daily Horoscope ===== -->
+    <div class="svc-tile" id="daily" style="min-height:0; margin-bottom:24px;">
+      <div class="svc-tile-top" style="max-width:100%;">
+        <div class="svc-title">Free Daily Horoscope</div>
+        <div class="svc-desc">Your reading for today, for every zodiac sign.</div>
+        <a href="horoscope.html?period=daily" class="svc-arrow" style="text-decoration:none;">&rarr;</a>
+      </div>
+    </div>
+
+    <!-- ===== Free Numerology Report ===== -->
+    <div class="svc-tile" id="numerology" style="min-height:0; margin-bottom:24px;">
+      <div class="svc-tile-top" style="max-width:100%;">
+        <div class="svc-title">Free Numerology Report</div>
+        <div class="svc-desc">Your Life Path Number and what it means, from your date of birth.</div>
+        <a href="calculators.html#numerology" class="svc-arrow" style="text-decoration:none;">&rarr;</a>
+      </div>
+    </div>
+
+    <!-- ===== Free Palmistry Reading ===== -->
+    <div class="calc-card" id="palmistry" style="margin-bottom:0;">
+      <div class="calc-card-title">Free Palmistry Reading</div>
+      <div class="calc-card-desc">Palm reading needs a real astrologer to actually look at your palm — this isn't something a calculator can do honestly. Start a free-first-minute chat with a palmistry specialist and share a photo of your palm there.</div>
+      <a href="consult.html?mode=chat" class="calc-btn" style="display:inline-block; text-decoration:none;">Chat with a palmistry astrologer</a>
+    </div>
+
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-top">
+    <div style="flex:1 1 260px; min-width:220px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <img src="assets/logo.png" alt="Astrowani" style="width:36px; height:36px; border-radius:50%;">
+        <span class="serif" style="font-size:19px; color:var(--cream);">Astrowani</span>
+      </div>
+      <div style="font-size:13.5px; line-height:1.7; max-width:280px;">India's astrology platform for real-time guidance from verified astrologers — chat, call and video, anytime.</div>
+    </div>
+    <div>
+      <div class="footer-col-title">Company</div>
+      <div class="footer-links"><a href="about.html">About us</a><a href="https://astrowani.com/astrologer-ragistration/">Astrologer registration</a><a href="blog.html">Blog</a><a href="book-call.html">Book a call</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Services</div>
+      <div class="footer-links"><a href="astrologers.html">All Astrologers</a><a href="index.html#services">Chat with astrologer</a><a href="marriage.html">Marriage matching</a><a href="courses.html">Courses</a><a href="index.html#wanishop">Wani Shop</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Legal</div>
+      <div class="footer-links"><a href="https://astrowani.com/privacy-policy/">Privacy policy</a><a href="https://astrowani.com/terms-and-conditions/">Terms &amp; conditions</a><a href="https://astrowani.com/refund-cancellation/">Refund policy</a><a href="https://astrowani.com/delete-your-account/">Delete account</a></div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div>&copy; 2026 Astrowani. All rights reserved.</div>
+    <div>Made with care in India</div>
+  </div>
+</footer>
+
+<script src="astro-engine.js"></script>
+<script src="astrologers-data.js"></script>
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (id) => document.getElementById(id);
+  const citySel = $('kundli-city');
+  citySel.innerHTML = ASTRO_CITIES.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
+
+  $('kundli-btn').addEventListener('click', () => {
+    const dob = $('kundli-dob').value, time = $('kundli-time').value || '12:00';
+    if (!dob) return;
+    const city = ASTRO_CITIES.find((c) => c.name === citySel.value) || ASTRO_CITIES[0];
+    const [hh, mm] = time.split(':').map(Number);
+    const d = new Date(dob + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+    const sun = astroSunSign(d.getMonth() + 1, d.getDate());
+    const rashi = astroRashi(astroMoonLongitude(astroJulianDay(d)), d.getFullYear());
+    const nak = astroNakshatra(d, d.getFullYear());
+    const asc = astroAscendant(new Date(dob + 'T00:00:00'), time, city.lat, city.lon, 5.5);
+    $('kundli-grid').innerHTML = [
+      ['Sun Sign', `${sun.symbol} ${sun.name}`],
+      ['Moon Sign (Rashi)', rashi.name],
+      ['Nakshatra', `${nak.name}, Pada ${nak.pada}`],
+      ['Ascendant (Lagna)', asc.siderealSign],
+    ].map(([label, value]) => `<div class="panchang-stat"><div class="panchang-stat-label">${label}</div><div class="panchang-stat-value">${value}</div></div>`).join('');
+    $('kundli-result').classList.add('is-visible');
+  });
+
+  const ASTRO_ELEMENT_SCORE = { 'Fire-Fire': 70, 'Fire-Earth': 45, 'Fire-Air': 85, 'Fire-Water': 40, 'Earth-Earth': 75, 'Earth-Air': 42, 'Earth-Water': 88, 'Air-Air': 72, 'Air-Water': 48, 'Water-Water': 80 };
+  function elementScore(e1, e2) {
+    const key1 = `${e1}-${e2}`, key2 = `${e2}-${e1}`;
+    return ASTRO_ELEMENT_SCORE[key1] ?? ASTRO_ELEMENT_SCORE[key2] ?? 60;
+  }
+  $('match-btn').addEventListener('click', () => {
+    const dob1 = $('match-dob1').value, dob2 = $('match-dob2').value;
+    const t1 = $('match-time1').value || '12:00', t2 = $('match-time2').value || '12:00';
+    if (!dob1 || !dob2) return;
+    const [h1, m1] = t1.split(':').map(Number), [h2, m2] = t2.split(':').map(Number);
+    const d1 = new Date(dob1 + `T${String(h1).padStart(2, '0')}:${String(m1).padStart(2, '0')}:00`);
+    const d2 = new Date(dob2 + `T${String(h2).padStart(2, '0')}:${String(m2).padStart(2, '0')}:00`);
+    const r1 = astroRashi(astroMoonLongitude(astroJulianDay(d1)), d1.getFullYear());
+    const r2 = astroRashi(astroMoonLongitude(astroJulianDay(d2)), d2.getFullYear());
+    const elements = ['Fire', 'Earth', 'Air', 'Water', 'Fire', 'Earth', 'Air', 'Water', 'Fire', 'Earth', 'Air', 'Water'];
+    const e1 = elements[r1.index], e2 = elements[r2.index];
+    const score = elementScore(e1, e2);
+    $('match-value').textContent = `${score}% compatible`;
+    $('match-sub').textContent = `${r1.name} (${e1}) & ${r2.name} (${e2})`;
+    $('match-result').classList.add('is-visible');
+  });
+});
+</script>
+</body>
+</html>

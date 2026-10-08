@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astrowani — Concept Hero</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --maroon: #592A19;
+    --cream: #F4D8BC;
+    --gold: #FFD700;
+    --gold-deep: color-mix(in srgb, var(--gold) 62%, var(--maroon) 38%);
+
+    /* ---- reversed tone: dark maroon base, cream ink, gold pops harder ---- */
+    --ink: var(--cream);
+    --ink-soft: color-mix(in srgb, var(--cream) 60%, var(--maroon) 40%);
+    --page-bg: var(--maroon);
+    --paper: color-mix(in srgb, var(--maroon) 78%, var(--cream) 22%);
+    --shadow: color-mix(in srgb, black 45%, transparent);
+    --ring: color-mix(in srgb, var(--cream) 16%, transparent);
+    --hairline: color-mix(in srgb, var(--cream) 14%, transparent);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Manrope', sans-serif; background: var(--page-bg); color: var(--ink); overflow-x: hidden; }
+  .serif { font-family: 'Marcellus', serif; }
+  img { max-width: 100%; display: block; }
+  a { text-decoration: none; color: inherit; }
+
+  /* ---------- floating pill nav ---------- */
+  .nav-wrap { position: sticky; top: 18px; z-index: 50; display: flex; justify-content: center; padding: 0 20px; }
+  .nav-pill {
+    width: 100%; max-width: 980px; background: var(--paper);
+    border-radius: 999px; padding: 10px 14px 10px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    box-shadow: 0 18px 40px -20px var(--shadow);
+    border: 1px solid var(--hairline);
+  }
+  .nav-brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; color: var(--ink); }
+  .nav-brand img { width: 30px; height: 30px; border-radius: 50%; }
+  .nav-links { display: flex; align-items: center; gap: 28px; font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+  .nav-links a:hover { color: var(--gold); }
+  .nav-cta { background: var(--gold); color: var(--maroon); font-weight: 700; font-size: 13.5px; padding: 11px 22px; border-radius: 999px; }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 70px 24px 0; text-align: center; overflow: hidden; }
+
+  /* concentric rings — flat outlines, no blur, no gradient */
+  .rings { position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%); z-index: 0; pointer-events: none; }
+  .ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px solid var(--ring); transform: translate(-50%, -50%); }
+
+  .eyebrow-pill {
+    position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px;
+    background: var(--paper); border: 1px solid var(--hairline); color: var(--ink);
+    padding: 8px 18px; border-radius: 999px; font-size: 13px; font-weight: 700; margin-bottom: 26px;
+    box-shadow: 0 8px 20px -12px var(--shadow);
+  }
+  .eyebrow-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
+
+  .hero h1 { position: relative; z-index: 1; margin: 0 auto 18px; font-weight: 400; font-size: 52px; line-height: 1.18; max-width: 760px; color: var(--ink); }
+  .hero p { position: relative; z-index: 1; margin: 0 auto 34px; max-width: 540px; font-size: 16.5px; line-height: 1.7; color: var(--ink-soft); }
+
+  .hero-cta {
+    position: relative; z-index: 1; display: inline-block; background: var(--gold); color: var(--maroon);
+    font-weight: 800; font-size: 16px; padding: 16px 34px; border-radius: 999px;
+    box-shadow: 0 16px 30px -12px color-mix(in srgb, var(--gold-deep) 65%, transparent);
+    margin-bottom: 56px;
+  }
+
+  /* ---------- mascot stage ---------- */
+  .stage { position: relative; max-width: 980px; margin: 0 auto; height: 480px; }
+
+  /* phone mockup — mascot stands inside it, frame runs off the bottom on purpose */
+  .phone-frame {
+    position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
+    width: 320px; height: 640px; z-index: 1;
+    background: var(--paper); border: 10px solid var(--cream); border-radius: 52px;
+    box-shadow: 0 30px 60px -24px var(--shadow);
+  }
+  .phone-frame::before {
+    content: ''; position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+    width: 74px; height: 16px; border-radius: 999px; background: var(--page-bg);
+  }
+
+  .mascot-wrap { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 2; }
+  .mascot-wrap img { height: 340px; width: auto; }
+
+  @media (max-width: 760px) {
+    .hero h1 { font-size: 34px; }
+    .nav-links { display: none; }
+    .stage { height: auto; }
+    .mascot-wrap { position: static; transform: none; display: flex; justify-content: center; margin: 16px 0; }
+    .phone-frame { width: 240px; height: 480px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="nav-wrap">
+  <div class="nav-pill">
+    <div class="nav-brand"><img src="assets/logo.png" alt="Astrowani"><span class="serif">Astrowani</span></div>
+    <div class="nav-links">
+      <a href="#">Astrologers</a>
+      <a href="#">Services</a>
+      <a href="#">Horoscope</a>
+      <a href="#">Reviews</a>
+    </div>
+    <a href="#" class="nav-cta">Get Started</a>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="rings" id="rings"></div>
+
+  <div class="eyebrow-pill"><span class="dot"></span>India's Trusted Astrology Platform</div>
+
+  <h1 class="serif">Find Clarity, Talk to<br>Real Astrologers</h1>
+  <p>Chat, call or video with verified astrologers for love, career and family guidance. Your first few minutes are always on us.</p>
+  <a href="#" class="hero-cta">Talk to an Astrologer</a>
+
+  <div class="stage">
+    <div class="phone-frame"></div>
+
+    <div class="mascot-wrap">
+      <img src="assets/mascot.png" alt="Astrowani guide mascot">
+    </div>
+  </div>
+</div>
+
+<script>
+  // flat concentric rings behind the hero — no gradients, just line circles at falling opacity
+  const ringsEl = document.getElementById('rings');
+  const sizes = [260, 360, 460, 560, 660];
+  sizes.forEach((s, i) => {
+    const r = document.createElement('div');
+    r.className = 'ring';
+    r.style.width = s + 'px';
+    r.style.height = s + 'px';
+    r.style.opacity = (1 - i * 0.16).toFixed(2);
+    ringsEl.appendChild(r);
+  });
+</script>
+
+</body>
+</html>

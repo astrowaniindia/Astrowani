@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily, Weekly &amp; Monthly Horoscope — Astrowani</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="scroll-progress"></div>
+
+<div id="site-nav">
+  <div class="nav-inner">
+    <a href="index.html" style="display:flex; align-items:center; gap:10px;">
+      <img class="logo-mark" src="assets/logo.png" alt="Astrowani">
+      <span class="serif" style="font-size:22px; font-weight:400; color:var(--cream);">Astrowani</span>
+    </a>
+    <div class="nav-links">
+      <a href="blog.html" class="nav-link i18n-t">Blog</a>
+      <a href="index.html#wanishop" class="nav-link i18n-t">Wani Shop</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="nav-login i18n-t">Login</a>
+      <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="btn-gold magnetic i18n-t" style="font-size:14px; padding:11px 22px; border-radius:999px;">Sign up</a>
+    </div>
+  </div>
+</div>
+
+<div class="page-header">
+  <div class="crumb"><a href="index.html" style="color:var(--gold);">Home</a> · Horoscope</div>
+  <h1 class="serif" id="horo-title">Daily Horoscope</h1>
+  <p id="horo-desc">Pick your zodiac sign to see your reading.</p>
+</div>
+
+<div class="band">
+  <div class="block">
+
+    <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:40px;" id="period-tabs">
+      <a href="horoscope.html?period=yesterday" class="consult-mode-pill" data-period="yesterday">Yesterday</a>
+      <a href="horoscope.html?period=daily" class="consult-mode-pill" data-period="daily">Today</a>
+      <a href="horoscope.html?period=tomorrow" class="consult-mode-pill" data-period="tomorrow">Tomorrow</a>
+      <a href="horoscope.html?period=weekly" class="consult-mode-pill" data-period="weekly">Weekly</a>
+      <a href="horoscope.html?period=monthly" class="consult-mode-pill" data-period="monthly">Monthly</a>
+      <a href="horoscope.html?period=yearly" class="consult-mode-pill" data-period="yearly">Yearly</a>
+    </div>
+
+    <div class="zodiac-row" id="horo-zodiac-row"></div>
+
+    <div class="horoscope-card" id="horo-card">
+      <div class="horoscope-sign" id="horo-sign-icon">♈</div>
+      <div style="flex:1 1 260px; min-width:220px;">
+        <div class="serif" style="font-size:24px; color:var(--cream); margin-bottom:6px;" id="horo-sign-name">Aries</div>
+        <div style="font-size:14px; line-height:1.75; color:var(--cream-muted);" id="horo-sentence"></div>
+      </div>
+      <div class="horoscope-meters">
+        <div><div class="meter-label">Love</div><div class="meter-track"><div class="score-bar-fill" id="meter-love" style="width:0%; height:6px;"></div></div></div>
+        <div><div class="meter-label">Career</div><div class="meter-track"><div class="score-bar-fill" id="meter-career" style="width:0%; height:6px;"></div></div></div>
+        <div><div class="meter-label">Money</div><div class="meter-track"><div class="score-bar-fill" id="meter-money" style="width:0%; height:6px;"></div></div></div>
+        <div><div class="meter-label">Health</div><div class="meter-track"><div class="score-bar-fill" id="meter-health" style="width:0%; height:6px;"></div></div></div>
+      </div>
+    </div>
+
+    <div class="calc-disclaimer" style="text-align:center; margin-top:24px;">General guidance generated for each sign and date — not a substitute for a personal reading. For guidance based on your own birth chart, <a href="consult.html?mode=chat" style="color:var(--maroon); font-weight:700;">talk to a verified astrologer</a>.</div>
+
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-top">
+    <div style="flex:1 1 260px; min-width:220px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <img src="assets/logo.png" alt="Astrowani" style="width:36px; height:36px; border-radius:50%;">
+        <span class="serif" style="font-size:19px; color:var(--cream);">Astrowani</span>
+      </div>
+      <div style="font-size:13.5px; line-height:1.7; max-width:280px;">India's astrology platform for real-time guidance from verified astrologers — chat, call and video, anytime.</div>
+    </div>
+    <div>
+      <div class="footer-col-title">Company</div>
+      <div class="footer-links"><a href="about.html">About us</a><a href="https://astrowani.com/astrologer-ragistration/">Astrologer registration</a><a href="blog.html">Blog</a><a href="book-call.html">Book a call</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Services</div>
+      <div class="footer-links"><a href="astrologers.html">All Astrologers</a><a href="index.html#services">Chat with astrologer</a><a href="marriage.html">Marriage matching</a><a href="courses.html">Courses</a><a href="index.html#wanishop">Wani Shop</a></div>
+    </div>
+    <div>
+      <div class="footer-col-title">Legal</div>
+      <div class="footer-links"><a href="https://astrowani.com/privacy-policy/">Privacy policy</a><a href="https://astrowani.com/terms-and-conditions/">Terms &amp; conditions</a><a href="https://astrowani.com/refund-cancellation/">Refund policy</a><a href="https://astrowani.com/delete-your-account/">Delete account</a></div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div>&copy; 2026 Astrowani. All rights reserved.</div>
+    <div>Made with care in India</div>
+  </div>
+</footer>
+
+<script src="astro-engine.js"></script>
+<script src="astrologers-data.js"></script>
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const period = ['yesterday', 'daily', 'tomorrow', 'weekly', 'monthly', 'yearly'].includes(params.get('period')) ? params.get('period') : 'daily';
+  let signName = params.get('sign') || 'Aries';
+
+  const PERIOD_LABELS = { yesterday: "Yesterday's Horoscope", daily: 'Daily Horoscope', tomorrow: "Tomorrow's Horoscope", weekly: 'Weekly Horoscope', monthly: 'Monthly Horoscope', yearly: 'Yearly Horoscope' };
+  document.getElementById('horo-title').textContent = PERIOD_LABELS[period];
+  document.title = PERIOD_LABELS[period] + ' — Astrowani';
+  document.querySelectorAll('.consult-mode-pill').forEach((p) => p.classList.toggle('active', p.getAttribute('data-period') === period));
+
+  document.getElementById('horo-zodiac-row').innerHTML = ASTRO_ZODIAC.map((z) =>
+    `<div class="z-chip" data-sign="${z.name}" style="cursor:pointer;"><div class="z-chip-inner">${z.symbol}</div><div class="z-name">${z.name}</div></div>`
+  ).join('');
+
+  function referenceDate() {
+    const d = new Date();
+    if (period === 'yesterday') d.setDate(d.getDate() - 1);
+    if (period === 'tomorrow') d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  function render() {
+    const z = ASTRO_ZODIAC.find((x) => x.name === signName) || ASTRO_ZODIAC[0];
+    const { sentence, meters } = astroHoroscopeReading(z.name, referenceDate(), period);
+    document.getElementById('horo-sign-icon').textContent = z.symbol;
+    document.getElementById('horo-sign-name').textContent = `${z.name} · ${z.element} sign`;
+    document.getElementById('horo-sentence').textContent = sentence;
+    document.getElementById('meter-love').style.width = meters.love + '%';
+    document.getElementById('meter-career').style.width = meters.career + '%';
+    document.getElementById('meter-money').style.width = meters.money + '%';
+    document.getElementById('meter-health').style.width = meters.health + '%';
+    document.querySelectorAll('#horo-zodiac-row .z-chip').forEach((c) => {
+      c.style.outline = c.getAttribute('data-sign') === z.name ? '2px solid var(--gold)' : 'none';
+      c.style.borderRadius = '18px';
+    });
+  }
+
+  document.getElementById('horo-zodiac-row').addEventListener('click', (e) => {
+    const chip = e.target.closest('.z-chip'); if (!chip) return;
+    signName = chip.getAttribute('data-sign');
+    render();
+  });
+
+  render();
+});
+</script>
+</body>
+</html>
