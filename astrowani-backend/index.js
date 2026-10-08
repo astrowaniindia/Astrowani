@@ -991,6 +991,10 @@ require('./src/sentryRoutes')(app);
 // which is exported there, so it registers after it.
 require('./src/qrRoutes')(app);
 require('./src/qrTrackingRoutes')(app); // public: GET /q/:source (scan log + redirect), POST /api/acquisition/first-open
+// Every acquisition channel, not just QR posters (/api/admin/acquisition/*): both Google
+// Ads campaigns, organic Play, posters and unknown, with activation and revenue per
+// signup. Separate from qrRoutes above, which is scoped to `qr_%` by design.
+require('./src/acquisitionRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);

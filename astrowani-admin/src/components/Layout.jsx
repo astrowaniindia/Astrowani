@@ -122,6 +122,7 @@ const ALL_GROUPS = [
     workspace: 'content',
     title: 'Customer Trackers',
     items: [
+      { to: '/acquisition', label: 'Acquisition (All Channels)' },
       { to: '/qr-codes', label: 'QR Codes (Offline)' },
       { to: '/audience', label: 'Audience Targeting' },
     ],
