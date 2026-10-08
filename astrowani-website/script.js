@@ -116,7 +116,22 @@ function injectNavDropdowns() {
   // Calculators, Panchang, then whatever's already in the nav (Blog, Wani Shop)
   container.insertAdjacentHTML('afterbegin', html);
 
-  // touch/click fallback — hover alone doesn't work on tap devices
+  // mouse: open on enter, close on leave only after a short grace period — see the CSS
+  // comment above .nav-item-drop for why a bare CSS :hover rule wasn't reliable enough
+  const CLOSE_GRACE_MS = 300;
+  container.querySelectorAll('.nav-item-drop').forEach((item) => {
+    let closeTimer = null;
+    item.addEventListener('mouseenter', () => {
+      if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+      container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => { if (o !== item) o.classList.remove('nav-drop-open'); });
+      item.classList.add('nav-drop-open');
+    });
+    item.addEventListener('mouseleave', () => {
+      closeTimer = setTimeout(() => { item.classList.remove('nav-drop-open'); closeTimer = null; }, CLOSE_GRACE_MS);
+    });
+  });
+
+  // touch/click fallback — tap devices have no hover at all
   container.querySelectorAll('.nav-item-drop > .nav-drop-trigger').forEach((trigger) => {
     trigger.addEventListener('click', (e) => {
       if (window.matchMedia('(hover: hover)').matches) return;

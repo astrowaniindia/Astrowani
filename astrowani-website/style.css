@@ -192,19 +192,18 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 .nav-link::after { content: ''; position: absolute; left: 0; bottom: -3px; width: 0; height: 2px; background: var(--gold); transition: width .3s cubic-bezier(.16,.84,.44,1); }
 .nav-link:hover::after { width: 100%; }
 
-/* ---------- nav dropdown menus (hover-triggered, used by both nav skins) ---------- */
+/* ---------- nav dropdown menus (JS-driven open/close, used by both nav skins) ----------
+   Deliberately NOT pure CSS :hover. Even with the padding-bridge fix below (no literal gap
+   left unhoverable), real mouse movement still isn't perfectly vertical — a fast or slightly
+   diagonal move from the trigger to an item can clip the trigger's own edge for a frame and
+   drop :hover right as the menu would otherwise be reached. injectNavDropdowns() below opens
+   on mouseenter and closes on mouseleave only after a short grace timer, so a momentary dip
+   out of either element's box doesn't close the menu — only genuinely leaving the whole
+   trigger+panel area for that long does. */
 .nav-item-drop { position: relative; display: inline-flex; align-items: center; }
 .nav-item-drop > .nav-drop-trigger { display: inline-flex; align-items: center; gap: 4px; cursor: default; }
 .nav-item-drop .nav-caret { width: 9px; height: 9px; flex: 0 0 auto; transition: transform .2s ease; }
-.nav-item-drop:hover .nav-caret, .nav-item-drop.nav-drop-open .nav-caret { transform: rotate(180deg); }
-/* .nav-dropdown is the HOVERABLE hit-box: it starts flush against the trigger (top:100%,
-   no gap) and uses padding-top to push its visible content down instead of a margin/top
-   offset. A gap there — the previous "top: calc(100% + 16px)" — meant the mouse crossed a
-   dead zone with no hoverable element under it while moving from the trigger down to the
-   panel, which dropped :hover and closed the menu before the pointer ever got there. The
-   padding keeps that same visual spacing while staying part of the hoverable box the whole
-   way down. The actual visible panel (background/border/shadow) lives on the nested
-   .nav-dropdown-panel so the invisible padding area never paints anything. */
+.nav-item-drop.nav-drop-open .nav-caret { transform: rotate(180deg); }
 .nav-dropdown {
   position: absolute; top: 100%; left: 50%; transform: translateX(-50%) translateY(6px);
   padding-top: 16px;
@@ -212,7 +211,6 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
   transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
   z-index: 60;
 }
-.nav-item-drop:hover .nav-dropdown,
 .nav-item-drop.nav-drop-open .nav-dropdown {
   opacity: 1; visibility: visible; pointer-events: auto; transform: translateX(-50%) translateY(0);
 }
