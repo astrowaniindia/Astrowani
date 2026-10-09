@@ -187,6 +187,23 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 .nav-login { font-size: 14px; font-weight: 700; color: var(--cream); padding: 10px 6px; white-space: nowrap; }
 #site-nav .nav-inner > a:first-child { flex: 0 0 auto; }
 
+/* floating nav (homepage only): off-screen above the viewport until the hero's own pill
+   nav scrolls out of its sticky parent (see script.js onScroll), then slides down; reverses
+   on the way back up. Same maroon/cream styling as #site-nav, just fixed + animated. */
+#site-nav-floating {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 70;
+  background: var(--maroon); border-bottom: 1px solid color-mix(in srgb, var(--gold) 25%, transparent);
+  box-shadow: 0 16px 30px -18px color-mix(in srgb, var(--maroon) 85%, transparent);
+  transform: translateY(-100%);
+  transition: transform .45s cubic-bezier(.16,.84,.44,1);
+  pointer-events: none;
+}
+#site-nav-floating.nav-floating-visible { transform: translateY(0); pointer-events: auto; }
+#site-nav-floating .nav-inner { max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+#site-nav-floating .nav-inner > a:first-child { flex: 0 0 auto; }
+#site-nav-floating .logo-mark { width: 36px; height: 36px; border-radius: 50%; }
+@media (prefers-reduced-motion: reduce) { #site-nav-floating { transition: none; } }
+
 /* nav underline */
 .nav-link { position: relative; padding-bottom: 3px; }
 .nav-link::after { content: ''; position: absolute; left: 0; bottom: -3px; width: 0; height: 2px; background: var(--gold); transition: width .3s cubic-bezier(.16,.84,.44,1); }

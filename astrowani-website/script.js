@@ -95,57 +95,69 @@ const ASTROWANI_NAV_MENUS = [
 ];
 
 function injectNavDropdowns() {
-  const container = document.querySelector('.ch-nav-links') || document.querySelector('.nav-links');
-  if (!container) return;
-  const linkClass = container.classList.contains('ch-nav-links') ? '' : 'nav-link';
-  const html = ASTROWANI_NAV_MENUS.map((menu) => {
-    const wideClass = menu.wide ? ` nav-dropdown-${menu.wide}` : '';
-    const colsClass = menu.cols >= 3 ? ' nav-dropdown-cols-3' : '';
-    const itemsHtml = menu.items.map(([label, href]) =>
-      `<a class="nav-dropdown-item" href="${href}"><span class="i18n-t">${label}</span>${ASTROWANI_NAV_ARROW}</a>`
-    ).join('');
-    const itemsWrap = menu.cols > 1
-      ? `<div class="nav-dropdown-cols${colsClass}">${itemsHtml}</div>`
-      : itemsHtml;
-    return `<div class="nav-item-drop">
-      <span class="nav-drop-trigger ${linkClass}"><span class="i18n-t">${menu.label}</span>${ASTROWANI_NAV_CARET}</span>
-      <div class="nav-dropdown${wideClass}"><div class="nav-dropdown-panel">${itemsWrap}</div></div>
-    </div>`;
-  }).join('');
-  // prepended, not appended — final order is Consultations, Horoscope, Free Services,
-  // Calculators, Panchang, then whatever's already in the nav (Blog, Wani Shop)
-  container.insertAdjacentHTML('afterbegin', html);
+  // index.html now carries two nav bars (the hero's .ch-nav-links pill, plus the fixed
+  // .nav-links floating nav that slides in once the pill scrolls away) — both need the
+  // same mega-menu items and handlers, so this runs once per container found.
+  const containers = [
+    document.querySelector('.ch-nav-links'),
+    document.querySelector('.nav-links'),
+  ].filter(Boolean);
+  if (!containers.length) return;
 
-  // mouse: open on enter, close on leave only after a short grace period — see the CSS
-  // comment above .nav-item-drop for why a bare CSS :hover rule wasn't reliable enough
-  const CLOSE_GRACE_MS = 300;
-  container.querySelectorAll('.nav-item-drop').forEach((item) => {
-    let closeTimer = null;
-    item.addEventListener('mouseenter', () => {
-      if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
-      container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => { if (o !== item) o.classList.remove('nav-drop-open'); });
-      item.classList.add('nav-drop-open');
+  containers.forEach((container) => {
+    const linkClass = container.classList.contains('ch-nav-links') ? '' : 'nav-link';
+    const html = ASTROWANI_NAV_MENUS.map((menu) => {
+      const wideClass = menu.wide ? ` nav-dropdown-${menu.wide}` : '';
+      const colsClass = menu.cols >= 3 ? ' nav-dropdown-cols-3' : '';
+      const itemsHtml = menu.items.map(([label, href]) =>
+        `<a class="nav-dropdown-item" href="${href}"><span class="i18n-t">${label}</span>${ASTROWANI_NAV_ARROW}</a>`
+      ).join('');
+      const itemsWrap = menu.cols > 1
+        ? `<div class="nav-dropdown-cols${colsClass}">${itemsHtml}</div>`
+        : itemsHtml;
+      return `<div class="nav-item-drop">
+        <span class="nav-drop-trigger ${linkClass}"><span class="i18n-t">${menu.label}</span>${ASTROWANI_NAV_CARET}</span>
+        <div class="nav-dropdown${wideClass}"><div class="nav-dropdown-panel">${itemsWrap}</div></div>
+      </div>`;
+    }).join('');
+    // prepended, not appended — final order is Consultations, Horoscope, Free Services,
+    // Calculators, Panchang, then whatever's already in the nav (Blog, Wani Shop)
+    container.insertAdjacentHTML('afterbegin', html);
+
+    // mouse: open on enter, close on leave only after a short grace period — see the CSS
+    // comment above .nav-item-drop for why a bare CSS :hover rule wasn't reliable enough
+    const CLOSE_GRACE_MS = 300;
+    container.querySelectorAll('.nav-item-drop').forEach((item) => {
+      let closeTimer = null;
+      item.addEventListener('mouseenter', () => {
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => { if (o !== item) o.classList.remove('nav-drop-open'); });
+        item.classList.add('nav-drop-open');
+      });
+      item.addEventListener('mouseleave', () => {
+        closeTimer = setTimeout(() => { item.classList.remove('nav-drop-open'); closeTimer = null; }, CLOSE_GRACE_MS);
+      });
     });
-    item.addEventListener('mouseleave', () => {
-      closeTimer = setTimeout(() => { item.classList.remove('nav-drop-open'); closeTimer = null; }, CLOSE_GRACE_MS);
+
+    // touch/click fallback — tap devices have no hover at all
+    container.querySelectorAll('.nav-item-drop > .nav-drop-trigger').forEach((trigger) => {
+      trigger.addEventListener('click', (e) => {
+        if (window.matchMedia('(hover: hover)').matches) return;
+        e.preventDefault();
+        const item = trigger.closest('.nav-item-drop');
+        const wasOpen = item.classList.contains('nav-drop-open');
+        container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => o.classList.remove('nav-drop-open'));
+        if (!wasOpen) item.classList.add('nav-drop-open');
+      });
     });
   });
 
-  // touch/click fallback — tap devices have no hover at all
-  container.querySelectorAll('.nav-item-drop > .nav-drop-trigger').forEach((trigger) => {
-    trigger.addEventListener('click', (e) => {
-      if (window.matchMedia('(hover: hover)').matches) return;
-      e.preventDefault();
-      const item = trigger.closest('.nav-item-drop');
-      const wasOpen = item.classList.contains('nav-drop-open');
-      container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => o.classList.remove('nav-drop-open'));
-      if (!wasOpen) item.classList.add('nav-drop-open');
-    });
-  });
   document.addEventListener('click', (e) => {
-    if (!container.contains(e.target)) {
-      container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => o.classList.remove('nav-drop-open'));
-    }
+    containers.forEach((container) => {
+      if (!container.contains(e.target)) {
+        container.querySelectorAll('.nav-item-drop.nav-drop-open').forEach((o) => o.classList.remove('nav-drop-open'));
+      }
+    });
   });
 }
 
@@ -612,6 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ---------- sticky nav shrink + top scroll progress ----------
   const nav = document.getElementById('site-nav');
+  const navFloating = document.getElementById('site-nav-floating');
+  const chWrap = document.querySelector('.ch-wrap');
   const progress = document.getElementById('scroll-progress');
   let ticking = false;
   const onScroll = () => {
@@ -620,6 +634,12 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(() => {
       const y = window.scrollY || document.documentElement.scrollTop;
       if (nav) nav.classList.toggle('nav-scrolled', y > 40);
+      if (navFloating) {
+        // shows exactly when the hero's own pill nav has scrolled out of view (its sticky
+        // parent, .ch-wrap, has left the viewport) — a seamless handoff, not a magic offset
+        const show = chWrap ? chWrap.getBoundingClientRect().bottom <= 0 : y > 80;
+        navFloating.classList.toggle('nav-floating-visible', show);
+      }
       if (progress) {
         const max = document.documentElement.scrollHeight - window.innerHeight;
         progress.style.width = (max > 0 ? Math.min(y / max, 1) * 100 : 0) + '%';
