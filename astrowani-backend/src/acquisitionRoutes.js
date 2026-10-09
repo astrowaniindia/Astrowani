@@ -236,4 +236,116 @@ module.exports = function registerAcquisitionRoutes(app) {
 
     res.json({ success: true, days, source: wanted, data, truncated: ct });
   }));
+
+  // ── Per-customer activity timeline: what one signup actually did ──────────
+  app.get('/api/admin/acquisition/customers/:id/activity', requireAdmin, h(async (req, res) => {
+    const customerId = String(req.params.id || '');
+
+    const [customerRes, callsRes, chatsRes, sessionsRes, rechargesRes, ordersRes] = await Promise.all([
+      db.from('customers').select('id, name, mobile, created_at, acquisition_source').eq('id', customerId).maybeSingle(),
+      db.from('call_requests').select('id, astrologer_id, status, created_at, responded_at').eq('customer_id', customerId),
+      db.from('chat_requests').select('id, receiver_id, status, created_at, responded_at').eq('caller_id', customerId),
+      db.from('chat_sessions').select('id, vendor_id, started_at, ended_at').eq('caller_id', customerId),
+      db.from('wallet_recharges').select('id, amount, status, created_at, paid_at').eq('customer_id', customerId),
+      db.from('orders').select('id, item_title, grand_total, status, payment_status, created_at').eq('customer_id', customerId),
+    ]);
+
+    if (customerRes.error) throw customerRes.error;
+    if (!customerRes.data) return res.status(404).json({ success: false, error: 'Customer not found' });
+
+    const astroIds = new Set();
+    for (const r of callsRes.data || []) if (r.astrologer_id) astroIds.add(r.astrologer_id);
+    for (const r of sessionsRes.data || []) if (r.vendor_id) astroIds.add(r.vendor_id);
+    const astroNames = new Map();
+    if (astroIds.size) {
+      const { data: astros } = await db.from('astrologers').select('id, first_name, last_name').in('id', [...astroIds]);
+      for (const a of astros || []) {
+        astroNames.set(a.id, [a.first_name, a.last_name].filter(Boolean).join(' ') || null);
+      }
+    }
+    const astroLabel = (id) => (id ? astroNames.get(id) || `astrologer ${String(id).slice(0, 8)}` : null);
+
+    const events = [];
+    events.push({ at: customerRes.data.created_at, type: 'signup', label: 'Signed up' });
+
+    for (const r of callsRes.data || []) {
+      events.push({
+        at: r.created_at,
+        type: 'call_requested',
+        label: `Requested a call with ${astroLabel(r.astrologer_id)} — status: ${r.status}`,
+      });
+      if (r.responded_at && r.status !== 'pending') {
+        events.push({
+          at: r.responded_at,
+          type: 'call_responded',
+          label: `Call with ${astroLabel(r.astrologer_id)} ${r.status}`,
+        });
+      }
+    }
+
+    for (const r of chatsRes.data || []) {
+      events.push({
+        at: r.created_at,
+        type: 'chat_requested',
+        label: `Requested a chat with ${astroLabel(r.receiver_id)} — status: ${r.status}`,
+      });
+      if (r.responded_at && r.status !== 'pending') {
+        events.push({
+          at: r.responded_at,
+          type: 'chat_responded',
+          label: `Chat with ${astroLabel(r.receiver_id)} ${r.status}`,
+        });
+      }
+    }
+
+    for (const s of sessionsRes.data || []) {
+      events.push({
+        at: s.started_at,
+        type: 'session_started',
+        label: `Consultation with ${astroLabel(s.vendor_id)} started`,
+      });
+      if (s.ended_at) {
+        const mins = s.started_at
+          ? Math.round(Math.max(0, (new Date(s.ended_at) - new Date(s.started_at)) / 60000))
+          : null;
+        events.push({
+          at: s.ended_at,
+          type: 'session_ended',
+          label: `Consultation with ${astroLabel(s.vendor_id)} ended${mins != null ? ` (${mins} min)` : ''}`,
+        });
+      }
+    }
+
+    for (const r of rechargesRes.data || []) {
+      events.push({
+        at: r.created_at,
+        type: 'recharge_attempted',
+        label: `Started a wallet recharge of ₹${r.amount} — status: ${r.status}`,
+      });
+      if (r.paid_at && r.status === 'paid') {
+        events.push({ at: r.paid_at, type: 'recharge_paid', label: `Wallet recharge of ₹${r.amount} succeeded` });
+      }
+    }
+
+    for (const o of ordersRes.data || []) {
+      events.push({
+        at: o.created_at,
+        type: 'order_placed',
+        label: `Placed an order: ${o.item_title || 'item'} — ₹${o.grand_total} (${o.payment_status || o.status})`,
+      });
+    }
+
+    events.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+
+    res.json({
+      success: true,
+      customer: {
+        id: customerRes.data.id,
+        name: customerRes.data.name,
+        mobile: customerRes.data.mobile,
+        acquisitionSource: customerRes.data.acquisition_source,
+      },
+      events,
+    });
+  }));
 };

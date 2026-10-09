@@ -53,6 +53,9 @@ export default function Acquisition() {
   const [open, setOpen] = useState(null);          // source string being drilled into
   const [detail, setDetail] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(null); // customer id whose timeline is expanded
+  const [activity, setActivity] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,11 +83,23 @@ export default function Acquisition() {
     if (open === source) { setOpen(null); setDetail([]); return; }
     setOpen(source);
     setDetail([]);
+    setActivityOpen(null);
     setDetailLoading(true);
     client.get(`/api/admin/acquisition/sources/${encodeURIComponent(source)}?days=${days}`)
       .then(({ data }) => setDetail(data?.data || []))
       .catch(() => setDetail([]))
       .finally(() => setDetailLoading(false));
+  }
+
+  function toggleActivity(customerId) {
+    if (activityOpen === customerId) { setActivityOpen(null); setActivity([]); return; }
+    setActivityOpen(customerId);
+    setActivity([]);
+    setActivityLoading(true);
+    client.get(`/api/admin/acquisition/customers/${encodeURIComponent(customerId)}/activity`)
+      .then(({ data }) => setActivity(data?.events || []))
+      .catch(() => setActivity([]))
+      .finally(() => setActivityLoading(false));
   }
 
   return (
@@ -199,7 +214,7 @@ export default function Acquisition() {
                       <tr>
                         <td colSpan={10} className="detail-cell">
                           {detailLoading ? <p className="muted">Loading customers…</p> : (
-                            <table className="inner">
+            <table className="inner">
                               <thead>
                                 <tr>
                                   <th>Customer</th><th>Mobile</th>
@@ -208,26 +223,58 @@ export default function Acquisition() {
                                   <th className="num">Minutes</th>
                                   <th className="num">Recharged</th>
                                   <th className="num">Wallet</th>
+                                  <th></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {detail.length === 0 && (
-                                  <tr><td colSpan={7} className="muted">No customers.</td></tr>
+                                  <tr><td colSpan={8} className="muted">No customers.</td></tr>
                                 )}
                                 {detail.slice(0, 200).map((c) => (
-                                  <tr key={c.id}>
-                                    <td>{c.name || <span className="muted">—</span>}</td>
-                                    <td>
-                                      {isDeleted(c.mobile)
-                                        ? <span className="muted">deleted account</span>
-                                        : (c.mobile || <span className="muted">—</span>)}
-                                    </td>
-                                    <td className="num">{day(c.createdAt)}</td>
-                                    <td className="num">{c.sessions}</td>
-                                    <td className="num">{c.minutes}</td>
-                                    <td className="num">{c.totalRecharged ? inr(c.totalRecharged) : '—'}</td>
-                                    <td className="num">{inr(c.walletBalance)}</td>
-                                  </tr>
+                                  <Fragment key={c.id}>
+                                    <tr>
+                                      <td>{c.name || <span className="muted">—</span>}</td>
+                                      <td>
+                                        {isDeleted(c.mobile)
+                                          ? <span className="muted">deleted account</span>
+                                          : (c.mobile || <span className="muted">—</span>)}
+                                      </td>
+                                      <td className="num">{day(c.createdAt)}</td>
+                                      <td className="num">{c.sessions}</td>
+                                      <td className="num">{c.minutes}</td>
+                                      <td className="num">{c.totalRecharged ? inr(c.totalRecharged) : '—'}</td>
+                                      <td className="num">{inr(c.walletBalance)}</td>
+                                      <td>
+                                        <button className="link-btn" onClick={() => toggleActivity(c.id)}>
+                                          {activityOpen === c.id ? 'Hide' : 'What did they do?'}
+                                        </button>
+                                      </td>
+                                    </tr>
+                                    {activityOpen === c.id && (
+                                      <tr>
+                                        <td colSpan={8} className="detail-cell">
+                                          {activityLoading ? <p className="muted">Loading activity…</p> : (
+                                            activity.length === 0 ? (
+                                              <p className="muted">No activity recorded for this customer.</p>
+                                            ) : (
+                                              <ul className="activity-timeline">
+                                                {activity.map((e, i) => (
+                                                  <li key={i}>
+                                                    <span className="activity-time">
+                                                      {e.at ? new Date(e.at).toLocaleString('en-IN', {
+                                                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                                                      }) : '—'}
+                                                    </span>
+                                                    <span className="activity-label">{e.label}</span>
+                                                  </li>
+                                                ))}
+                                              </ul>
+                                            )
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </Fragment>
                                 ))}
                               </tbody>
                             </table>
@@ -277,6 +324,10 @@ export default function Acquisition() {
           text-transform:uppercase; color:var(--text-muted); margin-bottom:4px; }
         .summary-row .acq-stat strong { font-size:20px; color:var(--text-primary); }
         th.num, td.num { text-align:right; white-space:nowrap; }
+        .activity-timeline { list-style:none; margin:6px 0; padding:0; display:flex; flex-direction:column; gap:6px; }
+        .activity-timeline li { display:flex; gap:12px; font-size:12.5px; align-items:baseline; }
+        .activity-time { color:var(--text-muted); white-space:nowrap; min-width:118px; font-weight:600; }
+        .activity-label { color:var(--text-primary); }
         .src-name { font-weight:650; color:var(--text-primary); }
         .src-meta { display:flex; gap:6px; align-items:center; margin-top:4px; flex-wrap:wrap; }
         .chip { font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
