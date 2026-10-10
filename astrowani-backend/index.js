@@ -3795,7 +3795,10 @@ app.post('/api/requests/:kind/:id/status', async (req, res) => {
     }
     const { data, error } = await supabaseService
       .from(target.table)
-      .update({ status })
+      // customer_resolved_at, NOT responded_at — see sql/request_customer_resolved_at.sql.
+      // It only powers the admin's "how long did it ring?" display and is never read by
+      // astrologerMetrics.js, so it can't be mistaken for the astrologer's response time.
+      .update({ status, customer_resolved_at: new Date().toISOString() })
       .eq('id', req.params.id)
       .eq(target.owner, customer.id)
       .eq('status', 'pending')

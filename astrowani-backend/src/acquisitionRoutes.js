@@ -243,8 +243,8 @@ module.exports = function registerAcquisitionRoutes(app) {
 
     const [customerRes, callsRes, chatsRes, sessionsRes, rechargesRes, ordersRes] = await Promise.all([
       db.from('customers').select('id, name, mobile, created_at, acquisition_source').eq('id', customerId).maybeSingle(),
-      db.from('call_requests').select('id, astrologer_id, status, created_at, responded_at').eq('customer_id', customerId),
-      db.from('chat_requests').select('id, receiver_id, status, created_at, responded_at').eq('caller_id', customerId),
+      db.from('call_requests').select('id, astrologer_id, status, created_at, responded_at, customer_resolved_at').eq('customer_id', customerId),
+      db.from('chat_requests').select('id, receiver_id, status, created_at, responded_at, customer_resolved_at').eq('caller_id', customerId),
       db.from('chat_sessions').select('id, vendor_id, started_at, ended_at').eq('caller_id', customerId),
       db.from('wallet_recharges').select('id, amount, status, created_at, paid_at').eq('customer_id', customerId),
       db.from('orders').select('id, item_title, grand_total, status, payment_status, created_at').eq('customer_id', customerId),
@@ -273,31 +273,43 @@ module.exports = function registerAcquisitionRoutes(app) {
     // CUSTOMER_SETTABLE_REQUEST_STATUSES above / CLAUDE.md "Call Cancellation Sync") — an
     // astrologer never produces either value, so every request that ends this way was the
     // customer backing out, not the astrologer declining. Spell that out here so nobody has
-    // to go read the code (or ask) to find out who actually did what.
-    const outcomeLabel = (noun, who, status) => {
+    // to go read the code (or ask) to find out who actually did what — INCLUDING how long it
+    // rang before that happened, which is why this also reads `customer_resolved_at`
+    // (set only on a customer-initiated cancel/timeout — see sql/request_customer_resolved_at.sql
+    // for why that is a separate column from `responded_at`, which astrologerMetrics.js uses
+    // for the astrologer's own response-time leaderboard number).
+    const ringDuration = (createdAt, resolvedAt) => {
+      if (!createdAt || !resolvedAt) return '';
+      const secs = Math.round((new Date(resolvedAt).getTime() - new Date(createdAt).getTime()) / 1000);
+      if (!Number.isFinite(secs) || secs < 0) return '';
+      if (secs < 60) return ` after ${secs}s`;
+      return ` after ${Math.floor(secs / 60)}m ${secs % 60}s`;
+    };
+
+    const outcomeLabel = (noun, who, status, createdAt, respondedAt, customerResolvedAt) => {
       switch (status) {
         case 'pending': return `${noun} ${who} — still ringing, no answer yet`;
-        case 'accepted': return `${noun} ${who} — picked up, it connected`;
-        case 'rejected': return `${noun} ${who} — the astrologer declined, it never connected`;
-        case 'cancelled': return `${noun} ${who} — the CUSTOMER cancelled while it was still ringing, before the astrologer answered; it never connected`;
-        case 'missed': return `${noun} ${who} — nobody answered in time and it auto-expired; it never connected`;
+        case 'accepted': return `${noun} ${who} — picked up${ringDuration(createdAt, respondedAt)}, it connected`;
+        case 'rejected': return `${noun} ${who} — the astrologer declined${ringDuration(createdAt, respondedAt)}, it never connected`;
+        case 'cancelled': return `${noun} ${who} — the CUSTOMER cancelled${ringDuration(createdAt, customerResolvedAt)}, before the astrologer answered; it never connected`;
+        case 'missed': return `${noun} ${who} — nobody answered${ringDuration(createdAt, customerResolvedAt)} and it auto-expired; it never connected`;
         default: return `${noun} ${who} — ${status}`;
       }
     };
 
     for (const r of callsRes.data || []) {
       events.push({
-        at: r.responded_at || r.created_at,
+        at: r.responded_at || r.customer_resolved_at || r.created_at,
         type: 'call_requested',
-        label: outcomeLabel('Called', astroLabel(r.astrologer_id), r.status),
+        label: outcomeLabel('Called', astroLabel(r.astrologer_id), r.status, r.created_at, r.responded_at, r.customer_resolved_at),
       });
     }
 
     for (const r of chatsRes.data || []) {
       events.push({
-        at: r.responded_at || r.created_at,
+        at: r.responded_at || r.customer_resolved_at || r.created_at,
         type: 'chat_requested',
-        label: outcomeLabel('Messaged', astroLabel(r.receiver_id), r.status),
+        label: outcomeLabel('Messaged', astroLabel(r.receiver_id), r.status, r.created_at, r.responded_at, r.customer_resolved_at),
       });
     }
 
