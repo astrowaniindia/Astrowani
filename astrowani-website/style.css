@@ -2,6 +2,15 @@
    Astrowani — strictly 3 brand colors: maroon, cream, gold.
    Every other tone on this page is a mix of those three via
    color-mix(), never a new hue.
+
+   CACHE-BUSTING: every <link> to this file across the site's HTML pages carries
+   "?v=N" (deploy-shop.yml never purges Cloudflare's edge cache, which caches this
+   file for 4h independently of index.html — so a deploy that changes CSS but not
+   the <link> tag can leave live pages running NEW html against OLD css for up to
+   4h, which is exactly what happened on 2026-10-09 and looked like a broken site).
+   Bump the "?v=N" number in every html file's <link href="style.css?v=N"> AND
+   <script src="script.js?v=N"> whenever this file OR script.js changes, so the
+   new URL has never been cached and Cloudflare is forced to fetch fresh.
    ============================================================ */
 :root {
   --maroon: #592A19;
@@ -523,6 +532,22 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
   margin-top: auto; transition: transform .25s ease, background .25s ease;
 }
 .svc-tile:hover .svc-arrow { transform: translateX(4px); background: var(--gold-deep); color: var(--maroon); }
+
+/* hover: a bright segment sweeps around the card's border, loading-spinner style, instead
+   of the old arrow button. Standard "gradient border" trick — a conic-gradient ring, clipped
+   to just the border band with a mask, then spun with transform (not the gradient's own
+   angle, which isn't smoothly animatable without @property). */
+.svc-tile::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; z-index: 2;
+  padding: 2px; pointer-events: none; box-sizing: border-box;
+  background: conic-gradient(from 0deg, transparent 0 72%, var(--gold) 85%, var(--gold-deep) 90%, transparent 97%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity .3s ease;
+}
+.svc-tile:hover::after { opacity: 1; animation: svcBorderTrace 2.4s linear infinite; }
+@keyframes svcBorderTrace { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .svc-tile:hover::after { animation: none; } }
 
 @media (max-width: 760px) {
   .svc-tile-top { max-width: 100%; }
