@@ -477,7 +477,7 @@ function RechargeActivitySection() {
                   // bucket label — that bucket is still fine for the summary table, but a
                   // per-event timeline should say which one this actually was.
                   const label = e.kind === 'recharge'
-                    ? (e.status === 'paid' ? 'Recharge' : `Recharge (${e.status})`)
+                    ? (e.status === 'paid' ? 'Recharge' : 'Recharge attempt — not completed')
                     : (e.kind === 'debit'
                       ? (e.sessionType || (timeline.categoryLabels[e.category] || 'Debit'))
                       : 'Credit');

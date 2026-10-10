@@ -1471,7 +1471,14 @@ module.exports = function registerAdminRoutes(app) {
         kind: 'recharge',
         status: r.status,
         amount: Number(r.amount),
-        description: r.status === 'paid' ? `Recharge via Razorpay (${r.razorpay_payment_id || '—'})` : `Recharge ${r.status}`,
+        // Plain English, not the raw column value — 'created' reads as success to anyone
+        // skimming, when it actually means the Razorpay order was opened and the customer
+        // never finished paying. Wallet was NOT credited for either non-'paid' case.
+        description: r.status === 'paid'
+          ? `Recharge via Razorpay (${r.razorpay_payment_id || '—'})`
+          : r.status === 'failed'
+            ? 'Payment failed at the gateway — wallet was not credited'
+            : 'Payment was never completed — wallet was not credited',
         at: r.paid_at || r.created_at,
       })),
       ...(txns || []).map((t) => {

@@ -331,22 +331,45 @@ module.exports = function registerAcquisitionRoutes(app) {
       }
     }
 
+    // Same rule as the calls/chats above: 'created' and 'failed' are raw DB codes that read
+    // as more successful than they are ('created' especially) — say in words whether the
+    // wallet was actually credited.
     for (const r of rechargesRes.data || []) {
+      const note = r.status === 'paid'
+        ? ''
+        : r.status === 'failed'
+          ? ' — payment failed at the gateway, wallet was not credited'
+          : ' — payment was never completed, wallet was not credited';
       events.push({
         at: r.created_at,
         type: 'recharge_attempted',
-        label: `Started a wallet recharge of ₹${r.amount} — status: ${r.status}`,
+        label: `Started a wallet recharge of ₹${r.amount}${note}`,
       });
       if (r.paid_at && r.status === 'paid') {
         events.push({ at: r.paid_at, type: 'recharge_paid', label: `Wallet recharge of ₹${r.amount} succeeded` });
       }
     }
 
+    const ORDER_STATUS_NOTE = {
+      pending_payment: 'waiting on payment',
+      placed: 'placed, payment received',
+      confirmed: 'confirmed by the shop',
+      packed: 'packed',
+      shipped: 'shipped',
+      out_for_delivery: 'out for delivery',
+      completed: 'delivered',
+      cancelled: 'cancelled',
+    };
     for (const o of ordersRes.data || []) {
+      let note = o.payment_status === 'failed'
+        ? 'payment failed, order was not placed'
+        : (ORDER_STATUS_NOTE[o.status] || o.status || 'unknown status');
+      if (o.status === 'cancelled' && o.payment_status === 'refunded') note = 'cancelled and refunded';
+      if (o.status === 'cancelled' && o.payment_status === 'refund_pending') note = 'cancelled, refund in progress';
       events.push({
         at: o.created_at,
         type: 'order_placed',
-        label: `Placed an order: ${o.item_title || 'item'} — ₹${o.grand_total} (${o.payment_status || o.status})`,
+        label: `Placed an order: ${o.item_title || 'item'} — ₹${o.grand_total} (${note})`,
       });
     }
 
