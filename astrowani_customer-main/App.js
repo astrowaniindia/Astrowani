@@ -185,22 +185,22 @@ const App = () => {
       // account branch above has settled, so a cleared account never gets one.
       if (token) await hydrateWalletBalance();
 
-      // Signed-out only: is this a first open from the targeted Google Ads campaign?
-      // getAcquisition() caches its native read, so this costs nothing on every launch
-      // after the first — only the one cold start where it isn't cached yet pays for it,
-      // and isTargetCampaignFirstOpen() never throws.
+      // Signed-out only: is this the first cold start, ever, for this install?
+      // UNIVERSAL — every signed-out visitor sees the gift reveal once, not just
+      // installs from one paid campaign (corrected 2026-10-10; see the long comment on
+      // isTargetCampaignFirstOpen in utils/acquisition.js for why that gating was
+      // wrong). getAcquisition() caches its native read, so this costs nothing on every
+      // launch after the first, and isTargetCampaignFirstOpen() never throws.
       if (!token) {
-        // TEMP DEV-ONLY PREVIEW (remove before any real build/push): the emulator has
-        // no real Play install referrer to detect, so force the campaign prompt on
-        // every signed-out cold start in __DEV__ so the owner can review it now.
-        const showPrompt = __DEV__ ? true : await isTargetCampaignFirstOpen();
+        const showPrompt = await isTargetCampaignFirstOpen();
         if (showPrompt) setShowCampaignPrompt(true);
-        // TEMP DEV-ONLY (remove with the override above): an emulator has no Play
-        // install referrer, so getCampaignVariant() can never answer 'metro' there.
-        // Set this to 'metro' to review the English single-astrologer flow, or
-        // 'gift' for the Hinglish one.
-        const DEV_VARIANT = 'metro';
-        const variant = __DEV__ ? DEV_VARIANT : await getCampaignVariant();
+        // DEV-ONLY PREVIEW: an emulator has no real Play install referrer, so
+        // getCampaignVariant() can never answer 'metro' there on its own. Set this to
+        // 'metro' to preview the English single-astrologer wording that a real Metro
+        // campaign install gets; leave it null (the default) to preview the Hinglish
+        // 'gift' reveal that everyone else — organic included — actually sees.
+        const DEV_VARIANT_PREVIEW = null; // edit locally to 'metro' to preview that wording
+        const variant = (__DEV__ && DEV_VARIANT_PREVIEW) || await getCampaignVariant();
         if (variant) {
           setCampaignVariant(variant);
           // PERSIST IT TOO, not just this component's state. Everything downstream of

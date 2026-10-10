@@ -234,21 +234,24 @@ export async function setCampaignVariant(variant) {
 }
 
 /**
- * True once, for a signed-out visitor whose install referrer carries this campaign's
- * `gad_campaignid`. Never throws. Checked once per install — the caller is expected to
- * persist PROMPT_SHOWN_KEY itself once the prompt has actually been shown (not here:
- * this function only answers "should it show", it does not decide that it did).
+ * True once, for ANY signed-out visitor's first cold start — not gated on a campaign
+ * referrer. (Corrected 2026-10-10: this used to require `gad_campaignid` to match the
+ * one paid campaign, which meant the gift reveal — and the free 11-minute call offer
+ * behind it — was only ever shown to the ~1 install in a hundred that came through that
+ * specific ad. Every organic install, every other campaign and every QR scan landed on
+ * the plain phone-number screen instead, which was never the intent: the reveal and the
+ * free call are for everyone. The campaign id still decides exactly one thing, entirely
+ * separately — which astrologer(s) appear in the free-call list afterwards, via
+ * campaign_astrologer_routing on the backend. It has nothing to do with whether this
+ * screen is shown.)
+ *
+ * Never throws. Checked once per install — the caller persists PROMPT_SHOWN_KEY once
+ * the prompt has actually been shown (not here: this only answers "should it show").
  */
 export async function isTargetCampaignFirstOpen() {
   try {
-    if (Platform.OS !== 'android') return false;
     if (await AsyncStorage.getItem(PROMPT_SHOWN_KEY)) return false;
-
-    const {acquisitionRaw} = await getAcquisition();
-    if (!acquisitionRaw) return false;
-
-    const match = /(?:^|&)gad_campaignid=([^&]*)/.exec(String(acquisitionRaw));
-    return !!match && decodeURIComponent(match[1]) === TARGET_CAMPAIGN_ID;
+    return true;
   } catch (e) {
     return false;
   }
