@@ -10,6 +10,8 @@ import { posthog, applySessionReplaySetting, loadAnalyticsEnvironment, getAnalyt
 import { navigationRef } from '../utils/NavigationService';
 import useWalletBalance from '../hooks/useWalletBalance';
 import Splash from '../screens/Splash/Splash';
+import CampaignFreeCallPrompt from '../screens/FreeCall/CampaignFreeCallPrompt';
+import CampaignGiftReveal from '../screens/FreeCall/CampaignGiftReveal';
 import Login from '../screens/Login/Login';
 import OtpScreen from '../screens/OtpScreen/OtpScreen';
 import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
@@ -117,7 +119,7 @@ const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
 
-export default function Navigation({ initialRoute, onReady }) {
+export default function Navigation({ initialRoute, initialParams, onReady }) {
   useEffect(() => {
     applySessionReplaySetting();
     loadAnalyticsEnvironment();
@@ -207,6 +209,22 @@ export default function Navigation({ initialRoute, onReady }) {
           Individual screens below still override it (e.g. Login/VerifyOtp -> maroon). */}
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
+        {/* Both are only ever an initialRoute (App.js picks one via
+            CAMPAIGN_GIFT_REVEAL_ENABLED), never navigated to from elsewhere —
+            see utils/acquisition.js isTargetCampaignFirstOpen. */}
+        <Stack.Screen
+          options={{ headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: COLORS.AstroMaroon } }}
+          name="CampaignFreeCallPrompt"
+          component={CampaignFreeCallPrompt}
+        />
+        <Stack.Screen
+          options={{ headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: COLORS.AstroMaroon } }}
+          name="CampaignGiftReveal"
+          component={CampaignGiftReveal}
+          // Carries the campaign variant ('gift' | 'metro'), which decides the
+          // language of this screen. Only ever set when it IS the initial route.
+          initialParams={initialParams}
+        />
         {/* contentStyle pins react-native-screens' native container background to
             match the screen's own root color. Without it, on iOS, a screen whose
             own KeyboardAvoidingView/ScrollView doesn't reach the true bottom edge

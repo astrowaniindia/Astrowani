@@ -1,4 +1,11 @@
-export const SOCKET_URL = 'https://backend.astrowani.com';
+// ⚠️ TEMP LOCAL TESTING — PUT THIS BACK TO 'https://backend.astrowani.com' BEFORE ANY
+// BUILD, COMMIT OR OTA. 10.0.2.2 is the emulator's route to this machine; it points at
+// `node --env-file=.env scripts/devServer.js` on PORT=4501, which is running the
+// campaign-astrologer routing that production does not have yet. On a real device, or
+// with that server stopped, every request simply fails.
+export const SOCKET_URL = __DEV__
+  ? 'http://10.0.2.2:4501'
+  : 'https://backend.astrowani.com';
 export const FREE_SERVICES_URL = SOCKET_URL;
 
 // Public Play Store listing for this app. Used by all three share paths — the

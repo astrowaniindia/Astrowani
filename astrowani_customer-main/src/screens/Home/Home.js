@@ -79,6 +79,7 @@ import FreeCallOffer from '../../components/FreeCallOffer';
 import FreeCallGiftBubble from '../../components/FreeCallGiftBubble';
 import { getFreeCallOffer } from '../../api/FreeCallApi';
 import { onFreeCallInviteOpen } from '../../utils/freeCallInvite';
+import { hidePendingGift } from '../../utils/pendingGiftBubble';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import useAstrologerListSync from '../../hooks/useAstrologerListSync';
@@ -1356,7 +1357,7 @@ const Home = ({navigation}) => {
       setFreeCallStartAtSlots(false);
       setFreeCallSource(source);
       setFreeCallVisible(true);
-    } else if (source !== 'invite') {
+    } else if (source === 'low_balance') {
       // Offered because the wallet was short, but the offer is gone by now (booked on
       // another device, or switched off). Recharging is the remaining way forward.
       navigation.navigate('Wallet');
@@ -1389,6 +1390,10 @@ const Home = ({navigation}) => {
 
   useEffect(() => {
     loadAllData();
+    // The gift carried over from the campaign reveal has arrived: this screen's own
+    // FreeCallGiftBubble takes it from here (utils/pendingGiftBubble.js). Two identical
+    // bubbles in the same corner is one too many.
+    hidePendingGift();
   }, []);
 
   // Refresh the astrologer carousel AND the live strip whenever Home regains focus (catches

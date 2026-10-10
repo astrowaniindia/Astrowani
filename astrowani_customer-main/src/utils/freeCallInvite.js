@@ -26,6 +26,38 @@ export function openFreeCallFromInvite() {
   openFreeCallSheet('invite');
 }
 
+// Queues the free-call sheet WITHOUT navigating — called from CampaignFreeCallPrompt,
+// which runs before login. Login/signup owns navigation from there; Home picks this up
+// via onFreeCallInviteOpen the moment it mounts, same as every other source — UNLESS
+// SignupWelcome gets to it first (see peekPendingFreeCall below): a campaign visitor
+// already said "yes" once on the prompt screen, so SignupWelcome skips its own
+// intro/offer card entirely and jumps straight into booking instead of asking again.
+export function queueFreeCallFromCampaign() {
+  pending = 'campaign';
+}
+
+// Called when the campaign prompt is DISMISSED (cross), not accepted. They have
+// already been asked once on that screen, so SignupWelcome must not ask again with
+// its own "Claim my FREE call" card right after — this just suppresses that card
+// (see peekPendingFreeCall below); it does NOT queue or redirect to anything.
+export function queueCampaignDeclined() {
+  pending = 'campaign_declined';
+}
+
+// Read without consuming — SignupWelcome uses this to decide whether to take over
+// before Home ever mounts, without racing Home's own onFreeCallInviteOpen subscriber
+// (which does not exist yet at that point in the stack).
+export function peekPendingFreeCall() {
+  return pending;
+}
+
+// SignupWelcome calls this once it has acted on the pending request (redirected, or
+// decided there was nothing eligible to redirect to), so Home never fires a second,
+// redundant open for the same campaign visit.
+export function clearPendingFreeCall() {
+  pending = null;
+}
+
 // Home registers here. The listener receives the source. Returns an unsubscribe function.
 export function onFreeCallInviteOpen(fn) {
   listener = fn;

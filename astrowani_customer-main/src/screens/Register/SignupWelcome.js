@@ -23,7 +23,6 @@ import {
   Text,
   View,
   Image,
-  TouchableOpacity,
   Animated,
   Easing,
   BackHandler,
@@ -42,6 +41,7 @@ import { getFreeCallOffer } from '../../api/FreeCallApi';
 import FreeCallOffer from '../../components/FreeCallOffer';
 import { markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { showStatusPopup } from '../../components/StatusPopup';
+import { peekPendingFreeCall, clearPendingFreeCall } from '../../utils/freeCallInvite';
 
 // How long to wait for the offer before falling back to the plain welcome.
 const GIFT_WAIT_MS = 5000;
@@ -163,6 +163,14 @@ export default function SignupWelcome({ navigation, route }) {
   // brief "Namaste ji" before Home -- never the free-call gift flow, which is
   // signup-only, so the eligibility fetch below is skipped entirely.
   const isLogin = !!route?.params?.isLogin;
+  // Came in off the campaign gift reveal having already said yes. This screen is then
+  // nothing but the wait for the offer fetch before the redirect below — so it must
+  // not DRAW itself. It used to show the full "Namaste … Shuru karne ke liye Namaste
+  // boliye" welcome with a spinner for the three or four seconds that fetch takes,
+  // which is a greeting nobody asked for sitting between "Haan, mujhe free call
+  // chahiye" and the free call. Read once, at mount, because the pending flag is
+  // cleared by the effect below.
+  const campaignRedirectRef = useRef(peekPendingFreeCall() === 'campaign');
 
   const enter = useRef(new Animated.Value(0)).current;
   const bubbleIn = useRef(new Animated.Value(0)).current;
@@ -178,6 +186,42 @@ export default function SignupWelcome({ navigation, route }) {
   useEffect(() => {
     if (isLogin) {
       captureEvent('login_welcome_viewed');
+
+      // A campaign visitor still lands here as a "login" whenever the phone number
+      // they enter already has an account -- a reinstall, or simply a number that
+      // was registered before. "Login" describes the greeting that gets skipped
+      // below, not a reason to drop the redirect they already said yes to on the
+      // gift reveal. Without this, campaignRedirectRef correctly hides the welcome
+      // card (see the render below) but nothing replaces it, and this branch's own
+      // auto-advance silently sends them to Home instead of the astrologer they
+      // were promised -- exactly the gap that let a returning test number fall
+      // through to the plain gift card instead of the Metro reveal's payoff.
+      const campaignSource = peekPendingFreeCall();
+      if (campaignSource === 'campaign') {
+        clearPendingFreeCall();
+        getFreeCallOffer({ usePrefetched: true }).then((fc) => {
+          const show = !!(fc?.enabled && fc?.eligible && fc?.offer);
+          if (show) {
+            captureEvent('campaign_free_call_auto_opened', { mode: fc.offer?.mode || null });
+            AsyncStorage.getItem('customerId')
+              .then((id) => { if (id) markFreeCallOfferSeen(id); })
+              .catch(() => {});
+          }
+          if (show && fc.offer?.mode === 'instant') {
+            navigation.reset({
+              index: 1,
+              routes: [{ name: 'DrawerNavigator' }, { name: 'InstantAstrologers' }],
+            });
+          } else {
+            navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+          }
+        }).catch(() => {
+          navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+        });
+        return undefined;
+      }
+      if (campaignSource === 'campaign_declined') clearPendingFreeCall();
+
       setGift(false);
       // A greeting, not a decision point -- nothing here to tap through, so it
       // moves on by itself rather than waiting for "Namaste" like signup does.
@@ -200,7 +244,16 @@ export default function SignupWelcome({ navigation, route }) {
     // Home can show its popup the moment it opens.
     let settled = false;
     const giveUp = setTimeout(() => {
-      if (!settled) { settled = true; setGift(false); }
+      if (settled) return;
+      settled = true;
+      // A campaign visitor must never be dropped onto the welcome screen by a slow
+      // fetch — that is the screen this path exists to skip. Home instead.
+      if (campaignRedirectRef.current) {
+        clearPendingFreeCall();
+        navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+        return;
+      }
+      setGift(false);
     }, GIFT_WAIT_MS);
     // Usually already on its way from the name screen (SignupName prefetches it).
     getFreeCallOffer({ usePrefetched: true }).then((fc) => {
@@ -209,6 +262,44 @@ export default function SignupWelcome({ navigation, route }) {
       if (settled) return;
       settled = true;
       const show = !!(fc?.enabled && fc?.eligible && fc?.offer);
+
+      // Already said "yes" on the pre-login campaign prompt (CampaignFreeCallPrompt) --
+      // do not ask again with this screen's own intro/claim card. Skip straight to
+      // booking: InstantAstrologers for the live instant-ring offer, or Home (still
+      // better than a second "do you want this?" card) for the scheduled/slots offer,
+      // which has no standalone screen of its own outside this card.
+      const campaignSource = peekPendingFreeCall();
+      if (campaignSource === 'campaign') {
+        clearPendingFreeCall(); // Home must not also try to open this.
+        if (show) {
+          captureEvent('campaign_free_call_auto_opened', { mode: fc.offer?.mode || null });
+          AsyncStorage.getItem('customerId')
+            .then((id) => { if (id) markFreeCallOfferSeen(id); })
+            .catch(() => {});
+          if (fc.offer?.mode === 'instant') {
+            navigation.reset({
+              index: 1,
+              routes: [{ name: 'DrawerNavigator' }, { name: 'InstantAstrologers' }],
+            });
+          } else {
+            navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+          }
+        } else {
+          // Nothing eligible to redirect to (offer off, already used, etc.) -- same
+          // as any other signup, no special-casing needed here.
+          navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+        }
+        return;
+      }
+      if (campaignSource === 'campaign_declined') {
+        // They were already asked on the pre-login prompt and said no -- this screen's
+        // own "Claim my FREE call" card must not ask a second time. Plain welcome only;
+        // the gift box on Home still offers it later if they change their mind.
+        clearPendingFreeCall();
+        setGift(false);
+        return;
+      }
+
       setGift(show ? fc : false);
       if (show) {
         // Seen here, so Home does not raise the same offer again as a popup.
@@ -243,6 +334,17 @@ export default function SignupWelcome({ navigation, route }) {
     // re-created every render, so listing it would refire this on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enter, bubbleIn, bounce, pulse]);
+
+  // No gift to show: this is a greeting, not a decision, same as the login branch —
+  // auto-advance after 3s instead of waiting on a "Namaste" tap. Only once `gift` has
+  // actually resolved to false (not while still null/loading), and never for the
+  // isLogin branch, which already has its own shorter auto-advance above.
+  useEffect(() => {
+    if (isLogin || gift !== false) return undefined;
+    const advance = setTimeout(() => goHome('signup_auto'), 3000);
+    return () => clearTimeout(advance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gift, isLogin]);
 
   const goHome = (via) => {
     if (leftRef.current) return;
@@ -310,6 +412,19 @@ export default function SignupWelcome({ navigation, route }) {
       ],
     });
   };
+
+  // The campaign path: nothing but the brown the gift reveal was already on, held for
+  // the moment the offer fetch takes, then the redirect. No greeting, no button, no
+  // "Namaste boliye" — they said yes on the previous screen and the next thing they
+  // should see is the free call itself.
+  if (campaignRedirectRef.current) {
+    return (
+      <View style={styles.campaignHold}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.AstroMaroon} />
+        <ActivityIndicator size="large" color={COLORS.AstroGold} />
+      </View>
+    );
+  }
 
   if (gift) {
     return (
@@ -433,20 +548,17 @@ export default function SignupWelcome({ navigation, route }) {
       </View>
 
       {/* Login: this is a greeting, not a decision -- it auto-advances (see the
-          mount effect), so there is nothing here to tap through. */}
-      {!isLogin && (
+          mount effect), so there is nothing here to tap through. Signup, once `gift`
+          has resolved to false, ALSO auto-advances now (see the effect above) -- so
+          this spinner only ever shows for the brief moment the offer is still loading;
+          there is no tappable button to wait for any more. */}
+      {!isLogin && gift === null && (
         <View style={[styles.footer, { paddingBottom: insets.bottom + verticalScale(18) }]}>
           <Text style={styles.hint}>{t('welcome.hint')}</Text>
           <Animated.View style={{ transform: [{ scale: pulse }] }}>
-            <TouchableOpacity
-              style={styles.hiBtn}
-              activeOpacity={0.85}
-              disabled={gift === null}
-              onPress={() => goHome('button')}>
-              {gift === null
-                ? <ActivityIndicator color={COLORS.AstroMaroon} />
-                : <Text style={styles.hiBtnText}>{t('welcome.hi')}</Text>}
-            </TouchableOpacity>
+            <View style={styles.hiBtn}>
+              <ActivityIndicator color={COLORS.AstroMaroon} />
+            </View>
           </Animated.View>
         </View>
       )}
@@ -455,6 +567,12 @@ export default function SignupWelcome({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  campaignHold: {
+    flex: 1,
+    backgroundColor: COLORS.AstroMaroon,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   // Social-proof badge above the offer card (preview, 2026-09-23).
   liveBadgeRow: {
     alignSelf: 'flex-end',

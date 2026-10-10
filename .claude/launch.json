@@ -12,6 +12,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["--env-file=astrowani-backend/.env", "vps-deployment/scripts/shop-dev-server.js"],
       "port": 4599
+    },
+    {
+      "name": "astrowani-website-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["astrowani-website/dev-server.js"],
+      "port": 4600
     }
   ]
 }

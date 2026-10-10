@@ -158,4 +158,115 @@ export async function reportFirstOpen() {
   }
 }
 
-export default {getAcquisition, reportFirstOpen};
+// ── Campaign-targeted first-open prompt ────────────────────────────────────
+//
+// "11 min call better geolocations" (Google Ads campaign 24326942598) pays far more
+// per install than the broad campaign (₹41 vs ₹1.91 — see astrowani-backend's
+// acquisitionRoutes.js), so a signed-out visitor from THIS campaign specifically sees a
+// full-screen "want a free call?" prompt before Login (see CampaignFreeCallPrompt.js /
+// App.js), instead of relying on the quieter post-signup gift screen every install sees.
+//
+// Hardcoded to one campaign id on purpose: this is a targeted response to one
+// expensive campaign's numbers, not a general mechanism. Widening it to other
+// campaigns is a deliberate follow-up, not something this constant should silently do.
+const TARGET_CAMPAIGN_ID = '24326942598';
+// The "Metro" campaign: the same 11-minute free call, but presented in ENGLISH and
+// routed to ONE named astrologer chosen for the visitor, rather than to the picker.
+//
+// This is the SAME campaign as TARGET_CAMPAIGN_ID, and deliberately so (owner,
+// 2026-10-10): "11 min call better geolocations" now runs the English flow with one
+// chosen astrologer instead of the Hinglish gift reveal. One install carries one
+// gad_campaignid, so a campaign can only ever be one variant — getCampaignVariant()
+// checks Metro FIRST, which is what makes this replace the gift flow rather than
+// depend on the order the branches happen to be written in.
+//
+// The 'gift' variant is kept whole and still works; it simply has no campaign
+// pointing at it. Point another id at TARGET_CAMPAIGN_ID to bring it back.
+const METRO_CAMPAIGN_ID = '24326942598';
+const PROMPT_SHOWN_KEY = 'campaignFreeCallPromptShown';
+// Which variant this install belongs to, remembered so the screens AFTER the first
+// one (signup, the chosen-astrologer card) can stay in the same language and layout
+// without re-reading the Play referrer on every screen.
+const VARIANT_KEY = 'campaignVariant';
+
+/** Pull the campaign id out of a stored Play referrer. */
+function campaignIdOf(raw) {
+  const match = /(?:^|&)gad_campaignid=([^&]*)/.exec(String(raw || ''));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch (e) {
+    return match[1];
+  }
+}
+
+/**
+ * 'metro' | 'gift' | null for this install, ignoring whether the prompt has been shown.
+ * Never throws.
+ */
+export async function getCampaignVariant() {
+  try {
+    const remembered = await AsyncStorage.getItem(VARIANT_KEY);
+    if (remembered) return remembered;
+    if (Platform.OS !== 'android') return null;
+    const {acquisitionRaw} = await getAcquisition();
+    const id = campaignIdOf(acquisitionRaw);
+    if (!id) return null;
+    // Metro first: it is the narrower, explicitly-configured one, so if the two ids
+    // were ever set the same the English flow wins rather than the choice being
+    // whichever branch happened to be written first.
+    const variant = (METRO_CAMPAIGN_ID && id === METRO_CAMPAIGN_ID)
+      ? 'metro'
+      : (id === TARGET_CAMPAIGN_ID ? 'gift' : null);
+    if (variant) await AsyncStorage.setItem(VARIANT_KEY, variant);
+    return variant;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Dev/testing only: force a variant without a real Play referrer. */
+export async function setCampaignVariant(variant) {
+  try {
+    if (variant) await AsyncStorage.setItem(VARIANT_KEY, variant);
+    else await AsyncStorage.removeItem(VARIANT_KEY);
+  } catch (e) {}
+}
+
+/**
+ * True once, for a signed-out visitor whose install referrer carries this campaign's
+ * `gad_campaignid`. Never throws. Checked once per install — the caller is expected to
+ * persist PROMPT_SHOWN_KEY itself once the prompt has actually been shown (not here:
+ * this function only answers "should it show", it does not decide that it did).
+ */
+export async function isTargetCampaignFirstOpen() {
+  try {
+    if (Platform.OS !== 'android') return false;
+    if (await AsyncStorage.getItem(PROMPT_SHOWN_KEY)) return false;
+
+    const {acquisitionRaw} = await getAcquisition();
+    if (!acquisitionRaw) return false;
+
+    const match = /(?:^|&)gad_campaignid=([^&]*)/.exec(String(acquisitionRaw));
+    return !!match && decodeURIComponent(match[1]) === TARGET_CAMPAIGN_ID;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function markCampaignFreeCallPromptShown() {
+  try {
+    await AsyncStorage.setItem(PROMPT_SHOWN_KEY, '1');
+  } catch (e) {
+    // Worst case the prompt shows again on a later cold start — never worth crashing over.
+  }
+}
+
+export default {
+  getAcquisition,
+  reportFirstOpen,
+  isTargetCampaignFirstOpen,
+  markCampaignFreeCallPromptShown,
+  getCampaignVariant,
+  setCampaignVariant,
+};

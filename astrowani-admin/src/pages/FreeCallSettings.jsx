@@ -379,7 +379,9 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           <div>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Offer Status & Visibility</h3>
             <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
-              When enabled, eligible first-time customers will see the promotional banner and slot booking modal in the mobile app.
+              {isInstant
+                ? 'When enabled, eligible first-time customers see the free call banner and can ring an available astrologer straight away for their free minutes. Nothing is scheduled.'
+                : 'When enabled, eligible first-time customers will see the promotional banner and slot booking modal in the mobile app.'}
             </p>
           </div>
           {offerLoaded && (
@@ -415,9 +417,16 @@ export default function FreeCallSettings({ flow = 'booking' }) {
               {offer.enabled ? 'Free Call Offer is ENABLED' : 'Free Call Offer is DISABLED'}
             </strong>
             <span className="muted" style={{ fontSize: 12.5 }}>
-              {offer.enabled
-                ? 'Customers who open the app and have never used their introductory call can book free consultation slots.'
-                : 'Offer banner and scheduling cards are completely hidden in the customer app.'}
+              {(() => {
+                if (!offer.enabled) {
+                  return isInstant
+                    ? 'The free call banner and the ring-now screen are completely hidden in the customer app.'
+                    : 'Offer banner and scheduling cards are completely hidden in the customer app.';
+                }
+                return isInstant
+                  ? 'Customers who open the app and have never used their introductory call can ring an available astrologer now for their free minutes.'
+                  : 'Customers who open the app and have never used their introductory call can book free consultation slots.';
+              })()}
             </span>
           </label>
         </div>
@@ -630,8 +639,9 @@ export default function FreeCallSettings({ flow = 'booking' }) {
       <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Instant calls</h3>
         <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
-          Instead of booking a slot for later, the customer picks an astrologer who is free
-          right now and their phone rings immediately — exactly like a paid call.
+          {isInstant
+            ? 'The customer picks an astrologer who is free right now and their phone rings immediately — exactly like a paid call, but free for the first minutes.'
+            : 'Instead of booking a slot for later, the customer picks an astrologer who is free right now and their phone rings immediately — exactly like a paid call.'}
         </p>
 
         <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
@@ -1170,13 +1180,18 @@ export default function FreeCallSettings({ flow = 'booking' }) {
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
             Status:{' '}
             <strong style={{ color: offer.enabled ? '#16a34a' : '#64748b' }}>
-              {offer.enabled ? 'Live & Accepting Bookings' : 'Offer Disabled'}
+              {offer.enabled
+                ? (isInstant ? 'Live — ringing astrologers now' : 'Live & Accepting Bookings')
+                : 'Offer Disabled'}
             </strong>
           </span>
         </div>
         <div className="btn-group">
-          <Link to="/free-call-bookings" className="btn secondary sm">
-            Cancel / Back to Bookings
+          <Link
+            to={isInstant ? '/free-call-instant' : '/free-call-bookings'}
+            className="btn secondary sm"
+          >
+            {isInstant ? 'Cancel' : 'Cancel / Back to Bookings'}
           </Link>
           <button
             className="btn sm"

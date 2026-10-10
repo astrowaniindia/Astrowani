@@ -38,7 +38,12 @@ class MainApplication : Application(), ReactApplication {
 
         // OTA: serve the latest downloaded bundle if hot-updater has one, else fall back to
         // the bundle baked into the APK. See MD files/deployment-and-releases.md.
-        override fun getJSBundleFile(): String? = HotUpdater.getJSBundleFile(applicationContext)
+        // Debug builds must fall through to Metro: HotUpdater always answers here (its
+        // fallback is the baked-in assets://index.android.bundle), so without this guard
+        // the dev server is ignored and every JS change needs a full re-bundle + install.
+        // Release behaviour is untouched — OTA still wins there.
+        override fun getJSBundleFile(): String? =
+            if (BuildConfig.DEBUG) null else HotUpdater.getJSBundleFile(applicationContext)
 
         override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
 

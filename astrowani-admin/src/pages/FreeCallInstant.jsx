@@ -1,5 +1,6 @@
 import FreeCallSettings from './FreeCallSettings';
 import FreeCallAnalytics from '../components/FreeCallAnalytics';
+import MetroCampaignPanel from '../components/MetroCampaignPanel';
 
 /**
  * The "ring an astrologer now" offer.
@@ -57,6 +58,11 @@ export default function FreeCallInstant() {
           having to walk to another page to see the result is how a setting gets changed
           and never checked. */}
       <FreeCallAnalytics />
+
+      {/* The Metro campaign is a DIFFERENT offer wearing the same plumbing — one chosen
+          astrologer instead of a picker — so it gets its own section with its own switch
+          and its own numbers rather than being averaged into the analytics above. */}
+      <MetroCampaignPanel />
     </div>
   );
 }

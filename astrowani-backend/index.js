@@ -986,6 +986,12 @@ require('./src/postHogRoutes')(app);
 // The free instant call offer's own analytics, read by its own admin page. Registered
 // after postHogRoutes because it reuses that module's ENV_FILTER and runHogQL.
 require('./src/freeCallAnalyticsRoutes')(app);
+// The Metro campaign's own switch + funnel, shown as its own section under the free
+// instant call analytics. Separate because the campaign's one-chosen-astrologer screen
+// and the ordinary picker answer different questions — see the file header.
+require('./src/metroCampaignRoutes')(app);
+// The whole customer journey in one ordered list (journeyCatalogue.js), one query.
+require('./src/journeyRoutes')(app);
 require('./src/sentryRoutes')(app);
 // Offline QR poster attribution (/api/admin/qr/*). Needs adminRoutes' requireAdmin,
 // which is exported there, so it registers after it.

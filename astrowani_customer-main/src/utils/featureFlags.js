@@ -70,3 +70,15 @@ export const SHAGUN_RECHARGE_ENABLED = true;
  * or from the "more minutes" sheet being declined.
  */
 export const FREE_CALL_RATING_PROMPT_ENABLED = true;
+
+/**
+ * Which pre-login campaign screen a targeted Google Ads install lands on (App.js).
+ *
+ * true  -> screens/FreeCall/CampaignGiftReveal.js    — the gift box that bursts open
+ *          into "YOU WIN · 11 minute free call" (owner, 2026-10-09).
+ * false -> screens/FreeCall/CampaignFreeCallPrompt.js — the earlier, quieter
+ *          speech-bubble version. Kept in the codebase, not deleted: it is one flag
+ *          away from being the one shown again, and both hand off identically
+ *          (queueFreeCallFromCampaign / queueCampaignDeclined).
+ */
+export const CAMPAIGN_GIFT_REVEAL_ENABLED = true;

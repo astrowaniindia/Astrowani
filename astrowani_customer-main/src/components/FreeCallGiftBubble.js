@@ -12,9 +12,13 @@ import { Animated, Easing, Text, TouchableOpacity, StyleSheet, View } from 'reac
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
+import useDraggableBubble from '../hooks/useDraggableBubble';
 
 const FreeCallGiftBubble = ({ visible, label, onPress, liftStyle }) => {
   const pulse = useRef(new Animated.Value(0)).current;
+  // Draggable, and sharing its parked position with the pre-login bubble
+  // (hooks/useDraggableBubble) so the gift stays wherever the customer put it.
+  const { panHandlers, dragStyle } = useDraggableBubble();
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -40,21 +44,43 @@ const FreeCallGiftBubble = ({ visible, label, onPress, liftStyle }) => {
     // `liftStyle` (an Animated transform, from Home) slides this up out of the way of
     // ConsultBar's "Chat with Astrologer" / "Talk To Astrologer" pills, which occupy the
     // same bottom-right-ish band once they slide into view — see Home.js.
+    // TWO NESTED VIEWS, ONE TRANSFORM EACH, AND THEY CANNOT BE MERGED.
+    //
+    // `liftStyle` is driven by Home's scroll position with useNativeDriver: true;
+    // `dragStyle` is a PanResponder, which can only run on the JS driver. Put both on
+    // ONE view — as this did — and React Native quietly drops the JS-driven one,
+    // because the view already belongs to the native animated driver. The bubble then
+    // ignores every drag while still lifting on scroll, which is exactly how it
+    // behaved: immovable, with no error anywhere to say why.
+    //
+    // (They also collided as plain styles: both set `transform`, and in a style array
+    // the last one wins, so one of the two was being discarded regardless.)
+    //
+    // Giving each driver its own view lets both work at once — the bubble lifts out of
+    // the ConsultBar's way on scroll AND can be dragged anywhere.
     <Animated.View style={[styles.wrap, liftStyle]} pointerEvents="box-none">
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-      />
-      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <TouchableOpacity style={styles.bubble} activeOpacity={0.85} onPress={onPress}>
-          <MaterialIcons name="card-giftcard" size={moderateScale(24)} color={COLORS.AstroGold} />
-        </TouchableOpacity>
-      </Animated.View>
-      {!!label && (
-        <View style={styles.labelWrap} pointerEvents="none">
-          <Text style={styles.label} numberOfLines={1}>{label}</Text>
+      <Animated.View style={[styles.dragLayer, dragStyle]} pointerEvents="box-none">
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+        />
+        {/* The drag handle is the CIRCLE: `wrap` is box-none so Home stays usable
+            around the bubble, and a box-none view never receives the gesture itself.
+            The handlers sit on a PLAIN View — the pulse below is native-driven too, and
+            putting the responder on that same view is the same mistake one level down. */}
+        <View {...panHandlers}>
+          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+            <TouchableOpacity style={styles.bubble} activeOpacity={0.85} onPress={onPress}>
+              <MaterialIcons name="card-giftcard" size={moderateScale(24)} color={COLORS.AstroGold} />
+            </TouchableOpacity>
+          </Animated.View>
         </View>
-      )}
+        {!!label && (
+          <View style={styles.labelWrap} pointerEvents="none">
+            <Text style={styles.label} numberOfLines={2}>{label}</Text>
+          </View>
+        )}
+      </Animated.View>
     </Animated.View>
   );
 };
@@ -71,6 +97,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 50,
   },
+  // Carries the drag offset only. Children centre on it exactly as they used to on
+  // `wrap`, so the ring and the label keep their relative positions.
+  dragLayer: { alignItems: 'center' },
   ring: {
     position: 'absolute',
     top: 0,
@@ -98,15 +127,16 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(8),
     paddingHorizontal: scale(7),
     paddingVertical: verticalScale(3),
-    maxWidth: scale(112),
+    maxWidth: scale(132),
     borderWidth: 1,
     borderColor: '#E9D9C9',
   },
   label: {
-    fontSize: moderateScale(9.5),
+    fontSize: moderateScale(9),
     color: COLORS.AstroMaroon,
     fontWeight: '700',
     textAlign: 'center',
+    lineHeight: moderateScale(12),
   },
 });
 

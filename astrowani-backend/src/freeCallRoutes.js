@@ -489,6 +489,102 @@ async function loadOffer() {
 const offerGuard = require('./offerGuard');
 const CUSTOMER_COLS = 'id, name, mobile, acquisition_source, acquisition_raw';
 
+/* ── Campaign-exclusive astrologers ──────────────────────────────────────────
+ * One named astrologer takes the free call for ONE ad campaign and for nothing
+ * else: a customer who arrived from that campaign is shown them and only them,
+ * and every other customer never sees or reaches them.
+ *
+ * They are deliberately kept OUT of `effectiveInstantPool`. That is what makes
+ * "only this campaign's calls" true rather than merely intended — the ordinary
+ * picker is built from the pool, so an astrologer who is not in it cannot appear
+ * there however the app behaves.
+ *
+ * THE PAIRING IS CHECKED HERE, against customers.acquisition_source, and never
+ * taken from the request. The app names an astrologer id when it rings; without
+ * this check a crafted request from any account would reach the campaign
+ * astrologer, which is precisely the thing the pool gate exists to stop.
+ *
+ * Shape of app_settings.campaign_astrologer_routing:
+ *   { "enabled": true,
+ *     "routes": [ { "source": "google_ads_123", "astrologerId": "<uuid>" } ] }
+ * Absent key, bad JSON or an unreadable row all mean "no campaign routing",
+ * which is the ordinary pool behaviour — this feature can only ever ADD a
+ * reachable astrologer for a matching customer, never take one away.
+ *
+ * `enabled` is the admin's master switch (admin → Free Instant Call Offer → Metro
+ * Campaign). OFF does not delete anything: the routes stay configured and the
+ * campaign's customers simply fall through to the ordinary astrologer picker, so
+ * the campaign behaves exactly like every other campaign until it is switched
+ * back on. It is read on EVERY resolve rather than captured at signup, so the
+ * switch applies to customers who arrived before it was flipped too.
+ *
+ * ABSENT MEANS ON, not off. The live row predates this flag and the routing it
+ * describes is already running; defaulting a missing key to `false` would switch
+ * a working campaign off the moment this code deployed. Only an explicit
+ * `enabled: false` turns it off.
+ */
+const CAMPAIGN_ROUTING_KEY = 'campaign_astrologer_routing';
+const CAMPAIGN_ROUTING_TTL_MS = 60000;
+let campaignRoutingCache = { at: 0, enabled: true, routes: [], testMobiles: [] };
+
+async function loadCampaignRoutes() {
+  const now = Date.now();
+  if (now - campaignRoutingCache.at < CAMPAIGN_ROUTING_TTL_MS) return campaignRoutingCache;
+  let routes = [];
+  let testMobiles = [];
+  let enabled = true;
+  try {
+    const { data } = await db
+      .from('app_settings')
+      .select('value')
+      .eq('key', CAMPAIGN_ROUTING_KEY)
+      .maybeSingle();
+    const parsed = data?.value ? JSON.parse(data.value) : null;
+    enabled = parsed?.enabled !== false;
+    routes = Array.isArray(parsed?.routes)
+      ? parsed.routes
+          .filter((r) => r && typeof r.source === 'string' && r.source && typeof r.astrologerId === 'string' && r.astrologerId)
+          .map((r) => ({ source: r.source, astrologerId: String(r.astrologerId) }))
+      : [];
+    // Named test numbers always resolve to the FIRST route's astrologer, whatever
+    // referrer they signed up with. An emulator has no Play install referrer, so
+    // without this the campaign flow cannot be exercised on one at all. Keep the list
+    // empty in normal operation — a real number in here silently gets the campaign
+    // astrologer instead of the pool.
+    testMobiles = Array.isArray(parsed?.testMobiles)
+      ? parsed.testMobiles.map((m) => String(m).replace(/\D/g, '').slice(-10)).filter(Boolean)
+      : [];
+  } catch (e) {
+    console.warn('[FreeCall] campaign routing unreadable, ignoring:', e.message);
+    routes = [];
+    testMobiles = [];
+    enabled = true;
+  }
+  campaignRoutingCache = { at: now, enabled, routes, testMobiles };
+  return campaignRoutingCache;
+}
+
+/** Drop the 60s cache, so an admin toggle takes effect on the next request. */
+function invalidateCampaignRoutes() {
+  campaignRoutingCache = { at: 0, enabled: true, routes: [], testMobiles: [] };
+}
+
+/** The astrologer reserved for THIS customer's campaign, or null. */
+async function campaignAstrologerFor(customer) {
+  const cfg = await loadCampaignRoutes();
+  // Switched off in the admin: the campaign's customers go through the ordinary
+  // pool, exactly like organic and every other campaign. Checked before the test
+  // numbers too, so OFF really means off for everyone including QA.
+  if (!cfg.enabled) return null;
+  if (!cfg.routes.length) return null;
+  const mobile = String(customer?.mobile || '').replace(/\D/g, '').slice(-10);
+  if (mobile && cfg.testMobiles.includes(mobile)) return cfg.routes[0].astrologerId;
+  const source = String(customer?.acquisition_source || '');
+  if (!source) return null;
+  const hit = cfg.routes.find((r) => r.source === source);
+  return hit ? hit.astrologerId : null;
+}
+
 /** JWT → the real customers row. Same pattern as orderRoutes/astroRoutes. */
 async function resolveCustomer(req) {
   const authHeader = req.headers.authorization;
@@ -1296,6 +1392,46 @@ module.exports = function registerFreeCallRoutes(app) {
     }
     const { offer, customer, booking } = gate;
 
+    // A campaign customer is shown ONE astrologer — the one reserved for the campaign
+    // they arrived from — instead of the pool. Answered before the pool work below,
+    // because for them the pool is not the list.
+    const campaignAstrologerId = await campaignAstrologerFor(customer);
+    if (campaignAstrologerId) {
+      const [chosenActive] = await activeAstrologers([campaignAstrologerId]);
+      const { data: chosenRows } = chosenActive
+        ? await db
+          .from('astrologers')
+          .select('id, first_name, last_name, profile_pic_url, experience, languages, average_rating, total_reviews, badge, is_online, hidden_from_customers')
+          .eq('id', campaignAstrologerId)
+        : { data: [] };
+      const row = (chosenRows || [])[0];
+      // `hidden_from_customers` is honoured here exactly as it is for the pool.
+      const usable = row && row.hidden_from_customers !== true && row.is_online !== false;
+      if (usable) {
+        const busyMap = await buildBusyMap(db);
+        const holdMap = await holds.buildHoldMap(db);
+        let busy = busyMap[row.id];
+        const hold = holdMap[row.id];
+        if (busy && busy.reason === 'hold' && hold && String(hold.customer_id) === String(customer.id)) busy = null;
+        return res.status(200).json({
+          success: true,
+          // The app renders the single "chosen for you" card off this and hides the grid.
+          chosen: instantCard(row, busy),
+          astrologers: [],
+          durationMinutes: offer.durationMinutes,
+          ringTimeoutSeconds: offer.ringTimeoutSeconds,
+          attemptsLeft: Math.max(0, offer.maxRingAttempts - ((booking && booking.call_attempts) || 0)),
+        });
+      }
+      // Reserved astrologer offline/hidden: say so rather than silently handing this
+      // customer the ordinary pool, which is a list they were never meant to see.
+      return res.status(200).json({
+        success: true, chosen: null, chosenOffline: true, astrologers: [],
+        durationMinutes: offer.durationMinutes,
+        attemptsLeft: offer.maxRingAttempts,
+      });
+    }
+
     const active = await activeAstrologers(offer.effectiveInstantPool);
     if (!active.length) {
       return res.status(200).json({
@@ -1376,7 +1512,13 @@ module.exports = function registerFreeCallRoutes(app) {
     // Pool membership is checked server-side: the id arrives from the client and a
     // client can name anyone. An astrologer outside the pool never agreed to take
     // free calls and must not be rung by one.
-    if (!offer.effectiveInstantPool.includes(astrologerId)) {
+    // ...or is the astrologer reserved for the campaign THIS customer arrived from.
+    // Checked against their own acquisition_source, so naming the campaign astrologer
+    // from any other account is still refused.
+    const campaignAstrologerId = await campaignAstrologerFor(customer);
+    const reachable = offer.effectiveInstantPool.includes(astrologerId)
+      || (campaignAstrologerId && campaignAstrologerId === astrologerId);
+    if (!reachable) {
       return res.status(403).json({ success: false, code: 'NOT_IN_POOL', message: 'That astrologer is not taking free calls.' });
     }
     const [active] = await activeAstrologers([astrologerId]);
@@ -3106,3 +3248,11 @@ module.exports.FREE_CALL_TZ_OFFSET_MIN = FREE_CALL_TZ_OFFSET_MIN;
 module.exports._internals = { buildSlots, offerDateKeys, businessDateKey, businessInstant, formatSlotLabel, describeWhen, DEFAULTS, parseClock };
 module.exports.assigneeCandidates = assigneeCandidates;
 module.exports.slotCapacity = slotCapacity;
+// The campaign-exclusive routing (see the block above `loadCampaignRoutes`), shared
+// with src/metroCampaignRoutes.js so the admin page reads the SAME config and the
+// SAME cache this file routes customers with — a second reader with its own copy is
+// how an admin ends up looking at a switch that no longer reflects what the app does.
+module.exports.CAMPAIGN_ROUTING_KEY = CAMPAIGN_ROUTING_KEY;
+module.exports.loadCampaignRoutes = loadCampaignRoutes;
+module.exports.invalidateCampaignRoutes = invalidateCampaignRoutes;
+module.exports.campaignAstrologerFor = campaignAstrologerFor;

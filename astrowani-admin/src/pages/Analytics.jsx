@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import client from '../api/client';
 import AnalyticsExclusionsCard from '../components/AnalyticsExclusionsCard';
+import CustomerJourney from '../components/CustomerJourney';
 
 const APP_TABS = [
   { key: 'customer', label: 'Customer App' },
@@ -300,7 +301,9 @@ export default function Analytics() {
       await client.patch('/api/admin/settings', { key: 'analytics_since', value: iso });
       setAnalyticsSince(iso);
       setSinceInput(toLocalInput(iso));
-      await load();
+      // Changing where analytics starts changes every number on the page, so put
+      // every section back to its Show button rather than refetching them all.
+      resetSections();
     } catch (e) {
       alert(e.response?.data?.message || e.message);
     } finally {
@@ -348,162 +351,210 @@ export default function Analytics() {
     }
   };
 
-  const load = useCallback(async () => {
-    const dateParams = { from: dateRange.from, to: dateRange.to };
-    const requests = {
-      // Summary is app-scoped now — DAU/WAU/MAU used to silently blend customer and
-      // vendor users, and astrologers keep their app open all day.
-      summary: safeGet('/api/admin/analytics/summary', { ...dateParams, app: appTab }),
-      trend: safeGet('/api/admin/analytics/trend', dateParams),
-      topScreens: safeGet('/api/admin/analytics/top-screens', { ...dateParams, app: appTab }),
-      funnel: safeGet('/api/admin/analytics/funnel', dateParams),
-      remediesFunnel: safeGet('/api/admin/analytics/remedies-funnel', dateParams),
-      revenue: safeGet('/api/admin/analytics/revenue', dateParams),
-      sessionVolume: safeGet('/api/admin/analytics/session-volume', dateParams),
-      // Retention is a rolling 30-day cohort window by nature (not "events between two
-      // dates") — deliberately not wired to the shared date-range control above.
-      retention: safeGet('/api/admin/analytics/retention', { days: 30 }),
-      // Supabase-backed — no POSTHOG_* dependency, so these never trip notConfigured.
-      revenueByType: safeGet('/api/admin/analytics/revenue-by-type', dateParams),
-      paymentFunnel: safeGet('/api/admin/analytics/payment-funnel', dateParams),
-      customerSplit: safeGet('/api/admin/analytics/customer-revenue-split', dateParams),
-      // Customer-app-only (Home.js has no vendor equivalent) — not tied to appTab.
-      homeInteractions: safeGet('/api/admin/analytics/home-interactions', dateParams),
-      homeFlow: safeGet('/api/admin/analytics/home-flow', dateParams),
-      // Supabase-backed: the outcome of every request that reached a request row.
-      requestOutcomes: safeGet('/api/admin/analytics/request-outcomes', dateParams),
-      astroPerf: safeGet('/api/admin/analytics/astrologer-performance', { ...dateParams, limit: 50 }),
-      // PostHog-backed: why signups/logins failed, and attempts blocked before a
-      // request row ever existed (low balance, busy, service off).
-      authFailures: safeGet('/api/admin/analytics/auth-failures', dateParams),
-      blockedAttempts: safeGet('/api/admin/analytics/blocked-attempts', dateParams),
-      freeCall: safeGet('/api/admin/analytics/free-call-funnel', dateParams),
-      services: safeGet('/api/admin/analytics/services-engagement', dateParams),
-      wallet: safeGet('/api/admin/analytics/wallet-funnel', dateParams),
-      freeChat: safeGet('/api/admin/analytics/free-chat-funnel', dateParams),
-      forcedUpdate: safeGet('/api/admin/analytics/forced-update', dateParams),
-    };
-    const keys = Object.keys(requests);
-    const values = await Promise.all(Object.values(requests));
-    const results = Object.fromEntries(keys.map((k, i) => [k, values[i]]));
+  /* ── NOTHING LOADS UNTIL IT IS ASKED FOR (owner, 2026-10-10) ───────────────
+   *
+   * This page used to fire 26 requests the moment it opened, and all 26 again on
+   * every date change — most of them HogQL queries against PostHog. That is what
+   * made it slow and flaky: one page view queued twenty-odd analytical queries
+   * nobody had asked for, and a handful would time out and show as failures.
+   *
+   * Now the page opens having fetched NOTHING. Every section below is a Gate with
+   * its own Show button, and pressing it fetches that one section for the dates
+   * currently selected. Pick the range first, then show only what you want to read.
+   *
+   * WHAT IS SHOWN IS ALWAYS REAL. A section renders only its own server response —
+   * there is no placeholder, sample or carried-over data anywhere on this page. If a
+   * request fails the section says so and offers Retry; if the range genuinely has
+   * no activity the section says that instead. Changing the dates RESETS every
+   * section back to its button rather than silently refetching, so a number can
+   * never sit under a date range it was not computed for.
+   */
+  const SECTIONS = {
+    overview: { label: 'Overview totals', get: (d) => [
+      ['summary', '/api/admin/analytics/summary', { ...d, app: appTab }],
+      ['revenue', '/api/admin/analytics/revenue', d],
+      ['sessionVolume', '/api/admin/analytics/session-volume', d],
+    ] },
+    appHealth: { label: 'App Health', get: () => [['appHealth', '/api/admin/analytics/app-health', { days: 7 }]] },
+    retention: { label: 'Retention', get: () => [['retention', '/api/admin/analytics/retention', { days: 30 }]] },
+    revenue: { label: 'Daily Revenue', get: (d) => [
+      ['revenue', '/api/admin/analytics/revenue', d],
+      // The per-type split (chat/call/video) is a SECOND endpoint. Fetching only
+      // the first left this card showing a confident Rs.0 for each type sitting
+      // directly under a real total of Rs.1,712 — a wrong number, not a missing one.
+      ['revenueByType', '/api/admin/analytics/revenue-by-type', d],
+    ] },
+    paymentFunnel: { label: 'Payment Funnel', get: (d) => [['paymentFunnel', '/api/admin/analytics/payment-funnel', d]] },
+    customerSplit: { label: 'New vs. Returning', get: (d) => [['customerSplit', '/api/admin/analytics/customer-revenue-split', d]] },
+    sessionVolume: { label: 'Session Volume', get: (d) => [['sessionVolume', '/api/admin/analytics/session-volume', d]] },
+    trend: { label: 'Daily Screen Views', get: (d) => [['trend', '/api/admin/analytics/trend', d]] },
+    authFunnel: { label: 'New Customer Funnel', get: (d) => [
+      ['authFunnel', '/api/admin/analytics/auth-funnel', { ...d, type: authFunnelType }],
+      // The 'why did they fail' table underneath the funnel reads authFailures.
+      ['authFailures', '/api/admin/analytics/auth-failures', d],
+    ] },
+    onboardingJourney: { label: 'First Journey', get: (d) => [['onboardingJourney', '/api/admin/analytics/onboarding-journey', d]] },
+    signupToConsult: { label: 'Signup to First Consultation', get: (d) => [['signupToConsult', '/api/admin/analytics/signup-to-consult', d]] },
+    freeCall: { label: 'Free Call Funnel', get: (d) => [['freeCall', '/api/admin/analytics/free-call-funnel', d]] },
+    freeChat: { label: 'Free Chat Funnel', get: (d) => [['freeChat', '/api/admin/analytics/free-chat-funnel', d]] },
+    forcedUpdate: { label: 'Forced Update', get: (d) => [['forcedUpdate', '/api/admin/analytics/forced-update', d]] },
+    funnel: { label: 'Call & Chat Funnel', get: (d) => [['funnel', '/api/admin/analytics/funnel', d]] },
+    requestOutcomes: { label: 'Request Outcomes', get: (d) => [['requestOutcomes', '/api/admin/analytics/request-outcomes', d]] },
+    blockedAttempts: { label: 'Blocked Attempts', get: (d) => [
+      ['blockedAttempts', '/api/admin/analytics/blocked-attempts', d],
+      ['authFailures', '/api/admin/analytics/auth-failures', d],
+    ] },
+    astroPerf: { label: 'Astrologer Performance', get: (d) => [['astroPerf', '/api/admin/analytics/astrologer-performance', { ...d, limit: 50 }]] },
+    remediesFunnel: { label: 'Remedies Funnel', get: (d) => [['remediesFunnel', '/api/admin/analytics/remedies-funnel', d]] },
+    wallet: { label: 'Wallet Funnel', get: (d) => [['wallet', '/api/admin/analytics/wallet-funnel', d]] },
+    services: { label: 'Services Engagement', get: (d) => [['services', '/api/admin/analytics/services-engagement', d]] },
+    home: { label: 'Home Screen', get: (d) => [
+      ['homeInteractions', '/api/admin/analytics/home-interactions', d],
+      ['homeFlow', '/api/admin/analytics/home-flow', d],
+    ] },
+    topScreens: { label: 'Top Screens', get: (d) => [['topScreens', '/api/admin/analytics/top-screens', { ...d, app: appTab }]] },
+  };
 
-    // If the core PostHog-backed summary call specifically 503s, PostHog itself isn't
-    // configured yet — show the existing full-page explainer rather than a page full of
-    // empty cards that all look individually broken.
-    if (!results.summary.ok && results.summary.status === 503) {
+  // Where each response goes. Separate from SECTIONS so one section can fill several
+  // cards' state (Home needs two endpoints) without the registry repeating itself.
+  const SETTERS = {
+    summary: setSummary,
+    trend: (d) => setTrend(pivotTrend(d?.points || [])),
+    topScreens: (d) => setTopScreens(d?.screens || []),
+    funnel: setFunnel,
+    remediesFunnel: setRemediesFunnel,
+    revenue: setRevenue,
+    sessionVolume: setSessionVolume,
+    retention: setRetention,
+    revenueByType: setRevenueByType,
+    paymentFunnel: setPaymentFunnel,
+    customerSplit: setCustomerSplit,
+    homeInteractions: (d) => setHomeInteractions(d?.sections || []),
+    homeFlow: setHomeFlow,
+    requestOutcomes: setRequestOutcomes,
+    astroPerf: (d) => setAstroPerf(d?.astrologers || []),
+    authFailures: setAuthFailures,
+    blockedAttempts: setBlockedAttempts,
+    freeCall: setFreeCallFunnel,
+    services: setServicesEngagement,
+    wallet: setWalletFunnel,
+    freeChat: setFreeChatFunnel,
+    forcedUpdate: setForcedUpdate,
+    appHealth: setAppHealth,
+    authFunnel: setAuthFunnel,
+    onboardingJourney: setJourney,
+    signupToConsult: setSignupConsult,
+  };
+
+  // idle -> loading -> done | error, per section. Nothing is 'done' on arrival.
+  const [sectionState, setSectionState] = useState({});
+
+  const showSection = useCallback(async (key) => {
+    const def = SECTIONS[key];
+    if (!def) return;
+    setSectionState((p) => ({ ...p, [key]: { status: 'loading' } }));
+    const dateParams = { from: dateRange.from, to: dateRange.to };
+    const calls = def.get(dateParams);
+    const results = await Promise.all(calls.map(async ([stateKey, url, params]) => {
+      try {
+        const { data } = await client.get(url, { params });
+        return { stateKey, data, ok: true };
+      } catch (e) {
+        return {
+          stateKey,
+          ok: false,
+          status: e.response?.status,
+          message: e.response?.data?.message || e.message,
+        };
+      }
+    }));
+    const failed = results.filter((r) => !r.ok);
+    results.filter((r) => r.ok).forEach((r) => {
+      const set = SETTERS[r.stateKey];
+      if (set) set(r.data);
+    });
+    // PostHog not configured at all is its own full-page explainer, not a card error.
+    if (failed.some((f) => f.status === 503) && key === 'overview') {
       setNotConfigured(true);
-      setLoading(false);
       return;
     }
-    setNotConfigured(false);
+    setSectionState((p) => ({
+      ...p,
+      [key]: failed.length
+        ? { status: 'error', message: failed.map((f) => f.message).join('; ') }
+        : { status: 'done', loadedAt: Date.now(), range: `${dateRange.from} → ${dateRange.to}` },
+    }));
+  }, [dateRange, appTab, authFunnelType]);
 
-    setSummary(results.summary.data);
-    setTrend(pivotTrend(results.trend.data?.points || []));
-    setTopScreens(results.topScreens.data?.screens || []);
-    setFunnel(results.funnel.data);
-    setRemediesFunnel(results.remediesFunnel.data);
-    setRevenue(results.revenue.data);
-    setSessionVolume(results.sessionVolume.data);
-    setRetention(results.retention.data);
-    setRevenueByType(results.revenueByType.data);
-    setPaymentFunnel(results.paymentFunnel.data);
-    setCustomerSplit(results.customerSplit.data);
-    setHomeInteractions(results.homeInteractions.data?.sections || []);
-    setHomeFlow(results.homeFlow.data);
-    setRequestOutcomes(results.requestOutcomes.data);
-    setAstroPerf(results.astroPerf.data?.astrologers || []);
-    setAuthFailures(results.authFailures.data);
-    setBlockedAttempts(results.blockedAttempts.data);
-    setFreeCallFunnel(results.freeCall.data);
-    setServicesEngagement(results.services.data);
-    setWalletFunnel(results.wallet.data);
-    setFreeChatFunnel(results.freeChat.data);
-    setForcedUpdate(results.forcedUpdate.data);
-
-    const failedKeys = keys.filter((k) => !results[k].ok);
-    setError(failedKeys.length
-      ? `${failedKeys.length} of ${keys.length} analytics requests failed and are showing no data (${failedKeys.join(', ')}). Everything else on this page is current — click Refresh to retry the rest.`
-      : '');
-    setLoading(false);
-  }, [appTab, dateRange]);
-
-  // Independent fetch, keyed on its own selector state — separate from the main load()
-  // so switching Signup/Login doesn't re-fetch every other card on the page.
-  const loadAuthFunnel = useCallback(async () => {
-    setAuthFunnel(null); // clear first: never show the old range under the new dates
-    try {
-      const { data } = await client.get('/api/admin/analytics/auth-funnel', {
-        params: { type: authFunnelType, from: dateRange.from, to: dateRange.to },
-      });
-      if (isStaleResponse(data)) return;
-      setAuthFunnel(data);
-    } catch (e) {
-      // A missing/misconfigured POSTHOG_* var already shows the page-level "not
-      // configured" state via the main load() call. This used to swallow the error and
-      // leave whatever was on screen before, which is worse than saying nothing.
-      setAuthFunnel({ error: true });
-    }
-  }, [authFunnelType, dateRange]);
-
-  useEffect(() => { loadAuthFunnel(); }, [loadAuthFunnel]);
-
-  // Signup -> first consultation. Independent fetch so a failure here never
-  // blanks the rest of the page.
-  const loadSignupConsult = useCallback(async () => {
-    setSignupConsult(null);
-    try {
-      const { data } = await client.get('/api/admin/analytics/signup-to-consult', {
-        params: { from: dateRange.from, to: dateRange.to },
-      });
-      if (isStaleResponse(data)) return;
-      setSignupConsult(data);
-    } catch (e) {
-      setSignupConsult({ error: true });
-    }
-  }, [dateRange]);
-
-  useEffect(() => { loadSignupConsult(); }, [loadSignupConsult]);
-
-  // The full first journey, click by click. Own fetch, so a failure here leaves the
-  // rest of the page intact.
-  const loadJourney = useCallback(async () => {
-    setJourney(null);
-    try {
-      const { data } = await client.get('/api/admin/analytics/onboarding-journey', {
-        params: { from: dateRange.from, to: dateRange.to },
-      });
-      if (isStaleResponse(data)) return;
-      setJourney(data);
-    } catch (e) {
-      setJourney({ error: true });
-    }
-  }, [dateRange]);
-
-  useEffect(() => { loadJourney(); }, [loadJourney]);
-
-  // Independent fetch — Sentry not being configured yet is expected and shouldn't 503
-  // the rest of the page the way a missing POSTHOG_* var does above.
-  const loadAppHealth = useCallback(async () => {
-    try {
-      const { data } = await client.get('/api/admin/analytics/app-health', { params: { days: 7 } });
-      setAppHealth(data);
-      setAppHealthNotConfigured(false);
-    } catch (e) {
-      if (e.response?.status === 503) setAppHealthNotConfigured(true);
-    }
+  // Dates (or the app tab) changed: put every section back to its button and throw the
+  // old numbers away. Deliberately NOT a refetch — the whole point of this page is that
+  // it only ever queries what was asked for — and deliberately not "leave them on
+  // screen", because a figure sitting under a range it was not computed for is the one
+  // thing worse than no figure at all.
+  const resetSections = useCallback(() => {
+    setSectionState({});
+    setSummary(null); setTrend([]); setTopScreens([]); setFunnel(null);
+    setRemediesFunnel(null); setRevenue(null); setSessionVolume(null);
+    setRevenueByType(null); setPaymentFunnel(null); setCustomerSplit(null);
+    setHomeInteractions([]); setHomeFlow(null); setRequestOutcomes(null);
+    setAstroPerf([]); setAuthFailures(null); setBlockedAttempts(null);
+    setFreeCallFunnel(null); setServicesEngagement(null); setWalletFunnel(null);
+    setFreeChatFunnel(null); setForcedUpdate(null); setAuthFunnel(null);
+    setJourney(null); setSignupConsult(null);
+    setError('');
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60000); // auto-refresh every 60s
-    return () => clearInterval(t);
-  }, [load]);
+  useEffect(() => { resetSections(); }, [dateRange, appTab, resetSections]);
 
-  useEffect(() => {
-    loadAppHealth();
-    const t = setInterval(loadAppHealth, 60000);
-    return () => clearInterval(t);
-  }, [loadAppHealth]);
+  /** One section: its Show button, or its contents once they have been fetched. */
+  const Gate = ({ k, title, children }) => {
+    const st = sectionState[k] || { status: 'idle' };
+    if (st.status === 'done') {
+      return (
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18, marginBottom: -10 }}>
+            <button
+              className="btn sm secondary"
+              onClick={() => showSection(k)}
+              title={`Showing ${st.range}`}
+            >
+              ↻ Reload
+            </button>
+          </div>
+          {children}
+        </div>
+      );
+    }
+    return (
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="row-between" style={{ alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>{title}</h3>
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+              {st.status === 'error'
+                ? `Could not load: ${st.message}`
+                : `Not loaded. Press Show to fetch this for ${dateRange.from} → ${dateRange.to}.`}
+            </p>
+          </div>
+          <button
+            className="btn"
+            onClick={() => showSection(k)}
+            disabled={st.status === 'loading'}
+          >
+            {st.status === 'loading' ? 'Loading…' : st.status === 'error' ? 'Retry' : 'Show'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+
+  // The four loaders that used to live here (auth funnel, signup->consultation, first
+  // journey, app health) each had their OWN useEffect firing on mount, and the main
+  // load() ran on a 60-SECOND setInterval on top of that — so the page re-ran twenty-odd
+  // PostHog queries every minute it was left open, whether or not anybody was reading it.
+  // All of it is gone: every one of those is now an ordinary section in SECTIONS above,
+  // fetched once, when its Show button is pressed. There is no polling on this page.
 
   const envCard = (
     <div className="card" style={{ marginBottom: 18, borderLeft: `4px solid ${analyticsEnv === 'production' ? 'var(--maroon)' : 'var(--amber)'}` }}>
@@ -645,7 +696,7 @@ export default function Analytics() {
     <div>
       <div className="row-between" style={{ marginBottom: 18 }}>
         <h1 className="page-title" style={{ margin: 0 }}>Analytics</h1>
-        <button className="btn secondary" onClick={load}>Refresh</button>
+        <button className="btn secondary" onClick={resetSections} title="Clears every loaded section. Nothing is re-fetched until you press Show again.">Clear all</button>
       </div>
       {error && <div className="error-text">{error}</div>}
 
@@ -658,7 +709,7 @@ export default function Analytics() {
       />
 
       {envCard}
-      <AnalyticsExclusionsCard onChanged={load} />
+      <AnalyticsExclusionsCard onChanged={resetSections} />
       {replayCard}
 
       <div className="stat-grid">
@@ -694,6 +745,10 @@ export default function Analytics() {
         </div>
       )}
 
+      {/* The whole journey, in order, before the individual cards below — it is the
+          map; they are the close-ups. Fetches nothing until its own Show is pressed. */}
+      <CustomerJourney from={dateRange.from} to={dateRange.to} />
+      <Gate k="appHealth" title="App Health">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>App Health</h3>
         {appHealthNotConfigured ? (
@@ -715,7 +770,9 @@ export default function Analytics() {
           </div>
         )}
       </div>
+      </Gate>
 
+      <Gate k="retention" title="Retention (customer app)">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>Retention (customer app)</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
@@ -774,7 +831,9 @@ export default function Analytics() {
           </div>
         )}
       </div>
+      </Gate>
 
+      <Gate k="revenue" title="Daily Revenue">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>Daily Revenue</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
@@ -807,7 +866,9 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
+      <Gate k="paymentFunnel" title="Payment Funnel">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ marginBottom: 4 }}>
           <h3 style={{ margin: 0 }}>Payment Funnel</h3>
@@ -833,7 +894,9 @@ export default function Analytics() {
           <span>{paymentFunnel?.failed ?? 0}</span>
         </div>
       </div>
+      </Gate>
 
+      <Gate k="customerSplit" title="New vs. Returning Customer Revenue">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>New vs. Returning Customer Revenue</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
@@ -854,7 +917,9 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
+      <Gate k="sessionVolume" title="Daily Session Volume">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>Daily Session Volume</h3>
         <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
@@ -874,7 +939,9 @@ export default function Analytics() {
           </ResponsiveContainer>
         </div>
       </div>
+      </Gate>
 
+      <Gate k="trend" title="Daily Screen Views">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>Daily Screen Views</h3>
         <div style={{ width: '100%', height: 280 }}>
@@ -891,7 +958,9 @@ export default function Analytics() {
           </ResponsiveContainer>
         </div>
       </div>
+      </Gate>
 
+      <Gate k="authFunnel" title="New Customer Funnel (signup / login)">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
           <h3 style={{ margin: 0 }}>New Customer Funnel — {authFunnel?.label || 'Signup'}</h3>
@@ -954,9 +1023,11 @@ export default function Analytics() {
           );
         })()}
       </div>
+      </Gate>
 
       {/* ── Signup -> first consultation ── */}
       {/* Every tap of the first journey, so a drop can be pinned to one screen. */}
+      <Gate k="onboardingJourney" title="First Journey — every step">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>First Journey — every step</h3>
         <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
@@ -975,7 +1046,9 @@ export default function Analytics() {
           </p>
         )}
       </div>
+      </Gate>
 
+      <Gate k="signupToConsult" title="Signup to First Consultation">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Signup to First Consultation</h3>
         <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
@@ -995,8 +1068,10 @@ export default function Analytics() {
           </p>
         )}
       </div>
+      </Gate>
 
       {/* ── Free Introductory Call Funnel ── */}
+      <Gate k="freeCall" title="Free Introductory Call Funnel">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
           <div>
@@ -1052,8 +1127,10 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
       {/* ── Free 5-Minute Chat Funnel ── */}
+      <Gate k="freeChat" title="Free 5-Minute Chat Funnel">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
           <div>
@@ -1091,8 +1168,10 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
       {/* ── Forced Update Response ── */}
+      <Gate k="forcedUpdate" title="Forced Update: Did They Comply?">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
           <div>
@@ -1156,7 +1235,9 @@ export default function Analytics() {
           </p>
         )}
       </div>
+      </Gate>
 
+      <Gate k="funnel" title="Call & Chat Funnel">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between">
           <h3 style={{ margin: 0 }}>Call &amp; Chat Funnel (customer app)</h3>
@@ -1182,8 +1263,10 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
       {/* ── Why attempts didn't connect ── */}
+      <Gate k="requestOutcomes" title="Why requests didn't connect">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Why requests didn't connect</h3>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
@@ -1228,8 +1311,10 @@ export default function Analytics() {
           </table>
         </div>
       </div>
+      </Gate>
 
       {/* ── Attempts blocked before a request row ever existed ── */}
+      <Gate k="blockedAttempts" title="Blocked before the request was even sent">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Blocked before the request was even sent</h3>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
@@ -1261,12 +1346,14 @@ export default function Analytics() {
           </div>
         )}
       </div>
+      </Gate>
 
       {/* ── Per-astrologer performance ──
           Nothing on this page was broken down per astrologer before, so an astrologer
           who rejects or misses most requests was indistinguishable from one who accepts
           everything — on a marketplace that's the most consequential difference there is.
           All from Postgres, so it's exact and covers pre-instrumentation history. */}
+      <Gate k="astroPerf" title="Astrologer performance">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Astrologer performance</h3>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
@@ -1314,12 +1401,14 @@ export default function Analytics() {
           </div>
         )}
       </div>
+      </Gate>
 
       {/* ── Remedies commerce funnel ──
           Was pointed at three events (remedy_buy_now_clicked / remedy_place_order_clicked /
           remedy_order_placed) that no longer exist anywhere in the app after the cart
           rewrite, so it rendered 0 → 0 → 0 permanently and read as "nobody is buying".
           Now driven by the five events the cart flow actually fires. */}
+      <Gate k="remediesFunnel" title="Remedies Purchase Funnel">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Remedies Purchase Funnel (customer app)</h3>
         <p className="muted" style={{ marginTop: 10, marginBottom: 16 }}>
@@ -1337,8 +1426,10 @@ export default function Analytics() {
           </span>
         </div>
       </div>
+      </Gate>
 
       {/* ── Wallet Recharge Funnel ── */}
+      <Gate k="wallet" title="Wallet Recharge Funnel">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
           <div>
@@ -1373,8 +1464,10 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
       {/* ── Astrology Services & Free Tools Engagement Breakdown ── */}
+      <Gate k="services" title="Astrology Services & Free Tools Engagement">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Astrology Services &amp; Free Tools Engagement</h3>
         <p className="muted" style={{ marginTop: 4, marginBottom: 16, fontSize: 13 }}>
@@ -1412,7 +1505,9 @@ export default function Analytics() {
           </div>
         )}
       </div>
+      </Gate>
 
+      <Gate k="home" title="Home Screen">
       <div className="card" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Home Screen</h3>
         <p className="muted" style={{ marginTop: 4 }}>
@@ -1474,7 +1569,9 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+      </Gate>
 
+      <Gate k="topScreens" title="Top Screens">
       <div className="card" style={{ marginTop: 18 }}>
         <div className="row-between">
           <h3 style={{ margin: 0 }}>Top Screens</h3>
@@ -1504,6 +1601,7 @@ export default function Analytics() {
           </table>
         </div>
       </div>
+      </Gate>
     </div>
   );
 }

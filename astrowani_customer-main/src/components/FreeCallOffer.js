@@ -84,7 +84,7 @@ function LiveDot() {
   );
 }
 
-function LiveBookedBadge({ count }) {
+export function LiveBookedBadge({ count }) {
   return (
     <View style={styles.liveBadgeRow}>
       <LiveDot />
@@ -105,7 +105,7 @@ function LiveBookedBadge({ count }) {
  * No Animated, no timers, no featuredIndex: this renders once and holds still.
  * Deliberately so — the brief was to remove the animation completely.
  */
-const AstrologerCluster = ({ list, t, instant }) => {
+export const AstrologerCluster = ({ list, t, instant }) => {
   const faces = (list || []).slice(0, CLUSTER_MAX);
   const tr = (k) => (typeof t === 'function' ? t(k) : k);
   if (!faces.length) return null;

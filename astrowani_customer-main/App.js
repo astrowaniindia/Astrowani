@@ -17,12 +17,26 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import { hydrateHomeCache, prefetchHomeData } from './src/utils/homePreload';
 import { loadMascotTips } from './src/utils/mascotTips';
 import { prefetchFreeCallOffer } from './src/api/FreeCallApi';
-import { reportFirstOpen } from './src/utils/acquisition';
+import {
+  reportFirstOpen,
+  isTargetCampaignFirstOpen,
+  getCampaignVariant,
+  setCampaignVariant as rememberCampaignVariant,
+} from './src/utils/acquisition';
+import { CAMPAIGN_GIFT_REVEAL_ENABLED } from './src/utils/featureFlags';
+import PendingGiftBubbleHost from './src/components/PendingGiftBubbleHost';
+import SignupNudgeHost from './src/components/SignupNudgeHost';
 import Instance from './src/api/ApiCall';
 import { resetAnalyticsIdentity } from './src/utils/Analytics';
 import { COLORS } from './src/Theme/Colors';
 import { onHomeReady } from './src/utils/appReady';
 import { hydrateWalletBalance } from './src/hooks/useWalletBalance';
+
+// Which pre-login screen a targeted-campaign install opens on. The older
+// speech-bubble prompt is hidden rather than deleted — see featureFlags.js.
+const CAMPAIGN_PROMPT_ROUTE = CAMPAIGN_GIFT_REVEAL_ENABLED
+  ? 'CampaignGiftReveal'
+  : 'CampaignFreeCallPrompt';
 
 // Hard ceiling on the whole cold-start cover (brand animation + avatar screen),
 // measured from app start — NOT an extra delay added after bootstrap, or a slow
@@ -68,6 +82,14 @@ Alert.alert = (title, message, buttons, options) => {
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [userToken, setUserToken] = useState(null);
+  // True only for a signed-out visitor whose install referrer carries the "11 min
+  // call better geolocations" campaign id, and only until the prompt has been shown
+  // once (utils/acquisition.js isTargetCampaignFirstOpen). Decided once, during
+  // bootstrap, alongside userToken — see the initialRoute prop below.
+  const [showCampaignPrompt, setShowCampaignPrompt] = useState(false);
+  // 'gift' (Hinglish reveal → astrologer picker) or 'metro' (English reveal → one
+  // astrologer chosen for them). Decided from the install referrer, once.
+  const [campaignVariant, setCampaignVariant] = useState('gift');
   // Gates on the intro animation's own onFinish, not a timer here, so the
   // animation always plays to completion even if the AsyncStorage bootstrap
   // below resolves first (the common case — a token read is near-instant).
@@ -163,6 +185,34 @@ const App = () => {
       // account branch above has settled, so a cleared account never gets one.
       if (token) await hydrateWalletBalance();
 
+      // Signed-out only: is this a first open from the targeted Google Ads campaign?
+      // getAcquisition() caches its native read, so this costs nothing on every launch
+      // after the first — only the one cold start where it isn't cached yet pays for it,
+      // and isTargetCampaignFirstOpen() never throws.
+      if (!token) {
+        // TEMP DEV-ONLY PREVIEW (remove before any real build/push): the emulator has
+        // no real Play install referrer to detect, so force the campaign prompt on
+        // every signed-out cold start in __DEV__ so the owner can review it now.
+        const showPrompt = __DEV__ ? true : await isTargetCampaignFirstOpen();
+        if (showPrompt) setShowCampaignPrompt(true);
+        // TEMP DEV-ONLY (remove with the override above): an emulator has no Play
+        // install referrer, so getCampaignVariant() can never answer 'metro' there.
+        // Set this to 'metro' to review the English single-astrologer flow, or
+        // 'gift' for the Hinglish one.
+        const DEV_VARIANT = 'metro';
+        const variant = __DEV__ ? DEV_VARIANT : await getCampaignVariant();
+        if (variant) {
+          setCampaignVariant(variant);
+          // PERSIST IT TOO, not just this component's state. Everything downstream of
+          // the reveal — the sign-up nudge above the navigator, the chosen-astrologer
+          // screen — reads the variant from storage rather than from a prop, because
+          // they are not children of the screen that knows it. Without this the dev
+          // override drove the reveal and nothing else, so the reveal was English and
+          // the nudge after it was still Hinglish.
+          await rememberCampaignVariant(variant);
+        }
+      }
+
       setUserToken(token);
       setIsLoading(false);
 
@@ -213,11 +263,21 @@ const App = () => {
               {/* Signed out: the Login screen, which also signs up a new number
                   (Login.js handleGetOtp), so one screen serves everyone (2026-09-20). */}
               <Navigation
-                initialRoute={userToken ? 'DrawerNavigator' : 'Login'}
+                initialRoute={userToken
+                  ? 'DrawerNavigator'
+                  : (showCampaignPrompt ? CAMPAIGN_PROMPT_ROUTE : 'Login')}
+                initialParams={showCampaignPrompt ? { variant: campaignVariant } : undefined}
                 onReady={() => setNavReady(true)}
               />
             </ErrorBoundary>
           )}
+          {/* Above the navigator on purpose: the gift the campaign reveal collapses
+              into has to survive Login/OTP/name and still be in the corner when Home
+              opens. A screen cannot draw something that outlives it. */}
+          <PendingGiftBubbleHost />
+          {/* Also above the navigator: it is raised on the way OUT of a screen, so a
+              screen-owned version would unmount with the screen that raised it. */}
+          <SignupNudgeHost />
           <CustomAlert />
           {/* The cold-start cover, on top of everything until the app behind it is
               drawn. Covering rather than replacing is the point: the navigator below

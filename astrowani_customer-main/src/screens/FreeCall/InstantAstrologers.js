@@ -76,6 +76,20 @@ export default function InstantAstrologers({ navigation, route }) {
   const channelRef = useRef(null);
   const navigatedRef = useRef(false);
 
+  // ── Journey tracking ───────────────────────────────────────────────────────
+  // This one screen serves two completely different experiences — the ordinary
+  // multi-astrologer picker, and the campaign's single chosen astrologer — and every
+  // event below used to be indistinguishable between them. Each is now stamped with
+  // `variant`, so "did people call the astrologer we hand-picked for them" is a
+  // question the data can actually answer.
+  //
+  // Refs, not state: onCall/onNotifyMe are useCallbacks that must not be rebuilt
+  // (and must not read a stale `data`) every time the list refreshes on focus.
+  const variantRef = useRef('picker');
+  const chosenSeenRef = useRef(false);
+  const screenAtRef = useRef(Date.now());
+  const rangRef = useRef(false);
+
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     const res = await getInstantAstrologers();
@@ -96,8 +110,35 @@ export default function InstantAstrologers({ navigation, route }) {
   // regardless, so a stale list can only ever cost one polite refusal.
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Fires ONCE, the first time the server's answer resolves to a chosen astrologer —
+  // this is "the customer actually saw the name we picked for them", which is the
+  // step every later number on this screen has to be read against. Kept out of
+  // `load()` so a focus-refresh does not count as a second viewing.
+  useEffect(() => {
+    if (data.chosen && !chosenSeenRef.current) {
+      chosenSeenRef.current = true;
+      variantRef.current = 'chosen';
+      captureEvent('free_call_chosen_shown', {
+        astrologer_id: data.chosen.id,
+        astrologer_name: data.chosen.name,
+        is_busy: !!data.chosen.isBusy,
+        duration_minutes: data.durationMinutes || 11,
+      });
+    } else if (data.chosenOffline && !chosenSeenRef.current) {
+      // The reserved astrologer was offline or hidden. A campaign customer who hits
+      // this sees a dead end where the whole ad promised a person, so it is tracked
+      // as its own outcome rather than vanishing into "opened but never rang".
+      chosenSeenRef.current = true;
+      variantRef.current = 'chosen';
+      captureEvent('free_call_chosen_offline');
+    }
+  }, [data]);
+
   useEffect(() => {
     captureEvent('free_call_instant_opened');
+    // Copied into the effect so the cleanup below is not reading a ref (the lint rule
+    // is right in general; this one is a mount timestamp that never changes).
+    const openedAt = screenAtRef.current;
     let cancelled = false;
     (async () => {
       const authToken = await AsyncStorage.getItem('token');
@@ -114,6 +155,16 @@ export default function InstantAstrologers({ navigation, route }) {
     })();
     return () => {
       cancelled = true;
+      // Left the screen. `navigatedRef` is the one thing that separates "went into
+      // the call" from "walked away", and without this the drop-off between seeing
+      // the chosen astrologer and ringing them is invisible.
+      if (!navigatedRef.current) {
+        captureEvent('free_call_left_without_calling', {
+          variant: variantRef.current,
+          rang: rangRef.current,
+          seconds_on_screen: Math.round((Date.now() - openedAt) / 1000),
+        });
+      }
       if (ringTimerRef.current) clearTimeout(ringTimerRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       // Leaving the screen mid-ring must not leave the astrologer's phone ringing for a
@@ -146,7 +197,12 @@ export default function InstantAstrologers({ navigation, route }) {
       ringRef.current = { requestId: res.requestId, sessionId: res.sessionId, astrologerId: astro.id };
       navigatedRef.current = false;
       setRinging({ astrologerId: astro.id, name: astro.name, image: astro.image });
-      captureEvent('free_call_instant_ring', { astrologer_id: astro.id });
+      rangRef.current = true;
+      captureEvent('free_call_instant_ring', {
+        astrologer_id: astro.id,
+        variant: variantRef.current,
+        seconds_to_ring: Math.round((Date.now() - screenAtRef.current) / 1000),
+      });
 
       const freeSeconds = (Number(res.durationMinutes) || 11) * 60;
 
@@ -155,6 +211,13 @@ export default function InstantAstrologers({ navigation, route }) {
       const goToCall = (sessionId) => {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
+        // Closes the funnel: shown -> rang -> ANSWERED. Without it the only signals
+        // are the two failures (rejected / no_answer), so a variant that connects
+        // well and one that is simply never tried look the same from here.
+        captureEvent('free_call_instant_answered', {
+          astrologer_id: astro.id,
+          variant: variantRef.current,
+        });
         stopRinging(null); // accepted: do NOT mark the request cancelled
         // REPLACE, not navigate. The free call is once per customer, so this screen must
         // not be underneath the call waiting to be returned to: `goBack()` at the end of
@@ -180,7 +243,7 @@ export default function InstantAstrologers({ navigation, route }) {
         // 'rejected' is already the row's status — marking it again would overwrite
         // the astrologer's own decision with ours.
         stopRinging(null);
-        captureEvent('free_call_instant_rejected', { astrologer_id: astro.id });
+        captureEvent('free_call_instant_rejected', { astrologer_id: astro.id, variant: variantRef.current });
         showStatusPopup({
           variant: 'busy',
           title: t('freeCallInstant.declinedTitle'),
@@ -213,7 +276,7 @@ export default function InstantAstrologers({ navigation, route }) {
         if (navigatedRef.current) return;
         navigatedRef.current = true;
         stopRinging('missed');
-        captureEvent('free_call_instant_no_answer', { astrologer_id: astro.id });
+        captureEvent('free_call_instant_no_answer', { astrologer_id: astro.id, variant: variantRef.current });
         showStatusPopup({
           variant: 'missed',
           title: t('freeCallInstant.noAnswerTitle'),
@@ -248,7 +311,7 @@ export default function InstantAstrologers({ navigation, route }) {
     const res = await requestNotifyMe(astro.id, 'audio', { t });
     if (res?.ok) {
       setNotified((prev) => ({ ...prev, [astro.id]: true }));
-      captureEvent('free_call_instant_notify_me', { astrologer_id: astro.id });
+      captureEvent('free_call_instant_notify_me', { astrologer_id: astro.id, variant: variantRef.current });
     }
   }, [notified, t]);
 
@@ -356,6 +419,91 @@ export default function InstantAstrologers({ navigation, route }) {
   // Pad to an even count so every row has two cells. Cheaper and more predictable than
   // giving the card a percentage maxWidth, which has to be kept in step with the row gap
   // by hand and drifts the moment either changes.
+  /* ── One astrologer, chosen for this customer ───────────────────────────────
+   * A campaign customer is not shown a panel to choose from: the server answers
+   * `chosen` instead of a list (see /api/free-call/instant/astrologers), and this
+   * screen renders that one astrologer as a full-width hero.
+   *
+   * It reuses onCall/onNotifyMe unchanged. The ringing, the waiting popup, the
+   * accept socket and the navigation into the call are identical to the picker's —
+   * only the choosing is removed, so there is no second call path to keep working.
+   */
+  const chosen = data.chosen || null;
+
+  const renderChosen = () => {
+    const busy = chosen.isBusy;
+    return (
+      <View style={styles.chosenPage}>
+        <View style={styles.chosenBadge}>
+          <Icon name="timer" size={moderateScale(14)} color={COLORS.AstroMaroon} />
+          <Text style={styles.chosenBadgeTxt}>
+            {t('metroChosen.badge', { minutes: data.durationMinutes || 11 })}
+          </Text>
+        </View>
+
+        <Text style={styles.chosenHead}>{t('metroChosen.chosenForYou')}</Text>
+
+        <View style={styles.chosenCard}>
+          <View style={[styles.chosenRing, busy && styles.chosenRingBusy]}>
+            {chosen.image ? (
+              <Image source={{ uri: chosen.image }} style={styles.chosenAvatar} />
+            ) : (
+              <View style={[styles.chosenAvatar, styles.avatarFallback]}>
+                <Icon name="person" size={moderateScale(54)} color={COLORS.AstroMaroon} />
+              </View>
+            )}
+          </View>
+          {/* Bigger than the avatar's own size (118) on purpose -- this card is the
+              one place the ribbon is the only badge on screen, so it can afford to
+              read larger than the shared sizing used on list tiles/profile. */}
+          <AstrologerBadge type={chosen.badgeType} size={scale(168)} />
+
+          <Text style={styles.chosenName} numberOfLines={2}>{chosen.name}</Text>
+
+          <View style={styles.statusRow}>
+            <View style={[styles.dot, busy && styles.dotBusy]} />
+            <Text style={[styles.statusTxt, busy && styles.statusTxtBusy]}>
+              {busy ? t('metroChosen.busyNow') : t('metroChosen.availableNow')}
+            </Text>
+          </View>
+
+          {chosen.rating > 0 && (
+            <View style={styles.ratingRow}>
+              <StarRating rating={chosen.rating} size={moderateScale(13)} />
+              {chosen.totalReviews > 0 && <Text style={styles.reviews}>({chosen.totalReviews})</Text>}
+            </View>
+          )}
+
+          {chosen.experience > 0 && (
+            <Text style={styles.chosenExp}>
+              {chosen.experience} {t('metroChosen.yearsExp')}
+            </Text>
+          )}
+
+          <Text style={styles.chosenSub}>{t('metroChosen.subline')}</Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.chosenCta, busy && styles.chosenCtaBusy]}
+          activeOpacity={0.88}
+          onPress={() => (busy ? onNotifyMe(chosen) : onCall(chosen))}
+        >
+          <Icon name={busy ? 'notifications-none' : 'call'} size={moderateScale(20)} color={COLORS.white} />
+          <Text style={styles.chosenCtaTxt}>
+            {busy
+              ? (notified[chosen.id] ? t('freeCallInstant.notified') : t('metroChosen.ctaBusy'))
+              : t('metroChosen.cta')}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.trustRow}>
+          <Icon name="verified-user" size={moderateScale(13)} color="#1E6B45" />
+          <Text style={styles.trustTxt}>{t('metroChosen.trustLine')}</Text>
+        </View>
+      </View>
+    );
+  };
+
   const gridData = useMemo(() => {
     const list = data.astrologers || [];
     return list.length % 2 === 1 ? [...list, { id: '__spacer__', __spacer: true }] : list;
@@ -396,6 +544,13 @@ export default function InstantAstrologers({ navigation, route }) {
 
       {loading ? (
         <View style={styles.centre}><ActivityIndicator size="large" color={COLORS.AstroMaroon} /></View>
+      ) : chosen ? (
+        renderChosen()
+      ) : data.chosenOffline ? (
+        <View style={styles.centre}>
+          <Icon name="schedule" size={moderateScale(42)} color={COLORS.AstroMaroon} />
+          <Text style={styles.blockedTxt}>{t('metroChosen.offline')}</Text>
+        </View>
       ) : blocked ? (
         <View style={styles.centre}>
           <Icon name="info-outline" size={moderateScale(42)} color={COLORS.AstroMaroon} />
@@ -596,6 +751,111 @@ const styles = StyleSheet.create({
   actionTxt: {
     color: COLORS.white, fontSize: moderateScale(14.5), fontWeight: '800',
     marginLeft: scale(6), includeFontPadding: false,
+  },
+
+  /* ── The single chosen astrologer (campaign flow) ───────────────────────── */
+  chosenPage: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(14),
+    paddingBottom: verticalScale(18),
+  },
+  chosenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    backgroundColor: COLORS.AstroGold,
+    borderRadius: moderateScale(20),
+    paddingHorizontal: scale(13),
+    paddingVertical: verticalScale(5),
+  },
+  chosenBadgeTxt: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(12),
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  chosenHead: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(20),
+    fontWeight: '900',
+    textAlign: 'center',
+    marginTop: verticalScale(12),
+    paddingHorizontal: scale(10),
+  },
+  // ONE card filling the width, not a tile in a grid: there is nothing to compare
+  // it against, and a half-width card would read as the first of several.
+  chosenCard: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    backgroundColor: CREAM,
+    borderRadius: moderateScale(22),
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    paddingVertical: verticalScale(20),
+    paddingHorizontal: scale(18),
+    marginTop: verticalScale(14),
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+  },
+  chosenRing: {
+    width: scale(132),
+    height: scale(132),
+    borderRadius: scale(66),
+    borderWidth: 3,
+    borderColor: FREE_GREEN,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chosenRingBusy: { borderColor: BUSY },
+  chosenAvatar: {
+    width: scale(118),
+    height: scale(118),
+    borderRadius: scale(59),
+    backgroundColor: '#EFE2D6',
+  },
+  chosenName: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(22),
+    fontWeight: '900',
+    textAlign: 'center',
+    marginTop: verticalScale(10),
+  },
+  chosenExp: {
+    color: '#7a675a',
+    fontSize: moderateScale(12.5),
+    fontWeight: '700',
+    marginTop: verticalScale(5),
+  },
+  chosenSub: {
+    color: '#6A4A38',
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+    lineHeight: moderateScale(19),
+    textAlign: 'center',
+    marginTop: verticalScale(11),
+  },
+  chosenCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: scale(9),
+    alignSelf: 'stretch',
+    backgroundColor: FREE_GREEN,
+    borderRadius: moderateScale(28),
+    paddingVertical: verticalScale(16),
+    marginTop: verticalScale(18),
+    elevation: 6,
+  },
+  chosenCtaBusy: { backgroundColor: BUSY },
+  chosenCtaTxt: {
+    color: COLORS.white,
+    fontSize: moderateScale(17),
+    fontWeight: '900',
   },
 
   trustRow: {
