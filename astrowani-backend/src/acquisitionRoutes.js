@@ -268,34 +268,37 @@ module.exports = function registerAcquisitionRoutes(app) {
     const events = [];
     events.push({ at: customerRes.data.created_at, type: 'signup', label: 'Signed up' });
 
+    // One plain-English line per request, not a raw status code the admin has to decode.
+    // 'cancelled' and 'missed' are BOTH set only by the customer's own app (see
+    // CUSTOMER_SETTABLE_REQUEST_STATUSES above / CLAUDE.md "Call Cancellation Sync") — an
+    // astrologer never produces either value, so every request that ends this way was the
+    // customer backing out, not the astrologer declining. Spell that out here so nobody has
+    // to go read the code (or ask) to find out who actually did what.
+    const outcomeLabel = (noun, who, status) => {
+      switch (status) {
+        case 'pending': return `${noun} ${who} — still ringing, no answer yet`;
+        case 'accepted': return `${noun} ${who} — picked up, it connected`;
+        case 'rejected': return `${noun} ${who} — the astrologer declined, it never connected`;
+        case 'cancelled': return `${noun} ${who} — the CUSTOMER cancelled while it was still ringing, before the astrologer answered; it never connected`;
+        case 'missed': return `${noun} ${who} — nobody answered in time and it auto-expired; it never connected`;
+        default: return `${noun} ${who} — ${status}`;
+      }
+    };
+
     for (const r of callsRes.data || []) {
       events.push({
-        at: r.created_at,
+        at: r.responded_at || r.created_at,
         type: 'call_requested',
-        label: `Requested a call with ${astroLabel(r.astrologer_id)} — status: ${r.status}`,
+        label: outcomeLabel('Called', astroLabel(r.astrologer_id), r.status),
       });
-      if (r.responded_at && r.status !== 'pending') {
-        events.push({
-          at: r.responded_at,
-          type: 'call_responded',
-          label: `Call with ${astroLabel(r.astrologer_id)} ${r.status}`,
-        });
-      }
     }
 
     for (const r of chatsRes.data || []) {
       events.push({
-        at: r.created_at,
+        at: r.responded_at || r.created_at,
         type: 'chat_requested',
-        label: `Requested a chat with ${astroLabel(r.receiver_id)} — status: ${r.status}`,
+        label: outcomeLabel('Messaged', astroLabel(r.receiver_id), r.status),
       });
-      if (r.responded_at && r.status !== 'pending') {
-        events.push({
-          at: r.responded_at,
-          type: 'chat_responded',
-          label: `Chat with ${astroLabel(r.receiver_id)} ${r.status}`,
-        });
-      }
     }
 
     for (const s of sessionsRes.data || []) {
