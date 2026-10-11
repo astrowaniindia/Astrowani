@@ -106,7 +106,7 @@ const RECHARGE_DATE_BASIS = [
 
 const RECHARGE_SORT = {
   name: (r) => (r.name || '').toLowerCase(),
-  totalRecharged: (r) => r.totalRecharged,
+  totalRecharged: (r) => r.periodRecharged ?? r.totalRecharged,
   rechargeCount: (r) => r.rechargeCount,
   lastRechargeAt: (r) => (r.lastRechargeAt ? new Date(r.lastRechargeAt).getTime() : null),
   walletBalance: (r) => r.walletBalance,
@@ -159,6 +159,19 @@ function RechargeActivitySection() {
     return [...set].sort((a, b) => (categoryLabels[a] || a).localeCompare(categoryLabels[b] || b));
   }, [rows, categoryLabels]);
 
+  // What a customer recharged WITHIN the selected date window — not their lifetime
+  // total. The "Today" / "Last 7 Days" chips pick which customers appear (by their
+  // last/first recharge, per dateBasis), but the "Recharged" figure shown for them must
+  // match that same window, or "Today" reads as "all-time" the moment someone has an
+  // older recharge too. 'all' (Any Time) has no window, so it stays the lifetime total.
+  const periodRechargedFor = (r) => {
+    if (rechargeTimeFilter === 'all') return r.totalRecharged;
+    return (r.recharges || []).reduce(
+      (s, e) => (inRange(e.paidAt, rechargeTimeFilter, rechargeRange) ? s + e.amount : s),
+      0,
+    );
+  };
+
   const filtered = useMemo(() => {
     // Blank or non-numeric bounds are simply absent bounds, so a half-typed "1" in the
     // max box narrows the list instead of emptying it the moment it is cleared again.
@@ -166,34 +179,38 @@ function RechargeActivitySection() {
     const max = maxRecharged.trim() === '' ? null : Number(maxRecharged);
     const q = search.trim().toLowerCase();
 
-    return rows.filter((r) => {
-      const basisDate = dateBasis === 'joined' ? r.createdAt : dateBasis === 'first' ? r.firstRechargeAt : r.lastRechargeAt;
-      if (!inRange(basisDate, rechargeTimeFilter, rechargeRange)) return false;
+    return rows
+      .filter((r) => {
+        const basisDate = dateBasis === 'joined' ? r.createdAt : dateBasis === 'first' ? r.firstRechargeAt : r.lastRechargeAt;
+        if (!inRange(basisDate, rechargeTimeFilter, rechargeRange)) return false;
 
-      const wallet = Number(r.walletBalance || 0);
-      if (rechargeWalletFilter === 'has' && !(wallet > 0)) return false;
-      if (rechargeWalletFilter === 'zero' && !(wallet <= 0)) return false;
+        const wallet = Number(r.walletBalance || 0);
+        if (rechargeWalletFilter === 'has' && !(wallet > 0)) return false;
+        if (rechargeWalletFilter === 'zero' && !(wallet <= 0)) return false;
 
-      if (categoryFilter !== 'all' && !((r.spend || {})[categoryFilter] > 0)) return false;
+        if (categoryFilter !== 'all' && !((r.spend || {})[categoryFilter] > 0)) return false;
 
-      const n = Number(r.rechargeCount || 0);
-      if (countFilter === 'one' && n !== 1) return false;
-      if (countFilter === 'few' && !(n >= 2 && n <= 4)) return false;
-      if (countFilter === 'many' && !(n >= 5)) return false;
+        const n = Number(r.rechargeCount || 0);
+        if (countFilter === 'one' && n !== 1) return false;
+        if (countFilter === 'few' && !(n >= 2 && n <= 4)) return false;
+        if (countFilter === 'many' && !(n >= 5)) return false;
 
-      if (spendFilter === 'spent' && !(r.totalSpent > 0)) return false;
-      if (spendFilter === 'unspent' && r.totalSpent > 0) return false;
+        if (spendFilter === 'spent' && !(r.totalSpent > 0)) return false;
+        if (spendFilter === 'unspent' && r.totalSpent > 0) return false;
 
-      if (min !== null && Number.isFinite(min) && r.totalRecharged < min) return false;
-      if (max !== null && Number.isFinite(max) && r.totalRecharged > max) return false;
-
-      if (!q) return true;
-      return (
-        (r.name || '').toLowerCase().includes(q) ||
-        (r.mobile || '').toLowerCase().includes(q) ||
-        (r.email || '').toLowerCase().includes(q)
-      );
-    });
+        if (!q) return true;
+        return (
+          (r.name || '').toLowerCase().includes(q) ||
+          (r.mobile || '').toLowerCase().includes(q) ||
+          (r.email || '').toLowerCase().includes(q)
+        );
+      })
+      .map((r) => ({ ...r, periodRecharged: periodRechargedFor(r) }))
+      .filter((r) => {
+        if (min !== null && Number.isFinite(min) && r.periodRecharged < min) return false;
+        if (max !== null && Number.isFinite(max) && r.periodRecharged > max) return false;
+        return true;
+      });
   }, [rows, search, rechargeTimeFilter, rechargeRange, dateBasis, rechargeWalletFilter, categoryFilter, countFilter, spendFilter, minRecharged, maxRecharged]);
 
   const sorted = useMemo(() => sortRows(filtered, sort, RECHARGE_SORT), [filtered, sort]);
@@ -220,13 +237,14 @@ function RechargeActivitySection() {
   // silently ignored the filters would be the one number nobody could reconcile.
   const exportCSV = () => {
     const cats = categoriesPresent;
-    const headers = ['Name', 'Mobile', 'Email', 'Total Recharged (INR)', 'Recharges', 'First Recharge', 'Last Recharge', 'Current Balance (INR)', 'Total Spent (INR)', ...cats.map((c) => `${categoryLabels[c] || c} (INR)`)];
+    const rechargedHeader = rechargeTimeFilter === 'all' ? 'Total Recharged (INR)' : 'Recharged In Range (INR)';
+    const headers = ['Name', 'Mobile', 'Email', rechargedHeader, 'Recharges', 'First Recharge', 'Last Recharge', 'Current Balance (INR)', 'Total Spent (INR)', ...cats.map((c) => `${categoryLabels[c] || c} (INR)`)];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = sorted.map((r) => [
       esc(r.name || ''),
       esc(r.isDeleted ? 'Freed' : r.mobile || ''),
       esc(r.email || ''),
-      r.totalRecharged,
+      r.periodRecharged,
       r.rechargeCount,
       r.firstRechargeAt || '',
       r.lastRechargeAt || '',
@@ -254,7 +272,7 @@ function RechargeActivitySection() {
   const totals = useMemo(() => {
     // Totals track the FILTERED set, so the stat cards move with the chips/search
     // instead of always describing the whole unfiltered table.
-    const totalRecharged = filtered.reduce((s, r) => s + r.totalRecharged, 0);
+    const totalRecharged = filtered.reduce((s, r) => s + r.periodRecharged, 0);
     const totalSpent = filtered.reduce((s, r) => s + r.totalSpent, 0);
     return { customers: filtered.length, totalRecharged, totalSpent };
   }, [filtered]);
@@ -396,7 +414,14 @@ function RechargeActivitySection() {
           <thead>
             <tr>
               <SortableTh label="Customer" sortKey="name" sort={sort} setSort={setSort} />
-              <SortableTh label="Recharged" sortKey="totalRecharged" sort={sort} setSort={setSort} numeric />
+              <SortableTh
+                label={rechargeTimeFilter === 'all' ? 'Recharged' : `Recharged (${DATE_FILTERS.find((f) => f.key === rechargeTimeFilter)?.label || 'Range'})`}
+                sortKey="totalRecharged"
+                sort={sort}
+                setSort={setSort}
+                numeric
+                title={rechargeTimeFilter === 'all' ? 'Lifetime total' : 'Amount recharged within the selected date range, not their lifetime total'}
+              />
               <SortableTh label="Recharges" sortKey="rechargeCount" sort={sort} setSort={setSort} numeric />
               <SortableTh label="Last Recharge" sortKey="lastRechargeAt" sort={sort} setSort={setSort} numeric />
               <SortableTh label="Current Balance" sortKey="walletBalance" sort={sort} setSort={setSort} numeric />
@@ -428,7 +453,10 @@ function RechargeActivitySection() {
                   <div className="muted" style={{ fontSize: 11.5 }}>{r.mobile || r.email || '—'}</div>
                 </td>
                 <td>
-                  <span style={{ fontWeight: 700, color: 'var(--emerald)' }}>₹{r.totalRecharged.toLocaleString('en-IN')}</span>
+                  <span style={{ fontWeight: 700, color: 'var(--emerald)' }}>₹{r.periodRecharged.toLocaleString('en-IN')}</span>
+                  {rechargeTimeFilter !== 'all' && r.periodRecharged !== r.totalRecharged && (
+                    <div className="muted" style={{ fontSize: 10.5 }}>₹{r.totalRecharged.toLocaleString('en-IN')} lifetime</div>
+                  )}
                 </td>
                 <td>{r.rechargeCount}</td>
                 <td style={{ fontSize: 12.5 }}>{formatDateTime(r.lastRechargeAt)}</td>

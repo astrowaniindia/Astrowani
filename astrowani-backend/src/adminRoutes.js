@@ -1370,11 +1370,17 @@ module.exports = function registerAdminRoutes(app) {
 
     const byCustomer = new Map();
     for (const r of recharges) {
-      const entry = byCustomer.get(r.customer_id) || { totalRecharged: 0, rechargeCount: 0, firstRechargeAt: r.paid_at, lastRechargeAt: r.paid_at };
+      const entry = byCustomer.get(r.customer_id) || { totalRecharged: 0, rechargeCount: 0, firstRechargeAt: r.paid_at, lastRechargeAt: r.paid_at, recharges: [] };
       entry.totalRecharged += Number(r.amount) || 0;
       entry.rechargeCount += 1;
       if (r.paid_at && (!entry.firstRechargeAt || r.paid_at < entry.firstRechargeAt)) entry.firstRechargeAt = r.paid_at;
       if (r.paid_at && (!entry.lastRechargeAt || r.paid_at > entry.lastRechargeAt)) entry.lastRechargeAt = r.paid_at;
+      // Individual events, not just the lifetime roll-up — the admin date chips (Today,
+      // Last 7 Days, ...) filter WHICH customers appear by their last/first recharge, but
+      // the "Recharged" amount shown must be what they recharged IN that window, not their
+      // all-time total. Without these per-event amounts there was no way to tell the two
+      // apart client-side.
+      entry.recharges.push({ amount: Number(r.amount) || 0, paidAt: r.paid_at });
       byCustomer.set(r.customer_id, entry);
     }
 
@@ -1416,6 +1422,7 @@ module.exports = function registerAdminRoutes(app) {
           rechargeCount: r.rechargeCount,
           firstRechargeAt: r.firstRechargeAt,
           lastRechargeAt: r.lastRechargeAt,
+          recharges: r.recharges,
           spend,
           totalSpent,
         };
