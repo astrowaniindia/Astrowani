@@ -181,6 +181,57 @@ function StepFunnel({ stages, baseLabel = 'viewed' }) {
   );
 }
 
+// Same shape the Metro Campaign panel renders (components/MetroCampaignPanel.jsx) —
+// {event, label, step, drop, total, people} — grouped into its step sections. Kept as
+// its own small component here rather than imported, since the Metro panel's version is
+// wired to that page's own switch/config UI around it.
+const REVEAL_STEP_TITLES = {
+  reveal: 'First screen after install — the gift box',
+  bubble: 'The gift bubble in the corner (after pressing ✕)',
+};
+function GiftRevealTable({ events }) {
+  const steps = ['reveal', 'bubble'].filter((step) => events.some((e) => e.step === step));
+  if (!steps.length) return <p className="muted" style={{ margin: 0 }}>No gift-reveal activity in this range.</p>;
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 11.5 }}>What happened</th>
+            <th style={{ textAlign: 'right', padding: '7px 10px', fontSize: 11.5 }}>People</th>
+            <th style={{ textAlign: 'right', padding: '7px 10px', fontSize: 11.5 }}>Times</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step) => (
+            <tr key={step}>
+              <td colSpan={3} style={{ padding: 0 }}>
+                <div className="muted" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '12px 10px 4px', textTransform: 'uppercase' }}>
+                  {REVEAL_STEP_TITLES[step]}
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <tbody>
+                    {events.filter((e) => e.step === step).map((e) => (
+                      <tr key={e.event}>
+                        <td style={{ padding: '7px 10px', fontSize: 12.5 }}>
+                          <span style={{ color: e.drop ? '#A33' : 'inherit' }}>{e.drop ? '↘ ' : ''}{e.label}</span>
+                          <div className="muted" style={{ fontSize: 10.5, marginTop: 1 }}>{e.event}</div>
+                        </td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700 }}>{e.people}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{e.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Analytics() {
   const [summary, setSummary] = useState(null);
   const [trend, setTrend] = useState([]);
@@ -193,6 +244,7 @@ export default function Analytics() {
   const [authFunnelType, setAuthFunnelType] = useState('signup');
   const [signupConsult, setSignupConsult] = useState(null);
   const [journey, setJourney] = useState(null);
+  const [giftReveal, setGiftReveal] = useState(null);
   const [freeCallFunnel, setFreeCallFunnel] = useState(null);
   const [freeChatFunnel, setFreeChatFunnel] = useState(null);
   const [forcedUpdate, setForcedUpdate] = useState(null);
@@ -394,6 +446,7 @@ export default function Analytics() {
       ['authFailures', '/api/admin/analytics/auth-failures', d],
     ] },
     onboardingJourney: { label: 'First Journey', get: (d) => [['onboardingJourney', '/api/admin/analytics/onboarding-journey', d]] },
+    giftReveal: { label: 'Gift Box Reveal', get: (d) => [['giftReveal', '/api/admin/analytics/gift-reveal', d]] },
     signupToConsult: { label: 'Signup to First Consultation', get: (d) => [['signupToConsult', '/api/admin/analytics/signup-to-consult', d]] },
     freeCall: { label: 'Free Call Funnel', get: (d) => [['freeCall', '/api/admin/analytics/free-call-funnel', d]] },
     freeChat: { label: 'Free Chat Funnel', get: (d) => [['freeChat', '/api/admin/analytics/free-chat-funnel', d]] },
@@ -443,6 +496,7 @@ export default function Analytics() {
     appHealth: setAppHealth,
     authFunnel: setAuthFunnel,
     onboardingJourney: setJourney,
+    giftReveal: setGiftReveal,
     signupToConsult: setSignupConsult,
   };
 
@@ -500,7 +554,7 @@ export default function Analytics() {
     setAstroPerf([]); setAuthFailures(null); setBlockedAttempts(null);
     setFreeCallFunnel(null); setServicesEngagement(null); setWalletFunnel(null);
     setFreeChatFunnel(null); setForcedUpdate(null); setAuthFunnel(null);
-    setJourney(null); setSignupConsult(null);
+    setJourney(null); setGiftReveal(null); setSignupConsult(null);
     setError('');
   }, []);
 
@@ -1043,6 +1097,34 @@ export default function Analytics() {
         ) : (
           <p className="muted" style={{ margin: 0 }}>
             {journey?.error ? 'Could not load this journey right now.' : 'Loading…'}
+          </p>
+        )}
+      </div>
+      </Gate>
+
+      {/* ── The gift-box reveal, tap by tap ── */}
+      {/* Universal since 2026-10-10 (commit 0ef3662) — every signed-out first open sees
+          this, not just one ad campaign's installs. Separate from "First Journey" above
+          because it happens BEFORE sign-in/signup, so it is not part of that cohort. */}
+      <Gate k="giftReveal" title="Gift Box Reveal — first open">
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Gift Box Reveal — first open</h3>
+        <p className="muted" style={{ marginTop: 6, marginBottom: 16 }}>
+          Every signed-out visitor sees the closed gift box once, on their very first
+          cold start — how many saw it, how many tapped it open, how many then pressed
+          the gold &ldquo;Yes! I want my free call&rdquo; button versus the ✕. Rows
+          marked <span style={{ color: '#A33' }}>↘</span> are drop-offs (left without
+          continuing). This is from PostHog, so it is subject to analytics consent.
+        </p>
+        {giftReveal?.reveal?.available ? (
+          <GiftRevealTable events={giftReveal.reveal.events || []} />
+        ) : giftReveal?.reveal ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Not available — {giftReveal.reveal.reason || 'PostHog is not reachable'}.
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            {giftReveal?.error ? 'Could not load this funnel right now.' : 'Loading…'}
           </p>
         )}
       </div>

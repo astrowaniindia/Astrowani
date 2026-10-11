@@ -47,18 +47,30 @@ function rangeFrom(req) {
   return { days, sinceIso: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() };
 }
 
+/** The `timestamp >= ...` fragment revealCounts needs, from a `rangeFrom` sinceIso. */
+function sinceWhere(sinceIso) {
+  return `timestamp >= toDateTime('${sinceIso.slice(0, 19).replace('T', ' ')}')`;
+}
+
 /**
  * The pre-login reveal's own events.
  *
  * These fire BEFORE there is an account, so they cannot be scoped by
  * acquisition_source the way everything else here is — there is no customer yet to
- * carry it. They do not need to be: in production this screen is only ever reached by
- * an install whose referrer carries the campaign id (see utils/acquisition.js
- * isTargetCampaignFirstOpen), so the events are campaign-exclusive by construction.
+ * carry it.
  *
- * The one exception is a DEVELOPER's own machine, where App.js forces the reveal on
- * every signed-out cold start so it can be reviewed without a real referrer. PostHog's
- * ENV_FILTER already drops development traffic, so those never reach these counts.
+ * NOT campaign-exclusive. Until 2026-10-10 this screen only ever reached an install
+ * whose referrer carried the Metro campaign id (isTargetCampaignFirstOpen in
+ * utils/acquisition.js), so these counts were campaign-only by construction. Commit
+ * 0ef3662 made the reveal universal — every signed-out first cold start sees it now,
+ * organic and every other campaign included — so these numbers, reported below inside
+ * the Metro panel, are no longer scoped to Metro traffic. The SAME counts are also
+ * exposed un-gated (no Metro route needs to be configured) at
+ * GET /api/admin/analytics/gift-reveal, which is where the general Analytics page reads
+ * them — see the "Gift Box Reveal" card there for the actual first-open funnel.
+ *
+ * PostHog's ENV_FILTER drops development traffic (a developer's own machine), so that
+ * never reaches these counts either way.
  */
 const REVEAL_EVENTS = [
   {
@@ -110,8 +122,13 @@ const REVEAL_EVENTS = [
 /**
  * One HogQL round trip for the reveal funnel. Nulls rather than throwing when PostHog
  * is unconfigured — the database numbers beside these must always render.
+ *
+ * `dateWhereClause` is a pre-built HogQL fragment (e.g. `timestamp >= toDateTime(...)`
+ * or postHog.resolveDateWhere's from/to form) rather than a bare ISO string, so this one
+ * function serves both the Metro panel's days-only range picker and the general
+ * Analytics page's from/to calendar range without duplicating the query.
  */
-async function revealCounts(sinceIso) {
+async function revealCounts(dateWhereClause) {
   if (!postHog.isConfigured()) return { available: false, reason: 'PostHog is not configured', events: [] };
   const names = REVEAL_EVENTS.map((e) => `'${e.event}'`).join(', ');
   // ${postHog.ENV_FILTER} is mandatory on every query in this codebase — production
@@ -121,7 +138,7 @@ async function revealCounts(sinceIso) {
     FROM events
     WHERE event IN (${names})
       AND ${postHog.ENV_FILTER}
-      AND timestamp >= toDateTime('${sinceIso.slice(0, 19).replace('T', ' ')}')
+      AND ${dateWhereClause}
     GROUP BY event
   `;
   try {
@@ -175,6 +192,18 @@ const hasDuration = (r) => r && r.duration_seconds !== null && r.duration_second
   && Number.isFinite(Number(r.duration_seconds));
 
 module.exports = function registerMetroCampaignRoutes(app) {
+  /**
+   * The gift-box reveal funnel, on its own, for EVERY signed-out first open — not just
+   * Metro-campaign installs (see the long comment on REVEAL_EVENTS above: that gating
+   * was removed 2026-10-10). Unlike the Metro panel's own reveal numbers, this route
+   * never requires a Metro astrologer route to be configured, and follows the general
+   * Analytics page's selected date range (from/to) rather than a fixed days picker.
+   */
+  app.get('/api/admin/analytics/gift-reveal', requireAdmin, h(async (req, res) => {
+    const dateWhere = postHog.resolveDateWhere(req, { defaultDays: 30 });
+    return res.status(200).json({ success: true, reveal: await revealCounts(dateWhere) });
+  }));
+
   /* ── The switch, and what it is pointed at ────────────────────────────────── */
   app.get('/api/admin/metro-campaign', requireAdmin, h(async (req, res) => {
     return res.status(200).json({ success: true, ...(await describeConfig()) });
@@ -257,7 +286,7 @@ module.exports = function registerMetroCampaignRoutes(app) {
         talk: { totalSeconds: 0, avgSeconds: 0 },
         money: { payout: 0, shagunCount: 0, shagunAmount: 0, net: 0 },
         outcomes: {},
-        reveal: await revealCounts(sinceIso),
+        reveal: await revealCounts(sinceWhere(sinceIso)),
       });
     }
 
@@ -334,7 +363,7 @@ module.exports = function registerMetroCampaignRoutes(app) {
         net: Number((shagun.amount - payout).toFixed(2)),
       },
       outcomes,
-      reveal: await revealCounts(sinceIso),
+      reveal: await revealCounts(sinceWhere(sinceIso)),
     });
   }));
 

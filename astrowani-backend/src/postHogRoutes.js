@@ -1180,3 +1180,4 @@ module.exports = function registerPostHogRoutes(app) {
 module.exports.runHogQL = runHogQL;
 module.exports.isConfigured = isConfigured;
 module.exports.ENV_FILTER = ENV_FILTER;
+module.exports.resolveDateWhere = resolveDateWhere;
