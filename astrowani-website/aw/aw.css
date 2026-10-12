@@ -198,33 +198,89 @@
 @keyframes awSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .aw-stage-spinner { animation: none; } }
 
+/* The whole chat screen is the app's maroon room, not this site's cream page —
+   otherwise the connecting/error state is cream, the conversation below it is
+   maroon, and a refresh flashes between the two. Same treatment the call screen
+   already gets further down. */
+.aw-chat-body { background: #592a19; }
+.aw-chat-screen { background: #592a19; color: var(--cream); }
+.aw-chat-screen .aw-stage-title { color: var(--cream); }
+.aw-chat-screen .aw-stage-text { color: var(--cream-muted); }
+
+/* ---------- chat screen ----------
+   Colours are taken from the CUSTOMER APP's ChatSessionScreen (styles block at
+   the foot of src/screens/ChatSessionScreen.js) rather than from this site's
+   cream palette. The site colours washed the conversation out: gold bubbles
+   with maroon text, and a near-cream "theirs" bubble, both on a cream page, so
+   the messages were barely readable. The app's scheme is a dark maroon room
+   with white cards, which is high-contrast and is also what a customer who uses
+   both already recognises.
+
+   App → web mapping (app hex values are literal, from COLORS in
+   src/Theme/Colors.js, so they stay put even if this site's tokens change):
+     container / my bubble  AstroMaroon #592a19
+     their bubble           #fff, text #2c3e50
+     my bubble text         #fff
+     their timestamp        #888        my timestamp rgba(255,255,255,.7)
+     input row              #fff, field #f9f9f9, border #e0e0e0, text #333  */
 .aw-chat-log {
   flex: 1 1 auto; overflow-y: auto; padding: 16px;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: #592a19;
   /* Keep a scroll gesture inside the log instead of chaining to the page. */
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 .aw-chat-sys { align-self: center; max-width: 85%; text-align: center;
-  font-size: 12px; line-height: 1.5; color: var(--ink-faint); padding: 6px 10px; }
-.aw-msg { max-width: 78%; padding: 9px 13px; border-radius: 16px; font-size: 14.5px; line-height: 1.45; }
-.aw-msg.is-mine { align-self: flex-end; background: var(--gold); color: var(--maroon); border-bottom-right-radius: 5px; }
-.aw-msg.is-theirs { align-self: flex-start; background: color-mix(in srgb, var(--maroon) 10%, var(--cream)); border-bottom-left-radius: 5px; }
+  font-size: 12px; line-height: 1.5; color: rgba(247,239,233,.72); padding: 6px 10px; }
+.aw-msg {
+  max-width: 78%; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.45;
+  /* The app gives every bubble elevation: 2. Without it "my" maroon bubble has
+     no edge against the maroon room behind it. */
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  /* An auto-sent birth-details message is multi-line and must keep its lines. */
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.aw-msg.is-mine {
+  align-self: flex-end; background: #592a19; color: #fff; border-bottom-right-radius: 5px;
+  /* Not in the app (Android elevation does this job there); on the web a maroon
+     card on a maroon wall needs a real edge. */
+  border: 1px solid rgba(255,215,0,.38);
+}
+.aw-msg.is-theirs { align-self: flex-start; background: #fff; color: #2c3e50; border-bottom-left-radius: 5px; }
 .aw-msg.is-pending { opacity: .6; }
-.aw-msg-time { margin-top: 3px; font-size: 10.5px; opacity: .65; text-align: right; }
+.aw-msg-time { margin-top: 4px; font-size: 11px; text-align: right; }
+.aw-msg.is-theirs .aw-msg-time { color: #888; }
+.aw-msg.is-mine .aw-msg-time { color: rgba(255,255,255,.7); }
+
+/* The session intro banner, same as the app's SessionIntroBanner component. */
+.aw-chat-banner {
+  display: flex; align-items: flex-start; gap: 8px; flex: 0 0 auto;
+  margin: 8px 10px 0; padding: 10px 12px; border-radius: 10px;
+  background: rgba(89,42,25,.94); border: 1px solid rgba(255,215,0,.35);
+  color: #F7EFE9; font-size: 12.5px; line-height: 1.5;
+}
+.aw-chat-banner-icon { flex: 0 0 auto; color: #FFD700; line-height: 1; }
+.aw-chat-banner-text { flex: 1 1 auto; min-width: 0; }
+.aw-chat-banner-close {
+  flex: 0 0 auto; background: none; border: 0; cursor: pointer; padding: 0 2px;
+  color: rgba(255,255,255,.7); font-size: 15px; line-height: 1;
+}
+
 .aw-chat-compose {
-  display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border-soft); flex: 0 0 auto;
+  display: flex; gap: 8px; padding: 12px; border-top: 1px solid #f0f0f0; flex: 0 0 auto;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  background: var(--paper);
+  background: #fff;
 }
 .aw-chat-compose input {
   /* 16px IS LOAD-BEARING: iOS Safari zooms the whole page in when a focused
      input is smaller than 16px, and never zooms back out — which leaves the
      chat half off-screen for the rest of the consultation. */
   flex: 1 1 auto; min-width: 0; padding: 12px 14px; font: inherit; font-size: 16px;
-  border: 1.5px solid var(--border-soft); border-radius: 999px; outline: none;
-  background: color-mix(in srgb, var(--cream) 60%, #fff 40%); color: var(--ink);
+  border: 1.5px solid #e0e0e0; border-radius: 999px; outline: none;
+  background: #f9f9f9; color: #333;
 }
+.aw-chat-compose input::placeholder { color: #808080; }
 .aw-chat-compose input:focus { border-color: var(--gold-deep); }
 
 /* ---------- call screen ---------- */

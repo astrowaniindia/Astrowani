@@ -9,12 +9,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20">
-<link rel="stylesheet" href="aw/aw.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="aw/aw.css?v=21">
 </head>
-<body class="aw-screen-body">
+<body class="aw-screen-body aw-chat-body">
 
-<div class="aw-screen">
+<div class="aw-screen aw-chat-screen">
   <header class="aw-screen-head">
     <a class="aw-back" href="astrologers.html" aria-label="Back">&#8592;</a>
     <img class="aw-peer-avatar" id="aw-peer-avatar" src="assets/logo.png" alt="">
@@ -41,8 +41,8 @@
 </div>
 
 <script type="module">
-  import { initChatPage } from './aw/chat-page.js?v=20';
-  import { bootScreen } from './aw/boot.js?v=20';
+  import { initChatPage } from './aw/chat-page.js?v=21';
+  import { bootScreen } from './aw/boot.js?v=21';
   bootScreen().then(initChatPage);
 </script>
 </body>

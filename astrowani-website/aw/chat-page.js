@@ -1,12 +1,12 @@
-import { api } from './api.js?v=20';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=20';
-import { toast, esc, confirmDialog } from './ui.js?v=20';
-import { isSignedIn, getUser } from './session.js?v=20';
-import { requireSignIn } from './auth.js?v=20';
-import { fetchBalance, ensureFunds } from './wallet.js?v=20';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=20';
-import { requestConsultation, RequestClosed } from './request.js?v=20';
-import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=20';
+import { api } from './api.js?v=21';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=21';
+import { toast, esc, confirmDialog } from './ui.js?v=21';
+import { isSignedIn, getUser } from './session.js?v=21';
+import { requireSignIn } from './auth.js?v=21';
+import { fetchBalance, ensureFunds } from './wallet.js?v=21';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=21';
+import { requestConsultation, RequestClosed } from './request.js?v=21';
+import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=21';
 
 /**
  * chat.html — the chat consultation screen.
@@ -152,6 +152,80 @@ function paintPeer(astro) {
   if (name) name.textContent = astro.name;
 }
 
+/**
+ * The opening "here are my details" message, auto-sent to the astrologer.
+ *
+ * Mirrors sendCustomerDetails() in the customer app's ChatSessionScreen. Without
+ * it the consultation starts with the astrologer asking for a birth date by
+ * hand, which is exactly what the app added this to stop.
+ *
+ * MUST match the app's wording character for character: the same session can be
+ * continued in the app, and the "already sent?" guard on both sides is a
+ * substring test against this marker. The leading emoji is deliberately NOT part
+ * of the marker — it has to match rows already in the database, and plain ASCII
+ * cannot be broken by an encoding difference.
+ */
+const DETAILS_MARKER = 'Namaste! Here are my details for the reading:';
+
+function formatDob(d) {
+  if (!d) return 'Not provided';
+  try {
+    return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch (_) {
+    return String(d);
+  }
+}
+
+async function buildDetailsMessage(fallbackName) {
+  let prof = null;
+  try {
+    // Never read the customers table directly — that is the whole point of this
+    // endpoint existing (it resolves "my own profile" from the JWT).
+    const res = await api.get('/api/users/profile');
+    prof = res?.data || null;
+  } catch (_) {
+    // Fall through: a details message with "Not provided" still beats none.
+  }
+  return `🙏 ${DETAILS_MARKER}\n\n`
+    + `Full Name: ${prof?.name || fallbackName || 'Not provided'}\n`
+    + `Date of Birth: ${formatDob(prof?.dob)}\n`
+    + `Time of Birth: ${prof?.timeOfBirth || 'Not provided'}\n`
+    + `Place of Birth: ${prof?.placeOfBirth || 'Not provided'}`;
+}
+
+/**
+ * The admin-authored in-session banner ("Your first minute is on us…"), the web
+ * twin of the app's SessionIntroBanner. Same self-dismiss window, same
+ * fails-to-hidden rule: if the copy cannot be read we show nothing rather than
+ * inventing a sentence no admin approved.
+ */
+const BANNER_DISMISS_AFTER_MS = 25000;
+
+async function mountIntroBanner(room, log) {
+  let info = null;
+  try {
+    const lang = document.documentElement.getAttribute('data-lang') === 'hi' ? 'hi' : 'en';
+    info = await api.get(`/api/session-intro-banner?language=${lang}`);
+  } catch (_) {
+    return;
+  }
+  if (!info?.enabled || !info.text) return;
+
+  const bar = document.createElement('div');
+  bar.className = 'aw-chat-banner';
+  bar.innerHTML = `<span class="aw-chat-banner-icon" aria-hidden="true">&#128161;</span>
+    <span class="aw-chat-banner-text"></span>
+    <button type="button" class="aw-chat-banner-close" aria-label="Dismiss">&times;</button>`;
+  bar.querySelector('.aw-chat-banner-text').textContent = info.text;
+
+  const remove = () => bar.remove();
+  bar.querySelector('.aw-chat-banner-close').addEventListener('click', remove);
+  // Above the log, not inside it: inside, it scrolls away with the conversation
+  // and it is also the first thing a "scroll to latest" jump skips past.
+  room.insertBefore(bar, log);
+  setTimeout(remove, BANNER_DISMISS_AFTER_MS);
+}
+
 function runChat({ sessionId, requestId, astro, rate }) {
   const stage = el('aw-chat-stage');
   const room = el('aw-chat-room');
@@ -273,12 +347,16 @@ function runChat({ sessionId, requestId, astro, rate }) {
   });
 
   (async () => {
+    let history = null;
     try {
       const res = await api.get(`/api/chat/messages?sessionId=${encodeURIComponent(sessionId)}`);
-      (res?.data || []).forEach(addMessage);
+      history = res?.data || [];
+      history.forEach(addMessage);
     } catch (_) {
       // History is not worth failing the session over; live messages still arrive.
     }
+
+    mountIntroBanner(room, log);
 
     try {
       socket = await getSocket();
@@ -300,6 +378,27 @@ function runChat({ sessionId, requestId, astro, rate }) {
     keepScrolledToLatest(log);
     timer = setInterval(paintTimer, 1000);
     paintTimer();
+
+    // Auto-send the birth details, AFTER the socket is subscribed so the row
+    // also renders on this screen rather than only reaching the astrologer.
+    //
+    // The condition is "have my details already been sent in this session?", NOT
+    // "is the chat empty?" — the app learned that the hard way (ChatSessionScreen
+    // carries the full note): the astrologer's own "Hello" lands inside the few
+    // seconds this takes, the chat is then not empty, and the details were never
+    // sent at all. Matching the marker also means a refresh mid-session, or a
+    // session started in the app and continued here, will not send them twice.
+    // A FAILED history read (null) errs toward sending: a duplicate is
+    // recoverable, an astrologer reading a chart with no birth date is not.
+    const alreadySent = Array.isArray(history)
+      && history.some((m) => String(m?.message || '').includes(DETAILS_MARKER));
+    if (!alreadySent && !ended) {
+      try {
+        await send(await buildDetailsMessage(me?.name));
+      } catch (_) {
+        // Never fatal: the customer can always type them out.
+      }
+    }
   })();
 
   // A closed tab needs nothing from us: the socket drops, and the backend's own
