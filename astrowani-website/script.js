@@ -726,6 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const SLOT_CLASSES = ['slot-center', 'slot-left', 'slot-right'];
+    const SWAP_MS = 5000;
     function handOverToCarousel() {
       let order = [center, left, right]; // order[0] is whoever currently sits centre
       [center, left, right].forEach((el) => {
@@ -734,13 +735,31 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       order.forEach((el, i) => el.classList.add(SLOT_CLASSES[i]));
       if (reduceMotion) return;
-      setInterval(() => {
+
+      // Driven by elapsed WALL-CLOCK time, not by trusting setInterval's own
+      // 5000ms cadence. A plain setInterval(fn, 5000) looks "stuck" the moment
+      // the tab is backgrounded (switching away to type, another window on
+      // top, the OS deprioritising the tab) -- Chrome throttles timers in a
+      // hidden tab, sometimes to a few calls a MINUTE, and the callback simply
+      // has not fired in 5s even though 5s of real time passed. A 1s ticker
+      // that checks elapsed time catches up the moment it is allowed to run
+      // again, and the visibilitychange listener forces that check instantly
+      // when the tab becomes visible, rather than waiting for the next tick.
+      let lastSwap = Date.now();
+      function swap() {
         order.forEach((el) => el.classList.remove(...SLOT_CLASSES));
         // Round-robin: whoever was on the left takes the centre, the centre
         // phone moves right, and the right phone comes back round to the left.
         order = [order[1], order[2], order[0]];
         order.forEach((el, i) => el.classList.add(SLOT_CLASSES[i]));
-      }, 5000);
+        lastSwap = Date.now();
+      }
+      setInterval(() => {
+        if (Date.now() - lastSwap >= SWAP_MS) swap();
+      }, 1000);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && Date.now() - lastSwap >= SWAP_MS) swap();
+      });
     }
 
     if (center.classList.contains('is-visible')) {
