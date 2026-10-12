@@ -1,26 +1,53 @@
 /**
  * Single source of truth for where the web client talks to.
  *
- * The site is served from shop.astrowani.com/test-site today and will move; this
- * is the one value that has to change when it does. The backend's CORS_ORIGINS
- * env var must list whatever origin this site is served from, or every call here
- * fails the browser preflight (native apps send no Origin and are unaffected,
- * which is why this never came up before the web client existed).
+ * REST and the socket deliberately do NOT resolve the same way — see below.
  */
 const PRODUCTION_BACKEND = 'https://backend.astrowani.com';
 
 /**
- * On localhost the calls go to this same origin, where dev-server.js proxies
- * /api and /socket.io upstream — so a laptop needs no CORS entry of its own.
- * Anywhere else (including the deployed site) it is the real backend host, and
- * that origin DOES have to be in the backend's CORS_ORIGINS allowlist.
+ * Origins that serve /api/ from their own nginx, proxied to the backend on
+ * loopback. To the browser those calls are same-origin, so there is no preflight
+ * and no CORS entry to maintain.
+ *
+ * DO NOT "simplify" this to always calling PRODUCTION_BACKEND. The backend sets
+ * its own Access-Control-Allow-Origin from a CORS_ORIGINS allowlist, and
+ * vps-deployment/nginx/astrowani-shop.conf explains why shop.astrowani.com was
+ * deliberately NOT added to it: a second source of that header produces
+ * duplicate Access-Control-Allow-Origin values, which browsers reject outright,
+ * and that would take the admin dashboard down. The proxy is the supported path.
+ *
+ * localhost is here for the same reason — dev-server.js proxies /api upstream.
+ *
+ * An origin NOT listed here falls back to calling the backend host directly,
+ * which then DOES need to be in CORS_ORIGINS. If the site moves, the choice is:
+ * proxy /api/ on the new host and add it here (preferred), or add it to the
+ * backend allowlist.
  */
-const isLocal = typeof location !== 'undefined'
-  && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+const SAME_ORIGIN_API_HOSTS = [
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+  'shop.astrowani.com',
+];
 
-export const BACKEND_URL = isLocal ? '' : PRODUCTION_BACKEND;
+const host = typeof location !== 'undefined' ? location.hostname : '';
+const apiIsSameOrigin = SAME_ORIGIN_API_HOSTS.includes(host);
 
-/** Socket.io lives on the same host as the REST API. */
+export const BACKEND_URL = apiIsSameOrigin ? '' : PRODUCTION_BACKEND;
+
+/**
+ * The socket is a SEPARATE decision, because /socket.io/ is not proxied by the
+ * shop's nginx — only /api/ is. It therefore connects to the backend host
+ * directly even where REST does not, which is allowed: the Socket.io server is
+ * configured `cors: { origin: '*' }` (index.js), independently of the REST
+ * allowlist. Routing it through location.origin on the deployed site would ask
+ * nginx for a path it does not serve, and the handshake would 404.
+ *
+ * Only dev-server.js, which proxies the websocket upgrade too, serves both.
+ */
+const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host);
+
 export const SOCKET_URL = isLocal ? location.origin : PRODUCTION_BACKEND;
 
 /** localStorage keys. Prefixed so they cannot collide with the site's theme/lang keys. */
