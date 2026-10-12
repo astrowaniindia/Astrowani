@@ -1036,6 +1036,12 @@ require('./src/freeServicesRoutes')(app);
 // Image upload — base64 -> Supabase Storage URL (POST /api/upload-image)
 require('./src/uploadRoutes')(app);
 
+// GET /api/blogs/sitemap.xml — the blog's XML sitemap, generated from the table.
+// It must be a route rather than a static file because the blog agent publishes
+// three articles a day and cannot commit to the website's git-deployed directory.
+// See src/blogSitemap.js for why a sitemap matters disproportionately here.
+require('./src/blogSitemap')(app, supabase);
+
 // Remedies commerce — saved addresses, multi-item cart checkout (Razorpay + wallet),
 // order history and cancellation. Owns /api/addresses/* and all of /api/orders/*,
 // including the GET /api/orders/mine that used to live in this file.
@@ -3089,6 +3095,10 @@ app.get('/api/blogs', async (req, res) => {
 
     const mapped = (data || []).map((b) => ({
       _id: b.id,
+      // The SEO slug (sql/blog_agent.sql). Null on every row written before
+      // 2026-10-13; aw/blog.js therefore accepts ?slug= OR ?id= and links by
+      // whichever a row has, so the five original posts keep working.
+      slug: b.slug || null,
       title: b.title,
       excerpt: b.excerpt,
       metaDescription: b.meta_description,

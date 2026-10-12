@@ -1,4 +1,4 @@
-import { api } from './api.js?v=37';
+import { api } from './api.js?v=38';
 
 /**
  * The blog section.
@@ -65,6 +65,10 @@ function mapPost(row) {
 
   return {
     id: row._id,
+    // Null on every post written before 2026-10-13. `href()` below falls back to
+    // ?id=, so the original five keep resolving.
+    slug: row.slug || '',
+    metaDescription: row.metaDescription || '',
     titleEn, titleHi,
     contentEn, contentHi,
     excerptEn, excerptHi,
@@ -82,6 +86,20 @@ async function fetchPage(page) {
   return { posts: rows.map(mapPost), totalPages: Math.max(1, Number(res?.totalPages) || 1) };
 }
 
+/**
+ * The article URL. Prefers the SEO slug and falls back to the UUID.
+ *
+ * A slug is the cheapest on-page SEO available here: ?id=dcf997a3-9f48-... says
+ * nothing to a reader or a crawler, while ?slug=mangal-dosh-in-the-kundali says
+ * what the page is about before it is even opened. Both forms are served
+ * forever, so no existing link anywhere can break.
+ */
+function href(post) {
+  return post.slug
+    ? `blog-post.html?slug=${encodeURIComponent(post.slug)}`
+    : `blog-post.html?id=${encodeURIComponent(post.id)}`;
+}
+
 function cardMedia(post) {
   return post.thumbnail
     ? `<img class="blog-card-img" src="${esc(post.thumbnail)}" alt="" loading="lazy">`
@@ -93,7 +111,7 @@ function featuredTemplate(post) {
     ? `style="background-image:url('${esc(post.thumbnail)}')"`
     : '';
   return `
-    <a href="blog-post.html?id=${encodeURIComponent(post.id)}" class="blog-featured reveal reveal-wipe">
+    <a href="${href(post)}" class="blog-featured reveal reveal-wipe">
       <div class="blog-featured-media" ${media}></div>
       <div class="blog-featured-body">
         ${post.category ? `<span class="blog-badge">${esc(post.category)}</span>` : ''}
@@ -109,7 +127,7 @@ function featuredTemplate(post) {
 
 function cardTemplate(post) {
   return `
-    <a href="blog-post.html?id=${encodeURIComponent(post.id)}" class="blog-card reveal reveal-wipe">
+    <a href="${href(post)}" class="blog-card reveal reveal-wipe">
       ${cardMedia(post)}
       <div class="blog-card-body">
         ${post.category ? `<span class="blog-badge">${esc(post.category)}</span>` : ''}
@@ -241,11 +259,28 @@ function articleTemplate(post, all) {
       </div>` : ''}`;
 }
 
+/**
+ * Set (or create) a <head> tag. The article page is rendered client-side, so
+ * every per-article meta tag has to be written here rather than being in the
+ * HTML file — there is one blog-post.html serving every article.
+ */
+function setMeta(selector, attrs) {
+  let el = document.head.querySelector(selector);
+  if (!el) {
+    el = document.createElement(attrs.rel ? 'link' : 'meta');
+    document.head.appendChild(el);
+  }
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
 function initBlogPost() {
   const root = document.getElementById('blog-post-root');
   if (!root) return;
 
-  const id = new URLSearchParams(location.search).get('id');
+  const params = new URLSearchParams(location.search);
+  const slug = params.get('slug');
+  const id = params.get('id');
   root.innerHTML = `
     <div class="blog-skeleton-line w-60" style="height:16px; max-width:200px;"></div>
     <div class="blog-skeleton-img" style="height:360px; border-radius:24px; margin:20px 0 32px;"></div>
@@ -253,7 +288,7 @@ function initBlogPost() {
     <div class="blog-skeleton-line w-80"></div>
     <div class="blog-skeleton-line w-60"></div>`;
 
-  if (!id) {
+  if (!slug && !id) {
     root.innerHTML = `<div class="blog-error"><div class="blog-error-icon">🔍</div><div>No article was specified.</div><a href="blog.html" class="blog-back-link" style="margin-top:14px;">← Back to all articles</a></div>`;
     return;
   }
@@ -261,19 +296,39 @@ function initBlogPost() {
   (async () => {
     try {
       const { posts } = await fetchPage(1);
-      const post = posts.find((p) => String(p.id) === String(id));
+      // Slug first, id second. Both are accepted for the life of the site: the
+      // posts written before slugs existed have none, and any link already shared
+      // uses ?id=.
+      const post = slug
+        ? posts.find((p) => p.slug === slug)
+        : posts.find((p) => String(p.id) === String(id));
       if (!post) {
         root.innerHTML = `<div class="blog-error"><div class="blog-error-icon">🔍</div><div>This article could not be found — it may have been unpublished.</div><a href="blog.html" class="blog-back-link" style="margin-top:14px;">← Back to all articles</a></div>`;
         return;
       }
       document.title = `${post.titleEn} — Astrowani Blog`;
-      const metaDesc = document.querySelector('meta[name="description"]') || (() => {
-        const m = document.createElement('meta');
-        m.name = 'description';
-        document.head.appendChild(m);
-        return m;
-      })();
-      metaDesc.content = post.excerptEn;
+      const description = post.metaDescription || post.excerptEn;
+      setMeta('meta[name="description"]', { name: 'description', content: description });
+
+      // A CANONICAL URL matters more here than it looks. The same article is
+      // reachable at ?slug=… and ?id=…, and a crawler that finds both treats them
+      // as two pages with identical content — which splits whatever ranking the
+      // article earns between them. The canonical names one winner.
+      const canonical = post.slug
+        ? `${location.origin}${location.pathname}?slug=${encodeURIComponent(post.slug)}`
+        : `${location.origin}${location.pathname}?id=${encodeURIComponent(post.id)}`;
+      setMeta('link[rel="canonical"]', { rel: 'canonical', href: canonical });
+
+      // Open Graph / Twitter, so a shared link shows the article's own title and
+      // photograph instead of the generic site card.
+      setMeta('meta[property="og:type"]', { property: 'og:type', content: 'article' });
+      setMeta('meta[property="og:title"]', { property: 'og:title', content: post.titleEn });
+      setMeta('meta[property="og:description"]', { property: 'og:description', content: description });
+      setMeta('meta[property="og:url"]', { property: 'og:url', content: canonical });
+      if (post.thumbnail) {
+        setMeta('meta[property="og:image"]', { property: 'og:image', content: post.thumbnail });
+        setMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
+      }
 
       root.innerHTML = articleTemplate(post, posts);
     } catch (err) {
