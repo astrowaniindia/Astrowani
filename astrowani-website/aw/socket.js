@@ -1,6 +1,6 @@
-import { SOCKET_URL } from './config.js?v=17';
-import { getToken, getUser, isSignedIn, onAuthChange } from './session.js?v=17';
-import { loadScript } from './ui.js?v=17';
+import { SOCKET_URL } from './config.js?v=18';
+import { getToken, getUser, isSignedIn, onAuthChange } from './session.js?v=18';
+import { loadScript } from './ui.js?v=18';
 
 /**
  * One Socket.io connection per tab, shared by everything that needs it.

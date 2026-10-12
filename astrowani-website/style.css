@@ -174,8 +174,12 @@ a.ch-cta {
 @media (max-width: 900px) {
   /* Hide the desktop menu rows and the account area on BOTH nav variants —
      the floating homepage pill and the ordinary sticky nav. */
+  /* .ch-nav-auth is the homepage pill's Login/Sign-up group. It carried an inline
+     style and NO class, so none of the selectors here reached it and the hero bar
+     kept both buttons on a phone. The inline `display:flex` also outranks a plain
+     rule, which is why every line in this block needs !important. */
   .nav-links, .ch-nav-links,
-  .nav-right, .nav-util-group,
+  .nav-right, .ch-nav-auth, .nav-util-group,
   .ch-nav-wrap .nav-util-group { display: none !important; }
 
   .nav-inner, .ch-nav-pill { justify-content: space-between; gap: 10px; }
