@@ -891,7 +891,7 @@ footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: 
    brand's URL/colour live in exactly one place (same source the apps use,
    src/config/api.js SOCIAL_LINKS) rather than being copy-pasted per page. */
 .footer-bottom-left { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-.footer-social { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.footer-social { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; margin-left: 6px; }
 .footer-social a {
   display: flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: 50%;

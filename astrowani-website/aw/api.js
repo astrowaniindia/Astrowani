@@ -1,5 +1,5 @@
-import { BACKEND_URL } from './config.js?v=28';
-import { getToken, signOut } from './session.js?v=28';
+import { BACKEND_URL } from './config.js?v=29';
+import { getToken, signOut } from './session.js?v=29';
 
 /**
  * One fetch wrapper for every backend call.
