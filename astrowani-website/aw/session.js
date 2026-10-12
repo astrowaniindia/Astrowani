@@ -1,4 +1,4 @@
-import { STORAGE } from './config.js?v=29';
+import { STORAGE } from './config.js?v=30';
 
 /**
  * Who is signed in, and a way to be told when that changes.
