@@ -3596,6 +3596,74 @@ app.post('/api/vendor/fcm-token', async (req, res) => {
 // sides have connected, so "active" here is: not ended, and either activated or accepted in
 // the last 90s (still connecting). Anything older that never activated is a dead accept and
 // must not drag the astrologer into an empty room. Fails to "nothing active" on any error.
+/**
+ * The customer's own still-open consultation.
+ *
+ * The mirror of /api/vendor/active-session below, and it exists for the web
+ * client: a browser tab can be refreshed, duplicated or closed mid-consultation
+ * in a way a native screen cannot, and without this the session would keep
+ * running (and billing) with nothing on screen to end it. The web client calls
+ * this on every page load and rejoins whatever it finds.
+ *
+ * Also covers the cross-platform case the owner asked for: a chat started in
+ * the app is found here, so opening the website mid-consultation picks it up
+ * rather than starting a second one.
+ *
+ * Same 3-hour / 90-second windowing as the vendor endpoint: `is_active` is only
+ * set once the astrologer signals connection, so a just-created session has to
+ * be matched on age instead, or a customer who refreshes during setup is told
+ * they have nothing running.
+ */
+app.get('/api/customer/active-session', async (req, res) => {
+  const none = { success: true, chat: null, call: null };
+  try {
+    const customer = await resolveCustomerFromReq(req);
+    if (!customer?.id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const now = Date.now();
+    const { data: sessions } = await supabaseService.from('chat_sessions')
+      .select('id, request_id, vendor_id, per_minute_charge, started_at, call_type, is_active')
+      .eq('caller_id', customer.id).is('ended_at', null)
+      .gte('started_at', new Date(now - 3 * 60 * 60 * 1000).toISOString())
+      .order('started_at', { ascending: false }).limit(5);
+
+    const s = (sessions || []).find((row) =>
+      row.is_active || (now - new Date(row.started_at).getTime()) < 90 * 1000);
+    if (!s) return res.status(200).json(none);
+
+    let astrologerName = '';
+    let astrologerImage = '';
+    try {
+      const { data: astro } = await supabaseService
+        .from('astrologers').select('first_name, last_name, profile_pic_url')
+        .eq('id', s.vendor_id).maybeSingle();
+      if (astro) {
+        astrologerName = `${astro.first_name || ''} ${astro.last_name || ''}`.trim();
+        // Same data:-URI guard as formatAstrologer — a legacy base64 column must
+        // never be inlined into a response.
+        astrologerImage = (astro.profile_pic_url && !astro.profile_pic_url.startsWith('data:'))
+          ? astro.profile_pic_url : '';
+      }
+    } catch (_) { /* a missing name must not hide the session */ }
+
+    const info = {
+      sessionId: s.id,
+      requestId: s.request_id || null,
+      astrologerId: s.vendor_id,
+      astrologerName,
+      astrologerImage,
+      perMinuteCharge: s.per_minute_charge,
+      startedAt: s.started_at,
+      callType: s.call_type || 'chat',
+    };
+    const isChat = info.callType === 'chat';
+    return res.status(200).json({ success: true, chat: isChat ? info : null, call: isChat ? null : info });
+  } catch (e) {
+    console.error('[customer active-session] error:', e.message);
+    return res.status(200).json(none);
+  }
+});
+
 app.get('/api/vendor/active-session', async (req, res) => {
   const none = { success: true, chat: null, call: null, live: null };
   try {
@@ -4906,9 +4974,14 @@ async function resolveOwnedRequestRow(astroId, targetTable, reqBody) {
   // This flag MUST come from the row, never from the request body: it decides whether
   // the customer is billed, so a vendor (or a tampered client) must not get a say.
   const freeColumn = targetTable === 'call_requests' ? ', is_free' : '';
+  // call_type is on call_requests only (a chat request is always a chat). Like
+  // is_free above, it MUST come from the row: it picks which of the three
+  // per-minute rates the session bills at, so a tampered vendor client must not
+  // be able to turn a ₹5 audio call into a ₹8 video one by relabelling it.
+  const typeColumn = targetTable === 'call_requests' ? ', call_type' : '';
   let query = supabaseService
     .from(targetTable)
-    .select(`id, status, ${callerColumn}${freeColumn}`)
+    .select(`id, status, ${callerColumn}${freeColumn}${typeColumn}`)
     .eq(ownerColumn, astroId);
 
   if (reqBody.requestId) {
@@ -4928,6 +5001,8 @@ async function resolveOwnedRequestRow(astroId, targetTable, reqBody) {
     status: data.status,
     callerId: data[callerColumn],
     isFree: data.is_free === true,
+    // null for a chat request — the caller substitutes 'chat'.
+    callType: data.call_type || null,
   };
 }
 
@@ -5023,11 +5098,29 @@ app.post('/api/session/accept', async (req, res) => {
     // forced to 0 as well as setting the flag, so that even if something later ignores
     // is_free, there is no per-minute charge to apply.
     const isFreeCall = ownedRow.isFree === true;
+
+    // THE ROW DECIDES THE CALL TYPE, NOT THE CLIENT.
+    //
+    // This used to read reqBody.callType, defaulting to 'chat' — so the rate the
+    // customer is billed came from a field the vendor app supplies. A client that
+    // sent the wrong value (or none, which is what a request from anything but the
+    // current app looks like) got the wrong rate: a video consultation recorded as
+    // a chat, billed at the chat price, and the astrologer paid the chat share.
+    // Caught 2026-10-11 while testing the web client — an accept that omitted the
+    // field silently created a ₹5 "chat" for an ₹8 video call.
+    //
+    // `call_requests.call_type` is written by /api/call/initiate from the
+    // CUSTOMER's request, which is the side that chose what to buy. A chat request
+    // has no such column and is always a chat.
+    const resolvedCallType = targetTable === 'call_requests'
+      ? (ownedRow.callType || reqBody.callType || 'audio')
+      : 'chat';
+
     const perMinuteCharge = isFreeCall
       ? 0
-      : reqBody.callType === 'chat'
+      : resolvedCallType === 'chat'
         ? astroData?.chat_charge_per_minute ?? 0
-        : reqBody.callType === 'video'
+        : resolvedCallType === 'video'
         ? astroData?.video_charge_per_minute ?? 0
         : astroData?.call_charge_per_minute ?? 0;
 
@@ -5038,7 +5131,7 @@ app.post('/api/session/accept', async (req, res) => {
       vendor_id: astroId,
       caller_id: realCallerId,
       started_at: new Date().toISOString(),
-      call_type: reqBody.callType || 'chat',
+      call_type: resolvedCallType,
       room_id: reqBody.roomId || null,
       call_request_id: targetTable === 'call_requests' ? resolvedRequestId : null,
       is_active: false,

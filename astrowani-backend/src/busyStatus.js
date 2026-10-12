@@ -8,6 +8,30 @@
 
 const holds = require('./astrologerHolds');
 
+/**
+ * How long an UNANSWERED request may keep an astrologer "busy".
+ *
+ * A pending row used to make someone busy forever. Nothing in the database ever
+ * resolves a request the client abandoned, and the 45s auto-cancel that should
+ * do it lives in the CLIENT — so a killed app, a crashed phone or (far more
+ * often, now that there is a web client) a closed browser tab leaves a `pending`
+ * row behind and the astrologer silently stops receiving work from everyone.
+ * Observed repeatedly while testing the web client.
+ *
+ * 90s is comfortably past the 45s both clients ring for, so a genuinely live
+ * request is never discounted; anything older was never going to be answered.
+ * This only affects the BUSY view — the row itself is untouched, and accepting
+ * it still goes through the same atomic claim.
+ */
+const PENDING_REQUEST_TTL_MS = 90 * 1000;
+
+function isFresh(createdAt) {
+  if (!createdAt) return false;
+  const t = new Date(createdAt).getTime();
+  if (!Number.isFinite(t)) return false;
+  return Date.now() - t < PENDING_REQUEST_TTL_MS;
+}
+
 // Single-astrologer check — used right before creating a new call/chat request.
 //
 // LIVE STREAMING (2026-08-08): an astrologer broadcasting live used to remain fully
@@ -43,8 +67,12 @@ async function checkAstrologerBusy(supabase, astrologerId, opts = {}) {
       return { busy: true, busySince: liveSession[0].started_at, reason: 'live', liveSessionId: liveSession[0].id };
     }
     if (activeSession && activeSession.length) return { busy: true, busySince: activeSession[0].started_at, reason: 'session' };
-    if (pendingCall && pendingCall.length) return { busy: true, busySince: pendingCall[0].created_at, reason: 'session' };
-    if (pendingChat && pendingChat.length) return { busy: true, busySince: pendingChat[0].created_at, reason: 'session' };
+    if (pendingCall && pendingCall.length && isFresh(pendingCall[0].created_at)) {
+      return { busy: true, busySince: pendingCall[0].created_at, reason: 'session' };
+    }
+    if (pendingChat && pendingChat.length && isFresh(pendingChat[0].created_at)) {
+      return { busy: true, busySince: pendingChat[0].created_at, reason: 'session' };
+    }
     if (holds.holdBlocks(hold, { customerId, isFreeCall })) {
       return {
         busy: true,
@@ -80,11 +108,17 @@ async function buildBusyMap(supabase) {
     (activeSessions || []).forEach((s) => {
       if (s.vendor_id && !busyMap[s.vendor_id]) busyMap[s.vendor_id] = { isBusy: true, busySince: s.started_at, reason: 'session' };
     });
+    // Same staleness rule as checkAstrologerBusy — an abandoned request must not
+    // show an astrologer as busy in every list on the platform, indefinitely.
     (pendingCalls || []).forEach((r) => {
-      if (r.astrologer_id && !busyMap[r.astrologer_id]) busyMap[r.astrologer_id] = { isBusy: true, busySince: r.created_at, reason: 'session' };
+      if (r.astrologer_id && !busyMap[r.astrologer_id] && isFresh(r.created_at)) {
+        busyMap[r.astrologer_id] = { isBusy: true, busySince: r.created_at, reason: 'session' };
+      }
     });
     (pendingChats || []).forEach((r) => {
-      if (r.receiver_id && !busyMap[r.receiver_id]) busyMap[r.receiver_id] = { isBusy: true, busySince: r.created_at, reason: 'session' };
+      if (r.receiver_id && !busyMap[r.receiver_id] && isFresh(r.created_at)) {
+        busyMap[r.receiver_id] = { isBusy: true, busySince: r.created_at, reason: 'session' };
+      }
     });
     // A reserved astrologer is unavailable to everyone browsing a list, whatever the
     // hold's phase — the held customer reaches them through their own upsell sheet, not
@@ -122,8 +156,12 @@ async function checkCustomerBusy(supabase, customerId) {
       supabase.from('chat_requests').select('created_at').eq('caller_id', customerId).eq('status', 'pending').limit(1),
     ]);
     if (activeSession && activeSession.length) return { busy: true, busySince: activeSession[0].started_at, reason: 'session' };
-    if (pendingCall && pendingCall.length) return { busy: true, busySince: pendingCall[0].created_at, reason: 'session' };
-    if (pendingChat && pendingChat.length) return { busy: true, busySince: pendingChat[0].created_at, reason: 'session' };
+    if (pendingCall && pendingCall.length && isFresh(pendingCall[0].created_at)) {
+      return { busy: true, busySince: pendingCall[0].created_at, reason: 'session' };
+    }
+    if (pendingChat && pendingChat.length && isFresh(pendingChat[0].created_at)) {
+      return { busy: true, busySince: pendingChat[0].created_at, reason: 'session' };
+    }
     return { busy: false, busySince: null, reason: null };
   } catch (e) {
     console.error('[busyStatus] checkCustomerBusy error:', e.message);
