@@ -655,13 +655,11 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
 - [ ] Report anything broken to Claude **before** enrolling. Fixes then go into the first real build.
 
 #### Phase 3: Apple Developer Program enrolment
-- [ ] **Decide the account type.**
-  - **Organization** if Astrowani is a registered Pvt Ltd/LLP: the App Store shows the company as seller. Needs a D-U-N-S number, a company website and a company-domain email.
-  - **Individual** otherwise: shows the owner's legal name. Faster.
-  - Note: the Privacy Policy currently says "astrowani.com is not a registered firm" while also calling it "the firm Astrowaniindia". Make the policy match whichever you choose.
+- [x] **Account type: ORGANIZATION, entity ASTROWANIINDIA** (decided 2026-10-12 — ASTROWANIINDIA is separately registered; the parent **Nexetern** must never appear on a platform record). See **DW** at the end of this file. The App Store will show ASTROWANIINDIA as seller. Needs a D-U-N-S number, a company website and a company-domain email.
+  - Note: the Privacy Policy still says "astrowani.com is not a registered firm" while also calling it "the firm Astrowaniindia". Both are now wrong — it must name ASTROWANIINDIA as the registered entity.
 - [ ] Apple Account (account.apple.com): company email, **two-factor authentication ON**, legal name exactly as on your ID/company papers.
 - [ ] A card with **international payments enabled**. The fee is US$99/year, charged in INR.
-- [ ] **Organization only:** check or request a **D-U-N-S number** at developer.apple.com/enroll/duns-lookup (free). Use the company name exactly as registered with the MCA. It takes ~5 working days, then ~2 more days for Apple to see it.
+- [ ] Check or request a **D-U-N-S number for ASTROWANIINDIA** at developer.apple.com/enroll/duns-lookup (free). Use the company name exactly as registered with the MCA. It takes ~5 working days, then ~2 more days for Apple to see it. **The same record also satisfies Google Ads advertiser verification (DW) — request it once, for ASTROWANIINDIA, not Nexetern.**
 - [ ] Enrol through the **Apple Developer app** on an iPhone (Account → Enroll Now) or at developer.apple.com/programs/enroll. Pay.
 - [ ] **Organization:** answer Apple's verification phone call.
 - [ ] Wait for the **"Welcome to the Apple Developer Program"** email.
@@ -788,6 +786,8 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
 
 - **Google Ads account 819-134-9882** ("Astrowani", astrowaniindia@gmail.com) created. Payments profile is
   **Organization "ASTROWANIINDIA"**, tax info **Accepted** (GSTIN, Rajasthan), Postpay, no backup card yet.
+  **Advertiser verification is due 2026-11-10 or the account is paused — and it must be done as
+  ASTROWANIINDIA, never the parent Nexetern. See DW at the end of this file.**
 - **Promotion 4DNF3-V3XPT-RMGW**: spend ₹20,000 (ex-GST) **by 2026-11-16** → ₹40,000 credit, which must be used
   within 60 days of being granted (~₹670/day). When the credit appears, raise the budget.
 - **Campaign App-1**: App → App installs, Android `com.astrowanicustomer`, India, English + Hindi, All users,
@@ -1441,31 +1441,33 @@ the wallet is a support ticket every time. Now `t('call.customerRate')` → **"C
 ₹25/min"** (EN + HI). **Deliberately does not do the maths in the app**: the share lives
 server-side and hardcoding 0.5 in the client would drift the day it changes.
 
-### DE. ⚠️ THE PLATFORM WALLET SCREEN IS BUILT BUT NOT MERGED — CHECK THIS FIRST
+### DE. The Platform Wallet screen is LIVE (this section used to say it was unmerged)
 
-Branch **`origin/claude/billing-astrologer-split-issue-wb5k72`** (3 commits on top of
-`1d81dde`) contains, all unmerged:
-- `GET /api/admin/wallet` in `adminRoutes.js` (+130) — balance, ledger, revenue-by-source,
-  and the per-minute **row folding** that turns 8 × ₹25 ticks into one
-  "Call with X (platform share) +₹200" entry;
-- `astrowani-admin/src/pages/AdminWallet.jsx` (164 lines) + its `App.jsx` route and
-  `Layout.jsx` sidebar entry under **Executive Center**;
-- `sql/hardening_19_billing_50_50_split.sql`, `sql/hardening_20_admin_wallet_session_id.sql`;
-- the same gift → `admin_wallet` fix as DC above.
+**Admin → Executive Center → Platform Wallet is in production.** Verified 2026-10-12:
+`astrowani-admin/src/pages/AdminWallet.jsx` plus its `App.jsx` route (`/admin-wallet`) and
+`Layout.jsx` sidebar entry are on `main`, and production answers **401** (not 404) on
+`GET /api/admin/wallet` to an unauthenticated request, so the route is mounted.
 
-**The database half of that branch IS live** (the split, and
-`admin_wallet_transactions.session_id`). **The code half is not**: `main` does not have it,
-and production answers **404** on `/api/admin/wallet` while a real admin route answers 401.
-So the Platform Wallet page cannot be reached in production, and the folding it describes
-is not running.
+- `GET /api/admin/wallet` in `adminRoutes.js` serves balance, ledger and revenue-by-source,
+  and does the per-minute **row folding** that turns 8 × ₹25 ticks into one
+  "Call with X (platform share) +₹200" entry. `DELETE /api/admin/wallet/:id` was added later
+  (`31f4f91`) for deleting a ledger line.
+- The work **re-landed directly on `main`** in `0cc6afc` rather than being merged, so
+  `origin/claude/billing-astrologer-split-issue-wb5k72` is **not an ancestor of HEAD** and
+  `git branch --merged` still lists it as unmerged. That branch is redundant — **do not merge
+  it**; everything in it is on `main` already, and merging would re-raise the `index.js` gift
+  conflict for nothing. It can be deleted.
+- `sql/hardening_19_billing_50_50_split.sql` and `sql/hardening_20_admin_wallet_session_id.sql`
+  **no longer exist in the repo** — they were superseded by `process_session_billing.sql`
+  (the source of truth, see DB) and `hardening_21`/`22`. The old warning about re-running 19/20
+  and reinstating the free-consultation outage is therefore moot, but the rule behind it still
+  stands: **`process_session_billing.sql` + `hardening_21` are the authority, and nothing may
+  turn the platform leg's WARNING back into an EXCEPTION.**
 
-**Do not rebuild that page** — merge the branch. Two things to know when doing it:
-1. It will **conflict in `index.js`** on the gift block (DC), because both sides add the
-   same credit. Keep either; the working-tree version also passes `customerId`, which
-   attributes the ledger row.
-2. `hardening_19`/`20` still carry the `RAISE` that DB fixed. **Do not re-run either after
-   `process_session_billing.sql`** — both reinstate the platform-wide free-consultation
-   outage. `hardening_21` says so at the top.
+**The split is confirmed running on real consultations** (it never had, as of 2026-09-30).
+Measured 2026-10-12 against production: 123 sessions in 24 h, **59**
+`admin_wallet_transactions` rows with `service_key = 'session_billing'`, `admin_wallet`
+holding exactly 1 row at ₹2462.50, and zero active sessions with an overdue `next_billing_at`.
 
 ### Verified 2026-09-30
 Against the LIVE database, each case run for real inside a transaction that was then
@@ -1489,6 +1491,11 @@ check customer −₹X, astrologer +₹X/2, `admin_wallet.balance` +₹X/2, and 
 `service_key='session_billing'` ledger row per minute. Note `admin_wallet_transactions`
 had **zero** `session_billing` rows as of this session, so the split had never yet run on a
 real consultation.
+
+> **RESOLVED 2026-10-12 — the split has since run on real consultations.** The zero-rows
+> observation above is a record of 2026-09-30 only; production now shows 59
+> `service_key='session_billing'` ledger rows in a 24 h window across 123 sessions, with
+> `admin_wallet` a single row and no overdue `next_billing_at`. See DE.
 
 ---
 
@@ -2227,3 +2234,221 @@ control still hiding the card while keeping the astrologer in the pool.
 **Not exercised on a device.** The test worth doing: select one astrologer, confirm the card
 appears on their dashboard and not on another's, switch it on, then de-select them in the admin
 and confirm the card disappears and they stop being offered for free calls.
+
+---
+
+## Session 2026-10-12: the legal entity for every platform is ASTROWANIINDIA
+
+### DW. One entity everywhere — ASTROWANIINDIA, never the parent
+
+Owner confirmed 2026-10-12: **ASTROWANIINDIA is separately registered.** Nexetern is the
+parent company and **must not appear on any platform record** — Google, Apple, Play, the
+bank/card, the GSTIN/PAN or the website policies.
+
+**The rule:** every platform verifies the entity that **pays**, and the payer here is
+ASTROWANIINDIA — that is already the Google Ads payments profile (Organization
+"ASTROWANIINDIA", GSTIN Rajasthan, CQ above). So the legal name, the registration
+certificate, the D-U-N-S record, the card holder and the tax id must all read
+ASTROWANIINDIA, character-for-character as registered with the MCA. **Submitting the
+parent's documents against a child's payments-profile name is the standard rejection
+cause**, and repeated rejections are what actually pauses an account.
+
+**Google Ads advertiser verification — ALL TASKS SUBMITTED 2026-10-12**, four weeks inside the
+2026-11-10 pause deadline. The account page shows every task under "Completed tasks" and the
+disclosure preview reads *Advertiser identity verified — ASTROWANIINDIA, IN*.
+- [x] Organization questions — answered 2026-10-12.
+- [x] **Dun & Bradstreet info** — answered 2026-10-12. **The D-U-N-S number itself is an
+      OPTIONAL field on this step**; Google matches the organization details against D&B's
+      records, allows 3 resubmissions, and falls back to identity documents. So the D&B lead
+      time never gated this deadline — it is only needed for Apple and the Play conversion.
+- [x] EU political ads → No.
+- [x] Who pays for your ads → ASTROWANIINDIA (the disclosure was already correct).
+- [x] Financial products & services ads application → **dismissed, correctly.** We advertise
+      astrology consultations, not financial products. The `wa.me` tag on that task means a
+      destination pointed at WhatsApp; leave the task dismissed, it is not deadline-bound.
+- **Do NOT click "Reset verification"** on that page — it wipes the submission and restarts
+  the whole process, deadline included.
+- Review is 1–10 days. If Google emails asking for documents (the D&B no-match fallback),
+  have the registration certificate, GST certificate, entity PAN and the owner's photo ID
+  ready.
+
+**Play Console is a PERSONAL account in the name of Dilip Sharma** (checked 2026-10-12);
+"Nexetern" is only the public **developer name**, a display field — Nexetern was never verified
+with Google and is not the legal publisher of anything. So:
+- [ ] Change the public developer name off "Nexetern" (Settings → Developer account →
+      Developer page). Users currently see the wrong publisher, and iOS will say ASTROWANIINDIA.
+- [ ] **Convert the Play account personal → organization (ASTROWANIINDIA).** Google supports
+      this conversion in place — **no new account and no app transfer**, installs/reviews/
+      listings/signing key all stay put. It is **one-way** (organization → personal is not
+      possible). Prerequisites: the **account owner** does it, **astrowani.com verified** in
+      Play Console (the "change account type" option only appears after website verification),
+      an **organization payments profile** (a personal one cannot be reused) which needs the
+      **D-U-N-S number** above, and the payout bank account in ASTROWANIINDIA's name.
+      Do it when no release is in review or mid-rollout.
+      Note: an organization account **publicly displays the verified legal name and address**
+      on the store listing — ASTROWANIINDIA's registered address becomes public.
+- **This is the forcing function for coins/IAP** (CO Phase 9): on a personal account, Play
+  payouts and tax forms belong to **Dilip Sharma personally**, not to ASTROWANIINDIA's
+  PAN/GSTIN. Convert before enabling IAP, or the revenue lands in the wrong entity. Confirm
+  with the accountant.
+
+**Knock-ons:**
+- **Apple enrolment is Organization, not Individual** (CO Phase 3) — the same D-U-N-S is
+  reused, and the App Store seller name becomes ASTROWANIINDIA.
+- **The Privacy Policy's "astrowani.com is not a registered firm" is now factually wrong** and
+  contradicts what Google and Apple are being told. Fix it to name ASTROWANIINDIA as the
+  registered entity (already on the CO Phase 1 website checklist).
+
+---
+
+## Subsystem added 2026-10-12: photos in a consultation chat (both apps + the website)
+
+### DX. Attaching an image, with crop, drawing and writing — and why none of it is rasterised on the device
+
+A customer can photograph a horoscope, a palm or a document and send it mid-chat;
+an astrologer can send a chart back with the relevant house circled. Crop, 90°
+rotation, freehand drawing and text-on-the-photo are all available **before** sending.
+Images only — no documents, no video — and the picker says so.
+
+**THE DESIGN DECISION EVERYTHING ELSE FOLLOWS: the device sends the ORIGINAL photo
+plus a small JSON description of the edits, and the backend replays them with sharp.**
+Nothing is flattened on the phone or in the browser.
+
+- The obvious alternative — draw it into a view and rasterise with
+  `react-native-view-shot` — is **a new native dependency in both apps**, i.e. a Play
+  Store *and* App Store build before a single user could attach a photo, and **no OTA
+  path at all**. As built, `react-native-image-picker` is already autolinked in both
+  apps and both already declare CAMERA + the iOS photo-library usage strings, so
+  **this whole feature ships by OTA. Zero native changes.** (Verified: both apps bundle
+  clean for Android; the vendor app has no `react-native-svg`, which is also why the
+  in-app stroke preview is drawn with plain `<View>`s, not SVG.)
+- It also keeps **full resolution**. A screenshot-based approach would have given an
+  astrologer ~1080px of a 2000px chart to zoom into.
+- The cost is that the editor is a **faithful preview, not the artefact**. Geometry
+  matches exactly (everything is normalised); text metrics are close but not identical,
+  because the astrologer app has no Poppins to preview with while the server renders
+  with it. See `TEXT_TOP_CORRECTION` in the composer.
+
+**THE COORDINATE RULE — every bug in this subsystem will be a coordinate bug.** Every
+number in the edit spec is normalised 0..1 against the **ORIENTED** photo: after the
+user's 90° taps, **before** the crop. x/widths divide by the oriented WIDTH, y/heights
+by the HEIGHT, a brush width by the WIDTH, a font size by the HEIGHT. The server
+composites in exactly that order — auto-orient → user rotation → **annotate** → crop →
+downscale — which is what makes a stroke anchored to the PHOTO rather than to the crop
+frame: re-cropping afterwards slides nothing, and a stroke running off the frame is
+correctly cut. Rotating in the editor **transforms the existing crop, strokes and
+captions** rather than discarding them (`rotateEditsClockwise`), and rescales brush
+widths and font sizes because the sides they normalise against have just swapped.
+
+| Piece | Where |
+|---|---|
+| `sql/chat_image_messages.sql` | `chat_messages.message_type / image_url / image_width / image_height`. **APPLIED 2026-10-12.** Two CHECK constraints; **no new grants** (`anon`/`authenticated` stay at zero). |
+| `src/chatImageComposer.js` | the sharp pipeline + `normaliseEdits`. No I/O, so it is unit-testable. |
+| `index.js` `POST /api/chat/image` | deliberately **next to `POST /api/chat/message`** — see below |
+| `astrowani-backend/assets/fonts/Poppins-Bold.ttf` | bundled, 150 KB, covers Devanagari |
+| customer/vendor `src/components/chatImage/*` + `src/utils/chatImage.js` | the editor, the bubble, the picker sheet — **duplicated byte-for-byte** between the two apps |
+| website `aw/chat-image.js`, `aw/chat-image-geometry.js`, CSS in `aw/aw.css` | same spec, same endpoint |
+
+**Things that are load-bearing — do not "tidy" them:**
+
+- **The route lives in `index.js` beside the text one, on purpose.** The gate it shares
+  — you must be a participant, the session must not have ended, and you must pass
+  `senderMayBeServed` — *is* the security of chat, and `POST /api/chat/message` shipped
+  **without** it (2026-08-08: anyone could inject a message into any session by guessing
+  its id). A second writer to `chat_messages` in its own module would drift away from
+  those three checks one refactor at a time. Only the pixels are factored out.
+- **`sessionId` is REQUIRED here**, unlike the text endpoint which still tolerates a
+  legacy caller without one. An image costs the server far more, and allowing it would
+  be an upload path with no session check at all.
+- **`message` is still filled in** — `📷 Photo`, or `📷 <caption>`. Far more things read
+  that column than will ever know about `message_type`: the push notification body, the
+  admin off-platform-contact proof view, a dispute transcript, and **every installed app
+  build that predates the OTA**. All of them degrade to something sensible with no change.
+- **A caption goes through the same `maskContacts`** as a typed message. A phone number
+  is a phone number whether it is typed in the box or under a photo. **THE PIXELS ARE
+  NOT SCANNED** — a number written on paper and photographed walks straight past the
+  off-platform detector. Closing that needs OCR on every chat image; it is a separate
+  decision, not an oversight.
+- **Throttles are claimed BEFORE the first `await`** (one photo per 2.5s per sender, 60
+  per session). Every `await` yields the loop, so two taps landing together would
+  otherwise both pass the check. Same rule as every other async guard in this project.
+- **The editor stays OPEN on a failed send**, with the crop and annotations intact.
+  Closing it would make an astrologer re-circle the house they just circled because of
+  one dropped request.
+- **`textDropped`** is returned when the deployed libvips cannot rasterise text (probed
+  once, cached). The photo still goes with its drawings and the sender is TOLD — rather
+  than believing a caption they typed went through.
+- **The express error handler now maps `entity.too.large` → 413 and a bad JSON body → 400.**
+  `express.json()` rejects before any route runs, so a route's own 413 can never be
+  reached; it used to answer **500**, i.e. "something went wrong, try again" for a photo
+  that would never fit. This affects every base64 endpoint, not just this one.
+- **`chat-images/` is its own folder in the public `app-images` bucket.** Names are
+  unguessable (timestamp + 12 hex) and this matches what profile photos and voice notes
+  already do — but it IS a public bucket. Moving chat photos behind signed URLs is a
+  follow-up, and the separate folder is what makes it possible without touching anything
+  else. Note account deletion deliberately does NOT purge them, consistent with the
+  2026-09-25 decision to keep `chat_messages`.
+
+### DY. The three copies, and the two scripts that stop them drifting
+
+The editor exists three times — customer app, astrologer app, website — because all
+three post the same spec to the same endpoint. Duplication is this repo's established
+pattern; its one real cost is drift, and drift here is silent (a photo cropped on the
+website coming back cropped somewhere else, with nothing erroring).
+
+- `astrowani_customer-main/scripts/checkSharedChatImageFiles.js` — hashes the 8 shared
+  app files, checks every `chatImage.*` key exists in **both** apps in **both**
+  languages, and re-derives the website's geometry to confirm it still matches.
+  **Verified to actually fail on an introduced one-character change** (exit 1), which is
+  the only reason to trust it.
+- `astrowani-website/aw/sync-chat-image-geometry.js` — regenerates the website's ESM
+  copy from the apps' CommonJS one, rewriting only the export syntax and refusing if
+  anything else would have to change. Run it after editing the app copy.
+
+Note the website's `?v=N` cache-busting version was bumped to **22** for this
+(`node aw/bump-version.js 22`), as every change under `aw/` requires.
+
+### Verified 2026-10-12
+
+- **Composer, 53/53** (`astrowani-backend/scripts/testChatImageComposer.js`). Asserts on
+  PIXELS, not on "it didn't throw": a crop of a four-quadrant image keeps the green
+  quadrant and loses the red one; a stroke lands where it was drawn and the rest of the
+  photo stays untouched; a stroke outside the crop is cut and one inside survives;
+  Devanagari text renders to real glyphs; white text still carries a dark shadow; EXIF
+  does not survive. Every annotation case is paired with a positive control.
+- **Editor geometry, 63/63**, run against both apps' copies. Includes four quarter turns
+  returning a point exactly where it started, a 1:1 crop of a 2:1 photo being square **in
+  output pixels** (not in normalised units — the easy bug), a ratio lock not drifting
+  over 25 drags, a canvas→photo→canvas round trip, and **4000 random crop drags** never
+  leaving the photo, inverting or producing NaN.
+- **Route, 38/38 over real HTTP against the live database** (devServer on a spare port;
+  `index.js` never booted, and the boot log checked for EADDRINUSE first — a port clash
+  did occur and was caught). A stranger with a VALID token → 403, an ended session → 409
+  `SESSION_ENDED`, a disconnected sender → 409 `NOT_CONNECTED`, an audio file dressed as
+  a photo → 400, an oversized body → 413, a second send inside the gap → 429 — each
+  paired with a positive control first. Teardown asserted 0 rows and 0 objects left.
+  (`chat_sessions` has a `uq_one_active_session_per_vendor` unique index, so a test
+  needing two sessions must retire the first — worth knowing before writing another.)
+- **Website editor, 34/34 in a real browser** (`aw/chat-image-selftest.html`, dev-only
+  and excluded from the deploy), driving real pointer gestures through the real
+  `aw/chat-image.js` and asserting on the spec it posts. Then the spec it produced was
+  replayed through the **real backend composer**, which rendered exactly the quadrant the
+  browser had selected, at the size the crop implies — the join between the two halves.
+- Both apps bundle for Android (customer 8,194,983 B; vendor 6,336,878 B). Lint: vendor
+  0 errors, customer 1 — the same pre-existing one `HEAD` has, checked side by side.
+
+**Two real defects were found by this verification and fixed, both of which would have
+shipped silently:**
+1. **sharp applies a pipeline in a FIXED internal order** (rotate, extract, resize,
+   composite) regardless of call order, so `.composite().extract()` cropped *first* and
+   then failed to lay a full-size overlay over the smaller crop. Annotating and cropping
+   are now separate passes.
+2. **`requestAnimationFrame` is not a safe trigger for a first paint.** The website
+   editor's initial render hung off one, and in a throttled or hidden document rAF simply
+   never fires — a blank editor with no error anywhere. It now paints immediately and
+   uses a `ResizeObserver` for the settle.
+
+**Not exercised on a device, and that is the test worth doing:** send a photo both ways
+in a real consultation on two handsets — check the crop and the drawing arrive as drawn,
+the caption is masked if it contains a number, the bubble does not make the chat jump
+while it loads, and the astrologer's push notification reads sensibly.
