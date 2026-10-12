@@ -1,5 +1,5 @@
-import { api } from './api.js?v=27';
-import { esc } from './ui.js?v=27';
+import { api } from './api.js?v=28';
+import { esc } from './ui.js?v=28';
 
 /**
  * "You have a consultation in progress" — a slim bar pinned to the bottom of

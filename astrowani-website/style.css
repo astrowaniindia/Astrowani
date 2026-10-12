@@ -324,6 +324,25 @@ img { max-width: 100%; display: block; }
 .band-tint { background: var(--band-tint); }
 section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 
+/* Long-form legal pages (privacy, terms, refund, delete-account, etc.) — the
+   text itself is the real astrowani.com copy verbatim, copied exactly rather
+   than rewritten, so this only has to make it readable, not re-author it. */
+.legal-content { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+.legal-content h2 {
+  font-family: 'Marcellus', serif; font-weight: 400; font-size: 22px;
+  color: var(--maroon); margin: 40px 0 14px;
+}
+.legal-content h2:first-child { margin-top: 0; }
+.legal-content p { font-size: 15px; line-height: 1.8; color: var(--ink-soft); margin: 0 0 16px; }
+.legal-content ul, .legal-content ol { margin: 0 0 16px; padding-left: 22px; }
+.legal-content li { font-size: 15px; line-height: 1.75; color: var(--ink-soft); margin-bottom: 8px; }
+.legal-content a { color: var(--gold-deep); text-decoration: underline; }
+.legal-content strong { color: var(--maroon); }
+.legal-content .legal-updated {
+  font-size: 13px; color: var(--ink-faint); margin: 36px 0 0; padding-top: 20px;
+  border-top: 1px solid var(--border-soft);
+}
+
 /* scroll progress bar — z-index must beat #site-nav-floating (also 70, below), or the
    floating nav paints over this 3px strip the moment it slides down and the line
    appears to "vanish" exactly when the second nav bar shows up. */
@@ -866,6 +885,21 @@ footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: 
 .footer-col-title { font-size: 12.5px; font-weight: 800; color: var(--cream); letter-spacing: 0.6px; text-transform: uppercase; margin-bottom: 16px; }
 .footer-links { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .footer-bottom { max-width: 1280px; margin: 0 auto; padding-top: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--cream-muted); }
+/* Social icons, bottom-left of the footer, one line. The .footer-social div
+   is an empty placeholder in every page's markup — injectFooterSocial() in
+   script.js fills it on every page that has one, so the icon list and each
+   brand's URL/colour live in exactly one place (same source the apps use,
+   src/config/api.js SOCIAL_LINKS) rather than being copy-pasted per page. */
+.footer-bottom-left { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.footer-social { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.footer-social a {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: color-mix(in srgb, var(--cream) 14%, transparent);
+  color: var(--cream); transition: background .2s ease, transform .2s ease;
+}
+.footer-social a:hover { background: var(--social-color, var(--gold)); transform: translateY(-2px); }
+.footer-social svg { width: 15px; height: 15px; fill: currentColor; }
 
 @media (max-width: 760px) {
   .band { padding: 64px 0; }

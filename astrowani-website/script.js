@@ -403,6 +403,35 @@ function injectMobileNav() {
   });
 }
 
+// Fills every `.footer-social` placeholder on the page with the real social
+// icons, one line, bottom-left of the footer.
+//
+// Mirrors SOCIAL_LINKS in the CUSTOMER APP (src/config/api.js) exactly — same
+// keys, URLs and brand colours — so the website and the app always point at
+// the same accounts. WhatsApp is deliberately NOT in this list, per the same
+// source: it was removed from the app's social row on the owner's
+// instruction (WhatsApp remains a real support/ordering channel elsewhere,
+// just not as a "follow us" social icon).
+const ASTROWANI_SOCIAL_LINKS = [
+  { key: 'facebook', label: 'Facebook', color: '#1877F2', url: 'https://www.facebook.com/jyotishjagrati',
+    path: 'M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.45 2.91h-2.33V22c4.78-.79 8.44-4.94 8.44-9.94Z' },
+  { key: 'instagram', label: 'Instagram', color: '#C13584', url: 'https://www.instagram.com/astrowani_official/',
+    path: 'M12 2c-2.72 0-3.06.01-4.12.06-1.06.05-1.79.22-2.43.47-.66.26-1.22.6-1.77 1.16-.56.55-.9 1.11-1.16 1.77-.25.64-.42 1.37-.47 2.43C2 8.94 2 9.28 2 12s.01 3.06.06 4.12c.05 1.06.22 1.79.47 2.43.26.66.6 1.22 1.16 1.77.55.56 1.11.9 1.77 1.16.64.25 1.37.42 2.43.47C8.94 22 9.28 22 12 22s3.06-.01 4.12-.06c1.06-.05 1.79-.22 2.43-.47.66-.26 1.22-.6 1.77-1.16.56-.55.9-1.11 1.16-1.77.25-.64.42-1.37.47-2.43.05-1.06.06-1.4.06-4.12s-.01-3.06-.06-4.12c-.05-1.06-.22-1.79-.47-2.43a4.93 4.93 0 0 0-1.16-1.77 4.93 4.93 0 0 0-1.77-1.16c-.64-.25-1.37-.42-2.43-.47C15.06 2.01 14.72 2 12 2Zm0 1.8c2.67 0 2.99.01 4.04.06.98.04 1.5.21 1.86.34.47.18.8.4 1.15.75.35.35.57.68.75 1.15.13.36.3.88.34 1.86.05 1.05.06 1.37.06 4.04s-.01 2.99-.06 4.04c-.04.98-.21 1.5-.34 1.86-.18.47-.4.8-.75 1.15-.35.35-.68.57-1.15.75-.36.13-.88.3-1.86.34-1.05.05-1.37.06-4.04.06s-2.99-.01-4.04-.06c-.98-.04-1.5-.21-1.86-.34a3.13 3.13 0 0 1-1.15-.75 3.13 3.13 0 0 1-.75-1.15c-.13-.36-.3-.88-.34-1.86-.05-1.05-.06-1.37-.06-4.04s.01-2.99.06-4.04c.04-.98.21-1.5.34-1.86.18-.47.4-.8.75-1.15.35-.35.68-.57 1.15-.75.36-.13.88-.3 1.86-.34C9.01 3.81 9.33 3.8 12 3.8Zm0 3.05a5.15 5.15 0 1 0 0 10.3 5.15 5.15 0 0 0 0-10.3Zm0 8.5a3.35 3.35 0 1 1 0-6.7 3.35 3.35 0 0 1 0 6.7Zm5.35-8.7a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0Z' },
+  { key: 'x', label: 'X', color: '#000000', url: 'https://x.com/astrowani_',
+    path: 'M13.6 10.17 20.1 3h-1.55l-5.64 6.23L8.4 3H2.5l6.82 9.64L2.5 21h1.55l5.96-6.59L14.6 21h5.9l-6.9-10.83Zm-2.11 2.33-.69-.97L4.9 4.17h2.38l4.43 6.23.69.97 5.77 8.11h-2.38l-4.7-6.98Z' },
+  { key: 'linkedin', label: 'LinkedIn', color: '#0A66C2', url: 'https://www.linkedin.com/company/astrowani/',
+    path: 'M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.03-1.85-3.03-1.86 0-2.14 1.45-2.14 2.94v5.66H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29ZM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12ZM7.12 20.45H3.56V9h3.56v11.45Z' },
+  { key: 'youtube', label: 'YouTube', color: '#FF0000', url: 'https://www.youtube.com/@Astrowani',
+    path: 'M23 12s0-3.52-.45-5.2a2.9 2.9 0 0 0-2.04-2.05C18.83 4.3 12 4.3 12 4.3s-6.83 0-8.51.45A2.9 2.9 0 0 0 1.45 6.8C1 8.48 1 12 1 12s0 3.52.45 5.2a2.9 2.9 0 0 0 2.04 2.05C5.17 19.7 12 19.7 12 19.7s6.83 0 8.51-.45a2.9 2.9 0 0 0 2.04-2.05C23 15.52 23 12 23 12ZM9.75 15.3V8.7L15.5 12l-5.75 3.3Z' },
+];
+
+function injectFooterSocial() {
+  const containers = document.querySelectorAll('.footer-social');
+  if (!containers.length) return;
+  const html = ASTROWANI_SOCIAL_LINKS.map((s) => `<a href="${s.url}" target="_blank" rel="noopener" aria-label="${s.label}" style="--social-color:${s.color};"><svg viewBox="0 0 24 24"><path d="${s.path}"/></svg></a>`).join('');
+  containers.forEach((c) => { c.innerHTML = html; });
+}
+
 function astroBadgeChip(a) {
   if (a.badge === 'celebrity') return '<div class="astro-badge-chip astro-badge-celebrity">&#9733; Celebrity</div>';
   if (a.badge === 'verified') return '<div class="astro-badge-chip astro-badge-verified">&#10003; Verified</div>';
@@ -489,6 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // After the dropdowns, so the drawer is built from the same menu data and
   // sits last in the bar (the hamburger is the right-most control).
   injectMobileNav();
+  injectFooterSocial();
   astroApplyLang(document.documentElement.getAttribute('data-lang') === 'hi' ? 'hi' : 'en');
   // Every astrologer surface renders from window.ASTROWANI_ASTROLOGERS. That array
   // starts as the bundled snapshot (so the page paints instantly, with no layout
