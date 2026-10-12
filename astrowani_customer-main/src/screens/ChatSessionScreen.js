@@ -36,6 +36,10 @@ import SessionIntroBanner from '../components/SessionIntroBanner';
 import SessionConnectionNotice, { useSessionConnection, billableSeconds } from '../components/SessionConnectionNotice';
 import { LanguageContext } from '../context/LanguageContext';
 import { joinSessionWithRetry } from '../utils/sessionRoom';
+import ChatImageBubble from '../components/chatImage/ChatImageBubble';
+import ImageEditorModal from '../components/chatImage/ImageEditorModal';
+import AttachSourceSheet from '../components/chatImage/AttachSourceSheet';
+import { pickChatImage, sendChatImage, imageErrorKey } from '../utils/chatImage';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
@@ -68,6 +72,11 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const [myId, setMyId] = useState(null);
   const [connecting, setConnecting] = useState(true);
   const [vendorTyping, setVendorTyping] = useState(false);
+  // Photo attachment: the "camera or gallery?" sheet, the photo being edited, and
+  // whether an upload is in flight. See src/components/chatImage/.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [editorSource, setEditorSource] = useState(null);
+  const [imageSending, setImageSending] = useState(false);
 
   const sessionRef = useRef(null);
   const walletRef = useRef(0);
@@ -752,11 +761,78 @@ const ChatSessionScreen = ({ route, navigation }) => {
   const minutes = Math.floor(shownSeconds / 60);
   const secs = shownSeconds % 60;
 
+  // ─── Photo attachments ────────────────────────────────────────────────────
+  const openAttach = () => {
+    // The server refuses a disconnected participant (SERVICE_PRESENCE_GRACE_MS), so
+    // there is no point letting someone crop and annotate a photo that cannot be
+    // sent. Same reasoning as the text send gate above.
+    if (conn.blocked) {
+      showStatusPopup({
+        variant: 'error',
+        title: t('chatSession.connSendBlockedTitle'),
+        message: t('chatSession.connSendBlockedMsg'),
+      });
+      return;
+    }
+    setAttachOpen(true);
+  };
+
+  const choosePhoto = async ({ fromCamera }) => {
+    setAttachOpen(false);
+    const picked = await pickChatImage({ fromCamera });
+    if (!picked) return; // backed out of the picker
+    if (picked.error) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(picked.error)) });
+      return;
+    }
+    setEditorSource(picked);
+  };
+
+  const submitPhoto = async (edits, caption) => {
+    if (!sessionRef.current || imageSending) return;
+    setImageSending(true);
+    const res = await sendChatImage({
+      roomId: requestId,
+      sessionId: sessionRef.current.id,
+      receiverId: person?._id || person?.id || person?.userId,
+      base64DataUri: editorSource.base64DataUri,
+      edits,
+      caption,
+    });
+    setImageSending(false);
+
+    if (!res.ok) {
+      // The editor stays OPEN on failure, with everything the person drew still in
+      // it — closing it would throw away the crop and the annotations and make them
+      // start again, which on a billed-by-the-minute consultation is the wrong way
+      // to handle a dropped packet.
+      showStatusPopup({ variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(res.code)) });
+      return;
+    }
+
+    setEditorSource(null);
+    // Added straight from the response as well as over the socket (deduped by id in
+    // mergeMessages), so the sender sees their own photo even mid-reconnect.
+    mergeMessages([res.row]);
+    captureEvent('chat_image_sent');
+    if (res.masked) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.maskedTitle'), message: t('chatImage.maskedMsg') });
+    } else if (res.textDropped) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.textDroppedTitle'), message: t('chatImage.textDroppedMsg') });
+    }
+  };
+
   const renderMessage = ({ item }) => {
     const isMine = String(item.sender_id) === String(myId);
-    const time = item.created_at 
+    const time = item.created_at
       ? new Date(item.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
       : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+    // An older row, or one from a build that predates photos, has no message_type
+    // and falls through to the text bubble exactly as before.
+    if (item.message_type === 'image' && item.image_url) {
+      return <ChatImageBubble item={item} isMine={isMine} time={time} />;
+    }
 
     return (
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
@@ -855,6 +931,13 @@ const ChatSessionScreen = ({ route, navigation }) => {
       {/* ── Input ─────────────────────────────── */}
       {!connecting && (
         <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
+          <TouchableOpacity
+            style={[styles.attachBtn, conn.blocked && { opacity: 0.45 }]}
+            onPress={openAttach}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+          >
+            <Ionicons name="image" size={23} color={COLORS.AstroMaroon} />
+          </TouchableOpacity>
           <TextInput
             ref={inputRef}
             style={styles.input}
@@ -873,6 +956,17 @@ const ChatSessionScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       )}
+
+      <AttachSourceSheet visible={attachOpen} onClose={() => setAttachOpen(false)} onPick={choosePhoto} />
+      <ImageEditorModal
+        visible={!!editorSource}
+        source={editorSource}
+        sending={imageSending}
+        // Blocked while an upload is in flight: cancelling mid-request would leave
+        // the photo arriving into a chat whose editor has already been thrown away.
+        onCancel={() => { if (!imageSending) setEditorSource(null); }}
+        onSend={submitPhoto}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -962,6 +1056,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 2,
+  },
+  attachBtn: {
+    width: 38,
+    height: 46,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 2,
   },
 });
 

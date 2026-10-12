@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat photo editor — self test</title>
+<link rel="stylesheet" href="../style.css?v=22">
+<link rel="stylesheet" href="aw.css?v=22">
+<style>
+  body { font-family: Manrope, system-ui, sans-serif; padding: 16px; }
+  #out { white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; }
+  .p { color: #0a7a2f; } .f { color: #b00020; font-weight: 700; }
+</style>
+</head>
+<body>
+<!--
+  LOCAL DEVELOPMENT ONLY — not linked from the site and not part of the deploy's
+  page set.
+
+  WHY IT EXISTS. The website's photo editor is the one copy of this feature whose
+  maths is NOT covered by a Node test: the apps' geometry is unit-tested directly
+  (astrowani_customer-main/scripts/testImageEditorGeometry.js) and the backend's
+  compositing is tested with sharp, but the browser build can only be exercised in
+  a browser. This drives the REAL aw/chat-image.js — a real crop drag, a real
+  stroke, a real caption — and asserts on the edit spec it hands to the server,
+  which is the only thing the server ever sees. A wrong spec is a photo that
+  arrives cropped to the wrong part of itself, and nothing anywhere throws.
+
+  Open http://localhost:4607/aw/chat-image-selftest.html with the dev server
+  running (PORT=4607 node astrowani-website/dev-server.js).
+-->
+<h1>Chat photo editor — self test</h1>
+<button id="run" class="aw-btn aw-btn-gold">Run</button>
+<div id="out"></div>
+
+<script type="module">
+import { attachChatImages, captionOf } from './chat-image.js?v=22';
+
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+const ok = (name, cond, extra) => {
+  if (cond) { pass++; out.insertAdjacentHTML('beforeend', `<div class="p">✓ ${name}</div>`); }
+  else { fail++; out.insertAdjacentHTML('beforeend', `<div class="f">✗ ${name}${extra ? ' — ' + extra : ''}</div>`); }
+};
+const near = (name, a, b, tol = 0.02) => ok(name, Math.abs(a - b) <= tol, `got ${a}, expected ${b}`);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Wait for a condition, so an assertion cannot race the thing it is checking. */
+const until = async (fn, ms = 2000) => {
+  for (let i = 0; i < ms / 25; i++) { if (fn()) return true; await sleep(25); }
+  return false;
+};
+
+/** A real PNG File, so the picker path (decode + downscale) runs for real. */
+async function makeFile(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.fillStyle = '#ff0000'; x.fillRect(0, 0, w / 2, h / 2);
+  x.fillStyle = '#00ff00'; x.fillRect(w / 2, 0, w / 2, h / 2);
+  x.fillStyle = '#0000ff'; x.fillRect(0, h / 2, w / 2, h / 2);
+  x.fillStyle = '#ffff00'; x.fillRect(w / 2, h / 2, w / 2, h / 2);
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  return new File([blob], 'test.png', { type: 'image/png' });
+}
+
+/** Drive a pointer gesture on an element the way a finger would. */
+function gesture(target, from, to, steps = 10) {
+  const opts = (x, y) => ({ clientX: x, clientY: y, pointerId: 1, bubbles: true, pointerType: 'touch', isPrimary: true });
+  target.dispatchEvent(new PointerEvent('pointerdown', opts(from.x, from.y)));
+  for (let i = 1; i <= steps; i++) {
+    const x = from.x + ((to.x - from.x) * i) / steps;
+    const y = from.y + ((to.y - from.y) * i) / steps;
+    document.querySelector('.aw-imgedit-stage').dispatchEvent(new PointerEvent('pointermove', opts(x, y)));
+  }
+  document.querySelector('.aw-imgedit-stage').dispatchEvent(new PointerEvent('pointerup', opts(to.x, to.y)));
+}
+
+async function openEditorWithFile(file, onSendSpy) {
+  const btn = document.createElement('button');
+  document.body.appendChild(btn);
+  const detach = attachChatImages({
+    button: btn,
+    roomId: 'room-1',
+    sessionId: 'sess-1',
+    receiverId: 'astro-1',
+    onMessage: () => {},
+    onSystem: () => {},
+    canSend: () => true,
+  });
+  // The hidden <input type=file> cannot be driven by a click (the browser will
+  // not open a file dialog from script and could not be answered anyway), so the
+  // file is placed on it with a DataTransfer and the change event is fired — the
+  // same entry point a real pick reaches.
+  const picker = btn.parentNode.querySelector('input[type="file"]');
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  picker.files = dt.files;
+  picker.dispatchEvent(new Event('change'));
+  // Wait for the decode + the first layout frame.
+  for (let i = 0; i < 60 && !document.querySelector('.aw-imgedit-stage canvas'); i++) await sleep(50);
+  await sleep(120);
+  return { detach, btn, picker };
+}
+
+/** Intercept the POST so the spec can be read without a real session. */
+function stubFetch() {
+  const real = window.fetch;
+  const calls = [];
+  window.fetch = async (url, init) => {
+    if (String(url).includes('/api/chat/image')) {
+      const body = JSON.parse(init.body);
+      calls.push(body);
+      return new Response(JSON.stringify({
+        success: true,
+        data: {
+          id: `m${calls.length}`, sender_id: 'me', message: body.caption ? `📷 ${body.caption}` : '📷 Photo',
+          message_type: 'image', image_url: 'about:blank', image_width: 100, image_height: 100,
+          created_at: new Date().toISOString(),
+        },
+        masked: false, textDropped: false,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return real(url, init);
+  };
+  return { calls, restore: () => { window.fetch = real; } };
+}
+
+document.getElementById('run').addEventListener('click', async () => {
+  out.innerHTML = ''; pass = 0; fail = 0;
+
+  ok('captionOf reads a caption', captionOf('📷 hello there') === 'hello there');
+  ok('captionOf treats the placeholder as no caption', captionOf('📷 Photo') === '');
+  ok('captionOf ignores a plain text message', captionOf('just text') === '');
+
+  const { calls, restore } = stubFetch();
+  try {
+    // ── 1. the editor opens on a real decoded file ──────────────────────────
+    const file = await makeFile(1200, 800);
+    const { detach } = await openEditorWithFile(file);
+    const root = document.querySelector('.aw-imgedit');
+    ok('the editor opened', !!root);
+    ok('the crop tab is the one it starts on', !!document.querySelector('[data-tab="crop"].is-on'));
+    ok('a crop frame is drawn', !!document.querySelector('.aw-crop-frame'));
+    ok('all four corner handles are there', document.querySelectorAll('.aw-crop-h').length === 4);
+
+    // ── 2. a locked aspect really changes the frame ─────────────────────────
+    const before = document.querySelector('.aw-crop-frame').getBoundingClientRect();
+    document.querySelector('[data-aspect="square"]').click();
+    await sleep(60);
+    const square = document.querySelector('.aw-crop-frame').getBoundingClientRect();
+    near('tapping 1:1 makes the visible frame square', square.width / square.height, 1, 0.03);
+    ok('…and it actually changed', Math.abs(square.width - before.width) > 2);
+
+    // ── 3. a crop drag moves the frame and lands in the spec ────────────────
+    document.querySelector('[data-aspect="free"]').click();
+    await sleep(60);
+    const frame = document.querySelector('.aw-crop-frame').getBoundingClientRect();
+    const tl = document.querySelector('.aw-crop-h.tl').getBoundingClientRect();
+    gesture(document.querySelector('.aw-crop-h.tl'),
+      { x: tl.left + tl.width / 2, y: tl.top + tl.height / 2 },
+      { x: tl.left + tl.width / 2 + frame.width * 0.25, y: tl.top + tl.height / 2 + frame.height * 0.25 });
+    await sleep(80);
+    const after = document.querySelector('.aw-crop-frame').getBoundingClientRect();
+    ok('dragging the top-left handle shrinks the frame',
+      after.width < frame.width - 4 && after.height < frame.height - 4,
+      `${frame.width}x${frame.height} -> ${after.width}x${after.height}`);
+
+    // ── 4. a stroke in draw mode ────────────────────────────────────────────
+    document.querySelector('[data-tab="draw"]').click();
+    await sleep(80);
+    ok('draw mode shows the colours', document.querySelectorAll('.aw-imgedit-swatch').length >= 4);
+    ok('draw mode shows the brush sizes', document.querySelectorAll('.aw-imgedit-brush').length === 3);
+    const stage = document.querySelector('.aw-imgedit-stage');
+    const sb = stage.getBoundingClientRect();
+    gesture(stage,
+      { x: sb.left + sb.width * 0.35, y: sb.top + sb.height * 0.45 },
+      { x: sb.left + sb.width * 0.65, y: sb.top + sb.height * 0.55 }, 14);
+    await sleep(80);
+    ok('Undo became available, so a stroke was recorded',
+      !document.querySelector('[data-act="undo"]').disabled);
+
+    // ── 5. a caption on the photo ───────────────────────────────────────────
+    document.querySelector('[data-tab="text"]').click();
+    await sleep(60);
+    const realPrompt = window.prompt;
+    window.prompt = () => 'Rahu राहु';
+    document.querySelector('[data-act="addtext"]').click();
+    window.prompt = realPrompt;
+    await sleep(80);
+    const textNode = document.querySelector('.aw-img-text');
+    ok('the caption is drawn on the photo', !!textNode && textNode.textContent === 'Rahu राहु');
+
+    // ── 6. send, and check the SPEC — the only thing the server sees ────────
+    document.querySelector('[data-el="caption"]').value = 'please check this';
+    document.querySelector('[data-el="sendform"]').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    for (let i = 0; i < 60 && !calls.length; i++) await sleep(50);
+    ok('the photo was posted', calls.length === 1);
+    const body = calls[0] || {};
+    ok('…to the right session', body.sessionId === 'sess-1' && body.roomId === 'room-1');
+    ok('…as a jpeg data URI', /^data:image\/jpeg;base64,/.test(body.image || ''));
+    ok('…with the caption', body.caption === 'please check this');
+    const e = body.edits || {};
+    ok('…carrying a crop', !!e.crop);
+    ok('…a crop that is smaller than the whole photo', e.crop.w < 0.99 || e.crop.h < 0.99,
+      JSON.stringify(e.crop));
+    ok('…a crop inside the photo', e.crop.x >= 0 && e.crop.y >= 0
+      && e.crop.x + e.crop.w <= 1.0001 && e.crop.y + e.crop.h <= 1.0001, JSON.stringify(e.crop));
+    ok('…one stroke', (e.strokes || []).length === 1, JSON.stringify((e.strokes || []).length));
+    const st = (e.strokes || [])[0] || {};
+    ok('…with several points', (st.points || []).length >= 3, `${(st.points || []).length} points`);
+    ok('…every point normalised', (st.points || []).every((p) => p.x >= -0.5 && p.x <= 1.5 && p.y >= -0.5 && p.y <= 1.5));
+    ok('…a hex colour the server will accept', /^#[0-9a-f]{6}$/i.test(st.color || ''), st.color);
+    ok('…one caption on the photo', (e.texts || []).length === 1);
+    ok('…with the text intact, Devanagari included', ((e.texts || [])[0] || {}).text === 'Rahu राहु');
+    ok('…no internal ids leaked into the payload',
+      !('id' in st) && !('id' in ((e.texts || [])[0] || {})));
+    // Waited for, not asserted on the spot: the stub records the request before
+    // the response is even parsed, so the POST lands well before onSend returns
+    // and the editor closes.
+    ok('the editor closed after a successful send',
+      await until(() => !document.querySelector('.aw-imgedit')));
+    ok('…and the page scroll lock was released', !document.body.classList.contains('aw-imgedit-open'));
+    detach();
+
+    // ── 7. rotation carries the annotations, and swaps the frame ────────────
+    calls.length = 0;
+    const r2 = await openEditorWithFile(await makeFile(1200, 800));
+    const f0 = document.querySelector('.aw-crop-frame').getBoundingClientRect();
+    ok('a landscape photo starts with a landscape frame', f0.width > f0.height, `${f0.width}x${f0.height}`);
+    document.querySelector('[data-act="rotate"]').click();
+    await sleep(100);
+    const f1 = document.querySelector('.aw-crop-frame').getBoundingClientRect();
+    ok('after one turn the frame is portrait', f1.height > f1.width, `${f1.width}x${f1.height}`);
+    document.querySelector('[data-el="sendform"]').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    for (let i = 0; i < 60 && !calls.length; i++) await sleep(50);
+    ok('the rotation is in the spec', (calls[0] || {}).edits.rotate === 90, JSON.stringify((calls[0] || {}).edits?.rotate));
+    r2.detach();
+
+    // ── 8. a non-image is refused before anything opens ─────────────────────
+    const r3 = await openEditorWithFile(new File(['hello'], 'notes.txt', { type: 'text/plain' }));
+    ok('a text file never opens the editor', !document.querySelector('.aw-imgedit'));
+    r3.detach();
+  } catch (err) {
+    ok(`harness crashed: ${err && err.message}`, false, String(err && err.stack || err));
+  } finally {
+    restore();
+    document.querySelectorAll('.aw-imgedit').forEach((n) => n.remove());
+    document.body.classList.remove('aw-imgedit-open');
+  }
+
+  out.insertAdjacentHTML('beforeend', `<div id="done" class="${fail ? 'f' : 'p'}">${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed</div>`);
+});
+</script>
+</body>
+</html>

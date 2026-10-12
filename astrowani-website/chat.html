@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=21">
-<link rel="stylesheet" href="aw/aw.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="aw/aw.css?v=22">
 </head>
 <body class="aw-screen-body aw-chat-body">
 
@@ -34,6 +34,9 @@
       <div class="aw-chat-sys">You are connected. Billing is per minute from now.</div>
     </div>
     <form class="aw-chat-compose" id="aw-chat-form">
+      <!-- Photos only. The chat accepts images and nothing else; the hidden file
+           input it drives is created in aw/chat-image.js with accept="image/*". -->
+      <button type="button" class="aw-chat-attach" id="aw-chat-attach" aria-label="Send a photo" title="Send a photo">&#128247;</button>
       <input type="text" id="aw-chat-input" autocomplete="off" placeholder="Type your message…" maxlength="2000">
       <button type="submit" class="aw-btn aw-btn-gold">Send</button>
     </form>
@@ -41,8 +44,8 @@
 </div>
 
 <script type="module">
-  import { initChatPage } from './aw/chat-page.js?v=21';
-  import { bootScreen } from './aw/boot.js?v=21';
+  import { initChatPage } from './aw/chat-page.js?v=22';
+  import { bootScreen } from './aw/boot.js?v=22';
   bootScreen().then(initChatPage);
 </script>
 </body>

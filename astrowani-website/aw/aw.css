@@ -434,3 +434,151 @@ body.is-video-call .aw-call-peer .aw-ring-avatar { width: 54px; height: 54px; ma
   .aw-resume-bar { flex-wrap: wrap; justify-content: center; text-align: center; }
   .aw-resume-text { flex: 1 1 100%; }
 }
+
+/* ---------- photo attachments in chat (aw/chat-image.js) ---------- */
+/* The composer's camera button. Deliberately the same size as the Send button so
+   the row does not look lopsided, and never allowed to shrink the text field
+   below the 16px iOS zoom threshold noted on .aw-chat-compose input above. */
+.aw-chat-attach {
+  flex: 0 0 auto; width: 44px; height: 44px; border: 0; border-radius: 999px;
+  background: #f1eae5; color: var(--maroon); cursor: pointer;
+  font-size: 19px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: filter .18s ease, transform .18s ease;
+}
+.aw-chat-attach:not(:disabled):hover { filter: brightness(.96); transform: translateY(-1px); }
+.aw-chat-attach:disabled { opacity: .55; cursor: default; }
+
+/* A photo bubble is the photo; the text padding would only box it in. */
+.aw-msg.aw-msg-img { padding: 4px; white-space: normal; }
+.aw-msg-photo {
+  display: block; width: min(260px, 62vw); border: 0; padding: 0; cursor: zoom-in;
+  border-radius: 14px; overflow: hidden; background: rgba(0,0,0,.18);
+}
+.aw-msg-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* A photo that cannot be loaded stays visible and tappable rather than becoming
+   an invisible gap that reads as "they never sent anything". */
+.aw-msg-photo.is-broken { position: relative; }
+.aw-msg-photo.is-broken::after {
+  content: 'Photo unavailable'; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45); color: #fff; font-size: 12px;
+}
+.aw-msg.aw-msg-img .aw-msg-text { padding: 6px 8px 0; }
+
+/* ---------- the photo editor ---------- */
+/* Fixed and full-viewport, with the page behind it locked, so a touch meant for
+   the crop handle cannot scroll the chat underneath. */
+.aw-imgedit {
+  position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column;
+  background: #0b0b0d; color: #fff;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+body.aw-imgedit-open { overflow: hidden; }
+.aw-imgedit-bar { display: flex; align-items: center; gap: 6px; padding: 10px 12px; flex: 0 0 auto; }
+.aw-imgedit-title { flex: 1 1 auto; font-family: 'Marcellus', serif; font-size: 16px; }
+.aw-imgedit-icon {
+  width: 40px; height: 40px; border: 0; border-radius: 999px; background: rgba(255,255,255,.1);
+  color: #fff; font-size: 22px; line-height: 1; cursor: pointer;
+}
+.aw-imgedit-text {
+  border: 0; background: none; color: var(--gold); font: inherit; font-size: 13px;
+  font-weight: 700; cursor: pointer; padding: 8px;
+}
+.aw-imgedit-text:disabled { opacity: .4; cursor: default; }
+
+.aw-imgedit-stage {
+  position: relative; flex: 1 1 auto; min-height: 0; margin: 4px;
+  /* The stage owns every gesture inside it: without this the browser treats a
+     drag across the crop frame as a page pan or a pinch-zoom. */
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.aw-imgedit-stage canvas { position: absolute; inset: 0; }
+.aw-imgedit-overlay { position: absolute; inset: 0; }
+
+.aw-crop-shade { position: absolute; background: rgba(0,0,0,.62); }
+.aw-crop-frame {
+  position: absolute; border: 1.5px solid rgba(255,255,255,.95); cursor: move;
+  /* Rule-of-thirds guides, the standard cue for "this is a crop frame". */
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.3) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.3) 1px, transparent 1px);
+  background-size: 33.33% 33.33%;
+}
+/* Generous hit areas — fingers, not cursors. The visible corner mark is smaller
+   than the square that actually receives the touch. */
+.aw-crop-h {
+  position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  cursor: pointer; display: block;
+}
+.aw-crop-h::after {
+  content: ''; position: absolute; width: 20px; height: 20px; border-color: #fff;
+}
+.aw-crop-h.tl::after { left: 7px; top: 7px; border-left: 4px solid #fff; border-top: 4px solid #fff; }
+.aw-crop-h.tr::after { right: 7px; top: 7px; border-right: 4px solid #fff; border-top: 4px solid #fff; }
+.aw-crop-h.bl::after { left: 7px; bottom: 7px; border-left: 4px solid #fff; border-bottom: 4px solid #fff; }
+.aw-crop-h.br::after { right: 7px; bottom: 7px; border-right: 4px solid #fff; border-bottom: 4px solid #fff; }
+
+.aw-img-text {
+  position: absolute; font-family: 'Manrope', sans-serif; font-weight: 700;
+  white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none;
+}
+.aw-img-text.is-editable { pointer-events: auto; cursor: move; outline: 1px dashed rgba(255,255,255,.5); outline-offset: 4px; }
+
+/* WRAPS, it does not scroll sideways. Six colours plus three brush sizes plus
+   Undo do not fit across a 360px phone, and with a horizontal scroll the Undo
+   button sat off the edge where nobody would find it — a control you cannot see
+   is a control you do not have. Wrapping to a second row keeps every tool on
+   screen at any width. */
+.aw-imgedit-tools {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 6px 12px;
+  min-height: 48px; flex: 0 0 auto;
+}
+.aw-imgedit-chip {
+  flex: 0 0 auto; border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer;
+  background: rgba(255,255,255,.12); color: #fff; font: inherit; font-size: 13px; font-weight: 600;
+}
+.aw-imgedit-chip.is-on { background: var(--gold); color: var(--maroon); }
+.aw-imgedit-swatch {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid rgba(255,255,255,.5); padding: 0;
+}
+.aw-imgedit-swatch.is-on { border: 3px solid var(--gold); transform: scale(1.12); }
+.aw-imgedit-brush {
+  flex: 0 0 auto; width: 30px; height: 30px; border: 0; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,.12); display: inline-flex; align-items: center; justify-content: center;
+}
+.aw-imgedit-brush.is-on { background: rgba(255,255,255,.3); }
+.aw-imgedit-brush i { display: block; border-radius: 999px; background: #fff; }
+.aw-imgedit-div { flex: 0 0 auto; width: 1px; height: 24px; background: rgba(255,255,255,.25); }
+.aw-imgedit-hint { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: rgba(255,255,255,.6); }
+
+.aw-imgedit-tabs { display: flex; justify-content: center; gap: 8px; padding: 6px 0; flex: 0 0 auto; }
+.aw-imgedit-tabs button {
+  border: 0; border-radius: 999px; padding: 8px 18px; cursor: pointer;
+  background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 13px; font-weight: 600;
+}
+.aw-imgedit-tabs button.is-on { background: var(--gold); color: var(--maroon); }
+
+.aw-imgedit-send {
+  display: flex; gap: 8px; padding: 10px 12px; flex: 0 0 auto;
+  border-top: 1px solid rgba(255,255,255,.15);
+}
+.aw-imgedit-send input {
+  /* 16px for the same iOS reason as the chat composer: a smaller focused input
+     zooms the page in and never zooms back out. */
+  flex: 1 1 auto; min-width: 0; padding: 12px 16px; font: inherit; font-size: 16px;
+  border: 0; border-radius: 999px; outline: none;
+  background: rgba(255,255,255,.1); color: #fff;
+}
+.aw-imgedit-send input::placeholder { color: rgba(255,255,255,.45); }
+
+.aw-lightbox {
+  position: fixed; inset: 0; z-index: 95; background: #000;
+  display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+}
+.aw-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: default; }
+.aw-lightbox-close {
+  position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 14px;
+  width: 40px; height: 40px; border: 0; border-radius: 999px;
+  background: rgba(255,255,255,.15); color: #fff; font-size: 24px; line-height: 1; cursor: pointer;
+}

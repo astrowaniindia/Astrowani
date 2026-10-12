@@ -1,12 +1,13 @@
-import { api } from './api.js?v=21';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=21';
-import { toast, esc, confirmDialog } from './ui.js?v=21';
-import { isSignedIn, getUser } from './session.js?v=21';
-import { requireSignIn } from './auth.js?v=21';
-import { fetchBalance, ensureFunds } from './wallet.js?v=21';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=21';
-import { requestConsultation, RequestClosed } from './request.js?v=21';
-import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=21';
+import { api } from './api.js?v=22';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=22';
+import { toast, esc, confirmDialog } from './ui.js?v=22';
+import { isSignedIn, getUser } from './session.js?v=22';
+import { requireSignIn } from './auth.js?v=22';
+import { fetchBalance, ensureFunds } from './wallet.js?v=22';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=22';
+import { requestConsultation, RequestClosed } from './request.js?v=22';
+import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=22';
+import { attachChatImages, captionOf, openLightbox } from './chat-image.js?v=22';
 
 /**
  * chat.html — the chat consultation screen.
@@ -246,6 +247,7 @@ function runChat({ sessionId, requestId, astro, rate }) {
 
   let socket = null;
   let joinHandle = null;
+  let detachImages = null;
   let announce = null;
   let ended = false;
   let timer = null;
@@ -259,8 +261,36 @@ function runChat({ sessionId, requestId, astro, rate }) {
     const div = document.createElement('div');
     div.className = `aw-msg ${mine ? 'is-mine' : 'is-theirs'}`;
     const when = row.created_at ? new Date(row.created_at) : new Date();
+    const time = `<div class="aw-msg-time">${when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</div>`;
+
+    // A photo. An older row — or one written by a build that predates photos —
+    // has no message_type and falls through to the text bubble exactly as before.
+    if (row.message_type === 'image' && row.image_url) {
+      const caption = captionOf(row.message);
+      // The aspect ratio comes from the ROW, not from the decoded image, so the
+      // bubble takes up its final shape before the photo has loaded. Without it
+      // every photo arriving mid-conversation shoves the log up or down and
+      // whatever the other person was reading jumps off the screen.
+      const w = Number(row.image_width) || 4;
+      const h = Number(row.image_height) || 3;
+      div.classList.add('aw-msg-img');
+      div.innerHTML = `<button type="button" class="aw-msg-photo" style="aspect-ratio:${w} / ${h}">
+          <img src="${esc(row.image_url)}" alt="${caption ? esc(caption) : 'Photo'}" loading="lazy">
+        </button>
+        ${caption ? `<div class="aw-msg-text">${esc(caption)}</div>` : ''}
+        ${time}`;
+      const btn = div.querySelector('.aw-msg-photo');
+      btn.addEventListener('click', () => openLightbox(row.image_url));
+      // A photo that will not load leaves something tappable rather than an
+      // invisible gap that reads as "they never sent anything".
+      div.querySelector('img').addEventListener('error', () => btn.classList.add('is-broken'));
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      return;
+    }
+
     div.innerHTML = `<div class="aw-msg-text">${esc(row.message)}</div>
-      <div class="aw-msg-time">${when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</div>`;
+      ${time}`;
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
   }
@@ -299,6 +329,7 @@ function runChat({ sessionId, requestId, astro, rate }) {
   function teardown() {
     ended = true;
     clearInterval(timer);
+    detachImages?.();
     joinHandle?.stop();
     if (socket) {
       socket.off('new_chat_message', onIncoming);
@@ -344,6 +375,19 @@ function runChat({ sessionId, requestId, astro, rate }) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     send(input.value);
+  });
+
+  // Photo attachments: crop, draw and write on it, then POST /api/chat/image.
+  // The saved row is added here exactly as the socket would add it (deduped by id
+  // in addMessage), so the sender sees their own photo even mid-reconnect.
+  detachImages = attachChatImages({
+    button: el('aw-chat-attach'),
+    roomId,
+    sessionId,
+    receiverId: astro.id,
+    onMessage: addMessage,
+    onSystem: addSystem,
+    canSend: () => !ended,
   });
 
   (async () => {

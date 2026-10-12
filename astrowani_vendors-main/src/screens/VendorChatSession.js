@@ -35,6 +35,10 @@ import ReportCustomerSheet from '../components/ReportCustomerSheet';
 import SessionConnectionNotice, { useSessionConnection, billableSeconds } from '../components/SessionConnectionNotice';
 import SessionIntroBanner from '../components/SessionIntroBanner';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
+import ChatImageBubble from '../components/chatImage/ChatImageBubble';
+import ImageEditorModal from '../components/chatImage/ImageEditorModal';
+import AttachSourceSheet from '../components/chatImage/AttachSourceSheet';
+import { pickChatImage, sendChatImage, imageErrorKey } from '../utils/chatImage';
 
 // Tap-to-send scripted openers shown above the message box for the astrologer.
 const SCRIPTED_REPLIES = [
@@ -68,6 +72,11 @@ const VendorChatSession = ({ route, navigation }) => {
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [astroId, setAstroId] = useState(null);
   const [sentChip, setSentChip] = useState(null);
+  // Photo attachment: the "camera or gallery?" sheet, the photo being edited, and
+  // whether an upload is in flight. See src/components/chatImage/.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [editorSource, setEditorSource] = useState(null);
+  const [imageSending, setImageSending] = useState(false);
 
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
@@ -593,11 +602,88 @@ const VendorChatSession = ({ route, navigation }) => {
     }
   };
 
+  // ---- Photo attachments ---------------------------------------------------
+  const openAttach = () => {
+    // The server refuses a disconnected participant (SERVICE_PRESENCE_GRACE_MS in
+    // the backend's index.js), so there is no point letting an astrologer crop and
+    // annotate a chart that cannot be sent. Same gate as the text send above.
+    if (conn.blocked) {
+      showStatusPopup({
+        variant: 'error',
+        title: t('call.connSendBlockedTitle'),
+        message: t('call.connSendBlockedMsg'),
+      });
+      return;
+    }
+    setAttachOpen(true);
+  };
+
+  const choosePhoto = async ({ fromCamera }) => {
+    setAttachOpen(false);
+    const picked = await pickChatImage({ fromCamera });
+    if (!picked) return; // backed out of the picker
+    if (picked.error) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(picked.error)) });
+      return;
+    }
+    setEditorSource(picked);
+  };
+
+  const submitPhoto = async (edits, caption) => {
+    if (!sessionIdRef.current || imageSending) return;
+    setImageSending(true);
+    const res = await sendChatImage({
+      roomId: requestId,
+      sessionId: sessionIdRef.current,
+      receiverId: callerId,
+      base64DataUri: editorSource.base64DataUri,
+      edits,
+      caption,
+    });
+    setImageSending(false);
+
+    if (!res.ok) {
+      // The editor stays OPEN on failure, with the crop and every annotation still
+      // in it. An astrologer who has just circled the 7th house of a chart must not
+      // have to do it again because of one dropped request.
+      showStatusPopup({ variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(res.code)) });
+      return;
+    }
+
+    setEditorSource(null);
+    // From the response as well as over the socket (deduped by id in mergeMessages),
+    // so it shows even if the socket is mid-reconnect.
+    mergeMessages([res.row]);
+    captureEvent('chat_image_sent');
+    if (res.masked) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.maskedTitle'), message: t('chatImage.maskedMsg') });
+    } else if (res.textDropped) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.textDroppedTitle'), message: t('chatImage.textDroppedMsg') });
+    }
+
+    // The customer's lock screen gets exactly the line the saved message carries,
+    // the same rule the text path follows (so a masked caption stays masked there).
+    const msgToken = await AsyncStorage.getItem('token');
+    Instance.post('/api/push/notify-chat-message', {
+      customerId: callerId,
+      astrologerId: astroIdRef.current,
+      message: (res.row && res.row.message) || 'Photo',
+    }, {
+      headers: msgToken ? { Authorization: `Bearer ${msgToken}` } : {},
+    }).catch(() => {});
+  };
+
   const renderMessage = ({ item }) => {
     const isMine = String(item.sender_id) === String(astroIdRef.current);
     const time = item.created_at 
       ? new Date(item.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
       : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+    // An older row, or one from a build that predates photos, has no message_type
+    // and falls through to the text bubble exactly as before.
+    if (item.message_type === 'image' && item.image_url) {
+      return <ChatImageBubble item={item} isMine={isMine} time={time} />;
+    }
 
     return (
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
@@ -719,6 +805,13 @@ const VendorChatSession = ({ route, navigation }) => {
 
         <View
           style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
+          <TouchableOpacity
+            style={[styles.attachBtn, conn.blocked && { opacity: 0.45 }]}
+            onPress={openAttach}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+          >
+            <Ionicons name="image" size={22} color={COLORS.AstroMaroon} />
+          </TouchableOpacity>
           <TextInput
             ref={inputRef}
             style={styles.input}
@@ -738,6 +831,17 @@ const VendorChatSession = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <AttachSourceSheet visible={attachOpen} onClose={() => setAttachOpen(false)} onPick={choosePhoto} />
+      <ImageEditorModal
+        visible={!!editorSource}
+        source={editorSource}
+        sending={imageSending}
+        // Blocked while an upload is in flight: cancelling mid-request would leave
+        // the photo arriving into a chat whose editor has already been discarded.
+        onCancel={() => { if (!imageSending) setEditorSource(null); }}
+        onSend={submitPhoto}
+      />
 
       <ReportCustomerSheet
         visible={reportOpen}
@@ -889,6 +993,13 @@ const styles = StyleSheet.create({
     color: '#333',
     marginRight: 10,
     backgroundColor: '#f9f9f9',
+  },
+  attachBtn: {
+    width: 36,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 2,
   },
   sendBtn: {
     backgroundColor: COLORS.AstroMaroon,
