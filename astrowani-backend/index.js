@@ -43,6 +43,11 @@ const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
 const contactLeak = require('./src/contactLeakRoutes');
 const contactLeakDetector = require('./src/contactLeakDetector');
+// Replays a chat photo's crop / rotation / drawing / captions with sharp. Committed
+// in the SAME change as the route below — a require at module scope that resolves to
+// a file not in the repository throws MODULE_NOT_FOUND before Express ever listens,
+// which took production down in full on 2026-10-12 (see b8adb29).
+const chatImageComposer = require('./src/chatImageComposer');
 const offerGuard = require('./src/offerGuard');
 const debtGuard = require('./src/debtGuard');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
@@ -4831,6 +4836,207 @@ app.post('/api/chat/message', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/chat/image — an IMAGE message in a consultation chat.
+//
+// WHY IT LIVES HERE, NEXT TO POST /api/chat/message, RATHER THAN IN ITS OWN MODULE
+//
+// The gate above it — "you must be one of the two people in this session, the
+// session must not have ended, and you must actually be connected to it" — is the
+// entire security of chat, and it was added only after that endpoint shipped
+// WITHOUT it (2026-08-08: any authenticated user could inject a message into any
+// session by guessing its id). A second writer into the same table in a separate
+// file would be a standing invitation to drift away from those three checks one
+// refactor at a time. So the identity resolution, the participant check, the
+// ended-session check and the service-presence gate below are the same code path,
+// in the same place, reading the same helpers. Only the IMAGE work — which is
+// sharp, pixels and an edit spec, and has no business knowing about sessions — is
+// factored out, into src/chatImageComposer.js where it is unit-tested
+// (scripts/testChatImageComposer.js) without a database or a socket.
+//
+// The request carries the photo as picked plus a description of what the sender did
+// to it (crop, 90° rotations, brush strokes, text). See the composer's header for
+// why the compositing happens on this side: it keeps the feature OTA-shippable, and
+// it keeps full resolution. The apps and the website all post the same shape here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-sender throttle. This endpoint is the most expensive one in the process —
+// base64 in, a sharp pipeline, a Storage upload — on a SINGLE-CORE Node box whose
+// comfortable ceiling is a few hundred concurrent users (CLAUDE.md DN). A chat is a
+// conversation between two people, so one photo every couple of seconds is far more
+// than anyone needs and far less than a loop can hurt with. In memory on purpose:
+// it only has to blunt a burst, and a pm2 restart losing the counters costs nothing.
+const CHAT_IMAGE_MIN_GAP_MS = 2500;
+const CHAT_IMAGE_MAX_PER_SESSION = 60;
+// A picked photo is capped client-side at 2000px/quality 0.85, which lands well
+// under a megabyte; this is the ceiling that stops a crafted request, and it sits
+// under the 10mb express.json limit so the body parser is not the thing that fails.
+const CHAT_IMAGE_MAX_BASE64_CHARS = 9 * 1024 * 1024;
+const chatImageLastSend = new Map(); // senderId -> ms
+const chatImageSessionCount = new Map(); // sessionId -> count
+
+// Unbounded Maps in a long-lived process are a leak, and this one is keyed by
+// session. Swept rather than deleted on session end: the end can arrive by any of
+// several paths (hangup, balance, abandon sweep) and a missed one would pin a
+// counter forever.
+setInterval(() => {
+  if (chatImageSessionCount.size > 5000) chatImageSessionCount.clear();
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [k, v] of chatImageLastSend) if (v < cutoff) chatImageLastSend.delete(k);
+}, 30 * 60 * 1000).unref();
+
+app.post('/api/chat/image', async (req, res) => {
+  try {
+    const { roomId, sessionId, receiverId, image, edits, caption } = req.body || {};
+    if (!roomId || !image) {
+      return res.status(400).json({ success: false, message: 'roomId and image are required' });
+    }
+    if (typeof image !== 'string' || image.length > CHAT_IMAGE_MAX_BASE64_CHARS) {
+      return res.status(413).json({ success: false, code: 'IMAGE_TOO_LARGE', message: 'That photo is too large. Please try another one.' });
+    }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Same dual-shape identity resolution as POST /api/chat/message: a vendor token
+    // already carries a real UUID, a customer token needs the phone -> UUID step.
+    let senderId = decoded.userId || decoded.id;
+    const isVendor = decoded.role === 'astrologer' || decoded.role === 'vendor' || !!decoded.astroId || !!decoded.vendorId;
+    if (!isVendor && decoded.phone) {
+      const row = await findCustomerByPhone(supabase, decoded.phone, 'id');
+      if (row) senderId = row.id;
+    }
+    if (!senderId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    // THE SAME THREE CHECKS AS THE TEXT ENDPOINT. An image costs the server far
+    // more than a line of text, so a sessionId is REQUIRED here — the text endpoint
+    // still tolerates its absence for the benefit of a stale/legacy caller, but
+    // there has never been a client that posts a photo without one, and allowing it
+    // would mean an unauthenticated-by-session upload path.
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required' });
+    }
+    const { data: sessionRow } = await supabaseService
+      .from('chat_sessions').select('id, caller_id, vendor_id, started_at, is_active, ended_at')
+      .eq('id', sessionId).maybeSingle();
+    if (!sessionRow
+      || (String(sessionRow.caller_id) !== String(senderId) && String(sessionRow.vendor_id) !== String(senderId))) {
+      return res.status(403).json({ success: false, message: 'Not a participant of this session' });
+    }
+    if (sessionRow.ended_at || sessionRow.is_active === false) {
+      return res.status(409).json({ success: false, code: 'SESSION_ENDED', message: 'This session has ended.' });
+    }
+    if (!(await senderMayBeServed(sessionId, senderId, sessionRow.started_at))) {
+      return res.status(409).json({
+        success: false,
+        code: 'NOT_CONNECTED',
+        message: 'You are not connected to this session. Check your network and try again.',
+      });
+    }
+
+    // Throttles, AFTER the participant check so a stranger cannot even reach them.
+    const now = Date.now();
+    const last = chatImageLastSend.get(String(senderId)) || 0;
+    if (now - last < CHAT_IMAGE_MIN_GAP_MS) {
+      return res.status(429).json({ success: false, code: 'TOO_FAST', message: 'One photo at a time — please wait a moment.' });
+    }
+    const sent = chatImageSessionCount.get(String(sessionId)) || 0;
+    if (sent >= CHAT_IMAGE_MAX_PER_SESSION) {
+      return res.status(429).json({ success: false, code: 'TOO_MANY', message: 'Too many photos in this consultation.' });
+    }
+    // Claimed BEFORE the first await below, not after: every await yields the event
+    // loop, so two taps landing together would otherwise both pass this check before
+    // either recorded itself. Same rule as the async guards elsewhere in this project.
+    chatImageLastSend.set(String(senderId), now);
+    chatImageSessionCount.set(String(sessionId), sent + 1);
+
+    let composed;
+    try {
+      composed = await chatImageComposer.composeChatImage({ dataUri: image, edits });
+    } catch (e) {
+      if (e && e.code === 'BAD_IMAGE') {
+        // Let them pick again straight away rather than sitting out the gap.
+        chatImageLastSend.delete(String(senderId));
+        return res.status(400).json({ success: false, code: 'BAD_IMAGE', message: 'That photo could not be read. Please pick another one.' });
+      }
+      throw e;
+    }
+
+    // Stored in the same public app-images bucket as profile photos and voice
+    // notes, under its OWN folder so chat photos can be found, purged or moved
+    // behind signed URLs later without touching anything else. The name is
+    // timestamp + 12 random hex characters, so a URL is not guessable — but it IS a
+    // public bucket, which is the app's existing norm for user media and is noted as
+    // a follow-up rather than quietly changed here.
+    const objectName = `chat-images/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
+    const { error: upErr } = await supabaseService.storage
+      .from('app-images')
+      .upload(objectName, composed.buffer, { contentType: composed.contentType, upsert: false });
+    if (upErr) throw upErr;
+    const { data: pub } = supabaseService.storage.from('app-images').getPublicUrl(objectName);
+
+    // A caption goes through the SAME contact masking as a typed message — a phone
+    // number is a phone number whether it is typed in the box or under a photo.
+    const rawCaption = String(caption || '').slice(0, 300);
+    const { text: safeCaption, masked } = rawCaption
+      ? contactLeakDetector.maskContacts(rawCaption)
+      : { text: '', masked: false };
+
+    // See sql/chat_image_messages.sql: `message` stays human-readable so the push
+    // notification, the admin proof view and any installed build that predates this
+    // feature all show something sensible instead of a blank or a raw URL.
+    const { data, error } = await supabaseService.from('chat_messages').insert([{
+      room_id: roomId,
+      session_id: sessionId,
+      sender_id: senderId,
+      receiver_id: receiverId || null,
+      message: safeCaption ? `📷 ${safeCaption}` : '📷 Photo',
+      message_type: 'image',
+      image_url: pub.publicUrl,
+      image_width: composed.width,
+      image_height: composed.height,
+    }]).select().single();
+    if (error) throw error;
+
+    io.to(sessionId).emit('new_chat_message', data);
+
+    // Only the caption is scanned. THE PIXELS ARE NOT: a phone number written on a
+    // piece of paper and photographed sails straight past the off-platform contact
+    // detector, which reads text. Noted in CLAUDE.md as a known gap — closing it
+    // would need OCR on every chat image, which is a separate decision.
+    if (rawCaption) {
+      contactLeak.recordChatFlag({
+        message: rawCaption,
+        messageId: data && data.id,
+        sessionId,
+        senderRole: isVendor ? 'astrologer' : 'customer',
+        astrologerId: sessionRow.vendor_id,
+        customerId: sessionRow.caller_id,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data,
+      masked,
+      // True when this libvips could not rasterise text. The image still carries its
+      // drawings; the app says the writing was dropped rather than letting the
+      // sender believe a caption they typed went through.
+      textDropped: !!composed.textDropped,
+    });
+  } catch (error) {
+    console.error('[Chat] image send error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to send photo' });
+  }
+});
+
 /**
  * Chat history for one session (or one room), for whoever is actually in it.
  *
@@ -7828,6 +8034,21 @@ app.locals.pollLiveAarti = () => liveAartiPoller.pollOnce();
 app.use((err, req, res, next) => {
   logError('express', err, { method: req.method, url: req.originalUrl });
   if (res.headersSent) return next(err);
+
+  // A BODY-PARSER REJECTION IS NOT A SERVER FAULT, and saying 500 to the app makes
+  // it unfixable from the user's side: "something went wrong, try again" for a
+  // photo that will never fit, however many times they retry. express.json()
+  // rejects before any route runs, so the route's own 413 can never be reached —
+  // this is the only place that can tell the difference. Found while testing
+  // POST /api/chat/image with an oversized photo (12 MB against the 10 MB limit),
+  // but it applies to every endpoint that takes a base64 payload.
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ success: false, code: 'PAYLOAD_TOO_LARGE', message: 'That file is too large.' });
+  }
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, code: 'BAD_JSON', message: 'Malformed request.' });
+  }
+
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
