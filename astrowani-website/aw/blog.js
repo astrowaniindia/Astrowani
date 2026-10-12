@@ -1,4 +1,4 @@
-import { api } from './api.js?v=32';
+import { api } from './api.js?v=33';
 
 /**
  * The blog section.
@@ -52,11 +52,16 @@ function mapPost(row) {
   const titleHi = row.hindi?.title || titleEn;
   const contentEn = row.english?.content || '';
   const contentHi = row.hindi?.content || contentEn;
-  const excerptEn = row.excerpt || plainText(contentEn, 160);
+  // Always run the excerpt through plainText, even when the admin field is
+  // already filled in — some rows have the WHOLE article pasted into
+  // `excerpt` rather than a short teaser, and a card rendering that in full
+  // looked like a layout bug rather than what it actually is (an admin data
+  // issue this code must not trust blindly).
+  const excerptEn = plainText(row.excerpt || contentEn, 160);
   // excerpt_hi is blank on every live row today (CLAUDE.md: the migration adding
   // it was never applied) — fall back to the Hindi body's own text rather than
   // showing an English excerpt under a Hindi title.
-  const excerptHi = row.hindi?.excerpt || plainText(contentHi, 160) || excerptEn;
+  const excerptHi = plainText(row.hindi?.excerpt || contentHi, 160) || excerptEn;
 
   return {
     id: row._id,
