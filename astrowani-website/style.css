@@ -133,7 +133,7 @@ a.ch-cta {
 
 .ch-mascot-bubble {
   position: absolute; left: calc(100% + 18px); top: 50%; transform: translateY(-62%);
-  width: 220px; background: var(--cream); border-radius: 18px; padding: 14px 16px;
+  width: 250px; background: var(--cream); border-radius: 18px; padding: 17px 19px;
   box-shadow: 0 16px 30px -14px var(--ch-shadow);
 }
 .ch-mascot-bubble::before {
@@ -142,11 +142,16 @@ a.ch-cta {
   border-top: 9px solid transparent; border-bottom: 9px solid transparent;
   border-right: 10px solid var(--cream);
 }
+/* Was var(--gold-deep) — a muted gold-maroon mix that reads as near-invisible on the
+   cream bubble (the contrast failure the screenshot showed). var(--maroon) matches
+   .ch-mascot-bubble-text below it, which the same screenshot shows reads fine, and it
+   swaps correctly with the dark/inverted theme the same way (see the --maroon/--cream
+   swap under [data-theme="inverted"] further up this file). */
 .ch-mascot-bubble-tag {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase;
-  color: var(--gold-deep); margin-bottom: 5px; line-height: 1.3;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--maroon); margin-bottom: 6px; line-height: 1.3;
 }
-.ch-mascot-bubble-text { font-size: 13px; font-weight: 700; color: var(--maroon); line-height: 1.4; }
+.ch-mascot-bubble-text { font-size: 14.5px; font-weight: 700; color: var(--maroon); line-height: 1.45; }
 
 @media (max-width: 760px) {
   .ch-hero h1 { font-size: 34px; }
@@ -154,9 +159,9 @@ a.ch-cta {
   .ch-stage { height: 480px; }
   .ch-mascot { left: 14px; bottom: 14px; }
   .ch-mascot img { height: 80px; }
-  .ch-mascot-bubble { width: 170px; padding: 10px 12px; left: calc(100% + 12px); }
-  .ch-mascot-bubble-tag { font-size: 9px; }
-  .ch-mascot-bubble-text { font-size: 11.5px; }
+  .ch-mascot-bubble { width: 190px; padding: 12px 14px; left: calc(100% + 12px); }
+  .ch-mascot-bubble-tag { font-size: 9.5px; }
+  .ch-mascot-bubble-text { font-size: 12.5px; }
   .ch-phone { width: 240px; height: 480px; }
   .ch-phone-side { display: none; }
 }

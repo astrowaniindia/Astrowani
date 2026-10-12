@@ -1,12 +1,12 @@
-import { api } from './api.js?v=19';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=19';
-import { toast, esc, confirmDialog } from './ui.js?v=19';
-import { isSignedIn, getUser } from './session.js?v=19';
-import { requireSignIn } from './auth.js?v=19';
-import { fetchBalance, ensureFunds } from './wallet.js?v=19';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=19';
-import { requestConsultation, RequestClosed } from './request.js?v=19';
-import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=19';
+import { api } from './api.js?v=20';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=20';
+import { toast, esc, confirmDialog } from './ui.js?v=20';
+import { isSignedIn, getUser } from './session.js?v=20';
+import { requireSignIn } from './auth.js?v=20';
+import { fetchBalance, ensureFunds } from './wallet.js?v=20';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=20';
+import { requestConsultation, RequestClosed } from './request.js?v=20';
+import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=20';
 
 /**
  * chat.html — the chat consultation screen.

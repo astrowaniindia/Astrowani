@@ -1,6 +1,6 @@
-import { api, ApiError } from './api.js?v=19';
-import { RING_TIMEOUT_MS, REQUEST_POLL_MS } from './config.js?v=19';
-import { getSocket, joinPersonalRoom } from './socket.js?v=19';
+import { api, ApiError } from './api.js?v=20';
+import { RING_TIMEOUT_MS, REQUEST_POLL_MS } from './config.js?v=20';
+import { getSocket, joinPersonalRoom } from './socket.js?v=20';
 
 /**
  * Ask an astrologer for a consultation and wait for them to pick up.
