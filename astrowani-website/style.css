@@ -882,6 +882,13 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
 /* footer */
 footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: var(--cream-muted); }
 .footer-top { max-width: 1280px; margin: 0 auto; display: flex; gap: 56px; flex-wrap: wrap; justify-content: space-between; padding-bottom: 40px; border-bottom: 1px solid color-mix(in srgb, var(--cream) 12%, transparent); }
+/* The brand block (logo, "Astrowani", the summary line) is always footer-top's
+   first child in every page's markup — targeted structurally so the same
+   40px shift as .footer-social below it applies without touching the HTML
+   of all 19 pages that carry this footer. Keeps the logo/text column and the
+   icon row underneath it aligned with each other, both shifted off the edge
+   together, which is what was actually being asked for. */
+.footer-top > div:first-child { margin-left: 40px; }
 .footer-col-title { font-size: 12.5px; font-weight: 800; color: var(--cream); letter-spacing: 0.6px; text-transform: uppercase; margin-bottom: 16px; }
 .footer-links { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .footer-bottom { max-width: 1280px; margin: 0 auto; padding-top: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--cream-muted); }
