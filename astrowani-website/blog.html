@@ -5,12 +5,13 @@
 <script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blog — Astrowani</title>
+<meta name="description" content="Remedies, muhurats and everyday astrology, written by the Astrowani team — numerology, palmistry, marriage and Vedic astrology articles.">
 <link rel="icon" href="assets/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=31">
-<link rel="stylesheet" href="aw/aw.css?v=31">
+<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="aw/aw.css?v=32">
 </head>
 <body>
 
@@ -40,28 +41,10 @@
 </div>
 
 <div class="band">
-  <div class="block" style="max-width:860px;">
-    <div class="review-grid" style="grid-template-columns:repeat(2, minmax(0,1fr));">
-
-      <a href="https://astrowani.com/blog/" class="review-card reveal reveal-wipe" style="display:block;">
-        <div style="font-size:12px; font-weight:700; color:var(--gold-deep); text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px;">July 2, 2026</div>
-        <div class="serif" style="font-size:21px; color:var(--maroon); margin-bottom:10px; line-height:1.3;">Special Saturn Remedy Package For Ongoing Blessings</div>
-        <div style="font-size:14px; color:var(--ink-soft); line-height:1.6;">A dedicated remedy package for easing Shani's effects — read the full article on our blog.</div>
-        <div style="margin-top:16px; font-size:13.5px; font-weight:800; color:var(--maroon);">Read more →</div>
-      </a>
-
-      <a href="https://astrowani.com/blog/" class="review-card reveal reveal-wipe" style="display:block;">
-        <div style="font-size:12px; font-weight:700; color:var(--gold-deep); text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px;">July 2, 2026</div>
-        <div class="serif" style="font-size:21px; color:var(--maroon); margin-bottom:10px; line-height:1.3;">क्या है राहु काल?</div>
-        <div style="font-size:14px; color:var(--ink-soft); line-height:1.6;">Rahu Kaal explained — what it means and how to plan your day around it.</div>
-        <div style="margin-top:16px; font-size:13.5px; font-weight:800; color:var(--maroon);">Read more →</div>
-      </a>
-
-    </div>
-
-    <div style="text-align:center; margin-top:40px;">
-      <a href="https://astrowani.com/blog/" class="btn-gold magnetic" style="display:inline-block; font-size:15.5px; padding:15px 32px;">View all articles on astrowani.com →</a>
-    </div>
+  <div class="block" style="max-width:1160px;">
+    <div id="blog-filter-bar" class="blog-filter-bar"></div>
+    <div id="blog-grid"></div>
+    <div id="blog-load-more-wrap" class="blog-load-more-wrap"></div>
   </div>
 </div>
 
@@ -96,7 +79,8 @@
   </div>
 </footer>
 
-<script src="script.js?v=31"></script>
-<script type="module" src="aw/boot.js?v=31"></script>
+<script src="script.js?v=32"></script>
+<script type="module" src="aw/boot.js?v=32"></script>
+<script type="module" src="aw/blog.js?v=32"></script>
 </body>
 </html>
