@@ -897,6 +897,10 @@ footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: 
 .footer-col-title { font-size: 12.5px; font-weight: 800; color: var(--cream); letter-spacing: 0.6px; text-transform: uppercase; margin-bottom: 16px; }
 .footer-links { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .footer-bottom { max-width: 1280px; margin: 0 auto; padding-top: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--cream-muted); }
+/* "Made with care in India" is footer-bottom's last child, pinned to the row's
+   right edge the same way the Legal column was — shifted in by the same
+   amount so it lines up under Legal instead of sitting further right. */
+.footer-bottom > div:last-child { margin-right: 64px; }
 /* Social icons, bottom-left of the footer, one line. The .footer-social div
    is an empty placeholder in every page's markup — injectFooterSocial() in
    script.js fills it on every page that has one, so the icon list and each

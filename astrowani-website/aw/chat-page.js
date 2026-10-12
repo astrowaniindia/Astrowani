@@ -1,13 +1,13 @@
-import { api } from './api.js?v=34';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=34';
-import { toast, esc, confirmDialog } from './ui.js?v=34';
-import { isSignedIn, getUser } from './session.js?v=34';
-import { requireSignIn } from './auth.js?v=34';
-import { fetchBalance, ensureFunds } from './wallet.js?v=34';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=34';
-import { requestConsultation, RequestClosed } from './request.js?v=34';
-import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=34';
-import { attachChatImages, captionOf, openLightbox } from './chat-image.js?v=34';
+import { api } from './api.js?v=35';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=35';
+import { toast, esc, confirmDialog } from './ui.js?v=35';
+import { isSignedIn, getUser } from './session.js?v=35';
+import { requireSignIn } from './auth.js?v=35';
+import { fetchBalance, ensureFunds } from './wallet.js?v=35';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=35';
+import { requestConsultation, RequestClosed } from './request.js?v=35';
+import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=35';
+import { attachChatImages, captionOf, openLightbox } from './chat-image.js?v=35';
 
 /**
  * chat.html — the chat consultation screen.
