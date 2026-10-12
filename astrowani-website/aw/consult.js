@@ -1,5 +1,5 @@
-import { toast } from './ui.js?v=35';
-import { findAstrologer } from './astrologers.js?v=35';
+import { toast } from './ui.js?v=36';
+import { findAstrologer } from './astrologers.js?v=36';
 
 /**
  * Turning a "Chat / Call / Video" button into a consultation.

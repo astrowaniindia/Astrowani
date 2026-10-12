@@ -916,6 +916,9 @@ footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: 
 }
 .footer-social a:hover { background: var(--social-color, var(--gold)); transform: translateY(-2px); }
 .footer-social svg { width: 15px; height: 15px; fill: currentColor; }
+.footer-playstore { display: flex; flex: 0 0 auto; transition: transform .2s ease, opacity .2s ease; }
+.footer-playstore:hover { transform: translateY(-2px); opacity: .9; }
+.footer-playstore img { height: 36px; width: auto; display: block; }
 
 @media (max-width: 760px) {
   .band { padding: 64px 0; }
