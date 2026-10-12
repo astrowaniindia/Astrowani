@@ -790,26 +790,36 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
 .phone-mock { width: 220px; height: 440px; background: var(--maroon); border: 3px solid var(--gold-deep); border-radius: 36px; padding: 10px; }
 .phone-mock-inner { width: 100%; height: 100%; border-radius: 24px; background: var(--maroon); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; border: 1px solid color-mix(in srgb, var(--cream) 16%, transparent); }
 
-.app-3d-stage { flex: 0 0 auto; position: relative; z-index: 1; width: 340px; max-width: 42vw; }
+/* display:flex column — the hint sits BELOW the model in normal flow now,
+   not absolutely positioned over it, which is what let it overlap the
+   model's feet before. Stacking in flow makes overlap structurally
+   impossible rather than something to keep nudging percentages to avoid. */
+.app-3d-stage { flex: 0 0 auto; position: relative; z-index: 1; width: 340px; max-width: 42vw; display: flex; flex-direction: column; align-items: center; }
 .app-3d-model { width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
 @media (max-width: 760px) { .app-3d-stage { width: 100%; max-width: 100%; } .app-3d-model { height: 340px; } }
 
-/* "drag to rotate" hint over the 3D model — see the comment in index.html for
-   why it exists as a custom overlay rather than model-viewer's own prompt. */
+/* "drag to rotate" hint below the 3D model — see the comment in index.html
+   for why it exists as a custom overlay rather than model-viewer's own
+   prompt. Sits in NORMAL FLOW under .app-3d-stage's flex column now, not
+   absolutely positioned over the model — that was overlapping its feet, and
+   nudging a bottom percentage is fragile (the model's own footprint within
+   the canvas is camera-orbit framing, not something this CSS controls). */
 .app-3d-hint {
-  position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center;
-  pointer-events: none; z-index: 2;
+  margin-top: -6px; pointer-events: none;
   opacity: 0; transition: opacity .5s ease;
 }
 .app-3d-hint.is-shown { opacity: 1; }
 .app-3d-hint-arc { display: block; margin-bottom: -10px; overflow: visible; }
+/* Dark maroon, not gold — .app-panel's own background IS var(--gold), so a
+   gold hint was invisible against it (confirmed: the finger never showed up
+   in a screenshot, only the cream "Drag to rotate" pill did). */
 .app-3d-hint-arc path {
-  fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round;
-  stroke-dasharray: 4 6; opacity: .55;
+  fill: none; stroke: var(--maroon); stroke-width: 2; stroke-linecap: round;
+  stroke-dasharray: 4 6; opacity: .5;
 }
 .app-3d-hint-finger {
-  color: var(--gold); filter: drop-shadow(0 3px 6px rgba(0,0,0,.4));
+  color: var(--maroon); filter: drop-shadow(0 2px 4px rgba(0,0,0,.25));
   animation: app3dHintSwipe 1.8s cubic-bezier(.45,0,.55,1) infinite;
 }
 .app-3d-hint-label {

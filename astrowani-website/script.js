@@ -660,10 +660,12 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ---------- "drag to rotate" hint on the 3D model ----------
-  // Shown once the model scrolls into view, hidden the instant the model-viewer
-  // reports a REAL user drag (camera-change with source 'user-interaction' —
-  // model-viewer also fires this on its own initial auto-framing, which is why
-  // that source check matters), or after a few demo cycles if nobody touches it.
+  // Shown once the model scrolls into view, hidden ONLY the instant the
+  // model-viewer reports a REAL user drag (camera-change with source
+  // 'user-interaction' — model-viewer also fires this on its own initial
+  // auto-framing, which is why that source check matters). No timed auto-hide
+  // — it used to give up after ~6.5s even if nobody had dragged yet, which
+  // reads as the hint being broken rather than as "already understood".
   //
   // A rect check on scroll/resize/interval, same as the .reveal sweep above,
   // not IntersectionObserver — this file already carries that fallback because
@@ -674,13 +676,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!hint || !model) return;
     let shown = false;
     let hidden = false;
-    const hide = () => {
-      if (hidden) return;
+    model.addEventListener('camera-change', (e) => {
+      if (e.detail?.source !== 'user-interaction' || hidden) return;
       hidden = true;
       hint.classList.remove('is-shown');
-    };
-    model.addEventListener('camera-change', (e) => {
-      if (e.detail?.source === 'user-interaction') hide();
     });
     function checkVisible() {
       if (shown || hidden) return;
@@ -688,7 +687,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (r.top < window.innerHeight - 40 && r.bottom > 0) {
         shown = true;
         hint.classList.add('is-shown');
-        setTimeout(hide, 6500); // roughly 3 swipe cycles, then stop pestering
       }
     }
     window.addEventListener('scroll', checkVisible, { passive: true });
