@@ -738,6 +738,42 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
 .app-3d-model { width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
 @media (max-width: 760px) { .app-3d-stage { width: 100%; max-width: 100%; } .app-3d-model { height: 340px; } }
 
+/* "drag to rotate" hint over the 3D model — see the comment in index.html for
+   why it exists as a custom overlay rather than model-viewer's own prompt. */
+.app-3d-hint {
+  position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity .5s ease;
+}
+.app-3d-hint.is-shown { opacity: 1; }
+.app-3d-hint-arc { display: block; margin-bottom: -10px; overflow: visible; }
+.app-3d-hint-arc path {
+  fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round;
+  stroke-dasharray: 4 6; opacity: .55;
+}
+.app-3d-hint-finger {
+  color: var(--gold); filter: drop-shadow(0 3px 6px rgba(0,0,0,.4));
+  animation: app3dHintSwipe 1.8s cubic-bezier(.45,0,.55,1) infinite;
+}
+.app-3d-hint-label {
+  margin-top: 4px; font-size: 11.5px; font-weight: 700; color: var(--maroon);
+  background: color-mix(in srgb, var(--cream) 88%, transparent);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+/* Travels the same arc the dashed guide draws: left and low, up through the
+   middle, right and low again — a swipe, not a side-to-side slide. */
+@keyframes app3dHintSwipe {
+  0%   { transform: translate(-34px, 6px) rotate(-14deg); opacity: 0; }
+  12%  { opacity: 1; }
+  50%  { transform: translate(0, -14px) rotate(0deg); opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translate(34px, 6px) rotate(14deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-3d-hint-finger { animation: none; }
+}
+
 /* FAQ — accordion. .faq-q is a <button> (padding replaces the old wrapper's), so
    it carries its own focus ring and is reachable by keyboard without extra markup. */
 .faq-item { background: var(--paper); border-radius: 18px; padding: 4px 26px; box-shadow: 0 8px 20px -16px var(--shadow-color); transition: transform .3s cubic-bezier(.16,.84,.44,1), box-shadow .3s cubic-bezier(.16,.84,.44,1), opacity .8s cubic-bezier(.16,.84,.44,1); }

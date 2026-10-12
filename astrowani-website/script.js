@@ -641,8 +641,64 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   }
   renderAstrologerSurfaces();
-  // aw/astrologers.js calls this once the live roster has replaced the snapshot.
-  window.ASTROWANI_RENDER_ASTROLOGERS = renderAstrologerSurfaces;
+  // aw/astrologers.js calls this once the live roster has replaced the snapshot,
+  // which REPLACES innerHTML on several surfaces (the category grid, the
+  // marquee, the consult grid). Wrapped, not assigned directly, so that re-render
+  // also re-scans for new .reveal elements -- see scanReveals() below. Without
+  // this, every element the live re-render creates sat at opacity:0 forever: the
+  // reveal system used to capture a fixed element list once, before this second
+  // render could ever run, so it had no way to see nodes created after it.
+  // scanReveals/sweepReveals are declared further down but are `function`
+  // declarations, hoisted within this whole DOMContentLoaded callback, and this
+  // wrapper is not actually CALLED until the async live-data fetch resolves --
+  // well after the `const io = ...` line below has run -- so the forward
+  // reference here is safe.
+  window.ASTROWANI_RENDER_ASTROLOGERS = () => {
+    renderAstrologerSurfaces();
+    scanReveals();
+    sweepReveals();
+  };
+
+  // ---------- "drag to rotate" hint on the 3D model ----------
+  // Shown once the model scrolls into view, hidden the instant the model-viewer
+  // reports a REAL user drag (camera-change with source 'user-interaction' —
+  // model-viewer also fires this on its own initial auto-framing, which is why
+  // that source check matters), or after a few demo cycles if nobody touches it.
+  //
+  // A rect check on scroll/resize/interval, same as the .reveal sweep above,
+  // not IntersectionObserver — this file already carries that fallback because
+  // IO has proven unreliable here before (see the comment on scanReveals).
+  (() => {
+    const hint = document.getElementById('app-3d-hint');
+    const model = document.getElementById('app-3d-model');
+    if (!hint || !model) return;
+    let shown = false;
+    let hidden = false;
+    const hide = () => {
+      if (hidden) return;
+      hidden = true;
+      hint.classList.remove('is-shown');
+    };
+    model.addEventListener('camera-change', (e) => {
+      if (e.detail?.source === 'user-interaction') hide();
+    });
+    function checkVisible() {
+      if (shown || hidden) return;
+      const r = model.getBoundingClientRect();
+      if (r.top < window.innerHeight - 40 && r.bottom > 0) {
+        shown = true;
+        hint.classList.add('is-shown');
+        setTimeout(hide, 6500); // roughly 3 swipe cycles, then stop pestering
+      }
+    }
+    window.addEventListener('scroll', checkVisible, { passive: true });
+    window.addEventListener('resize', checkVisible);
+    checkVisible();
+    const t = setInterval(() => {
+      checkVisible();
+      if (shown) clearInterval(t);
+    }, 250);
+  })();
 
   // ---------- concentric rings behind the hero (flat outlines, no gradient) ----------
   const chRingsEl = document.getElementById('ch-rings');
@@ -662,7 +718,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // IntersectionObserver is the primary driver; a direct bounding-rect sweep
   // backs it up on scroll (and on a short interval) so the reveal still
   // happens if IO is ever slow to fire.
-  const revealEls = Array.from(document.querySelectorAll('.reveal'));
+  //
+  // Elements are scanned LIVE on every scan/sweep, never captured once into a
+  // fixed array -- a fixed array was the original bug (see the comment on
+  // ASTROWANI_RENDER_ASTROLOGERS above). data-reveal-seen marks an element once
+  // it has been handed to the observer, so a re-scan after a re-render only
+  // picks up what is actually new rather than re-observing everything.
   const io = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (entry.isIntersecting) {
@@ -671,12 +732,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
-  revealEls.forEach((el) => io.observe(el));
+
+  function scanReveals() {
+    document.querySelectorAll('.reveal:not([data-reveal-seen])').forEach((el) => {
+      el.setAttribute('data-reveal-seen', '');
+      io.observe(el);
+    });
+  }
 
   function sweepReveals() {
     const vh = window.innerHeight;
-    revealEls.forEach((el) => {
-      if (el.classList.contains('is-visible')) return;
+    document.querySelectorAll('.reveal:not(.is-visible)').forEach((el) => {
       const rect = el.getBoundingClientRect();
       if (rect.top < vh - 40 && rect.bottom > 0) {
         el.classList.add('is-visible');
@@ -686,10 +752,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.addEventListener('scroll', sweepReveals, { passive: true });
   window.addEventListener('resize', sweepReveals);
+  scanReveals();
   sweepReveals();
   const sweepTimer = setInterval(() => {
     sweepReveals();
-    if (!revealEls.some((el) => !el.classList.contains('is-visible'))) clearInterval(sweepTimer);
+    if (!document.querySelector('.reveal:not(.is-visible)')) clearInterval(sweepTimer);
   }, 250);
 
   // ---------- FAQ accordion: one open at a time, toggle on click ----------
