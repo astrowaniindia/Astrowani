@@ -90,7 +90,7 @@
 .ch-nav-links .nav-item-drop:hover .nav-drop-trigger, .ch-nav-links .nav-item-drop.nav-drop-open .nav-drop-trigger { color: var(--gold); }
 .ch-nav-login { font-size: 14px; font-weight: 700; color: var(--ch-ink-soft); padding: 10px 6px; white-space: nowrap; }
 
-.ch-hero { position: relative; padding: 70px 24px 40px; text-align: center; }
+.ch-hero { position: relative; padding: 70px 24px 90px; text-align: center; }
 
 .ch-rings { position: absolute; left: 50%; top: 60%; transform: translate(-50%, -50%); z-index: 0; pointer-events: none; }
 .ch-ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px solid var(--ch-ring); transform: translate(-50%, -50%); }
@@ -122,13 +122,13 @@ a.ch-cta {
   box-shadow: 0 30px 60px -24px var(--ch-shadow);
   overflow: hidden;
 }
-.ch-phone-screen { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; background: var(--ch-paper); border-radius: 42px; }
+.ch-phone-screen { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; background: var(--ch-paper); border-radius: 42px; }
 .ch-phone::before {
   content: ''; position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 2;
-  width: 74px; height: 16px; border-radius: 999px; background: var(--ch-bg);
+  width: 37px; height: 8px; border-radius: 999px; background: var(--ch-bg);
 }
 
-.ch-mascot { position: absolute; left: 28px; bottom: 24px; z-index: 5; }
+.ch-mascot { position: absolute; left: 28px; bottom: 0px; z-index: 5; }
 .ch-mascot img { height: 110px; width: auto; display: block; }
 
 .ch-mascot-bubble {
@@ -151,14 +151,137 @@ a.ch-cta {
 @media (max-width: 760px) {
   .ch-hero h1 { font-size: 34px; }
   .ch-nav-links { display: none; }
-  .ch-stage { height: auto; }
+  .ch-stage { height: 480px; }
   .ch-mascot { left: 14px; bottom: 14px; }
   .ch-mascot img { height: 80px; }
   .ch-mascot-bubble { width: 170px; padding: 10px 12px; left: calc(100% + 12px); }
   .ch-mascot-bubble-tag { font-size: 9px; }
   .ch-mascot-bubble-text { font-size: 11.5px; }
   .ch-phone { width: 240px; height: 480px; }
+  .ch-phone-side { display: none; }
 }
+
+/* ============================================================
+   MOBILE NAV — brand + hamburger, everything else in a drawer.
+
+   The desktop bar is six dropdowns plus Blog, Wani Shop, the theme/language
+   buttons and the account area. That cannot shrink gracefully: on a phone it
+   simply overflowed off the right edge. Below 900px the bar keeps only the
+   Astrowani mark and a hamburger, and the full menu opens as a panel.
+   ============================================================ */
+.m-nav-toggle { display: none; }
+
+@media (max-width: 900px) {
+  /* Hide the desktop menu rows and the account area on BOTH nav variants —
+     the floating homepage pill and the ordinary sticky nav. */
+  .nav-links, .ch-nav-links,
+  .nav-right, .nav-util-group,
+  .ch-nav-wrap .nav-util-group { display: none !important; }
+
+  .nav-inner, .ch-nav-pill { justify-content: space-between; gap: 10px; }
+
+  .m-nav-toggle {
+    display: flex; flex-direction: column; justify-content: center; gap: 5px;
+    width: 46px; height: 46px; padding: 0 11px; flex: 0 0 auto;
+    background: transparent; border: 0; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .m-nav-toggle span {
+    display: block; height: 2.5px; width: 100%; border-radius: 2px;
+    background: var(--cream); transition: transform .2s ease, opacity .2s ease;
+  }
+  .m-nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7.5px) rotate(45deg); }
+  .m-nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .m-nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7.5px) rotate(-45deg); }
+}
+
+/* The panel itself is outside the media query: it is only ever opened by the
+   hamburger, which only exists on mobile, and keeping it here means a tablet
+   rotating mid-session cannot strand it half-styled. */
+.m-nav { position: fixed; inset: 0; z-index: 120; visibility: hidden; }
+.m-nav.is-open { visibility: visible; }
+.m-nav-scrim {
+  position: absolute; inset: 0; opacity: 0; transition: opacity .25s ease;
+  background: color-mix(in srgb, var(--maroon) 68%, transparent);
+}
+.m-nav.is-open .m-nav-scrim { opacity: 1; }
+.m-nav-panel {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  /* max-width as a second guard: the drawer must never be wider than the
+     screen it slides over, whatever the viewport units resolve to. */
+  width: min(86vw, 360px); max-width: 100%; display: flex; flex-direction: column;
+  background: var(--maroon); color: var(--cream);
+  transform: translateX(100%); transition: transform .28s cubic-bezier(.16,.84,.44,1);
+  box-shadow: -18px 0 46px -20px color-mix(in srgb, var(--maroon) 85%, transparent);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-right: env(safe-area-inset-right);
+}
+.m-nav.is-open .m-nav-panel { transform: translateX(0); }
+@media (prefers-reduced-motion: reduce) {
+  .m-nav-panel, .m-nav-scrim { transition: none; }
+}
+
+.m-nav-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid color-mix(in srgb, var(--cream) 16%, transparent);
+  flex: 0 0 auto;
+}
+.m-nav-brand { font-size: 21px; color: var(--cream); }
+.m-nav-close {
+  width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer;
+  color: var(--cream); font-size: 30px; line-height: 1; border-radius: 50%;
+}
+
+.m-nav-account { display: flex; gap: 10px; padding: 14px 18px; flex: 0 0 auto; }
+/* `min-width: 0` is the important part. These are flex children whose basis is
+   their content, so without it the signed-in labels ("₹1,250", "My account")
+   cannot shrink and the gold button is pushed off the edge of the drawer. */
+.m-nav-login, .m-nav-cta {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
+  min-height: 48px; padding: 0 12px; border-radius: 999px;
+  font-size: 14.5px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.m-nav-login {
+  border: 1.5px solid color-mix(in srgb, var(--cream) 32%, transparent);
+  color: var(--cream); font-weight: 700;
+}
+.m-nav-cta { font-weight: 800; }
+
+.m-nav-body { flex: 1 1 auto; overflow-y: auto; padding: 4px 0 18px; overscroll-behavior: contain; }
+.m-nav-sec-head {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  min-height: 52px; padding: 0 18px; border: 0; background: transparent; cursor: pointer;
+  color: var(--cream); font: inherit; font-size: 16px; font-weight: 700; text-align: left;
+}
+.m-nav-sec-head svg { width: 18px; height: 18px; transition: transform .2s ease; flex: 0 0 auto; }
+.m-nav-sec.is-open .m-nav-sec-head svg { transform: rotate(180deg); }
+.m-nav-sec-head:hover { background: color-mix(in srgb, var(--cream) 8%, transparent); }
+.m-nav-sec-body { display: none; padding: 2px 0 10px; background: color-mix(in srgb, var(--cream) 6%, transparent); }
+.m-nav-sec.is-open .m-nav-sec-body { display: block; }
+.m-nav-sub {
+  display: flex; align-items: center; min-height: 46px; padding: 0 18px 0 32px;
+  color: var(--cream-muted); font-size: 14.5px; font-weight: 600;
+}
+.m-nav-sub:hover { color: var(--gold); }
+.m-nav-link {
+  display: flex; align-items: center; min-height: 52px; padding: 0 18px;
+  color: var(--cream); font-size: 16px; font-weight: 700;
+  border-top: 1px solid color-mix(in srgb, var(--cream) 10%, transparent);
+}
+.m-nav-link:hover { color: var(--gold); }
+
+.m-nav-foot {
+  display: flex; gap: 10px; padding: 14px 18px; flex: 0 0 auto;
+  border-top: 1px solid color-mix(in srgb, var(--cream) 16%, transparent);
+}
+.m-nav-util {
+  flex: 1 1 0; min-height: 44px; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid color-mix(in srgb, var(--cream) 28%, transparent);
+  background: transparent; color: var(--cream); font: inherit; font-size: 13px; font-weight: 700;
+}
+.m-nav-util:hover { background: color-mix(in srgb, var(--cream) 10%, transparent); }
 
 /* ---------- subpage header banner ---------- */
 .page-header { background: var(--maroon); padding: 56px 24px; text-align: center; }
@@ -333,6 +456,29 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 /* app panel: settles in from slightly oversized */
 .reveal-zoom { transform: scale(1.12); transition: opacity .6s ease, transform .8s cubic-bezier(.16,.84,.44,1); }
 .reveal-zoom.is-visible { transform: scale(1); }
+
+.ch-phone.reveal-grow { transform: translateX(-50%) scale(.55); transition: opacity 1.1s ease, transform 1.6s cubic-bezier(.34,1.56,.64,1); }
+.ch-phone.reveal-grow.is-visible { transform: translateX(-50%) scale(1); }
+
+.ch-phone-side {
+  top: 150px; width: 190px; height: 380px; z-index: 0; opacity: .85;
+  border-width: 7px; border-radius: 40px; transform-origin: bottom center;
+}
+.ch-phone-side .ch-phone-screen { border-radius: 32px; }
+
+.ch-phone-side.reveal-grow-left {
+  left: calc(50% - 360px); transform: rotate(-10deg) scale(.35);
+  transition: opacity 1.1s ease, transform 1.6s cubic-bezier(.34,1.56,.64,1);
+  transition-delay: .15s;
+}
+.ch-phone-side.reveal-grow-left.is-visible { transform: rotate(-10deg) scale(1); }
+
+.ch-phone-side.reveal-grow-right {
+  left: calc(50% + 170px); transform: rotate(10deg) scale(.35);
+  transition: opacity 1.1s ease, transform 1.6s cubic-bezier(.34,1.56,.64,1);
+  transition-delay: .3s;
+}
+.ch-phone-side.reveal-grow-right.is-visible { transform: rotate(10deg) scale(1); }
 
 /* hero: one-time cinematic entrance on load */
 @keyframes heroRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }

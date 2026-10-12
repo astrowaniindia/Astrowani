@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chat with an Astrologer — Astrowani</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="aw/aw.css?v=16">
+</head>
+<body class="aw-screen-body">
+
+<div class="aw-screen">
+  <header class="aw-screen-head">
+    <a class="aw-back" href="astrologers.html" aria-label="Back">&#8592;</a>
+    <img class="aw-peer-avatar" id="aw-peer-avatar" src="assets/logo.png" alt="">
+    <div class="aw-peer-who">
+      <div class="aw-peer-name" id="aw-peer-name">Astrologer</div>
+      <div class="aw-peer-meta" id="aw-peer-meta">Connecting…</div>
+    </div>
+    <button type="button" class="aw-btn aw-btn-end" id="aw-chat-end">End chat</button>
+  </header>
+
+  <!-- connecting / error state -->
+  <div class="aw-stage" id="aw-chat-stage"></div>
+
+  <!-- the live conversation -->
+  <div class="aw-screen-main" id="aw-chat-room" hidden>
+    <div class="aw-chat-log" id="aw-chat-log">
+      <div class="aw-chat-sys">You are connected. Billing is per minute from now.</div>
+    </div>
+    <form class="aw-chat-compose" id="aw-chat-form">
+      <input type="text" id="aw-chat-input" autocomplete="off" placeholder="Type your message…" maxlength="2000">
+      <button type="submit" class="aw-btn aw-btn-gold">Send</button>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+  import { initChatPage } from './aw/chat-page.js?v=16';
+  import { bootScreen } from './aw/boot.js?v=16';
+  bootScreen().then(initChatPage);
+</script>
+</body>
+</html>

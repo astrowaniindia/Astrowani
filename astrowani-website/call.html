@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>try{if(localStorage.getItem('astro-theme')==='inverted')document.documentElement.setAttribute('data-theme','inverted');if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Call an Astrologer — Astrowani</title>
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="aw/aw.css?v=16">
+</head>
+<body class="aw-screen-body aw-call-body">
+
+<div class="aw-screen aw-call-screen">
+  <!-- connecting / error state -->
+  <div class="aw-stage" id="aw-call-stage"></div>
+
+  <!-- the live call -->
+  <div class="aw-call-live" id="aw-call-live" hidden>
+    <div class="aw-call-stage-area">
+      <video class="aw-remote-video" id="aw-remote-video" autoplay playsinline></video>
+      <div class="aw-call-peer">
+        <div class="aw-ring-avatar">
+          <span class="aw-ring-pulse"></span>
+          <img id="aw-call-avatar" src="assets/logo.png" alt="">
+        </div>
+        <div class="aw-call-name" id="aw-call-name">Astrologer</div>
+        <div class="aw-call-status" id="aw-call-status">Connecting…</div>
+      </div>
+      <video class="aw-local-video" id="aw-local-video" autoplay playsinline muted></video>
+    </div>
+
+    <div class="aw-call-controls">
+      <button type="button" class="aw-ctl" id="aw-ctl-mute"><span>Mute</span></button>
+      <button type="button" class="aw-ctl" id="aw-ctl-cam" hidden><span>Camera off</span></button>
+      <button type="button" class="aw-ctl aw-ctl-end" id="aw-ctl-end">End</button>
+    </div>
+    <div class="aw-call-rate" id="aw-call-rate"></div>
+  </div>
+
+  <audio id="aw-remote-audio" autoplay></audio>
+</div>
+
+<script type="module">
+  import { initCallPage } from './aw/call-page.js?v=16';
+  import { bootScreen } from './aw/boot.js?v=16';
+  bootScreen().then(initCallPage);
+</script>
+</body>
+</html>

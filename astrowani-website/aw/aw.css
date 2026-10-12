@@ -1,0 +1,380 @@
+/* ============================================================
+   Astrowani web client — sign-in, wallet, ringing, chat, call.
+
+   Uses the site's own three brand tokens (--maroon / --cream / --gold) and
+   nothing else, so the "revert colors" theme toggle inverts these overlays
+   along with the rest of the page for free.
+
+   CACHE-BUSTING: like style.css, every <link> to this file carries "?v=N".
+   Bump it in every HTML page whenever this file changes — Cloudflare caches
+   it for hours independently of the HTML.
+   ============================================================ */
+
+/* ---------- overlay shell ---------- */
+.aw-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; opacity: 0; transition: opacity .2s ease;
+}
+.aw-overlay.is-open { opacity: 1; }
+.aw-overlay-backdrop {
+  position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--maroon) 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+.aw-overlay-body {
+  position: relative; z-index: 1; width: 100%; max-width: 420px;
+  transform: translateY(12px) scale(.98);
+  transition: transform .26s cubic-bezier(.16,.84,.44,1);
+}
+.aw-overlay.is-open .aw-overlay-body { transform: translateY(0) scale(1); }
+
+.aw-card {
+  position: relative; background: var(--paper); color: var(--ink);
+  border-radius: 22px; padding: 28px 24px;
+  box-shadow: 0 30px 70px -24px color-mix(in srgb, var(--maroon) 60%, transparent);
+  border: 1px solid var(--border-soft);
+}
+.aw-card-sm { padding: 24px 22px; }
+.aw-card-title { margin: 0 0 8px; font-family: 'Marcellus', serif; font-size: 23px; font-weight: 400; color: var(--maroon); }
+.aw-card-text { margin: 0 0 18px; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+.aw-fineprint { margin: 14px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-faint); text-align: center; }
+.aw-fineprint a { color: var(--gold-deep); text-decoration: underline; }
+
+.aw-close {
+  position: absolute; top: 12px; right: 14px; width: 32px; height: 32px;
+  border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+  font-size: 26px; line-height: 1; color: var(--ink-soft);
+}
+.aw-close:hover { background: color-mix(in srgb, var(--maroon) 8%, transparent); }
+
+/* ---------- forms ---------- */
+/* The UA's [hidden] rule is display:none at the LOWEST specificity, so any
+   `display:` declaration on the same element silently defeats it. This bit
+   twice — the new-account name field rendered visible, and the chat room
+   showed through the connecting screen — so it is enforced once, globally,
+   for everything this stylesheet owns. */
+.aw-overlay [hidden],
+.aw-screen [hidden],
+[hidden].aw-screen-main,
+[hidden].aw-call-live,
+[hidden].aw-stage { display: none !important; }
+.aw-form { display: block; }
+.aw-field { display: block; margin-bottom: 14px; }
+.aw-field-label { display: block; font-size: 12px; font-weight: 800; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+.aw-field input {
+  width: 100%; box-sizing: border-box; padding: 13px 14px; font: inherit; font-size: 16px;
+  color: var(--ink); background: color-mix(in srgb, var(--cream) 60%, #fff 40%);
+  border: 1.5px solid var(--border-soft); border-radius: 12px; outline: none;
+}
+.aw-field input:focus { border-color: var(--gold-deep); }
+.aw-phone-input { display: flex; align-items: center; gap: 8px;
+  border: 1.5px solid var(--border-soft); border-radius: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--cream) 60%, #fff 40%); }
+.aw-phone-input:focus-within { border-color: var(--gold-deep); }
+.aw-phone-input .aw-phone-cc { padding-left: 14px; font-weight: 800; color: var(--ink-soft); }
+.aw-phone-input input { border: 0; background: transparent; border-radius: 0; }
+.aw-otp-input { letter-spacing: .5em; text-align: center; font-weight: 800; font-size: 20px; }
+.aw-error { margin: 0 0 12px; font-size: 13px; font-weight: 700; color: #B3261E; }
+:root[data-theme="inverted"] .aw-error { color: #FFB4AB; }
+
+.aw-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 22px; border: 0; border-radius: 999px; cursor: pointer;
+  font-family: 'Marcellus', serif; font-size: 15px; font-weight: 700;
+  transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
+}
+.aw-btn:disabled { opacity: .6; cursor: default; }
+.aw-btn-block { width: 100%; }
+.aw-btn-gold { background: var(--gold); color: var(--maroon); }
+.aw-btn-gold:not(:disabled):hover { transform: translateY(-2px); filter: brightness(1.05); }
+.aw-btn-ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--border-soft); }
+.aw-btn-ghost:not(:disabled):hover { background: color-mix(in srgb, var(--maroon) 7%, transparent); }
+.aw-btn-end { background: #B3261E; color: #fff; padding: 10px 18px; font-size: 14px; }
+.aw-linkbtn { background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--gold-deep); text-decoration: underline; }
+.aw-linkbtn:disabled { color: var(--ink-faint); text-decoration: none; cursor: default; }
+.aw-resend { display: block; margin: 12px auto 0; }
+.aw-card-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.aw-card-actions.aw-stack { flex-direction: column; }
+
+/* ---------- recharge ---------- */
+.aw-amount-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+.aw-amount {
+  padding: 12px 4px; border-radius: 12px; cursor: pointer;
+  border: 1.5px solid var(--border-soft); background: transparent;
+  font-family: 'Marcellus', serif; font-size: 15px; font-weight: 700; color: var(--ink);
+}
+.aw-amount:hover { border-color: var(--gold-deep); }
+.aw-amount.is-active { background: var(--gold); border-color: var(--gold); color: var(--maroon); }
+
+.aw-balance-box {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-radius: 16px; margin-bottom: 14px;
+  background: color-mix(in srgb, var(--gold) 16%, var(--cream) 84%);
+  border: 1px solid color-mix(in srgb, var(--gold-deep) 35%, transparent);
+}
+.aw-balance-label { font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+.aw-balance-value { font-family: 'Marcellus', serif; font-size: 26px; color: var(--maroon); }
+.aw-nav-balance { font-weight: 800; }
+
+/* ---------- ringing ---------- */
+.aw-ring-card { text-align: center; }
+.aw-ring-avatar { position: relative; width: 104px; height: 104px; margin: 4px auto 18px; }
+.aw-ring-avatar img { position: relative; z-index: 1; width: 100%; height: 100%;
+  border-radius: 50%; object-fit: cover; border: 3px solid var(--gold); }
+.aw-ring-pulse {
+  position: absolute; inset: -10px; border-radius: 50%;
+  border: 2px solid var(--gold); animation: awPulse 1.8s ease-out infinite;
+}
+.aw-ring-pulse.is-connected { animation: none; border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
+@keyframes awPulse {
+  0% { transform: scale(.86); opacity: .9; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .aw-ring-pulse { animation: none; } }
+.aw-ring-rate { margin: 0 0 18px; font-size: 12.5px; color: var(--ink-faint); }
+
+/* ============================================================
+   FULL SCREENS (chat.html / call.html)
+
+   These are pages, not overlays. Only signing in is a popup — everything a
+   visitor would expect a URL and a back button for is a real screen.
+   ============================================================ */
+.aw-screen-body {
+  margin: 0; background: var(--page-bg);
+  /* A fixed full-height screen on iOS still rubber-bands, showing white behind
+     it and letting a swipe scroll the page under a live consultation. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+.aw-screen {
+  display: flex; flex-direction: column; overflow: hidden;
+  /* 100vh is WRONG on mobile: it is the height WITHOUT the address bar, so the
+     bottom of the screen (the compose box, the End button) sits under it. dvh
+     tracks the visible viewport and shrinks when the keyboard opens. vh stays
+     only as the fallback for browsers that predate dvh.
+     --aw-vh is set by the keyboard handler in chat-page.js for iOS Safari,
+     which does not resize dvh when the keyboard appears. */
+  height: 100vh;
+  height: 100dvh;
+  height: var(--aw-vh, 100dvh);
+}
+.aw-screen-head {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: var(--maroon); color: var(--cream); flex: 0 0 auto;
+  /* Clears the notch / status bar when the page is in a standalone-ish view. */
+  padding-top: calc(12px + env(safe-area-inset-top));
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
+}
+.aw-back {
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--cream); font-size: 20px; text-decoration: none;
+}
+.aw-back:hover { background: color-mix(in srgb, var(--cream) 14%, transparent); }
+.aw-peer-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--gold); flex: 0 0 auto; }
+.aw-peer-who { flex: 1 1 auto; min-width: 0; }
+.aw-peer-name { font-family: 'Marcellus', serif; font-size: 17px; }
+.aw-peer-meta { font-size: 12px; color: var(--cream-muted); }
+.aw-screen-main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+/* connecting / error state shared by both screens */
+.aw-stage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.aw-stage-card { text-align: center; max-width: 420px; }
+.aw-stage-title { font-family: 'Marcellus', serif; font-weight: 400; font-size: 26px;
+  color: var(--ink); margin: 0 0 8px; }
+.aw-call-screen .aw-stage-title { color: var(--cream); }
+.aw-stage-text { font-size: 15px; line-height: 1.6; color: var(--ink-soft); margin: 0 0 22px; }
+.aw-call-screen .aw-stage-text { color: var(--cream-muted); }
+.aw-stage-spinner {
+  width: 46px; height: 46px; margin: 0 auto 20px; border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  border-top-color: var(--gold); animation: awSpin 1s linear infinite;
+}
+@keyframes awSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .aw-stage-spinner { animation: none; } }
+
+.aw-chat-log {
+  flex: 1 1 auto; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  /* Keep a scroll gesture inside the log instead of chaining to the page. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.aw-chat-sys { align-self: center; max-width: 85%; text-align: center;
+  font-size: 12px; line-height: 1.5; color: var(--ink-faint); padding: 6px 10px; }
+.aw-msg { max-width: 78%; padding: 9px 13px; border-radius: 16px; font-size: 14.5px; line-height: 1.45; }
+.aw-msg.is-mine { align-self: flex-end; background: var(--gold); color: var(--maroon); border-bottom-right-radius: 5px; }
+.aw-msg.is-theirs { align-self: flex-start; background: color-mix(in srgb, var(--maroon) 10%, var(--cream)); border-bottom-left-radius: 5px; }
+.aw-msg.is-pending { opacity: .6; }
+.aw-msg-time { margin-top: 3px; font-size: 10.5px; opacity: .65; text-align: right; }
+.aw-chat-compose {
+  display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border-soft); flex: 0 0 auto;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: var(--paper);
+}
+.aw-chat-compose input {
+  /* 16px IS LOAD-BEARING: iOS Safari zooms the whole page in when a focused
+     input is smaller than 16px, and never zooms back out — which leaves the
+     chat half off-screen for the rest of the consultation. */
+  flex: 1 1 auto; min-width: 0; padding: 12px 14px; font: inherit; font-size: 16px;
+  border: 1.5px solid var(--border-soft); border-radius: 999px; outline: none;
+  background: color-mix(in srgb, var(--cream) 60%, #fff 40%); color: var(--ink);
+}
+.aw-chat-compose input:focus { border-color: var(--gold-deep); }
+
+/* ---------- call screen ---------- */
+.aw-call-body { background: var(--maroon); }
+.aw-call-screen { background: var(--maroon); color: var(--cream); }
+.aw-call-live { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.aw-call-stage-area { position: relative; flex: 1 1 auto; display: flex;
+  align-items: center; justify-content: center; overflow: hidden; }
+/* The remote video only earns its space on a video call. */
+.aw-remote-video { display: none; }
+body.is-video-call .aw-remote-video { display: block; }
+.aw-local-video { display: none; }
+body.is-video-call .aw-local-video { display: block; }
+body.is-video-call .aw-call-peer {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  padding: 10px 16px; border-radius: 16px; z-index: 3;
+  background: color-mix(in srgb, var(--maroon) 70%, transparent);
+}
+body.is-video-call .aw-call-peer .aw-ring-avatar { width: 54px; height: 54px; margin-bottom: 8px; }
+.aw-remote-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.aw-local-video {
+  position: absolute; right: 14px; bottom: 14px; width: 104px; height: 150px;
+  object-fit: cover; border-radius: 14px; border: 2px solid var(--gold);
+  background: #000; z-index: 2;
+}
+.aw-call-peer { position: relative; z-index: 1; text-align: center; padding: 20px; }
+.aw-call-name { font-family: 'Marcellus', serif; font-size: 21px; margin-top: 4px; }
+.aw-call-status { font-size: 13.5px; color: var(--cream-muted); margin-top: 4px; }
+.aw-call-controls {
+  display: flex; gap: 12px; justify-content: center; padding: 14px; flex: 0 0 auto;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+}
+.aw-ctl {
+  /* 48px minimum: these are thumb targets on a phone, during a paid call, and
+     a mis-tap on "End" is expensive. */
+  min-height: 48px; min-width: 48px;
+  padding: 12px 18px; border-radius: 999px; cursor: pointer; font: inherit;
+  font-size: 14px; font-weight: 700;
+  border: 1.5px solid color-mix(in srgb, var(--cream) 35%, transparent);
+  background: transparent; color: var(--cream);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.aw-ctl:hover { background: color-mix(in srgb, var(--cream) 12%, transparent); }
+.aw-ctl.is-on { background: var(--gold); color: var(--maroon); border-color: var(--gold); }
+.aw-ctl-end { background: #B3261E; border-color: #B3261E; color: #fff; }
+.aw-call-rate { text-align: center; font-size: 11.5px; color: var(--cream-muted); padding: 0 0 14px; }
+
+/* ---------- wallet history ---------- */
+.aw-history-list { max-height: 50vh; overflow-y: auto; margin-top: 6px; }
+.aw-history-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px;
+  border-bottom: 1px solid var(--border-softer); }
+.aw-history-main { flex: 1 1 auto; min-width: 0; }
+.aw-history-desc { font-size: 14px; font-weight: 700; color: var(--ink); }
+.aw-history-date { font-size: 11.5px; color: var(--ink-faint); margin-top: 2px; }
+.aw-history-amt { font-family: 'Marcellus', serif; font-size: 16px; flex: 0 0 auto; }
+.aw-history-amt.is-credit { color: #1B7F3B; }
+.aw-history-amt.is-debit { color: var(--ink-soft); }
+:root[data-theme="inverted"] .aw-history-amt.is-credit { color: #7BD79B; }
+
+/* ---------- live status pill on astrologer cards ---------- */
+.astro-status {
+  display: none; align-items: center; gap: 5px;
+  position: absolute; top: 10px; left: 10px; z-index: 2;
+  padding: 3px 9px 3px 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase;
+}
+.astro-status.is-online, .astro-status.is-busy, .astro-status.is-offline, .astro-status.is-live { display: inline-flex; }
+.astro-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.astro-status.is-online { background: color-mix(in srgb, #1B7F3B 16%, var(--cream)); color: #1B7F3B; }
+.astro-status.is-busy { background: color-mix(in srgb, var(--gold) 30%, var(--cream)); color: var(--gold-deep); }
+.astro-status.is-live { background: #B3261E; color: #fff; }
+.astro-status.is-offline { background: color-mix(in srgb, var(--maroon) 12%, var(--cream)); color: var(--ink-faint); }
+.astro-card { position: relative; }
+[data-aw-action] { cursor: pointer; font: inherit; }
+[data-aw-action].is-unavailable { opacity: .55; }
+
+/* ---------- wallet page ---------- */
+.aw-wallet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .aw-wallet-grid { grid-template-columns: 1fr; } }
+
+/* ---------- "you have a consultation running" bar ---------- */
+.aw-resume-bar {
+  position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 120%);
+  z-index: 8000; display: flex; align-items: center; gap: 12px;
+  width: min(94vw, 680px); padding: 12px 16px; border-radius: 999px;
+  background: var(--maroon); color: var(--cream);
+  box-shadow: 0 22px 44px -18px color-mix(in srgb, var(--maroon) 75%, transparent);
+  transition: transform .3s cubic-bezier(.16,.84,.44,1);
+}
+.aw-resume-bar.is-open { transform: translate(-50%, 0); }
+.aw-resume-dot { width: 9px; height: 9px; border-radius: 50%; background: #7BD79B; flex: 0 0 auto;
+  animation: awPulseDot 1.6s ease-out infinite; }
+@keyframes awPulseDot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .aw-resume-dot { animation: none; } }
+.aw-resume-text { flex: 1 1 auto; font-size: 13.5px; font-weight: 700; }
+.aw-resume-bar .aw-btn { padding: 9px 16px; font-size: 13.5px; flex: 0 0 auto; }
+.aw-resume-bar .aw-btn-ghost { color: var(--cream); border-color: color-mix(in srgb, var(--cream) 35%, transparent); }
+
+/* ---------- toasts ---------- */
+.aw-toast-host {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  z-index: 9500; display: flex; flex-direction: column; gap: 8px; align-items: center;
+  pointer-events: none; width: min(92vw, 420px);
+}
+.aw-toast {
+  padding: 12px 18px; border-radius: 999px; font-size: 14px; font-weight: 700;
+  background: var(--maroon); color: var(--cream);
+  box-shadow: 0 18px 36px -16px color-mix(in srgb, var(--maroon) 70%, transparent);
+  opacity: 0; transform: translateY(10px); transition: opacity .2s ease, transform .2s ease;
+  text-align: center;
+}
+.aw-toast.is-open { opacity: 1; transform: translateY(0); }
+.aw-toast-error { background: #B3261E; color: #fff; }
+.aw-toast-success { background: #1B7F3B; color: #fff; }
+
+/* ---------- phones ---------- */
+@media (max-width: 560px) {
+  /* The sign-in popup becomes a bottom sheet — thumb-reachable, and it does not
+     cover the field being typed into when the keyboard opens. */
+  .aw-overlay { padding: 0; align-items: flex-end; }
+  .aw-overlay-body { max-width: none; }
+  .aw-card {
+    border-radius: 22px 22px 0 0;
+    padding-bottom: calc(28px + env(safe-area-inset-bottom));
+    max-height: 92dvh; overflow-y: auto;
+  }
+  /* Same iOS zoom-on-focus rule as the chat composer. */
+  .aw-field input, .aw-phone-input input { font-size: 16px; }
+  .aw-btn { min-height: 48px; }
+  .aw-amount { min-height: 48px; }
+
+  /* Call screen: a phone is portrait, so the remote video fills the frame and
+     the self-view shrinks to a corner thumbnail clear of the controls. */
+  .aw-local-video { width: 84px; height: 118px; right: 10px; bottom: 10px; }
+  .aw-call-name { font-size: 19px; }
+  .aw-ctl { flex: 1 1 0; max-width: 140px; }
+
+  /* The chat header's End button must not squeeze the astrologer's name out. */
+  .aw-peer-name { font-size: 16px; }
+  .aw-btn-end { padding: 10px 14px; font-size: 13px; }
+
+  /* Chat / Call / Video on the astrologer cards are the site's primary CTAs and
+     are tapped with a thumb — the site's own 43px is under the 48px target. */
+  .astro-card [data-aw-action],
+  .astro-actions .btn-ghost,
+  .astro-actions .btn-gold {
+    min-height: 48px; display: inline-flex; align-items: center; justify-content: center;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .aw-amount-grid { grid-template-columns: repeat(3, 1fr); }
+  .aw-resume-bar { flex-wrap: wrap; justify-content: center; text-align: center; }
+  .aw-resume-text { flex: 1 1 100%; }
+}

@@ -270,6 +270,139 @@ function injectNavUtilButtons() {
   });
 }
 
+/**
+ * Mobile navigation: logo + hamburger only, everything else behind a drawer.
+ *
+ * The desktop nav is a row of six dropdown menus plus Blog, Wani Shop, the
+ * theme/language buttons and the account area. On a phone that cannot shrink —
+ * it just ran off the right edge of the screen — and most Astrowani visitors
+ * are on a phone, so below 900px the bar keeps the brand and a hamburger, and
+ * the whole menu opens as a full-height panel.
+ *
+ * The drawer is built from the SAME ASTROWANI_NAV_MENUS data as the desktop
+ * dropdowns, so a menu item added there appears in both without a second edit.
+ *
+ * Its account row deliberately reuses the `.nav-login` class and the Play Store
+ * sign-up href: aw/account.js finds those by selector and rewrites them into
+ * the live wallet balance, so the drawer shows the balance without that module
+ * needing to know a drawer exists.
+ */
+function injectMobileNav() {
+  if (document.querySelector('.m-nav-toggle')) return;
+
+  const bars = [
+    document.querySelector('.ch-nav-pill'),
+    document.querySelector('.nav-inner'),
+  ].filter(Boolean);
+  if (!bars.length) return;
+
+  const burger = () => `
+    <button type="button" class="m-nav-toggle" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>`;
+  bars.forEach((bar) => bar.insertAdjacentHTML('beforeend', burger()));
+
+  // Bare identifier, not window.*: ASTROWANI_NAV_MENUS is a top-level `const`,
+  // which does not become a property of window.
+  const menus = typeof ASTROWANI_NAV_MENUS !== 'undefined' ? ASTROWANI_NAV_MENUS : [];
+  const sections = menus.map((menu, i) => `
+    <div class="m-nav-sec" data-sec="${i}">
+      <button type="button" class="m-nav-sec-head">
+        <span class="i18n-t">${menu.label}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="m-nav-sec-body">
+        ${menu.items.map(([label, href]) =>
+          `<a href="${href}" class="m-nav-sub i18n-t">${label}</a>`).join('')}
+      </div>
+    </div>`).join('');
+
+  const panel = document.createElement('div');
+  panel.className = 'm-nav';
+  panel.innerHTML = `
+    <div class="m-nav-scrim" data-close></div>
+    <aside class="m-nav-panel" role="dialog" aria-modal="true" aria-label="Menu">
+      <header class="m-nav-head">
+        <span class="serif m-nav-brand">Astrowani</span>
+        <button type="button" class="m-nav-close" data-close aria-label="Close menu">&times;</button>
+      </header>
+
+      <div class="m-nav-account">
+        <a href="#" class="nav-login m-nav-login">Login</a>
+        <!-- Deliberately NOT given the "magnetic" class: that handler
+             translates the button toward the cursor, which is pointless on a
+             phone and can shove it out of the drawer. The Play Store href is
+             what aw/account.js matches on to turn this into the account link
+             once the visitor is signed in. -->
+        <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN"
+           class="btn-gold m-nav-cta">Sign up</a>
+      </div>
+
+      <nav class="m-nav-body">
+        ${sections}
+        <a href="astrologers.html" class="m-nav-link i18n-t">All Astrologers</a>
+        <a href="blog.html" class="m-nav-link i18n-t">Blog</a>
+        <a href="index.html#wanishop" class="m-nav-link i18n-t">Wani Shop</a>
+        <a href="about.html" class="m-nav-link i18n-t">About us</a>
+      </nav>
+
+      <footer class="m-nav-foot">
+        <button type="button" class="m-nav-util" data-role="m-theme">Switch colours</button>
+        <button type="button" class="m-nav-util" data-role="m-lang">हिंदी / English</button>
+      </footer>
+    </aside>`;
+  document.body.appendChild(panel);
+
+  const open = () => {
+    panel.classList.add('is-open');
+    document.documentElement.style.overflow = 'hidden';
+    document.querySelectorAll('.m-nav-toggle').forEach((b) => b.setAttribute('aria-expanded', 'true'));
+  };
+  const close = () => {
+    panel.classList.remove('is-open');
+    document.documentElement.style.overflow = '';
+    document.querySelectorAll('.m-nav-toggle').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  };
+
+  document.querySelectorAll('.m-nav-toggle').forEach((b) => b.addEventListener('click', open));
+  panel.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+  // Accordion — one section open at a time keeps the list short enough to scan.
+  panel.querySelectorAll('.m-nav-sec-head').forEach((head) => {
+    head.addEventListener('click', () => {
+      const sec = head.closest('.m-nav-sec');
+      const wasOpen = sec.classList.contains('is-open');
+      panel.querySelectorAll('.m-nav-sec').forEach((s) => s.classList.remove('is-open'));
+      if (!wasOpen) sec.classList.add('is-open');
+    });
+  });
+
+  // Tapping a destination closes the drawer. A same-page #hash link does not
+  // reload, so without this the panel would stay over the section just jumped to.
+  panel.querySelectorAll('a[href]').forEach((a) => {
+    if (a.classList.contains('nav-login') || a.classList.contains('m-nav-cta')) return;
+    a.addEventListener('click', close);
+  });
+  // The account links open a popup or navigate; either way the drawer should go.
+  panel.querySelectorAll('.nav-login, .m-nav-cta').forEach((a) => a.addEventListener('click', close));
+
+  // The drawer's own theme/language buttons drive the existing nav-util buttons,
+  // so there is one implementation of each and they cannot drift apart.
+  panel.querySelector('[data-role="m-theme"]').addEventListener('click', () => {
+    document.querySelector('.nav-util-btn[data-role="theme"]')?.click();
+  });
+  panel.querySelector('[data-role="m-lang"]').addEventListener('click', () => {
+    document.querySelector('.nav-util-btn[data-role="lang"]')?.click();
+  });
+
+  // Rotating back to a wide screen must not leave a drawer covering the page.
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 900 && panel.classList.contains('is-open')) close();
+  });
+}
+
 function astroBadgeChip(a) {
   if (a.badge === 'celebrity') return '<div class="astro-badge-chip astro-badge-celebrity">&#9733; Celebrity</div>';
   if (a.badge === 'verified') return '<div class="astro-badge-chip astro-badge-verified">&#10003; Verified</div>';
@@ -283,16 +416,20 @@ function astroCardHtml(a, idx) {
     ? `${ASTROWANI_STAR_SVG}<span style="font-weight:800; color:var(--maroon);">${a.rating}</span><span style="color:var(--ink-soft); margin-left:2px;">(${a.reviews})</span>`
     : `${ASTROWANI_SPROUT_SVG}<span style="font-weight:700; color:var(--maroon);">New astrologer</span>`;
   const catLabel = a.cats.length > 2 ? a.cats.slice(0, 2).join(', ') + ` +${a.cats.length - 2}` : a.cats.join(', ');
+  // Real in-page actions, not Play Store links: the web client runs the
+  // consultation here. aw/astrologers.js owns the click via delegation, and
+  // falls back to the store link only if the web client failed to load.
   const chatBtn = a.chatOn
-    ? `<a href="${ASTROWANI_APP_LINK}" class="btn-ghost">Chat &#8377;${a.chat}</a>`
+    ? `<button type="button" class="btn-ghost" data-aw-action="chat" data-astro-id="${a.id}">Chat &#8377;${a.chat}</button>`
     : `<span class="btn-ghost">Chat off</span>`;
   const callBtn = a.callOn
-    ? `<a href="${ASTROWANI_APP_LINK}" class="btn-gold">Call &#8377;${a.call}</a>`
+    ? `<button type="button" class="btn-gold" data-aw-action="call" data-astro-id="${a.id}">Call &#8377;${a.call}</button>`
     : `<span class="btn-gold">Call off</span>`;
   return `
-    <div class="astro-card tilt-card" data-cats="${a.cats.join('|')}">
+    <div class="astro-card tilt-card" data-cats="${a.cats.join('|')}" data-astro-id="${a.id}">
       ${astroBadgeChip(a)}
-      <div class="astro-avatar" style="background:${ring};"><img src="assets/astrologers/${a.photo}" alt="${a.name}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
+      <div class="astro-status" data-aw-status></div>
+      <div class="astro-avatar" style="background:${ring};"><img src="${a.photoUrl || `assets/astrologers/${a.photo}`}" alt="${a.name}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
       <div class="astro-name">${a.name}</div>
       <div class="astro-meta">${catLabel} &middot; ${a.exp} yrs exp</div>
       <div class="astro-rating-row">${ratingHtml}</div>
@@ -316,12 +453,13 @@ function astroCardHtmlSingle(a, idx, mode) {
   const catLabel = a.cats.length > 2 ? a.cats.slice(0, 2).join(', ') + ` +${a.cats.length - 2}` : a.cats.join(', ');
   const enabled = a[cfg.verb];
   const actionBtn = enabled
-    ? `<a href="${ASTROWANI_APP_LINK}" class="${cfg.btn}" style="width:100%;">${cfg.label} &#8377;${a[cfg.price]}/min</a>`
+    ? `<button type="button" class="${cfg.btn}" style="width:100%;" data-aw-action="${mode}" data-astro-id="${a.id}">${cfg.label} &#8377;${a[cfg.price]}/min</button>`
     : `<span class="${cfg.btn}" style="width:100%;">${cfg.label} unavailable</span>`;
   return `
-    <div class="astro-card tilt-card" data-cats="${a.cats.join('|')}" data-enabled="${enabled ? '1' : '0'}">
+    <div class="astro-card tilt-card" data-cats="${a.cats.join('|')}" data-enabled="${enabled ? '1' : '0'}" data-astro-id="${a.id}">
       ${astroBadgeChip(a)}
-      <div class="astro-avatar" style="background:${ring};"><img src="assets/astrologers/${a.photo}" alt="${a.name}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
+      <div class="astro-status" data-aw-status></div>
+      <div class="astro-avatar" style="background:${ring};"><img src="${a.photoUrl || `assets/astrologers/${a.photo}`}" alt="${a.name}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
       <div class="astro-name">${a.name}</div>
       <div class="astro-meta">${catLabel} &middot; ${a.exp} yrs exp</div>
       <div class="astro-rating-row">${ratingHtml}</div>
@@ -348,7 +486,17 @@ window.addEventListener('load', astroCleanHashAfterLoad);
 document.addEventListener('DOMContentLoaded', () => {
   injectNavDropdowns();
   injectNavUtilButtons();
+  // After the dropdowns, so the drawer is built from the same menu data and
+  // sits last in the bar (the hamburger is the right-most control).
+  injectMobileNav();
   astroApplyLang(document.documentElement.getAttribute('data-lang') === 'hi' ? 'hi' : 'en');
+  // Every astrologer surface renders from window.ASTROWANI_ASTROLOGERS. That array
+  // starts as the bundled snapshot (so the page paints instantly, with no layout
+  // shift and no blank grid if the API is slow) and is REPLACED by aw/astrologers.js
+  // with the live roster — real prices, real service toggles, real online/busy
+  // state — which then calls this again. Hence a function rather than a one-shot
+  // block: the second render is the one that matters.
+  function renderAstrologerSurfaces() {
   const allAstrologers = window.ASTROWANI_ASTROLOGERS || [];
 
   // ---------- consult.html: single-button directory for one mode (chat/call/video) ----------
@@ -455,7 +603,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const filterBar = document.getElementById('astro-filter-bar');
-    if (filterBar && window.ASTROWANI_CATEGORIES) {
+    // Guarded: this function runs again when the live roster lands, and the pills
+    // are appended rather than replaced — without this they would double.
+    if (filterBar && window.ASTROWANI_CATEGORIES && !filterBar.dataset.awPillsBuilt) {
+      filterBar.dataset.awPillsBuilt = '1';
       const pillHtml = (cat) => `<button type="button" class="astro-filter-pill" data-cat="${cat}">${cat}</button>`;
       filterBar.insertAdjacentHTML('beforeend', window.ASTROWANI_CATEGORIES.map(pillHtml).join(''));
     }
@@ -470,7 +621,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
     };
-    if (filterBar) {
+    // Same re-render guard as the pills: one listener, however many times the
+    // grid is rebuilt. It reads the pills from the DOM at click time, so it keeps
+    // working against freshly rendered cards.
+    if (filterBar && !filterBar.dataset.awFilterWired) {
+      filterBar.dataset.awFilterWired = '1';
       filterBar.addEventListener('click', (e) => {
         const pill = e.target.closest('.astro-filter-pill');
         if (!pill) return;
@@ -478,9 +633,16 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     const params = new URLSearchParams(window.location.search);
-    const initialCat = params.get('cat') || 'All';
+    // On a re-render, keep whatever filter the visitor had chosen rather than
+    // snapping them back to the URL's category.
+    const activePill = filterBar && filterBar.querySelector('.astro-filter-pill.active');
+    const initialCat = (activePill && activePill.getAttribute('data-cat')) || params.get('cat') || 'All';
     applyFilter(initialCat);
   }
+  }
+  renderAstrologerSurfaces();
+  // aw/astrologers.js calls this once the live roster has replaced the snapshot.
+  window.ASTROWANI_RENDER_ASTROLOGERS = renderAstrologerSurfaces;
 
   // ---------- concentric rings behind the hero (flat outlines, no gradient) ----------
   const chRingsEl = document.getElementById('ch-rings');
