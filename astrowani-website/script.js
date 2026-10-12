@@ -700,6 +700,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 250);
   })();
 
+  // ---------- hero phone carousel: cycle which phone is centre, every 5s ----------
+  // Each phone already has a one-time scroll-triggered entrance
+  // (reveal-grow / reveal-grow-left / reveal-grow-right, from the reveal
+  // system above). Once that has actually finished, this hands the three
+  // elements over to style.css's .ch-phone-cycle / slot-center/left/right —
+  // whose resting values are IDENTICAL to the entrance's own end state, so
+  // the handover is invisible — and rotates which element holds which slot
+  // every 5s. The old entrance classes are explicitly REMOVED on handover:
+  // `.ch-phone-side.reveal-grow-left.is-visible` is three classes deep and
+  // would otherwise out-specificity the two-class slot rules and freeze that
+  // phone's rotation/position forever, no matter which slot it is later given.
+  (() => {
+    const stage = document.querySelector('.ch-stage');
+    if (!stage) return;
+    const center = stage.querySelector('.ch-phone.reveal-grow');
+    const left = stage.querySelector('.ch-phone-side.reveal-grow-left');
+    const right = stage.querySelector('.ch-phone-side.reveal-grow-right');
+    if (!center || !left || !right) return;
+    // .ch-phone-side { display: none } below 760px — only the centre phone
+    // shows at all on a phone screen, so there is nothing to cycle.
+    if (window.matchMedia('(max-width: 760px)').matches) return;
+    // Respected by not starting the repeating swap at all, rather than
+    // leaving it running with the CSS transitions stripped out (which would
+    // make the phones teleport between slots every 5s — worse than either
+    // full motion or none).
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const SLOT_CLASSES = ['slot-center', 'slot-left', 'slot-right'];
+    function handOverToCarousel() {
+      let order = [center, left, right]; // order[0] is whoever currently sits centre
+      [center, left, right].forEach((el) => {
+        el.classList.remove('reveal', 'reveal-grow', 'reveal-grow-left', 'reveal-grow-right', 'is-visible', 'ch-phone-side');
+        el.classList.add('ch-phone-cycle');
+      });
+      order.forEach((el, i) => el.classList.add(SLOT_CLASSES[i]));
+      if (reduceMotion) return;
+      setInterval(() => {
+        order.forEach((el) => el.classList.remove(...SLOT_CLASSES));
+        // Round-robin: whoever was on the left takes the centre, the centre
+        // phone moves right, and the right phone comes back round to the left.
+        order = [order[1], order[2], order[0]];
+        order.forEach((el, i) => el.classList.add(SLOT_CLASSES[i]));
+      }, 5000);
+    }
+
+    if (center.classList.contains('is-visible')) {
+      handOverToCarousel();
+    } else {
+      const waitForEntrance = setInterval(() => {
+        if (!center.classList.contains('is-visible')) return;
+        clearInterval(waitForEntrance);
+        handOverToCarousel();
+      }, 200);
+    }
+  })();
+
   // ---------- concentric rings behind the hero (flat outlines, no gradient) ----------
   const chRingsEl = document.getElementById('ch-rings');
   if (chRingsEl) {

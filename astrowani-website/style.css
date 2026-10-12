@@ -491,6 +491,50 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 }
 .ch-phone-side.reveal-grow-right.is-visible { transform: rotate(10deg) scale(1); }
 
+/* Hero phone CAROUSEL — takes over from the one-time reveal-grow* entrance
+   above once it finishes (script.js), and cycles which phone sits in which
+   slot every 5s. Each slot's left/top/width/height/border/transform here is
+   IDENTICAL to that slot's reveal-grow*.is-visible end state, so the handover
+   has nothing to animate and causes no jump — only the later slot SWAPS do.
+   Growing into slot-center vs shrinking into slot-left/right, across phones
+   that are genuinely different box sizes (320x640 vs 190x380, different
+   border width/radius), is what makes a swap read as "zoom in / zoom out",
+   not just a slide — no separate zoom keyframe needed. */
+.ch-phone-cycle {
+  transition:
+    left 1.3s cubic-bezier(.65,0,.35,1), top 1.3s cubic-bezier(.65,0,.35,1),
+    width 1.3s cubic-bezier(.65,0,.35,1), height 1.3s cubic-bezier(.65,0,.35,1),
+    transform 1.3s cubic-bezier(.65,0,.35,1), border-width 1.3s cubic-bezier(.65,0,.35,1),
+    border-radius 1.3s cubic-bezier(.65,0,.35,1), opacity 1.3s ease,
+    z-index 0s linear .4s;
+  transform-origin: center center;
+}
+.ch-phone-cycle .ch-phone-screen { transition: border-radius 1.3s cubic-bezier(.65,0,.35,1); }
+
+.ch-phone-cycle.slot-center {
+  left: 50%; top: -10px; width: 320px; height: 640px;
+  border-width: 10px; border-radius: 52px; opacity: 1; z-index: 2;
+  transform: translateX(-50%) scale(1) rotate(0deg);
+}
+.ch-phone-cycle.slot-center .ch-phone-screen { border-radius: 42px; }
+
+.ch-phone-cycle.slot-left {
+  left: calc(50% - 360px); top: 150px; width: 190px; height: 380px;
+  border-width: 7px; border-radius: 40px; opacity: .85; z-index: 1;
+  transform: translateX(0) scale(1) rotate(-10deg);
+}
+.ch-phone-cycle.slot-right {
+  left: calc(50% + 170px); top: 150px; width: 190px; height: 380px;
+  border-width: 7px; border-radius: 40px; opacity: .85; z-index: 1;
+  transform: translateX(0) scale(1) rotate(10deg);
+}
+.ch-phone-cycle.slot-left .ch-phone-screen,
+.ch-phone-cycle.slot-right .ch-phone-screen { border-radius: 32px; }
+/* No prefers-reduced-motion override here on purpose: script.js never starts
+   the repeating swap at all for that preference, rather than leaving the
+   transitions in place and having the phones teleport instantly between
+   slots every 5s, which would be worse than either full motion or none. */
+
 /* hero: one-time cinematic entrance on load */
 @keyframes heroRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes heroPop { from { opacity: 0; transform: scale(.93); } to { opacity: 1; transform: scale(1); } }
