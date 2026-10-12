@@ -692,6 +692,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!revealEls.some((el) => !el.classList.contains('is-visible'))) clearInterval(sweepTimer);
   }, 250);
 
+  // ---------- FAQ accordion: one open at a time, toggle on click ----------
+  // max-height is set to the wrap's real scrollHeight, not a CSS keyword — "auto"
+  // and "none" can't be transitioned, and the grid-template-rows: 0fr -> 1fr trick
+  // does not reserve space for text content inside an auto-height ancestor, so a
+  // just-opened answer measured a few pixels tall instead of its real height.
+  function closeFaqItem(item) {
+    item.removeAttribute('data-open');
+    item.querySelector('.faq-q')?.setAttribute('aria-expanded', 'false');
+    item.querySelector('.faq-a-wrap').style.maxHeight = '0px';
+  }
+  function openFaqItem(item) {
+    const wrap = item.querySelector('.faq-a-wrap');
+    item.setAttribute('data-open', '');
+    item.querySelector('.faq-q')?.setAttribute('aria-expanded', 'true');
+    wrap.style.maxHeight = `${wrap.scrollHeight}px`;
+  }
+  document.querySelectorAll('.faq-item').forEach((item) => {
+    const btn = item.querySelector('.faq-q');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const opening = !item.hasAttribute('data-open');
+      // Close every other item first, so only one answer is ever open — a long
+      // page of simultaneously-open answers is what an accordion exists to avoid.
+      document.querySelectorAll('.faq-item[data-open]').forEach((openItem) => {
+        if (openItem !== item) closeFaqItem(openItem);
+      });
+      if (opening) openFaqItem(item); else closeFaqItem(item);
+    });
+  });
+
   // ---------- odometer: digits roll down from above into place ----------
   function buildOdometer(el) {
     const text = el.getAttribute('data-text') || el.textContent;

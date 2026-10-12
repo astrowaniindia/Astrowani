@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=18">
-<link rel="stylesheet" href="aw/aw.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="aw/aw.css?v=19">
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 </head>
 <body>
@@ -18,7 +18,7 @@
 <div id="scroll-progress"></div>
 
 <!-- Floating nav: hidden above the viewport, slides down once the hero's own pill nav
-     scrolls out of view (see script.js?v=18 onScroll), reverses on the way back up. -->
+     scrolls out of view (see script.js?v=19 onScroll), reverses on the way back up. -->
 <div id="site-nav-floating">
   <div class="nav-inner">
     <a href="index.html" style="display:flex; align-items:center; gap:10px;">
@@ -133,7 +133,7 @@
   <!-- full-bleed: breaks out of the centered .block so the fade sits at the real screen edges -->
   <div class="astro-marquee-wrap">
     <div class="astro-marquee-track astro-marquee-track-ltr" id="astro-marquee-track">
-      <!-- astrologer cards (half the featured set) are injected twice by script.js?v=18 for a seamless loop -->
+      <!-- astrologer cards (half the featured set) are injected twice by script.js?v=19 for a seamless loop -->
     </div>
   </div>
   <div class="astro-marquee-wrap" style="margin-top:20px;">
@@ -326,7 +326,7 @@
     </div>
 
     <div class="cat-grid" id="home-cat-grid">
-      <!-- rendered by script.js?v=18 from the real app categories in astrologers-data.js -->
+      <!-- rendered by script.js?v=19 from the real app categories in astrologers-data.js -->
     </div>
   </div>
 </div>
@@ -406,7 +406,7 @@
       <a href="astrologers.html" class="magnetic" style="font-size:14.5px; font-weight:800; color:var(--maroon); border:1.5px solid var(--border-soft); padding:11px 20px; border-radius:999px;">View all astrologers →</a>
     </div>
     <div id="home-more-astrologers" class="astro-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
-      <!-- rendered by script.js?v=18 from astrologers-data.js, a fresh batch not shown in the marquee -->
+      <!-- rendered by script.js?v=19 from astrologers-data.js, a fresh batch not shown in the marquee -->
     </div>
   </div>
 </div>
@@ -421,18 +421,53 @@
     <div class="eyebrow">Frequently asked</div>
     <h2 class="serif" style="margin:0 0 36px; font-size:34px; font-weight:400; color:var(--maroon);">Why do you need astrology?</h2>
 
-    <div style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+    <!-- Each question is a <button> (not a <div>) so it is keyboard-focusable and
+         screen readers announce it as a toggle; aria-expanded is the single source
+         of truth the CSS and script.js both key off (see .faq-item[data-open] rule
+         and the click handler in script.js). Collapsed by default, one open at a
+         time: a wall of open text defeats the point of an accordion. -->
+    <div class="faq-list" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
       <div class="faq-item reveal reveal-slide-left">
-        <div class="faq-q">How does an online astrology consultation work?</div>
-        <div class="faq-a">Share your date, time and place of birth, choose an astrologer and start a chat, call or video session in minutes.</div>
+        <button class="faq-q" type="button" aria-expanded="false">
+          <span>How does an online astrology consultation work?</span>
+          <svg class="faq-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a-wrap"><div class="faq-a">Share your date, time and place of birth, choose an astrologer and start a chat, call or video session in minutes.</div></div>
       </div>
       <div class="faq-item reveal reveal-slide-left">
-        <div class="faq-q">Are the astrologers on Astrowani verified?</div>
-        <div class="faq-a">Every astrologer goes through a review before they can take consultations, so you always talk to a genuine expert.</div>
+        <button class="faq-q" type="button" aria-expanded="false">
+          <span>Are the astrologers on Astrowani verified?</span>
+          <svg class="faq-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a-wrap"><div class="faq-a">Every astrologer goes through a review before they can take consultations, so you always talk to a genuine expert.</div></div>
       </div>
       <div class="faq-item reveal reveal-slide-left">
-        <div class="faq-q">Is my first consultation really free?</div>
-        <div class="faq-a">New users get a free introductory call so you can experience a reading before adding money to your wallet.</div>
+        <button class="faq-q" type="button" aria-expanded="false">
+          <span>Is my first consultation really free?</span>
+          <svg class="faq-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a-wrap"><div class="faq-a">New users get a free introductory call so you can experience a reading before adding money to your wallet.</div></div>
+      </div>
+      <div class="faq-item reveal reveal-slide-left">
+        <button class="faq-q" type="button" aria-expanded="false">
+          <span>Is my wallet balance the same on the website and the app?</span>
+          <svg class="faq-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a-wrap"><div class="faq-a">Yes. Your wallet is tied to your phone number, so a recharge here shows up the moment you open the app with the same number, and vice versa.</div></div>
+      </div>
+      <div class="faq-item reveal reveal-slide-left">
+        <button class="faq-q" type="button" aria-expanded="false">
+          <span>What if I'm not satisfied with a consultation?</span>
+          <svg class="faq-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a-wrap"><div class="faq-a">You're only billed for the minutes you actually spend talking, and you can end a chat, call or video session at any time from your side.</div></div>
+      </div>
+      <div class="faq-item reveal reveal-slide-left">
+        <button class="faq-q" type="button" aria-expanded="false">
+          <span>Can I talk to the same astrologer every time?</span>
+          <svg class="faq-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a-wrap"><div class="faq-a">Yes — search for them by name or save them as a favourite, and your past conversations stay in your history so they have the context already.</div></div>
       </div>
     </div>
   </div>
@@ -468,7 +503,7 @@
 </footer>
 
 <script src="astrologers-data.js"></script>
-<script src="script.js?v=18"></script>
-<script type="module" src="aw/boot.js?v=18"></script>
+<script src="script.js?v=19"></script>
+<script type="module" src="aw/boot.js?v=19"></script>
 </body>
 </html>

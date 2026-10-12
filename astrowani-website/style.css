@@ -307,8 +307,10 @@ img { max-width: 100%; display: block; }
 .band-tint { background: var(--band-tint); }
 section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 
-/* scroll progress bar */
-#scroll-progress { position: fixed; top: 0; left: 0; height: 3px; width: 0%; background: var(--gold); z-index: 70; }
+/* scroll progress bar — z-index must beat #site-nav-floating (also 70, below), or the
+   floating nav paints over this 3px strip the moment it slides down and the line
+   appears to "vanish" exactly when the second nav bar shows up. */
+#scroll-progress { position: fixed; top: 0; left: 0; height: 3px; width: 0%; background: var(--gold); z-index: 80; }
 
 /* nav: shrinks + gains depth once you scroll past the hero */
 #site-nav { position: sticky; top: 0; z-index: 40; background: var(--maroon); border-bottom: 1px solid color-mix(in srgb, var(--gold) 25%, transparent); transition: box-shadow .35s ease; }
@@ -731,10 +733,25 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
 .app-3d-model { width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
 @media (max-width: 760px) { .app-3d-stage { width: 100%; max-width: 100%; } .app-3d-model { height: 340px; } }
 
-/* FAQ */
-.faq-item { background: var(--paper); border-radius: 18px; padding: 22px 26px; box-shadow: 0 8px 20px -16px var(--shadow-color); transition: transform .3s cubic-bezier(.16,.84,.44,1), box-shadow .3s cubic-bezier(.16,.84,.44,1), opacity .8s cubic-bezier(.16,.84,.44,1); }
-.faq-q { font-size: 15.5px; font-weight: 800; color: var(--maroon); margin-bottom: 6px; }
-.faq-a { font-size: 14px; color: var(--ink-soft); line-height: 1.6; }
+/* FAQ — accordion. .faq-q is a <button> (padding replaces the old wrapper's), so
+   it carries its own focus ring and is reachable by keyboard without extra markup. */
+.faq-item { background: var(--paper); border-radius: 18px; padding: 4px 26px; box-shadow: 0 8px 20px -16px var(--shadow-color); transition: transform .3s cubic-bezier(.16,.84,.44,1), box-shadow .3s cubic-bezier(.16,.84,.44,1), opacity .8s cubic-bezier(.16,.84,.44,1); }
+.faq-q {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  width: 100%; margin: 0; padding: 18px 0;
+  background: none; border: none; cursor: pointer; text-align: left; font-family: inherit;
+  font-size: 15.5px; font-weight: 800; color: var(--maroon);
+}
+.faq-q:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; border-radius: 6px; }
+.faq-arrow { flex: 0 0 auto; color: var(--maroon); transition: transform .3s cubic-bezier(.16,.84,.44,1); }
+.faq-q[aria-expanded="true"] .faq-arrow { transform: rotate(180deg); }
+/* max-height is set to the answer's real scrollHeight in px by script.js just
+   before data-open is added (see the FAQ accordion handler) — a plain CSS
+   percentage/auto trick (grid-template-rows: 0fr -> 1fr, or max-height: 0 -> none)
+   cannot transition to a text block's true height, so JS measures it once. */
+.faq-a-wrap { max-height: 0; overflow: hidden; transition: max-height .35s cubic-bezier(.16,.84,.44,1); }
+.faq-a { font-size: 14px; color: var(--ink-soft); line-height: 1.6; padding-bottom: 18px; }
+@media (prefers-reduced-motion: reduce) { .faq-a-wrap, .faq-arrow { transition: none; } }
 
 /* footer */
 footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: var(--cream-muted); }
