@@ -179,8 +179,19 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
   }
 
   // ── Brand ─────────────────────────────────────────────────────────────────
-  // The owner's actual requirement: Astrowani named several times, not once.
-  if (mentions < L.minAstrowaniMentions) fail('TOO_FEW_BRAND_MENTIONS', `${mentions} < ${L.minAstrowaniMentions}`);
+  // The owner's actual requirement: Astrowani named several times per article,
+  // not once. It is the FINAL article that has to satisfy that.
+  //
+  // The draft floor is lower than the final one, for the same reason the link
+  // check is skipped on a draft: generate.assemble() appends the CTA, which names
+  // Astrowani two or three more times. Holding the draft to the final number
+  // rejects articles that would have passed once assembled — measured against the
+  // real API on 2026-10-13, three generations in a row came back with exactly 3
+  // mentions and were discarded, when assembly would have taken them to 5-6.
+  const mentionFloor = stage === 'draft'
+    ? Math.max(1, L.minAstrowaniMentions - 2)
+    : L.minAstrowaniMentions;
+  if (mentions < mentionFloor) fail('TOO_FEW_BRAND_MENTIONS', `${mentions} < ${mentionFloor} (${stage})`);
   if (mentions > L.maxAstrowaniMentions) fail('TOO_MANY_BRAND_MENTIONS', `${mentions} > ${L.maxAstrowaniMentions}`);
   // Spelling matters more than it looks. "Astro Wani" and "Astrovani" are
   // DIFFERENT TOKENS to a search engine, so mentions split across them are

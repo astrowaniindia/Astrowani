@@ -91,14 +91,21 @@ KEYWORD RULES - this article has to be findable
 - Use it ${limits.minKeywordHits + 2} to 6 times across the whole article and NO more. Stuffing it reads as
   spam and is rejected. Use natural variations the rest of the time.
 
-LENGTH AND SHAPE
-- English body: ${minWords}-${limits.maxWordsEn - 400} words of real substance. No padding to hit a number.
-- ${limits.minH2 + 1} to 6 <h2> sections with specific, useful headings. Use <h3> for sub-points.
+LENGTH - READ THIS TWICE, IT IS THE MOST COMMON FAILURE
+- The English body MUST be at least ${minWords} words. Aim for ${minWords + 300}. An article under
+  ${limits.minWordsEn} words is DISCARDED by the publishing system and the work is wasted.
+- ${limits.minH2 + 1} to 6 <h2> sections, each with 2-4 full paragraphs under it. A heading
+  followed by two sentences is the thing that makes an article too short - every section
+  needs real explanation, an example, and what to do about it.
+- No padding, though: get the length from being SPECIFIC, not from repeating yourself or
+  writing an introduction to the introduction.
+
+SHAPE
 - Open with 2-3 sentences that answer the question immediately - do not warm up. Someone
   who reads only the first paragraph should already have the answer.
 - Include at least one <ul> list of practical points, and where it fits a short <table>
   (for example a planet, its day, and its remedy).
-- Mention Astrowani ${limits.minAstrowaniMentions} to 7 times, woven into sentences.
+- Mention Astrowani ${limits.minAstrowaniMentions + 1} to 7 times, woven into sentences. Count them before you answer.
 
 HTML RULES - obeyed exactly
 - Body is HTML using ONLY: <p> <h2> <h3> <ul> <ol> <li> <strong> <em> <blockquote>
@@ -106,13 +113,6 @@ HTML RULES - obeyed exactly
 - NO <h1>, NO <a> links, NO <img>, NO <script>, NO inline style attributes, NO classes.
   Links and images are added afterwards by the publishing system - do not write any.
 - No markdown. No code fences. HTML tags only.
-
-HINDI
-- Write a full Hindi version in Devanagari script, not a transliteration and not a
-  word-for-word translation - rewrite it the way a Hindi-speaking astrologer would say it.
-  Keep the same headings and structure. At least ${limits.minWordsHi + 100} words.
-- Common English terms Hindi readers already use (chat, call, video, app, Astrowani) stay
-  in their usual form.
 
 ${recentTitles && recentTitles.length ? `ALREADY PUBLISHED - do not retread these, and do not reuse their opening lines or structure:
 ${recentTitles.slice(0, 20).map((t) => `- ${t}`).join('\n')}
@@ -127,23 +127,63 @@ ${links.map((l) => `- ${l.anchor}`).join('\n')}
 Return ONLY a JSON object, no prose around it, with exactly these keys:
 {
   "titleEn": "under ${limits.titleMaxChars} characters, contains the keyword, written to be clicked",
-  "titleHi": "the Hindi title in Devanagari",
   "metaDescription": "${limits.metaMinChars}-${limits.metaMaxChars - 10} characters, contains the keyword, reads as a promise of the answer",
-  "metaDescriptionHi": "the same in Hindi, same length range",
   "excerpt": "90-200 characters, the one-line teaser used on blog cards",
-  "excerptHi": "the same in Hindi",
   "imageQuery": "2-4 ENGLISH words to search a stock photo library for a photograph that suits this article. Concrete and photographable - 'temple oil lamp', 'indian bride hands', 'night sky stars'. Never abstract, never a named deity or a chart diagram.",
   "imageAlt": "a plain description of that image for alt text, containing the keyword if it reads naturally",
-  "contentEn": "the full English body as HTML",
-  "contentHi": "the full Hindi body as HTML",
+  "contentEn": "the full English body as HTML, at least ${minWords} words",
   "faqs": [
     { "question": "a question people really ask about this", "answer": "2-4 sentences, plain text, no HTML" }
-  ],
-  "faqsHi": [
-    { "question": "the same question in Hindi", "answer": "the answer in Hindi, plain text" }
   ]
 }
-Give ${limits.minFaqs + 1} to 4 FAQs. The first FAQ should be the single most common question on this subject.`;
+Give ${limits.minFaqs + 1} to 4 FAQs. The first FAQ should be the single most common question on this subject.
+Write the English only. The Hindi version is requested separately.`;
+}
+
+/**
+ * The Hindi pass: translate the finished English article.
+ *
+ * It is given the ACTUAL English HTML rather than the topic, so the two versions
+ * say the same thing and share a heading structure — a reader toggling EN/HI on
+ * one URL expects one article in two languages, not two loosely related ones.
+ */
+function buildHindiPrompt({ topic, limits, titleEn, contentEn, faqs }) {
+  return `Below is a finished Astrowani blog article in English. Produce the Hindi version.
+
+HOW TO TRANSLATE IT
+- Devanagari script. NOT transliteration — "मंगल दोष", never "mangal dosh" in Latin letters.
+- Rewrite it the way a Hindi-speaking astrologer would actually say it, rather than
+  word-for-word. Natural Hindi, not translated-sounding Hindi.
+- Keep the SAME structure: the same number of <h2> sections, in the same order, saying the
+  same things. The two versions are shown on one page behind a language toggle.
+- At least ${limits.minWordsHi + 150} words. Do not summarise or shorten the article.
+- Terms Hindi readers already use in English stay in English: chat, call, video, app,
+  Astrowani, kundali. Keep every "Astrowani" exactly as spelled.
+
+HTML RULES - obeyed exactly
+- ONLY these tags: <p> <h2> <h3> <ul> <ol> <li> <strong> <em> <blockquote> <table> <thead>
+  <tbody> <tr> <th> <td>
+- NO <a> links, NO <img>, NO <script>, NO style or class attributes, NO markdown, no code
+  fences. Links are added afterwards by the publishing system.
+
+TITLE: ${titleEn}
+
+ARTICLE:
+${contentEn}
+
+FAQS:
+${(faqs || []).map((f, i) => `${i + 1}. Q: ${f.question}\n   A: ${f.answer}`).join('\n')}
+
+Return ONLY a JSON object, no prose around it:
+{
+  "titleHi": "the Hindi title in Devanagari",
+  "metaDescriptionHi": "${limits.metaMinChars}-${limits.metaMaxChars - 10} characters, in Hindi",
+  "excerptHi": "90-200 characters, in Hindi, the teaser used on blog cards",
+  "contentHi": "the full Hindi body as HTML, at least ${limits.minWordsHi + 150} words",
+  "faqsHi": [
+    { "question": "the question in Hindi", "answer": "the answer in Hindi, plain text, no HTML" }
+  ]
+}`;
 }
 
 /**
@@ -240,33 +280,76 @@ function normaliseFaqs(v) {
  * fixture in a test.
  */
 async function draft({ topic, limits, related = [], recentTitles = [], log = () => {} }) {
-  const { text, model, tier } = await callGemini({
+  // ── Call 1: the English article ──────────────────────────────────────────
+  //
+  // TWO CALLS, NOT ONE, AND THIS IS THE REASON. The first version asked for both
+  // languages plus the FAQs in a single reply, and measured against the real API
+  // on 2026-10-13 it failed every time: gemini-3.5-flash-lite returned ~8,000
+  // characters TOTAL and split them across the two languages, giving 391-553
+  // English words against a 700-word floor. It was not hitting MAX_TOKENS — it
+  // finished with STOP, having budgeted its own answer. A model asked for two
+  // articles writes two half-articles.
+  //
+  // Splitting them gives each call the full output budget. The cost is one extra
+  // request per article, so six a day instead of three, which is still nowhere
+  // near any free-tier limit.
+  const first = await callGemini({
     system: SYSTEM,
     prompt: buildPrompt({ topic, limits, related, recentTitles }),
     json: true,
-    temperature: 0.9,       // these are 1,000 articles on adjacent subjects; sameness is the risk
-    maxOutputTokens: 16384, // two full languages plus FAQs in one reply
+    temperature: 0.9, // these are a thousand articles on adjacent subjects; sameness is the risk
+    maxOutputTokens: 16384,
     log,
   });
-
-  const raw = parseJson(text);
+  const raw = parseJson(first.text);
 
   const clean = (v, max) => normaliseBrand(seo.stripHtml(pickString(v))).slice(0, max);
+  const contentEn = normaliseBrand(sanitiseHtml(raw.contentEn));
+  const titleEn = clean(raw.titleEn, 200);
+  const faqs = normaliseFaqs(raw.faqs);
+
+  // ── Call 2: the Hindi version, from the finished English ─────────────────
+  //
+  // Translating the completed article (rather than generating Hindi from the
+  // topic again) keeps the two versions saying the same thing — which matters,
+  // because a reader toggling EN/HI on one URL expects one article, not two
+  // loosely related ones. It also means the Hindi inherits the English's
+  // structure, so the headings line up.
+  //
+  // Hindi is best-effort: a failure here leaves the Hindi columns empty and the
+  // apps fall back to English, which is the pre-existing behaviour. Losing the
+  // Hindi is not a reason to throw away a good English article.
+  let hindi = {};
+  let hindiModel = null;
+  try {
+    const second = await callGemini({
+      system: SYSTEM,
+      prompt: buildHindiPrompt({ topic, limits, titleEn, contentEn, faqs }),
+      json: true,
+      temperature: 0.7, // a translation, so less room to wander than the original
+      maxOutputTokens: 16384,
+      log,
+    });
+    hindi = parseJson(second.text) || {};
+    hindiModel = second.model;
+  } catch (err) {
+    log(`  Hindi pass failed (${err.message.slice(0, 120)}) — publishing English only`);
+  }
 
   return {
-    model: `${model} (${tier})`,
-    titleEn: clean(raw.titleEn, 200),
-    titleHi: clean(raw.titleHi, 200),
+    model: `${first.model} (${first.tier})${hindiModel && hindiModel !== first.model ? ` + ${hindiModel} for hi` : ''}`,
+    titleEn,
+    titleHi: clean(hindi.titleHi, 200),
     metaDescription: clean(raw.metaDescription, 400),
-    metaDescriptionHi: clean(raw.metaDescriptionHi, 400),
+    metaDescriptionHi: clean(hindi.metaDescriptionHi, 400),
     excerpt: clean(raw.excerpt, 600),
-    excerptHi: clean(raw.excerptHi, 600),
+    excerptHi: clean(hindi.excerptHi, 600),
     imageQuery: seo.stripHtml(pickString(raw.imageQuery)).slice(0, 120),
     imageAlt: clean(raw.imageAlt, 220),
-    contentEn: normaliseBrand(sanitiseHtml(raw.contentEn)),
-    contentHi: normaliseBrand(sanitiseHtml(raw.contentHi)),
-    faqs: normaliseFaqs(raw.faqs),
-    faqsHi: normaliseFaqs(raw.faqsHi),
+    contentEn,
+    contentHi: normaliseBrand(sanitiseHtml(hindi.contentHi)),
+    faqs,
+    faqsHi: normaliseFaqs(hindi.faqsHi),
   };
 }
 
@@ -372,6 +455,7 @@ module.exports = {
   normaliseBrand,
   weaveInternalLinks,
   buildPrompt,
+  buildHindiPrompt,
   normaliseFaqs,
   ALLOWED_TAGS,
   SYSTEM,

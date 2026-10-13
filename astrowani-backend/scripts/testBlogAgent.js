@@ -505,6 +505,66 @@ ok('unparseable input throws rather than returning junk', (() => {
 })());
 
 // ═══════════════════════════════════════════════════════════════════════════
+section('the two-call split and the stage-aware brand floor');
+// ═══════════════════════════════════════════════════════════════════════════
+// THE REGRESSION THIS GUARDS, measured against the real API 2026-10-13: asking
+// for both languages in one reply made gemini-3.5-flash-lite budget ~8,000 chars
+// across them, yielding 391-553 English words against a 700 floor — three
+// rejections in a row. The English and Hindi are now separate calls.
+const enPrompt = generate.buildPrompt({ topic: TOPIC, limits: LIMITS, related: [], recentTitles: [] });
+ok('the English prompt no longer asks for Hindi', !/HINDI/.test(enPrompt), 'still asks for Hindi');
+ok('  and does not request contentHi', !/contentHi/.test(enPrompt));
+ok('  and says so explicitly', /Hindi version is requested separately/.test(enPrompt));
+ok('  and states a hard word floor', new RegExp(`at least ${LIMITS.minWordsEn + 150} words`).test(enPrompt), 'no floor stated');
+ok('  and warns that a short article is discarded', /DISCARDED/.test(enPrompt));
+ok('the English prompt still forbids links and images', /NO <a> links/.test(enPrompt) && /NO <img>/.test(enPrompt));
+
+const hiPrompt = generate.buildHindiPrompt({
+  topic: TOPIC, limits: LIMITS, titleEn: 'Mangal Dosh', contentEn: '<p>The body.</p><h2>A section</h2>',
+  faqs: [{ question: 'Q one?', answer: 'A one.' }],
+});
+ok('the Hindi prompt carries the finished English body', hiPrompt.includes('<p>The body.</p>'), 'english body missing');
+ok('  and the English title', hiPrompt.includes('Mangal Dosh'));
+ok('  and the FAQs to translate', hiPrompt.includes('Q one?') && hiPrompt.includes('A one.'));
+ok('  and demands Devanagari, not transliteration', /Devanagari/.test(hiPrompt) && /NOT transliteration/.test(hiPrompt));
+ok('  and forbids links, so assembly stays the only link source', /NO <a> links/.test(hiPrompt));
+ok('  and asks only for the Hindi keys', /contentHi/.test(hiPrompt) && !/"contentEn"/.test(hiPrompt));
+
+// The brand floor must be LOWER on a draft than on the final article, because
+// assemble() appends a CTA naming Astrowani twice more. A draft with 3 mentions
+// is fine; the published article must still reach 4.
+const threeArt = goodArticle({
+  contentEn: goodArticle().contentEn.replace(/Astrowani/g, 'the platform')
+    + '<p>Astrowani has verified astrologers. Astrowani is available by chat. Ask on Astrowani.</p>',
+});
+const draftThree = quality.check(threeArt, { keyword: KEYWORD, limits: LIMITS, stage: 'draft' });
+ok('a DRAFT with 3 brand mentions is accepted', !draftThree.rejections.some((r) => r.startsWith('TOO_FEW_BRAND_MENTIONS')),
+  draftThree.rejections.join('; '));
+eq('  (it really has 3)', draftThree.stats.mentions, 3);
+const finalTwo = quality.check(
+  goodArticle({ contentEn: goodArticle().contentEn.replace(/Astrowani/g, 'the platform') + '<p>Astrowani. Astrowani.</p>' }),
+  { keyword: KEYWORD, limits: LIMITS, stage: 'final' },
+);
+ok('a FINAL article with 2 brand mentions is rejected', finalTwo.rejections.some((r) => r.startsWith('TOO_FEW_BRAND_MENTIONS')),
+  finalTwo.rejections.join('; '));
+// And assembly must genuinely lift a 3-mention draft over the final floor —
+// otherwise the lower draft floor would just move the rejection one step later.
+const liftedAsm = generate.assemble(threeArt, {
+  topic: TOPIC, slug: 's', imageUrl: null, related: [], publishedAt: '2026-10-13T00:00:00Z',
+});
+const liftedVerdict = quality.check(liftedAsm, { keyword: KEYWORD, limits: LIMITS, stage: 'final' });
+ok(`assembly lifts 3 mentions to ${liftedVerdict.stats.mentions}, clearing the final floor`,
+  liftedVerdict.stats.mentions >= LIMITS.minAstrowaniMentions, `${liftedVerdict.stats.mentions} mentions`);
+ok('  and that assembled article passes the final gate', liftedVerdict.ok, liftedVerdict.rejections.join('; '));
+// A draft with ZERO mentions is still rejected — the floor is lowered, not removed.
+const zeroMentions = quality.check(
+  goodArticle({ contentEn: goodArticle().contentEn.replace(/Astrowani/g, 'the platform') }),
+  { keyword: KEYWORD, limits: LIMITS, stage: 'draft' },
+);
+ok('a DRAFT with 0 brand mentions is still rejected',
+  zeroMentions.rejections.some((r) => r.startsWith('TOO_FEW_BRAND_MENTIONS')), zeroMentions.rejections.join('; '));
+
+// ═══════════════════════════════════════════════════════════════════════════
 section('sitemap and robots.txt must agree');
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require('fs');
