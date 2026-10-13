@@ -123,7 +123,7 @@ const ALL_GROUPS = [
     title: 'Customer Trackers',
     items: [
       { to: '/acquisition', label: 'Acquisition (All Channels)' },
-      { to: '/qr-codes', label: 'QR Codes (Offline)' },
+      { to: '/qr-codes', label: 'Tracking Links' },
       { to: '/audience', label: 'Audience Targeting' },
     ],
   },

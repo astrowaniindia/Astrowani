@@ -2,22 +2,28 @@ import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import client from '../api/client';
 
-// Offline QR posters — one printed code per physical location, and what each one
-// actually brought in.
+// Tracking Links — one short link per place you send people from (a printed QR poster,
+// a WhatsApp broadcast, an SMS blast, a bio link, anything), and what each one actually
+// brought in. Started as "offline QR posters only"; the mechanism never cared how the
+// link was shared, so this page now covers every link-based acquisition channel we run
+// ourselves (as opposed to Google Ads, which is tracked separately on the Acquisition page).
 //
-// HOW THE ATTRIBUTION WORKS: a poster's QR encodes OUR short link
-// (https://backend.astrowani.com/q/qr_<place>). That link logs the scan and redirects to
-// the Play Store with `referrer=utm_source=qr_<place>`. Play hands that string back to
+// HOW THE ATTRIBUTION WORKS: a link's short URL
+// (https://backend.astrowani.com/q/qr_<name>). Tapping it logs the hit and redirects to
+// the Play Store with `referrer=utm_source=qr_<name>`. Play hands that string back to
 // the app: on first launch the app reports the install, and at signup it is stored on the
 // customer (customers.acquisition_source). So the page shows the whole funnel:
-//   scans -> opened the app -> signed up -> paid.
+//   opened the link -> opened the app -> signed up -> paid.
 //
 // WHAT IT STILL CANNOT SHOW, stated on the page itself: an install that never opens the
-// app (Play Console counts those), and posters printed BEFORE the short link existed
-// (they point straight at the Play Store, so their scans are invisible to us).
+// app (Play Console counts those), and any older link that points straight at the Play
+// Store instead of through our short link (its taps are invisible to us).
 
-// The prefix is what keeps these posters from ever colliding with Google Ads or
-// organic Play traffic, which set their own utm_source. The backend enforces it too.
+// The prefix is what keeps these links from ever colliding with Google Ads or organic
+// Play traffic, which set their own utm_source. The backend enforces it too. Kept as
+// `qr_` rather than renamed, even though this page is no longer QR-only — every existing
+// link and every customer already attributed uses this prefix, and changing it would
+// either break them or need a data migration for no user-visible benefit.
 const QR_PREFIX = 'qr_';
 
 const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
@@ -29,12 +35,14 @@ const day = (s) => (s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit'
 const SCAN_BASE = 'https://backend.astrowani.com';
 
 /**
- * The link a poster's QR encodes.
+ * The tracking link for a source — shareable as-is (WhatsApp, SMS, a bio link) or turned
+ * into a QR code for printing.
  *
- * It points at OUR server, which logs the scan and then redirects to the Play Store with
+ * It points at OUR server, which logs the open and then redirects to the Play Store with
  * the referrer (see astrowani-backend/src/qrTrackingRoutes.js). Being much shorter than
- * a Play URL also makes the QR sparser: fewer, bigger dots scan faster from further away.
- * Nothing but the source is in the link — the backend builds the Play URL itself.
+ * a Play URL also makes the QR sparser when one is generated: fewer, bigger dots scan
+ * faster from further away. Nothing but the source is in the link — the backend builds
+ * the Play URL itself.
  */
 function storeLink(source) {
   return `${SCAN_BASE}/q/${source}`;
@@ -89,7 +97,7 @@ export default function QrCodes() {
   const [editing, setEditing] = useState(null);
   const [copied, setCopied] = useState('');
 
-  // Copies a poster's Play Store link. The label flips to "Copied" for a moment so
+  // Copies a tracking link. The label flips to "Copied" for a moment so
   // it's obvious the click did something.
   const copyLink = async (source) => {
     try {
@@ -115,7 +123,7 @@ export default function QrCodes() {
       setTruncated(!!data.truncated);
       setFunnelMissing(!!data.funnelMissing);
     } catch (e) {
-      setError(e.response?.data?.message || e.message || 'Failed to load QR posters.');
+      setError(e.response?.data?.message || e.message || 'Failed to load tracking links.');
     } finally {
       setLoading(false);
     }
@@ -142,7 +150,7 @@ export default function QrCodes() {
     e?.preventDefault();
     const source = toSource(form.source);
     if (!source || source === QR_PREFIX) {
-      window.alert('Give the poster a short code, e.g. "har_ki_pauri".');
+      window.alert('Give the link a short code, e.g. "whatsapp_oct2026".');
       return;
     }
     if (!editing && rows.some((r) => r.source === source && r.registered)) {
@@ -177,7 +185,7 @@ export default function QrCodes() {
   const toggleArchive = async (r) => {
     const next = !r.archived;
     if (!window.confirm(next
-      ? `Archive "${r.label || r.source}"? It stays in the reports but drops out of the main list.`
+      ? `Archive the link "${r.label || r.source}"? It stays in the reports but drops out of the main list.`
       : `Bring "${r.label || r.source}" back into the active list?`)) return;
     try {
       await client.put(`/api/admin/qr/sources/${encodeURIComponent(r.source)}`, { ...r, archived: next });
@@ -189,10 +197,11 @@ export default function QrCodes() {
 
   const remove = async (r) => {
     if (!window.confirm(
-      `Delete the poster "${r.label || r.source}"?\n\n` +
-      'Nothing is lost. It moves to "Archived & deleted posters" at the bottom of this page with ' +
+      `Delete the link "${r.label || r.source}"?\n\n` +
+      'Nothing is lost. It moves to "Archived & deleted links" at the bottom of this page with ' +
       'its name and every number, and you can restore it any time.\n\n' +
-      'Its QR keeps working: if the printed code is still on a wall, new scans will keep counting.',
+      'The link itself keeps working: if it is still out there (on a wall, in an old message), ' +
+      'new opens will keep counting.',
     )) return;
     try {
       await client.delete(`/api/admin/qr/sources/${encodeURIComponent(r.source)}`);
@@ -202,9 +211,9 @@ export default function QrCodes() {
     }
   };
 
-  // Active posters fill the main table AND the summary cards. Archived and deleted posters
+  // Active links fill the main table AND the summary cards. Archived and deleted links
   // are kept whole in their own section below, but do NOT count in the cards: deleting a
-  // poster is how you take it out of the numbers (a test poster, a wall that came down).
+  // link is how you take it out of the numbers (a test link, a campaign that ended).
   // Nothing is erased — the archive section shows their own totals.
   const visible = useMemo(() => rows.filter((r) => !r.archived && !r.deleted), [rows]);
   const archivedRows = useMemo(() => rows.filter((r) => r.archived || r.deleted), [rows]);
@@ -238,20 +247,21 @@ export default function QrCodes() {
 
   return (
     <div>
-      <h1 className="page-title">QR Codes (Offline)</h1>
+      <h1 className="page-title">Tracking Links</h1>
       <p className="muted" style={{ marginTop: -8, marginBottom: 16, maxWidth: 900 }}>
-        One printed code per location. Each poster carries its own Play Store link, so every customer
-        it brings in is tagged with that poster for life. Kept completely separate from Google Ads —
-        ad installs carry Google&apos;s own tag and can never appear here.
+        One short link per place you send people from — a printed QR poster, a WhatsApp broadcast,
+        an SMS blast, a bio link, anything. Each link carries its own Play Store referrer, so every
+        customer it brings in is tagged with that link for life. Kept completely separate from
+        Google Ads — ad installs carry Google&apos;s own tag and can never appear here.
       </p>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>How this works</h3>
         <ol className="muted" style={{ fontSize: 13, lineHeight: 1.8, margin: 0, paddingLeft: 18 }}>
-          <li><strong>Add a poster</strong> below — one per place you will stick a poster. Only the short code is required.</li>
-          <li>The page makes that poster&apos;s <strong>tracking link</strong> (our own short link, which sends people on to the Play Store). Copy it, or download it as a <strong>QR code</strong>.</li>
-          <li>Send the <strong>QR image</strong> to the printer. Never retype the link by hand.</li>
-          <li>Each poster&apos;s row then shows the whole path: <strong>scanned → opened the app → signed up → paid</strong>, with how much they paid.</li>
+          <li><strong>Add a link</strong> below — one per campaign or location. Only the short code is required.</li>
+          <li>The page makes its <strong>tracking link</strong> (our own short link, which sends people on to the Play Store). Copy it and paste it anywhere — WhatsApp, SMS, a social bio — or download it as a <strong>QR code</strong> if you're printing it.</li>
+          <li>If you're printing it, send the <strong>QR image</strong> to the printer. Never retype the link by hand.</li>
+          <li>Each link&apos;s row then shows the whole path: <strong>opened → opened the app → signed up → paid</strong>, with how much they paid.</li>
         </ol>
       </div>
 
@@ -269,9 +279,9 @@ export default function QrCodes() {
         <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--amber, #d97706)' }}>
           <strong>Tracking is not switched on yet.</strong>
           <p className="muted" style={{ margin: '6px 0 0' }}>
-            The database is missing the attribution columns, so every poster below will read zero no matter
-            how many people scan it. Run <code>astrowani-backend/sql/acquisition_source.sql</code>. You can
-            still create posters and print their codes now — they will start counting once it is applied.
+            The database is missing the attribution columns, so every link below will read zero no matter
+            how many people open it. Run <code>astrowani-backend/sql/acquisition_source.sql</code>. You can
+            still create links and share or print them now — they will start counting once it is applied.
           </p>
         </div>
       )}
@@ -288,12 +298,12 @@ export default function QrCodes() {
 
       <div className="stat-grid">
         {[
-          { label: 'QR scans', value: totals.scans, footer: `From ${totals.uniqueScans} different phone${totals.uniqueScans === 1 ? '' : 's'} · every scan counted` },
-          { label: 'Installed and opened the app', value: totals.opened, footer: totals.uniqueScans ? `${pct(totals.opened, totals.uniqueScans)} of the different phones that scanned` : 'No scans yet' },
-          { label: 'Customers from QR posters', value: totals.signups, footer: totals.opened ? `Verified their number · ${pct(totals.signups, totals.opened)} of installs that opened` : 'Verified their number' },
+          { label: 'Link opens', value: totals.scans, footer: `From ${totals.uniqueScans} different phone${totals.uniqueScans === 1 ? '' : 's'} · every open counted` },
+          { label: 'Installed and opened the app', value: totals.opened, footer: totals.uniqueScans ? `${pct(totals.opened, totals.uniqueScans)} of the different phones that opened the link` : 'No opens yet' },
+          { label: 'Customers from tracking links', value: totals.signups, footer: totals.opened ? `Verified their number · ${pct(totals.signups, totals.opened)} of installs that opened` : 'Verified their number' },
           { label: 'Of those, have paid', value: totals.paying, footer: totals.signups ? `${pct(totals.paying, totals.signups)} of the customers · completed at least one recharge` : 'Completed at least one recharge' },
-          { label: 'Money in from QR customers', value: inr(totals.revenue), footer: 'Total recharged, all time' },
-          { label: 'Best poster', value: best ? (best.label || best.source) : '—', footer: best ? `${inr(best.totalRecharged)} from ${best.signups} customers` : 'No signups yet' },
+          { label: 'Money in from tracked customers', value: inr(totals.revenue), footer: 'Total recharged, all time' },
+          { label: 'Best link', value: best ? (best.label || best.source) : '—', footer: best ? `${inr(best.totalRecharged)} from ${best.signups} customers` : 'No signups yet' },
         ].map((c) => (
           <div className="stat" key={c.label}>
             <div className="stat-header"><span className="label">{c.label}</span></div>
@@ -307,17 +317,17 @@ export default function QrCodes() {
 
       {archivedRows.length > 0 && (
         <p className="muted" style={{ fontSize: 12, margin: '8px 2px 0' }}>
-          These totals are for active posters only. {archivedRows.length} archived or deleted poster{archivedRows.length === 1 ? ' is' : 's are'} kept
-          separately at the bottom of the page ({archivedTotals.scans} scans · {archivedTotals.signups} customer{archivedTotals.signups === 1 ? '' : 's'} · {inr(archivedTotals.revenue)}) and are not counted above.
+          These totals are for active links only. {archivedRows.length} archived or deleted link{archivedRows.length === 1 ? ' is' : 's are'} kept
+          separately at the bottom of the page ({archivedTotals.scans} opens · {archivedTotals.signups} customer{archivedTotals.signups === 1 ? '' : 's'} · {inr(archivedTotals.revenue)}) and are not counted above.
         </p>
       )}
 
       <div className="card" style={{ marginTop: 20, marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${editing}` : 'Add a poster'}</h3>
+        <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${editing}` : 'Add a link'}</h3>
         <p className="muted" style={{ marginTop: -4 }}>
-          Create the poster first, then download its QR and send that exact image to the printer.
-          Generating the code here is what guarantees the link is right — a hand-typed URL that is one
-          character off produces a poster that tracks nothing.
+          Create the link first. If you're printing it, download its QR and send that exact image to
+          the printer — generating the code here is what guarantees the link is right, since a
+          hand-typed URL that is one character off produces a link that tracks nothing.
         </p>
         <form onSubmit={save} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
           <label>
@@ -338,27 +348,27 @@ export default function QrCodes() {
           </label>
           <label>
             <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>City</div>
-            <input type="text" placeholder="Haridwar" value={form.city}
+            <input type="text" placeholder="Haridwar (leave blank for a non-location campaign)" value={form.city}
               onChange={(e) => setForm({ ...form, city: e.target.value })} />
           </label>
           <label>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Exact spot</div>
-            <input type="text" placeholder="Left of the main stairs" value={form.location}
+            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Exact spot / channel</div>
+            <input type="text" placeholder="Left of the main stairs — or 'WhatsApp broadcast'" value={form.location}
               onChange={(e) => setForm({ ...form, location: e.target.value })} />
           </label>
           <label>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Put up on</div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Started on</div>
             <input type="date" value={form.placedAt}
               onChange={(e) => setForm({ ...form, placedAt: e.target.value })} />
           </label>
           <label>
             <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Note</div>
-            <input type="text" placeholder="Paid ₹500/month to the shop" value={form.note}
+            <input type="text" placeholder="e.g. Paid ₹500/month to the shop, or 20k-contact WhatsApp list" value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </label>
           {toSource(form.source) && toSource(form.source) !== QR_PREFIX && (
             <div style={{ gridColumn: '1 / -1' }}>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Tracking link for this poster (updates as you type)</div>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Tracking link for this code (updates as you type)</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <code style={{ flex: 1, minWidth: 260, wordBreak: 'break-all', fontSize: 11 }}>
                   {storeLink(toSource(form.source))}
@@ -367,10 +377,10 @@ export default function QrCodes() {
                   {copied === toSource(form.source) ? 'Copied ✓' : 'Copy link'}
                 </button>
               </div>
-              {/* Nothing is saved here: the QR is generated from the code just typed, so a
-                  QR can be downloaded without creating a poster. Attribution still works —
-                  it keys off the code inside the link, and an unsaved code shows up in the
-                  table as "unregistered" once a customer signs up through it. */}
+              {/* Nothing is saved here: the link/QR is generated from the code just typed, so
+                  it can be copied or downloaded without creating a registry entry. Attribution
+                  still works — it keys off the code inside the link, and an unsaved code shows
+                  up in the table as "unregistered" once a customer signs up through it. */}
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
                 <QrPreview source={toSource(form.source)} />
                 <div>
@@ -378,8 +388,9 @@ export default function QrCodes() {
                     Download QR (PNG)
                   </button>
                   <div className="muted" style={{ fontSize: 12, marginTop: 6, maxWidth: 380 }}>
-                    No need to save a poster first. Saving one only adds a name and location so you can
-                    recognise it later in the table.
+                    Only needed if you're printing this. For WhatsApp/SMS/social, just copy the
+                    link above. No need to save a link first either way — saving one only adds a
+                    name and location so you can recognise it later in the table.
                   </div>
                 </div>
               </div>
@@ -387,7 +398,7 @@ export default function QrCodes() {
           )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <button className="btn" type="submit" disabled={saving}>
-              {saving ? 'Saving…' : editing ? 'Save changes' : 'Add poster'}
+              {saving ? 'Saving…' : editing ? 'Save changes' : 'Add link'}
             </button>
             {editing && (
               <button className="btn secondary" type="button" onClick={() => {
@@ -404,7 +415,7 @@ export default function QrCodes() {
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
         <span className="muted" style={{ fontSize: 12 }}>
-          {visible.length} poster{visible.length === 1 ? '' : 's'}
+          {visible.length} link{visible.length === 1 ? '' : 's'}
         </span>
       </div>
 
@@ -414,8 +425,8 @@ export default function QrCodes() {
         <table>
           <thead>
             <tr>
-              <th>Poster</th>
-              <th title="Every scan of this poster's link (different phones in brackets)">Scans</th>
+              <th>Link</th>
+              <th title="Every open of this tracking link (different phones in brackets)">Opens</th>
               <th title="Installs that opened the app at least once">Opened app</th>
               <th>Signed up</th>
               <th>Paid</th>
@@ -430,7 +441,7 @@ export default function QrCodes() {
             {loading && <tr><td colSpan={10} className="empty">Loading…</td></tr>}
             {!loading && !visible.length && (
               <tr><td colSpan={10} className="empty">
-                No posters yet. Add one above, download its QR, and put it on the wall.
+                No tracking links yet. Add one above — share it, or download its QR if you're printing it.
               </td></tr>
             )}
             {!loading && visible.map((r) => (
@@ -446,7 +457,7 @@ export default function QrCodes() {
                         {r.placedAt ? ` · up since ${day(r.placedAt)}` : ''}
                       </div>
                       {!r.registered && (
-                        <span className="badge amber" title="Signups are arriving under this code, but no poster was created for it here.">
+                        <span className="badge amber" title="Signups are arriving under this code, but no link was created for it here.">
                           unregistered
                         </span>
                       )}
@@ -489,13 +500,13 @@ export default function QrCodes() {
                         </div>
                       </div>
 
-                      <h4 style={{ marginBottom: 6, marginTop: 20 }}>Customers from this poster</h4>
+                      <h4 style={{ marginBottom: 6, marginTop: 20 }}>Customers from this link</h4>
                       {detailLoading && <div className="empty">Loading…</div>}
                       {!detailLoading && detail && !detail.data.length && (
                         <div className="empty">
-                          Nobody has signed up from this poster yet. If it has been up a while, check that the
-                          printed code matches the one above, and compare against Play Console — people may be
-                          installing but not finishing signup.
+                          Nobody has signed up from this link yet. If it has been running a while, check that
+                          the shared link or printed code matches the one above, and compare against Play
+                          Console — people may be installing but not finishing signup.
                         </div>
                       )}
                       {!detailLoading && detail && !!detail.data.length && (
@@ -573,19 +584,19 @@ export default function QrCodes() {
       {archivedRows.length > 0 && (
         <details className="card" style={{ marginTop: 20 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-            Archived &amp; deleted posters ({archivedRows.length})
+            Archived &amp; deleted links ({archivedRows.length})
           </summary>
           <p className="muted" style={{ fontSize: 12, margin: '8px 0 12px' }}>
-            Kept for reference and NOT counted in the totals above. Together: {archivedTotals.scans} scans ·{' '}
+            Kept for reference and NOT counted in the totals above. Together: {archivedTotals.scans} opens ·{' '}
             {archivedTotals.opened} opened the app · {archivedTotals.signups} customer{archivedTotals.signups === 1 ? '' : 's'} ·{' '}
-            {inr(archivedTotals.revenue)} recharged. Any of them can be restored. If a printed code is still on a
-            wall, new scans keep counting here.
+            {inr(archivedTotals.revenue)} recharged. Any of them can be restored. If the link is still out
+            there (on a wall, in an old message), new opens keep counting here.
           </p>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Poster</th><th>Status</th><th>Scans</th><th>Opened app</th><th>Signed up</th>
+                  <th>Link</th><th>Status</th><th>Opens</th><th>Opened app</th><th>Signed up</th>
                   <th>Paid</th><th>Money in</th><th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -626,35 +637,37 @@ export default function QrCodes() {
         <h3 style={{ marginTop: 0 }}>How to read these numbers</h3>
         <ul className="muted" style={{ fontSize: 13, lineHeight: 1.7, margin: 0, paddingLeft: 18 }}>
           <li>
-            <strong>Scans</strong> counts every hit on the poster&apos;s short link, so someone scanning twice adds
+            <strong>Opens</strong> counts every tap/scan of the link, so someone opening it twice adds
             two. The brackets show how many different phones those came from — approximate, since people on
-            the same office or mobile network can occasionally look like one. Link-preview robots are ignored.
-            The install and signup percentages are measured against different phones, not raw scans.
+            the same office or mobile network can occasionally look like one. Link-preview robots (including
+            WhatsApp&apos;s own link-preview fetch) are ignored. The install and signup percentages are
+            measured against different phones, not raw opens.
           </li>
           <li>
-            <strong>Opened app</strong> is installs from the poster that were opened at least once — including
+            <strong>Opened app</strong> is installs from the link that were opened at least once — including
             people who never signed up. An install that is never opened is invisible to us; Play Console →
             Grow → Acquisition (group by <code>utm_source</code>) counts those.
           </li>
           <li>
-            <strong>Posters printed before the short link existed</strong> point straight at the Play Store,
-            so their scans are not counted — only opens and signups are. Print new codes from this page.
+            <strong>A link shared before this page existed, or one pointing straight at the Play Store</strong>
+            will not have its opens counted — only installs and signups are. Create new links from this page
+            so opens are counted too.
           </li>
           <li>
             <strong>Opens and signups only count from build 46 onward.</strong> Someone who installs an older
-            version through the same poster still opens the app, but nothing reports it.
+            version through the same link still opens the app, but nothing reports it.
           </li>
           <li>
-            <strong>iPhone scans will not appear.</strong> Apple provides no equivalent way to tell which
-            poster an install came from, so an iPhone-heavy spot can look dead here while still working.
+            <strong>iPhone opens will not appear.</strong> Apple provides no equivalent way to tell which
+            link an install came from, so an iPhone-heavy audience can look dead here while still working.
           </li>
           <li>
             <strong>Only new accounts are tagged.</strong> Someone who already had an account and
-            reinstalled after scanning is not counted — the poster did not win them.
+            reinstalled after opening the link is not counted — the link did not win them.
           </li>
           <li>
-            <strong>A poster reading zero after a week</strong> is worth checking before moving it: scan it
-            yourself with a phone that has never had the app, and confirm it opens the Play Store listing.
+            <strong>A link reading zero after a few days</strong> is worth checking before trusting it: open
+            it yourself from a phone that has never had the app, and confirm it opens the Play Store listing.
           </li>
         </ul>
       </div>
