@@ -29,9 +29,31 @@ jobs:
           # them off, which is the safe default for a local/test boot — production is
           # the one place this must be 'true'.
           ENABLE_SESSION_MANAGER: 'true'
+          # ── Blog agent (2026-10-13) ────────────────────────────────────────
+          # The seventh Gemini key ("rajiv"), last in the chain in
+          # src/blogAgent/gemini.js and src/freeChatAi.js's naming convention.
+          GEMINI_API_KEY_RAJIV: ${{ secrets.GEMINI_API_KEY_RAJIV }}
+          # Free Pexels key — photographs for blog articles. WITHOUT IT the agent
+          # still works, but every article gets a locally drawn gradient card
+          # instead of a photograph (src/blogAgent/images.js falls through to its
+          # no-key generator). Free tier: 200 requests/hour; the agent needs 3/day.
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           set -e
           KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
+          # Optional keys: added to the allowlist only when the GitHub secret is
+          # actually set. The loop below hard-FAILS on an empty value, which is the
+          # right behaviour for a required secret and the wrong one for an optional
+          # one — without this guard, adding PEXELS_API_KEY here would break every
+          # run of this workflow until somebody created the secret.
+          # An `if`, not `[ -n ... ] && KEYS=...`: under `set -e` a failing test at
+          # the head of an && list exits the whole job, so the short form would
+          # abort this workflow precisely when a key is NOT set — the one case the
+          # guard exists to survive.
+          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY; do
+            if [ -n "${!opt}" ]; then KEYS="$KEYS $opt"; fi
+          done
+          echo "writing: $KEYS"
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/k && chmod 600 ~/.ssh/k
           : > /tmp/newkeys
