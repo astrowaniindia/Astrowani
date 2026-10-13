@@ -5,6 +5,8 @@
 // invisible until rankings move weeks later.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const kw = require('./keywords');
+
 /**
  * Where the new Astrowani website lives.
  *
@@ -171,14 +173,24 @@ function keywordDensity(html, keyword) {
 
 // ── Internal links ──────────────────────────────────────────────────────────
 
-/** The link targets an article in `category` should use, in order. */
-function linksForCategory(category, count = 4) {
+/**
+ * The link targets an article in `category` should use, in order.
+ *
+ * `seed` is the article's slug. It selects the ANCHOR TEXT for each target from
+ * keywords.js, which is the fix for the defect that prompted all of this: with a
+ * single fixed anchor per target, every article on the site linked with the exact
+ * same words, teaching a search engine one phrase instead of the whole vocabulary
+ * people search. Without a seed the first (default) phrasing is used, so older
+ * callers behave as before.
+ */
+function linksForCategory(category, count = 4, seed = '') {
   const keys = CATEGORY_LINKS[category] || DEFAULT_LINKS;
   const out = [];
   for (const k of keys.concat(DEFAULT_LINKS)) {
     if (out.length >= count) break;
     if (!LINK_TARGETS[k] || out.some((l) => l.key === k)) continue;
-    out.push({ key: k, ...LINK_TARGETS[k] });
+    const anchor = seed ? (kw.anchorFor(k, seed) || LINK_TARGETS[k].anchor) : LINK_TARGETS[k].anchor;
+    out.push({ key: k, url: LINK_TARGETS[k].url, anchor });
   }
   return out;
 }
@@ -197,33 +209,34 @@ function postUrl(slug) {
  * to three recent ones means every post keeps acquiring inbound links as the
  * blog grows, and the whole section stays reachable in a couple of hops.
  */
-function relatedLinksHtml(related, { heading = 'Read next on Astrowani' } = {}) {
+function relatedLinksHtml(related, { heading = null, hindi = false, seed = '' } = {}) {
   const items = (related || []).filter((r) => r && r.slug && r.title);
   if (!items.length) return '';
+  heading = heading || kw.relatedHeadingFor(seed, { hindi });
   const lis = items.map((r) => `<li><a href="${escAttr(postUrl(r.slug))}">${escAttr(r.title)}</a></li>`).join('');
   return `<h2>${escAttr(heading)}</h2><ul>${lis}</ul>`;
 }
 
-/** The closing call to action. Carries the brand plus the strongest internal links. */
-function ctaHtml(category, { hindi = false } = {}) {
-  const links = linksForCategory(category, 2);
-  if (hindi) {
-    return `<h2>Astrowani se baat kijiye</h2><p>`
-      + `Is lekh mein di gayi baatein aam siddhant hain. Aapki kundali aapki hai — uske grah, `
-      + `dasha aur yog sirf aapke hain. <a href="${escAttr(links[0].url)}">Astrowani</a> par `
-      + `verified jyotishi chat, call aur video par turant uplabdh hain, aur aap apni exact `
-      + `kundali dikha kar seedha jawab le sakte hain. `
-      + `<a href="${escAttr(links[1] ? links[1].url : links[0].url)}">Astrowani</a> par pehli baat-cheet `
-      + `shuru karein, ya <a href="${escAttr(PLAY_STORE_URL)}">Astrowani app</a> download karein.</p>`;
-  }
-  return `<h2>Talk it through with an astrologer on Astrowani</h2><p>`
-    + `Everything above is the general principle. Your own chart is not general — its planets, `
-    + `dashas and combinations belong to you alone, and two people with the same placement can `
-    + `need opposite advice. On <a href="${escAttr(links[0].url)}">Astrowani</a> you can reach a `
-    + `verified astrologer by chat, call or video within minutes and get an answer against your `
-    + `actual birth details rather than a general rule. `
-    + `<a href="${escAttr(links[1] ? links[1].url : links[0].url)}">Start a consultation on Astrowani</a>, `
-    + `or get the <a href="${escAttr(PLAY_STORE_URL)}">Astrowani app</a> to keep your chart with you.</p>`;
+/**
+ * The closing call to action.
+ *
+ * ROTATED, not fixed. At three posts a day an identical closing paragraph becomes
+ * the most repeated text on the domain within a month, and near-duplicate blocks
+ * across many pages are what thin-content classifiers look for. keywords.js holds
+ * several genuinely different paragraphs; the article picks one by its own slug,
+ * so the choice is stable per article but spread across the blog.
+ */
+function ctaHtml(category, { hindi = false, seed = '' } = {}) {
+  const links = linksForCategory(category, 2, seed);
+  const a = links[0];
+  const b = links[1] || links[0];
+  const variant = kw.ctaFor(seed || category, { hindi });
+  const link = (t) => `<a href="${escAttr(t.url)}">${escAttr(t.anchor)}</a>`;
+  const body = String(variant.body)
+    .replace('{a}', link(a))
+    .replace('{b}', link(b))
+    .replace('{app}', `<a href="${escAttr(PLAY_STORE_URL)}">Astrowani app</a>`);
+  return `<h2>${escAttr(variant.heading)}</h2><p>${body}</p>`;
 }
 
 // ── Structured data ─────────────────────────────────────────────────────────
@@ -293,9 +306,10 @@ function jsonLd({ title, description, slug, imageUrl, faqs, category, publishedA
 }
 
 /** The visible FAQ section. Mirrors the FAQPage data so the page and the markup agree. */
-function faqHtml(faqs, { heading = 'Frequently asked questions' } = {}) {
+function faqHtml(faqs, { heading = null, hindi = false, seed = '' } = {}) {
   const qs = (faqs || []).filter((f) => f && f.question && f.answer);
   if (!qs.length) return '';
+  heading = heading || kw.faqHeadingFor(seed, { hindi });
   const body = qs.map((f) => `<h3>${escAttr(String(f.question).trim())}</h3><p>${escAttr(stripHtml(f.answer))}</p>`).join('');
   return `<h2>${escAttr(heading)}</h2>${body}`;
 }

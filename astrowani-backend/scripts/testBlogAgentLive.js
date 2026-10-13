@@ -45,6 +45,7 @@ const agent = require('../src/blogAgent');
 const images = require('../src/blogAgent/images');
 const store = require('../src/blogAgent/publish');
 const seo = require('../src/blogAgent/seo');
+const kw = require('../src/blogAgent/keywords');
 const quality = require('../src/blogAgent/quality');
 const sharp = require('sharp');
 
@@ -62,7 +63,14 @@ const section = (t) => console.log(`\n── ${t} ──`);
 // even if the process dies halfway through.
 const MARK = `zzz-agent-selftest-${Date.now()}`;
 
+// The topic the runOnce test forces. Declared here because the fixture has to
+// contain the SECONDARY KEYWORDS the agent will assign for it — a real article
+// uses the keywords it is given, and the gate (correctly) rejects one that
+// ignores them, so a fixture of fixed prose would be testing the wrong thing.
+const RUN_TOPIC = { key: `${MARK}-topic`, title: 'Mangal Dosh', keyword: 'mangal dosh', category: 'Marriage' };
+
 function fixtureReply(titleSuffix = '') {
+  const assigned = kw.secondaryFor(RUN_TOPIC.category, RUN_TOPIC.key, { count: 6 });
   const para = ('Mangal dosh is read from the position of Mars in the birth chart, and the classical '
     + 'texts treat it as a matter of degree rather than a verdict. Where Mars sits, which house it '
     + 'rules and whether a benefic planet aspects it all change the reading, which is why two '
@@ -94,16 +102,25 @@ function fixtureReply(titleSuffix = '') {
       + `<li>Ask a verified astrologer on Astrowani to read the chart itself.</li></ul>`
       + `<h2>Remedies traditionally advised</h2><p>${para}</p>`
       + `<p>Astrowani keeps verified astrologers available by chat and call, and an Astrowani `
-      + `consultation against your own birth details beats any general rule.</p>`,
+      + `consultation against your own birth details beats any general rule.</p>`
+      // The assigned secondary keywords, worked in as a real article would.
+      + `<h2>Related things people ask about</h2><p>Readers often search for `
+      + `${assigned.slice(0, 4).map((k) => `${k}`).join(', ')} — all of which come back to the same `
+      + `question of how Mars sits in the chart, and all of which an astrologer can check in minutes.</p>`,
     contentHi: `${paraHi}<h2>मंगल दोष का अर्थ</h2><p>${paraHi}</p>`,
     faqs: [
       { question: 'Is mangal dosh really a problem for marriage?', answer: 'It usually delays rather than denies. The house Mars occupies matters more than the label.' },
       { question: 'Can mangal dosh cancel out by itself?', answer: 'Yes. Several classical cancellations exist, including when both charts carry it.' },
       { question: 'Which remedies are advised?', answer: 'Tuesday fasting and specific daan are common. The remedy should match the chart.' },
+      { question: 'Does it affect both partners equally?', answer: 'No. It depends on the house Mars occupies in each chart and what aspects it.' },
+      { question: 'Can it be checked online?', answer: 'A calculator can flag it, but whether it matters needs an astrologer to read the whole chart.' },
     ],
     faqsHi: [
       { question: 'क्या मंगल दोष विवाह में बाधा है?', answer: 'यह आमतौर पर विवाह को टालता है, रोकता नहीं।' },
       { question: 'क्या यह स्वयं समाप्त हो सकता है?', answer: 'हाँ, कई शास्त्रीय स्थितियों में यह स्वतः समाप्त माना जाता है।' },
+      { question: 'उपाय क्या हैं?', answer: 'मंगलवार का व्रत और दान आम उपाय हैं। उपाय कुंडली के अनुसार होना चाहिए।' },
+      { question: 'क्या दोनों पर असर बराबर होता है?', answer: 'नहीं, यह इस पर निर्भर करता है कि मंगल किस भाव में है।' },
+      { question: 'क्या इसे ऑनलाइन देख सकते हैं?', answer: 'कैलकुलेटर संकेत दे सकता है, पर पूरी कुंडली ज्योतिषी ही पढ़ेगा।' },
     ],
   };
 }
@@ -218,6 +235,7 @@ const created = { blogIds: [], runIds: [], objects: [] };
       state, history,
     });
 
+    if (result.status !== 'published') console.log('    diagnostic:', JSON.stringify(result.rejections || result.error));
     eq('runOnce published', result.status, 'published');
     // TWO calls for an accepted article: the English pass, then the Hindi pass. The
 // Hindi pass runs only because the English was accepted — see below for the
@@ -305,8 +323,13 @@ eq('the model was called twice: English then Hindi', modelCalls, 2);
     }
     // The app ignores <script> (BlogScreen.js ignoredDomTags), so the JSON-LD
     // must not be the only place the FAQ text exists.
+    // The FAQ heading now ROTATES (keywords.js), so assert that one of the known
+    // variants is present rather than one fixed string — a fixed string here would
+    // fail for the right reason tomorrow and look like a bug.
     ok('the FAQ text is also visible prose, not only JSON-LD',
-      html.includes('Frequently asked questions') && html.includes('Is mangal dosh really a problem'));
+      kw.FAQ_HEADINGS_EN.some((h) => html.includes(h)) && html.includes('Is mangal dosh really a problem'),
+      'no known FAQ heading in the published body');
+    eq('exactly 5 FAQs were published', (row.content_en.match(/<h3>/g) || []).length, 5);
     ok('the Hindi body has no JSON-LD (one URL, one @graph)', !/ld\+json/.test(row.content_hi));
 
     // ── The ledger ─────────────────────────────────────────────────────────

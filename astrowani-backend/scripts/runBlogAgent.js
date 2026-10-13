@@ -100,7 +100,15 @@ async function showStatus(db, log) {
 }
 
 async function setEnabled(db, value, log) {
-  const current = await configModule.load(db, { log: () => {} });
+  // THE RAW ROW, NOT THE MERGED CONFIG. Writing back the merged object froze every
+  // code default into the database — after which raising a threshold in the code
+  // changed nothing, because the stored row still held the old value. That is how
+  // the agent came to publish an article with 2 FAQs while the code said 5.
+  //
+  // So: start from what is actually stored, flip one flag, and persist nothing
+  // else. Anything absent here keeps following the code defaults, which is what a
+  // default is for.
+  const current = await configModule.loadRaw(db);
   const next = { ...current, enabled: value };
   delete next.configError;
 
@@ -115,7 +123,11 @@ async function setEnabled(db, value, log) {
 
   log(`blog agent is now ${value ? 'ENABLED' : 'DISABLED'}.`);
   if (value) {
-    log(`  publish mode: ${next.publish ? 'LIVE' : 'drafts'}; ${next.articlesPerRun} article(s) per run; cap ${next.maxPerDay}/day`);
+    // Report the RESOLVED config (row over code defaults), not `next` — `next` is
+    // deliberately sparse now, so most of its fields are undefined.
+    const resolved = await configModule.load(db, { log: () => {} });
+    log(`  publish mode: ${resolved.publish ? 'LIVE' : 'drafts'}; ${resolved.articlesPerRun} article(s) per run; cap ${resolved.maxPerDay}/day`);
+    log(`  thresholds: ${resolved.limits.minWordsEn}+ words, exactly ${resolved.limits.minFaqs} FAQs, ${resolved.limits.minAstrowaniMentions}+ brand mentions`);
     log('  the cron schedule decides when it actually runs — see vps-deployment/blog-agent/README.md');
   }
 }

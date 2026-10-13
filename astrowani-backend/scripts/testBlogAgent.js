@@ -23,6 +23,7 @@
 const seo = require('../src/blogAgent/seo');
 const quality = require('../src/blogAgent/quality');
 const generate = require('../src/blogAgent/generate');
+const keywords = require('../src/blogAgent/keywords');
 const topics = require('../src/blogAgent/topics');
 const { parseJson } = require('../src/blogAgent/gemini');
 const config = require('../src/blogAgent/config');
@@ -94,6 +95,8 @@ function goodArticle(overrides = {}) {
       { question: 'Is mangal dosh really a problem for marriage?', answer: 'It usually delays rather than denies. Much depends on the house Mars occupies and whether another planet cancels it.' },
       { question: 'Does mangal dosh ever cancel out by itself?', answer: 'Yes. There are several classical cancellations, including when both charts carry it and when Mars is in its own sign.' },
       { question: 'What remedies are traditionally advised?', answer: 'Tuesday fasting, Hanuman Chalisa and specific daan are the common ones. An astrologer should match the remedy to the chart.' },
+      { question: 'Does mangal dosh affect both partners equally?', answer: 'No. Its effect depends on the house Mars occupies in each chart and on what aspects it.' },
+      { question: 'Can mangal dosh be checked online?', answer: 'A calculator can flag it, but whether it matters needs an astrologer to read the whole chart.' },
     ],
     faqsHi: [
       { question: 'क्या मंगल दोष विवाह में सच में बाधा है?', answer: 'यह आमतौर पर विवाह को टालता है, रोकता नहीं। मंगल किस भाव में है यह ज़्यादा मायने रखता है।' },
@@ -220,7 +223,7 @@ if (ld) {
   ok('Article image is an array', Array.isArray(article.image));
   eq('Article inLanguage', article.inLanguage, 'en-IN');
   const faqNode = ld['@graph'].find((n) => n['@type'] === 'FAQPage');
-  eq('FAQPage carries every FAQ', faqNode.mainEntity.length, 3);
+  eq('FAQPage carries every FAQ', faqNode.mainEntity.length, quality.DEFAULT_LIMITS.minFaqs);
   ok('each FAQ has an acceptedAnswer with text', faqNode.mainEntity.every((q) => q.acceptedAnswer?.text?.length > 10));
   const crumbs = ld['@graph'].find((n) => n['@type'] === 'BreadcrumbList');
   eq('breadcrumb has 3 levels', crumbs.itemListElement.length, 3);
@@ -274,7 +277,11 @@ rejects('too few H2s is rejected',
   { contentEn: goodArticle().contentEn.replace(/<h2>/g, '<p>').replace(/<\/h2>/g, '</p>') }, 'TOO_FEW_H2');
 rejects('an <h1> in the body is rejected',
   { contentEn: `<h1>Competing</h1>${goodArticle().contentEn}` }, 'H1_IN_BODY');
-rejects('too few FAQs is rejected', { faqs: [goodArticle().faqs[0]] }, 'TOO_FEW_FAQS');
+rejects('too few FAQs is rejected', { faqs: goodArticle().faqs.slice(0, 3) }, 'WRONG_FAQ_COUNT');
+rejects('too MANY FAQs is rejected too — exactly 5 is the rule',
+  { faqs: [...goodArticle().faqs, { question: 'A sixth?', answer: 'One too many.' }] }, 'WRONG_FAQ_COUNT');
+rejects('duplicate FAQ questions are rejected',
+  { faqs: [...goodArticle().faqs.slice(0, 4), { ...goodArticle().faqs[0] }] }, 'DUPLICATE_FAQ_QUESTIONS');
 rejects('a short meta description is rejected', { metaDescription: 'Too short.' }, 'META_LENGTH');
 rejects('an over-long meta description is rejected', { metaDescription: 'x'.repeat(200) }, 'META_LENGTH');
 rejects('an over-long excerpt is rejected', { excerpt: 'y'.repeat(400) }, 'EXCERPT_LENGTH');
@@ -455,18 +462,21 @@ const assembled = generate.assemble(goodArticle(), {
   publishedAt: '2026-10-13T00:00:00.000Z',
 });
 ok('the FAQ section is rendered visibly, not only as markup',
-  /Frequently asked questions/.test(assembled.contentEn) && /Is mangal dosh really a problem/.test(assembled.contentEn));
+  keywords.FAQ_HEADINGS_EN.some((h) => assembled.contentEn.includes(h))
+    && /Is mangal dosh really a problem/.test(assembled.contentEn),
+  'no known FAQ heading found');
 ok('related posts are linked by slug',
   assembled.contentEn.includes('blog-post.html?slug=kundali-milan'), 'no related link');
-ok('the CTA is appended', /Talk it through with an astrologer on Astrowani/.test(assembled.contentEn));
+ok('the CTA is appended', keywords.CTA_EN.some((c) => assembled.contentEn.includes(c.heading)),
+  'no known CTA heading found');
 ok('the Play Store link is present and correct',
   assembled.contentEn.includes('play.google.com/store/apps/details?id=com.astrowanicustomer'));
 ok('JSON-LD is appended to the English body', /application\/ld\+json/.test(assembled.contentEn));
 // The Hindi body must NOT carry a second @graph: one URL serves both languages
 // (style.css .lang-en/.lang-hi), so two Article nodes would be conflicting markup.
 ok('the Hindi body carries NO JSON-LD', !/application\/ld\+json/.test(assembled.contentHi), 'hindi has ld+json');
-ok('the Hindi body has its own Hindi CTA', /Astrowani se baat kijiye/.test(assembled.contentHi));
-ok('the Hindi body has a Hindi FAQ heading', /Aksar pooche jaane wale sawal/.test(assembled.contentHi));
+ok('the Hindi body has its own Hindi CTA', keywords.CTA_HI.some((c) => assembled.contentHi.includes(c.heading)));
+ok('the Hindi body has a Hindi FAQ heading', keywords.FAQ_HEADINGS_HI.some((h) => assembled.contentHi.includes(h)));
 const asmVerdict = quality.check(assembled, { keyword: TOPIC.keyword, limits: LIMITS, existing: [], stage: 'final' });
 ok('the ASSEMBLED article still passes the gate', asmVerdict.ok, asmVerdict.rejections.join('; '));
 ok(`  assembled: ${asmVerdict.stats.wordsEn} words, ${asmVerdict.stats.mentions} mentions, ${asmVerdict.stats.internalLinks} links`, true);
@@ -604,6 +614,84 @@ ok('a DRAFT with 0 brand mentions is still rejected',
   zeroMentions.rejections.some((r) => r.startsWith('TOO_FEW_BRAND_MENTIONS')), zeroMentions.rejections.join('; '));
 
 // ═══════════════════════════════════════════════════════════════════════════
+section('keyword and anchor variety — the defect that prompted all of this');
+// ═══════════════════════════════════════════════════════════════════════════
+// THE MEASURED DEFECT: the first two published articles carried IDENTICAL anchor
+// text — "verified astrologers on Astrowani", "Astrowani", "Start a consultation
+// on Astrowani", "Astrowani app" — and an identical closing CTA. Every article on
+// the site therefore taught a search engine the same four phrases.
+const bank = keywords.bankSize();
+ok(`the keyword bank holds ${bank.unique} unique phrases`, bank.unique >= 400, JSON.stringify(bank));
+ok(`  across ${Object.keys(keywords.SECONDARY).length} categories`, Object.keys(keywords.SECONDARY).length >= 10);
+ok(`  with ${bank.anchorVariants} anchor variants and ${bank.ctaVariants} CTA variants`,
+  bank.anchorVariants >= 60 && bank.ctaVariants >= 8);
+const allSecondary = Object.values(keywords.SECONDARY).flat();
+eq('no duplicate keywords within the bank', allSecondary.length - new Set(allSecondary).size, 0);
+ok('every keyword is lowercase and trimmed (they are compared case-insensitively)',
+  allSecondary.every((k) => k === k.toLowerCase().trim()));
+
+// Rotation must be DETERMINISTIC — an article has to render identically on a
+// regenerate, or a republish would silently rewrite its own anchors.
+eq('anchor choice is deterministic for a slug',
+  keywords.anchorFor('astrologers', 'my-slug'), keywords.anchorFor('astrologers', 'my-slug'));
+eq('CTA choice is deterministic for a slug',
+  keywords.ctaFor('my-slug').heading, keywords.ctaFor('my-slug').heading);
+
+// …and genuinely varied ACROSS articles. This is the assertion that would have
+// caught the original bug.
+const slugs = Array.from({ length: 40 }, (_, i) => `article-number-${i}`);
+const anchorsSeen = new Set(slugs.map((sl) => keywords.anchorFor('astrologers', sl)));
+ok(`40 articles produce ${anchorsSeen.size} different "astrologers" anchors`, anchorsSeen.size >= 5,
+  [...anchorsSeen].join(' | '));
+const ctasSeen = new Set(slugs.map((sl) => keywords.ctaFor(sl).heading));
+ok(`40 articles produce ${ctasSeen.size} different CTA headings`, ctasSeen.size >= 4, [...ctasSeen].join(' | '));
+const faqHeads = new Set(slugs.map((sl) => keywords.faqHeadingFor(sl)));
+ok(`40 articles produce ${faqHeads.size} different FAQ headings`, faqHeads.size >= 3);
+
+// Secondary keywords must differ between articles in the same category, or the
+// repetition problem just moves from anchors to body text.
+const kwSets = slugs.slice(0, 12).map((sl) => keywords.secondaryFor('Marriage', sl).join('|'));
+ok(`12 Marriage articles get ${new Set(kwSets).size} different keyword sets`, new Set(kwSets).size >= 10);
+const firstTwo = [keywords.secondaryFor('Marriage', 'a'), keywords.secondaryFor('Marriage', 'b')];
+ok('two different articles do not get the identical keyword set', firstTwo[0].join() !== firstTwo[1].join());
+ok('each article gets at least one commercial-intent keyword',
+  slugs.slice(0, 10).every((sl) => keywords.secondaryFor('Vedic Astrology', sl)
+    .some((k) => keywords.COMMERCIAL.includes(k))));
+ok('a keyword set has no duplicates inside it',
+  slugs.slice(0, 20).every((sl) => { const v = keywords.secondaryFor('Vastu', sl); return v.length === new Set(v).size; }));
+
+// The gate must reject an article whose anchor set is identical to a recent post.
+const asmA = generate.assemble(goodArticle(), {
+  topic: TOPIC, slug: 'post-a', imageUrl: null, related: [], publishedAt: '2026-10-13T00:00:00Z',
+});
+const anchorsA = [...asmA.contentEn.matchAll(/<a\s[^>]*>([^<]{2,80})<\/a>/gi)].map((m) => m[1].trim());
+const sameSet = quality.check(asmA, {
+  keyword: KEYWORD, limits: LIMITS, stage: 'final', recentAnchorSets: [anchorsA],
+});
+ok('an article whose anchor set exactly matches a recent post is rejected',
+  sameSet.rejections.some((r) => r.startsWith('ANCHOR_SET_IDENTICAL_TO_RECENT')), sameSet.rejections.join('; '));
+// Control: a DIFFERENT recent anchor set must not trip it.
+const diffSet = quality.check(asmA, {
+  keyword: KEYWORD, limits: LIMITS, stage: 'final',
+  recentAnchorSets: [['some other anchor', 'and another one']],
+});
+ok('  but a different recent anchor set does NOT trip it', diffSet.ok, diffSet.rejections.join('; '));
+
+// Secondary-keyword coverage is enforced at the final stage.
+const missedKw = quality.check(asmA, {
+  keyword: KEYWORD, limits: LIMITS, stage: 'final',
+  secondaryKeywords: ['zzz nonexistent phrase one', 'zzz nonexistent phrase two', 'zzz nonexistent three'],
+});
+ok('an article ignoring all its secondary keywords is rejected',
+  missedKw.rejections.some((r) => r.startsWith('TOO_FEW_SECONDARY_KEYWORDS')), missedKw.rejections.join('; '));
+const usedKw = quality.check(asmA, {
+  keyword: KEYWORD, limits: LIMITS, stage: 'final',
+  secondaryKeywords: ['mangal dosh', 'astrologer', 'marriage'],
+});
+ok('  and one that uses them passes (positive control)', usedKw.ok, usedKw.rejections.join('; '));
+ok(`  (${usedKw.stats.secondaryHits} secondary keywords found)`, usedKw.stats.secondaryHits >= 3);
+
+// ═══════════════════════════════════════════════════════════════════════════
 section('sitemap and robots.txt must agree');
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require('fs');
@@ -715,6 +803,31 @@ async function configChecks() {
   const strBool = await config.load(settingsRow({ enabled: 'true', publish: 'false' }), { log: () => {} });
   ok('a string "true" is accepted for enabled', strBool.enabled === true);
   ok('a string "false" is accepted for publish', strBool.publish === false);
+
+  // ── The config-freezing bug, which published a non-compliant article ──────
+  //
+  // `--enable` used to write back the whole MERGED config, freezing every code
+  // default into the row. Raising minFaqs from 2 to 5 in code then changed
+  // nothing — the row still said 2 — and the agent published an article with 2
+  // FAQs while the gate believed it was enforcing 5. It failed SILENTLY, which is
+  // why it needs a test rather than a comment.
+  const rawEmpty = await config.loadRaw(stubDb({ data: [] }));
+  eq('loadRaw returns {} for a missing row, not the defaults', Object.keys(rawEmpty).length, 0);
+  const rawOnly = await config.loadRaw(settingsRow({ enabled: true }));
+  eq('loadRaw returns ONLY what is stored', JSON.stringify(rawOnly), JSON.stringify({ enabled: true }));
+  ok('  and does NOT merge in limits', rawOnly.limits === undefined);
+  ok('  while load() still resolves them', (await config.load(settingsRow({ enabled: true }), { log: () => {} })).limits.minFaqs === quality.DEFAULT_LIMITS.minFaqs);
+  const rawBad = await config.loadRaw(stubDb({ data: [{ value: '{broken' }] }));
+  eq('loadRaw never throws on a malformed row', Object.keys(rawBad).length, 0);
+  // A sparse row must follow the CODE for everything it does not name — that is
+  // the property the bug destroyed.
+  const sparse = await config.load(settingsRow({ enabled: true }), { log: () => {} });
+  eq('a sparse row follows code defaults for FAQs', sparse.limits.minFaqs, quality.DEFAULT_LIMITS.minFaqs);
+  eq('  and for word count', sparse.limits.minWordsEn, quality.DEFAULT_LIMITS.minWordsEn);
+  // …but an EXPLICIT override must still win, or the row becomes pointless.
+  const explicit = await config.load(settingsRow({ enabled: true, limits: { minFaqs: 7 } }), { log: () => {} });
+  eq('an explicit limits override still wins', explicit.limits.minFaqs, 7);
+  eq('  without clobbering its siblings', explicit.limits.minWordsEn, quality.DEFAULT_LIMITS.minWordsEn);
 
   const garbageLimits = await config.load(settingsRow({ enabled: true, limits: 'nonsense' }), { log: () => {} });
   ok('a non-object limits value falls back to the defaults',

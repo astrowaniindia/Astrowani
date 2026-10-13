@@ -17,6 +17,7 @@ const quality = require('./quality');
 const images = require('./images');
 const store = require('./publish');
 const seo = require('./seo');
+const kw = require('./keywords');
 
 function makeClient() {
   const url = process.env.SUPABASE_URL;
@@ -61,6 +62,15 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
   const runId = dryRun ? null : await store.openRun(db, { topic });
 
   try {
+    // The secondary keywords this article is responsible for, and the anchor sets
+    // recent articles used — both feed the gate, which is what stops the whole
+    // blog converging on one vocabulary.
+    const secondaryKeywords = kw.secondaryFor(topic.category, topic.key, { count: 6 });
+    const recentAnchorSets = state.recent
+      .map((r) => r.anchors)
+      .filter((a) => Array.isArray(a) && a.length)
+      .slice(0, 5);
+
     // ── Related posts, for the internal link graph ─────────────────────────
     const related = state.recent
       .filter((r) => r.slug)
@@ -90,7 +100,9 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
       // Ordering matters: checking after illustrating would leave an orphaned
       // object in the public bucket on every rejection, and nothing ever deletes
       // those.
-      verdict = quality.check(drafted, { keyword: topic.keyword, limits, existing: state.recent, stage: 'draft' });
+      verdict = quality.check(drafted, {
+        keyword: topic.keyword, limits, existing: state.recent, stage: 'draft', secondaryKeywords,
+      });
       log(`  stats: ${JSON.stringify(verdict.stats)}`);
 
       if (verdict.ok) { article = drafted; break; }
@@ -160,9 +172,24 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     // link count, brand-mention count and keyword density are all different
     // numbers from the ones that passed. Checking only the draft would mean the
     // thresholds that matter were never applied to what actually gets published.
-    const finalVerdict = quality.check(assembled, { keyword: topic.keyword, limits, existing: state.recent, stage: 'final' });
+    const finalVerdict = quality.check(assembled, {
+      keyword: topic.keyword, limits, existing: state.recent, stage: 'final',
+      secondaryKeywords, recentAnchorSets,
+    });
     if (!finalVerdict.ok) {
       log(`  REJECTED AFTER ASSEMBLY: ${finalVerdict.rejections.join('; ')}`);
+      // The image was fetched and uploaded before this point, so a post-assembly
+      // rejection would otherwise leave an orphan in the PUBLIC bucket that
+      // nothing ever deletes. Best-effort: a failed cleanup must not mask the
+      // rejection that actually matters.
+      if (image.objectName) {
+        try {
+          await db.storage.from(images.BUCKET).remove([image.objectName]);
+          log(`  cleaned up the unused image (${image.objectName})`);
+        } catch (e) {
+          log(`  WARNING: could not remove unused image ${image.objectName}: ${e.message}`);
+        }
+      }
       await store.closeRun(db, runId, {
         status: 'rejected', attempts, model: article.model,
         rejections: finalVerdict.rejections.map((r) => `post-assembly ${r}`),
@@ -172,8 +199,11 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     }
 
     log(`  final: ${finalVerdict.stats.wordsEn} words, ${finalVerdict.stats.mentions} brand mentions, `
-      + `${finalVerdict.stats.internalLinks} links, kw x${finalVerdict.stats.keywordHits} `
-      + `(${finalVerdict.stats.density}%), slug "${slug}"`);
+      + `${finalVerdict.stats.internalLinks} links (${finalVerdict.stats.distinctAnchors} distinct anchors), `
+      + `kw x${finalVerdict.stats.keywordHits} (${finalVerdict.stats.density}%), `
+      + `${finalVerdict.stats.faqCount} FAQs, ${finalVerdict.stats.secondaryHits} secondary keywords`);
+    log(`  secondary used: ${(finalVerdict.stats.secondaryFound || []).join(', ') || 'none'}`);
+    log(`  slug: ${slug}`);
 
     if (dryRun) {
       await store.closeRun(db, runId, { status: 'skipped', attempts, model: article.model });

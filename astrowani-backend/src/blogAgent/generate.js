@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const { generate: callGemini, parseJson } = require('./gemini');
 const seo = require('./seo');
+const kw = require('./keywords');
 
 /**
  * The voice. Lifted from decisions already recorded in CLAUDE.md rather than
@@ -76,7 +77,12 @@ THE BRAND
  */
 function buildPrompt({ topic, limits, related, recentTitles }) {
   const minWords = limits.minWordsEn + 150; // ask above the floor so a short answer still passes
-  const links = seo.linksForCategory(topic.category, 4);
+  const links = seo.linksForCategory(topic.category, 4, topic.key);
+  // The long tail. One keyword per article leaves most of the available search
+  // traffic unclaimed, and giving every article the SAME extra keywords would just
+  // move the repetition problem rather than fix it — so these are drawn from a
+  // 455-phrase bank, seeded by the topic, and differ article to article.
+  const secondary = kw.secondaryFor(topic.category, topic.key, { count: 6 });
 
   return `Write one complete blog article for the Astrowani blog.
 
@@ -86,10 +92,15 @@ CATEGORY: ${topic.category}
 PRIMARY SEARCH KEYWORD: "${topic.keyword}"
 
 KEYWORD RULES - this article has to be findable
-- Use the exact phrase "${topic.keyword}" in the title, in the first 80 words, and in at
-  least one <h2> heading.
+- PRIMARY: use the exact phrase "${topic.keyword}" in the title, in the first 80 words, and
+  in at least one <h2> heading.
 - Use it ${limits.minKeywordHits + 2} to 6 times across the whole article and NO more. Stuffing it reads as
   spam and is rejected. Use natural variations the rest of the time.
+- SECONDARY: work AT LEAST ${limits.minSecondaryKeywords} of these phrases into the article, naturally, where they
+  genuinely fit. Do not list them, do not force them, and do not use all of them:
+${secondary.map((k) => `    - ${k}`).join('\n')}
+  These are the related things people search for. A sentence that answers one of them
+  earns the article a second and third way to be found.
 
 LENGTH - READ THIS TWICE, IT IS THE MOST COMMON FAILURE
 - The English body MUST be at least ${minWords} words. Aim for ${minWords + 300}. An article under
@@ -134,9 +145,12 @@ Return ONLY a JSON object, no prose around it, with exactly these keys:
   "contentEn": "the full English body as HTML, at least ${minWords} words",
   "faqs": [
     { "question": "a question people really ask about this", "answer": "2-4 sentences, plain text, no HTML" }
-  ]
+  ]  // EXACTLY ${limits.minFaqs} items
 }
-Give ${limits.minFaqs + 1} to 4 FAQs. The first FAQ should be the single most common question on this subject.
+Give EXACTLY ${limits.minFaqs} FAQs - not four, not six. Every Astrowani article ends with ${limits.minFaqs} questions.
+The first should be the single most common question on this subject; the rest should cover
+the follow-ups a reader would have afterwards. Keep each answer to 2-4 sentences of plain
+text, and make them genuinely useful rather than restating the article.
 Write the English only. The Hindi version is requested separately.`;
 }
 
@@ -182,7 +196,7 @@ Return ONLY a JSON object, no prose around it:
   "contentHi": "the full Hindi body as HTML, at least ${limits.minWordsHi + 150} words",
   "faqsHi": [
     { "question": "the question in Hindi", "answer": "the answer in Hindi, plain text, no HTML" }
-  ]
+  ]  // all ${(faqs || []).length} of them, same order
 }`;
 }
 
@@ -384,10 +398,10 @@ async function draft(opts) {
  * Anchors are only placed inside <p> text, never inside a heading — a linked
  * heading looks broken on both the website and in the app.
  */
-function weaveInternalLinks(html, category, { max = 3 } = {}) {
+function weaveInternalLinks(html, category, { max = 3, seed = '' } = {}) {
   let out = String(html || '');
   let placed = 0;
-  const targets = seo.linksForCategory(category, 6);
+  const targets = seo.linksForCategory(category, 6, seed);
 
   for (const t of targets) {
     if (placed >= max) break;
@@ -417,7 +431,7 @@ function weaveInternalLinks(html, category, { max = 3 } = {}) {
   // pointing at calculators.html — a mismatch that wastes the anchor as a signal
   // and reads oddly. "Astrowani" as anchor text belongs on the astrologers page.
   if (placed < max) {
-    const fallback = seo.LINK_TARGETS.astrologers;
+    const fallback = seo.linksForCategory(category, 1, seed)[0] || seo.LINK_TARGETS.astrologers;
     const re = /(?<!<a[^>]*>)\b(Astrowani)\b(?![^<]*>)(?![^<]*<\/a>)/;
     if (re.test(out)) {
       out = out.replace(re, `<a href="${seo.escAttr(fallback.url)}">$1</a>`);
@@ -439,14 +453,17 @@ function weaveInternalLinks(html, category, { max = 3 } = {}) {
 function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [], publishedAt } = {}) {
   const category = topic.category;
 
-  const woven = weaveInternalLinks(draftArticle.contentEn, category, { max: 3 });
-  const wovenHi = weaveInternalLinks(draftArticle.contentHi, category, { max: 2 });
+  // The slug seeds every rotation, so one article renders consistently while the
+  // blog as a whole varies.
+  const seed = slug || topic.key || draftArticle.titleEn;
+  const woven = weaveInternalLinks(draftArticle.contentEn, category, { max: 3, seed });
+  const wovenHi = weaveInternalLinks(draftArticle.contentHi, category, { max: 2, seed });
 
   const contentEn = [
     woven.html,
-    seo.faqHtml(draftArticle.faqs),
-    seo.relatedLinksHtml(related),
-    seo.ctaHtml(category),
+    seo.faqHtml(draftArticle.faqs, { seed }),
+    seo.relatedLinksHtml(related, { seed }),
+    seo.ctaHtml(category, { seed }),
     seo.jsonLd({
       title: draftArticle.titleEn,
       description: draftArticle.metaDescription,
@@ -466,9 +483,9 @@ function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [],
   // as conflicting markup rather than as two languages.
   const contentHi = [
     wovenHi.html,
-    seo.faqHtml(draftArticle.faqsHi.length ? draftArticle.faqsHi : draftArticle.faqs, { heading: 'Aksar pooche jaane wale sawal' }),
-    seo.relatedLinksHtml(related, { heading: 'Astrowani par aage padhiye' }),
-    seo.ctaHtml(category, { hindi: true }),
+    seo.faqHtml(draftArticle.faqsHi.length ? draftArticle.faqsHi : draftArticle.faqs, { hindi: true, seed }),
+    seo.relatedLinksHtml(related, { hindi: true, seed }),
+    seo.ctaHtml(category, { hindi: true, seed }),
   ].filter(Boolean).join('');
 
   return { ...draftArticle, contentEn, contentHi, linksPlaced: woven.linksPlaced };

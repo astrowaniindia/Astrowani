@@ -72,7 +72,13 @@ const DEFAULT_LIMITS = {
   maxWordsEn: 3000,
   minWordsHi: 400,          // Hindi says the same thing in fewer, longer words
   minH2: 3,
-  minFaqs: 2,
+  // EXACTLY this many FAQs, at the end of every article. The owner's requirement
+  // (2026-10-13), and an exact count rather than a minimum: Google's FAQPage rich
+  // result wants a consistent block, and "sometimes 3, sometimes 6" reads as
+  // unedited output.
+  minFaqs: 5,
+  // How many of the article's assigned secondary keywords must actually appear.
+  minSecondaryKeywords: 3,
   minAstrowaniMentions: 4,
   maxAstrowaniMentions: 14, // past this it reads as an advert, not an article
   minInternalLinks: 3,
@@ -131,7 +137,8 @@ function similarity(a, b) {
  * be told everything that was wrong, and the ledger is only useful if it records
  * the whole picture.
  */
-function check(article, { keyword, limits = {}, existing = [], stage = 'final' } = {}) {
+function check(article, opts = {}) {
+  const { keyword, limits = {}, existing = [], stage = 'final' } = opts;
   const L = { ...DEFAULT_LIMITS, ...limits };
   const rejections = [];
   const fail = (code, detail) => rejections.push(detail ? `${code}: ${detail}` : code);
@@ -178,9 +185,12 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
   // self-inflicted on-page error.
   if (/<h1[\s>]/i.test(contentEn)) fail('H1_IN_BODY');
 
-  if ((article?.faqs || []).filter((f) => f && f.question && f.answer).length < L.minFaqs) {
-    fail('TOO_FEW_FAQS', `< ${L.minFaqs}`);
-  }
+  const faqCount = (article?.faqs || []).filter((f) => f && f.question && f.answer).length;
+  if (faqCount !== L.minFaqs) fail('WRONG_FAQ_COUNT', `${faqCount}, want exactly ${L.minFaqs}`);
+  // Duplicated questions would satisfy the count while giving the reader nothing,
+  // and a FAQPage block with repeated `name` values is invalid structured data.
+  const qs = (article?.faqs || []).map((f) => String(f?.question || '').trim().toLowerCase()).filter(Boolean);
+  if (qs.length !== new Set(qs).size) fail('DUPLICATE_FAQ_QUESTIONS');
 
   // ── Metadata ──────────────────────────────────────────────────────────────
   if (meta.length < L.metaMinChars || meta.length > L.metaMaxChars) {
@@ -239,6 +249,48 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
     if (!phraseCount(opening, keyword)) fail('KEYWORD_NOT_IN_OPENING');
   }
 
+  // ── Keyword breadth ───────────────────────────────────────────────────────
+  //
+  // THE DEFECT THIS EXISTS FOR: the first two published articles used one keyword
+  // each and identical anchor text, so the whole blog taught a search engine the
+  // same handful of phrases. `secondaryKeywords` are assigned per article from a
+  // 455-phrase bank; this checks that some of them genuinely landed rather than
+  // being ignored by the model.
+  const secondary = Array.isArray(opts.secondaryKeywords) ? opts.secondaryKeywords : [];
+  let secondaryHits = 0;
+  const secondaryFound = [];
+  for (const k of secondary) {
+    if (phraseCount(contentEn, k)) { secondaryHits += 1; secondaryFound.push(k); }
+  }
+  // CHECKED AT BOTH STAGES, and the draft stage is the one that matters: assembly
+  // adds no keywords, so a shortfall here is entirely the model's output — which
+  // means it is RETRYABLE. Checking only at the final stage (as the first version
+  // did) threw away a finished article, complete with a downloaded and uploaded
+  // photograph, instead of simply asking the model again.
+  if (secondary.length && secondaryHits < L.minSecondaryKeywords) {
+    fail('TOO_FEW_SECONDARY_KEYWORDS', `${secondaryHits} of ${secondary.length} used, want ${L.minSecondaryKeywords}`);
+  }
+
+  // Anchor text must not be a carbon copy of the last few posts. Checked at the
+  // final stage only, since anchors are added by assembly.
+  const anchors = [...contentEn.matchAll(/<a\s[^>]*>([^<]{2,80})<\/a>/gi)].map((m) => m[1].trim().toLowerCase());
+  const distinctAnchors = new Set(anchors);
+  if (stage === 'final' && anchors.length >= 3) {
+    const prevAnchorSets = (opts.recentAnchorSets || []);
+    for (const prev of prevAnchorSets) {
+      const prevSet = new Set((prev || []).map((a) => String(a).trim().toLowerCase()));
+      if (!prevSet.size) continue;
+      let shared = 0;
+      for (const a of distinctAnchors) if (prevSet.has(a)) shared += 1;
+      // Some overlap is fine and expected ("Astrowani" will recur). An IDENTICAL
+      // anchor set is the failure — that is what the first two posts had.
+      if (shared === distinctAnchors.size && shared === prevSet.size) {
+        fail('ANCHOR_SET_IDENTICAL_TO_RECENT', `${shared} anchors, all shared`);
+        break;
+      }
+    }
+  }
+
   // ── Content safety ────────────────────────────────────────────────────────
   const plainEn = stripHtml(contentEn);
   const plainHi = stripHtml(contentHi);
@@ -272,6 +324,7 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
       wordsEn, wordsHi, h2Count, mentions, internalLinks,
       keywordHits, density: Number(density.toFixed(2)),
       metaChars: meta.length, excerptChars: excerpt.length,
+      faqCount, secondaryHits, secondaryFound, distinctAnchors: distinctAnchors.size,
       maxSimilarity: Number(maxSim.toFixed(3)),
     },
   };

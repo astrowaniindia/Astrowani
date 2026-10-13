@@ -97,4 +97,29 @@ async function load(db, { log = () => {} } = {}) {
   return merged;
 }
 
-module.exports = { load, DEFAULTS, SETTINGS_KEY };
+/**
+ * The stored row EXACTLY as written, with no defaults merged in.
+ *
+ * WHY THIS EXISTS, and it is not a convenience. `--enable` used to write back the
+ * whole MERGED config, which froze every code default into the database at the
+ * moment it ran. The consequence was silent and total: raising minFaqs from 2 to 5
+ * in the code changed nothing, because the row still said 2 — so the agent
+ * published an article with 2 FAQs while the gate believed it was enforcing 5.
+ *
+ * Any writer must therefore start from THIS, change only what it means to change,
+ * and persist nothing it was not asked to persist. A default that is written down
+ * stops being a default.
+ */
+async function loadRaw(db) {
+  try {
+    const { data, error } = await db
+      .from('app_settings').select('value').eq('key', SETTINGS_KEY).limit(1);
+    if (error) throw error;
+    if (!data || !data.length || !data[0].value) return {};
+    return (typeof data[0].value === 'string' ? JSON.parse(data[0].value) : data[0].value) || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+module.exports = { load, loadRaw, DEFAULTS, SETTINGS_KEY };

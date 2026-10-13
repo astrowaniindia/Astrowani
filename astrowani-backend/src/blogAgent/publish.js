@@ -57,6 +57,12 @@ async function loadBlogState(db, { recentLimit = 40 } = {}) {
     slug: r.slug,
     createdAt: r.created_at,
     text: stripHtml(r.content_en || '').slice(0, 6000),
+    // The anchor text this post used. The gate compares a new article's anchor set
+    // against these so the blog cannot converge on one phrasing — which is exactly
+    // what the first two agent articles did, both linking with the identical four
+    // strings.
+    anchors: [...String(r.content_en || '').matchAll(/<a\s[^>]*>([^<]{2,80})<\/a>/gi)]
+      .map((m) => m[1].trim()),
   }));
 
   return { takenSlugs, recent };
