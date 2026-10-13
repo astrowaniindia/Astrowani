@@ -70,10 +70,16 @@ WorkingDirectory=$BACKEND_DIR
 # --env-file is how every other script here is run, and it keeps the secrets in
 # the root-owned .env rather than in a systemd unit that is world-readable.
 ExecStart=$NODE_BIN --env-file=$BACKEND_DIR/.env $BACKEND_DIR/scripts/runBlogAgent.js --count %i
-# A model call can legitimately take two minutes, and three attempts plus an
-# image fetch can stack up. Ten minutes is generous; past that something is hung
-# and killing it is correct.
-TimeoutStartSec=600
+# MEASURED 2026-10-13, which is why this is 20 minutes and not 10. A healthy run
+# is ~105s (English 41s + Hindi 64s on gemini-3.5-flash-lite). But the chain walks
+# past the full flash models first, and on the free tier those are routinely
+# saturated — usually failing fast with a 503, sometimes timing out at the 120s
+# the client allows. Worst case is 3 English attempts plus the Hindi pass, each
+# having waited out a flash timeout, which lands around 660s and would have been
+# killed under the original 600s. The process exits on its own when it finishes,
+# so a generous ceiling costs nothing; being killed mid-retry costs the slot and
+# looks like a hang rather than a rejection.
+TimeoutStartSec=1200
 # Nice + IOSchedulingClass: the backend shares this single core (CLAUDE.md DN)
 # and serves live calls and chat. The agent must always lose that contest.
 Nice=10

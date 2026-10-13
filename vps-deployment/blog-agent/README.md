@@ -16,7 +16,7 @@ generation and the live site. Read that file before loosening anything in it.
 
 | What | Provider | Free allowance | What we use |
 |---|---|---|---|
-| Writing | Gemini (`gemini-2.5-flash`, falls back to `2.0-flash`) | per-key daily request quota, and **six keys** are chained | ~3–6 calls/day |
+| Writing | Gemini 3.x flash, falling through to flash-lite | per-key daily request quota, and **seven keys** are chained | ~4–6 calls/day |
 | Photographs | Pexels → Pixabay → Unsplash | 200/hr (Pexels), generous (Pixabay), 50/hr (Unsplash) | 3/day |
 | Photographs, no key | a branded image drawn locally with sharp | unlimited | fallback |
 | Hindi | Gemini writes it natively, in the same call | — | 0 extra calls |
@@ -25,6 +25,26 @@ Hindi is **not** routed through `src/autoTranslate.js`. That module uses MyMemor
 free endpoint, whose allowance is ~5k characters a day — three long articles is
 ~24k, so it would be exhausted by breakfast and the Hindi columns would sit empty.
 Gemini writes the Hindi directly, which is both free and better.
+
+**Each article is TWO model calls, in this order: English → gate → Hindi.** One
+reply cannot hold two articles — measured against the real API, asking for both
+gave ~8,000 characters split across them, i.e. 391–553 English words against a
+700-word floor. Split, the same model produced 885 English and 1,117 Hindi words
+and passed first time. Hindi runs only *after* the English passes, so a rejected
+attempt costs one call rather than two.
+
+**Hindi is best-effort.** If the translation fails or comes back bad (too short,
+or English text returned in the Hindi field), the agent **drops the Hindi and
+publishes the English** rather than discarding the article — the Hindi columns are
+allowed to be empty and both apps fall back to English. A healthy run logs
+`Hindi accepted: 1057 words, 78.9% Devanagari`.
+
+**Model names are probed, never hardcoded from memory.** The first version named
+`gemini-2.5-flash` and `gemini-2.0-flash`; both are retired and every call 404'd.
+`GET /v1beta/models` is the authority. On the free tier the full flash models are
+routinely `503 "currently experiencing high demand"` while flash-lite answers
+instantly, so the chain falls through flash → lite and ends on the alias
+`gemini-flash-lite-latest`, which cannot 404 when a numbered version retires.
 
 ---
 
@@ -50,7 +70,7 @@ user cannot write that file directly — CLAUDE.md):
 | Variable | Needed? | Notes |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | **yes** | already set. Anon cannot write — every anon/authenticated write in `public` was revoked on 2026-09-23 |
-| `GEMINI_API_KEY` | **yes** | already set. The other five `GEMINI_API_KEY_*` are used as fallbacks automatically |
+| `GEMINI_API_KEY` | **yes** | already set. The other six `GEMINI_API_KEY_*` (`_CONSULT`, `_PRODUCT`, `_STARTUP`, `_WASTEEE006`, `_PRIYA`, `_RAJIV`) are tried as fallbacks automatically |
 | `PEXELS_API_KEY` | recommended | free, instant, no attribution required: <https://www.pexels.com/api/> |
 | `PIXABAY_API_KEY` | optional | second source: <https://pixabay.com/api/docs/> |
 | `UNSPLASH_ACCESS_KEY` | optional | its licence asks for a credit, which the agent adds automatically |
@@ -223,10 +243,10 @@ delete from blogs where slug = 'the-slug';                       -- remove
 cd astrowani-backend
 
 # Pure logic. No network, no database, no keys.
-node scripts/testBlogAgent.js            # 172 checks
+node scripts/testBlogAgent.js            # 210 checks
 
 # Live database + storage, model stubbed. Publishes a DRAFT and deletes it.
-node --experimental-websocket --env-file=.env scripts/testBlogAgentLive.js   # 83 checks
+node --experimental-websocket --env-file=.env scripts/testBlogAgentLive.js   # 84 checks
 ```
 
 `--experimental-websocket` is needed only on Node 20, which has no global

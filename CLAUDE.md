@@ -2521,6 +2521,18 @@ would spend that quota re-translating text that is already finished.
 - **`HINDI_NOT_HINDI` exists because a loaded model returns the English body again for
   `contentHi`**, and nothing downstream would notice — the app's Hindi toggle would just show
   English. It requires at least 25% Devanagari.
+- **Each article is TWO calls, in the order English -> gate -> Hindi.** One reply cannot hold
+  two articles: measured against the real API, asking for both gave ~8,000 characters split
+  across them, i.e. **391-553 English words against a 700-word floor, rejected three times in a
+  row.** Split, the same model gave 885 English / 1,117 Hindi and passed first time. The Hindi
+  pass runs only AFTER the English gate passes — running it first meant every discarded article
+  paid for a translation, and 3 attempts x 2 calls x up to 130s exceeds the systemd unit's
+  TimeoutStartSec (raised to 1200s for the same reason; a healthy run is ~105s).
+- **Hindi is judged by `quality.checkHindi()`, separately, and a failure DROPS THE HINDI rather
+  than the article.** The Hindi columns are allowed to be empty and both apps already fall back
+  to English, so rejecting 1,100 good English words over one weak translation would be the wrong
+  trade. `check()` therefore judges no Hindi at all, in either stage. `checkHindi` returns
+  `skipped: true` when there is no Hindi, so "never asked for" cannot be read as "came back bad".
 - **Model names must be probed, never remembered.** `DEFAULT_MODELS` originally named
   `gemini-2.5-flash` / `2.0-flash` and **every call 404'd** — both retired, the API itself
   pointing at the 3.x line. Measured 2026-10-13: the full flash tier is routinely **503
@@ -2589,13 +2601,20 @@ the app and the admin. When the new site takes the domain, set it to `https://as
 run a one-off UPDATE over `blogs.content_en` / `content_hi` for the articles already published.
 
 ### Verified 2026-10-13
-- **`scripts/testBlogAgent.js` — 184 offline checks** (no network, no DB, no keys). Every gate
+- **A real end-to-end generation was run** (owner-supplied key, 2026-10-13). Two topics, both
+  accepted on the FIRST attempt after the two-call split: Mangal Dosh 885 EN / 1,117 HI words,
+  Kundali Milan 868 EN / 1,057 HI (78.9% Devanagari), finishing at ~1,090 words with 9-11 brand
+  mentions, 6 internal links and keyword density 0.74-1.27%. The prose is specific (houses,
+  *bhanga* cancellation rules, Mars exalted in Capricorn, Tuesday remedies) and correctly frames
+  readings as tendencies rather than verdicts. **The published article itself has still never
+  been seen on the site** — these were `--dry-run`.
+- **`scripts/testBlogAgent.js` — 210 offline checks** (no network, no DB, no keys). Every gate
   rule is paired with a positive control, because a gate that rejects everything passes a
   negative-only suite. **The suite was itself verified to FAIL on four deliberately introduced
   regressions** (gate ignoring banned claims, slug keeping Devanagari, assembly dropping JSON-LD,
   both slug guards removed) — the Devanagari one needed BOTH guards removed, which is how it was
   discovered that the `[^a-z0-9]+` catch-all already covers it.
-- **`scripts/testBlogAgentLive.js` — 83 checks against the LIVE database and storage bucket**,
+- **`scripts/testBlogAgentLive.js` — 84 checks against the LIVE database and storage bucket**,
   model stubbed (the Gemini keys live only in the VPS `.env`). `index.js` is NEVER booted. It
   publishes a real row as a **draft**, asserts the columns, the rendered HTML (every `href` is
   ours, anchors balanced, no `<h1>`, no `style`/`class`), the parsed JSON-LD, the thumbnail
