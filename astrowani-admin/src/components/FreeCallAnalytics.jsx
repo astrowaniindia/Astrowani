@@ -285,17 +285,50 @@ export default function FreeCallAnalytics() {
               sub={(data.money?.shagunCount || 0) + ' payments'} tone="#16a34a" />
           </div>
 
+          {/* ── The number that matters: did a new signup actually try the free call ── */}
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+              padding: '14px 16px', marginBottom: 22, border: '1px solid var(--border)',
+              borderRadius: 10, background: 'var(--surface)',
+            }}
+          >
+            <div style={{ flex: '1 1 260px' }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 2 }}>
+                🎯 New signups who tried the free call
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                Of everyone who signed up {rangeLabelFor(preset)}, this is how many have EVER rung an
+                astrologer for the free call since (including after this window, if they're new) — the
+                number to push toward 100%.
+              </p>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 28, fontWeight: 800, color: (data.signupConversion?.rate || 0) >= 90 ? '#16a34a' : (data.signupConversion?.rate || 0) >= 50 ? '#d97706' : '#c0392b' }}>
+                {data.signupConversion?.rate ?? 0}%
+              </div>
+              <div className="muted" style={{ fontSize: 12.5 }}>
+                {data.signupConversion?.triedFreeCall ?? 0} of {data.signupConversion?.newSignups ?? 0} new signups
+              </div>
+            </div>
+          </div>
+
           {/* ── Day by day ── */}
           <h4 style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 700 }}>Day by day</h4>
           <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
             One row per calendar day in the range above, most recent first. A day with no
             activity still shows as a row of zeros, so a quiet day is visible rather than missing.
+            <strong> New signups / Tried</strong> is that day's signup cohort — "Tried" counts anyone
+            from that cohort who has EVER rung the free call since, even after this window, so it can
+            keep climbing on older rows as people convert late.
           </p>
           <div style={{ overflowX: 'auto', marginBottom: 22, maxHeight: 360, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)' }}>
                   <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Date</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>New signups</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Tried free call</th>
                   <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Rings</th>
                   <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Answered</th>
                   <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Talked</th>
@@ -306,27 +339,34 @@ export default function FreeCallAnalytics() {
               </thead>
               <tbody>
                 {(data.daily || []).length === 0 && (
-                  <tr><td colSpan={7} className="muted" style={{ padding: 10 }}>No days in this range.</td></tr>
+                  <tr><td colSpan={9} className="muted" style={{ padding: 10 }}>No days in this range.</td></tr>
                 )}
-                {(data.daily || []).map((d) => (
-                  <tr key={d.date} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: 6, fontWeight: 600 }}>
-                      {new Date(`${d.date}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })}
-                    </td>
-                    <td style={{ padding: 6 }}>{d.rings}</td>
-                    <td style={{ padding: 6 }}>{d.answered}</td>
-                    <td style={{ padding: 6, color: d.completed ? '#16a34a' : 'inherit', fontWeight: d.completed ? 700 : 400 }}>
-                      {d.completed}
-                    </td>
-                    <td style={{ padding: 6 }} className="muted">
-                      {d.missed + d.rejected} missed · {d.tooShort} too short · {d.abandonedByAstrologer} left early
-                    </td>
-                    <td style={{ padding: 6 }}>{d.payout ? `₹${d.payout}` : '—'}</td>
-                    <td style={{ padding: 6, color: d.shagunAmount ? '#16a34a' : 'inherit' }}>
-                      {d.shagunAmount ? `₹${d.shagunAmount} (${d.shagunCount})` : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {(data.daily || []).map((d) => {
+                  const rate = d.signups ? Math.round((d.triedFreeCall / d.signups) * 100) : null;
+                  return (
+                    <tr key={d.date} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: 6, fontWeight: 600 }}>
+                        {new Date(`${d.date}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })}
+                      </td>
+                      <td style={{ padding: 6 }}>{d.signups}</td>
+                      <td style={{ padding: 6, fontWeight: 700, color: rate === null ? 'inherit' : rate >= 90 ? '#16a34a' : rate >= 50 ? '#d97706' : '#c0392b' }}>
+                        {d.signups ? `${d.triedFreeCall} (${rate}%)` : '—'}
+                      </td>
+                      <td style={{ padding: 6 }}>{d.rings}</td>
+                      <td style={{ padding: 6 }}>{d.answered}</td>
+                      <td style={{ padding: 6, color: d.completed ? '#16a34a' : 'inherit', fontWeight: d.completed ? 700 : 400 }}>
+                        {d.completed}
+                      </td>
+                      <td style={{ padding: 6 }} className="muted">
+                        {d.missed + d.rejected} missed · {d.tooShort} too short · {d.abandonedByAstrologer} left early
+                      </td>
+                      <td style={{ padding: 6 }}>{d.payout ? `₹${d.payout}` : '—'}</td>
+                      <td style={{ padding: 6, color: d.shagunAmount ? '#16a34a' : 'inherit' }}>
+                        {d.shagunAmount ? `₹${d.shagunAmount} (${d.shagunCount})` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

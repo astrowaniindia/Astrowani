@@ -25,7 +25,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('./adminRoutes');
 const postHog = require('./postHogRoutes');
 const freeCallAttempts = require('./freeCallAttempts');
-const { chunkIds } = require('./pagedSelect');
+const { chunkIds, pagedSelect } = require('./pagedSelect');
+const { withoutExcluded } = require('./analyticsExclusions');
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -65,7 +66,7 @@ const dayKey = (iso) => (iso || '').slice(0, 10);
  * the headline totals above can't give you: a 30-day total of 90 rings reads completely
  * differently if it's 3/day steady versus 85 on one day and silence since.
  */
-function buildDailySeries(sinceIso, untilIso, rows, shagunDaily) {
+function buildDailySeries(sinceIso, untilIso, rows, shagunDaily, signupDaily) {
   const startDay = dayKey(sinceIso);
   const endDay = untilIso ? dayKey(untilIso) : dayKey(new Date().toISOString());
   const byDay = new Map();
@@ -75,6 +76,7 @@ function buildDailySeries(sinceIso, untilIso, rows, shagunDaily) {
     byDay.set(key, {
       date: key, rings: 0, answered: 0, completed: 0, tooShort: 0, abandonedByAstrologer: 0,
       cancelled: 0, missed: 0, rejected: 0, payout: 0, shagunCount: 0, shagunAmount: 0,
+      signups: 0, triedFreeCall: 0,
     });
   }
   rows.forEach((r) => {
@@ -98,6 +100,17 @@ function buildDailySeries(sinceIso, untilIso, rows, shagunDaily) {
     if (!entry) return; // paid after the window closed — still counted in the headline total
     entry.shagunCount += s.count;
     entry.shagunAmount += s.amount;
+  });
+  // A signup is attributed to the day they CREATED THEIR ACCOUNT (the cohort), and
+  // "tried" asks whether that same person has EVER rung the free call since — including
+  // after this window closed. That is deliberate: someone who signs up on day D and
+  // rings on day D+1 is still a conversion, and the point of this number is to watch it
+  // climb toward 100% as a cohort matures, not to freeze it at whatever happened same-day.
+  (signupDaily || []).forEach(([key, s]) => {
+    const entry = byDay.get(key);
+    if (!entry) return;
+    entry.signups = s.signups;
+    entry.triedFreeCall = s.tried;
   });
   return [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date)); // most recent first
 }
@@ -510,12 +523,47 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
     const totalTalk = talked.reduce((a, r) => a + (Number(r.duration_seconds) || 0), 0);
     const payout = rows.reduce((a, r) => a + (Number(r.payout_amount) || 0), 0);
 
+    // ── Signup -> free call conversion ──
+    //
+    // The offer's whole point is to get a brand-new customer talking to an astrologer
+    // within minutes of signing up, so "how many people signed up" and "how many of
+    // THEM ever tried it" is the number that actually matters — not just "rings
+    // happened this week" in isolation. Deliberately a cohort: a signup's "tried" status
+    // looks at their WHOLE history, not just rings inside this window, so someone who
+    // signs up on the last day of the range and rings the next day still counts.
+    let signupsQuery = db.from('customers').select('id, created_at').gte('created_at', effectiveSinceIso);
+    if (untilIso) signupsQuery = signupsQuery.lte('created_at', untilIso);
+    const { rows: signupRows } = await pagedSelect(() => signupsQuery);
+    const signups = withoutExcluded(signupRows, 'id');
+
+    const triedIds = new Set();
+    for (const chunk of chunkIds(signups.map((c) => c.id))) {
+      const { data: everRang } = await db.from(freeCallAttempts.TABLE)
+        .select('customer_id')
+        .in('customer_id', chunk);
+      (everRang || []).forEach((r) => { if (r.customer_id) triedIds.add(r.customer_id); });
+    }
+
+    const signupDaily = new Map();
+    signups.forEach((c) => {
+      const key = dayKey(c.created_at);
+      const e = signupDaily.get(key) || { signups: 0, tried: 0 };
+      e.signups += 1;
+      if (triedIds.has(c.id)) e.tried += 1;
+      signupDaily.set(key, e);
+    });
+
     return res.status(200).json({
       success: true,
       ready: true,
       days,
       range: { from: dayKey(effectiveSinceIso), to: untilIso ? dayKey(untilIso) : dayKey(new Date().toISOString()) },
-      daily: buildDailySeries(effectiveSinceIso, untilIso, rows, [...shagunByDay.entries()]),
+      daily: buildDailySeries(effectiveSinceIso, untilIso, rows, [...shagunByDay.entries()], [...signupDaily.entries()]),
+      signupConversion: {
+        newSignups: signups.length,
+        triedFreeCall: triedIds.size,
+        rate: signups.length ? Math.round((triedIds.size / signups.length) * 100) : 0,
+      },
       instantSince,
       // The DATABASE branch of the tree — everything here really happened.
       tree: {
