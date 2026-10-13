@@ -346,11 +346,25 @@ async function acquire(db, { query, title, avoidRefs = [], log = () => {} }) {
   return { ...stored, ref: gen.ref, provider: gen.provider, credit: null };
 }
 
-/** The credit line Unsplash's licence asks for. Empty for the other providers. */
+/**
+ * The credit line Unsplash's licence asks for. Empty for the other providers.
+ *
+ * Carries a CLASS rather than an inline colour, deliberately. The owner asked for
+ * #f4d8bc, which measures 7.57:1 against the dark theme's background and 1.10:1
+ * against the light theme's #EBCEB2 — i.e. invisible in light mode. A class lets
+ * the stylesheet give each theme a readable value (aw/aw.css), and an inline style
+ * could not, because it would win over the dark-mode rule as well.
+ *
+ * In the customer app, which renders this HTML through react-native-render-html
+ * and has no stylesheet, the class is simply ignored and the line inherits normal
+ * body text styling — which is correct there.
+ */
 function creditHtml(credit) {
   if (!credit) return '';
   const esq = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  return `<p><em>Photo by <a href="${esq(credit.link)}" rel="nofollow noopener">${esq(credit.name)}</a> on ${esq(credit.provider)}.</em></p>`;
+  return `<p class="aw-photo-credit"><em>Photo by `
+    + `<a href="${esq(credit.link)}" rel="nofollow noopener">${esq(credit.name)}</a> `
+    + `on ${esq(credit.provider)}.</em></p>`;
 }
 
 module.exports = {

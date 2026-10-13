@@ -582,3 +582,33 @@ body.aw-imgedit-open { overflow: hidden; }
   width: 40px; height: 40px; border: 0; border-radius: 999px;
   background: rgba(255,255,255,.15); color: #fff; font-size: 24px; line-height: 1; cursor: pointer;
 }
+
+
+/* ── Photo credit under a blog article ───────────────────────────────────────
+ * Emitted by the blog agent (astrowani-backend/src/blogAgent/images.js) to
+ * satisfy Unsplash's licence, which requires the photographer and Unsplash to be
+ * named and linked.
+ *
+ * #f4d8bc IN BOTH THEMES, at the owner's explicit instruction after being shown
+ * the measurement: it is 7.57:1 against the dark background and 1.10:1 against
+ * the light theme's #EBCEB2, so in light mode this line is deliberately almost
+ * invisible. That is the intent — a near-silent credit that satisfies the licence
+ * without competing with the article. Do not "fix" the contrast.
+ */
+/* `.legal-content p` and `.legal-content a` (style.css:336-339) both carry
+ * specificity 0,1,1, so a bare `.aw-photo-credit` at 0,1,0 loses to them and the
+ * paragraph kept its inherited --ink-soft. Matching their specificity is the fix;
+ * !important is not needed and would make this harder to override later. */
+.legal-content .aw-photo-credit,
+.legal-content .aw-photo-credit em,
+.legal-content .aw-photo-credit a,
+.aw-photo-credit,
+.aw-photo-credit em,
+.aw-photo-credit a {
+  color: #f4d8bc;
+}
+.aw-photo-credit {
+  font-size: 13.5px;
+  margin-top: 26px;
+}
+.aw-photo-credit a { text-decoration: underline; }
