@@ -15,11 +15,43 @@ import client from '../api/client';
  *                  shown separately and never added to a measured number.
  */
 
-const RANGES = [
-  { days: 7, label: '7 days' },
-  { days: 30, label: '30 days' },
-  { days: 90, label: '90 days' },
+// Same preset set and the same "from/to beats days" convention as the main Analytics
+// page (astrowani-admin/src/pages/Analytics.jsx) — Today and Yesterday need calendar-day
+// bounds, which a rolling "days" window can't express.
+const PRESETS = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: '7', label: '7 days' },
+  { key: '30', label: '30 days' },
+  { key: '90', label: '90 days' },
 ];
+
+// Local calendar date as YYYY-MM-DD — NOT d.toISOString().slice(0,10), which shifts to
+// UTC first and can land on the wrong day depending on the admin's timezone.
+function toLocalISODate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** A preset key -> the {from, to} (or {days}) params the backend expects. */
+function rangeParamsFor(preset) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (preset === 'today') { const d = toLocalISODate(today); return { from: d, to: d }; }
+  if (preset === 'yesterday') {
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    const d = toLocalISODate(y); return { from: d, to: d };
+  }
+  return { days: Number(preset) || 30 };
+}
+
+function rangeLabelFor(preset) {
+  const p = PRESETS.find((x) => x.key === preset);
+  if (preset === 'today' || preset === 'yesterday') return p.label.toLowerCase();
+  return `last ${p.label}`;
+}
 
 const fmtSeconds = (s) => {
   const n = Number(s) || 0;
@@ -114,7 +146,7 @@ function Bar({ label, value, max, color }) {
 }
 
 export default function FreeCallAnalytics() {
-  const [days, setDays] = useState(30);
+  const [preset, setPreset] = useState('30');
   const [data, setData] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -126,9 +158,10 @@ export default function FreeCallAnalytics() {
     setLoading(true);
     setErr(null);
     try {
+      const params = rangeParamsFor(preset);
       const [a, c] = await Promise.all([
-        client.get(`/api/admin/free-call/analytics?days=${days}`),
-        client.get(`/api/admin/free-call/analytics/customers?days=${days}`),
+        client.get('/api/admin/free-call/analytics', { params }),
+        client.get('/api/admin/free-call/analytics/customers', { params }),
       ]);
       setData(a.data);
       setCustomers(c.data?.customers || []);
@@ -137,7 +170,7 @@ export default function FreeCallAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [preset]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -182,17 +215,17 @@ export default function FreeCallAnalytics() {
           </span>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {RANGES.map((r) => (
+          {PRESETS.map((p) => (
             <button
-              key={r.days}
+              key={p.key}
               className="btn sm"
-              onClick={() => setDays(r.days)}
+              onClick={() => setPreset(p.key)}
               style={{
-                fontWeight: days === r.days ? 700 : 400,
-                opacity: days === r.days ? 1 : 0.6,
+                fontWeight: preset === p.key ? 700 : 400,
+                opacity: preset === p.key ? 1 : 0.6,
               }}
             >
-              {r.label}
+              {p.label}
             </button>
           ))}
           <button className="btn sm" onClick={load} disabled={loading}>
@@ -201,8 +234,9 @@ export default function FreeCallAnalytics() {
         </div>
       </div>
       <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
-        Everything this offer did in the last {days} days. <strong>Measured</strong> numbers come
-        from the database and are exact. <strong>Tracked</strong> numbers come from app analytics
+        Everything this offer did {rangeLabelFor(preset)}
+        {data?.range ? ` (${data.range.from} to ${data.range.to})` : ''}. <strong>Measured</strong> numbers
+        come from the database and are exact. <strong>Tracked</strong> numbers come from app analytics
         and cover the taps that happen before a call exists.
       </p>
 
@@ -249,6 +283,52 @@ export default function FreeCallAnalytics() {
             <Stat label="Paid to astrologers" value={'₹' + (data.money?.payout || 0)} />
             <Stat label="Shagun received" value={'₹' + (data.money?.shagunAmount || 0)}
               sub={(data.money?.shagunCount || 0) + ' payments'} tone="#16a34a" />
+          </div>
+
+          {/* ── Day by day ── */}
+          <h4 style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 700 }}>Day by day</h4>
+          <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
+            One row per calendar day in the range above, most recent first. A day with no
+            activity still shows as a row of zeros, so a quiet day is visible rather than missing.
+          </p>
+          <div style={{ overflowX: 'auto', marginBottom: 22, maxHeight: 360, overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)' }}>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Date</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Rings</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Answered</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Talked</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Missed/declined</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Paid out</th>
+                  <th style={{ padding: 6, position: 'sticky', top: 0, background: 'var(--surface, #fff)' }}>Shagun in</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.daily || []).length === 0 && (
+                  <tr><td colSpan={7} className="muted" style={{ padding: 10 }}>No days in this range.</td></tr>
+                )}
+                {(data.daily || []).map((d) => (
+                  <tr key={d.date} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: 6, fontWeight: 600 }}>
+                      {new Date(`${d.date}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })}
+                    </td>
+                    <td style={{ padding: 6 }}>{d.rings}</td>
+                    <td style={{ padding: 6 }}>{d.answered}</td>
+                    <td style={{ padding: 6, color: d.completed ? '#16a34a' : 'inherit', fontWeight: d.completed ? 700 : 400 }}>
+                      {d.completed}
+                    </td>
+                    <td style={{ padding: 6 }} className="muted">
+                      {d.missed + d.rejected} missed · {d.tooShort} too short · {d.abandonedByAstrologer} left early
+                    </td>
+                    <td style={{ padding: 6 }}>{d.payout ? `₹${d.payout}` : '—'}</td>
+                    <td style={{ padding: 6, color: d.shagunAmount ? '#16a34a' : 'inherit' }}>
+                      {d.shagunAmount ? `₹${d.shagunAmount} (${d.shagunCount})` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* ── The tree ── */}

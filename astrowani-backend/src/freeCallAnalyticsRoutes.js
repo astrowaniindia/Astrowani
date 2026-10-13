@@ -34,12 +34,72 @@ const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ success: false, message: 'Could not load free call analytics' });
 });
 
-/** 1..180 days, defaulting to 30. Same clamping discipline as the PostHog routes. */
+/**
+ * `from`/`to` (YYYY-MM-DD, inclusive) take priority; `days` (a rolling window ending now)
+ * is the fallback. Same convention as adminRoutes.resolveDateBounds, so every date
+ * control in the admin behaves the same way — this is what lets the page offer "Today"
+ * and "Yesterday" (a single calendar day has no meaningful "days" equivalent) alongside
+ * the rolling 7/30/90-day presets.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 function rangeFrom(req) {
+  const { from, to } = req.query;
+  if (ISO_DATE.test(from || '') && ISO_DATE.test(to || '')) {
+    return { days: null, sinceIso: `${from}T00:00:00.000Z`, untilIso: `${to}T23:59:59.999Z` };
+  }
   const n = parseInt(req.query.days, 10);
   const days = Number.isFinite(n) && n > 0 ? Math.min(n, 180) : 30;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  return { days, sinceIso: since.toISOString() };
+  return { days, sinceIso: since.toISOString(), untilIso: null };
+}
+
+/** UTC calendar date of an ISO timestamp — same convention `adminRoutes.js` already
+ * uses for its day-bucketed cards (revenue, session-volume), so this page's daily rows
+ * line up with the rest of the admin rather than introducing a second convention. */
+const dayKey = (iso) => (iso || '').slice(0, 10);
+
+/**
+ * One row per calendar day between `sinceIso` and `untilIso` (or today, if the request
+ * was a rolling window with no explicit end) — zero-filled, so a quiet day shows as 0
+ * rather than simply being absent from the table. This is the actual "daily tracking"
+ * the headline totals above can't give you: a 30-day total of 90 rings reads completely
+ * differently if it's 3/day steady versus 85 on one day and silence since.
+ */
+function buildDailySeries(sinceIso, untilIso, rows, shagunDaily) {
+  const startDay = dayKey(sinceIso);
+  const endDay = untilIso ? dayKey(untilIso) : dayKey(new Date().toISOString());
+  const byDay = new Map();
+  for (let d = new Date(`${startDay}T00:00:00.000Z`), end = new Date(`${endDay}T00:00:00.000Z`);
+    d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const key = d.toISOString().slice(0, 10);
+    byDay.set(key, {
+      date: key, rings: 0, answered: 0, completed: 0, tooShort: 0, abandonedByAstrologer: 0,
+      cancelled: 0, missed: 0, rejected: 0, payout: 0, shagunCount: 0, shagunAmount: 0,
+    });
+  }
+  rows.forEach((r) => {
+    const entry = byDay.get(dayKey(r.rang_at));
+    if (!entry) return; // outside the seeded range — should not happen, but never throw over it
+    entry.rings += 1;
+    if (r.answered_at) entry.answered += 1;
+    if (r.outcome === 'completed') entry.completed += 1;
+    else if (r.outcome === 'too_short') entry.tooShort += 1;
+    else if (r.outcome === 'abandoned_by_astrologer') entry.abandonedByAstrologer += 1;
+    else if (r.outcome === 'cancelled') entry.cancelled += 1;
+    else if (r.outcome === 'missed') entry.missed += 1;
+    else if (r.outcome === 'rejected') entry.rejected += 1;
+    entry.payout += Number(r.payout_amount) || 0;
+  });
+  // A Shagun payment is attributed to the day it was PAID, not the day of the call it
+  // thanks — the two are usually the same day but not always, and "money that came in
+  // today" is the number worth reading off a daily table.
+  (shagunDaily || []).forEach(([key, s]) => {
+    const entry = byDay.get(key);
+    if (!entry) return; // paid after the window closed — still counted in the headline total
+    entry.shagunCount += s.count;
+    entry.shagunAmount += s.amount;
+  });
+  return [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date)); // most recent first
 }
 
 /**
@@ -317,7 +377,7 @@ async function namesFor(table, ids, cols) {
 module.exports = function registerFreeCallAnalyticsRoutes(app) {
   /* ── The whole picture for the offer, in one call ─────────────────────────── */
   app.get('/api/admin/free-call/analytics', requireAdmin, h(async (req, res) => {
-    const { days, sinceIso } = rangeFrom(req);
+    const { days, sinceIso, untilIso } = rangeFrom(req);
     const instantSince = await loadInstantSince();
 
     if (!freeCallAttempts.isAvailable()) {
@@ -338,17 +398,23 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
     const effectiveSinceIso = new Date(instantSince) > new Date(sinceIso) ? instantSince : sinceIso;
 
     const [{ data: attempts }, { data: bookings }, clicks] = await Promise.all([
-      db.from(freeCallAttempts.TABLE)
-        .select('id, booking_id, customer_id, astrologer_id, session_id, attempt_no, outcome, '
-          + 'ended_by, rang_at, answered_at, ended_at, duration_seconds, payout_amount')
-        .gte('rang_at', effectiveSinceIso)
-        .order('rang_at', { ascending: false })
-        .limit(5000),
-      db.from('free_call_bookings')
-        .select('id, customer_id, status, call_attempts, created_at, kind')
-        .eq('kind', 'instant')
-        .gte('created_at', effectiveSinceIso)
-        .limit(5000),
+      (() => {
+        let q = db.from(freeCallAttempts.TABLE)
+          .select('id, booking_id, customer_id, astrologer_id, session_id, attempt_no, outcome, '
+            + 'ended_by, rang_at, answered_at, ended_at, duration_seconds, payout_amount')
+          .gte('rang_at', effectiveSinceIso)
+          .order('rang_at', { ascending: false })
+          .limit(5000);
+        return untilIso ? q.lte('rang_at', untilIso) : q;
+      })(),
+      (() => {
+        let q = db.from('free_call_bookings')
+          .select('id, customer_id, status, call_attempts, created_at, kind')
+          .eq('kind', 'instant')
+          .gte('created_at', effectiveSinceIso)
+          .limit(5000);
+        return untilIso ? q.lte('created_at', untilIso) : q;
+      })(),
       clickCounts(effectiveSinceIso),
     ]);
 
@@ -425,12 +491,20 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
     // ── What came back: Shagun Arpan paid against these very sessions ──
     const sessionIds = rows.map((r) => r.session_id).filter(Boolean);
     let shagun = { count: 0, amount: 0 };
+    const shagunByDay = new Map();
     for (const chunk of chunkIds(sessionIds)) {
       const { data: pays } = await db.from('dakshina_payments')
-        .select('amount, status, session_id')
+        .select('amount, status, session_id, paid_at')
         .in('session_id', chunk)
         .eq('status', 'paid');
-      (pays || []).forEach((p) => { shagun.count += 1; shagun.amount += Number(p.amount) || 0; });
+      (pays || []).forEach((p) => {
+        shagun.count += 1;
+        shagun.amount += Number(p.amount) || 0;
+        const key = dayKey(p.paid_at);
+        const e = shagunByDay.get(key) || { count: 0, amount: 0 };
+        e.count += 1; e.amount += Number(p.amount) || 0;
+        shagunByDay.set(key, e);
+      });
     }
 
     const totalTalk = talked.reduce((a, r) => a + (Number(r.duration_seconds) || 0), 0);
@@ -440,6 +514,8 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
       success: true,
       ready: true,
       days,
+      range: { from: dayKey(effectiveSinceIso), to: untilIso ? dayKey(untilIso) : dayKey(new Date().toISOString()) },
+      daily: buildDailySeries(effectiveSinceIso, untilIso, rows, [...shagunByDay.entries()]),
       instantSince,
       // The DATABASE branch of the tree — everything here really happened.
       tree: {
@@ -488,7 +564,7 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
 
   /* ── One row per customer, with their own attempt timeline ────────────────── */
   app.get('/api/admin/free-call/analytics/customers', requireAdmin, h(async (req, res) => {
-    const { days, sinceIso } = rangeFrom(req);
+    const { days, sinceIso, untilIso } = rangeFrom(req);
     const instantSince = await loadInstantSince();
     if (!freeCallAttempts.isAvailable()) {
       return res.status(200).json({ success: true, days, ready: false, customers: [], instantSince });
@@ -499,12 +575,14 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
     const effectiveSinceIso = new Date(instantSince) > new Date(sinceIso) ? instantSince : sinceIso;
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
-    const { data: attempts } = await db.from(freeCallAttempts.TABLE)
+    let attemptsQuery = db.from(freeCallAttempts.TABLE)
       .select('id, customer_id, astrologer_id, session_id, attempt_no, outcome, ended_by, '
         + 'rang_at, answered_at, ended_at, duration_seconds, payout_amount')
       .gte('rang_at', effectiveSinceIso)
       .order('rang_at', { ascending: false })
       .limit(3000);
+    if (untilIso) attemptsQuery = attemptsQuery.lte('rang_at', untilIso);
+    const { data: attempts } = await attemptsQuery;
 
     const rows = attempts || [];
     const byCustomer = new Map();
