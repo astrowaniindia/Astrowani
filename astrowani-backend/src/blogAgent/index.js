@@ -75,7 +75,10 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     for (let attempt = 1; attempt <= cfg.maxAttemptsPerArticle; attempt += 1) {
       attempts = attempt;
       log(`attempt ${attempt}/${cfg.maxAttemptsPerArticle}: asking the model…`);
-      const drafted = await generate.draft({
+      // ENGLISH ONLY at this point. The Hindi pass runs after this gate passes,
+      // so a rejected attempt costs one model call instead of two — and three
+      // attempts cannot exceed the systemd unit's 600s TimeoutStartSec.
+      const drafted = await generate.draftEnglish({
         topic,
         limits,
         related,
@@ -100,6 +103,26 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
         rejections: verdict?.rejections || [], word_count: verdict?.stats?.wordsEn || null,
       });
       return { status: 'rejected', topic, rejections: verdict?.rejections || [], attempts };
+    }
+
+    // ── Hindi ──────────────────────────────────────────────────────────────
+    // Only now, on an article that has earned it.
+    log('  English accepted — translating to Hindi…');
+    article = await generate.addHindi(article, { topic, limits, log });
+
+    const hindiVerdict = quality.checkHindi(article, { limits });
+    if (hindiVerdict.skipped) {
+      log('  no Hindi returned — publishing English only (the apps fall back)');
+    } else if (!hindiVerdict.ok) {
+      // DROP the Hindi, do NOT reject the article. Hindi is best-effort and both
+      // apps already fall back to English on an empty column; discarding 1,100
+      // good English words over one weak translation would be the wrong trade.
+      log(`  Hindi rejected (${hindiVerdict.rejections.join('; ')}) — dropping it, publishing English only`);
+      article = {
+        ...article, titleHi: '', metaDescriptionHi: '', excerptHi: '', contentHi: '', faqsHi: [],
+      };
+    } else {
+      log(`  Hindi accepted: ${hindiVerdict.stats.wordsHi} words, ${hindiVerdict.stats.devanagariPct}% Devanagari`);
     }
 
     // ── Slug ───────────────────────────────────────────────────────────────
@@ -262,10 +285,15 @@ async function run({
   }
 
   const published = results.filter((r) => r.status === 'published').length;
-  log(`\ndone: ${published} published, `
-    + `${results.filter((r) => r.status === 'rejected').length} rejected, `
-    + `${results.filter((r) => r.status === 'failed').length} failed, `
-    + `${results.filter((r) => r.status === 'skipped').length} skipped`);
+  const tally = (s) => results.filter((r) => r.status === s).length;
+  // A dry run produces status 'dry-run', which belongs in this line too — the
+  // first version counted only the four real outcomes, so a successful dry run
+  // reported "0 published, 0 rejected, 0 failed, 0 skipped" and read as though
+  // nothing had happened.
+  const dryRuns = tally('dry-run');
+  log(`\ndone: ${published} published, ${tally('rejected')} rejected, `
+    + `${tally('failed')} failed, ${tally('skipped')} skipped`
+    + (dryRuns ? `, ${dryRuns} generated but not stored (dry run)` : ''));
 
   return { ran: true, published, results, config: cfg };
 }

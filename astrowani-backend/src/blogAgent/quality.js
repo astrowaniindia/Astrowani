@@ -154,12 +154,24 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
   // ── Structure ─────────────────────────────────────────────────────────────
   if (!titleEn) fail('TITLE_MISSING');
   else if (titleEn.length > L.titleMaxChars) fail('TITLE_TOO_LONG', `${titleEn.length} > ${L.titleMaxChars} chars`);
-  if (!titleHi) fail('TITLE_HI_MISSING');
 
   if (wordsEn < L.minWordsEn) fail('TOO_SHORT_EN', `${wordsEn} words < ${L.minWordsEn}`);
   if (wordsEn > L.maxWordsEn) fail('TOO_LONG_EN', `${wordsEn} words > ${L.maxWordsEn}`);
-  if (wordsHi < L.minWordsHi) fail('TOO_SHORT_HI', `${wordsHi} words < ${L.minWordsHi}`);
   if (h2Count < L.minH2) fail('TOO_FEW_H2', `${h2Count} < ${L.minH2}`);
+
+  // HINDI IS NOT CHECKED HERE, IN EITHER STAGE, AND THAT IS DELIBERATE.
+  //
+  // A draft is English-only by construction — generate.addHindi() runs only after
+  // this gate passes, so that a rejected attempt does not pay for a translation
+  // of an article about to be discarded (three attempts x two calls x 130s would
+  // also blow the systemd unit's 600s budget).
+  //
+  // And at the FINAL stage, bad Hindi must not reject a good English article:
+  // Hindi is best-effort, and both apps already fall back to English when the
+  // column is empty. The orchestrator therefore calls checkHindi() separately and
+  // DROPS the Hindi rather than failing the article. Folding these back in here
+  // would mean one weak translation discarded 1,100 good English words.
+  void titleHi; void wordsHi; // measured for `stats`, judged by checkHindi()
 
   // An <h1> inside the body would compete with the page's own <h1>, which
   // blog-post.html renders from the title. Two h1s on a page is a classic
@@ -239,15 +251,6 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
     if (hit) fail('SCAFFOLD_LEAKED', `"${String(hit[0]).slice(0, 60)}"`);
   }
 
-  // Hindi must actually be Hindi. A model under load will happily return the
-  // English text again for `contentHi`, and nothing downstream would notice —
-  // the app's Hindi toggle would just show English, which is the exact bug
-  // autoTranslate.js was written to fix.
-  const devanagari = (plainHi.match(/[ऀ-ॿ]/g) || []).length;
-  if (plainHi.length && devanagari / plainHi.length < 0.25) {
-    fail('HINDI_NOT_HINDI', `${((devanagari / plainHi.length) * 100).toFixed(0)}% Devanagari`);
-  }
-
   // ── Near-duplicate of something already published ─────────────────────────
   let maxSim = 0;
   let simAgainst = null;
@@ -274,8 +277,60 @@ function check(article, { keyword, limits = {}, existing = [], stage = 'final' }
   };
 }
 
+/**
+ * Judge the Hindi half on its own.
+ *
+ * SEPARATE FROM check() BECAUSE THE CONSEQUENCE IS DIFFERENT. A failure here
+ * means "drop the Hindi and publish the English", not "discard the article" — the
+ * Hindi columns are allowed to be empty and both apps fall back to English, which
+ * is the pre-existing behaviour. Rejecting 1,100 good English words over one weak
+ * translation would be the wrong trade.
+ *
+ * `{ ok: true, skipped: true }` when there is no Hindi at all, so a caller cannot
+ * confuse "no Hindi was produced" with "the Hindi is bad".
+ */
+function checkHindi(article, { limits = {} } = {}) {
+  const L = { ...DEFAULT_LIMITS, ...limits };
+  const rejections = [];
+  const contentHi = article?.contentHi || '';
+  const plainHi = stripHtml(contentHi);
+
+  if (!plainHi) return { ok: true, skipped: true, rejections: [], stats: { wordsHi: 0, devanagariPct: 0 } };
+
+  const wordsHi = wordCount(contentHi);
+  const devanagari = (plainHi.match(/[ऀ-ॿ]/g) || []).length;
+  const pct = (devanagari / plainHi.length) * 100;
+
+  if (!String(article.titleHi || '').trim()) rejections.push('TITLE_HI_MISSING');
+  if (wordsHi < L.minWordsHi) rejections.push(`TOO_SHORT_HI: ${wordsHi} words < ${L.minWordsHi}`);
+
+  // A model under load will happily return the ENGLISH text again for contentHi,
+  // and nothing downstream would notice — the app's Hindi toggle would simply
+  // show English, which is the exact bug src/autoTranslate.js exists to fix.
+  // Transliterated Hindi in Latin script fails this too, and should: it is not
+  // what a Hindi reader expects and it ranks for nothing.
+  if (pct < 25) rejections.push(`HINDI_NOT_HINDI: ${pct.toFixed(0)}% Devanagari`);
+
+  for (const re of BANNED_PATTERNS) {
+    const hit = re.exec(plainHi);
+    if (hit) rejections.push(`BANNED_CLAIM: "${String(hit[0]).slice(0, 60)}"`);
+  }
+  for (const re of SCAFFOLD_PATTERNS) {
+    const hit = re.exec(plainHi) || re.exec(article.titleHi || '');
+    if (hit) rejections.push(`SCAFFOLD_LEAKED: "${String(hit[0]).slice(0, 60)}"`);
+  }
+
+  return {
+    ok: rejections.length === 0,
+    skipped: false,
+    rejections,
+    stats: { wordsHi, devanagariPct: Number(pct.toFixed(1)) },
+  };
+}
+
 module.exports = {
   check,
+  checkHindi,
   similarity,
   shingles,
   DEFAULT_LIMITS,

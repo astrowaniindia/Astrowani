@@ -279,20 +279,15 @@ function normaliseFaqs(v) {
  * because a check that lives inside the generator cannot be run against a
  * fixture in a test.
  */
-async function draft({ topic, limits, related = [], recentTitles = [], log = () => {} }) {
-  // ── Call 1: the English article ──────────────────────────────────────────
-  //
+async function draftEnglish({ topic, limits, related = [], recentTitles = [], log = () => {} }) {
   // TWO CALLS, NOT ONE, AND THIS IS THE REASON. The first version asked for both
   // languages plus the FAQs in a single reply, and measured against the real API
   // on 2026-10-13 it failed every time: gemini-3.5-flash-lite returned ~8,000
   // characters TOTAL and split them across the two languages, giving 391-553
   // English words against a 700-word floor. It was not hitting MAX_TOKENS — it
   // finished with STOP, having budgeted its own answer. A model asked for two
-  // articles writes two half-articles.
-  //
-  // Splitting them gives each call the full output budget. The cost is one extra
-  // request per article, so six a day instead of three, which is still nowhere
-  // near any free-tier limit.
+  // articles writes two half-articles. Split, the same model produced 885 English
+  // and 1,117 Hindi words and passed on the first attempt.
   const first = await callGemini({
     system: SYSTEM,
     prompt: buildPrompt({ topic, limits, related, recentTitles }),
@@ -304,53 +299,78 @@ async function draft({ topic, limits, related = [], recentTitles = [], log = () 
   const raw = parseJson(first.text);
 
   const clean = (v, max) => normaliseBrand(seo.stripHtml(pickString(v))).slice(0, max);
-  const contentEn = normaliseBrand(sanitiseHtml(raw.contentEn));
-  const titleEn = clean(raw.titleEn, 200);
-  const faqs = normaliseFaqs(raw.faqs);
 
-  // ── Call 2: the Hindi version, from the finished English ─────────────────
-  //
-  // Translating the completed article (rather than generating Hindi from the
-  // topic again) keeps the two versions saying the same thing — which matters,
-  // because a reader toggling EN/HI on one URL expects one article, not two
-  // loosely related ones. It also means the Hindi inherits the English's
-  // structure, so the headings line up.
-  //
-  // Hindi is best-effort: a failure here leaves the Hindi columns empty and the
-  // apps fall back to English, which is the pre-existing behaviour. Losing the
-  // Hindi is not a reason to throw away a good English article.
-  let hindi = {};
-  let hindiModel = null;
+  return {
+    model: `${first.model} (${first.tier})`,
+    titleEn: clean(raw.titleEn, 200),
+    metaDescription: clean(raw.metaDescription, 400),
+    excerpt: clean(raw.excerpt, 600),
+    imageQuery: seo.stripHtml(pickString(raw.imageQuery)).slice(0, 120),
+    imageAlt: clean(raw.imageAlt, 220),
+    contentEn: normaliseBrand(sanitiseHtml(raw.contentEn)),
+    faqs: normaliseFaqs(raw.faqs),
+    // Filled by addHindi(). Present and empty so the shape never varies.
+    titleHi: '', metaDescriptionHi: '', excerptHi: '', contentHi: '', faqsHi: [],
+  };
+}
+
+/**
+ * The Hindi pass, run on an article that has ALREADY PASSED the English gate.
+ *
+ * ORDER MATTERS AND IT IS NOT JUST ABOUT COST. Running this before the gate meant
+ * every rejected attempt paid for a Hindi translation of an article about to be
+ * thrown away — and worse, three attempts x two calls x up to 130s each is 780s,
+ * past the 600s TimeoutStartSec the systemd unit allows. The unit would have been
+ * killed mid-retry, which looks like a hang rather than a rejection. Gating first
+ * means a failed attempt costs one call, and only the accepted article pays for
+ * Hindi.
+ *
+ * Translating the FINISHED English (rather than generating Hindi from the topic
+ * again) keeps the two versions saying the same thing — a reader toggling EN/HI on
+ * one URL expects one article in two languages, not two loosely related ones — and
+ * makes the headings line up.
+ *
+ * BEST-EFFORT BY DESIGN: on any failure the Hindi fields stay empty, `/api/blogs`
+ * serves `hindi.title` as '' and both apps fall back to English, which is the
+ * pre-existing behaviour. Losing the Hindi must never discard a good English
+ * article.
+ */
+async function addHindi(article, { topic, limits, log = () => {} }) {
+  const clean = (v, max) => normaliseBrand(seo.stripHtml(pickString(v))).slice(0, max);
   try {
-    const second = await callGemini({
+    const res = await callGemini({
       system: SYSTEM,
-      prompt: buildHindiPrompt({ topic, limits, titleEn, contentEn, faqs }),
+      prompt: buildHindiPrompt({
+        topic, limits, titleEn: article.titleEn, contentEn: article.contentEn, faqs: article.faqs,
+      }),
       json: true,
       temperature: 0.7, // a translation, so less room to wander than the original
       maxOutputTokens: 16384,
       log,
     });
-    hindi = parseJson(second.text) || {};
-    hindiModel = second.model;
+    const hi = parseJson(res.text) || {};
+    return {
+      ...article,
+      model: `${article.model}${res.model ? ` + ${res.model} for hi` : ''}`,
+      titleHi: clean(hi.titleHi, 200),
+      metaDescriptionHi: clean(hi.metaDescriptionHi, 400),
+      excerptHi: clean(hi.excerptHi, 600),
+      contentHi: normaliseBrand(sanitiseHtml(hi.contentHi)),
+      faqsHi: normaliseFaqs(hi.faqsHi),
+    };
   } catch (err) {
-    log(`  Hindi pass failed (${err.message.slice(0, 120)}) — publishing English only`);
+    log(`  Hindi pass failed (${err.message.slice(0, 140)}) — publishing English only`);
+    return article;
   }
+}
 
-  return {
-    model: `${first.model} (${first.tier})${hindiModel && hindiModel !== first.model ? ` + ${hindiModel} for hi` : ''}`,
-    titleEn,
-    titleHi: clean(hindi.titleHi, 200),
-    metaDescription: clean(raw.metaDescription, 400),
-    metaDescriptionHi: clean(hindi.metaDescriptionHi, 400),
-    excerpt: clean(raw.excerpt, 600),
-    excerptHi: clean(hindi.excerptHi, 600),
-    imageQuery: seo.stripHtml(pickString(raw.imageQuery)).slice(0, 120),
-    imageAlt: clean(raw.imageAlt, 220),
-    contentEn,
-    contentHi: normaliseBrand(sanitiseHtml(hindi.contentHi)),
-    faqs,
-    faqsHi: normaliseFaqs(hindi.faqsHi),
-  };
+/**
+ * Both passes in one call. Kept for callers that want the whole article in one
+ * await and do not gate between the two halves (the test suites do).
+ */
+async function draft(opts) {
+  const en = await draftEnglish(opts);
+  return addHindi(en, opts);
 }
 
 /**
@@ -390,8 +410,14 @@ function weaveInternalLinks(html, category, { max = 3 } = {}) {
 
   // Fall back to linking a plain "Astrowani" mention, so the minimum-links gate
   // is satisfiable even when the model used none of the anchor phrases.
+  //
+  // THE DESTINATION IS ALWAYS A BRAND-LEVEL PAGE, not the next target in the
+  // category list. Anchor text should describe where the link goes, and in a real
+  // generation this produced "Understanding your chart through [Astrowani]"
+  // pointing at calculators.html — a mismatch that wastes the anchor as a signal
+  // and reads oddly. "Astrowani" as anchor text belongs on the astrologers page.
   if (placed < max) {
-    const fallback = seo.linksForCategory(category, max)[placed] || seo.LINK_TARGETS.astrologers;
+    const fallback = seo.LINK_TARGETS.astrologers;
     const re = /(?<!<a[^>]*>)\b(Astrowani)\b(?![^<]*>)(?![^<]*<\/a>)/;
     if (re.test(out)) {
       out = out.replace(re, `<a href="${seo.escAttr(fallback.url)}">$1</a>`);
@@ -450,6 +476,8 @@ function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [],
 
 module.exports = {
   draft,
+  draftEnglish,
+  addHindi,
   assemble,
   sanitiseHtml,
   normaliseBrand,

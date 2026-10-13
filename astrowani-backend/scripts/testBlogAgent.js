@@ -270,7 +270,6 @@ function rejects(name, overrides, code, opts = {}) {
 rejects('too short is rejected', { contentEn: '<p>Short.</p><h2>a</h2><h2>b</h2><h2>c</h2>' }, 'TOO_SHORT_EN');
 rejects('a title over 70 chars is rejected',
   { titleEn: 'Mangal Dosh And Everything You Could Possibly Want To Know About It Today' }, 'TITLE_TOO_LONG');
-rejects('a missing Hindi title is rejected', { titleHi: '' }, 'TITLE_HI_MISSING');
 rejects('too few H2s is rejected',
   { contentEn: goodArticle().contentEn.replace(/<h2>/g, '<p>').replace(/<\/h2>/g, '</p>') }, 'TOO_FEW_H2');
 rejects('an <h1> in the body is rejected',
@@ -359,15 +358,51 @@ for (const [name, text] of [
   rejects(`${name} is rejected`, { contentEn: `${goodArticle().contentEn}<p>${text}</p>` }, 'SCAFFOLD_LEAKED');
 }
 
-section('quality gate — Hindi must actually be Hindi');
-// The real failure: a loaded model returns the English body again for contentHi.
-// Nothing downstream notices, and the app's Hindi toggle quietly shows English —
-// precisely the bug src/autoTranslate.js exists to fix.
-rejects('English text in the Hindi field is rejected',
-  { contentHi: goodArticle().contentEn }, 'HINDI_NOT_HINDI');
-rejects('transliterated Hindi (Latin script) is rejected',
-  { contentHi: '<p>' + 'Mangal dosh ka arth yah hai ki aapki kundali mein mangal ashubh sthan par hai. '.repeat(12) + '</p>' }, 'HINDI_NOT_HINDI');
-ok('genuine Devanagari passes', !quality.check(goodArticle(), { keyword: KEYWORD, limits: LIMITS, stage: 'draft' }).rejections.some((r) => r.startsWith('HINDI_NOT_HINDI')));
+section('Hindi is judged SEPARATELY, and a failure drops it rather than the article');
+// checkHindi() is its own function because the consequence differs: bad Hindi
+// means "publish the English", not "discard 1,100 good English words". Both apps
+// already fall back to English on an empty column.
+const hiGood = quality.checkHindi(goodArticle(), { limits: LIMITS });
+ok('genuine Devanagari is ACCEPTED (positive control)', hiGood.ok, hiGood.rejections.join('; '));
+ok(`  (${hiGood.stats.wordsHi} words, ${hiGood.stats.devanagariPct}% Devanagari)`, true);
+
+// THE REAL FAILURE: a loaded model returns the English body again for contentHi.
+// Nothing downstream notices — the app's Hindi toggle quietly shows English,
+// which is precisely the bug src/autoTranslate.js exists to fix.
+const hiEnglish = quality.checkHindi(goodArticle({ contentHi: goodArticle().contentEn }), { limits: LIMITS });
+ok('English text in the Hindi field is rejected',
+  hiEnglish.rejections.some((r) => r.startsWith('HINDI_NOT_HINDI')), hiEnglish.rejections.join('; '));
+const hiTranslit = quality.checkHindi({
+  titleHi: 'Mangal Dosh',
+  contentHi: '<p>' + 'Mangal dosh ka arth yah hai ki aapki kundali mein mangal ashubh sthan par hai. '.repeat(40) + '</p>',
+}, { limits: LIMITS });
+ok('transliterated Hindi (Latin script) is rejected',
+  hiTranslit.rejections.some((r) => r.startsWith('HINDI_NOT_HINDI')), hiTranslit.rejections.join('; '));
+const hiShort = quality.checkHindi({ titleHi: 'मंगल', contentHi: '<p>मंगल दोष का अर्थ यह है।</p>' }, { limits: LIMITS });
+ok('short Hindi is rejected', hiShort.rejections.some((r) => r.startsWith('TOO_SHORT_HI')), hiShort.rejections.join('; '));
+const hiNoTitle = quality.checkHindi(goodArticle({ titleHi: '' }), { limits: LIMITS });
+ok('a missing Hindi title is rejected', hiNoTitle.rejections.includes('TITLE_HI_MISSING'), hiNoTitle.rejections.join('; '));
+// "No Hindi at all" must be distinguishable from "the Hindi is bad", or the
+// orchestrator cannot tell a failed translation from one that was never asked for.
+const hiAbsent = quality.checkHindi({ contentHi: '' }, { limits: LIMITS });
+ok('no Hindi at all reports skipped:true, not a failure', hiAbsent.ok === true && hiAbsent.skipped === true);
+ok('  and a present-but-bad Hindi is NOT skipped', hiEnglish.skipped === false);
+// A banned claim in the Hindi must still be caught — it is published text too.
+const hiBanned = quality.checkHindi({
+  titleHi: 'मंगल', contentHi: '<p>' + 'यह उपाय कैंसर को पूरी तरह ठीक कर देगा। '.repeat(40) + '</p>This cures cancer completely.',
+}, { limits: LIMITS });
+ok('a banned claim in the Hindi is caught',
+  hiBanned.rejections.some((r) => r.startsWith('BANNED_CLAIM')), hiBanned.rejections.join('; '));
+
+// And check() itself must no longer judge Hindi at all, in either stage —
+// otherwise an English-only draft would be rejected for having no Hindi yet.
+const englishOnly = goodArticle({ titleHi: '', contentHi: '' });
+const eoDraft = quality.check(englishOnly, { keyword: KEYWORD, limits: LIMITS, stage: 'draft' });
+ok('an English-ONLY draft passes check() (Hindi comes later)', eoDraft.ok, eoDraft.rejections.join('; '));
+const eoFinal = quality.check(generate.assemble(englishOnly, {
+  topic: TOPIC, slug: 's', imageUrl: null, related: [], publishedAt: '2026-10-13T00:00:00Z',
+}), { keyword: KEYWORD, limits: LIMITS, stage: 'final' });
+ok('an English-only article passes the FINAL gate too', eoFinal.ok, eoFinal.rejections.join('; '));
 
 section('near-duplicate detection');
 eq('a text is identical to itself', Number(quality.similarity('a b c d e f g h', 'a b c d e f g h').toFixed(2)), 1);
@@ -405,6 +440,10 @@ const draftWithLink = quality.check(
   { keyword: KEYWORD, limits: LIMITS, stage: 'draft' },
 );
 ok('a DRAFT containing a model-written link is rejected', draftWithLink.rejections.some((r) => r.startsWith('MODEL_WROTE_LINKS')), draftWithLink.rejections.join('; '));
+// draftEnglish() must return the Hindi keys present and EMPTY, so the article's
+// shape never varies between the two passes and no caller has to guard for it.
+ok('generate exposes draftEnglish and addHindi as separate passes',
+  typeof generate.draftEnglish === 'function' && typeof generate.addHindi === 'function');
 
 // ═══════════════════════════════════════════════════════════════════════════
 section('assemble — what actually gets published');

@@ -31,6 +31,9 @@ const geminiMod = require('../src/blogAgent/gemini');
 
 let modelCalls = 0;
 let nextReply = null;
+// The stub answers BOTH passes. generate.draftEnglish() asks for the English
+// keys and generate.addHindi() asks for the Hindi ones; returning the whole
+// fixture to both is harmless, because each pass reads only the keys it wants.
 geminiMod.generate = async () => {
   modelCalls += 1;
   if (!nextReply) throw new Error('stub: no reply queued');
@@ -216,7 +219,10 @@ const created = { blogIds: [], runIds: [], objects: [] };
     });
 
     eq('runOnce published', result.status, 'published');
-    ok('the model was called exactly once (no retries needed)', modelCalls === 1, `${modelCalls} calls`);
+    // TWO calls for an accepted article: the English pass, then the Hindi pass. The
+// Hindi pass runs only because the English was accepted — see below for the
+// rejected case, which must cost ONE.
+eq('the model was called twice: English then Hindi', modelCalls, 2);
     if (result.blogId) created.blogIds.push(result.blogId);
     ok(`slug is "${result.slug}"`, /^mangal-dosh-in-the-kundali/.test(result.slug), result.slug);
     ok('the article is reported as a draft', result.published === false);
@@ -328,6 +334,7 @@ const created = { blogIds: [], runIds: [], objects: [] };
     nextReply = { ...fixtureReply(' bad'), contentEn: '<p>Far too short to publish.</p>' };
     const rejState = await store.loadBlogState(db);
     const rejHistory = await store.loadAgentHistory(db);
+    const callsBeforeReject = modelCalls; // BEFORE the run — see the cost assertion below
     const rejResult = await agent.runOnce({
       db, cfg: { ...cfg, maxAttemptsPerArticle: 2 }, log: () => {}, dryRun: false,
       forcedTopic: { key: `${MARK}-reject`, title: 'Bad', keyword: 'mangal dosh', category: 'Marriage' },
@@ -345,6 +352,17 @@ const created = { blogIds: [], runIds: [], objects: [] };
       ok('  and the reasons stored', JSON.stringify(rejLedger[0].rejections).includes('TOO_SHORT_EN'),
         JSON.stringify(rejLedger[0].rejections));
       eq('  and both attempts counted', rejLedger[0].attempts, 2);
+      // THE COST OF A REJECTION: one call per attempt, not two. Running the Hindi
+      // pass before the gate meant every discarded article paid for a translation
+      // — and three attempts x two calls x up to 130s each exceeds the 600s
+      // TimeoutStartSec of the systemd unit, so the unit would have been killed
+      // mid-retry and looked like a hang rather than a rejection.
+      //
+      // The count is taken BEFORE the run. An earlier version of this assertion
+      // captured it after, which made it arithmetically always true — a dead test
+      // that looked like a passing one.
+      eq('  2 rejected attempts cost 2 model calls, not 4 (no Hindi on a reject)',
+        modelCalls - callsBeforeReject, 2);
       ok('  and no blog_id', !rejLedger[0].blog_id);
     }
     // No orphaned image: the gate runs BEFORE the image is fetched, so a
@@ -354,10 +372,11 @@ const created = { blogIds: [], runIds: [], objects: [] };
 
     // ── The disabled switch ────────────────────────────────────────────────
     section('the master switch');
+    const callsBeforeDisabled = modelCalls; // BEFORE, so the check can actually fail
     const disabled = await agent.run({ db, log: () => {}, count: 1 });
     eq('run() does nothing while the agent is disabled', disabled.ran, false);
     eq('  and says why', disabled.reason, 'disabled');
-    ok('  and the model was not called', modelCalls === 3, `${modelCalls} total calls`);
+    eq('  and the model was not called at all', modelCalls - callsBeforeDisabled, 0);
 
     // ═══════════════════════════════════════════════════════════════════════
     section('teardown');
