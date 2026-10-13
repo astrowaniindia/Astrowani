@@ -260,6 +260,30 @@ function articleTemplate(post, all) {
 }
 
 /**
+ * Pick the better meta description.
+ *
+ * `meta_description` is the right field and agent-written posts fill it with a
+ * real sentence — but the five posts written before 2026-10-13 have a 2005-style
+ * keyword list in it ("numerology, Palmistry, Astrology, Prediction, Solution,
+ * Remedies"), which Google has ignored for twenty years and which reads badly as
+ * a search snippet. Preferring that column unconditionally made those five posts
+ * WORSE than the excerpt they used to show.
+ *
+ * A keyword list is distinguishable from a sentence by the shape of its
+ * comma-separated fragments: a list's are one or two words each, a sentence's are
+ * not. ("Fewer than N commas" does not work — a good sentence happily has three.)
+ */
+function bestDescription(post) {
+  const meta = String(post.metaDescription || '').trim();
+  if (meta) {
+    const clauses = meta.split(',').map((c) => c.trim()).filter(Boolean);
+    const avgWords = clauses.reduce((n, c) => n + c.split(/\s+/).length, 0) / (clauses.length || 1);
+    if (avgWords > 3 && meta.length >= 50) return meta;
+  }
+  return post.excerptEn;
+}
+
+/**
  * Set (or create) a <head> tag. The article page is rendered client-side, so
  * every per-article meta tag has to be written here rather than being in the
  * HTML file — there is one blog-post.html serving every article.
@@ -307,7 +331,7 @@ function initBlogPost() {
         return;
       }
       document.title = `${post.titleEn} — Astrowani Blog`;
-      const description = post.metaDescription || post.excerptEn;
+      const description = bestDescription(post);
       setMeta('meta[name="description"]', { name: 'description', content: description });
 
       // A CANONICAL URL matters more here than it looks. The same article is

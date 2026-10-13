@@ -505,6 +505,73 @@ ok('unparseable input throws rather than returning junk', (() => {
 })());
 
 // ═══════════════════════════════════════════════════════════════════════════
+section('sitemap and robots.txt must agree');
+// ═══════════════════════════════════════════════════════════════════════════
+const fs = require('fs');
+const path = require('path');
+const { buildSitemap, STATIC_PAGES } = require('../src/blogSitemap');
+
+const sm = buildSitemap([
+  { slug: 'mangal-dosh-in-the-kundali', created_at: '2026-10-13T00:00:00Z', updated_at: '2026-10-13T06:00:00Z' },
+  { slug: null, created_at: '2026-07-09T00:00:00Z' },
+]);
+ok('the sitemap declares the XML prolog and namespace',
+  sm.startsWith('<?xml version="1.0" encoding="UTF-8"?>') && sm.includes('sitemaps.org/schemas/sitemap/0.9'));
+const smLocs = [...sm.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+ok('every <loc> is absolute', smLocs.every((l) => /^https?:\/\//.test(l)), smLocs.find((l) => !/^https?:\/\//.test(l)));
+ok('the slugged post is listed', smLocs.some((l) => l.includes('slug=mangal-dosh-in-the-kundali')));
+// A post with no slug has only a ?id=<uuid> URL. Submitting that invites Google
+// to index an address that changes the moment the row gets a slug — a duplicate
+// and a redirect to maintain later.
+ok('a post with NO slug is excluded', !smLocs.some((l) => l.includes('?id=')), smLocs.join(' '));
+eq('<url> and </url> are balanced',
+  (sm.match(/<url>/g) || []).length, (sm.match(/<\/url>/g) || []).length);
+// A slug with XML metacharacters must not be able to break out of <loc>.
+// NOTE the escaping that saves us here is encodeURIComponent inside postUrl, not
+// xmlEscape — by the time the value reaches xmlEscape there is no raw '&' or '<'
+// left, so asserting on '&amp;' appearing was testing the wrong mechanism. What
+// matters is that no raw metacharacter survives and the document still parses.
+ok('a hostile slug cannot break out of <loc>', (() => {
+  const x = buildSitemap([{ slug: 'a&b<c>', created_at: '2026-10-13T00:00:00Z' }]);
+  const loc = /<loc>([^<]*blog-post[^<]*)<\/loc>/.exec(x);
+  if (!loc) return false;
+  const noRawMeta = !/[<&]/.test(loc[1]);
+  const tagsBalanced = (x.match(/<loc>/g) || []).length === (x.match(/<\/loc>/g) || []).length;
+  return noRawMeta && tagsBalanced && loc[1].includes('%26') && loc[1].includes('%3C');
+})());
+// And the control: xmlEscape itself does escape, for the fields that are not
+// URL-encoded first.
+eq('xmlEscape handles an ampersand', require('../src/blogAgent/seo').escAttr('a & b'), 'a &amp; b');
+// On a database failure the route still returns the static pages, so a crawler
+// gets a short sitemap rather than an error it may back off from for days.
+ok('the degraded sitemap (no posts) is still valid', (() => {
+  const x = buildSitemap([]);
+  return x.includes('<urlset') && x.includes('</urlset>') && (x.match(/<url>/g) || []).length === STATIC_PAGES.length;
+})());
+
+// THE CROSS-CHECK: submitting a URL in the sitemap while blocking it in
+// robots.txt is a Search Console error, and an easy one to create by accident —
+// chat.html and call.html look like app screens but are the highest-intent
+// landing pages on the site.
+const robotsPath = path.join(__dirname, '..', '..', 'astrowani-website', 'robots.txt');
+if (fs.existsSync(robotsPath)) {
+  const robots = fs.readFileSync(robotsPath, 'utf8');
+  const disallowed = [...robots.matchAll(/^Disallow:\s*\/(.*)$/gm)].map((m) => m[1].trim()).filter(Boolean);
+  const sitemapPages = STATIC_PAGES.map(([pg]) => pg);
+  const conflicts = disallowed.filter((d) => sitemapPages.includes(d.replace(/\$$/, '')));
+  eq('no page is both submitted and disallowed', conflicts.length, 0);
+  ok('robots.txt points at the sitemap route', /Sitemap:\s*https?:\/\/\S*\/api\/blogs\/sitemap\.xml/.test(robots));
+  ok('robots.txt allows crawling at all (positive control)', /^Allow:\s*\/$/m.test(robots));
+  // Every page we submit must actually exist, or we are spending crawl budget on 404s.
+  const siteDir = path.join(__dirname, '..', '..', 'astrowani-website');
+  const missing = sitemapPages.filter((pg) => pg && !fs.existsSync(path.join(siteDir, pg)));
+  eq('every submitted page exists as a file', missing.length, 0);
+  if (missing.length) console.log(`        missing: ${missing.join(', ')}`);
+} else {
+  ok('robots.txt exists', false, robotsPath);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // config.load is async, so the rest runs inside a function. Deliberately NOT
 // top-level await: Node then reclassifies this .js file as an ES module and
 // every require() above it fails.
