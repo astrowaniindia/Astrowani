@@ -2452,3 +2452,170 @@ shipped silently:**
 in a real consultation on two handsets — check the crop and the drawing arrive as drawn,
 the caption is masked if it contains a number, the bubble does not make the chat jump
 while it loads, and the astrologer's push notification reads sensibly.
+
+---
+
+## Subsystem added 2026-10-13: the blog agent — three SEO articles a day, unattended
+
+### DZ. What it is, and the two things it must never do
+
+`astrowani-backend/src/blogAgent/` plus `scripts/runBlogAgent.js`. Three systemd timers a day
+(03:30 / 09:30 / 17:30 IST) each write ONE article — English and Hindi, with a photograph —
+into the `blogs` table, which is what the **new** website's blog section (`astrowani-website`,
+served today at `shop.astrowani.com/test-site`) and the customer app's `BlogList`/`BlogScreen`
+both read. The owner's brief: 3 posts/day forever, on different topics, Astrowani named several
+times in each, free APIs only.
+
+**Everything is free, and that is a constraint not a happy accident.** Gemini writes the article
+through the same six-key chain `src/freeChatAi.js` already runs (plus a seventh, `rajiv`, added
+2026-10-13); photographs come from Pexels → Pixabay → Unsplash; with no image key at all it
+draws a branded card locally with `sharp`. No new npm dependency was added for any of it.
+
+**Hindi is written by Gemini in the same call, NOT by `src/autoTranslate.js`.** That module uses
+MyMemory, whose free allowance is ~5k characters a day; three long articles is ~24k, so it would
+be exhausted before breakfast and the Hindi columns would sit empty — the exact bug autoTranslate
+was built to fix. The agent therefore also deliberately writes to `blogs` with the service role
+rather than through `POST /api/admin/blogs`, because that route fires `queueBlogTranslation()` and
+would spend that quota re-translating text that is already finished.
+
+> **THE TWO INVARIANTS. First: it publishes to a live website with nobody reading first, so
+> everything about it fails CLOSED.** `enabled` defaults to `false`; a config row that cannot be
+> read or parsed leaves it off; a missing `blog_agent_runs` table makes it refuse to publish at
+> all. This is the deliberate opposite of `src/audience.js`, which fails OPEN — there, failing
+> open withholds nothing from a customer; here it would publish unreviewed. **Second: it must
+> never write the same article twice.** Duplicate content does not merely fail to rank, it drags
+> down the pages that were already ranking, and an agent out of ideas does not stop — it starts
+> rewriting last month's post under a new title.
+
+### EA. The parts that are load-bearing — do not "simplify" these
+
+- **The quality gate (`quality.js`) has TWO STAGES, and conflating them breaks everything.**
+  The prompt forbids the model from writing any `<a>` tags (an invented URL is a 404, and the
+  real links are added afterwards by code that knows them). The first version of the gate
+  nonetheless checked the link count on the DRAFT, so **every article was rejected on
+  `TOO_FEW_LINKS` and the agent could never have published anything at all.** `stage: 'draft'`
+  checks what the model is responsible for; `stage: 'final'` runs after `generate.assemble()` has
+  added the links, FAQ, CTA and JSON-LD — which change the word count, link count, brand-mention
+  count and keyword density, so the numbers that passed the draft are not the published ones.
+  A draft containing a link now fails `MODEL_WROTE_LINKS`, because that means the sanitiser leaked.
+- **`sanitiseHtml` is a WHITELIST that strips every attribute**, not a blacklist. The model is a
+  third party writing markup that lands in a web page *and* in the app's
+  `react-native-render-html`. Dropping all attributes is what makes it safe without parsing: no
+  `href`, `src`, `style` or `on*` can survive, so there is nothing to sanitise individually.
+- **Topic dedup is on a STABLE `topic_key`, read from `blog_agent_runs`, not from `blogs`.** The
+  model rewrites the title every run, so the title cannot identify a subject. The ledger records
+  **failed and rejected** attempts too — counting only published posts would make the agent loop
+  forever on a topic the model cannot write well, and a quiet agent and a broken one would look
+  identical from outside (the same failure mode `astrologerFanout` is noted for).
+- **The catalogue walks its generated topics in order, with a prime stride — never `Math.random()`.**
+  A random walk over a large space revisits far sooner than intuition suggests (birthday problem)
+  and every revisit wastes a run slot. 2,383 topics ≈ **2.2 years** at 3/day, verified by
+  simulating 1,000 days with zero repeats. When it runs out the agent **stops and says so**.
+- **The gate runs BEFORE the image is fetched.** Checking afterwards would leave an orphaned
+  object in the public `app-images` bucket on every rejection, and nothing ever deletes those.
+- **`BANNED_PATTERNS` is not an SEO rule.** It rejects medical, fertility, guaranteed-wealth,
+  black-magic and caste claims outright, because `fc964c0` already had to reword seven Wani Shop
+  items for the App Store and a blog is a worse place to make those claims, not a safer one. Each
+  pattern is paired in the test suite with a legitimate sentence that must still PASS, or the
+  agent silently stops writing about health, money and marriage.
+- **`HINDI_NOT_HINDI` exists because a loaded model returns the English body again for
+  `contentHi`**, and nothing downstream would notice — the app's Hindi toggle would just show
+  English. It requires at least 25% Devanagari.
+- **Model names must be probed, never remembered.** `DEFAULT_MODELS` originally named
+  `gemini-2.5-flash` / `2.0-flash` and **every call 404'd** — both retired, the API itself
+  pointing at the 3.x line. Measured 2026-10-13: the full flash tier is routinely **503
+  "high demand"** on free while the *lite* tier answers instantly, so the chain falls through
+  flash → lite and **ends on the alias `gemini-flash-lite-latest`, which cannot 404 when a
+  numbered version retires.** `GET /v1beta/models` is the authority.
+- **Brand casing is normalised, brand MISSPELLINGS are rejected.** "AstroWani" is the same token
+  to a search engine as "Astrowani", so `generate.normaliseBrand()` fixes the casing silently
+  rather than discarding a good 1,400-word article over a capital W. "Astro Wani" and "Astrovani"
+  are *different* tokens — mentions split across them are mentions thrown away — so those fail
+  `BRAND_MISSPELT`.
+- **`maxPerDay` (4) is a hard ceiling counted from the ledger**, and it is the guard against a
+  misconfigured timer or two overlapping schedules quietly publishing twenty articles overnight.
+- **The live config row wins over `config.js` DEFAULTS**, the same trap recorded at DR (free-call
+  duration) and DU (Dakshina amounts). To change a live value, change `app_settings.blog_agent_config`.
+
+### EB. What shipped alongside it, and the SEO blocker that remains
+
+`sql/blog_agent.sql`, **APPLIED 2026-10-13**: `blogs.slug` (plus a partial unique index, so the
+five pre-agent rows stay valid with NULL), and the `blog_agent_runs` ledger (RLS on, service-role
+only, zero anon/authenticated grants).
+
+It also adds `blogs.excerpt_hi` and `blogs.meta_description_hi` — and **that fixed a live bug
+nobody had noticed since 2026-08-16.** `sql/blog_meta_description_hindi_schema.sql` was written
+for those two columns and never applied, but `astrowani-admin`'s `Blogs.jsx` always sends them
+(they are in its `EMPTY` object) and `adminRoutes.js` `crud('blogs')` has both in `allowed` — so
+PostgREST refused the whole statement and **every admin blog save had been failing for two
+months.** CLAUDE.md's old claim that `excerpt_hi` was "blank on every live row" was wrong: it did
+not exist.
+
+- `GET /api/blogs` now returns `slug`. `aw/blog.js` accepts **`?slug=` or `?id=`** forever, so no
+  shared link can break, and sets a per-article canonical plus Open Graph/Twitter tags — the
+  canonical matters because one article is reachable at both URLs and a crawler finding both
+  treats them as duplicate pages, splitting whatever the article earns.
+- `src/blogSitemap.js` serves `GET /api/blogs/sitemap.xml`, generated from the table. It is a
+  ROUTE and not a file because the agent publishes three a day and cannot commit to the
+  git-deployed website directory. A post with **no slug is excluded deliberately** — submitting
+  a `?id=<uuid>` URL invites Google to index an address that changes the moment the row gets a
+  slug. On a database error it still returns the static pages, because a crawler that gets an
+  error page may back off for days.
+- `astrowani-website/robots.txt` points at that route. **Every `Disallow` here must be absent
+  from the sitemap and vice versa** — an earlier draft blocked `chat.html` and `call.html`, which
+  look like app screens but are the "Chat with an Astrologer" / "Call an Astrologer" landing
+  pages carrying the highest-intent keywords on the site. `testBlogAgent.js` now cross-checks the
+  two files and asserts every submitted page exists as a real file.
+- `aw/blog.js`'s `bestDescription()` keeps `meta_description` only when it reads as prose. The
+  five pre-agent rows hold a keyword list in that column ("numerology, Palmistry, Astrology, …"),
+  which `Home.js` renders as the visible line under a blog card; preferring it unconditionally
+  made those five posts *worse*. ("Fewer than N commas" does not work — a good sentence has three.)
+
+> **THE REAL SEO BLOCKER IS NOT CONTENT, AND THE AGENT CANNOT FIX IT.** `blog.html` and
+> `blog-post.html` render **entirely in JavaScript**, and the new site is not on `astrowani.com`
+> yet (that is still the old WordPress, with its own ThinkRank sitemap). Google does run JS, but
+> on a second pass days-to-weeks behind, and only for URLs it already knows — and there is no
+> server-rendered `<a href>` anywhere pointing at an individual article. The sitemap takes
+> rendering out of the *discovery* path, which is why it matters disproportionately here, so
+> **submit it in Search Console once the site is on its final domain.** What would actually solve
+> it is server-rendered article pages (prerender at publish time, or an nginx route per post).
+> That is website work, not agent work, and it is the highest-value SEO change left.
+
+**`BLOG_SITE_BASE_URL` is the one setting that will need changing.** It defaults to
+`https://shop.astrowani.com/test-site` because that is where the new site actually answers (all
+13 internal link targets verified there 2026-10-13); those paths 404 on astrowani.com today.
+Internal links are absolute, not relative, because the same `content_en` renders in the website,
+the app and the admin. When the new site takes the domain, set it to `https://astrowani.com` and
+run a one-off UPDATE over `blogs.content_en` / `content_hi` for the articles already published.
+
+### Verified 2026-10-13
+- **`scripts/testBlogAgent.js` — 184 offline checks** (no network, no DB, no keys). Every gate
+  rule is paired with a positive control, because a gate that rejects everything passes a
+  negative-only suite. **The suite was itself verified to FAIL on four deliberately introduced
+  regressions** (gate ignoring banned claims, slug keeping Devanagari, assembly dropping JSON-LD,
+  both slug guards removed) — the Devanagari one needed BOTH guards removed, which is how it was
+  discovered that the `[^a-z0-9]+` catch-all already covers it.
+- **`scripts/testBlogAgentLive.js` — 83 checks against the LIVE database and storage bucket**,
+  model stubbed (the Gemini keys live only in the VPS `.env`). `index.js` is NEVER booted. It
+  publishes a real row as a **draft**, asserts the columns, the rendered HTML (every `href` is
+  ours, anchors balanced, no `<h1>`, no `style`/`class`), the parsed JSON-LD, the thumbnail
+  actually fetching as a 1200x675 JPEG with EXIF stripped, the ledger row, and that
+  `GET /api/blogs` does **not** serve it — with a positive control that the endpoint returned 5
+  published posts, so the check is not passing on an empty list — then deletes everything and
+  **asserts its own teardown**. Production confirmed unchanged after: 5 blogs, 0 slugs, 0 ledger rows.
+- Two real bugs were found by that live suite and fixed, both of which would have shipped:
+  **(1)** `sharp` refuses a composite larger than its base, and a long title at dpi 150 overflows
+  1200x675 — and because `.composite()` is LAZY it threw at `.toBuffer()`, *outside* the
+  try/catch meant to contain it, taking the whole article down. Same family as the
+  fixed-pipeline-order trap at DX. **(2)** The teardown checked the public URL, which keeps
+  answering 200 from Supabase's CDN after a delete, reporting a leak that was not there — storage
+  deletion must be verified through the storage API.
+
+### Still to do (owner)
+- A **free Pexels key** (`PEXELS_API_KEY`, 2 minutes, no attribution required). Without it every
+  article gets a generated gradient card instead of a photograph.
+- `sudo bash vps-deployment/blog-agent/install.sh`, then `--dry-run` to read one, then `--enable`.
+  **The agent ships disabled** — the timers fire and do nothing until it is switched on.
+- Submit the sitemap in Google Search Console once the site is on its final domain.
+- Operator guide, including every failure mode and the SQL to inspect the ledger:
+  [`vps-deployment/blog-agent/README.md`](vps-deployment/blog-agent/README.md).

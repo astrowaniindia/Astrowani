@@ -21,18 +21,36 @@ const axios = require('axios');
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
- * Models in preference order.
+ * Models in preference order: best prose first, most RELIABLE last.
  *
- * Flash first: an article is a long output and the free tier's per-minute token
- * allowance is the binding constraint, not quality. 2.5-flash writes noticeably
- * better Hindi than 2.0, so it leads; 2.0-flash is the fallback because its
- * free-tier limits are the most generous of the three and it is the one most
- * likely to answer when the others are rate-limited.
+ * MEASURED AGAINST THE LIVE API 2026-10-13, which is the only reason this list
+ * is what it is. The first version named gemini-2.5-flash and gemini-2.0-flash
+ * and every single call 404'd — both are retired, and the API's own error text
+ * said to move to the 3.x line. Guessing model names from memory does not work;
+ * `GET /v1beta/models` is the authority.
+ *
+ * What that probe actually found, on a free-tier key:
+ *   gemini-3.8-flash        timed out at 45s (succeeds with the 120s this file allows)
+ *   gemini-3.7/3.6/3.5-flash  503 "currently experiencing high demand"
+ *   gemini-3.5-flash-lite   answered immediately
+ *   gemini-3.1-flash-lite   answered immediately
+ *
+ * So the full flash tier is routinely saturated on the free tier while the lite
+ * tier is not. Flash still leads because an article's prose is noticeably better
+ * for it, but the chain has to fall through to lite rather than treating a 503 as
+ * a failure — which is why worthRetryingOnAnotherKey() includes 503.
+ *
+ * THE LAST ENTRY IS AN ALIAS ON PURPOSE. `gemini-flash-lite-latest` cannot 404
+ * when a numbered version retires, so the agent can never end up in the state
+ * this list started in: every model gone, nothing published, and the reason
+ * invisible until somebody reads a log.
  */
 const DEFAULT_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
 ];
 
 /**
@@ -49,6 +67,11 @@ function geminiKeys() {
     ['startup', e.GEMINI_API_KEY_STARTUP],
     ['wasteee006', e.GEMINI_API_KEY_WASTEEE006],
     ['priya', e.GEMINI_API_KEY_PRIYA],
+    // "rajiv" (the owner's name for it, 2026-10-13), added for the blog agent.
+    // Last in the chain, so it is only reached when the six before it refuse —
+    // which also means adding it cannot change the behaviour of anything that
+    // was already working.
+    ['rajiv', e.GEMINI_API_KEY_RAJIV],
   ];
   return chain.filter(([, k]) => !!k).map(([tier, key]) => ({ tier, key }));
 }
