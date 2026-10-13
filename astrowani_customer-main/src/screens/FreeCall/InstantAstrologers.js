@@ -11,10 +11,22 @@
 //
 // The server owns everything else too: who is in the pool, how long the call is, how
 // long to ring, how many astrologers one customer may try. This screen renders answers.
+//
+// IT ALSO RUNS SIGNED OUT (2026-10-14). The campaign gift reveal now sends a visitor
+// here the moment the "you win 11 minutes" animation has been read, BEFORE they have
+// an account — the faces are a far better reason to sign up than a phone-number box
+// is. In that state the panel is loaded from /instant/preview (shows, never rings) and
+// EVERY way of reaching for an astrologer — the card, "Call free", "Notify me" — raises
+// the sign-up sheet instead of doing its usual job. The sheet signs them up in place,
+// the panel reloads underneath it, and from then on this is the ordinary screen.
+//
+// Nothing about eligibility is relaxed by any of that: the ring still goes through the
+// authenticated endpoint behind the full instantGate. Signed out there is simply nobody
+// to evaluate yet.
 
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, RefreshControl, StatusBar,
+  ActivityIndicator, Animated, BackHandler, FlatList, Image, RefreshControl, StatusBar,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -28,7 +40,9 @@ import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
-import { getInstantAstrologers, ringInstantAstrologer, giveUpInstantRing } from '../../api/FreeCallApi';
+import {
+  getInstantAstrologers, getInstantAstrologersPreview, ringInstantAstrologer, giveUpInstantRing,
+} from '../../api/FreeCallApi';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
@@ -36,6 +50,10 @@ import RequestingPopup from '../../components/RequestingPopup';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { captureEvent } from '../../utils/Analytics';
+import FreeCallSignupSheet from '../../components/FreeCallSignupSheet';
+import CollapseIntoGiftBubble, { useCollapseAnimation } from '../../components/CollapseIntoGiftBubble';
+import { showPendingGift } from '../../utils/pendingGiftBubble';
+import { clearPendingFreeCall } from '../../utils/freeCallInvite';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -60,6 +78,14 @@ export default function InstantAstrologers({ navigation, route }) {
   const [data, setData] = useState({ astrologers: [], durationMinutes: 11 });
   const [blocked, setBlocked] = useState(null); // { code, message } when the server refuses
   const [notified, setNotified] = useState({}); // astrologerId -> true
+
+  // null until the token has been read. The panel waits for it rather than guessing:
+  // loading the authenticated endpoint without a token answers UNAUTHORIZED, which
+  // this screen would render as "this offer is not available for your account" — the
+  // worst possible first sentence for somebody who has just won a free call.
+  const [signedOut, setSignedOut] = useState(null);
+  const [signupVisible, setSignupVisible] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   // The in-flight ring. A ref rather than state because the ring timeout and the
   // unmount cleanup both read it from inside closures that must not go stale.
@@ -90,9 +116,12 @@ export default function InstantAstrologers({ navigation, route }) {
   const screenAtRef = useRef(Date.now());
   const rangRef = useRef(false);
 
-  const load = useCallback(async (isRefresh = false) => {
+  const load = useCallback(async (isRefresh = false, asVisitor = signedOut) => {
+    if (asVisitor === null) return; // token not read yet — see `signedOut`
     if (isRefresh) setRefreshing(true);
-    const res = await getInstantAstrologers();
+    // The preview endpoint shows the same pool and never refuses, because a visitor
+    // has nothing to be refused for yet.
+    const res = asVisitor ? await getInstantAstrologersPreview() : await getInstantAstrologers();
     // A code on a successful-looking response means the server refused: not eligible,
     // offer switched off, wrong platform. Say which rather than showing an empty list.
     if (res.code) {
@@ -103,11 +132,23 @@ export default function InstantAstrologers({ navigation, route }) {
     }
     setLoading(false);
     setRefreshing(false);
+  }, [signedOut]);
+
+  // The token decides which endpoint `load` uses, so it is read before anything else
+  // and kept in state rather than re-read per call — the sign-up sheet flips it.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem('token')
+      .then((tok) => { if (!cancelled) setSignedOut(!tok); })
+      .catch(() => { if (!cancelled) setSignedOut(true); });
+    return () => { cancelled = true; };
   }, []);
 
   // Re-read on every focus: an astrologer who was free when the screen opened may not
   // be by the time the customer has finished reading. The ring re-checks server-side
   // regardless, so a stale list can only ever cost one polite refusal.
+  // `load` closes over `signedOut`, so this also re-runs the moment the sheet signs
+  // somebody in — which is what swaps the preview panel for the real one.
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Fires ONCE, the first time the server's answer resolves to a chosen astrologer —
@@ -134,11 +175,47 @@ export default function InstantAstrologers({ navigation, route }) {
     }
   }, [data]);
 
+  // Read once, at mount: this is a mount-time fact, and reading it inside the effect
+  // below would make the effect depend on a route param and re-fire the "opened"
+  // event every time any param on this screen changes (astrologerBusy does).
+  const fromGiftRevealRef = useRef(!!route?.params?.fromGiftReveal);
+
   useEffect(() => {
-    captureEvent('free_call_instant_opened');
+    // `fromGiftReveal` separates the visitors the campaign reveal hands straight here
+    // from everybody else who reaches this screen. Without it the sign-up gate's
+    // conversion cannot be read against the arrivals it is actually gating.
+    captureEvent('free_call_instant_opened', { from_gift_reveal: fromGiftRevealRef.current });
     // Copied into the effect so the cleanup below is not reading a ref (the lint rule
     // is right in general; this one is a mount timestamp that never changes).
     const openedAt = screenAtRef.current;
+    return () => {
+      // Left the screen. `navigatedRef` is the one thing that separates "went into
+      // the call" from "walked away", and without this the drop-off between seeing
+      // the chosen astrologer and ringing them is invisible.
+      if (!navigatedRef.current) {
+        captureEvent('free_call_left_without_calling', {
+          variant: variantRef.current,
+          rang: rangRef.current,
+          seconds_on_screen: Math.round((Date.now() - openedAt) / 1000),
+        });
+      }
+      if (ringTimerRef.current) clearTimeout(ringTimerRef.current);
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      // Leaving the screen mid-ring must not leave the astrologer's phone ringing for a
+      // customer who has gone. Fire-and-forget: the server sweeps it anyway.
+      if (ringRef.current && !navigatedRef.current) giveUpInstantRing(ringRef.current.requestId, 'cancelled');
+    };
+  }, []);
+
+  // The socket is SEPARATE from the mount effect above, and waits for a real token.
+  //
+  // A visitor has nothing to listen for — nobody can accept a call they cannot place —
+  // and connecting anonymously would join no personal room, so the first ring after
+  // the sign-up sheet closed would have had no `call_accepted` listener behind it.
+  // Keyed on `signedOut`, this connects the moment an account exists, which is still
+  // well before the panel's first tap can turn into a ring.
+  useEffect(() => {
+    if (signedOut !== false) return undefined;
     let cancelled = false;
     (async () => {
       const authToken = await AsyncStorage.getItem('token');
@@ -155,24 +232,12 @@ export default function InstantAstrologers({ navigation, route }) {
     })();
     return () => {
       cancelled = true;
-      // Left the screen. `navigatedRef` is the one thing that separates "went into
-      // the call" from "walked away", and without this the drop-off between seeing
-      // the chosen astrologer and ringing them is invisible.
-      if (!navigatedRef.current) {
-        captureEvent('free_call_left_without_calling', {
-          variant: variantRef.current,
-          rang: rangRef.current,
-          seconds_on_screen: Math.round((Date.now() - openedAt) / 1000),
-        });
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
-      if (ringTimerRef.current) clearTimeout(ringTimerRef.current);
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      // Leaving the screen mid-ring must not leave the astrologer's phone ringing for a
-      // customer who has gone. Fire-and-forget: the server sweeps it anyway.
-      if (ringRef.current && !navigatedRef.current) giveUpInstantRing(ringRef.current.requestId, 'cancelled');
-      if (socketRef.current) socketRef.current.disconnect();
     };
-  }, []);
+  }, [signedOut]);
 
   /** Tear down one ring attempt. `status` is what the request row is marked as. */
   const stopRinging = useCallback((status) => {
@@ -188,8 +253,79 @@ export default function InstantAstrologers({ navigation, route }) {
     return active;
   }, []);
 
+  /**
+   * EVERY reach for an astrologer passes through here first.
+   *
+   * Signed out it swallows the tap and raises the sign-up sheet — the card, "Call
+   * free" and "Notify me" alike, because a visitor who taps a face and gets nothing
+   * concludes the screen is broken, not that they need an account. Signed in it is a
+   * no-op and the caller carries on exactly as before.
+   *
+   * Returns true when it handled the tap.
+   */
+  const gateVisitor = useCallback((what) => {
+    if (signedOut === false) return false;
+    // Token not read yet. Nothing is rendered to tap at this point (load() waits on
+    // the same flag), but swallowing is still the right answer: the alternative is a
+    // ring fired with no token, which answers UNAUTHORIZED and shows an error.
+    if (signedOut === null) return true;
+    captureEvent('free_call_signup_gate_hit', { via: what });
+    setSignupVisible(true);
+    return true;
+  }, [signedOut]);
+
+  /**
+   * The sheet finished: there is an account now.
+   *
+   * Flipping `signedOut` is what re-points `load` at the authenticated endpoint and
+   * connects the socket; the focus effect's dependency on `load` then refreshes the
+   * panel underneath the closing sheet. Deliberately does NOT ring anybody — the tap
+   * that opened the sheet was thirty seconds and three fields ago, and ringing a
+   * real astrologer off a tap that stale is the server's decision to be asked for
+   * again, not ours to replay.
+   */
+  const onSignedUp = useCallback(() => {
+    setSignupVisible(false);
+    setSignedOut(false);
+    setLoading(true);
+    load(false, false);
+    // The reveal queued 'campaign' so that SignupWelcome, after the long way round
+    // through Login, would send them back here. They never left — so the redirect has
+    // already happened and the queue has nothing left to do. Cleared, or it sits set
+    // for the rest of the run waiting for a screen that is not coming.
+    clearPendingFreeCall();
+  }, [load]);
+
+  /**
+   * The back arrow, for a visitor: the panel folds into the gift bubble and drops it
+   * in the corner, then Login. The offer is not abandoned by backing out — it is put
+   * somewhere, and they watched where. `showPendingGift` hands the landed bubble to
+   * the host above the navigator, which keeps it there through Login, OTP and name.
+   */
+  const onBack = useCallback(() => {
+    if (signedOut !== true) { navigation.goBack(); return; }
+    if (leaving) return;
+    captureEvent('free_call_visitor_left_to_login');
+    setLeaving(true);
+  }, [signedOut, leaving, navigation]);
+
+  useFocusEffect(useCallback(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (signedOut !== true) return false; // ordinary screen, ordinary back
+      onBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [signedOut, onBack]));
+
+  const { collapse, contentOpacity } = useCollapseAnimation(leaving, () => {
+    showPendingGift();
+    navigation.replace('Login');
+  });
+
   /* The customer tapped an idle astrologer. */
   const onCall = useCallback(async (astro) => {
+    if (gateVisitor('call_free')) return;
     if (busyRef.current || ringRef.current) return;
     busyRef.current = true;
     try {
@@ -301,10 +437,11 @@ export default function InstantAstrologers({ navigation, route }) {
       }
       showStatusPopup({ variant: 'error', title: t('freeCallInstant.failedTitle'), message: err.message });
     }
-  }, [load, stopRinging, t, navigation]);
+  }, [load, stopRinging, t, navigation, gateVisitor]);
 
   /* The customer tapped a busy astrologer's pill. */
   const onNotifyMe = useCallback(async (astro) => {
+    if (gateVisitor('notify_me')) return;
     if (notified[astro.id]) return;
     // Optimistic: the button says "we'll tell you" straight away. requestNotifyMe asks
     // for notification permission first — see src/utils/notifyMe.js.
@@ -313,7 +450,7 @@ export default function InstantAstrologers({ navigation, route }) {
       setNotified((prev) => ({ ...prev, [astro.id]: true }));
       captureEvent('free_call_instant_notify_me', { astrologer_id: astro.id, variant: variantRef.current });
     }
-  }, [notified, t]);
+  }, [notified, t, gateVisitor]);
 
   const renderCard = ({ item }) => {
     // An odd-length list gets one padding entry (see gridData). Without it a lone card
@@ -325,6 +462,8 @@ export default function InstantAstrologers({ navigation, route }) {
     const elapsed = item.busySince
       ? Math.max(0, Math.round((Date.now() - new Date(item.busySince).getTime()) / 1000))
       : 0;
+    // The card, the action bar and the busy pill are one TouchableOpacity, so this is
+    // also the "tapped anywhere on the card" path. Both branches gate internally.
     const press = () => (busy ? onNotifyMe(item) : onCall(item));
 
     return (
@@ -533,8 +672,12 @@ export default function InstantAstrologers({ navigation, route }) {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.AstroMaroon} />
 
+      {/* Wrapped so the whole panel can fade out together as it folds into the gift
+          bubble on the way to Login. `leaving` also makes it inert — a tap landing on
+          a screen that is already halfway into the corner has nowhere sensible to go. */}
+      <Animated.View style={[styles.fill, { opacity: contentOpacity }]} pointerEvents={leaving ? 'none' : 'auto'}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity onPress={onBack} style={styles.back} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Icon name="arrow-back" size={moderateScale(22)} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
@@ -622,12 +765,24 @@ export default function InstantAstrologers({ navigation, route }) {
         onCancel={() => { stopRinging('cancelled'); load(); }}
         context="free_call_instant"
       />
+      </Animated.View>
+
+      {/* The whole sign-up, over the panel the visitor was just reaching into. The
+          astrologers stay visible behind it on purpose — see the component. */}
+      <FreeCallSignupSheet
+        visible={signupVisible}
+        onClose={() => setSignupVisible(false)}
+        onDone={onSignedUp}
+      />
+
+      {leaving && <CollapseIntoGiftBubble collapse={collapse} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: CREAM },
+  fill: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

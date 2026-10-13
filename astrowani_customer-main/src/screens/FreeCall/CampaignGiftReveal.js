@@ -10,12 +10,22 @@
 //
 // The box therefore waits, closed and fidgeting, until they tap ANYWHERE — that tap is
 // the whole conversion moment. Then: lid off, burst, "YOU WIN!" punches in dead centre
-// and travels up to the top, and the prize, the guide and the CTA arrive under it.
+// and travels up to the top, and the prize and the guide arrive under it.
+//
+// NOTHING IS ASKED OF THEM HERE (2026-10-14). There is no CTA and no ✕: once the reveal
+// has played out the screen holds for READ_HOLD_MS so the prize can be read, then hands
+// them STRAIGHT to the free-call panel (screens/FreeCall/InstantAstrologers.js), still
+// signed out. A button here was one more thing to agree to between winning something and
+// seeing it, and a ✕ over an opened present is an invitation to leave. The sign-up is
+// not skipped — it is moved to the moment they reach for an actual astrologer, where it
+// is the last step before a call rather than the first step before a list
+// (components/FreeCallSignupSheet).
 //
 // Replaces (does not delete) CampaignFreeCallPrompt.js — see
-// CAMPAIGN_GIFT_REVEAL_ENABLED in utils/featureFlags.js. Both hand off identically:
-// accept -> queueFreeCallFromCampaign(), cross -> queueCampaignDeclined(), and
-// SignupWelcome acts on whichever was queued.
+// CAMPAIGN_GIFT_REVEAL_ENABLED in utils/featureFlags.js. Both still queue
+// queueFreeCallFromCampaign(), which is what SignupWelcome acts on once an account
+// exists. The decline path (queueCampaignDeclined) is gone with the ✕: there is no
+// longer any way to say no on this screen.
 //
 // EVERY animation here drives transform/opacity only, so all of it runs on the native
 // driver. On a cheap phone this is the first thing a paid visitor ever sees; a reveal
@@ -25,31 +35,34 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Pressable,
   StatusBar,
   Animated,
   Easing,
-  Dimensions,
   AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Ellipse, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
-import Icon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import { markCampaignFreeCallPromptShown } from '../../utils/acquisition';
-import { queueFreeCallFromCampaign, queueCampaignDeclined } from '../../utils/freeCallInvite';
-import { showPendingGift } from '../../utils/pendingGiftBubble';
-import { showSignupNudge } from '../../utils/signupNudge';
-import { NUDGE_MS } from '../../components/SignupNudgeHost';
+import { queueFreeCallFromCampaign } from '../../utils/freeCallInvite';
 
 const GOLD = COLORS.AstroGold;
 const CREAM = '#FFF8EE';
 const DEEP = '#4A1C10';
 const GUIDE_AVATAR_ASPECT = 145 / 281;
+
+// ── When the screen hands over ─────────────────────────────────────────────
+// REVEAL_MS is the last animation in openGift() (the guide at 1600ms) plus its spring;
+// past that the screen is finished moving. READ_HOLD_MS is then pure reading time —
+// five seconds with the prize sitting still, which is what the owner asked for and is
+// about twice as long as it takes to read two lines. Shortening it turns the reveal
+// into a flash the customer never gets to take in; lengthening it starts to feel stuck.
+const REVEAL_MS = 2300;
+const READ_HOLD_MS = 5000;
 
 const BOX = scale(168);
 // The teaser and the tap hint float a fixed distance above/below the box's centre, so
@@ -63,27 +76,9 @@ const WIN_RISE = verticalScale(215);
 // Where the prize card settles: just under the risen title.
 const PRIZE_DROP = verticalScale(94);
 
-// ── The "it goes in your pocket" exit ────────────────────────────────────────
-// Dismissing does not just close the screen: the whole screen collapses into the
-// gift bubble and flies to the bottom-right corner — landing exactly where Home's
-// floating gift sits ("Your 11min free call is waiting", components/FreeCallGiftBubble).
-// The prize is not lost by pressing ✕, it is PUT SOMEWHERE, and the customer has
-// watched where. These three must stay in step with that component's own geometry.
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const BUBBLE = scale(52);              // FreeCallGiftBubble SIZE
-const LABEL_W = scale(126);            // PendingGiftBubbleHost GIFT_LABEL_W
-// The host centres the circle over its (wider) hint pill, so the circle itself sits
-// further in from the screen edge than the pill does. Land on that same spot.
-const BUBBLE_RIGHT = scale(14) + (LABEL_W - BUBBLE) / 2;
-// Must equal PendingGiftBubbleHost's `wrap.bottom`, which is what this bubble hands
-// over to the instant it lands — a mismatch makes the gift jump as the screen changes.
-const BUBBLE_BOTTOM = verticalScale(48);
-// Big enough that the circle covers the screen at the start of the collapse.
-const COLLAPSE_SCALE = (Math.max(SCREEN_W, SCREEN_H) * 1.3) / BUBBLE;
-// Offset from the bubble's resting centre to the screen's centre, i.e. how far it
-// travels on the way down to the corner.
-const COLLAPSE_DX = SCREEN_W / 2 - (SCREEN_W - BUBBLE_RIGHT - BUBBLE / 2);
-const COLLAPSE_DY = SCREEN_H / 2 - (SCREEN_H - BUBBLE_BOTTOM - BUBBLE / 2);
+// The collapse-into-the-gift-bubble exit now belongs to the screen this one hands
+// over to (components/CollapseIntoGiftBubble, used by InstantAstrologers): leaving is
+// something the customer does from the panel, not from the reveal.
 
 const RAY_COUNT = 14;
 const CONFETTI_COUNT = 30;
@@ -178,20 +173,10 @@ export default function CampaignGiftReveal({ navigation, route }) {
   const winRise = useRef(new Animated.Value(0)).current;   // ...then travels up
   const prize = useRef(new Animated.Value(0)).current;     // prize card
   const avatarIn = useRef(new Animated.Value(0)).current;  // guide slides up
-  const ctaIn = useRef(new Animated.Value(0)).current;     // button slides up
-  const pulse = useRef(new Animated.Value(1)).current;     // button heartbeat
   const float = useRef(new Animated.Value(0)).current;     // guide bob
-  const collapse = useRef(new Animated.Value(0)).current;  // screen -> corner bubble
-  const [collapsing, setCollapsing] = useState(false);
-  // Once the landed bubble has been handed to PendingGiftBubbleHost, this screen stops
-  // drawing its own. Both render the same bubble on the same spot, and for the beat
-  // they overlapped their two cream labels sat slightly apart — which read on screen as
-  // two gifts in the corner.
-  const [handedOff, setHandedOff] = useState(false);
 
   const shakeRef = useRef(null);
   const exitTimer = useRef(null);
-  const nudgingRef = useRef(false);
 
   // ── Journey timing ─────────────────────────────────────────────────────────
   // Every event this screen sends carries how long the person had been looking at
@@ -261,15 +246,8 @@ export default function CampaignGiftReveal({ navigation, route }) {
         Animated.timing(float, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ]),
     );
-    const beat = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.045, duration: 820, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 820, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
     hint.start();
     bob.start();
-    beat.start();
 
     // THE ONE EXIT NOTHING ELSE SEES. The ✕ only exists after the box is open, and
     // this screen is the app's initial route, so someone who never taps the box can
@@ -294,7 +272,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
       shake.stop();
       hint.stop();
       bob.stop();
-      beat.stop();
       appStateSub.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,74 +312,38 @@ export default function CampaignGiftReveal({ navigation, route }) {
         Animated.delay(1600),
         Animated.spring(avatarIn, { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }),
       ]),
-      Animated.sequence([
-        Animated.delay(1820),
-        Animated.spring(ctaIn, { toValue: 1, friction: 8, tension: 65, useNativeDriver: true }),
-      ]),
     ]).start();
+
+    // The hand-off. Armed here rather than in the animation's completion callback
+    // because `Animated.parallel` only calls back when EVERY leg has finished, and a
+    // leg that is interrupted (a spring settled early, the screen backgrounded) never
+    // does — which would leave the customer on a finished reveal with no way forward
+    // and no button to press, since this screen no longer has one.
+    exitTimer.current = setTimeout(toAstrologers, REVEAL_MS + READ_HOLD_MS);
   };
 
   /**
-   * Accepting the prize goes through the sign-up reassurance first. The jump from
-   * "YOU WIN" straight to a phone-number field is where this screen loses people, so
-   * the card says the call is already theirs and that the form is three taps — then
-   * the app moves on by itself. Nothing to press, nothing to get past.
+   * Straight to the panel of astrologers, SIGNED OUT.
+   *
+   * `queueFreeCallFromCampaign()` is still called, exactly as the old CTA did: it is
+   * what tells SignupWelcome, after the sign-up finishes, that this customer is owed
+   * the free call and must land back on the instant panel rather than Home. The sheet
+   * on that screen is not the only way an account can appear (they can still reach
+   * Login by the back arrow), so the queue has to be set here, before either path.
+   *
+   * `replace`, not `navigate`: this screen is the app's initial route and there is
+   * nothing to come back to. The free-call screen's own back arrow is what leads on
+   * to Login.
    */
-  const acceptWithNudge = () => {
-    if (leftRef.current || nudgingRef.current) return;
-    nudgingRef.current = true;
-    showSignupNudge();
-    exitTimer.current = setTimeout(() => leave('cta', true), NUDGE_MS);
-  };
-
-  const leave = (via, accepted) => {
+  const toAstrologers = () => {
     if (leftRef.current) return;
     leftRef.current = true;
-    if (accepted) {
-      captureEvent('campaign_gift_reveal_accepted', {
-        seconds_on_screen: secsSinceShown(),
-        seconds_since_open: secsSinceOpen(),
-      });
-      queueFreeCallFromCampaign();
-    } else {
-      captureEvent('campaign_gift_reveal_closed', {
-        via,
-        opened: openedRef.current,
-        seconds_on_screen: secsSinceShown(),
-        seconds_since_open: secsSinceOpen(),
-      });
-      // Asked once here — SignupWelcome must not raise its own offer card afterwards.
-      queueCampaignDeclined();
-    }
-    navigation.replace('Login');
-  };
-
-  /**
-   * Dismiss: the screen folds itself into the gift bubble and drops it into the
-   * bottom-right corner — the exact spot Home's own gift sits — before moving on.
-   * The point is that pressing ✕ visibly PUTS the prize somewhere rather than
-   * throwing it away, so the bubble on Home afterwards is a thing they watched
-   * land there, not a new thing to be explained.
-   */
-  const dismissIntoBubble = () => {
-    if (leftRef.current || collapsing) return;
-    setCollapsing(true);
-    captureEvent('campaign_gift_reveal_collapsed');
-    Animated.timing(collapse, {
-      toValue: 1,
-      duration: 880,
-      easing: Easing.bezier(0.45, 0, 0.2, 1),
-      useNativeDriver: true,
-    }).start(() => {
-      // Hand the landed bubble over to the host above the navigator BEFORE leaving, so
-      // it simply stays in the corner through Login/OTP/name instead of blinking out
-      // with this screen. Both draw the same bubble on the same coordinates, so the
-      // swap is invisible.
-      showPendingGift();
-      setHandedOff(true);
-      // A beat on the corner, so the landing registers before the screen changes.
-      exitTimer.current = setTimeout(() => leave('cross', false), 320);
+    captureEvent('campaign_gift_reveal_auto_advanced', {
+      seconds_on_screen: secsSinceShown(),
+      seconds_since_open: secsSinceOpen(),
     });
+    queueFreeCallFromCampaign();
+    navigation.replace('InstantAstrologers', { fromGiftReveal: true });
   };
 
   // ── Interpolations ─────────────────────────────────────────────────────────
@@ -427,28 +368,13 @@ export default function CampaignGiftReveal({ navigation, route }) {
   const prizeRise = prize.interpolate({ inputRange: [0, 1], outputRange: [PRIZE_DROP + verticalScale(26), PRIZE_DROP] });
   const prizeScale = prize.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
   const avatarRise = avatarIn.interpolate({ inputRange: [0, 1], outputRange: [verticalScale(130), 0] });
-  const ctaRise = ctaIn.interpolate({ inputRange: [0, 1], outputRange: [verticalScale(70), 0] });
   const hintFade = hintPulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] });
-
-  // The collapse: everything on screen drops away fast while the bubble shrinks out of
-  // the middle and slides into the corner, its gift icon and label appearing only once
-  // it is small enough for them to read as a bubble rather than a wall of gold.
-  const contentFade = collapse.interpolate({ inputRange: [0, 0.3], outputRange: [1, 0], extrapolate: 'clamp' });
-  const bubbleScale = collapse.interpolate({ inputRange: [0, 1], outputRange: [COLLAPSE_SCALE, 1] });
-  const bubbleX = collapse.interpolate({ inputRange: [0, 1], outputRange: [COLLAPSE_DX, 0] });
-  const bubbleY = collapse.interpolate({ inputRange: [0, 1], outputRange: [COLLAPSE_DY, 0] });
-  const bubbleIconFade = collapse.interpolate({ inputRange: [0, 0.68, 0.9], outputRange: [0, 0, 1], extrapolate: 'clamp' });
-  const bubbleLabelFade = collapse.interpolate({ inputRange: [0, 0.85, 1], outputRange: [0, 0, 1], extrapolate: 'clamp' });
 
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Everything on screen, so the collapse can fold the lot away in one go. */}
-      <Animated.View
-        style={[StyleSheet.absoluteFill, { opacity: contentFade }]}
-        pointerEvents={collapsing ? 'none' : 'box-none'}
-      >
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* ── The stage: box, then burst, then prize. Every layer is an absolute fill
              centred on itself, so the box sits exactly on the screen's centre and the
              burst fires from the same point. ──────────────────────────────────── */}
@@ -587,76 +513,21 @@ export default function CampaignGiftReveal({ navigation, route }) {
         />
       </Animated.View>
 
-      {/* ── CTA. pointerEvents is gated on `opened`: before the reveal this button is
-             invisible but still laid out, and an invisible button that can be pressed
-             is worse than no button. ───────────────────────────────────────────── */}
-      <Animated.View
-        pointerEvents={opened ? 'auto' : 'none'}
-        style={[
-          styles.footer,
-          {
-            paddingBottom: insets.bottom + verticalScale(18),
-            opacity: ctaIn,
-            transform: [{ translateY: ctaRise }],
-          },
-        ]}
-      >
-        <Animated.View style={{ transform: [{ scale: pulse }] }}>
-          <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={acceptWithNudge}>
-            <Text style={styles.ctaText}>{t('campaignGift.cta')}</Text>
-            <Icon name="arrow-forward" size={moderateScale(20)} color={COLORS.AstroMaroon} />
-          </TouchableOpacity>
-        </Animated.View>
-      </Animated.View>
+      {/* There is no CTA and no ✕ any more. Nothing on this screen has to be pressed
+             after the box is open: it holds for the reading beat and hands over by
+             itself (toAstrologers). A bottom pad is kept so the guide clears the
+             gesture bar on the phones that have one. */}
+      <View style={{ paddingBottom: insets.bottom + verticalScale(18) }} />
       </View>
-      </Animated.View>
+      </View>
 
-      {/* Tap-anywhere catcher. Rendered AFTER the content so it is above all of it, and
-          unmounted the moment the box opens so it never swallows the CTA. The ✕ below
-          is rendered after this and carries a higher zIndex, so it still works. */}
+      {/* Tap-anywhere catcher. Rendered AFTER the content so it is above all of it,
+          and unmounted the moment the box opens so nothing is left swallowing taps on
+          a screen that has already handed over. */}
       {!opened && (
         <Pressable style={styles.tapCatcher} onPress={openGift} accessibilityRole="button" />
       )}
 
-      {/* The way out appears only AFTER the gift is open. While the box is still shut
-          there is nothing to decline yet, and an ✕ sitting over an unopened present is
-          an invitation to leave before ever seeing what is in it. */}
-      {opened && !collapsing && (
-        <Animated.View
-          style={[styles.closeWrap, { top: insets.top + verticalScale(10), opacity: avatarIn }]}
-        >
-          <TouchableOpacity
-            style={styles.closeBtn}
-            activeOpacity={0.7}
-            onPress={dismissIntoBubble}
-            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-          >
-            <Icon name="close" size={moderateScale(22)} color={CREAM} />
-          </TouchableOpacity>
-        </Animated.View>
-      )}
-
-      {/* The screen, folded into Home's gift bubble and dropped in the corner. It is
-          deliberately the SAME maroon circle + gold gift icon + cream label that
-          FreeCallGiftBubble renders, landing on its exact coordinates, so what the
-          customer sees on Home afterwards is the thing they just watched land. */}
-      {collapsing && !handedOff && (
-        <View style={styles.collapseLayer} pointerEvents="none">
-          <Animated.View
-            style={[
-              styles.collapseBubble,
-              { transform: [{ translateX: bubbleX }, { translateY: bubbleY }, { scale: bubbleScale }] },
-            ]}
-          >
-            <Animated.View style={{ opacity: bubbleIconFade }}>
-              <Icon name="card-giftcard" size={moderateScale(24)} color={GOLD} />
-            </Animated.View>
-          </Animated.View>
-          <Animated.View style={[styles.collapseLabel, { opacity: bubbleLabelFade }]}>
-            <Text style={styles.collapseLabelText} numberOfLines={2}>{t('freeCall.giftHint')}</Text>
-          </Animated.View>
-        </View>
-      )}
     </View>
   );
 }
@@ -664,16 +535,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.AstroMaroon, overflow: 'hidden' },
   tapCatcher: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
-  closeWrap: { position: 'absolute', right: scale(16), zIndex: 30 },
-  closeBtn: {
-    width: scale(36),
-    height: scale(36),
-    borderRadius: scale(18),
-    backgroundColor: 'rgba(0,0,0,0.28)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
   // Fills the WHOLE screen (not the space left over above the guide/CTA), so the
   // stage's centre is the screen's centre — which is where the box must sit.
   stage: { ...StyleSheet.absoluteFillObject },
@@ -704,46 +565,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.6,
     textAlign: 'center',
-  },
-
-  collapseLayer: { ...StyleSheet.absoluteFillObject, zIndex: 40 },
-  collapseBubble: {
-    position: 'absolute',
-    right: BUBBLE_RIGHT,
-    bottom: BUBBLE_BOTTOM,
-    width: BUBBLE,
-    height: BUBBLE,
-    borderRadius: BUBBLE / 2,
-    backgroundColor: COLORS.AstroMaroon,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-  },
-  // Same cream pill FreeCallGiftBubble puts under its icon, in the same place.
-  collapseLabel: {
-    position: 'absolute',
-    right: scale(14),
-    width: LABEL_W,
-    bottom: BUBBLE_BOTTOM - verticalScale(39),
-    alignItems: 'stretch',
-  },
-  collapseLabelText: {
-    backgroundColor: '#FFF9F3',
-    borderRadius: moderateScale(8),
-    borderWidth: 1,
-    borderColor: '#E9D9C9',
-    paddingHorizontal: scale(7),
-    paddingVertical: verticalScale(3),
-    fontSize: moderateScale(9),
-    lineHeight: moderateScale(12),
-    color: COLORS.AstroMaroon,
-    fontWeight: '700',
-    textAlign: 'center',
-    overflow: 'hidden',
   },
 
   youWin: {
@@ -849,24 +670,4 @@ const styles = StyleSheet.create({
     borderTopColor: '#421F12',
   },
 
-  footer: { paddingHorizontal: scale(20) },
-  cta: {
-    flexDirection: 'row',
-    backgroundColor: GOLD,
-    borderRadius: moderateScale(30),
-    paddingVertical: verticalScale(16),
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 8,
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.65,
-    shadowRadius: 14,
-  },
-  ctaText: {
-    color: COLORS.AstroMaroon,
-    fontSize: moderateScale(17),
-    fontWeight: '900',
-    marginRight: scale(8),
-  },
 });

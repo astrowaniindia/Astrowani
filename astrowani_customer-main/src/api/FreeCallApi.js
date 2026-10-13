@@ -175,6 +175,33 @@ export async function getInstantAstrologers() {
 }
 
 /**
+ * The same panel, for somebody who has NOT signed up yet.
+ *
+ * The campaign gift reveal drops a signed-out visitor straight onto the free-call
+ * screen, so the faces have to load before there is a token to load them with. This
+ * hits /instant/preview, which shows and never rings — the ring still goes through
+ * the authenticated endpoint once they have an account.
+ *
+ * Resolves (never rejects) to an empty panel, like every other read here: the worst
+ * a failure may do on this screen is show nobody, not show an error to someone who
+ * was just told they won a call.
+ */
+export async function getInstantAstrologersPreview() {
+  try {
+    const res = await Instance.get('/api/free-call/instant/preview', {
+      params: { platform: PLATFORM },
+    });
+    if (!res.data?.success) return { ...NO_ASTROLOGERS };
+    (res.data.astrologers || []).forEach((a) => {
+      if (typeof a?.image === 'string' && /^https?:/.test(a.image)) Image.prefetch(a.image).catch(() => {});
+    });
+    return res.data;
+  } catch (_) {
+    return { ...NO_ASTROLOGERS };
+  }
+}
+
+/**
  * Ring one astrologer. THROWS on refusal; `code` is what the screen branches on:
  * ASTROLOGER_BUSY | NOT_IN_POOL | UNAVAILABLE | SELF_BUSY | TOO_MANY_ATTEMPTS |
  * ALREADY_USED | NOT_ELIGIBLE | OFFER_CLOSED | MIGRATION_REQUIRED.
