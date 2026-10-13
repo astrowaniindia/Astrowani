@@ -272,10 +272,18 @@ eq('the model was called twice: English then Hindi', modelCalls, 2);
     // ── The SEO payload a crawler would read ───────────────────────────────
     section('the published HTML, as a crawler and the app receive it');
     const html = row.content_en;
-    ok('no model-written links survive — every href is ours',
-      (html.match(/href="([^"]*)"/g) || []).every((h) => h.includes(seo.SITE_BASE) || h.includes('play.google.com')),
-      (html.match(/href="([^"]*)"/g) || []).join(' '));
-    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+    // Every href must come from code we control, never from the model. The three
+    // legitimate sources are our own site, the Play Store CTA, and — when the
+    // photo came from Unsplash — the attribution link their LICENCE REQUIRES,
+    // naming the photographer and Unsplash. An earlier version of this assertion
+    // allowed only the first two and failed the moment real attribution appeared,
+    // which was the test being wrong rather than the code.
+    const ALLOWED_LINK_HOSTS = [seo.SITE_BASE, 'play.google.com', 'unsplash.com'];
+    const allHrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
+    ok('no model-written links survive — every href comes from our own code',
+      allHrefs.every((h) => ALLOWED_LINK_HOSTS.some((a) => h.includes(a))),
+      allHrefs.filter((h) => !ALLOWED_LINK_HOSTS.some((a) => h.includes(a))).join(' '));
+    const hrefs = allHrefs;
     ok(`${hrefs.length} links in the body`, hrefs.length >= 3);
     ok('no link is relative', hrefs.every((h) => /^https?:\/\//.test(h)), hrefs.join(' '));
     ok('no anchor is left unclosed',
@@ -372,8 +380,34 @@ eq('the model was called twice: English then Hindi', modelCalls, 2);
 
     // ── The disabled switch ────────────────────────────────────────────────
     section('the master switch');
+    // THE SWITCH IS TESTED AGAINST A FORCED-OFF CONFIG, NOT AGAINST WHATEVER THE
+    // LIVE ROW HAPPENS TO SAY. An earlier version just called run() and relied on
+    // the production config being absent (and therefore disabled by default) — so
+    // the moment the agent was genuinely switched on, this test failed while
+    // nothing was wrong. A test that passes only while a production setting has a
+    // particular value is testing the setting, not the code.
+    //
+    // The proxy passes every call through to the real database except the
+    // app_settings read for blog_agent_config, which it forces to enabled:false.
+    const offDb = new Proxy(db, {
+      get(target, prop) {
+        if (prop !== 'from') return Reflect.get(target, prop);
+        return (table) => {
+          if (table !== 'app_settings') return target.from(table);
+          return {
+            select: () => ({
+              eq: (_col, key) => ({
+                limit: async () => (key === 'blog_agent_config'
+                  ? { data: [{ value: JSON.stringify({ enabled: false }) }] }
+                  : target.from('app_settings').select('value').eq(_col, key).limit(1)),
+              }),
+            }),
+          };
+        };
+      },
+    });
     const callsBeforeDisabled = modelCalls; // BEFORE, so the check can actually fail
-    const disabled = await agent.run({ db, log: () => {}, count: 1 });
+    const disabled = await agent.run({ db: offDb, log: () => {}, count: 1 });
     eq('run() does nothing while the agent is disabled', disabled.ran, false);
     eq('  and says why', disabled.reason, 'disabled');
     eq('  and the model was not called at all', modelCalls - callsBeforeDisabled, 0);
