@@ -465,10 +465,33 @@ ok('the FAQ section is rendered visibly, not only as markup',
   keywords.FAQ_HEADINGS_EN.some((h) => assembled.contentEn.includes(h))
     && /Is mangal dosh really a problem/.test(assembled.contentEn),
   'no known FAQ heading found');
+// The FAQ is a native <details>/<summary> accordion: it needs no JavaScript, so it
+// cannot break on an already client-rendered page, and a crawler reads a collapsed
+// answer because the text is in the DOM either way.
+const faqDetails = [...assembled.contentEn.matchAll(/<details class="aw-faq"><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)];
+eq('every FAQ is a <details> accordion', faqDetails.length, quality.DEFAULT_LIMITS.minFaqs);
+ok('  each has a question in <summary> and an answer in <p>',
+  faqDetails.every((m) => m[1].trim().length > 5 && m[2].trim().length > 10));
+ok('  and no <h3> questions remain', !/<h3>[^<]*\?<\/h3>/.test(assembled.contentEn));
+ok('  wrapped in .aw-faq-list', /<div class="aw-faq-list">/.test(assembled.contentEn));
+// The answers must still be in the DOM for a crawler even while collapsed.
+ok('  answers are present in the HTML, not loaded on click',
+  assembled.contentEn.includes('It usually delays rather than denies'));
 ok('related posts are linked by slug',
   assembled.contentEn.includes('blog-post.html?slug=kundali-milan'), 'no related link');
 ok('the CTA is appended', keywords.CTA_EN.some((c) => assembled.contentEn.includes(c.heading)),
   'no known CTA heading found');
+// THE FAQ MUST BE LAST — the owner's requirement, and it previously sat between
+// the article and the related-posts block where it was buried under two sections.
+const h2Order = [...assembled.contentEn.matchAll(/<h2[^>]*>([^<]+)<\/h2>/g)].map((m) => m[1]);
+eq('the FAQ heading is the LAST h2 in the article', h2Order[h2Order.length - 1], 'Frequently asked questions');
+ok('  and the CTA comes before it',
+  h2Order.findIndex((h) => keywords.CTA_EN.some((c) => c.heading === h)) < h2Order.length - 1,
+  h2Order.join(' > '));
+ok('  and "read next" before that',
+  h2Order.findIndex((h) => keywords.RELATED_HEADINGS_EN.includes(h)) >= 0, h2Order.join(' > '));
+const hiH2 = [...assembled.contentHi.matchAll(/<h2[^>]*>([^<]+)<\/h2>/g)].map((m) => m[1]);
+eq('the Hindi FAQ heading is last too', hiH2[hiH2.length - 1], 'Aksar pooche jaane wale sawal');
 ok('the Play Store link is present and correct',
   assembled.contentEn.includes('play.google.com/store/apps/details?id=com.astrowanicustomer'));
 ok('JSON-LD is appended to the English body', /application\/ld\+json/.test(assembled.contentEn));
@@ -645,8 +668,19 @@ ok(`40 articles produce ${anchorsSeen.size} different "astrologers" anchors`, an
   [...anchorsSeen].join(' | '));
 const ctasSeen = new Set(slugs.map((sl) => keywords.ctaFor(sl).heading));
 ok(`40 articles produce ${ctasSeen.size} different CTA headings`, ctasSeen.size >= 4, [...ctasSeen].join(' | '));
+// blog-post.html renders its own related section titled "More from the Astrowani
+// blog". If the agent ever picks the same words the heading appears twice, a few
+// hundred pixels apart, over two lists of the same posts.
+ok('no related-heading variant collides with the website section title',
+  !keywords.RELATED_HEADINGS_EN.includes('More from the Astrowani blog'),
+  keywords.RELATED_HEADINGS_EN.join(' | '));
+// The FAQ heading is deliberately CONSTANT — it is structure, not copy. Rotating
+// it produced "Common questions about this", which is correct English and
+// unrecognisable as an FAQ block to someone scanning for the questions. Its SEO
+// value is in the FAQPage structured data beneath it, not in the wording varying.
 const faqHeads = new Set(slugs.map((sl) => keywords.faqHeadingFor(sl)));
-ok(`40 articles produce ${faqHeads.size} different FAQ headings`, faqHeads.size >= 3);
+eq('the FAQ heading does NOT rotate', faqHeads.size, 1);
+eq('  and is the recognisable one', [...faqHeads][0], 'Frequently asked questions');
 
 // Secondary keywords must differ between articles in the same category, or the
 // repetition problem just moves from anchors to body text.

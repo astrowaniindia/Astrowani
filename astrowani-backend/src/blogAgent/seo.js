@@ -305,13 +305,32 @@ function jsonLd({ title, description, slug, imageUrl, faqs, category, publishedA
   return `<script type="application/ld+json">${payload}</script>`;
 }
 
-/** The visible FAQ section. Mirrors the FAQPage data so the page and the markup agree. */
+/**
+ * The visible FAQ section, as a click-to-expand accordion.
+ *
+ * NATIVE <details>/<summary>, not a JavaScript widget, and that choice carries its
+ * weight three times over:
+ *  - It works with no script at all, so it cannot break on a page that is already
+ *    entirely client-rendered.
+ *  - A crawler reads the answer text whether or not the panel is open — collapsed
+ *    <details> content is in the DOM and is indexed, unlike content hidden behind
+ *    a click handler that never runs for a bot.
+ *  - The customer app renders this HTML through react-native-render-html, which
+ *    does not implement <details>; there it degrades to showing question and
+ *    answer stacked, which is exactly what it showed before. No app release needed.
+ *
+ * The question is a <summary>, so it is a real disclosure control with keyboard
+ * support, rather than a <div> pretending to be one.
+ */
 function faqHtml(faqs, { heading = null, hindi = false, seed = '' } = {}) {
   const qs = (faqs || []).filter((f) => f && f.question && f.answer);
   if (!qs.length) return '';
   heading = heading || kw.faqHeadingFor(seed, { hindi });
-  const body = qs.map((f) => `<h3>${escAttr(String(f.question).trim())}</h3><p>${escAttr(stripHtml(f.answer))}</p>`).join('');
-  return `<h2>${escAttr(heading)}</h2>${body}`;
+  const body = qs.map((f) => `<details class="aw-faq">`
+    + `<summary>${escAttr(String(f.question).trim())}</summary>`
+    + `<p>${escAttr(stripHtml(f.answer))}</p>`
+    + `</details>`).join('');
+  return `<h2 class="aw-faq-title">${escAttr(heading)}</h2><div class="aw-faq-list">${body}</div>`;
 }
 
 module.exports = {

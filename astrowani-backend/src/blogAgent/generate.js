@@ -459,11 +459,23 @@ function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [],
   const woven = weaveInternalLinks(draftArticle.contentEn, category, { max: 3, seed });
   const wovenHi = weaveInternalLinks(draftArticle.contentHi, category, { max: 2, seed });
 
+  // ORDER: article -> read next -> CTA -> FAQ.
+  //
+  // The FAQ block is LAST, at the owner's instruction ("5 questions at the end of
+  // each blog"). It previously sat between the article and the related-posts
+  // block, which buried it under two further sections — someone scrolling to the
+  // bottom for the questions did not find them there.
+  //
+  // The trade-off, stated so it is a choice and not an accident: the CTA no longer
+  // closes the page. That is acceptable because the FAQ answers are themselves a
+  // conversion surface (each one ends on "ask an astrologer"), and because an FAQ
+  // immediately above the fold-end is what Google's FAQ rich result expects to
+  // find.
   const contentEn = [
     woven.html,
-    seo.faqHtml(draftArticle.faqs, { seed }),
     seo.relatedLinksHtml(related, { seed }),
     seo.ctaHtml(category, { seed }),
+    seo.faqHtml(draftArticle.faqs, { seed }),
     seo.jsonLd({
       title: draftArticle.titleEn,
       description: draftArticle.metaDescription,
@@ -483,9 +495,9 @@ function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [],
   // as conflicting markup rather than as two languages.
   const contentHi = [
     wovenHi.html,
-    seo.faqHtml(draftArticle.faqsHi.length ? draftArticle.faqsHi : draftArticle.faqs, { hindi: true, seed }),
     seo.relatedLinksHtml(related, { hindi: true, seed }),
     seo.ctaHtml(category, { hindi: true, seed }),
+    seo.faqHtml(draftArticle.faqsHi.length ? draftArticle.faqsHi : draftArticle.faqs, { hindi: true, seed }),
   ].filter(Boolean).join('');
 
   return { ...draftArticle, contentEn, contentHi, linksPlaced: woven.linksPlaced };

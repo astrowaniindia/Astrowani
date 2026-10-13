@@ -612,3 +612,89 @@ body.aw-imgedit-open { overflow: hidden; }
   margin-top: 26px;
 }
 .aw-photo-credit a { text-decoration: underline; }
+
+
+/* ── Blog FAQ accordion ──────────────────────────────────────────────────────
+ * Emitted by the blog agent as native <details>/<summary> (see
+ * astrowani-backend/src/blogAgent/seo.js). No JavaScript: the disclosure is the
+ * browser's own, so it keeps working on a page that is already fully
+ * client-rendered, and a crawler reads the answers whether a panel is open or not.
+ *
+ * The default triangle marker is removed and replaced with our own chevron so it
+ * matches the site rather than the browser.
+ */
+.legal-content .aw-faq-title,
+.aw-faq-title { margin-top: 44px; }
+
+.legal-content .aw-faq-list,
+.aw-faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.legal-content .aw-faq,
+.aw-faq {
+  border: 1px solid var(--border-soft, rgba(89, 42, 25, .16));
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .34);
+  overflow: hidden;
+  transition: border-color .18s ease, background .18s ease;
+}
+.legal-content .aw-faq[open],
+.aw-faq[open] {
+  background: rgba(255, 255, 255, .55);
+  border-color: var(--gold, #c79a4e);
+}
+
+.legal-content .aw-faq > summary,
+.aw-faq > summary {
+  list-style: none;              /* Firefox */
+  cursor: pointer;
+  padding: 15px 48px 15px 18px;
+  position: relative;
+  font-weight: 600;
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--maroon, #592a19);
+  user-select: none;
+}
+/* The default disclosure triangle, in every engine that still draws one. */
+.aw-faq > summary::-webkit-details-marker { display: none; }
+.aw-faq > summary::marker { content: ''; }
+
+/* Our own chevron, rotating open. */
+.legal-content .aw-faq > summary::after,
+.aw-faq > summary::after {
+  content: '';
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -6px;
+  border-right: 2px solid var(--gold-deep, #a4762b);
+  border-bottom: 2px solid var(--gold-deep, #a4762b);
+  transform: rotate(45deg);
+  transition: transform .2s ease;
+}
+.legal-content .aw-faq[open] > summary::after,
+.aw-faq[open] > summary::after { transform: rotate(-135deg); margin-top: -2px; }
+
+.legal-content .aw-faq > summary:hover,
+.aw-faq > summary:hover { color: var(--gold-deep, #a4762b); }
+.aw-faq > summary:focus-visible { outline: 2px solid var(--gold, #c79a4e); outline-offset: -2px; }
+
+.legal-content .aw-faq > p,
+.aw-faq > p {
+  margin: 0;
+  padding: 0 18px 16px;
+  font-size: 14.5px;
+  line-height: 1.75;
+}
+
+@media (max-width: 560px) {
+  .aw-faq > summary { padding: 13px 42px 13px 14px; font-size: 14.5px; }
+  .aw-faq > p { padding: 0 14px 14px; }
+}

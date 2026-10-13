@@ -355,26 +355,30 @@ const CTA_HI = [
   },
 ];
 
-/** Headings that would otherwise be identical on every post. */
-const FAQ_HEADINGS_EN = [
-  'Frequently asked questions',
-  'Common questions about this',
-  'Questions people ask most',
-  'Your questions, answered',
-  'Quick answers to common doubts',
-];
-const FAQ_HEADINGS_HI = [
-  'Aksar pooche jaane wale sawal',
-  'Isse juday aam sawaal',
-  'Logon ke sabse aam sawaal',
-  'Aapke sawaal, hamare jawab',
-];
+/**
+ * The FAQ heading does NOT rotate, and that is a reversal of an earlier decision.
+ *
+ * It was rotated for variety alongside the anchors and the CTA, which produced
+ * "Common questions about this" — correct English, and unrecognisable as an FAQ
+ * block at a glance. A reader scanning for the questions could not find them.
+ *
+ * The heading is STRUCTURE, not copy. Its SEO value comes from the FAQPage
+ * structured data underneath it, not from the words varying, so rotating it cost
+ * recognisability and gained nothing. Anchors and CTAs still rotate, because
+ * those are copy and their variation is the whole point.
+ */
+const FAQ_HEADINGS_EN = ['Frequently asked questions'];
+const FAQ_HEADINGS_HI = ['Aksar pooche jaane wale sawal'];
+// NOTE "More from the Astrowani blog" is deliberately ABSENT. blog-post.html
+// renders its own related-posts section under exactly that title (aw/blog.js
+// articleTemplate), so an article picking it showed the heading twice, a few
+// hundred pixels apart, over two different lists of the same posts.
 const RELATED_HEADINGS_EN = [
   'Read next on Astrowani',
-  'More from the Astrowani blog',
   'Related reading',
   'Continue reading on Astrowani',
   'You might also find these useful',
+  'Keep reading',
 ];
 const RELATED_HEADINGS_HI = [
   'Astrowani par aage padhiye',

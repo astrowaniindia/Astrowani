@@ -307,7 +307,15 @@ eq('the model was called twice: English then Hindi', modelCalls, 2);
     ok('no anchor is left unclosed',
       (html.match(/<a\b/gi) || []).length === (html.match(/<\/a>/gi) || []).length);
     ok('no <h1> competes with the page heading', !/<h1/i.test(html));
-    ok('no inline style or class attribute', !/\s(style|class)=/i.test(html));
+    // No INLINE STYLE anywhere, and no class except the handful our own code
+    // emits. The rule exists to stop MODEL-written attributes reaching the page;
+    // `aw-faq`, `aw-faq-list`, `aw-faq-title` and `aw-photo-credit` are ours and
+    // are how the website styles the accordion and the credit line.
+    const OUR_CLASSES = ['aw-faq', 'aw-faq-list', 'aw-faq-title', 'aw-photo-credit'];
+    ok('no inline style attribute survives', !/\sstyle=/i.test(html));
+    const classes = [...html.matchAll(/\sclass="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/)).filter(Boolean);
+    ok('every class on the page is one of ours', classes.every((c) => OUR_CLASSES.includes(c)),
+      [...new Set(classes.filter((c) => !OUR_CLASSES.includes(c)))].join(' '));
     const ldMatch = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
     ok('JSON-LD is present', !!ldMatch);
     if (ldMatch) {
@@ -329,7 +337,10 @@ eq('the model was called twice: English then Hindi', modelCalls, 2);
     ok('the FAQ text is also visible prose, not only JSON-LD',
       kw.FAQ_HEADINGS_EN.some((h) => html.includes(h)) && html.includes('Is mangal dosh really a problem'),
       'no known FAQ heading in the published body');
-    eq('exactly 5 FAQs were published', (row.content_en.match(/<h3>/g) || []).length, 5);
+    eq('exactly 5 FAQs were published', (row.content_en.match(/<details class="aw-faq">/g) || []).length, 5);
+    ok('  as click-to-expand accordions', /<details class="aw-faq"><summary>/.test(row.content_en));
+    const publishedH2 = [...row.content_en.matchAll(/<h2[^>]*>([^<]+)<\/h2>/g)].map((m) => m[1]);
+    eq('  and the FAQ block is the LAST section', publishedH2[publishedH2.length - 1], 'Frequently asked questions');
     ok('the Hindi body has no JSON-LD (one URL, one @graph)', !/ld\+json/.test(row.content_hi));
 
     // ── The ledger ─────────────────────────────────────────────────────────
