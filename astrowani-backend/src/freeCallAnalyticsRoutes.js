@@ -345,8 +345,8 @@ async function clickCounts(sinceIso) {
 
 /** Talk-time histogram. Boundaries chosen to match the lines the product cares about. */
 const TALK_BUCKETS = [
-  { label: 'Under 30s (did not count)', min: 0, max: 29 },
-  { label: '30s – 2 min', min: 30, max: 119 },
+  { label: 'Under 90s (did not count)', min: 0, max: 89 },
+  { label: '90s – 2 min', min: 90, max: 119 },
   { label: '2 – 4 min (before payout)', min: 120, max: 239 },
   { label: '4 – 8 min (payout earned)', min: 240, max: 479 },
   { label: '8 – 11 min', min: 480, max: 659 },

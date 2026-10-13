@@ -3,7 +3,7 @@
 -- WHY THIS TABLE HAS TO EXIST, rather than reading free_call_bookings:
 -- `free_call_bookings` is deliberately MUTATED and partly ERASED as a customer works
 -- through the pool. One booking row is reused for every astrologer they try, and when a
--- connection dies before it was a conversation (under 30s, or the astrologer bailed
+-- connection dies before it was a conversation (under 90s, or the astrologer bailed
 -- early) sessionManager.finaliseFreeCallBooking NULLs call_session_id, call_ended_at and
 -- call_duration_seconds so the customer can retry with somebody else. That is correct
 -- product behaviour and it must not change -- but it means the booking row keeps no
@@ -19,7 +19,7 @@
 --   cancelled                the customer cancelled and moved on to someone else
 --   missed                   the ring timed out with no answer
 --   rejected                 the astrologer declined
---   too_short                connected but under MIN_REAL_CALL_SECONDS (30s) -- the
+--   too_short                connected but under MIN_REAL_CALL_SECONDS (90s) -- the
 --                            booking is released, the customer keeps their free call
 --   abandoned_by_astrologer  the astrologer hung up before the 3-minute line
 --   completed                a real conversation happened

@@ -44,7 +44,7 @@ const STALE_INSTANT_BOOKING_MS = 30 * 60 * 1000;
 // attempt is handed back to the customer rather than counted as their free call. One
 // constant for all four, because if they ever disagree somebody is charged, paid or
 // blocked for a conversation that did not take place.
-const MIN_REAL_CALL_SECONDS = 30;
+const MIN_REAL_CALL_SECONDS = 90;
 /**
  * A free call must run this long before the customer is offered paid minutes, and
  * before the astrologer is reserved while they decide.
