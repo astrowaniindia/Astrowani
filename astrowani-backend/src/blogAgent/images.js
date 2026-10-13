@@ -94,14 +94,45 @@ async function fromUnsplash(query, offset) {
   return {
     url: pick.urls.regular,
     ref: `unsplash:${pick.id}`,
-    // Unsplash asks for a credit, so one is produced and the caller appends it.
+    // Unsplash's licence REQUIRES a credit naming the photographer and Unsplash,
+    // both linked. Produced here and appended to the article by the caller.
     credit: {
       name: pick.user?.name || 'Unsplash',
       link: pick.user?.links?.html || 'https://unsplash.com',
       provider: 'Unsplash',
     },
+    // Required by the Unsplash API terms — see triggerUnsplashDownload below.
+    downloadLocation: pick.links?.download_location || null,
     provider: 'unsplash',
   };
+}
+
+/**
+ * Tell Unsplash a photo was actually used.
+ *
+ * REQUIRED BY THEIR API TERMS, and it is not a formality: this endpoint is how a
+ * photographer's download count is credited, which is most of what they get back
+ * for giving the work away. Skipping it is both a terms violation and the kind of
+ * free-riding that gets an API key revoked. It is the first item on Unsplash's own
+ * production checklist after hotlinking.
+ *
+ * Fire-and-forget and never throws: the photo is already downloaded and the
+ * article is already written by this point, so a failed ping must not cost the
+ * article. It does not count against the hourly rate limit.
+ */
+async function triggerUnsplashDownload(downloadLocation, log = () => {}) {
+  const key = process.env.UNSPLASH_ACCESS_KEY;
+  if (!key || !downloadLocation) return false;
+  try {
+    await axios.get(downloadLocation, {
+      headers: { Authorization: `Client-ID ${key}` },
+      timeout: FETCH_TIMEOUT_MS,
+    });
+    return true;
+  } catch (err) {
+    log(`unsplash download ping failed (harmless): ${err.response?.status || err.message}`);
+    return false;
+  }
 }
 
 const PROVIDERS = [fromPexels, fromPixabay, fromUnsplash];
@@ -293,6 +324,13 @@ async function acquire(db, { query, title, avoidRefs = [], log = () => {} }) {
       try {
         const buffer = await fetchAndNormalise(found.url);
         const stored = await upload(db, buffer);
+        // Unsplash requires this ping once a photo is genuinely used. Done AFTER a
+        // successful download and upload, so a photo we ended up not using is not
+        // reported as used.
+        if (found.downloadLocation) {
+          const pinged = await triggerUnsplashDownload(found.downloadLocation, log);
+          if (pinged) log('unsplash download endpoint notified (required by their terms)');
+        }
         log(`image from ${found.provider} (${found.ref}) -> ${stored.objectName}`);
         return { ...stored, ref: found.ref, provider: found.provider, credit: found.credit };
       } catch (err) {
@@ -317,6 +355,7 @@ function creditHtml(credit) {
 
 module.exports = {
   acquire,
+  triggerUnsplashDownload,
   upload,
   fetchAndNormalise,
   generatedImage,

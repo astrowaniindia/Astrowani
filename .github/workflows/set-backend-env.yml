@@ -38,6 +38,12 @@ jobs:
           # instead of a photograph (src/blogAgent/images.js falls through to its
           # no-key generator). Free tier: 200 requests/hour; the agent needs 3/day.
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          # Unsplash is the provider actually in use (2026-10-13): Pexels PAUSED new
+          # API key issuance, so the Pexels var above is kept only in case they
+          # reopen. Unsplash's licence REQUIRES crediting the photographer, which
+          # src/blogAgent/images.js does automatically, and its API terms require
+          # pinging the download endpoint on use, which it also does.
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
           set -e
           KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
@@ -50,7 +56,7 @@ jobs:
           # the head of an && list exits the whole job, so the short form would
           # abort this workflow precisely when a key is NOT set — the one case the
           # guard exists to survive.
-          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY; do
+          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY; do
             if [ -n "${!opt}" ]; then KEYS="$KEYS $opt"; fi
           done
           echo "writing: $KEYS"

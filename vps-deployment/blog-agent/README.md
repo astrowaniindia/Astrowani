@@ -71,13 +71,22 @@ user cannot write that file directly — CLAUDE.md):
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | **yes** | already set. Anon cannot write — every anon/authenticated write in `public` was revoked on 2026-09-23 |
 | `GEMINI_API_KEY` | **yes** | already set. The other six `GEMINI_API_KEY_*` (`_CONSULT`, `_PRODUCT`, `_STARTUP`, `_WASTEEE006`, `_PRIYA`, `_RAJIV`) are tried as fallbacks automatically |
-| `PEXELS_API_KEY` | recommended | free, instant, no attribution required: <https://www.pexels.com/api/> |
-| `PIXABAY_API_KEY` | optional | second source: <https://pixabay.com/api/docs/> |
-| `UNSPLASH_ACCESS_KEY` | optional | its licence asks for a credit, which the agent adds automatically |
+| `UNSPLASH_ACCESS_KEY` | **the one in use** | <https://unsplash.com/oauth/applications/new> — free Demo app, 50 req/hour (the agent needs 3/day). Its licence REQUIRES crediting the photographer, which the agent adds automatically, and its API terms require pinging the download endpoint on use, which it also does. |
+| `PEXELS_API_KEY` | unavailable | **Pexels PAUSED new API key issuance** (checked 2026-10-13). Kept wired up in case they reopen — it would then be preferred, since it needs no attribution. |
+| `PIXABAY_API_KEY` | optional | second source: <https://pixabay.com/api/docs/>. Their edge rate-limits our checks, so current availability is unconfirmed. |
 | `BLOG_SITE_BASE_URL` | **see below** | where the new site lives |
 
 **Without any image key the agent still works** — it draws a branded gradient card
-locally. Get a Pexels key; it takes two minutes and real photographs are worth it.
+locally (deterministic from the article title, so each post gets its own colour).
+
+**We stay on Unsplash's Demo tier deliberately.** 50 requests/hour against a need of
+3/day means production access (1,000/hour) is never required — which matters,
+because the first item on Unsplash's production checklist is that photos be
+*hotlinked* to unsplash.com rather than re-hosted. The agent re-hosts, because it
+crops to 1200x675, strips EXIF and serves from our own bucket so an article's image
+cannot vanish or change later, and because the customer app renders the same URL.
+Attribution and the download ping — the two things their API *terms* require — are
+both implemented.
 
 ### `BLOG_SITE_BASE_URL` — the one setting that will need changing
 
