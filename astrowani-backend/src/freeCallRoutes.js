@@ -1496,67 +1496,6 @@ module.exports = function registerFreeCallRoutes(app) {
     });
   }));
 
-
-  /* ── Visitor: the pool, WITHOUT being signed in ────────────────────────────
-   * The campaign gift reveal now hands a signed-out visitor straight to the free-call
-   * screen (customer app screens/FreeCall/InstantAstrologers.js), before they have an
-   * account. They have to be able to SEE who they would be talking to — the whole
-   * point of putting the panel before the form is that a row of real faces is a far
-   * better reason to sign up than a phone-number box is.
-   *
-   * THIS ROUTE CAN ONLY EVER SHOW. It takes no token, resolves no customer, and there
-   * is no ring here: the moment they tap anything the app raises the sign-up sheet,
-   * and every ring still goes through /instant/ring behind the full instantGate. So
-   * none of the eligibility machinery is skipped — it is simply not reached yet,
-   * because there is nobody to evaluate.
-   *
-   * What IS still honoured, because it decides what a stranger may see: the platform
-   * switch, instant mode, the master `enabled` flag (an invite cannot apply — invites
-   * belong to an account), the pool, `hidden_from_customers`, and `is_online`. Busy
-   * state is shown as it is to everyone else; `holds.buildHoldMap` is not consulted
-   * because the "held FOR this customer" exception needs a customer.
-   */
-  app.get('/api/free-call/instant/preview', h(async (req, res) => {
-    const EMPTY = { success: true, astrologers: [], durationMinutes: 11 };
-
-    const offer = await loadOffer();
-    // Answers 200-with-nothing rather than a refusal code on purpose. The app shows
-    // this screen to someone who has just been told they won a call, so the one thing
-    // it must never do is throw an error at them; an empty panel it already renders
-    // honestly ("nobody is online right now").
-    if (!platformAllowed(offer, platformOf(req))) return res.status(200).json(EMPTY);
-    if (offer.mode !== 'instant' || !offer.enabled) return res.status(200).json(EMPTY);
-
-    const active = await activeAstrologers(offer.effectiveInstantPool);
-    if (!active.length) {
-      return res.status(200).json({ ...EMPTY, durationMinutes: offer.durationMinutes });
-    }
-
-    const { data: rows, error: rowsErr } = await db
-      .from('astrologers')
-      .select('id, first_name, last_name, profile_pic_url, experience, languages, average_rating, total_reviews, badge, is_online, hidden_from_customers')
-      .not('hidden_from_customers', 'is', true)
-      .in('id', active.map((a) => a.id));
-
-    if (rowsErr) {
-      console.error('[FreeCall] instant PREVIEW query failed — the panel will look empty:', rowsErr.message);
-      return res.status(200).json({ ...EMPTY, durationMinutes: offer.durationMinutes });
-    }
-
-    const busyMap = await buildBusyMap(db);
-    const cards = (rows || [])
-      .filter((a) => a.is_online !== false)
-      .map((a) => instantCard(a, busyMap[a.id]))
-      .sort((x, y) => (x.isBusy === y.isBusy ? (y.rating - x.rating) : (x.isBusy ? 1 : -1)));
-
-    return res.status(200).json({
-      success: true,
-      astrologers: [...cards, ...localTest.fakeCards()],
-      durationMinutes: offer.durationMinutes,
-      preview: true,
-    });
-  }));
-
   /* ── Customer: ring this astrologer now ───────────────────────────────────── */
   app.post('/api/free-call/instant/ring', h(async (req, res) => {
     const gate = await instantGate(req);
