@@ -63,11 +63,6 @@ const BOTTOM = verticalScale(48);
 // it belongs to. CampaignGiftReveal derives its landing spot from the same numbers.
 export const GIFT_LABEL_W = scale(126);
 export const GIFT_EDGE = scale(14);
-// Home's own FreeCallGiftBubble rests higher, clear of the bottom tab bar. When this
-// host is standing in for THAT bubble (the free-call panel collapsing on its way to
-// Home) it has to rest there too, or the gift jumps up the screen the moment Home's
-// own bubble takes over.
-export const GIFT_BOTTOM_HOME = verticalScale(86);
 
 /**
  * Which part of signing up this customer still owes us. Read at tap time rather than
@@ -91,18 +86,13 @@ async function resolveStep() {
 export default function PendingGiftBubbleHost() {
   const { t } = useContext(LanguageContext);
   const [visible, setVisible] = useState(false);
-  // Which bubble this one is standing in for — see utils/pendingGiftBubble.js.
-  const [placement, setPlacement] = useState('prelogin');
   const [sheet, setSheet] = useState(null); // null | 'phone' | 'name' | 'ready'
   const [faces, setFaces] = useState([]);
   const pulse = useRef(new Animated.Value(0)).current;
   // Drag it anywhere; it stays where it is put, here and on Home.
   const { panHandlers, dragStyle } = useDraggableBubble();
 
-  useEffect(() => onPendingGiftChange((next, where) => {
-    setVisible(next);
-    if (where) setPlacement(where);
-  }), []);
+  useEffect(() => onPendingGiftChange(setVisible), []);
 
   // Fetched once the bubble appears, so the faces are already there when the card is
   // opened. Best effort in every direction: no token is needed, nothing waits on it,
@@ -182,10 +172,7 @@ export default function PendingGiftBubbleHost() {
 
   return (
     <>
-      <Animated.View
-        style={[styles.wrap, placement === 'home' && styles.wrapHome, dragStyle]}
-        pointerEvents="box-none"
-      >
+      <Animated.View style={[styles.wrap, dragStyle]} pointerEvents="box-none">
         <Animated.View
           pointerEvents="none"
           style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
@@ -258,8 +245,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 90,
   },
-  // Applied over `wrap` when standing in for Home's bubble.
-  wrapHome: { bottom: GIFT_BOTTOM_HOME },
   ring: {
     position: 'absolute',
     top: 0,

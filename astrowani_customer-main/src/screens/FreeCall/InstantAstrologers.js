@@ -85,10 +85,7 @@ export default function InstantAstrologers({ navigation, route }) {
   // worst possible first sentence for somebody who has just won a free call.
   const [signedOut, setSignedOut] = useState(null);
   const [signupVisible, setSignupVisible] = useState(false);
-  // null = staying. Otherwise WHERE the collapse is heading, because the same
-  // fold-into-the-bubble animation now has three endings.
-  const [leavingTo, setLeavingTo] = useState(null);
-  const leaving = leavingTo !== null;
+  const [leaving, setLeaving] = useState(false);
 
   // The in-flight ring. A ref rather than state because the ring timeout and the
   // unmount cleanup both read it from inside closures that must not go stale.
@@ -287,96 +284,43 @@ export default function InstantAstrologers({ navigation, route }) {
    * real astrologer off a tap that stale is the server's decision to be asked for
    * again, not ours to replay.
    */
-  const onSignedUp = useCallback(async () => {
+  const onSignedUp = useCallback(() => {
     setSignupVisible(false);
     setSignedOut(false);
+    setLoading(true);
+    load(false, false);
     // The reveal queued 'campaign' so that SignupWelcome, after the long way round
     // through Login, would send them back here. They never left — so the redirect has
     // already happened and the queue has nothing left to do. Cleared, or it sits set
     // for the rest of the run waiting for a screen that is not coming.
     clearPendingFreeCall();
-    setLoading(true);
-
-    // NOW ASK THE SERVER WHETHER THIS ACCOUNT MAY ACTUALLY HAVE THE CALL.
-    //
-    // Everything before this point was a visitor looking at a preview, which refuses
-    // nobody because there was nobody to refuse. The account that just appeared may
-    // well have used the offer already — including on an account that has since been
-    // DELETED, which src/offerGuard.js still recognises by a hash of the number. This
-    // is the first moment the real gate (instantGate) can run, and it is the only
-    // authority on eligibility.
-    //
-    // Deliberately NOT inferred from `isNewAccount`. A returning customer who signed
-    // up last week and never took their free call is still entitled to it, and
-    // treating "has an account" as "has used it" would quietly take the offer off
-    // them. The server knows the difference; the client does not.
-    const res = await getInstantAstrologers();
-    if (res.code) {
-      // Refused. Do not sit them in front of a panel they cannot use and an error —
-      // fold it away and hand them to the ordinary post-login welcome, which moves
-      // itself on to Home. They are simply a logged-in customer now.
-      captureEvent('free_call_not_eligible_after_signup', { code: res.code });
-      setLeavingTo('welcome');
-      return;
-    }
-    setBlocked(null);
-    setData(res);
-    setLoading(false);
-  }, []);
+  }, [load]);
 
   /**
-   * Back ALWAYS folds the panel into the gift bubble and drops it in the corner. The
-   * offer is not abandoned by backing out — it is put somewhere, and the customer has
-   * watched where. Only the DESTINATION differs:
-   *
-   *   not signed up yet -> Login, with the bubble carried there by
-   *                        PendingGiftBubbleHost (it lives above the navigator, so it
-   *                        survives Login, OTP and the name step).
-   *   signed up         -> Home, where Home's OWN FreeCallGiftBubble picks the gift up
-   *                        on exactly the same coordinates.
+   * The back arrow, for a visitor: the panel folds into the gift bubble and drops it
+   * in the corner, then Login. The offer is not abandoned by backing out — it is put
+   * somewhere, and they watched where. `showPendingGift` hands the landed bubble to
+   * the host above the navigator, which keeps it there through Login, OTP and name.
    */
   const onBack = useCallback(() => {
+    if (signedOut !== true) { navigation.goBack(); return; }
     if (leaving) return;
-    captureEvent('free_call_left_via_collapse', { signed_up: signedOut === false });
-    setLeavingTo(signedOut === false ? 'home' : 'login');
-  }, [leaving, signedOut]);
+    captureEvent('free_call_visitor_left_to_login');
+    setLeaving(true);
+  }, [signedOut, leaving, navigation]);
 
   useFocusEffect(useCallback(() => {
-    // Hardware back must do exactly what the arrow does, or the collapse is something
-    // only half the people who leave this screen ever see — and a visitor pressing it
-    // would pop the only route on the stack.
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (signedOut !== true) return false; // ordinary screen, ordinary back
       onBack();
       return true;
     });
     return () => sub.remove();
-  }, [onBack]));
+  }, [signedOut, onBack]));
 
   const { collapse, contentOpacity } = useCollapseAnimation(leaving, () => {
-    if (leavingTo === 'welcome') {
-      // Logged in, but not entitled to the call. NO gift bubble is parked here — one
-      // would promise a free call this account cannot have, which is worse than no
-      // bubble at all. SignupWelcome with `isLogin` is the "Namaste ji" screen the
-      // ordinary login shows, and it moves itself on to Home with nothing to press.
-      navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { isLogin: true } }] });
-      return;
-    }
-    // Still owed the call. Home calls hidePendingGift() on mount (Home.js), so this
-    // pre-login bubble only holds the gift for the instant between the collapse
-    // landing and Home drawing its own — and since the two are the same circle on the
-    // same spot, that hand-off cannot be seen.
-    // Stand in for the bubble this is actually handing over to: Home's own rests
-    // higher (clear of the tab bar) than the pre-login one, and landing on the wrong
-    // height makes the gift jump the moment the real bubble appears.
-    showPendingGift(leavingTo === 'login' ? 'prelogin' : 'home');
-    if (leavingTo === 'login') { navigation.replace('Login'); return; }
-    // Signed in. Prefer a real back stack where one exists — somebody who opened this
-    // from a push or the low-balance prompt should land where they came from rather
-    // than have their stack thrown away. The gift reveal arrives here via `replace`,
-    // so for a visitor who just signed up in the sheet there is nothing beneath and
-    // Home is the right answer.
-    if (navigation.canGoBack()) navigation.goBack();
-    else navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+    showPendingGift();
+    navigation.replace('Login');
   });
 
   /* The customer tapped an idle astrologer. */
@@ -831,12 +775,7 @@ export default function InstantAstrologers({ navigation, route }) {
         onDone={onSignedUp}
       />
 
-      {leaving && (
-        <CollapseIntoGiftBubble
-          collapse={collapse}
-          placement={leavingTo === 'login' ? 'prelogin' : 'home'}
-        />
-      )}
+      {leaving && <CollapseIntoGiftBubble collapse={collapse} />}
     </View>
   );
 }

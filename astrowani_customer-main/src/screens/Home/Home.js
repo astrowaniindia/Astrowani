@@ -1304,23 +1304,9 @@ const Home = ({navigation}) => {
       // The Home mascot tip waits for this popup: nothing to wait for if it was
       // not opened, otherwise it becomes true when the customer closes or books.
       if (!autoOpened) setFreeCallHandled(true);
-      // HAND THE CARRIED-OVER BUBBLE OVER *HERE*, not on mount.
-      //
-      // The bubble that flies into the corner when the free-call panel collapses is
-      // PendingGiftBubbleHost's (utils/pendingGiftBubble.js). This screen's own
-      // FreeCallGiftBubble can only be drawn once `freeCall` has come back from the
-      // server, which takes seconds. Retiring the carried-over one at mount therefore
-      // made the gift the customer had just watched land VANISH, and reappear a few
-      // seconds later — which reads as a bug, and undoes the whole point of showing
-      // them where it went. Releasing it only now means the two swap over directly:
-      // same circle, same coordinates, nothing missing in between and never two at once.
-      hidePendingGift();
     } catch (_) {
       // getFreeCallOffer resolves to "off" on failure; this only guards surprises.
       setFreeCallHandled(true);
-      // Released on the failure path too, or a failed fetch strands the carried-over
-      // bubble on Home for the rest of the session with nothing behind it.
-      hidePendingGift();
     }
   };
 
@@ -1404,9 +1390,10 @@ const Home = ({navigation}) => {
 
   useEffect(() => {
     loadAllData();
-    // NOTE: the carried-over gift bubble is NOT released here. It is released inside
-    // checkFreeCallOffer, the moment this screen knows what its own bubble should
-    // show — see the comment there.
+    // The gift carried over from the campaign reveal has arrived: this screen's own
+    // FreeCallGiftBubble takes it from here (utils/pendingGiftBubble.js). Two identical
+    // bubbles in the same corner is one too many.
+    hidePendingGift();
   }, []);
 
   // Refresh the astrologer carousel AND the live strip whenever Home regains focus (catches
