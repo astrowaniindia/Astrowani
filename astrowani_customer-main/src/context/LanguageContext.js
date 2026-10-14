@@ -1011,11 +1011,6 @@ const translations = {
     // The sign-up sheet raised over the free-call panel (components/FreeCallSignupSheet).
     // The thirty seconds is the promise the whole card is built around -- keep it loud,
     // and keep it true if the steps ever change.
-    // The panel when the offer is live but nobody can be rung right now: a time to
-    // choose, not a dead end.
-    'freeCallBooking.title': 'Abhi koi astrologer free nahi hai',
-    'freeCallBooking.body': 'Koi baat nahi — apni {{minutes}} minute ki free call ka time choose kar lijiye, astrologer ji aapko khud call karenge.',
-    'freeCallBooking.cta': 'Apna time choose kariye',
     'freeCallSignup.title': 'Aapki free call toh pakki hai!',
     'freeCallSignup.sub': 'Bas ek chhota sa sign up baaki hai',
     'freeCallSignup.thirtySeconds': 'Sirf 30 second lega, usse zyada nahi',
@@ -2536,9 +2531,6 @@ const translations = {
     'campaignGift.claimStepReady': 'सब तैयार है — अभी अपना ज्योतिषी चुनिए',
     'campaignGift.claimCta': 'मेरी फ्री कॉल क्लेम करें',
     'campaignGift.claimLater': 'बाद में',
-    'freeCallBooking.title': 'अभी कोई ज्योतिषी फ्री नहीं है',
-    'freeCallBooking.body': 'कोई बात नहीं — अपनी {{minutes}} मिनट की फ्री कॉल का समय चुन लीजिए, ज्योतिषी जी आपको खुद कॉल करेंगे.',
-    'freeCallBooking.cta': 'अपना समय चुनिए',
     'freeCallSignup.title': 'आपकी फ्री कॉल तो पक्की है!',
     'freeCallSignup.sub': 'बस एक छोटा सा साइन अप बाकी है',
     'freeCallSignup.thirtySeconds': 'सिर्फ 30 सेकंड लगेगा, उससे ज़्यादा नहीं',
