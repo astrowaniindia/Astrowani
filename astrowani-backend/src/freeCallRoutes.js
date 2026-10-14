@@ -1496,6 +1496,89 @@ module.exports = function registerFreeCallRoutes(app) {
     });
   }));
 
+
+  /* ── Visitor: the pool, WITHOUT being signed in ────────────────────────────
+   * The campaign gift reveal now hands a signed-out visitor straight to the free-call
+   * screen (customer app screens/FreeCall/InstantAstrologers.js), before they have an
+   * account. They have to be able to SEE who they would be talking to — the whole
+   * point of putting the panel before the form is that a row of real faces is a far
+   * better reason to sign up than a phone-number box is.
+   *
+   * THIS ROUTE CAN ONLY EVER SHOW. It takes no token, resolves no customer, and there
+   * is no ring here: the moment they tap anything the app raises the sign-up sheet,
+   * and every ring still goes through /instant/ring behind the full instantGate. So
+   * none of the eligibility machinery is skipped — it is simply not reached yet,
+   * because there is nobody to evaluate.
+   *
+   * What IS still honoured, because it decides what a stranger may see: the platform
+   * switch, instant mode, the master `enabled` flag (an invite cannot apply — invites
+   * belong to an account), the pool, `hidden_from_customers`, and `is_online`. Busy
+   * state is shown as it is to everyone else; `holds.buildHoldMap` is not consulted
+   * because the "held FOR this customer" exception needs a customer.
+   */
+  app.get('/api/free-call/instant/preview', h(async (req, res) => {
+    const EMPTY = { success: true, astrologers: [], durationMinutes: 11 };
+    // THE OFFER STILL STANDS, THERE IS JUST NOBODY TO RING RIGHT NOW.
+    //
+    // A visitor reaches this screen seconds after being told they have won eleven
+    // free minutes. "Nobody is online" is a dead end at the worst possible moment —
+    // so whenever the offer is live but instant calling is not available, the app is
+    // told to offer the BOOKING flow instead (pick a time, the astrologer rings you).
+    // This is the difference between "come back later" and "choose a time".
+    //
+    // Note loadOffer() already degrades instant -> scheduled by itself when the pool
+    // is empty, so `mode !== 'instant'` catches both the admin choosing scheduled and
+    // the pool having emptied. The explicit pool checks below cover the rest.
+    const booking = (o) => ({
+      ...EMPTY, bookingFallback: true, durationMinutes: o.durationMinutes, preview: true,
+    });
+
+    const offer = await loadOffer();
+    // Answers 200-with-nothing rather than a refusal code on purpose. The app shows
+    // this screen to someone who has just been told they won a call, so the one thing
+    // it must never do is throw an error at them.
+    if (!platformAllowed(offer, platformOf(req))) return res.status(200).json(EMPTY);
+    // Switched off entirely: there is no offer to book either, so no fallback.
+    if (!offer.enabled) return res.status(200).json(EMPTY);
+    if (offer.mode !== 'instant') return res.status(200).json(booking(offer));
+
+    const active = await activeAstrologers(offer.effectiveInstantPool);
+    if (!active.length) return res.status(200).json(booking(offer));
+
+    const { data: rows, error: rowsErr } = await db
+      .from('astrologers')
+      .select('id, first_name, last_name, profile_pic_url, experience, languages, average_rating, total_reviews, badge, is_online, hidden_from_customers')
+      .not('hidden_from_customers', 'is', true)
+      .in('id', active.map((a) => a.id));
+
+    if (rowsErr) {
+      // Offer the booking flow rather than an empty panel: the offer itself is fine,
+      // it is our lookup that failed, and a time they can choose is a far better
+      // answer than a screen that says nobody is available.
+      console.error('[FreeCall] instant PREVIEW query failed — offering booking instead:', rowsErr.message);
+      return res.status(200).json(booking(offer));
+    }
+
+    const busyMap = await buildBusyMap(db);
+    const cards = (rows || [])
+      .filter((a) => a.is_online !== false)
+      .map((a) => instantCard(a, busyMap[a.id]))
+      .sort((x, y) => (x.isBusy === y.isBusy ? (y.rating - x.rating) : (x.isBusy ? 1 : -1)));
+
+    // Everybody in the pool is signed out. Busy astrologers are still worth showing
+    // (the panel sorts them last and they can be asked to call back), but an empty
+    // list is the same dead end as an empty pool.
+    const withFillersCount = cards.length + localTest.fakeCards().length;
+    if (!withFillersCount) return res.status(200).json(booking(offer));
+
+    return res.status(200).json({
+      success: true,
+      astrologers: [...cards, ...localTest.fakeCards()],
+      durationMinutes: offer.durationMinutes,
+      preview: true,
+    });
+  }));
+
   /* ── Customer: ring this astrologer now ───────────────────────────────────── */
   app.post('/api/free-call/instant/ring', h(async (req, res) => {
     const gate = await instantGate(req);
