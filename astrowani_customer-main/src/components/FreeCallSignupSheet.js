@@ -22,8 +22,6 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -46,6 +44,11 @@ import { getAcquisition } from '../utils/acquisition';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
+// The success tick only. The sheet's own CTA is the app's standard maroon: green is
+// this screen's language for "free and available" and belongs to the card's "Call free"
+// button, which is the thing being offered. A second green button of equal weight,
+// sitting over those cards, competes with it — every other button in the app that moves
+// you through a form is maroon, and this is a form.
 const FREE_GREEN = '#137A43';
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
@@ -88,15 +91,19 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
   // double tap that matters happens inside that frame.
   const inFlight = useRef(false);
   const tokenRef = useRef('');
-  const pop = useRef(new Animated.Value(0)).current;
 
+  // NO entrance animation on the card, deliberately. It used to pop in on a
+  // native-driver spring, and the Animated node sitting inside a <Modal> + a
+  // KeyboardAvoidingView was re-parented the moment the keyboard opened over the
+  // phone field — which threw "connectAnimatedNodes: Animated node with tag (parent)
+  // does not exist" and red-boxed the app on the very first field. The Modal's own
+  // animationType="fade" already gives the sheet an entrance; a second, hand-rolled
+  // one bought nothing and cost the whole screen.
   useEffect(() => {
     if (!visible) return undefined;
     captureEvent('free_call_signup_sheet_shown', { step: 'phone' });
-    pop.setValue(0);
-    Animated.spring(pop, { toValue: 1, friction: 7, tension: 70, useNativeDriver: true }).start();
     return undefined;
-  }, [visible, pop]);
+  }, [visible]);
 
   // Reset only once the sheet is fully gone. Clearing on the way out would blank the
   // fields in front of the customer during the dismiss animation.
@@ -133,10 +140,17 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
     setBusy(true);
     setError('');
     try {
+      // NO `intent`. The backend only enforces "this number must/must not already
+      // exist" when the caller names a flow (index.js mobile-otp-request): `signup`
+      // refuses an existing number with ACCOUNT_EXISTS, `login` refuses a new one with
+      // NO_ACCOUNT. This sheet is BOTH — the app has never had separate login and
+      // sign-up journeys, and a returning customer reaching for a free call must get
+      // their code, not "please log in instead" on a screen with nowhere to log in.
+      // Omitted, the server sends the code either way; `isNewAccount` on verify is
+      // what decides whether the name step is needed.
       const res = await Instance.post('/api/users/mobile-otp-request', {
         phoneNumber: digits,
         role: 'customer',
-        intent: 'signup',
       });
       if (res?.data?.success) {
         captureEvent('free_call_signup_otp_sent', { resend: !!isResend });
@@ -296,15 +310,7 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
         style={styles.backdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Animated.View
-          style={[
-            styles.card,
-            {
-              opacity: pop,
-              transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }],
-            },
-          ]}
-        >
+        <View style={styles.card}>
           <TouchableOpacity
             style={styles.close}
             onPress={onClose}
@@ -432,7 +438,7 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
           </TouchableOpacity>
 
           <Text style={styles.legal}>{t('freeCallSignup.legal')}</Text>
-        </Animated.View>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -556,7 +562,7 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: verticalScale(14),
-    backgroundColor: FREE_GREEN,
+    backgroundColor: COLORS.AstroMaroon,
     borderRadius: moderateScale(12),
     paddingVertical: verticalScale(12),
     flexDirection: 'row',

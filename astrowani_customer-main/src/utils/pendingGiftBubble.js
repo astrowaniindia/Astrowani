@@ -18,18 +18,33 @@
 
 let visible = false;
 let listener = null;
+// WHERE the carried-over bubble rests. The two bubbles this one stands in for sit at
+// different heights on purpose: Home's clears the bottom tab bar, the pre-login
+// screens have no tab bar and want it lower. Standing in for the wrong one makes the
+// gift visibly jump the moment the real bubble takes over, which is exactly what this
+// hand-over exists to prevent.
+let placement = 'prelogin'; // 'prelogin' | 'home'
 
-/** The reveal has collapsed into the corner — keep that bubble on screen. */
-export function showPendingGift() {
+/**
+ * The screen has collapsed into the corner — keep that bubble on screen.
+ * `where` is the bubble this one is standing in for, so it lands on its coordinates.
+ */
+export function showPendingGift(where = 'prelogin') {
   visible = true;
-  if (listener) listener(true);
+  placement = where === 'home' ? 'home' : 'prelogin';
+  if (listener) listener(true, placement);
+}
+
+/** Where the bubble is currently resting, for a host mounting mid-journey. */
+export function peekPendingGiftPlacement() {
+  return placement;
 }
 
 /** Home is up (or the journey ended): its own bubble takes it from here. */
 export function hidePendingGift() {
   if (!visible) return;
   visible = false;
-  if (listener) listener(false);
+  if (listener) listener(false, placement);
 }
 
 /**
@@ -38,7 +53,7 @@ export function hidePendingGift() {
  */
 export function onPendingGiftChange(fn) {
   listener = fn;
-  fn(visible);
+  fn(visible, placement);
   return () => {
     if (listener === fn) listener = null;
   };

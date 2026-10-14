@@ -31,15 +31,19 @@ const LABEL_W = scale(126);            // PendingGiftBubbleHost GIFT_LABEL_W
 // The host centres the circle over its (wider) hint pill, so the circle itself sits
 // further in from the screen edge than the pill does. Land on that same spot.
 const BUBBLE_RIGHT = scale(14) + (LABEL_W - BUBBLE) / 2;
-// Must equal PendingGiftBubbleHost's `wrap.bottom`, which is what this bubble hands
-// over to the instant it lands — a mismatch makes the gift jump as the screen changes.
-const BUBBLE_BOTTOM = verticalScale(48);
+// WHERE IT LANDS DEPENDS ON WHERE IT IS GOING, and getting this wrong is visible.
+// The bubble this one hands over to rests at two different heights: the pre-login
+// host's (no tab bar on Login/OTP/name, so it sits low) and Home's own
+// FreeCallGiftBubble (higher, clear of the bottom tab bar). Landing on one and being
+// replaced by the other makes the gift jump up the screen at the hand-off, which is
+// precisely what the whole collapse exists to avoid.
+const BUBBLE_BOTTOM = { prelogin: verticalScale(48), home: verticalScale(86) };
 // Big enough that the circle covers the screen at the start of the collapse.
 const COLLAPSE_SCALE = (Math.max(SCREEN_W, SCREEN_H) * 1.3) / BUBBLE;
 // Offset from the bubble's resting centre to the screen's centre, i.e. how far it
 // travels on the way down to the corner.
 const COLLAPSE_DX = SCREEN_W / 2 - (SCREEN_W - BUBBLE_RIGHT - BUBBLE / 2);
-const COLLAPSE_DY = SCREEN_H / 2 - (SCREEN_H - BUBBLE_BOTTOM - BUBBLE / 2);
+const collapseDy = (bottom) => SCREEN_H / 2 - (SCREEN_H - bottom - BUBBLE / 2);
 
 export const COLLAPSE_MS = 880;
 
@@ -74,12 +78,13 @@ export function useCollapseAnimation(active, onLanded) {
   };
 }
 
-export default function CollapseIntoGiftBubble({ collapse }) {
+export default function CollapseIntoGiftBubble({ collapse, placement = 'prelogin' }) {
   const { t } = useContext(LanguageContext);
 
+  const bottom = BUBBLE_BOTTOM[placement] || BUBBLE_BOTTOM.prelogin;
   const bubbleScale = collapse.interpolate({ inputRange: [0, 1], outputRange: [COLLAPSE_SCALE, 1] });
   const bubbleX = collapse.interpolate({ inputRange: [0, 1], outputRange: [COLLAPSE_DX, 0] });
-  const bubbleY = collapse.interpolate({ inputRange: [0, 1], outputRange: [COLLAPSE_DY, 0] });
+  const bubbleY = collapse.interpolate({ inputRange: [0, 1], outputRange: [collapseDy(bottom), 0] });
   // The icon and label appear only once the circle is small enough to read as a
   // bubble rather than as a wall of maroon.
   const iconFade = collapse.interpolate({ inputRange: [0, 0.68, 0.9], outputRange: [0, 0, 1], extrapolate: 'clamp' });
@@ -90,6 +95,7 @@ export default function CollapseIntoGiftBubble({ collapse }) {
       <Animated.View
         style={[
           styles.bubble,
+          { bottom },
           { transform: [{ translateX: bubbleX }, { translateY: bubbleY }, { scale: bubbleScale }] },
         ]}
       >
@@ -97,7 +103,7 @@ export default function CollapseIntoGiftBubble({ collapse }) {
           <Icon name="card-giftcard" size={moderateScale(24)} color={COLORS.AstroGold} />
         </Animated.View>
       </Animated.View>
-      <Animated.View style={[styles.label, { opacity: labelFade }]}>
+      <Animated.View style={[styles.label, { bottom: bottom - verticalScale(39) }, { opacity: labelFade }]}>
         <Text style={styles.labelText} numberOfLines={2}>{t('freeCall.giftHint')}</Text>
       </Animated.View>
     </View>
@@ -109,7 +115,6 @@ const styles = StyleSheet.create({
   bubble: {
     position: 'absolute',
     right: BUBBLE_RIGHT,
-    bottom: BUBBLE_BOTTOM,
     width: BUBBLE,
     height: BUBBLE,
     borderRadius: BUBBLE / 2,
@@ -127,7 +132,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: scale(14),
     width: LABEL_W,
-    bottom: BUBBLE_BOTTOM - verticalScale(39),
     alignItems: 'stretch',
   },
   labelText: {
