@@ -242,6 +242,25 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
     }
   };
 
+  /**
+   * Back to the number, with it still in the box so a typo is one character to fix
+   * rather than ten to retype. Without this a mistyped digit was a dead end: the
+   * sheet has no back button and the only way out was to close it and start again.
+   * The full sign-up flow has had this all along (VerifyOtp's "Change Phone Number"),
+   * which is why this reuses that screen's label rather than inventing a second one.
+   */
+  const changeNumber = () => {
+    if (inFlight.current) return;
+    captureEvent('free_call_signup_change_number');
+    setStep('phone');
+    setOtp('');
+    setError('');
+    // The code already sent stays valid, and the server's own throttle still applies
+    // if they ask for another — but the countdown belonged to the old number, and
+    // leaving it running would block a legitimate first send to a corrected one.
+    setResendIn(0);
+  };
+
   /* ── Step 3: the name (and, optionally, a friend's code) ────────────────── */
   const saveName = async () => {
     if (inFlight.current) return;
@@ -380,17 +399,23 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
                 maxLength={OTP_LENGTH}
                 autoFocus
               />
-              <TouchableOpacity
-                disabled={resendIn > 0 || busy}
-                onPress={() => sendOtp(true)}
-                style={styles.resendWrap}
-              >
-                <Text style={[styles.resend, resendIn > 0 && styles.resendOff]}>
-                  {resendIn > 0
-                    ? t('freeCallSignup.resendIn', { seconds: resendIn })
-                    : t('freeCallSignup.resend')}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.otpLinks}>
+                <TouchableOpacity
+                  disabled={resendIn > 0 || busy}
+                  onPress={() => sendOtp(true)}
+                  style={styles.linkBtn}
+                >
+                  <Text style={[styles.resend, resendIn > 0 && styles.resendOff]}>
+                    {resendIn > 0
+                      ? t('freeCallSignup.resendIn', { seconds: resendIn })
+                      : t('freeCallSignup.resend')}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={styles.linkSep}>·</Text>
+                <TouchableOpacity disabled={busy} onPress={changeNumber} style={styles.linkBtn}>
+                  <Text style={styles.resend}>{t('otp.changeNumber')}</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
@@ -550,7 +575,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: verticalScale(10),
   },
-  resendWrap: { alignSelf: 'center', paddingVertical: verticalScale(6) },
+  otpLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  linkBtn: { paddingVertical: verticalScale(6), paddingHorizontal: scale(4) },
+  linkSep: { color: '#C7B3A1', fontSize: moderateScale(11.5) },
   resend: { fontFamily: 'Poppins-Bold', fontSize: moderateScale(11.5), color: COLORS.AstroMaroon },
   resendOff: { color: '#B9A693' },
   error: {
