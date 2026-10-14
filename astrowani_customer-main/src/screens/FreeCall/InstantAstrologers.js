@@ -42,6 +42,7 @@ import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
 import {
   getInstantAstrologers, getInstantAstrologersPreview, ringInstantAstrologer, giveUpInstantRing,
+  getFreeCallOffer,
 } from '../../api/FreeCallApi';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
@@ -53,7 +54,9 @@ import { captureEvent } from '../../utils/Analytics';
 import FreeCallSignupSheet from '../../components/FreeCallSignupSheet';
 import CollapseIntoGiftBubble, { useCollapseAnimation } from '../../components/CollapseIntoGiftBubble';
 import { showPendingGift } from '../../utils/pendingGiftBubble';
-import { clearPendingFreeCall, openFreeCallSheet } from '../../utils/freeCallInvite';
+import { clearPendingFreeCall } from '../../utils/freeCallInvite';
+import FreeCallOffer from '../../components/FreeCallOffer';
+import { isProfileComplete as checkProfileComplete, ensureProfileComplete } from '../../utils/profileGate';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -94,6 +97,19 @@ export default function InstantAstrologers({ navigation, route }) {
   // Mirrors data.bookingFallback. A ref because onSignedUp is a useCallback that must
   // not be rebuilt (and must not read a stale `data`) every time the panel refreshes.
   const bookingFallbackRef = useRef(false);
+  // THE SLOT PICKER LIVES ON THIS SCREEN, not on Home.
+  //
+  // It used to hand over to Home's copy of FreeCallOffer, which meant the customer
+  // watched this panel disappear, Home load behind them, and a sheet arrive on top of
+  // it — for a decision they had already made here. Choosing a time is this screen's
+  // job when there is nobody to ring; Home is where they go once it is BOOKED.
+  const [bookingOffer, setBookingOffer] = useState(null);   // the /offer payload
+  const [bookingVisible, setBookingVisible] = useState(false);
+  const [bookingUser, setBookingUser] = useState(null);
+  // Set the moment a slot is taken. The sheet stays up afterwards for its
+  // confirmation (and the birth-details step), so "booked" and "finished with this
+  // screen" are two different moments and only the second one navigates.
+  const bookedRef = useRef(false);
 
   // The in-flight ring. A ref rather than state because the ring timeout and the
   // unmount cleanup both read it from inside closures that must not go stale.
@@ -289,11 +305,49 @@ export default function InstantAstrologers({ navigation, route }) {
    * does. Signed in there is nothing to ask for, so it goes straight to Home's
    * booking sheet.
    */
+  /**
+   * Raise the slot picker OVER this panel.
+   *
+   * The offer payload is fetched first — FreeCallOffer renders the admin-authored
+   * copy and the astrologer faces out of it — and the server is asked again rather
+   * than trusted from the preview, because by now there is an account to evaluate
+   * and only the server can say whether this customer may book at all.
+   */
+  const openSlotPicker = useCallback(async () => {
+    setLoading(true);
+    const [fc, userStr] = await Promise.all([
+      getFreeCallOffer(),
+      AsyncStorage.getItem('userData'),
+    ]);
+    setLoading(false);
+    if (fc?.enabled && fc?.eligible) {
+      try { setBookingUser(userStr ? JSON.parse(userStr) : null); } catch (_) { setBookingUser(null); }
+      setBookingOffer(fc.offer || null);
+      setBookingVisible(true);
+      return;
+    }
+    // Not entitled after all — used already, or the offer closed while they were
+    // signing up. Same destination as every other refusal on this screen: the
+    // ordinary welcome, which takes itself to Home.
+    captureEvent('free_call_booking_refused', { enabled: !!fc?.enabled, eligible: !!fc?.eligible });
+    navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { isLogin: true } }] });
+  }, [navigation]);
+
+  /**
+   * Done here: the call is booked, so hand them to Home. `reset` rather than a push —
+   * this screen reached them from the gift reveal with nothing beneath it, and a
+   * booked offer is not something to come back to by pressing back.
+   */
+  const goHomeAfterBooking = useCallback((then) => {
+    navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+    if (then) setTimeout(then, 350);
+  }, [navigation]);
+
   const onBookInstead = useCallback(() => {
     captureEvent('free_call_booking_cta', { signed_up: signedOut === false });
     if (gateVisitor('book_instead')) return;
-    openFreeCallSheet('free_call_panel');
-  }, [gateVisitor, signedOut]);
+    openSlotPicker();
+  }, [gateVisitor, signedOut, openSlotPicker]);
 
   /**
    * The sheet finished: there is an account now.
@@ -314,14 +368,11 @@ export default function InstantAstrologers({ navigation, route }) {
     // for the rest of the run waiting for a screen that is not coming.
     clearPendingFreeCall();
 
-    // THE PANEL WAS OFFERING A BOOKING, NOT A RING. Hand straight over to Home's own
-    // booking sheet: it owns the slot grid and the booking call, re-asks the server
-    // for the offer itself, and already copes with every answer (eligible, already
-    // booked, offer gone). Re-implementing any of that here would be a second
-    // booking flow to keep in step with the first.
+    // THE PANEL WAS OFFERING A BOOKING, NOT A RING — so pick the time HERE, on the
+    // screen they chose it on, rather than sending them to Home to be asked again.
     if (bookingFallbackRef.current) {
       captureEvent('free_call_booking_after_signup');
-      openFreeCallSheet('free_call_panel');
+      await openSlotPicker();
       return;
     }
 
@@ -354,10 +405,17 @@ export default function InstantAstrologers({ navigation, route }) {
       navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { isLogin: true } }] });
       return;
     }
+    // THE END OF THE SIGN-UP FUNNEL: an account exists and the server says it may
+    // have the free call. Everything after this is the ordinary ring flow, which is
+    // already tracked (free_call_instant_ring / call_connected).
+    captureEvent('free_call_eligible', {
+      astrologers: (res.astrologers || []).length,
+      via: 'signup_sheet',
+    });
     setBlocked(null);
     setData(res);
     setLoading(false);
-  }, [navigation]);
+  }, [navigation, openSlotPicker]);
 
   /**
    * Back ALWAYS folds the panel into the gift bubble and drops it in the corner. The
@@ -372,9 +430,15 @@ export default function InstantAstrologers({ navigation, route }) {
    */
   const onBack = useCallback(() => {
     if (leaving) return;
-    captureEvent('free_call_left_via_collapse', { signed_up: signedOut === false });
+    // `at` says WHAT they were looking at when they left — a panel of astrologers, a
+    // booking invitation, or an empty screen. Without it every exit from this screen
+    // looks the same in the funnel, and they are not the same at all.
+    captureEvent('free_call_left_via_collapse', {
+      signed_up: signedOut === false,
+      at: bookingFallbackRef.current ? 'booking_offer' : ((data.astrologers || []).length ? 'astrologer_panel' : 'empty'),
+    });
     setLeavingTo(signedOut === false ? 'home' : 'login');
-  }, [leaving, signedOut]);
+  }, [leaving, signedOut, data.astrologers]);
 
   useFocusEffect(useCallback(() => {
     // Hardware back must do exactly what the arrow does, or the collapse is something
@@ -871,6 +935,37 @@ export default function InstantAstrologers({ navigation, route }) {
         context="free_call_instant"
       />
       </Animated.View>
+
+      {/* The slot picker, on THIS screen. `startAtSlots` skips the offer card: they
+          already said they want to book by tapping the button that opened this, and
+          asking again is a question they have just answered.
+
+          Booking is the end of this screen's job, so a booked customer goes to Home
+          — but only once they are DONE, which means after the confirmation and after
+          the optional birth-details step, not the instant the slot is taken. */}
+      <FreeCallOffer
+        visible={bookingVisible}
+        offer={bookingOffer}
+        phone={bookingUser?.phone || ''}
+        t={t}
+        source="free_call_panel"
+        startAtSlots
+        showBookedBadge
+        bookedCount={359}
+        needsBirthDetails={!checkProfileComplete(bookingUser)}
+        onAddBirthDetails={() => {
+          setBookingVisible(false);
+          goHomeAfterBooking(() => ensureProfileComplete(navigation, 'free_call_after_booking'));
+        }}
+        onBooked={() => { bookedRef.current = true; }}
+        onClose={() => {
+          setBookingVisible(false);
+          // Closed WITHOUT booking: they are still on the free-call screen with the
+          // offer intact, which is exactly where they should be. Only a booking ends
+          // this screen.
+          if (bookedRef.current) goHomeAfterBooking();
+        }}
+      />
 
       {/* The whole sign-up, over the panel the visitor was just reaching into. The
           astrologers stay visible behind it on purpose — see the component. */}

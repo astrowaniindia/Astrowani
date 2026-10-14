@@ -1,6 +1,7 @@
 import FreeCallSettings from './FreeCallSettings';
 import FreeCallAnalytics from '../components/FreeCallAnalytics';
 import MetroCampaignPanel from '../components/MetroCampaignPanel';
+import FreeCallSignupFunnel from '../components/FreeCallSignupFunnel';
 
 /**
  * The "ring an astrologer now" offer.
@@ -63,6 +64,12 @@ export default function FreeCallInstant() {
           astrologer instead of a picker — so it gets its own section with its own switch
           and its own numbers rather than being averaged into the analytics above. */}
       <MetroCampaignPanel />
+
+      {/* LAST on the page, deliberately. This is the journey BEFORE the offer can be
+          taken — app opened, gift tapped, signed up in the pop-up — so it answers
+          "why are so few people reaching the panel at all", a question you ask after
+          the offer's own numbers above have already told you something is thin. */}
+      <FreeCallSignupFunnel />
     </div>
   );
 }
