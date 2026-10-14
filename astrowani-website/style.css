@@ -82,8 +82,8 @@
   box-shadow: 0 18px 40px -20px var(--ch-shadow);
   border: 1px solid var(--ch-hairline);
 }
-.ch-nav-brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; color: var(--ch-ink); flex: 0 0 auto; }
-.ch-nav-brand img { width: 30px; height: 30px; border-radius: 50%; }
+.ch-nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; color: var(--ch-ink); flex: 0 0 auto; }
+.ch-nav-brand img { width: 36px; height: 36px; border-radius: 50%; }
 .ch-nav-links { display: flex; align-items: center; gap: 18px; font-size: 13px; font-weight: 600; color: var(--ch-ink-soft); flex-wrap: nowrap; white-space: nowrap; }
 .ch-nav-links a, .ch-nav-links .nav-drop-trigger { position: relative; padding-bottom: 3px; }
 .ch-nav-links a:hover { color: var(--gold); }
@@ -94,6 +94,16 @@
 
 .ch-rings { position: absolute; left: 50%; top: 60%; transform: translate(-50%, -50%); z-index: 0; pointer-events: none; }
 .ch-ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px solid var(--ch-ring); transform: translate(-50%, -50%); }
+
+.ch-zodiac-bg {
+  position: absolute; top: 20px; right: -70px; width: 500px; height: 500px;
+  z-index: 0; pointer-events: none; opacity: 0.16;
+  animation: ch-zodiac-spin 40s linear infinite;
+}
+@keyframes ch-zodiac-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (max-width: 900px) {
+  .ch-zodiac-bg { width: 290px; height: 290px; top: 10px; right: -55px; opacity: 0.12; }
+}
 
 .ch-eyebrow {
   position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px;

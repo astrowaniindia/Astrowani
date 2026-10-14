@@ -803,20 +803,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   })();
 
-  // ---------- concentric rings behind the hero (flat outlines, no gradient) ----------
-  const chRingsEl = document.getElementById('ch-rings');
-  if (chRingsEl) {
-    const ringSizes = [260, 360, 460, 560, 660];
-    ringSizes.forEach((s, i) => {
-      const r = document.createElement('div');
-      r.className = 'ch-ring';
-      r.style.width = s + 'px';
-      r.style.height = s + 'px';
-      r.style.opacity = (1 - i * 0.16).toFixed(2);
-      chRingsEl.appendChild(r);
-    });
-  }
-
   // ---------- scroll-triggered reveal (clip-path wipe) ----------
   // IntersectionObserver is the primary driver; a direct bounding-rect sweep
   // backs it up on scroll (and on a short interval) so the reveal still
