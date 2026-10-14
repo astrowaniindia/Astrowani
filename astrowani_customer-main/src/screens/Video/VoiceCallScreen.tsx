@@ -277,6 +277,11 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       session_id: sid,
       duration_seconds: callDurationRef.current,
       connected: callDurationRef.current > 0,
+      // Free calls and paid calls both land here. Without this the sign-up funnel
+      // cannot tell "the free call they just won actually happened" from any other
+      // call on the platform, and the last two stages would count paid traffic.
+      free_call: !!freeCall,
+      free_call_mode: freeCall ? freeCallMode : null,
     });
     if (sid) {
       // ── FIRE AND FORGET. NEVER AWAIT THIS BEFORE NAVIGATING (owner, 2026-10-04) ──
@@ -586,7 +591,12 @@ const VoiceCallScreen = ({route, navigation}: any) => {
             callStateRef.current = 'in_call';
             isConnectedRef.current = true;
             setCallState('in_call');
-            captureEvent('call_connected', {call_type: 'voice', session_id: sessionIdRef.current});
+            captureEvent('call_connected', {
+              call_type: 'voice',
+              session_id: sessionIdRef.current,
+              free_call: !!freeCall,
+              free_call_mode: freeCall ? freeCallMode : null,
+            });
             // Audio recording for the contact-detail audit (no-op unless an admin enabled it).
             startCallRecording(sessionIdRef.current, 'voice');
             // Persistent notification — billing keeps running even if the customer
