@@ -1012,7 +1012,7 @@ const translations = {
     // The thirty seconds is the promise the whole card is built around -- keep it loud,
     // and keep it true if the steps ever change.
     'freeCallSignup.title': 'Aapki free call toh pakki hai!',
-    'freeCallSignup.sub': 'Bas ek chhota sa sign up baaki hai',
+    'freeCallSignup.sub': 'Bas ek chhota sa sign up baaki hai, phir seedha astrologer ji se baat',
     'freeCallSignup.thirtySeconds': 'Sirf 30 second lega, usse zyada nahi',
     'freeCallSignup.phonePlaceholder': 'Apna mobile number',
     'freeCallSignup.phoneInvalid': 'Poora 10 digit ka number daaliye',
@@ -2532,7 +2532,7 @@ const translations = {
     'campaignGift.claimCta': 'मेरी फ्री कॉल क्लेम करें',
     'campaignGift.claimLater': 'बाद में',
     'freeCallSignup.title': 'आपकी फ्री कॉल तो पक्की है!',
-    'freeCallSignup.sub': 'बस एक छोटा सा साइन अप बाकी है',
+    'freeCallSignup.sub': 'बस एक छोटा सा साइन अप बाकी है, फिर सीधे ज्योतिषी जी से बात',
     'freeCallSignup.thirtySeconds': 'सिर्फ 30 सेकंड लगेगा, उससे ज़्यादा नहीं',
     'freeCallSignup.phonePlaceholder': 'अपना मोबाइल नंबर',
     'freeCallSignup.phoneInvalid': 'पूरा 10 अंकों का नंबर डालिए',
