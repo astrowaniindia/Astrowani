@@ -85,10 +85,8 @@ export default function InstantAstrologers({ navigation, route }) {
   // worst possible first sentence for somebody who has just won a free call.
   const [signedOut, setSignedOut] = useState(null);
   const [signupVisible, setSignupVisible] = useState(false);
-  // null = staying. Otherwise where the collapse is heading: 'login' or 'home'. Only
-  // the back paths collapse — an account that may not have the call leaves without
-  // the animation (see onSignedUp), because folding into a gift bubble would promise
-  // a gift that is not there.
+  // null = staying. Otherwise WHERE the collapse is heading, because the same
+  // fold-into-the-bubble animation now has three endings.
   const [leavingTo, setLeavingTo] = useState(null);
   const leaving = leavingTo !== null;
 
@@ -314,22 +312,17 @@ export default function InstantAstrologers({ navigation, route }) {
     // them. The server knows the difference; the client does not.
     const res = await getInstantAstrologers();
     if (res.code) {
-      // Refused — this account may not have the call. Straight to the ordinary
-      // post-login welcome, which moves itself on to Home.
-      //
-      // NO COLLAPSE HERE, deliberately. The fold-into-the-gift-bubble animation says
-      // "your gift is still waiting over there"; playing it to somebody who has just
-      // been told the offer is spent promises the opposite of what happened, and
-      // leaves a bubble on Home for a call they cannot make. The collapse belongs to
-      // the two paths where the offer survives (back, signed up or not) — not here.
+      // Refused. Do not sit them in front of a panel they cannot use and an error —
+      // fold it away and hand them to the ordinary post-login welcome, which moves
+      // itself on to Home. They are simply a logged-in customer now.
       captureEvent('free_call_not_eligible_after_signup', { code: res.code });
-      navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { isLogin: true } }] });
+      setLeavingTo('welcome');
       return;
     }
     setBlocked(null);
     setData(res);
     setLoading(false);
-  }, [navigation]);
+  }, []);
 
   /**
    * Back ALWAYS folds the panel into the gift bubble and drops it in the corner. The
@@ -360,8 +353,15 @@ export default function InstantAstrologers({ navigation, route }) {
   }, [onBack]));
 
   const { collapse, contentOpacity } = useCollapseAnimation(leaving, () => {
-    // Only the two back paths reach here, and in both the offer is still theirs.
-    // Home calls hidePendingGift() once its own offer request resolves (Home.js), so this
+    if (leavingTo === 'welcome') {
+      // Logged in, but not entitled to the call. NO gift bubble is parked here — one
+      // would promise a free call this account cannot have, which is worse than no
+      // bubble at all. SignupWelcome with `isLogin` is the "Namaste ji" screen the
+      // ordinary login shows, and it moves itself on to Home with nothing to press.
+      navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { isLogin: true } }] });
+      return;
+    }
+    // Still owed the call. Home calls hidePendingGift() on mount (Home.js), so this
     // pre-login bubble only holds the gift for the instant between the collapse
     // landing and Home drawing its own — and since the two are the same circle on the
     // same spot, that hand-off cannot be seen.
