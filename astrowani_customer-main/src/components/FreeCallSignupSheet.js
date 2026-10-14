@@ -91,12 +91,6 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
   // double tap that matters happens inside that frame.
   const inFlight = useRef(false);
   const tokenRef = useRef('');
-  // Funnel milestones are reported ONCE each. Without these latches, "filled the
-  // phone number" would count a keystroke rather than a person: every edit after the
-  // tenth digit re-fires, and a step that can fire repeatedly makes the funnel read
-  // as though more people reached it than reached the step before it.
-  const phoneFilledRef = useRef(false);
-  const otpFilledRef = useRef(false);
 
   // NO entrance animation on the card, deliberately. It used to pop in on a
   // native-driver spring, and the Animated node sitting inside a <Modal> + a
@@ -119,8 +113,6 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
       setStep('phone'); setOtp(''); setName(''); setReferral('');
       setError(''); setBusy(false); setResendIn(0);
       inFlight.current = false;
-      phoneFilledRef.current = false;
-      otpFilledRef.current = false;
     }, 250);
     return () => clearTimeout(id);
   }, [visible]);
@@ -140,10 +132,6 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
   const sendOtp = async (isResend) => {
     if (inFlight.current) return;
     const digits = phone.replace(/\D/g, '');
-    // The TAP, reported before anything can refuse it. `_otp_sent` below only fires
-    // when the server actually accepted, so the gap between these two is "asked for a
-    // code and did not get one" — invisible if the funnel only counted successes.
-    if (!isResend) captureEvent('free_call_signup_otp_tapped');
     if (digits.length !== 10) {
       fail(t('freeCallSignup.phoneInvalid'), 'phone_invalid');
       return;
@@ -344,13 +332,7 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.close}
-            onPress={() => {
-              // WHERE they gave up is the whole value of this event. "Closed the
-              // sign-up" tells you nothing; "closed it on the OTP step" tells you the
-              // code is not arriving.
-              captureEvent('free_call_signup_sheet_dismissed', { step });
-              onClose?.();
-            }}
+            onPress={onClose}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             accessibilityRole="button"
           >
@@ -390,15 +372,7 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
               <TextInput
                 style={styles.fieldInput}
                 value={phone}
-                onChangeText={(v) => {
-                  const digits = v.replace(/\D/g, '').slice(0, 10);
-                  setPhone(digits);
-                  setError('');
-                  if (digits.length === 10 && !phoneFilledRef.current) {
-                    phoneFilledRef.current = true;
-                    captureEvent('free_call_signup_phone_filled');
-                  }
-                }}
+                onChangeText={(v) => { setPhone(v.replace(/\D/g, '').slice(0, 10)); setError(''); }}
                 placeholder={t('freeCallSignup.phonePlaceholder')}
                 placeholderTextColor="#B9A693"
                 keyboardType="number-pad"
@@ -422,14 +396,6 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
                   const digits = v.replace(/\D/g, '').slice(0, OTP_LENGTH);
                   setOtp(digits);
                   setError('');
-                  if (digits.length === OTP_LENGTH && !otpFilledRef.current) {
-                    otpFilledRef.current = true;
-                    // `autofilled` separates a code the phone read from the SMS from
-                    // one that was typed — very different friction, same step.
-                    // Empty one moment and six digits the next means it was pasted
-                    // or autofilled; typing arrives a digit at a time.
-                    captureEvent('free_call_signup_otp_filled', { autofilled: !otp });
-                  }
                   // Verify the moment the last digit lands — typed, pasted or
                   // autofilled. One fewer tap inside a thirty-second promise.
                   if (digits.length === OTP_LENGTH) verify(digits);

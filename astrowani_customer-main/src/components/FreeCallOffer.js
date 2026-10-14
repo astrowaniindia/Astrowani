@@ -254,12 +254,9 @@ const FreeCallOffer = ({
       setError('');
       setConfirmed(null);
       if (startAtSlots) {
-        // The customer has ALREADY chosen to book, so skip the intro card and show
-        // the times. Two callers set this: the old birth-details hop, and the
-        // free-call panel's "choose a time" button (screens/FreeCall/
-        // InstantAstrologers.js) when there is nobody to ring. Birth details are
-        // collected AFTER booking now, so arriving here without them is correct.
-        captureEvent('free_call_slots_opened', { source, skipped_intro: true });
+        // Reopened right after the customer filled in their birth details: they
+        // already chose to book, so go straight to the times.
+        captureEvent('free_call_slots_opened', { source, after_birth_details: true });
         setStep('slots');
         loadSlots(null);
       } else {
