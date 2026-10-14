@@ -367,7 +367,12 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
               the thing that actually earns the next tap — further down the card.
               adjustsFontSizeToFit rather than truncation, so a longer translation
               shrinks slightly instead of losing its last word to an ellipsis. */}
-          <Text style={styles.sub} numberOfLines={1} adjustsFontSizeToFit>
+          {/* minimumFontScale is what keeps this honest: the line is long enough that
+              adjustsFontSizeToFit would otherwise shrink it to unreadable on a narrow
+              phone rather than admit it does not fit. At 0.75 it stops shrinking and
+              wraps instead — ugly on a 4" screen, but still legible, which is the
+              better failure. */}
+          <Text style={styles.sub} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
             {t('freeCallSignup.sub')}
           </Text>
 
@@ -543,7 +548,9 @@ const styles = StyleSheet.create({
   },
   sub: {
     fontFamily: 'Poppins-Regular',
-    fontSize: moderateScale(12),
+    // Sized so the full line fits without adjustsFontSizeToFit having to do much —
+    // auto-shrinking is the safety net, not the plan.
+    fontSize: moderateScale(10.5),
     // Lighter than the headline on purpose: this line supports it, it does not
     // compete with it.
     color: '#9A8574',
