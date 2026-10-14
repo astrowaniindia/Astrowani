@@ -185,6 +185,11 @@ export async function getInstantAstrologers() {
  * Resolves (never rejects) to an empty panel, like every other read here: the worst
  * a failure may do on this screen is show nobody, not show an error to someone who
  * was just told they won a call.
+ *
+ * `bookingFallback: true` means the offer is live but there is nobody to ring right
+ * now — the screen should offer a TIME instead of a dead end. A network failure here
+ * deliberately does NOT set it: we cannot promise a booking we could not confirm the
+ * offer for, and the panel's own empty state is the honest answer.
  */
 export async function getInstantAstrologersPreview() {
   try {

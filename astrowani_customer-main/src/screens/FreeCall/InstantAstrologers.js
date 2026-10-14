@@ -53,7 +53,7 @@ import { captureEvent } from '../../utils/Analytics';
 import FreeCallSignupSheet from '../../components/FreeCallSignupSheet';
 import CollapseIntoGiftBubble, { useCollapseAnimation } from '../../components/CollapseIntoGiftBubble';
 import { showPendingGift } from '../../utils/pendingGiftBubble';
-import { clearPendingFreeCall } from '../../utils/freeCallInvite';
+import { clearPendingFreeCall, openFreeCallSheet } from '../../utils/freeCallInvite';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -91,6 +91,9 @@ export default function InstantAstrologers({ navigation, route }) {
   // a gift that is not there.
   const [leavingTo, setLeavingTo] = useState(null);
   const leaving = leavingTo !== null;
+  // Mirrors data.bookingFallback. A ref because onSignedUp is a useCallback that must
+  // not be rebuilt (and must not read a stale `data`) every time the panel refreshes.
+  const bookingFallbackRef = useRef(false);
 
   // The in-flight ring. A ref rather than state because the ring timeout and the
   // unmount cleanup both read it from inside closures that must not go stale.
@@ -134,6 +137,7 @@ export default function InstantAstrologers({ navigation, route }) {
     } else {
       setBlocked(null);
       setData(res);
+      bookingFallbackRef.current = !!res.bookingFallback;
     }
     setLoading(false);
     setRefreshing(false);
@@ -280,6 +284,18 @@ export default function InstantAstrologers({ navigation, route }) {
   }, [signedOut]);
 
   /**
+   * "Choose a time instead." Signed out this raises the same sign-up sheet every
+   * other control on this panel does — a booking needs an account exactly as a ring
+   * does. Signed in there is nothing to ask for, so it goes straight to Home's
+   * booking sheet.
+   */
+  const onBookInstead = useCallback(() => {
+    captureEvent('free_call_booking_cta', { signed_up: signedOut === false });
+    if (gateVisitor('book_instead')) return;
+    openFreeCallSheet('free_call_panel');
+  }, [gateVisitor, signedOut]);
+
+  /**
    * The sheet finished: there is an account now.
    *
    * Flipping `signedOut` is what re-points `load` at the authenticated endpoint and
@@ -297,6 +313,18 @@ export default function InstantAstrologers({ navigation, route }) {
     // already happened and the queue has nothing left to do. Cleared, or it sits set
     // for the rest of the run waiting for a screen that is not coming.
     clearPendingFreeCall();
+
+    // THE PANEL WAS OFFERING A BOOKING, NOT A RING. Hand straight over to Home's own
+    // booking sheet: it owns the slot grid and the booking call, re-asks the server
+    // for the offer itself, and already copes with every answer (eligible, already
+    // booked, offer gone). Re-implementing any of that here would be a second
+    // booking flow to keep in step with the first.
+    if (bookingFallbackRef.current) {
+      captureEvent('free_call_booking_after_signup');
+      openFreeCallSheet('free_call_panel');
+      return;
+    }
+
     setLoading(true);
 
     // NOW ASK THE SERVER WHETHER THIS ACCOUNT MAY ACTUALLY HAVE THE CALL.
@@ -755,6 +783,27 @@ export default function InstantAstrologers({ navigation, route }) {
           <Icon name="info-outline" size={moderateScale(42)} color={COLORS.AstroMaroon} />
           <Text style={styles.blockedTxt}>{blocked.message || t('freeCallInstant.notAvailable')}</Text>
         </View>
+      ) : data.bookingFallback ? (
+        /* THE OFFER IS LIVE, THERE IS JUST NOBODY TO RING. Offer a time instead of a
+           dead end — this is the screen somebody reaches seconds after being told
+           they won eleven free minutes, and "come back later" is the worst possible
+           answer to that. The CTA goes through the same sign-up sheet as everything
+           else here; Home's booking sheet takes over once there is an account. */
+        <View style={styles.centre}>
+          <Icon name="event-available" size={moderateScale(42)} color={COLORS.AstroMaroon} />
+          <Text style={styles.bookingTitle}>{t('freeCallBooking.title')}</Text>
+          <Text style={styles.bookingBody}>
+            {t('freeCallBooking.body', { minutes: data.durationMinutes || 11 })}
+          </Text>
+          <TouchableOpacity
+            style={styles.bookingCta}
+            activeOpacity={0.88}
+            onPress={onBookInstead}
+          >
+            <Icon name="schedule" size={moderateScale(18)} color={COLORS.white} />
+            <Text style={styles.bookingCtaTxt}>{t('freeCallBooking.cta')}</Text>
+          </TouchableOpacity>
+        </View>
       ) : !data.astrologers?.length ? (
         <View style={styles.centre}>
           <Icon name="schedule" size={moderateScale(42)} color={COLORS.AstroMaroon} />
@@ -1079,6 +1128,32 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(6),
   },
   trustTxt: { fontSize: moderateScale(10.5), color: '#1E6B45', marginLeft: scale(5), fontWeight: '600' },
+  bookingTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: moderateScale(15),
+    color: COLORS.AstroMaroon,
+    textAlign: 'center',
+    marginTop: verticalScale(12),
+  },
+  bookingBody: {
+    fontFamily: 'Poppins-Regular',
+    fontSize: moderateScale(12.5),
+    color: '#6B4A36',
+    textAlign: 'center',
+    marginTop: verticalScale(6),
+    lineHeight: moderateScale(19),
+  },
+  bookingCta: {
+    marginTop: verticalScale(18),
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(22),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(7),
+  },
+  bookingCtaTxt: { fontFamily: 'Poppins-Bold', fontSize: moderateScale(13.5), color: COLORS.white },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(32) },
   blockedTxt: {
     marginTop: verticalScale(12),
