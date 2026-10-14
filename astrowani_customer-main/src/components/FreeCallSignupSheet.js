@@ -344,7 +344,14 @@ export default function FreeCallSignupSheet({ visible, onClose, onDone }) {
           </View>
 
           <Text style={styles.title}>{t('freeCallSignup.title')}</Text>
-          <Text style={styles.sub}>{t('freeCallSignup.sub')}</Text>
+          {/* One line, always. It is a supporting line under the headline, and at two
+              lines it competed with the headline and pushed the 30-second promise —
+              the thing that actually earns the next tap — further down the card.
+              adjustsFontSizeToFit rather than truncation, so a longer translation
+              shrinks slightly instead of losing its last word to an ellipsis. */}
+          <Text style={styles.sub} numberOfLines={1} adjustsFontSizeToFit>
+            {t('freeCallSignup.sub')}
+          </Text>
 
           {/* The promise, given its own line and its own weight. It is the reason
               anybody gets past the first field. */}
@@ -502,11 +509,12 @@ const styles = StyleSheet.create({
   },
   sub: {
     fontFamily: 'Poppins-Regular',
-    fontSize: moderateScale(12.5),
-    color: '#6B4A36',
+    fontSize: moderateScale(12),
+    // Lighter than the headline on purpose: this line supports it, it does not
+    // compete with it.
+    color: '#9A8574',
     textAlign: 'center',
     marginTop: verticalScale(4),
-    lineHeight: moderateScale(18),
   },
   promise: {
     flexDirection: 'row',
