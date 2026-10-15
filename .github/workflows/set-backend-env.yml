@@ -44,6 +44,19 @@ jobs:
           # src/blogAgent/images.js does automatically, and its API terms require
           # pinging the download endpoint on use, which it also does.
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          # ── Razorpay webhook (2026-10-15) ──────────────────────────────────
+          # Razorpay -> us, server-to-server, for a payment captured at the
+          # gateway whose app died before POST /api/wallet/verify-payment landed.
+          # That is not a rare edge: a UPI intent hands the customer off to
+          # GPay/PhonePe, Android reclaims the backgrounded RN activity, and the
+          # RazorpayCheckout.open() promise the app is awaiting never resolves —
+          # so no verify call is ever made, no error is reported, and the money
+          # is taken with nothing credited. src/razorpayWebhookRoutes.js closes
+          # exactly that gap and is already registered (index.js), but with this
+          # unset it refuses every call 503 and does nothing (fail closed — an
+          # unsigned "payment captured" must never credit anybody).
+          # MUST equal the secret entered on the Razorpay webhook itself.
+          RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
         run: |
           set -e
           KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
@@ -56,7 +69,7 @@ jobs:
           # the head of an && list exits the whole job, so the short form would
           # abort this workflow precisely when a key is NOT set — the one case the
           # guard exists to survive.
-          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY; do
+          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET; do
             if [ -n "${!opt}" ]; then KEYS="$KEYS $opt"; fi
           done
           echo "writing: $KEYS"
