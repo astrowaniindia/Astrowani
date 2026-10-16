@@ -128,6 +128,39 @@ const failedPayment = (over = {}) => ({
   ok('counts the repeated reason as 2', />2</.test(d.html));
   ok('says nobody was charged', /No customer was charged/.test(d.html));
 
+  // The heartbeat. A quiet day MUST still email, or silence is ambiguous between
+  // "nothing failed" and "the alerting is dead" — the failure shape this whole
+  // week started with.
+  const quiet = alerts.digestEmail('2026-10-14', []);
+  ok('quiet day still produces an email', Boolean(quiet.subject && quiet.html));
+  ok('quiet subject says none', /none/i.test(quiet.subject), quiet.subject);
+  ok('quiet body explains a missing email is the alarm',
+    /sent every day/i.test(quiet.html) && /has broken/i.test(quiet.html));
+
+  // ── amount mismatch ──────────────────────────────────────────────────────
+  console.log('\nalertAmountMismatch');
+  outbox = [];
+  let mm = await alerts.alertAmountMismatch({
+    kind: 'recharge', orderId: 'order_MM', paymentId: 'pay_MM', amountPaise: 12345,
+    customerId: 'cust-123',
+  });
+  ok('recharge mismatch emails', mm.emailed === true && outbox.length === 1);
+  ok('subject flags it as needing action', /ACTION NEEDED/.test(outbox[0].subject), outbox[0]?.subject);
+  ok('subject carries the charged amount', /123\.45/.test(outbox[0].subject), outbox[0]?.subject);
+  ok('body says the customer WAS charged', /has NOT been credited/.test(outbox[0].html));
+  ok('body carries the customer id', /cust-123/.test(outbox[0].html));
+  ok('body omits the order row it does not have', !/Our order row/.test(outbox[0].html));
+
+  outbox = [];
+  mm = await alerts.alertAmountMismatch({
+    kind: 'order', orderId: 'order_MM2', paymentId: 'pay_MM2', amountPaise: 50000,
+    internalRef: 'row-abc',
+  });
+  ok('shop mismatch emails', mm.emailed === true && outbox.length === 1);
+  ok('shop mismatch names the shop', /Wani Shop order/.test(outbox[0].html));
+  ok('shop mismatch carries our order row', /row-abc/.test(outbox[0].html));
+  ok('shop mismatch omits the customer id it does not have', !/Customer ID/.test(outbox[0].html));
+
   // ── 5. the webhook route, over real HTTP ─────────────────────────────────
   console.log('\nPOST /api/razorpay/webhook');
   const app = express();
@@ -247,6 +280,7 @@ const failedPayment = (over = {}) => ({
     { id: 'p2', status: 'captured', amount: 9900 },
     { id: 'p3', status: 'failed', amount: 10100, error_source: 'gateway', error_reason: 'payment_failed' },
   ]);
+  razorpay.isConfigured = () => true;
 
   outbox = [];
   // 05:00Z = 10:30 IST, after the send hour
@@ -260,6 +294,15 @@ const failedPayment = (over = {}) => ({
   r = await alerts.runDigestIfDue(new Date('2026-10-16T05:30:00Z'));
   ok('does not send twice for the same day', r.ran === false && r.reason === 'already_sent', JSON.stringify(r));
   ok('no second email', outbox.length === 0);
+
+  // A day with NOTHING to report must still send — the heartbeat, end to end.
+  await cleanup();
+  razorpay.listPayments = async () => ([{ id: 'p9', status: 'captured', amount: 100 }]);
+  outbox = [];
+  r = await alerts.runDigestIfDue(new Date('2026-10-16T05:00:00Z'));
+  ok('quiet day still runs', r.ran === true && r.failures === 0, JSON.stringify(r));
+  ok('quiet day STILL emails', r.emailed === true && outbox.length === 1, JSON.stringify(r));
+  ok('quiet email says none', /none/i.test(outbox[0].subject), outbox[0]?.subject);
 
   razorpay.listPayments = realList;
   razorpay.isConfigured = realRzpConfigured;

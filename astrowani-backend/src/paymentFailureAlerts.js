@@ -95,6 +95,50 @@ async function handlePaymentFailed(payment) {
   }
 }
 
+/**
+ * A captured payment whose amount does not match the order we created.
+ *
+ * WHY THIS IS ITS OWN ALERT AND NOT A DIGEST LINE. It is the opposite of a failed
+ * payment: the customer HAS been charged, and completeRecharge / completeOrderPayment
+ * deliberately refuse to credit, because crediting a figure that disagrees with what
+ * was taken is worse than stalling. So someone is out of pocket with nothing to show,
+ * it cannot be fixed by retrying, and until now it existed only as a console line in
+ * a log nobody reads. Every minute it sits unseen is a customer waiting.
+ *
+ * Never throws — the webhook must still answer 200.
+ */
+async function alertAmountMismatch({ kind, orderId, paymentId, amountPaise, customerId, internalRef }) {
+  try {
+    const rows = [
+      ['What', kind === 'order' ? 'Wani Shop order' : 'Wallet recharge'],
+      ['Razorpay charged', `Rs ${rupees(amountPaise)}`],
+      ['Order ID', orderId || '-'],
+      ['Payment ID', paymentId || '-'],
+      // The two completion paths return different handles: the recharge one knows
+      // the customer, the shop one knows our own order row. Show whichever came.
+      ...(customerId ? [['Customer ID', customerId]] : []),
+      ...(internalRef ? [['Our order row', internalRef]] : []),
+    ];
+    const res = await mailer.sendAlertEmail({
+      subject: `ACTION NEEDED: payment amount mismatch - Rs ${rupees(amountPaise)}`,
+      html: `
+        <p><strong>A customer was charged but has NOT been credited.</strong> Razorpay
+        captured an amount that does not match the order we created, so the server
+        refused to credit it rather than credit the wrong figure.</p>
+        <table cellpadding="6" style="border-collapse:collapse">
+          ${rows.map(([k, v]) => `<tr><td style="color:#666">${esc(k)}</td><td><strong>${esc(v)}</strong></td></tr>`).join('')}
+        </table>
+        <p style="color:#666;font-size:12px">Retrying will not fix this — it needs a person.
+        Check the payment in the Razorpay dashboard against the order, then either credit
+        the customer manually or refund them.</p>`,
+    });
+    return { emailed: res.sent, error: res.error };
+  } catch (err) {
+    console.error('[paymentFailureAlerts] mismatch alert failed:', err.message);
+    return { emailed: false, error: err.message };
+  }
+}
+
 // ── Daily digest ────────────────────────────────────────────────────────────
 
 /** 'YYYY-MM-DD' for the IST day containing `d`. */
@@ -125,6 +169,22 @@ async function writeDigestState(state) {
 }
 
 function digestEmail(dateKey, failures) {
+  // IT SENDS EVEN WHEN THERE IS NOTHING TO REPORT, and that is the point rather than
+  // an oversight. If a quiet day produced no email, then "no email at 09:00" would
+  // mean either "nothing failed" or "the digest died / the backend is down / the
+  // Brevo key was revoked" — indistinguishable, which is exactly the silent-failure
+  // shape that let payments go missing for months before anyone noticed. Sending
+  // daily regardless makes the ABSENCE of an email the alarm, and doubles as the only
+  // check that the mail path still works at all.
+  if (!failures.length) {
+    return {
+      subject: `Payment failures ${dateKey}: none`,
+      html: `<p>No payments failed on ${esc(dateKey)} (IST).</p>
+        <p style="color:#666;font-size:12px">This summary is sent every day, including
+        quiet ones. If it ever stops arriving, the alerting itself has broken — treat a
+        missing email as the warning, not as good news.</p>`,
+    };
+  }
   const byReason = new Map();
   for (const p of failures) {
     const k = describeFailure(p);
@@ -169,13 +229,8 @@ async function runDigestIfDue(now = new Date()) {
     const payments = await razorpay.listPayments({ fromUnix, toUnix });
     const failures = payments.filter((p) => p.status === 'failed');
 
-    // Record the date even with nothing to report, or every poll re-queries
-    // Razorpay all day for a quiet day.
-    if (!failures.length) {
-      await writeDigestState({ ...state, lastSentDate: yesterday });
-      return { ran: true, failures: 0, emailed: false };
-    }
-
+    // No early return for a quiet day — see digestEmail: the daily email is also the
+    // heartbeat that proves the alerting is alive, so it goes out either way.
     const { subject, html } = digestEmail(yesterday, failures);
     const res = await mailer.sendAlertEmail({ subject, html });
     // Only record it as sent if it actually went, so a transient Resend outage
@@ -204,6 +259,7 @@ module.exports = {
   istDateKey,
   istDayBounds,
   handlePaymentFailed,
+  alertAmountMismatch,
   runDigestIfDue,
   startDigestTicker,
 };

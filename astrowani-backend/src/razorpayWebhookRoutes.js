@@ -99,6 +99,11 @@ module.exports = function registerRazorpayWebhook(app) {
       if (recharge.matched) {
         if (recharge.amountMismatch) {
           console.error(`[razorpay-webhook] AMOUNT MISMATCH on wallet recharge ${orderId} (payment ${paymentId}, ${amountPaise} paise) — NOT credited, needs a human`);
+          // The customer HAS been charged and deliberately not credited. A console
+          // line is not good enough for that — email it.
+          await paymentFailureAlerts.alertAmountMismatch({
+            kind: 'recharge', orderId, paymentId, amountPaise, customerId: recharge.customerId,
+          });
         } else {
           console.log(`[razorpay-webhook] wallet recharge ${orderId}: ${recharge.credited ? 'credited' : recharge.alreadyProcessed ? 'already processed' : 'not payable'}`);
         }
@@ -111,6 +116,9 @@ module.exports = function registerRazorpayWebhook(app) {
       if (order.matched) {
         if (order.amountMismatch) {
           console.error(`[razorpay-webhook] AMOUNT MISMATCH on remedy order ${orderId} (payment ${paymentId}, ${amountPaise} paise) — NOT placed, needs a human`);
+          await paymentFailureAlerts.alertAmountMismatch({
+            kind: 'order', orderId, paymentId, amountPaise, internalRef: order.orderId,
+          });
         } else {
           console.log(`[razorpay-webhook] remedy order ${orderId}: ${order.placed ? 'placed' : order.alreadyProcessed ? 'already processed' : 'not payable'}`);
         }
