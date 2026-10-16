@@ -1020,6 +1020,31 @@ const translations = {
     'campaignGift.nudgeTitle': 'Aapki free call pakki hai!',
     'campaignGift.nudgeBody': 'Bas ek chhota sa sign up baaki hai',
 
+    // ── The sign-up card that floats over the free 11-minute panel ────────────
+    // components/SignupGatePopup.js. Hinglish, like the rest of onboarding. Every
+    // line is written as "finish collecting what you won", never "register first" —
+    // the astrologers are visible behind the card while these are read.
+    'signupGate.prize': '11 MINUTE FREE CALL',
+    'signupGate.phoneTitle': 'Aapki free call taiyaar hai',
+    'signupGate.phoneSub': '30 second se jyada nhi lagenge sign up mein',
+    // Live social proof in the card's top corner. ENGLISH IN BOTH LANGUAGE BLOCKS
+    // (owner, 2026-10-17) — the rest of this card is Hinglish, but the Devanagari
+    // version of this line ran the badge to the full width of the card and pushed the
+    // dot off on a narrow phone. It is also a count plus a recent window rather than a
+    // total: a bare number is a statistic, a number with a clock on it is a queue.
+    'signupGate.social': '20 people had their free call just 5 minutes ago',
+    'signupGate.sendCode': 'OTP bhejiye',
+    'signupGate.otpTitle': 'OTP daaliye',
+    'signupGate.otpSub': '6 digit ka code {{phone}} par bheja gaya hai',
+    'signupGate.verify': 'Verify kariye',
+    'signupGate.changeNumber': 'Number badliye',
+    'signupGate.resend': 'Dobara bhejiye',
+    'signupGate.resendIn': 'Dobara bhejein {{n}}s mein',
+    'signupGate.nameTitle': 'Aapka naam kya hai?',
+    'signupGate.nameSub': 'Astrologer ji aapko naam se bulayenge.',
+    'signupGate.namePlaceholder': 'Apna naam likhiye',
+    'signupGate.start': 'Meri free call shuru kariye',
+
     // ── The Metro campaign ────────────────────────────────────────────────────
     // ENGLISH IN BOTH LANGUAGE BLOCKS, deliberately. This campaign is bought
     // against English ad copy, so the app has to continue in the language the
@@ -2525,6 +2550,24 @@ const translations = {
     'campaignGift.claimLater': 'बाद में',
     'campaignGift.nudgeTitle': 'आपकी फ्री कॉल पक्की है!',
     'campaignGift.nudgeBody': 'बस एक छोटा सा साइन अप बाकी है',
+
+    // components/SignupGatePopup.js — see the note in the 'en' block.
+    'signupGate.prize': '11 मिनट की फ्री कॉल',
+    'signupGate.phoneTitle': 'आपकी फ्री कॉल तैयार है',
+    'signupGate.phoneSub': '30 सेकंड से ज़्यादा नहीं लगेंगे साइन अप में',
+    // English on purpose, even here — see the note in the 'en' block.
+    'signupGate.social': '20 people had their free call just 5 minutes ago',
+    'signupGate.sendCode': 'OTP भेजिए',
+    'signupGate.otpTitle': 'OTP डालिए',
+    'signupGate.otpSub': '6 अंकों का कोड {{phone}} पर भेजा गया है',
+    'signupGate.verify': 'वेरिफाई कीजिए',
+    'signupGate.changeNumber': 'नंबर बदलिए',
+    'signupGate.resend': 'दोबारा भेजिए',
+    'signupGate.resendIn': 'दोबारा भेजें {{n}}s में',
+    'signupGate.nameTitle': 'आपका नाम क्या है?',
+    'signupGate.nameSub': 'ज्योतिषी जी आपको नाम से बुलाएंगे.',
+    'signupGate.namePlaceholder': 'अपना नाम लिखिए',
+    'signupGate.start': 'मेरी फ्री कॉल शुरू कीजिए',
 
     // Metro campaign — ENGLISH on purpose, even here. See the note in the 'en'
     // block: this campaign's ads are in English and the app must not switch

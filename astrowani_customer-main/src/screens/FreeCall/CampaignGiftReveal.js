@@ -318,24 +318,35 @@ export default function CampaignGiftReveal({ navigation, route }) {
     // leg that is interrupted (a spring settled early, the screen backgrounded) never
     // does — which would leave the customer on a finished reveal with no way forward
     // and no button to press, since this screen no longer has one.
-    exitTimer.current = setTimeout(toLogin, REVEAL_MS + READ_HOLD_MS);
+    exitTimer.current = setTimeout(toFreeCall, REVEAL_MS + READ_HOLD_MS);
   };
 
   /**
-   * Straight to sign-up, SIGNED OUT — the ordinary Login -> OTP -> Name flow, not a
-   * screen of its own.
+   * Straight to the PRIZE, signed out (owner, 2026-10-17).
    *
-   * `queueFreeCallFromCampaign()` is the only thing that makes this different from an
-   * organic visitor tapping Login themselves: it is read by SignupWelcome once the
-   * name step is saved, which is what sends this customer on to the free 11-minute
-   * panel automatically instead of Home — see utils/freeCallInvite.js and
-   * SignupWelcome's `campaignRedirectRef`. Untouched by this screen's own changes;
-   * reused exactly as the old CTA button used it.
+   * This used to `replace('Login')`: the reveal ended and a full-screen maroon
+   * phone-number form took its place. The 11-minute call the person had just opened
+   * a box to win left the screen at the precise moment we asked them for something,
+   * which is what made the sign-up read as the catch rather than as the last step.
+   *
+   * Now it hands over to the free-call panel itself — real astrologers, photographs,
+   * who is free right now — and InstantAstrologers raises a sign-up card over the
+   * bottom of it (components/SignupGatePopup.js, phone + OTP + name, all in the one
+   * card). Nothing is skipped and nothing is loosened: the same three steps, the same
+   * endpoints, and the card cannot be dismissed. The only difference is that the
+   * prize is on the screen behind while they are taken.
+   *
+   * `queueFreeCallFromCampaign()` is kept so the ordinary hand-off still exists for
+   * every path that is NOT this one — a visitor who kills the app on the sign-up card
+   * and comes back later goes through Login/SignupWelcome as before, and that flag is
+   * what lands them on the panel. The card clears it itself once it succeeds
+   * (InstantAstrologers.onSignedUp), so nobody gets the booking sheet pushed at them
+   * for an offer they have just taken.
    *
    * `replace`, not `navigate`: this screen is the app's initial route and there is
    * nothing to come back to.
    */
-  const toLogin = () => {
+  const toFreeCall = () => {
     if (leftRef.current) return;
     leftRef.current = true;
     captureEvent('campaign_gift_reveal_auto_advanced', {
@@ -343,7 +354,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
       seconds_since_open: secsSinceOpen(),
     });
     queueFreeCallFromCampaign();
-    navigation.replace('Login');
+    navigation.replace('InstantAstrologers');
   };
 
   // ── Interpolations ─────────────────────────────────────────────────────────
@@ -515,7 +526,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
 
       {/* There is no CTA and no ✕ any more. Nothing on this screen has to be pressed
              after the box is open: it holds for the reading beat and hands over by
-             itself (toLogin). A bottom pad is kept so the guide clears the gesture
+             itself (toFreeCall). A bottom pad is kept so the guide clears the gesture
              bar on the phones that have one. */}
       <View style={{ paddingBottom: insets.bottom + verticalScale(18) }} />
       </View>

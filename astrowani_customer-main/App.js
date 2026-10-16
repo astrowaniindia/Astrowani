@@ -260,12 +260,29 @@ const App = () => {
               Retry. Screen-level boundaries mounted lower down should NOT pass it. */}
           {!isLoading && (
             <ErrorBoundary name="AppRoot" isRoot>
-              {/* Signed out: the Login screen, which also signs up a new number
-                  (Login.js handleGetOtp), so one screen serves everyone (2026-09-20). */}
+              {/* Signed out, and which of the two it is turns only on whether the gift
+                  reveal has already played on this install:
+                    first cold start  -> the reveal, which hands over to the panel itself
+                    every one after   -> the panel directly
+                  Either way the destination is the free 11-minute panel with the
+                  sign-up card over it (components/SignupGatePopup.js), which does the
+                  whole thing — phone, OTP, name — without leaving the screen.
+
+                  THIS USED TO FALL BACK TO 'Login' AND THAT WAS THE BUG (2026-10-17):
+                  the reveal is once-per-install (utils/acquisition.js
+                  PROMPT_SHOWN_KEY), so someone who killed the app part-way through
+                  signing up came back to the plain full-screen phone form — the exact
+                  screen this change exists to get rid of, reappearing at the one moment
+                  it does the most damage. The prize has to still be there on the second
+                  launch, or it was never really theirs.
+
+                  Login is NOT dead: it is still a registered route and still the screen
+                  the 401 interceptor and an explicit sign-out send people to. It just
+                  is not where a cold start lands any more. */}
               <Navigation
                 initialRoute={userToken
                   ? 'DrawerNavigator'
-                  : (showCampaignPrompt ? CAMPAIGN_PROMPT_ROUTE : 'Login')}
+                  : (showCampaignPrompt ? CAMPAIGN_PROMPT_ROUTE : 'InstantAstrologers')}
                 initialParams={showCampaignPrompt ? { variant: campaignVariant } : undefined}
                 onReady={() => setNavReady(true)}
               />

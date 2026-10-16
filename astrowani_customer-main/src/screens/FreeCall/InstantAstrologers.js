@@ -28,7 +28,10 @@ import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
+import Instance from '../../api/ApiCall';
 import { getInstantAstrologers, ringInstantAstrologer, giveUpInstantRing } from '../../api/FreeCallApi';
+import SignupGatePopup from '../../components/SignupGatePopup';
+import { clearPendingFreeCall } from '../../utils/freeCallInvite';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
@@ -51,6 +54,11 @@ const BUSY = '#E67E22';
 // against white text (5.3:1).
 const FREE_GREEN = '#137A43';
 
+// How many faces the signed-out preview shows. Enough to fill the panel behind the
+// sign-up card on any phone; more would only be scrolled to by someone who cannot
+// scroll, since the card is covering the list.
+const PREVIEW_COUNT = 8;
+
 export default function InstantAstrologers({ navigation, route }) {
   const { t } = useContext(LanguageContext);
   const insets = useSafeAreaInsets();
@@ -60,6 +68,11 @@ export default function InstantAstrologers({ navigation, route }) {
   const [data, setData] = useState({ astrologers: [], durationMinutes: 11 });
   const [blocked, setBlocked] = useState(null); // { code, message } when the server refuses
   const [notified, setNotified] = useState({}); // astrologerId -> true
+  // null = not known yet, true = signed out (preview + forced sign-up card),
+  // false = a real signed-in panel. Starts null so the first frame is the spinner
+  // rather than a flash of the preview.
+  const [guest, setGuest] = useState(null);
+  const guestRef = useRef(false);
 
   // The in-flight ring. A ref rather than state because the ring timeout and the
   // unmount cleanup both read it from inside closures that must not go stale.
@@ -92,6 +105,58 @@ export default function InstantAstrologers({ navigation, route }) {
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
+
+    // ── Signed out ────────────────────────────────────────────────────────────
+    // The gift reveal now hands straight over to THIS screen rather than to the
+    // login form (owner, 2026-10-17), so the first time it is seen there is no
+    // token yet. /api/free-call/instant/astrologers is customer-scoped and would
+    // answer 401, which this screen would render as "not available" — the one
+    // thing the visitor must not read a second after being told they won a call.
+    //
+    // So guest mode fills the panel from the PUBLIC astrologer list instead. It is
+    // a true preview, not a mock: the same people, photographs, ratings and busy
+    // state the signed-in panel shows. Nothing on it can be tapped (see onCall)
+    // because SignupGatePopup is covering it and cannot be dismissed — the list is
+    // here to be seen, which is the entire reason the card floats over it.
+    //
+    // No backend change was needed for this, and that is deliberate: a guest
+    // variant of the free-call endpoint would be a new unauthenticated surface on
+    // the money path, for a list we already serve publicly on every home screen.
+    const token = await AsyncStorage.getItem('token');
+    if (!token) {
+      guestRef.current = true;
+      setGuest(true);
+      try {
+        const res = await Instance.get('/api/astrologers');
+        const rows = Array.isArray(res?.data) ? res.data : (res?.data?.data || []);
+        setData({
+          durationMinutes: 11,
+          astrologers: rows
+            .filter((a) => a?.name && !a.isOffline && !a.isLoggedOut)
+            .slice(0, PREVIEW_COUNT)
+            .map((a) => ({
+              id: String(a.id || a._id || a.userId),
+              name: a.name,
+              image: a.profileImage || '',
+              rating: Number(a.rating) || 0,
+              totalReviews: a.totalReviews || 0,
+              experience: a.experience || 0,
+              languages: Array.isArray(a.language) ? a.language : [],
+              badgeType: a.badgeType || null,
+              isBusy: !!a.isBusy,
+            })),
+        });
+      } catch (_) {
+        // The panel behind the card is reassurance, never a blocker. An empty one
+        // still shows the hero and the card still signs them up.
+      }
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    guestRef.current = false;
+    setGuest(false);
+
     const res = await getInstantAstrologers();
     // A code on a successful-looking response means the server refused: not eligible,
     // offer switched off, wrong platform. Say which rather than showing an empty list.
@@ -104,6 +169,37 @@ export default function InstantAstrologers({ navigation, route }) {
     setLoading(false);
     setRefreshing(false);
   }, []);
+
+  /**
+   * The sign-up card finished. There is a token now, so this screen has to become the
+   * real panel: a live socket, the customer-scoped astrologer list, and working cards.
+   *
+   * A full REMOUNT rather than a re-fetch, on purpose. The socket, the analytics
+   * "opened" event and the ring plumbing are all set up in a mount-time effect, and
+   * re-running them by hand from here would be a second, parallel copy of that setup
+   * to keep in step forever. `reset` gives the screen a new key, so it mounts exactly
+   * as it does for every already-signed-in customer and there is no guest-specific
+   * path left running underneath.
+   *
+   * The Drawer goes in UNDERNEATH it, which is the other half of this: the gift reveal
+   * made this screen the only route in the stack, so a visitor who signs up and then
+   * finds nobody online would otherwise have a back arrow that leads nowhere. Now it
+   * leads Home, like everywhere else in the app.
+   *
+   * `navigatedRef` is set first so the unmount does not log this as the customer
+   * walking away from the panel without calling — they are being handed the real one.
+   */
+  const onSignedUp = useCallback(() => {
+    navigatedRef.current = true;
+    // They are already standing on the free-call panel, so the campaign hand-off that
+    // CampaignGiftReveal queued has nothing left to do. Left set, Home would open the
+    // booking sheet at them later for an offer they are in the middle of taking.
+    clearPendingFreeCall();
+    navigation.reset({
+      index: 1,
+      routes: [{ name: 'DrawerNavigator' }, { name: 'InstantAstrologers' }],
+    });
+  }, [navigation]);
 
   // Re-read on every focus: an astrologer who was free when the screen opened may not
   // be by the time the customer has finished reading. The ring re-checks server-side
@@ -143,6 +239,10 @@ export default function InstantAstrologers({ navigation, route }) {
     (async () => {
       const authToken = await AsyncStorage.getItem('token');
       if (cancelled) return;
+      // Signed out there is nobody to join a room as, and no ring can be placed —
+      // the sign-up card owns the screen until there is a token. The remount after
+      // sign-up (see onSignedUp) is what opens the socket for real.
+      if (!authToken) return;
       socketRef.current = io(SOCKET_URL, { auth: { token: authToken } });
       socketRef.current.on('connect', async () => {
         const userStr = await AsyncStorage.getItem('userData');
@@ -190,6 +290,9 @@ export default function InstantAstrologers({ navigation, route }) {
 
   /* The customer tapped an idle astrologer. */
   const onCall = useCallback(async (astro) => {
+    // The preview behind the sign-up card is not operable — it has no token to ring
+    // with. Belt and braces: the card covers the list and cannot be dismissed.
+    if (guestRef.current) return;
     if (busyRef.current || ringRef.current) return;
     busyRef.current = true;
     try {
@@ -305,6 +408,7 @@ export default function InstantAstrologers({ navigation, route }) {
 
   /* The customer tapped a busy astrologer's pill. */
   const onNotifyMe = useCallback(async (astro) => {
+    if (guestRef.current) return;
     if (notified[astro.id]) return;
     // Optimistic: the button says "we'll tell you" straight away. requestNotifyMe asks
     // for notification permission first — see src/utils/notifyMe.js.
@@ -534,9 +638,11 @@ export default function InstantAstrologers({ navigation, route }) {
       <StatusBar barStyle="light-content" backgroundColor={COLORS.AstroMaroon} />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Icon name="arrow-back" size={moderateScale(22)} color={COLORS.white} />
-        </TouchableOpacity>
+        {!guest && (
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon name="arrow-back" size={moderateScale(22)} color={COLORS.white} />
+          </TouchableOpacity>
+        )}
         <Text style={styles.headerTitle} numberOfLines={1}>
           {t('freeCallInstant.title', { minutes: data.durationMinutes || 11 })}
         </Text>
@@ -622,6 +728,11 @@ export default function InstantAstrologers({ navigation, route }) {
         onCancel={() => { stopRinging('cancelled'); load(); }}
         context="free_call_instant"
       />
+
+      {/* The forced sign-up card, over the preview. Everything it needs — phone, OTP,
+          name — happens inside it, so this screen never navigates away and the prize
+          stays on screen the whole way through. See components/SignupGatePopup.js. */}
+      <SignupGatePopup visible={guest === true} onDone={onSignedUp} />
     </View>
   );
 }
