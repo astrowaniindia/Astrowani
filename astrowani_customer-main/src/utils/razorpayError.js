@@ -41,7 +41,7 @@ function readableReason(raw) {
 }
 
 /**
- * @returns {{cancelled: boolean, network: boolean, message: string|null, code: string}}
+ * @returns {{cancelled: boolean, timedOut: boolean, network: boolean, message: string|null, code: string}}
  *  `message` is null when there is nothing worth showing — the caller should stay
  *  silent rather than invent an error.
  */
@@ -55,9 +55,16 @@ export function describeRazorpayError(error) {
     CANCEL_CODES.has(code) ||
     /cancel|declined by (the )?user|user (closed|dismissed|aborted)/i.test(blob);
   const network = NETWORK_CODES.has(code);
+  // A UPI request expires after a few minutes if the PIN is never entered. It is NOT
+  // a cancellation (nobody pressed anything) and NOT a failure of their bank or card —
+  // it is the commonest outcome of all, 56% of failures measured 9-16 Oct 2026, and
+  // the customer simply did not finish. Worth separating so it can be said calmly and
+  // offered a retry, instead of a red "Payment Failed" that reads as a bank problem.
+  const timedOut = !cancelled && /timed? ?out|not completed (on|in) time|expired/i.test(blob);
 
   return {
     cancelled,
+    timedOut,
     network,
     code: String(code ?? 'unknown'),
     // A cancellation has no message by design: the customer chose to leave and does

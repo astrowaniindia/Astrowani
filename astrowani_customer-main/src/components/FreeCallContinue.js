@@ -510,12 +510,42 @@ export function FreeCallContinueHost() {
       const rz = describeRazorpayError(err);
       // A cancelled payment is not a failure. Nothing was charged and they know they
       // pressed back; a red "Payment failed" only implies their money is in limbo.
+      // No retry offered either — they chose to leave.
       if (rz.cancelled) return;
-      showStatusPopup({
-        variant: rz.network ? 'error' : 'error',
-        title: t('freeCallContinue.payFailedTitle'),
-        message: rz.message || err?.message || t('freeCallContinue.payFailedBody'),
-      });
+
+      // This is the highest-intent moment in the whole product: somebody who has just
+      // had a good free consultation and is reaching for their wallet. 21 started and
+      // 5 paid over 1-16 Oct. The sheet does stay open behind this popup, but nothing
+      // said so, so a dead-end "payment failed" was where most of them stopped. The
+      // retry re-runs the SAME option, so one tap puts them back in the gateway.
+      //
+      // Reuses the wallet.* retry strings rather than adding a parallel set: the
+      // sentences are identical and two copies drift.
+      const after = rz.timedOut ? 'timeout' : (rz.network ? 'network' : 'failure');
+      captureEvent('free_call_continue_failed', { minutes: option.minutes, after });
+      const retry = {
+        confirmText: t('wallet.retryBtn'),
+        onConfirm: () => {
+          captureEvent('free_call_continue_retry_tapped', { minutes: option.minutes, after });
+          choose(option);
+        },
+        cancelText: t('wallet.retryNotNow'),
+      };
+      if (rz.timedOut) {
+        showStatusPopup({
+          variant: 'cancelled',
+          title: t('wallet.notCompletedTitle'),
+          message: t('wallet.notCompletedMsg'),
+          ...retry,
+        });
+      } else {
+        showStatusPopup({
+          variant: 'error',
+          title: t('freeCallContinue.payFailedTitle'),
+          message: rz.message || err?.message || t('freeCallContinue.payFailedBody'),
+          ...retry,
+        });
+      }
     }
   }, [data, req, close, t]);
 

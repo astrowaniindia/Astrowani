@@ -249,13 +249,44 @@ const Wallet = ({navigation, route}) => {
       // in limbo.
       if (rzp.cancelled && !apiMessage) {
         // Backed out of the checkout — a calm "cancelled" note, never a failure.
+        // DELIBERATELY NOT OFFERED A RETRY: they chose to leave, and a "try again"
+        // button on top of that is nagging. The retry below is for the people who
+        // meant to pay and did not get there.
         showStatusPopup({ variant: 'cancelled', title: t('payment.cancelledTitle'), message: t('payment.cancelledMsg') });
       } else {
-        showStatusPopup({
-          variant: 'error',
-          title: t('wallet.paymentFailed'),
-          message: apiMessage || rzp.message || (rzp.network ? t('wallet.networkError') : t('wallet.tryAgain')),
-        });
+        // Every other outcome ends here, and the commonest by far is a UPI request
+        // that expired (56% of failures, 9-16 Oct 2026): somebody who wanted to pay,
+        // got as far as their UPI app, and did not finish. Until now that produced a
+        // dead-end popup with one OK button, so the attempt was simply lost. Offering
+        // the retry in place re-opens the gateway with the same amount, instead of
+        // making them find the screen and type it again.
+        const after = rzp.timedOut ? 'timeout' : (rzp.network ? 'network' : 'failure');
+        captureEvent('recharge_retry_offered', { amount: finalAmount, after });
+        const retry = {
+          confirmText: t('wallet.retryBtn'),
+          onConfirm: () => {
+            captureEvent('recharge_retry_tapped', { amount: finalAmount, after });
+            handleSubmit();
+          },
+          cancelText: t('wallet.retryNotNow'),
+        };
+        if (rzp.timedOut && !apiMessage) {
+          // An expired request is not a bank declining them. Red "Payment Failed"
+          // wording reads as "your money may be stuck" and is the opposite of true.
+          showStatusPopup({
+            variant: 'cancelled',
+            title: t('wallet.notCompletedTitle'),
+            message: t('wallet.notCompletedMsg'),
+            ...retry,
+          });
+        } else {
+          showStatusPopup({
+            variant: 'error',
+            title: t('wallet.paymentFailed'),
+            message: apiMessage || rzp.message || (rzp.network ? t('wallet.networkError') : t('wallet.tryAgain')),
+            ...retry,
+          });
+        }
       }
     } finally {
       setProcessing(false);

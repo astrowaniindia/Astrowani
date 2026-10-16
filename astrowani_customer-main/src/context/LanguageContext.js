@@ -913,6 +913,13 @@ const translations = {
     'wallet.slideToPay': 'Slide right to pay',
     'wallet.networkError': 'We could not reach the payment service. Check your internet connection and try again.',
     'wallet.tryAgain': 'The payment could not be completed. Nothing has been charged — please try again.',
+    // A UPI request that expired is the single commonest failure (56%, measured
+    // 9-16 Oct 2026). It is not a bank problem and not a cancellation, so it gets
+    // calm wording and a retry rather than a red "Payment Failed".
+    'wallet.notCompletedTitle': 'Payment not completed',
+    'wallet.notCompletedMsg': 'The payment request expired before it was approved. Nothing has been charged.',
+    'wallet.retryBtn': 'Try again',
+    'wallet.retryNotNow': 'Not now',
     'wallet.addMoney': 'Add Money to Wallet',
     'wallet.rechargeSubtitle': 'Recharge seamlessly to talk to experts',
     'wallet.enterAmount': 'Enter Amount',
@@ -2428,6 +2435,10 @@ const translations = {
     'wallet.slideToPay': 'भुगतान के लिए दाईं ओर स्लाइड करें',
     'wallet.networkError': 'हम भुगतान सेवा तक नहीं पहुंच सके। कृपया अपना इंटरनेट कनेक्शन जांचें और दोबारा प्रयास करें।',
     'wallet.tryAgain': 'भुगतान पूरा नहीं हो सका। आपसे कोई राशि नहीं ली गई — कृपया दोबारा प्रयास करें।',
+    'wallet.notCompletedTitle': 'भुगतान पूरा नहीं हुआ',
+    'wallet.notCompletedMsg': 'भुगतान अनुरोध स्वीकृत होने से पहले समाप्त हो गया। आपसे कोई राशि नहीं ली गई।',
+    'wallet.retryBtn': 'दोबारा प्रयास करें',
+    'wallet.retryNotNow': 'अभी नहीं',
     'wallet.addMoney': 'वॉलेट में पैसे जोड़ें',
     'wallet.rechargeSubtitle': 'विशेषज्ञों से बात करने के लिए आसानी से रीचार्ज करें',
     'wallet.enterAmount': 'राशि दर्ज करें',
