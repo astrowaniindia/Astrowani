@@ -645,23 +645,30 @@ const styles = StyleSheet.create({
   // the only bright block on the screen.
   bubble: {
     alignSelf: 'center',
-    // Narrower than it was (290): against the bigger guide a near-full-width caption
-    // read as a banner laid over him rather than as something he is saying, and the
-    // tail had to point at a box several times his own width.
-    maxWidth: scale(215),
-    marginBottom: verticalScale(13),
+    // Sized to FILL the band between the prize card and the guide's head, which was
+    // the last bare stretch of this screen. Still well short of the full width (290,
+    // the original) — at that size against the bigger guide it read as a banner laid
+    // over him rather than as something he is saying, and the tail pointed at a box
+    // several times his own width. It grows by being TALLER instead: a moderate width
+    // keeps the line wrapping to four lines, and the type and padding below do the
+    // filling.
+    maxWidth: scale(262),
+    marginBottom: verticalScale(14),
     backgroundColor: 'rgba(0,0,0,0.26)',
     borderRadius: moderateScale(14),
     borderWidth: 1,
     borderColor: 'rgba(255,210,51,0.45)',
-    paddingVertical: verticalScale(8),
-    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(16),
+    paddingHorizontal: scale(18),
   },
   bubbleText: {
     color: CREAM,
-    fontSize: moderateScale(12.5),
+    // Up from 12.5/18. At the old size this was a caption under a large illustration;
+    // it is the only sentence on the screen that explains what was just won, so it
+    // can carry the weight of actually being read.
+    fontSize: moderateScale(16),
     fontWeight: '600',
-    lineHeight: moderateScale(18),
+    lineHeight: moderateScale(25),
     textAlign: 'center',
   },
   // Tail pointing DOWN at the guide standing under it: a border triangle with a fill
