@@ -141,13 +141,14 @@ const failedPayment = (over = {}) => ({
   await new Promise((res) => server.listen(0, res));
   const port = server.address().port;
 
-  const post = async (bodyObj, { sign = true } = {}) => {
+  const post = async (bodyObj, { sign = true, path = '/api/razorpay/webhook', secret = SECRET } = {}) => {
     const body = JSON.stringify(bodyObj);
     const headers = { 'Content-Type': 'application/json' };
-    if (sign) headers['x-razorpay-signature'] = crypto.createHmac('sha256', SECRET).update(body).digest('hex');
-    const r = await fetch(`http://127.0.0.1:${port}/api/razorpay/webhook`, { method: 'POST', headers, body });
+    if (sign) headers['x-razorpay-signature'] = crypto.createHmac('sha256', secret).update(body).digest('hex');
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: 'POST', headers, body });
     return { status: r.status, json: await r.json().catch(() => ({})) };
   };
+  const ALERTS = require('../src/razorpayWebhookRoutes').ALERTS_PATH;
   const failedEvent = (over) => ({ event: 'payment.failed', payload: { payment: { entity: failedPayment(over) } } });
 
   outbox = [];
@@ -176,6 +177,44 @@ const failedPayment = (over = {}) => ({
   res = await post({ event: 'refund.created', payload: {} });
   ok('unrelated event acknowledged, not alerted',
     res.status === 200 && res.json.ignored === 'refund.created', JSON.stringify(res.json));
+
+  // ── the separate alerts webhook ──────────────────────────────────────────
+  // It exists so payment.failed could be subscribed WITHOUT editing the money
+  // webhook, whose edit form re-presents the secret blank.
+  console.log('\nPOST /api/razorpay/webhook/alerts');
+  ok('path is the expected one', ALERTS === '/api/razorpay/webhook/alerts', ALERTS);
+
+  outbox = [];
+  res = await post(failedEvent({ error_source: 'gateway' }), { path: ALERTS });
+  ok('alerts path accepts the shared secret', res.status === 200 && res.json.alert === 'urgent', JSON.stringify(res.json));
+  ok('alerts path emails', outbox.length === 1);
+
+  outbox = [];
+  res = await post(failedEvent(), { path: ALERTS });
+  ok('alerts path digests a customer failure', res.status === 200 && res.json.alert === 'digest');
+  ok('alerts path sends no email for that', outbox.length === 0);
+
+  outbox = [];
+  res = await post(failedEvent({ error_source: 'gateway' }), { path: ALERTS, sign: false });
+  ok('alerts path refuses an unsigned call', res.status === 400);
+  ok('alerts path sends nothing when unsigned', outbox.length === 0);
+
+  // Its own secret, when Razorpay's create form was given a fresh one.
+  process.env.RAZORPAY_WEBHOOK_SECRET_ALERTS = 'a_different_secret_entirely';
+  outbox = [];
+  res = await post(failedEvent({ error_source: 'gateway' }), { path: ALERTS, secret: 'a_different_secret_entirely' });
+  ok('alerts path accepts its OWN secret when set', res.status === 200 && res.json.alert === 'urgent', JSON.stringify(res.json));
+  res = await post(failedEvent({ error_source: 'gateway' }), { path: ALERTS, secret: SECRET });
+  ok('alerts path then REJECTS the money secret', res.status === 400, JSON.stringify(res.json));
+  // the money webhook must be unaffected by that variable existing at all
+  res = await post({ event: 'refund.created', payload: {} }, { secret: SECRET });
+  ok('money webhook still uses its own secret', res.status === 200, JSON.stringify(res.json));
+  res = await post({ event: 'refund.created', payload: {} }, { secret: 'a_different_secret_entirely' });
+  ok('money webhook rejects the alerts secret', res.status === 400);
+  delete process.env.RAZORPAY_WEBHOOK_SECRET_ALERTS;
+
+  res = await post(failedEvent({ error_source: 'gateway' }), { path: ALERTS, secret: SECRET });
+  ok('falls back to the shared secret when unset again', res.status === 200, JSON.stringify(res.json));
 
   server.close();
 

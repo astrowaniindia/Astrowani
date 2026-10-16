@@ -58,17 +58,22 @@ jobs:
           # MUST equal the secret entered on the Razorpay webhook itself.
           RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
           # ── Failed-payment email alerts (2026-10-16) ──────────────────────
-          # Resend (free tier 3,000/month) sends them; src/mailer.js posts to its
-          # API with axios, so there is no new npm dependency. Nothing is sent
-          # until all three are set — the alerting is simply off, it does not error.
+          # Brevo (free tier 300/day) sends them; src/mailer.js posts to its API
+          # with axios, so there is no new npm dependency. Nothing is sent until
+          # all three are set — the alerting is simply off, it does not error.
           # ALERT_EMAIL_TO is the address to change when the owner wants alerts
           # somewhere other than the Razorpay account's own inbox; comma-separate
-          # for several. ALERT_EMAIL_FROM must be on a domain VERIFIED in Resend
-          # or Resend refuses the send, which is the likeliest reason a setup that
-          # looks correct delivers nothing.
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # for several. The ALERT_EMAIL_FROM address must be a VERIFIED SENDER in
+          # Brevo (Senders & IPs -> Senders; a plain Gmail is fine, no domain setup
+          # needed) — an unverified one is rejected, and that is the likeliest
+          # reason a setup that looks correct delivers nothing.
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+          # Only needed if the payment.failed webhook (/api/razorpay/webhook/alerts)
+          # was given its own secret. Left unset, that path verifies against
+          # RAZORPAY_WEBHOOK_SECRET, so reusing one secret for both needs nothing here.
+          RAZORPAY_WEBHOOK_SECRET_ALERTS: ${{ secrets.RAZORPAY_WEBHOOK_SECRET_ALERTS }}
         run: |
           set -e
           KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
@@ -81,7 +86,7 @@ jobs:
           # the head of an && list exits the whole job, so the short form would
           # abort this workflow precisely when a key is NOT set — the one case the
           # guard exists to survive.
-          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \n                     RESEND_API_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM; do
+          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \n                     BREVO_API_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM \n                     RAZORPAY_WEBHOOK_SECRET_ALERTS; do
             if [ -n "${!opt}" ]; then KEYS="$KEYS $opt"; fi
           done
           echo "writing: $KEYS"

@@ -35,9 +35,30 @@ function signatureValid(rawBody, signature, secret) {
 
 const HANDLED_EVENTS = new Set(['payment.captured', 'order.paid', 'payment.failed']);
 
+// TWO PATHS, ONE HANDLER.
+//
+// `/api/razorpay/webhook` is the money one: payment.captured / order.paid, the
+// webhook that credits a wallet when the customer's app died mid-payment.
+// `/api/razorpay/webhook/alerts` exists only so that subscribing to payment.failed
+// did not require EDITING the money webhook. Razorpay's edit form re-presents the
+// secret field empty, and a save that blanks it would break crediting for everyone
+// while looking like a successful edit — a far worse outcome than an extra route.
+// Razorpay also refuses two webhooks on one URL, so a second path is required.
+//
+// Both accept every event; the split is purely about which Razorpay webhook sends
+// what, so a misdirected event still does the right thing rather than being dropped.
+const ALERTS_PATH = '/api/razorpay/webhook/alerts';
+
+// The alerts webhook may carry its own secret — Razorpay's create form invites a new
+// one and it is natural to generate a fresh string. Falls back to the money
+// webhook's, so reusing the same secret also just works.
+const secretFor = (path) => (path === ALERTS_PATH
+  ? (process.env.RAZORPAY_WEBHOOK_SECRET_ALERTS || process.env.RAZORPAY_WEBHOOK_SECRET)
+  : process.env.RAZORPAY_WEBHOOK_SECRET);
+
 module.exports = function registerRazorpayWebhook(app) {
-  app.post('/api/razorpay/webhook', async (req, res) => {
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  const handler = async (req, res) => {
+    const secret = secretFor(req.route && req.route.path);
     if (!secret) {
       console.error('[razorpay-webhook] RAZORPAY_WEBHOOK_SECRET is not set — refusing. See src/razorpayWebhookRoutes.js.');
       return res.status(503).json({ ok: false, message: 'Webhook not configured' });
@@ -104,7 +125,11 @@ module.exports = function registerRazorpayWebhook(app) {
       console.error('[razorpay-webhook] failed:', err.message);
       return res.status(500).json({ ok: false });
     }
-  });
+  };
+
+  app.post('/api/razorpay/webhook', handler);
+  app.post(ALERTS_PATH, handler);
 };
 
 module.exports.signatureValid = signatureValid;
+module.exports.ALERTS_PATH = ALERTS_PATH;
