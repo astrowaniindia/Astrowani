@@ -14,9 +14,22 @@ import client from '../api/client';
  * analytics consent and to the admin's own exclusion list. It is "tracked", never
  * "measured" — do not add any of it to a number that came out of the database.
  *
- * The drop-outs below the funnel are deliberately NOT stages. Somebody who closed the
- * sheet on the OTP step is already counted at "Entered their number" above; listing
- * them as a stage would count the same person twice and make the funnel widen.
+ * The drop-outs below the funnel are deliberately NOT stages. Somebody whose OTP the
+ * server refused is already counted at "Entered their number" above; listing them as a
+ * stage would count the same person twice and make the funnel widen.
+ *
+ * REWIRED 2026-10-17. Its middle stages used to read the FreeCallSignupSheet events
+ * (`free_call_signup_*`, `from_gift_reveal`), which stopped being sent when that sheet
+ * was reverted on 2026-10-14 — so every stage between "Saw the free-call screen" and
+ * "Rang an astrologer" had been reading zero, which looks like a total collapse rather
+ * than like a card pointed at events nothing emits. They now read the replacement
+ * flow's `signup_gate_*` events. Three stages were dropped rather than left at zero,
+ * because the interactions behind them no longer exist: tapping an astrologer to raise
+ * the sheet (the card is up from the start now), tapping a separate "send OTP" button
+ * before the code was requested, and the sheet being dismissed at all — the card
+ * cannot be closed.
+ *
+ * The fuller view of this journey is its own page, "New Signup Flow 17th Oct".
  */
 
 const PRESETS = [

@@ -483,39 +483,41 @@ module.exports = function registerPostHogRoutes(app) {
   // it can say so rather than presenting a drop-off that does not exist.
   //
   // THERE IS A SECOND ENTRY POINT, and leaving it out broke this card's shape
-  // (measured 2026-10-16). Since the free-call sign-up sheet shipped on 2026-10-14
-  // a signed-out visitor can sign up WITHOUT ever reaching the Login screen: the
-  // gift reveal lands them on the instant free-call panel, they reach for an
-  // astrologer, and the sheet takes the number and the code inline
-  // (`free_call_signup_*`, FreeCallSignupSheet). The sheet fires the same
-  // `signup_otp_verified` / `signup_completed` / `signup_name_saved` at the BOTTOM,
-  // so the bottom counted those people while the top did not — on 15 Oct 2026 the
-  // card read 134 viewed, 90 tapped Continue and 115 verified, i.e. more
-  // verifications than screen views, which is impossible and read as "the events
-  // are broken". 43 of that day's sign-ups came through the sheet. Every stage down
-  // to the OTP therefore matches EITHER path's event.
+  // (measured 2026-10-16). A signed-out visitor can sign up WITHOUT ever reaching the
+  // Login screen: the gift reveal lands them on the instant free-call panel and a card
+  // over it takes the number, the code and the name inline (`signup_gate_*`,
+  // components/SignupGatePopup). That card fires the same `signup_otp_verified` /
+  // `signup_completed` / `signup_name_saved` at the BOTTOM, so the bottom counts those
+  // people while the top would not — on 15 Oct 2026 this card read 134 viewed, 90
+  // tapped Continue and 115 verified, i.e. more verifications than screen views, which
+  // is impossible and read as "the events are broken". Every stage down to the OTP
+  // therefore matches EITHER path's event.
   //
-  // The sheet's three stages map one-to-one onto the Login screen's:
-  //   free_call_signup_sheet_shown  -> the sign-in prompt was seen
-  //   free_call_signup_otp_tapped   -> the tap that asks for a code
-  //   free_call_signup_otp_sent     -> the server actually sent one
-  // `free_call_signup_phone_filled` is deliberately NOT used: it fires on the field
-  // reaching ten digits, not on a tap, so it has no counterpart here (it is a stage
-  // of its own on the free-call-signup-funnel card, which reads that journey in
-  // full).
+  // ⚠️ THIS HAS NOW BROKEN TWICE FOR THE SAME REASON. The first inline sign-up
+  // (FreeCallSignupSheet, `free_call_signup_*`, 2026-10-14) was reverted the same day,
+  // and the replacement shipped on 2026-10-17 under DIFFERENT event names — so these
+  // lists kept matching events nothing sent any more while the new ones went
+  // uncounted, and the funnel silently went back to widening as it descends. If a
+  // third way to create an account is ever added, its top-of-funnel events belong
+  // here in the same breath as the feature, or this card lies again.
+  //
+  // The card's three stages map one-to-one onto the Login screen's:
+  //   signup_gate_shown            -> the sign-in prompt was seen
+  //   signup_gate_phone_submitted  -> the tap that asks for a code
+  //   signup_gate_otp_sent         -> the server actually sent one
   const SHARED_ENTRY_STAGES = [
     {
       key: 'viewed',
       label: 'Reached a sign-in prompt',
       shared: true,
       screenNames: ['Login', 'Register'],
-      events: ['login_screen_viewed', 'signup_screen_viewed', 'free_call_signup_sheet_shown'],
+      events: ['login_screen_viewed', 'signup_screen_viewed', 'signup_gate_shown'],
     },
     {
       key: 'submitted',
       label: 'Asked for a code',
       shared: true,
-      events: ['login_submit_tapped', 'signup_submit_tapped', 'free_call_signup_otp_tapped'],
+      events: ['login_submit_tapped', 'signup_submit_tapped', 'signup_gate_phone_submitted'],
     },
   ];
 
@@ -529,7 +531,7 @@ module.exports = function registerPostHogRoutes(app) {
       stages: [
         { ...SHARED_ENTRY_STAGES[0] },
         { ...SHARED_ENTRY_STAGES[1] },
-        { key: 'otp_sent', label: 'OTP Sent', events: ['signup_otp_sent', 'free_call_signup_otp_sent'] },
+        { key: 'otp_sent', label: 'OTP Sent', events: ['signup_otp_sent', 'signup_gate_otp_sent'] },
         { key: 'otp_verified', label: 'OTP Verified', events: ['signup_otp_verified'] },
         // THE TRUTH FOR THIS STAGE IS POSTGRES, NOT AN EVENT. The free-call sheet
         // omits `intent` on purpose so an existing number can sign IN through it, but
@@ -839,7 +841,7 @@ module.exports = function registerPostHogRoutes(app) {
    * 2026-08-21 audit found on three cards at once, and it looks identical to "nobody
    * did this".
    *
-   * `from_gift_reveal` is matched against both the boolean and its string form,
+   * `signed_out` is matched against both the boolean and its string form,
    * because a property that arrives as 'true' from one SDK version and true from
    * another would otherwise drop that stage to zero without anything erroring.
    */
@@ -852,22 +854,21 @@ module.exports = function registerPostHogRoutes(app) {
         SELECT
           count(DISTINCT if(event = 'campaign_gift_reveal_shown', person_id, NULL)) AS first_open,
           count(DISTINCT if(event = 'campaign_gift_reveal_opened', person_id, NULL)) AS gift_opened,
+          -- Was properties.from_gift_reveal, which the app stopped sending when the
+          -- 2026-10-14 flow was reverted. signed_out is the equivalent today: the
+          -- panel is opened both by a visitor behind the sign-up card and by a
+          -- signed-in customer picking an astrologer, and only the first is this funnel.
           count(DISTINCT if(event = 'free_call_instant_opened'
-            AND properties.from_gift_reveal IN (true, 'true'), person_id, NULL)) AS panel_seen,
-          count(DISTINCT if(event = 'free_call_signup_gate_hit', person_id, NULL)) AS tapped_astrologer,
-          count(DISTINCT if(event = 'free_call_signup_phone_filled', person_id, NULL)) AS phone_filled,
-          count(DISTINCT if(event = 'free_call_signup_otp_tapped', person_id, NULL)) AS otp_tapped,
-          count(DISTINCT if(event = 'free_call_signup_otp_sent', person_id, NULL)) AS otp_sent,
-          count(DISTINCT if(event = 'free_call_signup_otp_filled', person_id, NULL)) AS otp_filled,
-          count(DISTINCT if(event = 'signup_otp_verified'
-            AND properties.via = 'free_call_sheet', person_id, NULL)) AS verified,
-          count(DISTINCT if(event = 'free_call_eligible', person_id, NULL)) AS eligible,
+            AND properties.signed_out IN (true, 'true'), person_id, NULL)) AS panel_seen,
+          count(DISTINCT if(event = 'signup_gate_shown', person_id, NULL)) AS gate_shown,
+          count(DISTINCT if(event = 'signup_gate_phone_submitted', person_id, NULL)) AS phone_filled,
+          count(DISTINCT if(event = 'signup_gate_otp_sent', person_id, NULL)) AS otp_sent,
+          count(DISTINCT if(event = 'signup_gate_name_shown', person_id, NULL)) AS name_shown,
+          count(DISTINCT if(event = 'signup_gate_completed', person_id, NULL)) AS verified,
           -- Past the sign-up: what they did with the call they had just been given.
-          -- free_call_instant_ring is the tap on an astrologer, _answered is that
-          -- astrologer picking up, and the last two are the call itself. call_connected
-          -- and call_ended fire for PAID calls too, hence the free_call property: an
-          -- older build that predates it sends no property at all and is correctly
-          -- excluded rather than counted as free.
+          -- call_connected and call_ended fire for PAID calls too, hence the free_call
+          -- property: an older build that predates it sends no property at all and is
+          -- correctly excluded rather than counted as free.
           count(DISTINCT if(event = 'free_call_instant_ring', person_id, NULL)) AS rang,
           count(DISTINCT if(event = 'free_call_instant_answered', person_id, NULL)) AS answered,
           count(DISTINCT if(event = 'call_connected'
@@ -878,10 +879,9 @@ module.exports = function registerPostHogRoutes(app) {
         FROM events
         WHERE ${scope} AND ${dateWhere}
           AND event IN ('campaign_gift_reveal_shown', 'campaign_gift_reveal_opened',
-            'free_call_instant_opened', 'free_call_signup_gate_hit',
-            'free_call_signup_phone_filled', 'free_call_signup_otp_tapped',
-            'free_call_signup_otp_sent', 'free_call_signup_otp_filled',
-            'signup_otp_verified', 'free_call_eligible',
+            'free_call_instant_opened', 'signup_gate_shown',
+            'signup_gate_phone_submitted', 'signup_gate_otp_sent',
+            'signup_gate_name_shown', 'signup_gate_completed',
             'free_call_instant_ring', 'free_call_instant_answered',
             'call_connected', 'call_ended')
       `),
@@ -890,16 +890,10 @@ module.exports = function registerPostHogRoutes(app) {
       // under phone_filled above, and adding them would double-count.
       runHogQL(`
         SELECT
-          count(DISTINCT if(event = 'free_call_left_via_collapse', person_id, NULL)) AS left_back,
-          count(DISTINCT if(event = 'free_call_signup_sheet_dismissed'
-            AND properties.step = 'phone', person_id, NULL)) AS quit_phone,
-          count(DISTINCT if(event = 'free_call_signup_sheet_dismissed'
-            AND properties.step = 'otp', person_id, NULL)) AS quit_otp,
-          count(DISTINCT if(event = 'free_call_signup_sheet_dismissed'
-            AND properties.step = 'name', person_id, NULL)) AS quit_name,
-          count(DISTINCT if(event = 'free_call_signup_change_number', person_id, NULL)) AS changed_number,
-          count(DISTINCT if(event = 'free_call_not_eligible_after_signup', person_id, NULL)) AS not_eligible,
-          count(DISTINCT if(event = 'free_call_booking_cta', person_id, NULL)) AS chose_booking,
+          count(DISTINCT if(event = 'signup_gate_failed'
+            AND properties.step = 'phone', person_id, NULL)) AS failed_phone,
+          count(DISTINCT if(event = 'signup_gate_failed'
+            AND properties.step = 'otp', person_id, NULL)) AS failed_otp,
           -- Eligible, but the call never happened. These are the expensive ones: the
           -- sign-up worked and the offer was still lost.
           count(DISTINCT if(event = 'free_call_instant_rejected', person_id, NULL)) AS rejected,
@@ -908,19 +902,16 @@ module.exports = function registerPostHogRoutes(app) {
           count(DISTINCT if(event = 'free_call_left_without_calling', person_id, NULL)) AS left_without_calling
         FROM events
         WHERE ${scope} AND ${dateWhere}
-          AND event IN ('free_call_left_via_collapse', 'free_call_signup_sheet_dismissed',
-            'free_call_signup_change_number', 'free_call_not_eligible_after_signup',
-            'free_call_booking_cta', 'free_call_instant_rejected',
+          AND event IN ('signup_gate_failed', 'free_call_instant_rejected',
             'free_call_instant_no_answer', 'free_call_instant_notify_me',
             'free_call_left_without_calling')
       `),
     ]);
 
-    const [firstOpen, giftOpened, panelSeen, tapped, phoneFilled, otpTapped,
-      otpSent, otpFilled, verified, eligible,
+    const [firstOpen, giftOpened, panelSeen, gateShown, phoneFilled,
+      otpSent, nameShown, verified,
       rang, answered, connected, completed] = (rows[0] || []).map((n) => Number(n) || 0);
-    const [leftBack, quitPhone, quitOtp, quitName, changedNumber,
-      notEligible, choseBooking, rejected, noAnswer, notifyMe,
+    const [failedPhone, failedOtp, rejected, noAnswer, notifyMe,
       leftWithoutCalling] = (dropRows[0] || []).map((n) => Number(n) || 0);
 
     return res.json({
@@ -930,26 +921,19 @@ module.exports = function registerPostHogRoutes(app) {
         { key: 'first_open', label: 'First open (gift shown)', count: firstOpen },
         { key: 'gift_opened', label: 'Opened the gift box', count: giftOpened },
         { key: 'panel_seen', label: 'Saw the free-call screen', count: panelSeen },
-        { key: 'tapped_astrologer', label: 'Tapped an astrologer / Call free', count: tapped },
+        { key: 'gate_shown', label: 'Sign-up card shown', count: gateShown },
         { key: 'phone_filled', label: 'Entered their number', count: phoneFilled },
-        { key: 'otp_tapped', label: 'Tapped "OTP bhejiye"', count: otpTapped },
         { key: 'otp_sent', label: 'OTP actually sent', count: otpSent },
-        { key: 'otp_filled', label: 'Entered the 6-digit OTP', count: otpFilled },
-        { key: 'verified', label: 'OTP verified (account created)', count: verified },
-        { key: 'eligible', label: 'Eligible for the free call', count: eligible },
+        { key: 'name_shown', label: 'Reached the name step', count: nameShown },
+        { key: 'verified', label: 'Signed in', count: verified },
         { key: 'rang', label: 'Rang an astrologer', count: rang },
         { key: 'answered', label: 'Astrologer answered', count: answered },
         { key: 'connected', label: 'Call connected', count: connected },
         { key: 'completed', label: 'Call actually talked (>0s)', count: completed },
       ],
       dropouts: [
-        { key: 'left_back', label: 'Left with the back button', count: leftBack },
-        { key: 'quit_phone', label: 'Closed sign-up on the number step', count: quitPhone },
-        { key: 'quit_otp', label: 'Closed sign-up on the OTP step', count: quitOtp },
-        { key: 'quit_name', label: 'Closed sign-up on the name step', count: quitName },
-        { key: 'changed_number', label: 'Changed their number', count: changedNumber },
-        { key: 'not_eligible', label: 'Signed in but offer already used', count: notEligible },
-        { key: 'chose_booking', label: 'Chose a time instead (nobody free)', count: choseBooking },
+        { key: 'failed_phone', label: 'Number refused by the server', count: failedPhone },
+        { key: 'failed_otp', label: 'OTP refused by the server', count: failedOtp },
         { key: 'rejected', label: 'Astrologer declined the ring', count: rejected },
         { key: 'no_answer', label: 'Rang out, nobody picked up', count: noAnswer },
         { key: 'notify_me', label: 'Asked to be notified (all busy)', count: notifyMe },
