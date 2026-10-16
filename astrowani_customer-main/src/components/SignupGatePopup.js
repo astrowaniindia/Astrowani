@@ -200,6 +200,7 @@ export default function SignupGatePopup({ visible, onDone }) {
       setCode('');
       otpRef.current?.clear?.();
       setTimer(Math.min(Math.ceil(Number(seconds) || RESEND_SECONDS), RESEND_SECONDS));
+      captureEvent('signup_gate_otp_shown');
       setStep('otp');
     };
     try {
@@ -319,6 +320,11 @@ export default function SignupGatePopup({ visible, onDone }) {
           if (res.data.user) {
             await AsyncStorage.setItem('userData', JSON.stringify(res.data.user));
           }
+          // The last step, and the one with no second chance: a customer who closes
+          // the app here already HAS an account, so they never come back through this
+          // card and never appear in signup_name_saved. Without this stage the funnel
+          // would report them as having dropped at OTP, which they did not.
+          captureEvent('signup_gate_name_shown');
           setStep('name');
         } else {
           captureEvent('login_completed');

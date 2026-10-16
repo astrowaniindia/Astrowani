@@ -354,7 +354,10 @@ export default function CampaignGiftReveal({ navigation, route }) {
       seconds_since_open: secsSinceOpen(),
     });
     queueFreeCallFromCampaign();
-    navigation.replace('InstantAstrologers');
+    // `fromReveal` is read back by InstantAstrologers' opened event. It is the only
+    // way to tell "came off the gift box" from "cold start after the box has already
+    // been seen" — both land on the same screen in the same signed-out state.
+    navigation.replace('InstantAstrologers', { fromReveal: true });
   };
 
   // ── Interpolations ─────────────────────────────────────────────────────────

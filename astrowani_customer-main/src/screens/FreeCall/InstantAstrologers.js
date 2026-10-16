@@ -102,6 +102,10 @@ export default function InstantAstrologers({ navigation, route }) {
   const chosenSeenRef = useRef(false);
   const screenAtRef = useRef(Date.now());
   const rangRef = useRef(false);
+  // Set once by CampaignGiftReveal's replace() and never changed after. A ref, so the
+  // mount-only effect below keeps its empty dependency array — re-running that effect
+  // would tear down and rebuild the socket.
+  const fromRevealRef = useRef(!!route?.params?.fromReveal);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -231,7 +235,22 @@ export default function InstantAstrologers({ navigation, route }) {
   }, [data]);
 
   useEffect(() => {
-    captureEvent('free_call_instant_opened');
+    // `signed_out` SPLITS THIS EVENT IN TWO, and without it the whole 17 Oct funnel is
+    // unreadable: since the gift reveal started handing over to this screen, an "opened"
+    // can mean either the guest preview behind the sign-up card or the real panel a
+    // signed-in customer picks an astrologer from. Blended, the panel looks twice as
+    // busy as it is and the sign-up drop-off has no denominator. Read from storage
+    // rather than from `guest` state, which is still null on this first render.
+    // `via` separates the two ways a signed-out visitor gets here — straight off the
+    // reveal on a first install, or a cold start after it has already played.
+    (async () => {
+      let signedOut = false;
+      try { signedOut = !(await AsyncStorage.getItem('token')); } catch (_) {}
+      captureEvent('free_call_instant_opened', {
+        signed_out: signedOut,
+        via: fromRevealRef.current ? 'gift_reveal' : 'direct',
+      });
+    })();
     // Copied into the effect so the cleanup below is not reading a ref (the lint rule
     // is right in general; this one is a mount timestamp that never changes).
     const openedAt = screenAtRef.current;
