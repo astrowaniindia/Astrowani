@@ -99,6 +99,10 @@ export default function SignupGatePopup({ visible, onDone }) {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  // Optional, and applied only AFTER the name is saved — see saveName. Same field,
+  // same endpoint and same best-effort handling as SignupName.js, so the two ways
+  // into an account cannot disagree about how a referral is redeemed.
+  const [referralCode, setReferralCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [timer, setTimer] = useState(0);
 
@@ -108,6 +112,7 @@ export default function SignupGatePopup({ visible, onDone }) {
   const busyRef = useRef(false);
   const resendRef = useRef(false);
   const otpRef = useRef(null);
+  const referralRef = useRef(null);
   const rise = useRef(new Animated.Value(0)).current;
   // Two rings leaving the green dot, the second half a cycle behind the first, so the
   // badge reads as a ripple on water rather than as one pulsing circle.
@@ -376,6 +381,29 @@ export default function SignupGatePopup({ visible, onDone }) {
       if (!res?.data?.success || !updated) throw new Error('save_failed');
       await AsyncStorage.setItem('userData', JSON.stringify(updated));
       captureEvent('signup_name_saved', { via: 'signup_gate' });
+
+      // DELIBERATELY NEVER BLOCKING, and deliberately after the name is already
+      // saved: a wrong, expired or mistyped code must not stop a new customer
+      // reaching their free call. Nothing is shown on failure beyond the analytics
+      // event — the reward is the referrer's, not theirs, so there is nothing for
+      // this person to act on. Same rule as SignupName.js.
+      const code = referralCode.trim().toUpperCase();
+      if (code) {
+        try {
+          await Instance.post(
+            '/api/customer/referral/apply',
+            { referralCode: code },
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          captureEvent('referral_code_applied', { at: 'signup_gate' });
+        } catch (e) {
+          captureEvent('referral_code_rejected', {
+            at: 'signup_gate',
+            reason: e?.response?.data?.code || 'other',
+          });
+        }
+      }
+
       finish('signup');
     } catch (err) {
       captureEvent('signup_name_save_failed', { reason: err?.response?.data?.code || 'other' });
@@ -518,6 +546,13 @@ export default function SignupGatePopup({ visible, onDone }) {
 
                   <OtpInput
                     ref={otpRef}
+                    // Focus (and therefore the keyboard) on BOTH steps after the
+                    // first. Only the phone step is left unfocused, because there the
+                    // keyboard would cover the astrologers the customer is signing up
+                    // to reach before they had chosen to type anything. Past that they
+                    // have committed, and making them tap a field they were just sent
+                    // to is a step for nothing.
+                    autoFocus
                     numberOfDigits={6}
                     focusColor={COLORS.AstroMaroon}
                     onTextChange={setCode}
@@ -569,11 +604,38 @@ export default function SignupGatePopup({ visible, onDone }) {
                     />
                     <TextInput
                       style={styles.input}
+                      autoFocus
                       maxLength={MAX_NAME_LENGTH}
                       placeholder={t('signupGate.namePlaceholder')}
                       placeholderTextColor={COLORS.placeholder}
                       value={name}
                       onChangeText={setName}
+                      onSubmitEditing={() => referralRef.current?.focus()}
+                      returnKeyType="next"
+                    />
+                  </View>
+
+                  {/* Optional, and labelled as optional rather than merely allowed to
+                      be blank: an unexplained second box on the last step of a
+                      sign-up reads as one more thing being asked for. */}
+                  <Text style={styles.referralLabel}>{t('signupName.referralLabel')}</Text>
+                  <View style={[styles.inputRow, styles.referralRow]}>
+                    <Icon
+                      name="card-giftcard"
+                      size={moderateScale(19)}
+                      color={COLORS.AstroMaroon}
+                      style={styles.nameIcon}
+                    />
+                    <TextInput
+                      ref={referralRef}
+                      style={styles.input}
+                      maxLength={20}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      placeholder={t('signupName.referralPlaceholder')}
+                      placeholderTextColor={COLORS.placeholder}
+                      value={referralCode}
+                      onChangeText={setReferralCode}
                       onSubmitEditing={saveName}
                       returnKeyType="done"
                     />
@@ -736,6 +798,14 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(15),
   },
   nameIcon: { marginRight: scale(8) },
+  referralLabel: {
+    color: COLORS.textLight,
+    fontSize: moderateScale(11.5),
+    fontWeight: '600',
+    marginBottom: verticalScale(5),
+    marginLeft: scale(4),
+  },
+  referralRow: { marginBottom: verticalScale(14) },
   input: {
     flex: 1,
     fontSize: moderateScale(16),
