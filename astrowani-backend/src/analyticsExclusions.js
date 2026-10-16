@@ -31,6 +31,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 let excluded = new Set(); // admin's list ∪ deleted customers — what every filter uses
+let adminExcluded = []; // the admin's list ALONE (see adminExcludedIds below)
 
 // Only well-formed UUIDs survive — these ids are interpolated into HogQL, so this is
 // also the injection guard.
@@ -53,6 +54,7 @@ async function refreshAnalyticsExclusions() {
     // Any failed read keeps the last known list rather than briefly counting everyone.
     if (adminRes.error || deletedRes.error || softRes.error) return;
     const adminIds = parseIds(adminRes.data?.value);
+    adminExcluded = adminIds;
     excluded = new Set([
       ...adminIds,
       ...parseIds(deletedRes.data?.value),
@@ -84,6 +86,21 @@ async function recordDeletedCustomer(id) {
 
 const isExcludedCustomer = (id) => !!id && excluded.has(String(id).toLowerCase());
 
+// THE ADMIN'S LIST ALONE, for a Postgres COUNT that cannot be filtered row by row
+// (the auth funnel's "Account Created" stage). Deliberately NOT the full set: that
+// one carries every soft-deleted account, which is thousands of ids, and a PostgREST
+// `not.in` of that size is a URL long enough that the request simply fails
+// ("fetch failed", measured 2026-10-16) — and it does not need them, because a
+// soft-deleted row is identifiable in the table itself (`mobile LIKE 'deleted:%'`,
+// the same query that builds this set) and hard-deleted ids have no row left to
+// count. Every id here has been through parseIds, so each is a well-formed UUID —
+// safe for a PostgREST `in` list, which is the rule src/pgrstFilter.js enforces.
+const adminExcludedIds = () => [...adminExcluded];
+
+// The pattern a caller filtering `customers` in SQL should use for the rest of the
+// set, so the two stay in step if this ever changes.
+const SOFT_DELETED_MOBILE_PATTERN = 'deleted:%';
+
 // Keep only rows whose `field` is not an excluded customer. Cheap no-op when the list is empty.
 function withoutExcluded(rows, field) {
   if (!excluded.size || !Array.isArray(rows)) return rows || [];
@@ -107,6 +124,8 @@ module.exports = {
   parseIds,
   refreshAnalyticsExclusions,
   isExcludedCustomer,
+  adminExcludedIds,
+  SOFT_DELETED_MOBILE_PATTERN,
   withoutExcluded,
   hogqlExclusionClause,
 };

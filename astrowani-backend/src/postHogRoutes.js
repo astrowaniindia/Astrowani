@@ -25,8 +25,8 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('./adminRoutes');
 const { TtlCache } = require('./ttlCache');
-const { hogqlSinceClause } = require('./analyticsSince');
-const { hogqlExclusionClause } = require('./analyticsExclusions');
+const { hogqlSinceClause, clampSince } = require('./analyticsSince');
+const { hogqlExclusionClause, adminExcludedIds, SOFT_DELETED_MOBILE_PATTERN } = require('./analyticsExclusions');
 
 const POSTHOG_HOST = process.env.POSTHOG_HOST; // e.g. https://us.i.posthog.com
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
@@ -481,19 +481,41 @@ module.exports = function registerPostHogRoutes(app) {
   // "Viewed 2 -> OTP Sent 47 (2350%)", because the top measured a near-dead screen while
   // everything below it measured everyone. `shared: true` is passed through to the UI so
   // it can say so rather than presenting a drop-off that does not exist.
+  //
+  // THERE IS A SECOND ENTRY POINT, and leaving it out broke this card's shape
+  // (measured 2026-10-16). Since the free-call sign-up sheet shipped on 2026-10-14
+  // a signed-out visitor can sign up WITHOUT ever reaching the Login screen: the
+  // gift reveal lands them on the instant free-call panel, they reach for an
+  // astrologer, and the sheet takes the number and the code inline
+  // (`free_call_signup_*`, FreeCallSignupSheet). The sheet fires the same
+  // `signup_otp_verified` / `signup_completed` / `signup_name_saved` at the BOTTOM,
+  // so the bottom counted those people while the top did not — on 15 Oct 2026 the
+  // card read 134 viewed, 90 tapped Continue and 115 verified, i.e. more
+  // verifications than screen views, which is impossible and read as "the events
+  // are broken". 43 of that day's sign-ups came through the sheet. Every stage down
+  // to the OTP therefore matches EITHER path's event.
+  //
+  // The sheet's three stages map one-to-one onto the Login screen's:
+  //   free_call_signup_sheet_shown  -> the sign-in prompt was seen
+  //   free_call_signup_otp_tapped   -> the tap that asks for a code
+  //   free_call_signup_otp_sent     -> the server actually sent one
+  // `free_call_signup_phone_filled` is deliberately NOT used: it fires on the field
+  // reaching ten digits, not on a tap, so it has no counterpart here (it is a stage
+  // of its own on the free-call-signup-funnel card, which reads that journey in
+  // full).
   const SHARED_ENTRY_STAGES = [
     {
       key: 'viewed',
-      label: 'Opened sign-in screen',
+      label: 'Reached a sign-in prompt',
       shared: true,
       screenNames: ['Login', 'Register'],
-      events: ['login_screen_viewed', 'signup_screen_viewed'],
+      events: ['login_screen_viewed', 'signup_screen_viewed', 'free_call_signup_sheet_shown'],
     },
     {
       key: 'submitted',
-      label: 'Tapped Continue',
+      label: 'Asked for a code',
       shared: true,
-      events: ['login_submit_tapped', 'signup_submit_tapped'],
+      events: ['login_submit_tapped', 'signup_submit_tapped', 'free_call_signup_otp_tapped'],
     },
   ];
 
@@ -507,9 +529,15 @@ module.exports = function registerPostHogRoutes(app) {
       stages: [
         { ...SHARED_ENTRY_STAGES[0] },
         { ...SHARED_ENTRY_STAGES[1] },
-        { key: 'otp_sent', label: 'OTP Sent', events: ['signup_otp_sent'] },
+        { key: 'otp_sent', label: 'OTP Sent', events: ['signup_otp_sent', 'free_call_signup_otp_sent'] },
         { key: 'otp_verified', label: 'OTP Verified', events: ['signup_otp_verified'] },
-        { key: 'completed', label: 'Account Created', events: ['signup_completed'] },
+        // THE TRUTH FOR THIS STAGE IS POSTGRES, NOT AN EVENT. The free-call sheet
+        // omits `intent` on purpose so an existing number can sign IN through it, but
+        // it fires `signup_completed` either way — so the event counts returning
+        // customers as new accounts (115 events against 91 real rows on 15 Oct 2026)
+        // and the login funnel loses them. A row in `customers` cannot be wrong about
+        // whether an account was created, so this stage counts rows.
+        { key: 'completed', label: 'Account Created', source: 'db' },
         { key: 'name_saved', label: 'Name Saved', events: ['signup_name_saved'] },
         { key: 'welcome', label: 'Tapped Namaste (reached Home)', events: ['signup_welcome_hi_tapped'] },
       ],
@@ -540,37 +568,73 @@ module.exports = function registerPostHogRoutes(app) {
       });
       return parts.join(' OR ');
     };
-    const selects = def.stages
+    // A stage with `source: 'db'` is answered by Postgres and takes no part in the
+    // HogQL query, so the event-backed stages keep their own positions in its row.
+    const eventStages = def.stages.filter((st) => st.source !== 'db');
+    const selects = eventStages
       .map((st) => `count(DISTINCT if(${stageCondition(st)}, person_id, NULL)) AS ${st.key}`)
       .join(',\n        ');
     const eventList = [...new Set(
-      def.stages.flatMap((st) => [
+      eventStages.flatMap((st) => [
         ...(st.events || []),
         ...((st.screenNames || []).length ? ['$screen'] : []),
       ])
     )].map((e) => `'${e}'`).join(', ');
 
-    const rows = await runHogQL(`
-      SELECT
-        ${selects}
-      FROM events
-      WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
-        AND event IN (${eventList})
-    `);
-    const values = rows[0] || def.stages.map(() => 0);
-    const stages = def.stages.map((st, i) => ({
-      key: st.key,
-      label: st.label,
-      shared: !!st.shared,
-      count: Number(values[i]) || 0,
-    }));
+    // Accounts actually created in the range. Built from resolveRangeInstants, so this
+    // half of the funnel covers exactly the IST days the HogQL clause does, and
+    // clamped to the admin's analytics start date like every other card.
+    const dbCreatedCount = async () => {
+      const { startIso, endIso } = resolveRangeInstants(req, { defaultDays: 7 });
+      let q = db.from('customers').select('id', { count: 'exact', head: true })
+        .gte('created_at', clampSince(startIso));
+      if (endIso) q = q.lt('created_at', endIso);
+      // The same people the HogQL half drops (ENV_FILTER's exclusion clause): the
+      // admin's excluded list, and deleted accounts. Without this the two halves
+      // measure different populations and this stage reads larger than the event
+      // stage above it. Soft-deleted rows go by their own marker rather than by id —
+      // see adminExcludedIds for why the full set cannot be sent as a `not.in`.
+      q = q.not('mobile', 'like', SOFT_DELETED_MOBILE_PATTERN);
+      const skip = adminExcludedIds();
+      if (skip.length) q = q.not('id', 'in', `(${skip.join(',')})`);
+      const { count, error } = await q;
+      if (error) throw error;
+      return count || 0;
+    };
+
+    const [rows, created] = await Promise.all([
+      runHogQL(`
+        SELECT
+          ${selects}
+        FROM events
+        WHERE properties.app = 'customer' AND ${ENV_FILTER} AND ${dateWhere}
+          AND event IN (${eventList})
+      `),
+      def.stages.some((st) => st.source === 'db') ? dbCreatedCount() : Promise.resolve(0),
+    ]);
+    const values = rows[0] || eventStages.map(() => 0);
+    let ei = -1;
+    const stages = def.stages.map((st) => {
+      if (st.source === 'db') {
+        return { key: st.key, label: st.label, shared: false, source: 'db', count: created };
+      }
+      ei += 1;
+      return {
+        key: st.key,
+        label: st.label,
+        shared: !!st.shared,
+        count: Number(values[ei]) || 0,
+      };
+    });
     return res.json({
       success: true,
       type,
       label: def.label,
       stages,
       range: rangeMeta(req, { defaultDays: 7 }),
-      note: 'The first two stages are shared by signup and login — one screen serves both, and which flow it is only becomes known after the number is checked.',
+      note: type === 'signup'
+        ? 'The first two stages are shared by signup and login, and count BOTH ways in: the Login screen and the free-call sign-up sheet. "Account Created" comes from the customers table rather than an event, because the sheet reports a returning customer who logs in through it as a signup.'
+        : 'The first two stages are shared by signup and login. A login completed inside the free-call sign-up sheet is reported by the app as a signup, so it is missing from the bottom of this funnel.',
     });
   }));
 
