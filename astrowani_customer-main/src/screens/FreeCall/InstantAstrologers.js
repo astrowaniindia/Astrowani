@@ -32,6 +32,7 @@ import Instance from '../../api/ApiCall';
 import { getInstantAstrologers, ringInstantAstrologer, giveUpInstantRing } from '../../api/FreeCallApi';
 import SignupGatePopup from '../../components/SignupGatePopup';
 import { clearPendingFreeCall } from '../../utils/freeCallInvite';
+import { markFreeCallOfferSeen } from '../../utils/onboardingFlags';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
@@ -193,8 +194,28 @@ export default function InstantAstrologers({ navigation, route }) {
    * `navigatedRef` is set first so the unmount does not log this as the customer
    * walking away from the panel without calling — they are being handed the real one.
    */
-  const onSignedUp = useCallback(() => {
+  const onSignedUp = useCallback(async () => {
     navigatedRef.current = true;
+
+    // MARK THE OFFER AS ALREADY SEEN, BEFORE the reset below mounts Home.
+    //
+    // Home's checkFreeCallOffer auto-opens the big "LIMITED OFFER · ONLY FOR YOU —
+    // Claim my FREE call" card for any eligible customer who has not seen it, and the
+    // reset puts the Drawer (and therefore Home) underneath this screen — so the
+    // instant that sign-up finished, Home woke up and pitched the free call ON TOP of
+    // the free-call panel the customer was already standing on. They had just been
+    // given it twice and asked to claim it a third time.
+    //
+    // This is the right flag rather than a new one: they HAVE seen the offer. The gift
+    // reveal, the panel and the whole sign-up card were the offer. Ordering matters —
+    // mark first, then reset, or Home mounts and reads the flag before it is set.
+    try {
+      const id = await AsyncStorage.getItem('customerId');
+      if (id) await markFreeCallOfferSeen(id);
+    } catch (_) {
+      // Worst case the card shows once. Never worth blocking the hand-off over.
+    }
+
     // They are already standing on the free-call panel, so the campaign hand-off that
     // CampaignGiftReveal queued has nothing left to do. Left set, Home would open the
     // booking sheet at them later for an offer they are in the middle of taking.
