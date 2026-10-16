@@ -387,17 +387,22 @@ export default function SignupGatePopup({ visible, onDone }) {
 
   if (!visible) return null;
 
+  // Kept, at about two thirds of its old weight. It is the only line INSIDE the card
+  // that names the prize, and the card has to stand on its own the moment the
+  // keyboard covers the panel behind it — but at full size it was the single tallest
+  // block here and it was pushing the card up over the astrologers' Call free
+  // buttons, which the customer is supposed to be able to see the whole time.
+  const header = (
+    <View style={styles.prizeChip}>
+      <Icon name="timer" size={moderateScale(11)} color={COLORS.AstroMaroon} />
+      <Text style={styles.prizeChipTxt}>{t('signupGate.prize')}</Text>
+    </View>
+  );
+
   const slide = rise.interpolate({
     inputRange: [0, 1],
     outputRange: [verticalScale(420), 0],
   });
-
-  const header = (
-    <View style={styles.prizeChip}>
-      <Icon name="timer" size={moderateScale(14)} color={COLORS.AstroMaroon} />
-      <Text style={styles.prizeChipTxt}>{t('signupGate.prize')}</Text>
-    </View>
-  );
 
   return (
     <Modal
@@ -461,7 +466,6 @@ export default function SignupGatePopup({ visible, onDone }) {
                     </View>
                     <TextInput
                       style={styles.input}
-                      autoFocus
                       maxLength={12}
                       keyboardType="phone-pad"
                       placeholder={t('login.phoneNumber')}
@@ -557,7 +561,6 @@ export default function SignupGatePopup({ visible, onDone }) {
                     />
                     <TextInput
                       style={styles.input}
-                      autoFocus
                       maxLength={MAX_NAME_LENGTH}
                       placeholder={t('signupGate.namePlaceholder')}
                       placeholderTextColor={COLORS.placeholder}
@@ -599,7 +602,10 @@ const styles = StyleSheet.create({
     paddingTop: verticalScale(10),
     // Capped so the panel behind is never fully covered — the prize has to stay in
     // view, which is the whole point of showing the card over it rather than as a screen.
-    maxHeight: '70%',
+    // Belt and braces behind the content trims above: even a very large system font
+    // cannot let this card climb over the astrologers' Call free buttons, which is
+    // the whole reason it is a card and not a screen.
+    maxHeight: '58%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.18,
@@ -607,7 +613,7 @@ const styles = StyleSheet.create({
     elevation: 16,
   },
   topBar: {
-    paddingBottom: verticalScale(10),
+    paddingBottom: verticalScale(8),
   },
   grabber: {
     alignSelf: 'center',
@@ -615,7 +621,7 @@ const styles = StyleSheet.create({
     height: verticalScale(4),
     borderRadius: moderateScale(3),
     backgroundColor: '#E6D8CC',
-    marginBottom: verticalScale(9),
+    marginBottom: verticalScale(8),
   },
   live: {
     alignSelf: 'flex-end',
@@ -660,49 +666,49 @@ const styles = StyleSheet.create({
   },
   cardBody: {
     paddingHorizontal: scale(22),
-    paddingBottom: verticalScale(26),
+    paddingBottom: verticalScale(16),
   },
   prizeChip: {
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: scale(6),
+    gap: scale(5),
     backgroundColor: '#FFF3E2',
     borderWidth: 1,
     borderColor: '#F0DCC2',
-    borderRadius: moderateScale(20),
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(6),
-    marginBottom: verticalScale(14),
+    borderRadius: moderateScale(16),
+    paddingHorizontal: scale(11),
+    paddingVertical: verticalScale(3),
+    marginBottom: verticalScale(9),
   },
   prizeChipTxt: {
     color: COLORS.AstroMaroon,
     fontWeight: '800',
-    fontSize: moderateScale(12),
+    fontSize: moderateScale(10),
   },
   title: {
     textAlign: 'center',
     color: COLORS.textDark,
     fontWeight: '800',
-    fontSize: moderateScale(20),
+    fontSize: moderateScale(19),
   },
   sub: {
     textAlign: 'center',
     color: COLORS.textLight,
-    fontSize: moderateScale(13),
-    marginTop: verticalScale(6),
-    marginBottom: verticalScale(18),
-    lineHeight: moderateScale(19),
+    fontSize: moderateScale(12.5),
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(13),
+    lineHeight: moderateScale(18),
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: verticalScale(54),
+    height: verticalScale(50),
     borderWidth: 1,
     borderColor: COLORS.lightBorder,
-    borderRadius: moderateScale(28),
+    borderRadius: moderateScale(26),
     paddingHorizontal: scale(16),
-    marginBottom: verticalScale(16),
+    marginBottom: verticalScale(12),
   },
   cc: {
     flexDirection: 'row',
@@ -739,8 +745,8 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
   },
   cta: {
-    height: verticalScale(54),
-    borderRadius: moderateScale(28),
+    height: verticalScale(50),
+    borderRadius: moderateScale(26),
     backgroundColor: COLORS.AstroMaroon,
     alignItems: 'center',
     justifyContent: 'center',
@@ -770,7 +776,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginTop: verticalScale(14),
+    marginTop: verticalScale(11),
   },
   termsTxt: {
     fontSize: moderateScale(11),
