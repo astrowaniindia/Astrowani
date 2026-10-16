@@ -1005,7 +1005,7 @@ const translations = {
     'campaignGift.youWin': 'YOU WIN!',
     'campaignGift.prizeTitle': '11 Minute FREE Call',
     'campaignGift.prizeSub': 'Expert astrologer ji ke saath',
-    'campaignGift.avatarLine': 'Namaste! Aapne jeet li hai 11 minute ki free call. Jo bhi sawaal ho hamare astrologer ji se baat kariye',
+    'campaignGift.avatarLine': 'Namaste! Aapne jeet li hai 11 minute ki free call. Jo bhi sawaal ho humare expert astrologer ji se pooch lijiye',
     'campaignGift.cta': 'Haan! Mujhe free call chahiye',
     // The carried-over gift bubble, tapped on Login/OTP/name
     'campaignGift.claimTitle': 'Aapka free call reserve hai',
@@ -2539,7 +2539,7 @@ const translations = {
     'campaignGift.youWin': 'YOU WIN!',
     'campaignGift.prizeTitle': '11 मिनट की फ्री कॉल',
     'campaignGift.prizeSub': 'एक्सपर्ट ज्योतिषी जी के साथ',
-    'campaignGift.avatarLine': 'नमस्ते! आपने जीत ली है 11 मिनट की फ्री कॉल. जो भी सवाल हो हमारे ज्योतिषी जी से बात कीजिए',
+    'campaignGift.avatarLine': 'नमस्ते! आपने जीत ली है 11 मिनट की फ्री कॉल. जो भी सवाल हो हमारे एक्सपर्ट ज्योतिषी जी से पूछ लीजिए',
     'campaignGift.cta': 'हाँ! मुझे फ्री कॉल चाहिए',
     'campaignGift.claimTitle': 'आपकी फ्री कॉल रिज़र्व है',
     'campaignGift.claimSub': 'एक्सपर्ट ज्योतिषी जी के साथ 11 मिनट की फ्री कॉल',
