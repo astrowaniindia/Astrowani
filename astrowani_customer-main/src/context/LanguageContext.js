@@ -1024,7 +1024,6 @@ const translations = {
     // components/SignupGatePopup.js. Hinglish, like the rest of onboarding. Every
     // line is written as "finish collecting what you won", never "register first" —
     // the astrologers are visible behind the card while these are read.
-    'signupGate.prize': '11 MINUTE FREE CALL',
     'signupGate.phoneTitle': 'Aapki free call taiyaar hai',
     'signupGate.phoneSub': '30 second se jyada nhi lagenge sign up mein',
     // Live social proof in the card's top corner. ENGLISH IN BOTH LANGUAGE BLOCKS
@@ -1034,6 +1033,15 @@ const translations = {
     // total: a bare number is a statistic, a number with a clock on it is a queue.
     'signupGate.social': '20 people had their free call just 5 minutes ago',
     'signupGate.sendCode': 'OTP bhejiye',
+    // The four reassurance chips under the subtitle. ENGLISH IN BOTH LANGUAGE BLOCKS,
+    // like the live badge above: these are the four words a person scans rather than
+    // reads, and "₹0" / "100%" carry in any language. They answer the question nobody
+    // types -- what does putting my number in actually cost me.
+    'signupGate.trustZero': '₹0',
+    'signupGate.trustNoAutopay': 'No autopay',
+    'signupGate.trustFree': 'Completely free',
+    'signupGate.trustSafe': '100% safe',
+
     'signupGate.otpTitle': 'OTP daaliye',
     'signupGate.otpSub': '6 digit ka code {{phone}} par bheja gaya hai',
     'signupGate.verify': 'Verify kariye',
@@ -2552,12 +2560,17 @@ const translations = {
     'campaignGift.nudgeBody': 'बस एक छोटा सा साइन अप बाकी है',
 
     // components/SignupGatePopup.js — see the note in the 'en' block.
-    'signupGate.prize': '11 मिनट की फ्री कॉल',
     'signupGate.phoneTitle': 'आपकी फ्री कॉल तैयार है',
     'signupGate.phoneSub': '30 सेकंड से ज़्यादा नहीं लगेंगे साइन अप में',
     // English on purpose, even here — see the note in the 'en' block.
     'signupGate.social': '20 people had their free call just 5 minutes ago',
     'signupGate.sendCode': 'OTP भेजिए',
+    // English on purpose, even here — see the note in the 'en' block.
+    'signupGate.trustZero': '₹0',
+    'signupGate.trustNoAutopay': 'No autopay',
+    'signupGate.trustFree': 'Completely free',
+    'signupGate.trustSafe': '100% safe',
+
     'signupGate.otpTitle': 'OTP डालिए',
     'signupGate.otpSub': '6 अंकों का कोड {{phone}} पर भेजा गया है',
     'signupGate.verify': 'वेरिफाई कीजिए',

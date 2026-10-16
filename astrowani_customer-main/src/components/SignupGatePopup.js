@@ -393,17 +393,6 @@ export default function SignupGatePopup({ visible, onDone }) {
 
   if (!visible) return null;
 
-  // Kept, at about two thirds of its old weight. It is the only line INSIDE the card
-  // that names the prize, and the card has to stand on its own the moment the
-  // keyboard covers the panel behind it — but at full size it was the single tallest
-  // block here and it was pushing the card up over the astrologers' Call free
-  // buttons, which the customer is supposed to be able to see the whole time.
-  const header = (
-    <View style={styles.prizeChip}>
-      <Icon name="timer" size={moderateScale(11)} color={COLORS.AstroMaroon} />
-      <Text style={styles.prizeChipTxt}>{t('signupGate.prize')}</Text>
-    </View>
-  );
 
   const slide = rise.interpolate({
     inputRange: [0, 1],
@@ -461,9 +450,24 @@ export default function SignupGatePopup({ visible, onDone }) {
             >
               {step === 'phone' && (
                 <>
-                  {header}
                   <Text style={styles.title}>{t('signupGate.phoneTitle')}</Text>
                   <Text style={styles.sub}>{t('signupGate.phoneSub')}</Text>
+
+                  {/* The four things a person wants to know before typing a number
+                      into anything, answered before they ask. Only on the phone step:
+                      by the OTP step they have already decided, and repeating it there
+                      would read as protesting too much.
+                      BLUE, deliberately not the card's maroon or the badge's green —
+                      maroon is this app's "pay / commit" colour on every wallet and
+                      checkout button, which is the exact association to avoid on the
+                      line that says it costs nothing. */}
+                  <View style={styles.trustRow}>
+                    {['trustZero', 'trustNoAutopay', 'trustFree', 'trustSafe'].map((k) => (
+                      <View key={k} style={styles.trustChip}>
+                        <Text style={styles.trustTxt}>{t(`signupGate.${k}`)}</Text>
+                      </View>
+                    ))}
+                  </View>
 
                   <View style={styles.inputRow}>
                     <View style={styles.cc}>
@@ -507,7 +511,6 @@ export default function SignupGatePopup({ visible, onDone }) {
 
               {step === 'otp' && (
                 <>
-                  {header}
                   <Text style={styles.title}>{t('signupGate.otpTitle')}</Text>
                   <Text style={styles.sub}>
                     {t('signupGate.otpSub', { phone: `+91 ${phoneNumber}` })}
@@ -554,7 +557,6 @@ export default function SignupGatePopup({ visible, onDone }) {
 
               {step === 'name' && (
                 <>
-                  {header}
                   <Text style={styles.title}>{t('signupGate.nameTitle')}</Text>
                   <Text style={styles.sub}>{t('signupGate.nameSub')}</Text>
 
@@ -611,7 +613,7 @@ const styles = StyleSheet.create({
     // Belt and braces behind the content trims above: even a very large system font
     // cannot let this card climb over the astrologers' Call free buttons, which is
     // the whole reason it is a card and not a screen.
-    maxHeight: '58%',
+    maxHeight: '66%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.18,
@@ -674,24 +676,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(22),
     paddingBottom: verticalScale(16),
   },
-  prizeChip: {
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(5),
-    backgroundColor: '#FFF3E2',
-    borderWidth: 1,
-    borderColor: '#F0DCC2',
-    borderRadius: moderateScale(16),
-    paddingHorizontal: scale(11),
-    paddingVertical: verticalScale(3),
-    marginBottom: verticalScale(9),
-  },
-  prizeChipTxt: {
-    color: COLORS.AstroMaroon,
-    fontWeight: '800',
-    fontSize: moderateScale(10),
-  },
   title: {
     textAlign: 'center',
     color: COLORS.textDark,
@@ -705,6 +689,26 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(4),
     marginBottom: verticalScale(13),
     lineHeight: moderateScale(18),
+  },
+  trustRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: scale(6),
+    marginBottom: verticalScale(14),
+  },
+  trustChip: {
+    backgroundColor: '#EDF3FF',
+    borderWidth: 1,
+    borderColor: '#D3E2FF',
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(9),
+    paddingVertical: verticalScale(3),
+  },
+  trustTxt: {
+    color: '#1B5FD9',
+    fontWeight: '700',
+    fontSize: moderateScale(10.5),
   },
   inputRow: {
     flexDirection: 'row',
