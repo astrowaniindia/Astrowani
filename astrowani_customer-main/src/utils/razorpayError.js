@@ -21,6 +21,26 @@
 const CANCEL_CODES = new Set([2, '2']);
 const NETWORK_CODES = new Set([0, '0', 3, '3']);
 
+/**
+ * Razorpay's error envelope, whichever field happens to carry it.
+ *
+ * `description` is usually the serialised `{"error":{…}}` object, but the SDK is not
+ * consistent about which key it lands in, and some paths hand over an already-parsed
+ * object. Everything here is best-effort: a null simply means we classify from the
+ * text instead, which is what the code did before this existed.
+ */
+function envelope(error) {
+  for (const raw of [error?.description, error?.message]) {
+    if (typeof raw !== 'string' || !raw.trim().startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.error && typeof parsed.error === 'object') return parsed.error;
+    } catch (_) { /* not JSON after all — fall through */ }
+  }
+  if (error?.error && typeof error.error === 'object') return error.error;
+  return null;
+}
+
 /** Pull a human sentence out of Razorpay's envelope, or null if there isn't one. */
 function readableReason(raw) {
   if (!raw || typeof raw !== 'string') return null;
@@ -41,7 +61,8 @@ function readableReason(raw) {
 }
 
 /**
- * @returns {{cancelled: boolean, timedOut: boolean, network: boolean, message: string|null, code: string}}
+ * @returns {{cancelled: boolean, timedOut: boolean, network: boolean, declined: boolean,
+ *            message: string|null, code: string}}
  *  `message` is null when there is nothing worth showing — the caller should stay
  *  silent rather than invent an error.
  */
@@ -62,10 +83,35 @@ export function describeRazorpayError(error) {
   // offered a retry, instead of a red "Payment Failed" that reads as a bank problem.
   const timedOut = !cancelled && /timed? ?out|not completed (on|in) time|expired/i.test(blob);
 
+  // DECLINED: the bank, card issuer or wallet was asked to move the money and refused.
+  //
+  // Measured on the live dashboard 16 Oct 2026: every PhonePe Wallet failure in 90 days
+  // (9 of them) carried `source: 'issuer'`, `step: 'payment_authorization'` — and the
+  // same customers succeeded minutes later, one of them at ₹10 sixty seconds after ₹100
+  // was refused. That is a balance, not a fault.
+  //
+  // IT MATTERS THAT THIS IS SEPARATED. Razorpay buckets it as "Gateway – Technical
+  // Error" and its customer-facing sentence is "declined by the bank" — for a WALLET
+  // there is no bank involved, so the customer is told something untrue about a problem
+  // they could fix in ten seconds. One of them tried five times in seven minutes.
+  //
+  // NOT narrowed to wallets, deliberately: the checkout rejection does not say which
+  // method was used (the envelope carries only payment_id and order_id), so a
+  // wallet-only branch could not be written honestly. "Check the balance, then retry or
+  // use another method" is correct for a wallet, a card and UPI alike.
+  const env = envelope(error);
+  const source = String(env?.source ?? error?.source ?? '').toLowerCase();
+  const step = String(env?.step ?? error?.step ?? '').toLowerCase();
+  const declined = !cancelled && !timedOut && !network && (
+    ((source === 'issuer' || source === 'bank') && step === 'payment_authorization') ||
+    /declined by (the )?bank|insufficient (funds|balance)/i.test(blob)
+  );
+
   return {
     cancelled,
     timedOut,
     network,
+    declined,
     code: String(code ?? 'unknown'),
     // A cancellation has no message by design: the customer chose to leave and does
     // not need telling what they just did.

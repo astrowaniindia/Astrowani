@@ -918,6 +918,8 @@ const translations = {
     // calm wording and a retry rather than a red "Payment Failed".
     'wallet.notCompletedTitle': 'Payment not completed',
     'wallet.notCompletedMsg': 'The payment request expired before it was approved. Nothing has been charged.',
+    'wallet.declinedTitle': 'Payment declined',
+    'wallet.declinedMsg': 'Your bank or wallet did not approve this payment — most often because there is not enough balance. Nothing has been charged. Check the balance, then try again or use a different payment method.',
     'wallet.retryBtn': 'Try again',
     'wallet.retryNotNow': 'Not now',
     'wallet.addMoney': 'Add Money to Wallet',
@@ -2437,6 +2439,8 @@ const translations = {
     'wallet.tryAgain': 'भुगतान पूरा नहीं हो सका। आपसे कोई राशि नहीं ली गई — कृपया दोबारा प्रयास करें।',
     'wallet.notCompletedTitle': 'भुगतान पूरा नहीं हुआ',
     'wallet.notCompletedMsg': 'भुगतान अनुरोध स्वीकृत होने से पहले समाप्त हो गया। आपसे कोई राशि नहीं ली गई।',
+    'wallet.declinedTitle': 'भुगतान अस्वीकृत',
+    'wallet.declinedMsg': 'आपके बैंक या वॉलेट ने यह भुगतान स्वीकार नहीं किया — अक्सर इसकी वजह खाते में पर्याप्त बैलेंस न होना है। आपसे कोई राशि नहीं ली गई। बैलेंस जाँचें, फिर दोबारा कोशिश करें या कोई दूसरा भुगतान तरीका चुनें।',
     'wallet.retryBtn': 'दोबारा प्रयास करें',
     'wallet.retryNotNow': 'अभी नहीं',
     'wallet.addMoney': 'वॉलेट में पैसे जोड़ें',

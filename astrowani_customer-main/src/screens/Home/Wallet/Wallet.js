@@ -260,7 +260,9 @@ const Wallet = ({navigation, route}) => {
         // dead-end popup with one OK button, so the attempt was simply lost. Offering
         // the retry in place re-opens the gateway with the same amount, instead of
         // making them find the screen and type it again.
-        const after = rzp.timedOut ? 'timeout' : (rzp.network ? 'network' : 'failure');
+        const after = rzp.timedOut ? 'timeout'
+          : rzp.declined ? 'declined'
+          : (rzp.network ? 'network' : 'failure');
         captureEvent('recharge_retry_offered', { amount: finalAmount, after });
         const retry = {
           confirmText: t('wallet.retryBtn'),
@@ -277,6 +279,17 @@ const Wallet = ({navigation, route}) => {
             variant: 'cancelled',
             title: t('wallet.notCompletedTitle'),
             message: t('wallet.notCompletedMsg'),
+            ...retry,
+          });
+        } else if (rzp.declined && !apiMessage) {
+          // Razorpay's own sentence here is "declined by the bank", which it sends even
+          // for a wallet, where no bank is involved. Replaced rather than passed through:
+          // it names the wrong culprit and gives the customer nothing to act on, and the
+          // retry button below will simply fail again until the balance is topped up.
+          showStatusPopup({
+            variant: 'error',
+            title: t('wallet.declinedTitle'),
+            message: t('wallet.declinedMsg'),
             ...retry,
           });
         } else {

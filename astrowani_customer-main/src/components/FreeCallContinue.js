@@ -521,7 +521,9 @@ export function FreeCallContinueHost() {
       //
       // Reuses the wallet.* retry strings rather than adding a parallel set: the
       // sentences are identical and two copies drift.
-      const after = rz.timedOut ? 'timeout' : (rz.network ? 'network' : 'failure');
+      const after = rz.timedOut ? 'timeout'
+        : rz.declined ? 'declined'
+        : (rz.network ? 'network' : 'failure');
       captureEvent('free_call_continue_failed', { minutes: option.minutes, after });
       const retry = {
         confirmText: t('wallet.retryBtn'),
@@ -536,6 +538,16 @@ export function FreeCallContinueHost() {
           variant: 'cancelled',
           title: t('wallet.notCompletedTitle'),
           message: t('wallet.notCompletedMsg'),
+          ...retry,
+        });
+      } else if (rz.declined) {
+        // This is where the measured case actually happened: ₹100 refused at 8:49am,
+        // ₹10 taken at 8:50am, same wallet. Telling them "declined by the bank" sent
+        // them back to retry the same amount that had just been refused.
+        showStatusPopup({
+          variant: 'error',
+          title: t('wallet.declinedTitle'),
+          message: t('wallet.declinedMsg'),
           ...retry,
         });
       } else {
