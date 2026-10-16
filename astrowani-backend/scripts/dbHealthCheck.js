@@ -197,6 +197,76 @@ async function adminWalletSingleton() {
   return `${n} admin_wallet row(s)`;
 }
 
+async function rechargeCreditIntegrity() {
+  // THE BUG THIS EXISTS FOR. A wallet recharge can be completed twice over: by the
+  // app's POST /api/wallet/verify-payment, and by Razorpay's webhook. Both are
+  // deliberate (either can be the only one that arrives), and they are safe ONLY
+  // because both key the credit `razorpay:<paymentId>` — the same string — and
+  // `uq_wallet_tx_idempotency` makes a second row with that key impossible.
+  //
+  // That guarantee is one edit away from silently disappearing: change how either
+  // caller builds the key and the two stop colliding, so every payment credits
+  // TWICE and nothing errors. Nobody notices until the ledger is audited. The
+  // index being dropped has the same effect. So this does not trust the index —
+  // it checks the OBSERVABLE CONSEQUENCE, which is true regardless of why.
+  //
+  // It also checks the opposite direction, which is the failure that started all
+  // this: a recharge marked paid with NO credit behind it is money taken from a
+  // customer and never given to them.
+  const [paid, credits] = await Promise.all([
+    get('wallet_recharges?select=razorpay_payment_id,amount,bonus_amount,customer_id,paid_at&status=eq.paid&razorpay_payment_id=not.is.null&limit=100000'),
+    get('wallet_transactions?select=idempotency_key,amount,user_id&idempotency_key=like.razorpay:*&limit=100000'),
+  ]);
+
+  const byKey = new Map();
+  for (const c of credits) {
+    if (!byKey.has(c.idempotency_key)) byKey.set(c.idempotency_key, []);
+    byKey.get(c.idempotency_key).push(c);
+  }
+
+  // A duplicate key at all means uq_wallet_tx_idempotency is gone — every
+  // idempotent money path in the codebase relies on it, not just this one.
+  const dupKeys = [...byKey.entries()].filter(([, rows]) => rows.length > 1);
+  if (dupKeys.length) {
+    report('CRITICAL', 'idempotency-index-missing',
+      `${dupKeys.length} idempotency key(s) appear more than once in wallet_transactions — uq_wallet_tx_idempotency is not enforcing. EVERY idempotent credit path is unprotected, not only recharges.`,
+      dupKeys.map(([k, rows]) => ({ idempotency_key: k, rows: rows.length })));
+  }
+
+  const doubled = [];
+  const missing = [];
+  const wrongAmount = [];
+  for (const p of paid) {
+    const rows = byKey.get(`razorpay:${p.razorpay_payment_id}`) || [];
+    const expected = Number(p.amount || 0) + Number(p.bonus_amount || 0);
+    if (rows.length > 1) {
+      doubled.push({ payment: p.razorpay_payment_id, customer_id: p.customer_id, credits: rows.length });
+    } else if (rows.length === 0) {
+      missing.push({ payment: p.razorpay_payment_id, customer_id: p.customer_id, amount: p.amount, paid_at: p.paid_at });
+    } else if (Number(rows[0].amount) !== expected) {
+      wrongAmount.push({ payment: p.razorpay_payment_id, expected, credited: Number(rows[0].amount) });
+    }
+  }
+
+  if (doubled.length) {
+    report('CRITICAL', 'double-credited-recharge',
+      `${doubled.length} payment(s) credited more than once — the app path and the Razorpay webhook are no longer sharing one idempotency key. Check creditKey() in src/walletRecharge.js is used by BOTH callers.`,
+      doubled);
+  }
+  if (missing.length) {
+    report('CRITICAL', 'recharge-paid-not-credited',
+      `${missing.length} recharge(s) marked paid with no credit in the ledger — customers charged and not given their money.`,
+      missing);
+  }
+  if (wrongAmount.length) {
+    report('CRITICAL', 'recharge-amount-mismatch',
+      `${wrongAmount.length} recharge(s) credited an amount that does not match what was paid (plus bonus).`,
+      wrongAmount);
+  }
+
+  return `${paid.length} paid recharge(s), ${doubled.length} doubled, ${missing.length} uncredited`;
+}
+
 (async () => {
   const checks = [
     ['Stuck sessions', stuckSessions],
@@ -207,6 +277,7 @@ async function adminWalletSingleton() {
     ['Unfinalized sessions', unfinalizedSessions],
     ['Public-key exposure', anonExposure],
     ['Admin wallet singleton', adminWalletSingleton],
+    ['Recharge credit integrity', rechargeCreditIntegrity],
   ];
 
   const summary = [];
