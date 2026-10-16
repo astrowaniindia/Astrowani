@@ -21,6 +21,7 @@
 // configuring the secret late loses nothing that was recent.
 const crypto = require('crypto');
 const walletRecharge = require('./walletRecharge');
+const paymentFailureAlerts = require('./paymentFailureAlerts');
 const { completeOrderPayment } = require('./orderRoutes');
 
 /** HMAC-SHA256 of the EXACT bytes Razorpay sent, compared in constant time. */
@@ -32,7 +33,7 @@ function signatureValid(rawBody, signature, secret) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const HANDLED_EVENTS = new Set(['payment.captured', 'order.paid']);
+const HANDLED_EVENTS = new Set(['payment.captured', 'order.paid', 'payment.failed']);
 
 module.exports = function registerRazorpayWebhook(app) {
   app.post('/api/razorpay/webhook', async (req, res) => {
@@ -51,6 +52,20 @@ module.exports = function registerRazorpayWebhook(app) {
     if (!HANDLED_EVENTS.has(event)) return res.json({ ok: true, ignored: event || 'unknown' });
 
     const payment = (req.body.payload && req.body.payload.payment && req.body.payload.payment.entity) || {};
+
+    // A FAILED payment moves no money, so it never touches a wallet or an order —
+    // it is only worth telling a human about. Handled before the completion paths
+    // and returned early so a failure can never be mistaken for something to credit.
+    //
+    // Awaited, but it cannot throw (handlePaymentFailed catches everything) and it
+    // cannot block: a thrown or slow alert must not turn into a 500, because Razorpay
+    // would then retry the event and email twice.
+    if (event === 'payment.failed') {
+      const outcome = await paymentFailureAlerts.handlePaymentFailed(payment);
+      console.log(`[razorpay-webhook] payment failed ${payment.id || '?'} (${paymentFailureAlerts.describeFailure(payment)}): ${outcome.kind}${outcome.emailed ? ', emailed' : ''}`);
+      return res.json({ ok: true, kind: 'payment_failed', alert: outcome.kind });
+    }
+
     const orderId = payment.order_id || (req.body.payload && req.body.payload.order && req.body.payload.order.entity && req.body.payload.order.entity.id);
     const paymentId = payment.id;
     const amountPaise = payment.amount;

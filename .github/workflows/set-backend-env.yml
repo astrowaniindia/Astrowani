@@ -57,6 +57,18 @@ jobs:
           # unsigned "payment captured" must never credit anybody).
           # MUST equal the secret entered on the Razorpay webhook itself.
           RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
+          # ── Failed-payment email alerts (2026-10-16) ──────────────────────
+          # Resend (free tier 3,000/month) sends them; src/mailer.js posts to its
+          # API with axios, so there is no new npm dependency. Nothing is sent
+          # until all three are set — the alerting is simply off, it does not error.
+          # ALERT_EMAIL_TO is the address to change when the owner wants alerts
+          # somewhere other than the Razorpay account's own inbox; comma-separate
+          # for several. ALERT_EMAIL_FROM must be on a domain VERIFIED in Resend
+          # or Resend refuses the send, which is the likeliest reason a setup that
+          # looks correct delivers nothing.
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
         run: |
           set -e
           KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
@@ -69,7 +81,7 @@ jobs:
           # the head of an && list exits the whole job, so the short form would
           # abort this workflow precisely when a key is NOT set — the one case the
           # guard exists to survive.
-          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET; do
+          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \n                     RESEND_API_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM; do
             if [ -n "${!opt}" ]; then KEYS="$KEYS $opt"; fi
           done
           echo "writing: $KEYS"

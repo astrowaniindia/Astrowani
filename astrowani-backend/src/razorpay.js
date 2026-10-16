@@ -101,6 +101,36 @@ async function createPaymentLink({ amountRupees, referenceId, description, custo
   }
 }
 
+// Every payment Razorpay recorded in a window, for the daily failure digest.
+//
+// Read from RAZORPAY, not from our own tables, deliberately: a payment that failed
+// at the gateway may never have produced a row here at all, and those are exactly
+// the ones worth reporting. Razorpay is the authority on what was attempted.
+//
+// Paginates — the API caps `count` at 100 and a busy day exceeds that. `hardCap`
+// stops a bad window from walking the entire account.
+async function listPayments({ fromUnix, toUnix, hardCap = 1000 }) {
+  if (!isConfigured()) {
+    const err = new Error('RAZORPAY_KEY_SECRET is not configured on this server');
+    err.code = 'RAZORPAY_NOT_CONFIGURED';
+    throw err;
+  }
+  const out = [];
+  let skip = 0;
+  while (out.length < hardCap) {
+    const res = await axios.get('https://api.razorpay.com/v1/payments', {
+      params: { from: fromUnix, to: toUnix, count: 100, skip },
+      auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET },
+      timeout: 20000,
+    });
+    const items = res.data?.items || [];
+    out.push(...items);
+    if (items.length < 100) break;
+    skip += items.length;
+  }
+  return out;
+}
+
 // Verifies the HMAC-SHA256(order_id + "|" + payment_id, key_secret) signature Razorpay's
 // checkout returns on success. This is the ONLY thing that proves the payment is real —
 // never credit a wallet based on a client-reported "success" without this check passing.
@@ -117,4 +147,4 @@ function verifySignature({ orderId, paymentId, signature }) {
   }
 }
 
-module.exports = { RAZORPAY_KEY_ID, isConfigured, createOrder, createPaymentLink, verifySignature };
+module.exports = { RAZORPAY_KEY_ID, isConfigured, createOrder, createPaymentLink, verifySignature, listPayments };

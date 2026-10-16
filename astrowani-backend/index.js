@@ -1048,6 +1048,7 @@ require('./src/blogSitemap')(app, supabase);
 require('./src/orderRoutes')(app);
 // Razorpay -> us, for payments whose app died before verify-payment landed.
 require('./src/razorpayWebhookRoutes')(app);
+const paymentFailureAlerts = require('./src/paymentFailureAlerts');
 require('./src/sentryWebhookRoutes')(app);
 // WebRTC relay list. Lets a TURN server be added, replaced or repaired for every
 // installed app in one backend deploy instead of a store release — see
@@ -8135,5 +8136,11 @@ server.listen(PORT, () => {
   // genuinely separate concern from the money-writing loops above and starts
   // regardless of ENABLE_SESSION_MANAGER.
   liveAartiPoller.start();
+
+  // Daily failed-payment digest. Reads Razorpay and sends an email; it moves no
+  // money, so like the Aarti poller it starts regardless of ENABLE_SESSION_MANAGER.
+  // It is a no-op until RESEND_API_KEY / ALERT_EMAIL_FROM / ALERT_EMAIL_TO are set,
+  // and the date it last sent lives in app_settings, so restarting does not resend.
+  paymentFailureAlerts.startDigestTicker();
 });
 
