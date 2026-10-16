@@ -628,16 +628,27 @@ const styles = StyleSheet.create({
   guideRow: {
     alignItems: 'center',
     paddingHorizontal: scale(18),
-    marginBottom: verticalScale(36),
+    // Was 36. The guide is far taller now, so the old gap pushed him up towards the
+    // prize card; this keeps him standing on the bottom of the screen instead.
+    marginBottom: verticalScale(6),
   },
-  guide: { height: verticalScale(140), aspectRatio: GUIDE_AVATAR_ASPECT },
+  // Was 140, which left most of the lower half of this screen empty — the prize sat
+  // at the top, the guide was a thumbnail at the bottom and a third of the screen in
+  // between was bare maroon. He is the only warm thing on the screen, so he carries
+  // the dead space rather than a bigger card or more text doing it. Still comfortably
+  // BELOW the centre line: the bubble's top edge is roughly where the middle is, so
+  // the prize keeps the top half to itself.
+  guide: { height: verticalScale(250), aspectRatio: GUIDE_AVATAR_ASPECT },
   // DELIBERATELY NOT the prize card's solid cream slab with a thick gold frame: at that
   // weight two cream cards stacked up the screen competed with each other and the eye could not
   // tell which one was the prize. This is a quiet translucent caption — the prize stays
   // the only bright block on the screen.
   bubble: {
     alignSelf: 'center',
-    maxWidth: scale(290),
+    // Narrower than it was (290): against the bigger guide a near-full-width caption
+    // read as a banner laid over him rather than as something he is saying, and the
+    // tail had to point at a box several times his own width.
+    maxWidth: scale(215),
     marginBottom: verticalScale(13),
     backgroundColor: 'rgba(0,0,0,0.26)',
     borderRadius: moderateScale(14),
