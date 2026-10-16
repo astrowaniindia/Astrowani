@@ -26,6 +26,7 @@ import Missed from './pages/Missed';
 import Withdrawals from './pages/Withdrawals';
 import Reports from './pages/Reports';
 import AdminWallet from './pages/AdminWallet';
+import NewSignupFlow from './pages/NewSignupFlow';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="withdrawals" element={<Withdrawals />} />
         <Route path="reports" element={<Reports />} />
         <Route path="admin-wallet" element={<AdminWallet />} />
+        <Route path="new-signup-flow" element={<NewSignupFlow />} />
         <Route path="support-inbox" element={<SupportInbox />} />
         <Route path="support" element={<Support />} />
         <Route path="new-entries" element={<NewEntries />} />

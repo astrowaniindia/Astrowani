@@ -995,6 +995,13 @@ require('./src/freeCallAnalyticsRoutes')(app);
 // instant call analytics. Separate because the campaign's one-chosen-astrologer screen
 // and the ordinary picker answer different questions — see the file header.
 require('./src/metroCampaignRoutes')(app);
+// "New Signup Flow 17th Oct" — the gift reveal → free-call panel → in-place sign-up
+// card journey shipped 2026-10-17, on its own page. Deliberately NOT folded into the
+// existing auth funnels: those measure the older Login → VerifyOtp → SignupName route,
+// which is still live for sign-out and the 401 interceptor, and averaging two different
+// products together would make neither number mean anything. Same ENV_FILTER reuse, so
+// it registers after postHogRoutes.
+require('./src/newSignupFlowRoutes')(app);
 // The whole customer journey in one ordered list (journeyCatalogue.js), one query.
 require('./src/journeyRoutes')(app);
 require('./src/sentryRoutes')(app);
