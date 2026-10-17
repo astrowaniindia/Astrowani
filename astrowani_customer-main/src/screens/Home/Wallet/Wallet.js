@@ -12,6 +12,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   InputAccessoryView,
+  Image,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
@@ -29,15 +30,28 @@ import { captureEvent } from '../../../utils/Analytics';
 import { razorpayPrefill } from '../../../utils/customerIdentity';
 
 // Real card/wallet network marks only -- FontAwesome5's bundled Brands font has
-// genuine Visa/Mastercard/Google Pay glyphs (single-color simplified renditions, not
-// the full official multi-color logo artwork, but the standard way apps show "these
-// payment methods are accepted"). UPI has no logo asset anywhere in this project or
-// any bundled font, so it is the plain word "UPI" -- a label, not a fabricated logo.
+// genuine Visa/Google Pay glyphs (single-color simplified renditions, not the full
+// official multi-color logo artwork, but the standard way apps show "these payment
+// methods are accepted"). UPI has no logo asset anywhere in this project or any
+// bundled font, so it is the plain word "UPI" -- a label, not a fabricated logo.
+//
+// Paytm and PhonePe replaced Mastercard and American Express (owner, 2026-10-17):
+// they are what customers here actually pay with, and Amex in particular is barely
+// used in India. Neither has a glyph in FontAwesome5's Brands font, so both are
+// real logo artwork shipped as assets (kind: 'image') at three densities.
+// The PhonePe asset is the roundel ALONE, deliberately: the full lockup puts the
+// "PhonePe" wordmark under the mark, and inside a 48dp circle that text renders as
+// unreadable mush. Its white background is left in rather than keyed out -- the
+// badge behind it is exactly #fff, and keying white out of an anti-aliased logo
+// leaves a visible fringe around the curve. The Paytm asset is the app tile with
+// its corners rounded (22%, the platform app-icon radius): rendered square it read
+// as a hard box sitting inside a row of circles, which looked like a broken image
+// rather than a logo.
 const TRUST_BADGES = [
   { key: 'visa', kind: 'icon', name: 'cc-visa', color: '#1A1F71' },
-  { key: 'mastercard', kind: 'icon', name: 'cc-mastercard', color: '#EB001B' },
+  { key: 'paytm', kind: 'image', source: require('../../../assets/images/paytm.png') },
   { key: 'gpay', kind: 'icon', name: 'google-pay', color: '#4285F4' },
-  { key: 'amex', kind: 'icon', name: 'cc-amex', color: '#006FCF' },
+  { key: 'phonepe', kind: 'image', source: require('../../../assets/images/phonepe.png') },
   { key: 'paypal', kind: 'icon', name: 'cc-paypal', color: '#003087' },
   { key: 'upi', kind: 'text', label: 'UPI', color: COLORS.AstroMaroon },
   // Trailing "+ more" -- Razorpay's own checkout sheet supports netbanking,
@@ -387,6 +401,8 @@ const Wallet = ({navigation, route}) => {
               <View style={[styles.trustBadge, b.kind === 'more' && styles.trustMoreBadge]}>
                 {b.kind === 'icon' ? (
                   <FontAwesome5 name={b.name} brand size={moderateScale(24)} color={b.color} />
+                ) : b.kind === 'image' ? (
+                  <Image source={b.source} style={styles.trustBadgeImage} resizeMode="contain" />
                 ) : b.kind === 'more' ? (
                   <>
                     <Text style={styles.trustMorePlus}>+</Text>
@@ -634,6 +650,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Lato-Bold',
     color: COLORS.AstroMaroon,
     letterSpacing: 0.2,
+  },
+  // Sized to match the optical weight of the FontAwesome glyphs beside it. Square
+  // artwork reads larger than a glyph at the same box size, so this is a touch
+  // smaller than the 24 they are drawn at rather than equal to it.
+  trustBadgeImage: {
+    width: moderateScale(22),
+    height: moderateScale(22),
   },
   trustBadge: {
     width: scale(48),
