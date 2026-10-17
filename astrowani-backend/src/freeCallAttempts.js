@@ -116,12 +116,20 @@ async function markAnswered(sessionId) {
  *   completed                a real conversation
  *   too_short                under MIN_REAL_CALL_SECONDS — the booking was released
  *   abandoned_by_astrologer  they hung up before the 3-minute line
+ *   interrupted              the backend was restarted mid-call, so the length is
+ *                            UNKNOWN — duration_seconds stays null and no milestone was
+ *                            paid. Distinct from 'too_short', which asserts a length.
+ *
+ * NOT IN THE OLD CHECK CONSTRAINT: 'interrupted' needs
+ * sql/free_call_attempts_interrupted.sql. Until that runs the update is rejected and
+ * `safely` logs it, leaving the row on 'ringing' — unhelpful, but still not a false
+ * 'completed', which is the one outcome that must never be invented.
  */
 async function markEnded({
   sessionId, outcome, endedBy, durationSeconds, payoutAmount,
 }) {
   if (!sessionId) return null;
-  const valid = ['completed', 'too_short', 'abandoned_by_astrologer'].includes(outcome)
+  const valid = ['completed', 'too_short', 'abandoned_by_astrologer', 'interrupted'].includes(outcome)
     ? outcome : 'completed';
   const patch = {
     outcome: valid,
@@ -129,7 +137,14 @@ async function markEnded({
     updated_at: new Date().toISOString(),
   };
   if (['customer', 'astrologer', 'system'].includes(endedBy)) patch.ended_by = endedBy;
-  if (Number.isFinite(Number(durationSeconds))) {
+  // NULL AND ZERO ARE DIFFERENT ANSWERS HERE, and `Number(null)` is 0, which is finite —
+  // so a bare Number.isFinite check quietly turned "we do not know how long this was" into
+  // "they answered and said nothing for zero seconds". That matters beyond tidiness: the
+  // analytics treat any non-null duration as a real conversation (hasDuration), so an
+  // interrupted attempt would have been counted under "talked properly" and averaged in as
+  // a zero. Leave the column NULL unless a length was actually measured.
+  if (durationSeconds !== null && durationSeconds !== undefined
+      && Number.isFinite(Number(durationSeconds))) {
     patch.duration_seconds = Math.max(0, Math.round(Number(durationSeconds)));
   }
   if (Number.isFinite(Number(payoutAmount))) patch.payout_amount = Number(payoutAmount);

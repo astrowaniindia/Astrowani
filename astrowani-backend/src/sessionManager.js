@@ -167,6 +167,16 @@ class SessionManager {
     // When billing for a session was paused because someone was away: sessionId -> ms.
     // On resume the next charge is pushed back by the pause, so away time is never billed.
     this.pausedSince = new Map();
+
+    // WHEN THIS PROCESS STARTED WATCHING FREE CALLS. Both are process-local and both
+    // are needed, because a free call is only observed when the poll timer is running
+    // AND a socket server is attached — endAbandonedFreeCalls() no-ops without io, and
+    // that presence sweep is the only thing that ever vouches for how long a free call
+    // lasted. endOverdueFreeCalls() reads them to tell "this call really ran its
+    // eleven minutes" apart from "this process was not alive to see it". See
+    // presenceWatchingSinceMs().
+    this.ioAttachedAtMs = null;
+    this.pollingSinceMs = null;
     console.log('SessionManager Instance Created.');
   }
 
@@ -182,11 +192,35 @@ class SessionManager {
   // it hid the bug during local testing.
   attachIo(io) {
     this.io = io;
+    if (io && !this.ioAttachedAtMs) this.ioAttachedAtMs = Date.now();
+  }
+
+  /**
+   * Since when could this process have NOTICED a free call ending? Null when it never
+   * could — a script, a test harness, or a backend started without socket.io.
+   *
+   * Free calls are deliberately kept out of the billing poll (nothing to bill), so the
+   * only thing that ever measures one is endAbandonedFreeCalls()'s presence check, which
+   * needs both the 30-second timer and an attached io. The LATER of the two is when
+   * watching really began: an io attached after the timer started leaves a blind window
+   * just as surely as a timer that had not begun.
+   *
+   * This is what makes the overrun backstop honest. A call that was being watched from
+   * before it started and is still open at minute thirteen was seen to have both people
+   * present at every poll in between, so "it ran its eleven minutes" is an observation.
+   * A call that started before this process did was never watched at all, and its length
+   * is unknown — which is the case a restart or an outage produces.
+   */
+  presenceWatchingSinceMs() {
+    if (!this.ioAttachedAtMs || !this.pollingSinceMs) return null;
+    return Math.max(this.ioAttachedAtMs, this.pollingSinceMs);
   }
 
   start(io) {
     this.io = io;
+    if (io && !this.ioAttachedAtMs) this.ioAttachedAtMs = Date.now();
     if (this.timer) return;
+    this.pollingSinceMs = Date.now();
     console.log(`SessionManager Background Worker Started (Interval: ${this.pollingInterval}ms)`);
     this.timer = setInterval(() => {
       this.checkActiveSessions();
@@ -941,6 +975,10 @@ class SessionManager {
    *   to chat_sessions.ended_at: that is the moment the session was actually closed, and
    *   rewriting it would change paid-session records and every analytics figure built on
    *   them for a problem that only exists on the free path.
+   * @param {boolean} [opts.interrupted] This free call's length was never observed — the
+   *   process that is closing it was not alive while it was running. Mutually exclusive
+   *   with endedAtMs, which is a measurement; this is the admission that there is none.
+   *   See closeFreeCallBooking and endOverdueFreeCalls.
    */
   async terminateSession(sessionId, reason = 'Normal termination', opts = {}) {
     console.log(`[SessionManager] Terminating session ${sessionId}. Reason: ${reason}`);
@@ -1003,7 +1041,8 @@ class SessionManager {
     // being just another ended session. Identified by the booking that points at
     // this session, so it does not depend on chat_sessions.is_free having been
     // migrated yet.
-    const freeBooking = await this.closeFreeCallBooking(sessionId, opts.endedAtMs, opts.endedBy || null);
+    const freeBooking = await this.closeFreeCallBooking(sessionId, opts.endedAtMs, opts.endedBy || null,
+      opts.interrupted === true);
 
     if (sessionRow.caller_id && !freeBooking) {
       await this.maybeRewardReferral(sessionRow.caller_id);
@@ -1113,6 +1152,19 @@ class SessionManager {
           + 'No wallet or admin_wallet write was made.');
         return;
       }
+      // NO DURATION WAS OBSERVED, SO NOTHING IS OWED YET — and this guard has to come
+      // before the fallback below, which is the line that actually paid the ₹5 on
+      // 2026-10-17. `call_duration_seconds` is null for an interrupted call, so that
+      // fallback would measure now() minus the call's start and hand back the full
+      // thirteen minutes the session sat open across the outage: a milestone paid on a
+      // conversation nobody saw. The attempt is on record as 'interrupted' in
+      // free_call_attempts with payout_amount 0, so an admin can see it and settle by
+      // hand (which is what the owner chose to do for the one real case).
+      if (booking.interrupted) {
+        console.warn(`[SessionManager] Free call ${sessionId}: NOT paying a milestone — the call was `
+          + 'interrupted and its length was never observed. Recorded as interrupted for manual review.');
+        return;
+      }
       const seconds = Number(booking.call_duration_seconds);
       const elapsed = Number.isFinite(seconds) && seconds > 0
         ? seconds
@@ -1196,8 +1248,11 @@ class SessionManager {
    *
    * Never throws: a booking that fails to update must not stop a call from ending,
    * and must not leave is_active true. Worst case the admin marks it by hand.
+   *
+   * `interrupted` means the length of this call is UNKNOWN rather than short or long, so
+   * every number below that would be derived from it is left out instead of guessed.
    */
-  async closeFreeCallBooking(sessionId, endedAtMs = null, endedBy = null) {
+  async closeFreeCallBooking(sessionId, endedAtMs = null, endedBy = null, interrupted = false) {
     try {
       const read = (columns) => supabase
         .from('free_call_bookings')
@@ -1235,7 +1290,15 @@ class SessionManager {
       const endedAt = (Number.isFinite(caller) && caller > 0)
         ? new Date(Math.min(Date.now(), Math.max(caller, startedAt ? startedAt.getTime() : caller)))
         : new Date();
-      const seconds = startedAt ? Math.max(0, Math.round((endedAt - startedAt) / 1000)) : null;
+      //
+      // NULL FOR AN INTERRUPTED CALL, and that single null is what carries the whole
+      // decision. Every flag below is written as `seconds !== null && ...`, so they all
+      // become false on their own: the booking is never marked completed, the upsell hold
+      // is never placed, and payFreeCallAstrologer has no duration to pay a milestone on.
+      // Nothing here has to special-case the outage; it just stops claiming to know.
+      const seconds = interrupted
+        ? null
+        : (startedAt ? Math.max(0, Math.round((endedAt - startedAt) / 1000)) : null);
 
       const happened = seconds !== null && seconds >= MIN_REAL_CALL_SECONDS;
       // Long enough to be worth continuing — drives BOTH the hold and the app's
@@ -1280,18 +1343,28 @@ class SessionManager {
         patch.call_session_id = null;
         patch.call_ended_at = null;
         patch.call_duration_seconds = null;
-        console.log(`[SessionManager] Free call ${sessionId} lasted ${seconds ?? 'no'}s — `
-          + `under ${MIN_REAL_CALL_SECONDS}s, so booking ${booking.id} is released to be retried.`);
+        console.log(interrupted
+          ? `[SessionManager] Free call ${sessionId} was interrupted and its length is unknown, `
+            + `so booking ${booking.id} is released and the customer keeps their free call.`
+          : `[SessionManager] Free call ${sessionId} lasted ${seconds ?? 'no'}s — `
+            + `under ${MIN_REAL_CALL_SECONDS}s, so booking ${booking.id} is released to be retried.`);
       }
 
       // ANALYTICS, RECORDED HERE ON PURPOSE: this is the only place that knows both who
       // hung up and how the attempt was classified, and the patch above is about to erase
       // the evidence for a released attempt (call_ended_at / call_duration_seconds are
       // NULLed so the customer can retry). Fire-and-forget; never blocks the end of a call.
+      // 'interrupted' is checked FIRST: without it an outage-closed call would be filed
+      // as 'too_short', which is a claim about its length and the one claim we cannot
+      // make. This row is the only durable record of the attempt — the patch above has
+      // just unlinked an instant booking so the customer can retry, which deliberately
+      // erases call_ended_at and call_duration_seconds from the booking itself.
       freeCallAttempts.markEnded({
         sessionId,
-        outcome: abandonedByAstrologer ? 'abandoned_by_astrologer' : (happened ? 'completed' : 'too_short'),
-        endedBy,
+        outcome: interrupted
+          ? 'interrupted'
+          : (abandonedByAstrologer ? 'abandoned_by_astrologer' : (happened ? 'completed' : 'too_short')),
+        endedBy: interrupted ? 'system' : endedBy,
         durationSeconds: seconds,
       });
 
@@ -1306,6 +1379,7 @@ class SessionManager {
         qualifiesForUpsell,
         qualifiesForDakshina,
         abandonedByAstrologer,
+        interrupted,
       };
     } catch (err) {
       console.error('[SessionManager] closeFreeCallBooking failed:', err.message);
@@ -1435,11 +1509,48 @@ class SessionManager {
       if (error || !rows || !rows.length) return;
 
       const now = Date.now();
+      const watchingSince = this.presenceWatchingSinceMs();
       for (const row of rows) {
         if (!row.call_started_at) continue;
         const startedMs = new Date(row.call_started_at).getTime();
         const promisedMs = (row.duration_minutes || 11) * 60 * 1000;
         if (now - startedMs < promisedMs + 120_000) continue;
+
+        // DID THIS PROCESS WATCH THE CALL? Everything below turns on it.
+        //
+        // The promised length is only a measurement when the presence sweep was running
+        // for the whole call: it checks both participants every thirty seconds and ends
+        // the session itself the moment either is gone, so a free call still open at
+        // minute thirteen was seen to be a real conversation throughout. That is the
+        // ordinary overrun this backstop was written for, and it keeps its old behaviour.
+        //
+        // A call that started before this process did was watched by nobody. On
+        // 2026-10-17 Hostinger restarted the VPS for a kernel CVE while a customer was
+        // forty seconds into her free call; when the backend came back this sweep wrote
+        // the booking down as a completed ELEVEN-MINUTE call, which spent her one free
+        // call on a conversation she never had and paid the four-minute milestone on a
+        // duration nobody observed.
+        //
+        // There is no better evidence to fall back on, and that was checked rather than
+        // assumed: free sessions are kept out of the billing poll on purpose so no tick
+        // ever advances next_billing_at; the presence maps are in-memory and die with the
+        // process; free_call_attempts records answered_at at pickup and then nothing until
+        // the call ends; call recording is dormant, Android-only and uploads at the end;
+        // and there is no heartbeat anywhere (see the note on SESSION_PRESENCE_GRACE_MS).
+        // Every timestamp that exists is a start-of-call timestamp.
+        //
+        // So the honest answer is to say we do not know. Mark it interrupted, record no
+        // duration, pay no milestone and give the customer their free call back.
+        const observed = watchingSince !== null && startedMs >= watchingSince;
+        if (!observed) {
+          console.warn(`[SessionManager] Free call ${row.call_session_id} was open across a `
+            + 'backend restart — its real length was never observed, so it is being closed as '
+            + 'INTERRUPTED: no duration recorded, no milestone paid, the free call is not spent.');
+          await this.terminateSession(row.call_session_id, 'Free call interrupted by a backend restart',
+            { interrupted: true });
+          continue;
+        }
+
         console.log(`[SessionManager] Free call ${row.call_session_id} overran — ending it.`);
         // Recorded as exactly the minutes that were promised, not the extra two of slack
         // plus however long this sweep took to come round. The offer was 11 minutes; a

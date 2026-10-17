@@ -75,7 +75,7 @@ function buildDailySeries(sinceIso, untilIso, rows, shagunDaily, signupDaily) {
     const key = d.toISOString().slice(0, 10);
     byDay.set(key, {
       date: key, rings: 0, answered: 0, completed: 0, tooShort: 0, abandonedByAstrologer: 0,
-      cancelled: 0, missed: 0, rejected: 0, payout: 0, shagunCount: 0, shagunAmount: 0,
+      cancelled: 0, missed: 0, rejected: 0, interrupted: 0, payout: 0, shagunCount: 0, shagunAmount: 0,
       signups: 0, triedFreeCall: 0,
     });
   }
@@ -90,6 +90,10 @@ function buildDailySeries(sinceIso, untilIso, rows, shagunDaily, signupDaily) {
     else if (r.outcome === 'cancelled') entry.cancelled += 1;
     else if (r.outcome === 'missed') entry.missed += 1;
     else if (r.outcome === 'rejected') entry.rejected += 1;
+    // Answered, then the backend restarted under it — length unknown, nothing paid. It is
+    // counted on its own line rather than folded into tooShort, which would be a claim
+    // about a duration that was never measured.
+    else if (r.outcome === 'interrupted') entry.interrupted += 1;
     entry.payout += Number(r.payout_amount) || 0;
   });
   // A Shagun payment is attributed to the day it was PAID, not the day of the call it
@@ -579,6 +583,11 @@ module.exports = function registerFreeCallAnalyticsRoutes(app) {
         rejected: outcomes.rejected || 0,
         tooShort: outcomes.too_short || 0,
         abandonedByAstrologer: outcomes.abandoned_by_astrologer || 0,
+        // Answered but closed by a backend restart. These sit under `answered` and are
+        // deliberately absent from `connected`/`completed` (both derived from a recorded
+        // duration, which an interrupted attempt has none of), so without this line the
+        // funnel would show an unexplained gap between "picked up" and the reasons below.
+        interrupted: outcomes.interrupted || 0,
         stillRinging: outcomes.ringing || 0,
       },
       rates: {

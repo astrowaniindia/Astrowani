@@ -74,6 +74,7 @@ const OUTCOME_LABEL = {
   cancelled: 'Customer moved on',
   missed: 'Nobody answered',
   rejected: 'Astrologer declined',
+  interrupted: 'Cut off by a backend restart',
   ringing: 'Still ringing',
 };
 const OUTCOME_COLOR = {
@@ -83,6 +84,7 @@ const OUTCOME_COLOR = {
   cancelled: '#6b7280',
   missed: '#6b7280',
   rejected: '#c0392b',
+  interrupted: '#7c3aed',
   ringing: '#2563eb',
 };
 
@@ -359,6 +361,7 @@ export default function FreeCallAnalytics() {
                       </td>
                       <td style={{ padding: 6 }} className="muted">
                         {d.missed + d.rejected} missed · {d.tooShort} too short · {d.abandonedByAstrologer} left early
+                        {d.interrupted ? ` · ${d.interrupted} interrupted` : ''}
                       </td>
                       <td style={{ padding: 6 }}>{d.payout ? `₹${d.payout}` : '—'}</td>
                       <td style={{ padding: 6, color: d.shagunAmount ? '#16a34a' : 'inherit' }}>
@@ -407,6 +410,8 @@ export default function FreeCallAnalytics() {
               of={t.answered || 0} tone="#d97706" />
             <TreeRow depth={3} label="Astrologer left early — free call given back"
               value={t.abandonedByAstrologer || 0} of={t.answered || 0} tone="#c0392b" />
+            <TreeRow depth={3} label="Cut off by a backend restart — length unknown, free call given back"
+              value={t.interrupted || 0} of={t.answered || 0} tone="#7c3aed" />
             <TreeRow depth={2} label="Customer gave up and tried someone else" value={t.cancelled || 0}
               of={t.rings || 0} tone="#6b7280" />
             <TreeRow depth={2} label="Rang out — nobody answered" value={t.missed || 0} of={t.rings || 0}
