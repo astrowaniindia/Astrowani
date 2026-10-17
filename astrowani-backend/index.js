@@ -62,6 +62,7 @@ const coins = require('./src/coins');
 const REFERRAL_REWARD_AMOUNT = 50;
 const smsProviders = require('./src/smsProviders');
 const { TtlCache } = require('./src/ttlCache');
+const { rankAstrologers } = require('./src/astrologerRanking');
 const { contentCache } = require('./src/contentCache');
 const { chunkIds, pagedSelect } = require('./src/pagedSelect');
 const sessionFolding = require('./src/sessionFolding');
@@ -3404,7 +3405,14 @@ app.get('/api/astrologers', async (req, res) => {
         buildBusyMap(supabase),
         vendorDevices.buildDeviceMap(visibleRows.map((a) => a.id)),
       ]);
-      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap, deviceSet));
+      // Reachable astrologers first — see src/astrologerRanking.js. Without
+      // this the list is served in physical table order, which is why the
+      // first cards on Home were the same three offline astrologers every
+      // time. Ranked inside the cache producer so the sort is paid once per
+      // 10s window rather than once per request.
+      return rankAstrologers(
+        visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap, deviceSet)),
+      );
     });
 
     // Optional category filter — ?category=<categoryId|name>. Matches by category UUID
@@ -3460,7 +3468,12 @@ app.get('/api/astrologers/liveAstrologers', async (req, res) => {
         buildBusyMap(supabase),
         vendorDevices.buildDeviceMap(visibleRows.map((a) => a.id)),
       ]);
-      return visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap, deviceSet));
+      // Same reachability-first order as /api/astrologers. Everyone here is
+      // already `is_available`, but they can still be busy or have their
+      // services off, so the ranking is not a no-op.
+      return rankAstrologers(
+        visibleRows.map((astro, index) => formatAstrologer(astro, index, categoryMap, busyMap, deviceSet)),
+      );
     });
 
     return res.status(200).json({ data: formattedData });

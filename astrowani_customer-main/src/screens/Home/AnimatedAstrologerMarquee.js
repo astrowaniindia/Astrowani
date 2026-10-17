@@ -15,6 +15,7 @@ import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { captureEvent } from '../../utils/Analytics';
 import AstrologerBadge from '../../components/AstrologerBadge';
+import { orderForSection } from '../../utils/astrologerAvailability';
 import { LanguageContext } from '../../context/LanguageContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -164,7 +165,13 @@ const MarqueeCard = React.memo(function MarqueeCard({ item, index, scrollX, onCa
     );
 });
 
-export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, onCardPress }) {
+// `services` names the service(s) THIS carousel actually offers, e.g. ['video'].
+// It decides who is worth putting in front of the customer: the shuffle below
+// draws from the whole list, and with only a fraction of astrologers offering
+// video and online at any moment, an unranked draw of twelve was reliably a row
+// of cards nobody could video-call. Shuffling WITHIN the ranking keeps the
+// variety this carousel was built for without spending the row on dead cards.
+export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, onCardPress, services = [] }) {
   const { t } = React.useContext(LanguageContext);
   // Stable across refetches: Home re-fetches astrologerToShow on focus/Realtime
   // signal, handing this a NEW array reference every time even when the actual
@@ -181,11 +188,21 @@ export default function AnimatedAstrologerMarquee({ astrologers, onCallPress, on
     if (idsSignature === prevIdsRef.current && shuffledRef.current.length) {
       const byId = new Map(list.map((a) => [a._id, a]));
       const refreshed = shuffledRef.current.map((a) => byId.get(a._id) || a);
-      shuffledRef.current = refreshed;
-      return refreshed;
+      // Re-rank the refreshed rows. This is NOT the re-shuffling the comment
+      // above warns about — the random order is untouched and the sort is
+      // stable, so a card only ever moves when that astrologer's actual
+      // availability changed. Skipping this is what let someone who went
+      // offline mid-session keep a front slot until the next cold start.
+      const ranked = orderForSection(refreshed, services);
+      shuffledRef.current = ranked;
+      return ranked;
     }
     prevIdsRef.current = idsSignature;
-    const fresh = shuffledCopy(list);
+    // Shuffle first, rank second. orderForSection's sort is stable, so the
+    // random order survives intact as the tiebreaker *inside* each rank — the
+    // row stays varied between cold starts while always leading with the
+    // astrologers a customer can actually reach for this service.
+    const fresh = orderForSection(shuffledCopy(list), services);
     shuffledRef.current = fresh;
     return fresh;
     // eslint-disable-next-line react-hooks/exhaustive-deps

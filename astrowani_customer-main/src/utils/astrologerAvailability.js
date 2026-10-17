@@ -86,3 +86,68 @@ export function sortReachableFirst(list) {
   }
   return [...reachable, ...unreachable];
 }
+
+// ── Per-section ordering ────────────────────────────────────────────────────
+//
+// `sortReachableFirst` above is the right order for a screen dedicated to ONE
+// service, because the backend already filtered or the whole list is relevant.
+// Home is different: it fetches `/api/astrologers` once and renders it in two
+// carousels — "Chat & Call with Astrologer" and "Video Call with Astrologers" —
+// so one order has to serve both, and it cannot. An astrologer who is online
+// with video switched off is a dead card in the video row however reachable
+// they are elsewhere.
+//
+// On 2026-10-17 both Home rows were drawn from the list in physical table
+// order (the backend issued no ORDER BY at all), so the first three cards were
+// rows 2-4 of the table — all offline, every toggle off — while 31 of 58
+// astrologers were reachable. Measured against production, the chat/call row
+// held 3 usable cards out of 12 and the video row 2 out of 12.
+//
+// THE SCORE:
+//     +2  offers THIS section's service
+//     +1  reachable (per unreachableState above)
+//
+// The service weight is the larger one on purpose: in the video row, somebody
+// who cannot take a video call is not promoted over somebody who can merely by
+// being awake. Busy is deliberately NOT an axis here, for the same reason
+// sortReachableFirst leaves it out — a busy astrologer is online and will be
+// free shortly, which is not the same as being unreachable, and ranking on it
+// would also reshuffle the row every time anyone started or ended a session.
+
+const SERVICE_FIELD = {
+  chat: 'isChatEnabled',
+  call: 'isCallEnabled',
+  video: 'isVideoEnabled',
+};
+
+function sectionScore(item, services) {
+  if (!item) return 0;
+  let score = 0;
+  // No services named = rank on reachability alone.
+  const offersService =
+    !services.length ||
+    services.some(s => SERVICE_FIELD[s] && item[SERVICE_FIELD[s]] === true);
+  if (offersService) score += 2;
+  if (!unreachableState(item)) score += 1;
+  return score;
+}
+
+/**
+ * Returns a NEW array ordered for one section. `services` is the service(s) that
+ * section actually offers, e.g. ['chat', 'call'] or ['video'].
+ *
+ * Nothing is ever filtered out: hiding unavailable astrologers was explicitly
+ * rejected for this app (CLAUDE.md, "Service-Toggle Visibility Sync") — cards
+ * stay put and show a red Unavailable/Offline state. This only decides who the
+ * customer sees FIRST.
+ *
+ * Unlike sortReachableFirst this DOES rely on Array.prototype.sort being stable,
+ * which is guaranteed since ES2019 and holds in Hermes. That is the point rather
+ * than an accident: ties keep their incoming order, so the marquee's shuffle
+ * survives inside each rank and the row stays varied between cold starts.
+ */
+export function orderForSection(list, services = []) {
+  if (!Array.isArray(list)) return [];
+  const wanted = Array.isArray(services) ? services : [services];
+  return list.slice().sort((a, b) => sectionScore(b, wanted) - sectionScore(a, wanted));
+}

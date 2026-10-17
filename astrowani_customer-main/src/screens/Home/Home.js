@@ -88,6 +88,11 @@ import useChatRequest from '../../hooks/useChatRequest';
 import useDraggableMarquee from '../../hooks/useDraggableMarquee';
 import useFreeServicePurchase from '../../hooks/useFreeServicePurchase';
 import { astroServiceLabel } from '../../utils/astroServiceLabel';
+import { orderForSection } from '../../utils/astrologerAvailability';
+
+// Module-level so this prop is a stable reference — a fresh [] on every render
+// would be a new dependency value for the marquee's memo on each pass.
+const VIDEO_SECTION_SERVICES = ['video'];
 import RequestingPopup from '../../components/RequestingPopup';
 import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
@@ -674,8 +679,16 @@ const Home = ({navigation}) => {
   // 3b67c270), and the reason iOS Home was dead on bundle 01a0634c.
   // Every other reader of this value already guards (see the `?.length` and the
   // `if (!astrologerToShow)` above); these two were the exceptions.
+  // This row offers Chat and Call, so it leads with astrologers who can take
+  // one RIGHT NOW. The slice is what makes the ordering load-bearing rather
+  // than cosmetic: only the first MARQUEE_CARDS_PER_COPY are ever rendered, so
+  // before this an offline astrologer sitting early in the table permanently
+  // occupied a slot a reachable one could never reach. See utils/astrologerOrder.js.
   const marqueeSet = React.useMemo(
-    () => (astrologerToShow?.length ? astrologerToShow.slice(0, MARQUEE_CARDS_PER_COPY) : []),
+    () =>
+      astrologerToShow?.length
+        ? orderForSection(astrologerToShow, ['chat', 'call']).slice(0, MARQUEE_CARDS_PER_COPY)
+        : [],
     [astrologerToShow],
   );
   const marqueeItems = React.useMemo(
@@ -1837,6 +1850,7 @@ const Home = ({navigation}) => {
             </View>
             <AnimatedAstrologerMarquee
               astrologers={astrologerToShow}
+              services={VIDEO_SECTION_SERVICES}
               onCallPress={initiateVideoCall}
               onCardPress={openAstrologer}
             />
