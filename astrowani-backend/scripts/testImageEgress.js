@@ -38,8 +38,8 @@ const OBJ = 'https://fxpoustnddrgumhwdcma.supabase.co/storage/v1/object/public/a
 
   // Both dimensions plus resize=contain are load-bearing: width alone does NOT
   // scale proportionally, it leaves the height alone and squashes the image.
-  ok('carries width', /[?&]width=600(&|$)/.test(card), card);
-  ok('carries height too (width alone squashes)', /&height=600(&|$)/.test(card), card);
+  ok('carries width', /[?&]width=520(&|$)/.test(card), card);
+  ok('carries height too (width alone squashes)', /&height=520(&|$)/.test(card), card);
   ok('carries resize=contain (never crops)', /&resize=contain(&|$)/.test(card), card);
   ok('carries quality', /&quality=70(&|$)/.test(card), card);
 
@@ -54,7 +54,8 @@ const OBJ = 'https://fxpoustnddrgumhwdcma.supabase.co/storage/v1/object/public/a
     widths.avatar.includes('width=300&height=300'), widths.avatar);
   ok('small avatar is 120', widths.small.includes('width=120&height=120'), widths.small);
   ok('icon is 240', widths.icon.includes('width=240&height=240'), widths.icon);
-  ok('card is 600', widths.card.includes('width=600&height=600'), widths.card);
+  ok('card is 520 (matches the 48%-wide grid, not above it)',
+    widths.card.includes('width=520&height=520'), widths.card);
   ok('banner is 1080', widths.banner.includes('width=1080&height=1080'), widths.banner);
   ok('every surface gets its own width (not one hardcoded size)',
     new Set(Object.values(widths).map((u) => /width=(\d+)/.exec(u)[1])).size === Object.keys(widths).length,

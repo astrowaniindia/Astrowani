@@ -54,9 +54,24 @@ const WIDTH = {
   // 100px icon is bounded and cheap — while the 105 KB and 110 KB rows that were
   // costing 24 MB/day still collapse.
   ICON: 240,
-  // Service cards, blog thumbnails — a half-to-full-width card on a phone.
-  CARD: 600,
-  // Full-bleed banner artwork, the only surface that genuinely needs the width.
+  // Service cards and blog thumbnails. 520 is not a round number: the astro
+  // report grid renders its cards at `width: '48%'`, two per row, which on the
+  // 1080px-wide screen most of our users carry is ~518 physical pixels. Measured
+  // 2026-10-19 on the live card art, this is what the extra width was buying:
+  //
+  //     width   320    400    480   520   600    720    900   1080
+  //     bytes    22K    34K    47K   ~55K  68K    91K   134K   177K
+  //
+  // i.e. 600 cost 24% more than the screen can show. Sizing to the surface
+  // rather than above it is free; going below it is not, so do not drop this
+  // further without re-checking what the grid actually renders.
+  CARD: 520,
+  // Full-bleed banner artwork, and the one width NOT worth trimming. The banner
+  // box is `Dimensions.get('window').width` with no margin, so on that same
+  // 1080px phone it is a 1:1 pixel match — anything lower is upscaled on the
+  // device and visibly soft on the most prominent image in the app. Measured:
+  // dropping to 720 would save ~36 KB per banner, which is real but not worth
+  // softening the hero artwork for.
   BANNER: 1080,
 };
 
