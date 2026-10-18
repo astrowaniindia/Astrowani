@@ -73,6 +73,31 @@ on:
           - device
           - simulator
 
+      upload_to_appetize:
+        # Pushes the build straight to Appetize instead of leaving you to download
+        # the artifact and upload it by hand. SIMULATOR ONLY -- Appetize rejects a
+        # device build, so this is refused at the resolve step below rather than
+        # after a ~10-minute macOS build.
+        #
+        # Needs the repo secret APPETIZE_API_TOKEN (Appetize dashboard -> Account ->
+        # API token). Missing it does NOT fail the run: the artifact is still
+        # produced and the step says what to add. Nothing here is required for the
+        # manual download route, which keeps working exactly as before.
+        description: 'Simulator only: also upload to Appetize (needs APPETIZE_API_TOKEN)'
+        required: false
+        default: false
+        type: boolean
+
+      appetize_public_key:
+        # Appetize mints a NEW app, with a NEW URL, for every bare POST /v1/apps.
+        # Passing the publicKey of an existing Appetize app replaces that app's
+        # build instead, so the link you bookmarked keeps working across runs.
+        # Leave empty on the first upload and take the publicKey from the summary.
+        description: 'Optional: existing Appetize publicKey to replace (keeps the same link)'
+        required: false
+        default: ''
+        type: string
+
 jobs:
   build:
     runs-on: macos-15
@@ -80,6 +105,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # FIRST step on purpose: refuse an impossible combination before spending any
+      # macOS minutes on it. Appetize runs iOS Simulators, so it cannot accept a
+      # device binary -- finding that out after the build is a wasted ~10 minutes of
+      # a budget worth roughly a dozen runs a month.
+      - name: Refuse device + Appetize
+        if: ${{ inputs.upload_to_appetize && inputs.target != 'simulator' }}
+        run: |
+          echo "::error::target=${{ inputs.target }} cannot be uploaded to Appetize -- it runs iOS Simulators and rejects a device build with \"App is not a simulator build\". Re-run with target=simulator."
+          exit 1
 
       # Resolve the per-app paths once, so the rest of the job is app-agnostic.
       - name: Resolve app paths
@@ -265,3 +300,81 @@ jobs:
           path: ${{ steps.app.outputs.dir }}/ios/${{ inputs.target == 'simulator' && '_appetize/**' || steps.app.outputs.ipa }}
           retention-days: 14
           if-no-files-found: error
+
+      # AFTER the artifact upload, deliberately: if Appetize is down, rejects the
+      # build, or the token has expired, the build itself must still be in your
+      # hands. Reversing these two steps would throw away a ~10-minute macOS build
+      # over somebody else's outage.
+      #
+      # The REST API wants a ZIP containing the .app -- which is exactly what the
+      # Package step above refuses to produce for the artifact path, because GitHub
+      # re-zips artifacts and Appetize unzips only once. So the zip is made HERE,
+      # used only by this curl, and never uploaded as an artifact. Do not "tidy" the
+      # two into one zip: they are for two different consumers.
+      - name: Upload to Appetize
+        if: ${{ inputs.upload_to_appetize && inputs.target == 'simulator' }}
+        working-directory: ${{ steps.app.outputs.dir }}/ios
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+          PUBLIC_KEY: ${{ inputs.appetize_public_key }}
+          APP_PRODUCT: ${{ steps.app.outputs.product }}
+          APP_NAME: ${{ inputs.app }}
+        run: |
+          set -euo pipefail
+
+          # A missing token is a setup gap, not a build failure. The artifact is
+          # already uploaded, so say what to add and finish green rather than
+          # painting a successful build red.
+          if [ -z "${APPETIZE_API_TOKEN:-}" ]; then
+            echo "::warning::APPETIZE_API_TOKEN is not set, so nothing was uploaded. Add it under Settings -> Secrets and variables -> Actions (value: Appetize dashboard -> Account -> API token), then re-run. The build is still attached to this run as an artifact."
+            exit 0
+          fi
+
+          # zip from INSIDE _appetize so the archive root is <App>.app itself. Zipping
+          # the parent would bury it one level down and Appetize would report
+          # "No .app folder found".
+          ( cd _appetize && zip -qry ../appetize-upload.zip "$APP_PRODUCT" )
+          ls -lh appetize-upload.zip
+
+          # POST /v1/apps mints a NEW app with a new URL; POST /v1/apps/<key>
+          # replaces an existing one, keeping the link stable.
+          URL="https://api.appetize.io/v1/apps"
+          if [ -n "${PUBLIC_KEY:-}" ]; then
+            URL="$URL/$PUBLIC_KEY"
+            echo "replacing existing Appetize app $PUBLIC_KEY"
+          else
+            echo "creating a new Appetize app (pass appetize_public_key next time to keep one link)"
+          fi
+
+          # --fail-with-body, not --fail: on a 4xx we need Appetize's own message
+          # ("not a simulator build", a bad token) and not just "curl: (22)".
+          # The token travels in a header, which curl does not echo.
+          HTTP=$(curl -sS --fail-with-body -X POST "$URL" \
+            -H "X-API-KEY: $APPETIZE_API_TOKEN" \
+            -F "file=@appetize-upload.zip" \
+            -F "platform=ios" \
+            -o appetize-response.json \
+            -w '%{http_code}') || {
+              echo "::error::Appetize upload failed (HTTP $HTTP). Response:"
+              cat appetize-response.json || true
+              exit 1
+            }
+
+          # Read the keys out with node rather than grep: the response is JSON and a
+          # regex over it would silently match the wrong field the day Appetize adds one.
+          node -e '
+            const r = require("./appetize-response.json");
+            const key = r.publicKey || "";
+            const link = r.publicURL || (key ? "https://appetize.io/app/" + key : "");
+            console.log("publicKey=" + key);
+            console.log("link=" + link);
+            const out = process.env.GITHUB_STEP_SUMMARY;
+            if (out) {
+              require("fs").appendFileSync(out,
+                "## Appetize build ready\n\n" +
+                "- app: `" + (process.env.APP_NAME || "") + "` (iOS Simulator)\n" +
+                (link ? "- open: " + link + "\n" : "") +
+                (key ? "- publicKey: `" + key + "`  — pass this as `appetize_public_key` next run to keep this same link\n" : "") +
+                "\nSimulator builds cannot exercise the camera, microphone, WebRTC call media, push/CallKit or Razorpay.\n");
+            }
+          '
