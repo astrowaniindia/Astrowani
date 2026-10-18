@@ -2789,9 +2789,19 @@ Knock-ons worth knowing:
 - **Not deployed.** Commits `8b50292a` and `48e5a557` are on a branch; until the backend ships,
   the apps still request raw URLs. The two PNG conversions ARE live (they changed stored files,
   not code).
-- **626 MB of dead OTA bundles** in `hot-updater-storage-for-astrowani` / `-vendor` — **0
-  requests in 24 h**, OTA has served from R2 since. Deleting takes storage 688 MB → 62 MB.
-  Frees space, not bandwidth.
+- ~~626 MB of dead OTA bundles~~ — **PRUNED 2026-10-19, but only 427 MB of it.** The two
+  legacy `hot-updater-*` buckets held 307 objects; **101 of them (199 MB) are still
+  referenced by 31 `bundles` rows that are `enabled = true`**, targeting app versions still
+  in the wild (customer `24.0`/`24.0.0`/`24.0.x`, vendor `6.5`/`6.5.0`/`6.5.x`) plus 33
+  `bundle_patches` delta rows. Deleting those would silently stop OTA reaching anyone who
+  has not taken the native update — i.e. break the one channel that could fix it for them.
+  **Never prune these buckets by bucket; prune by reference.** The safe set is objects with
+  no row in `bundles` (`storage_uri`, `manifest_storage_uri`, `asset_base_storage_uri`) or
+  `bundle_patches` (`patch_storage_uri`). Storage went **688 MB → 261 MB**.
+  Note `asset_base_storage_uri` is a bare folder prefix (`…/assets`) with no object behind
+  it, so an integrity check will always report it as 2 "missing" references — that is
+  expected, not damage. Verified after: 3 kept bundles still download (5.1-5.3 MB), and the
+  `update-server` function served **373 × HTTP 200** to real devices in the same 24 h.
 - `scripts/testImageEgress.js` (**46 offline checks**, verified to fail on three deliberate
   regressions) and `scripts/recompressStorageImages.js` (dry-run by default, resizes in place
   without touching paths or formats).
