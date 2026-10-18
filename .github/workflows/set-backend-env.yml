@@ -74,6 +74,34 @@ jobs:
           # was given its own secret. Left unset, that path verifies against
           # RAZORPAY_WEBHOOK_SECRET, so reusing one secret for both needs nothing here.
           RAZORPAY_WEBHOOK_SECRET_ALERTS: ${{ secrets.RAZORPAY_WEBHOOK_SECRET_ALERTS }}
+          # -- APNs VoIP push, iOS astrologer app (2026-10-19) -----------------
+          # Without these the astrologer's iPhone NEVER rings for a call arriving
+          # while the app is killed: src/voipPush.js logs "APNs VoIP not configured"
+          # at boot and every such call is silently missed. FCM and the socket paths
+          # are unaffected, which is exactly why this is easy to miss - the app looks
+          # fine until the phone is locked.
+          #
+          # Only KEY_ID + TEAM_ID + PRIVATE_KEY are required; the other two have
+          # correct defaults in code and are here so they can be changed without a
+          # deploy. APNS_PRIVATE_KEY_PATH is deliberately NOT here: this workflow
+          # writes env VALUES, never files, so a path would point at nothing.
+          #
+          # APNS_PRIVATE_KEY is the .p8 contents on ONE line with its newlines
+          # escaped. A real multi-line secret would append raw newlines to the VPS
+          # .env and silently truncate the key - the run step below refuses that
+          # rather than letting it through.
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
+          APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
+          # Defaults to com.astrowaniVendor.voip in code. The ".voip" suffix is
+          # required; without it APNs answers 400 TopicDisallowed, which reads like a
+          # credential problem and sends you looking in the wrong place.
+          APNS_VOIP_TOPIC: ${{ secrets.APNS_VOIP_TOPIC }}
+          # "true" ONLY once TestFlight/App Store builds are in use; defaults to
+          # sandbox in code. A sandbox token sent to the production host (or the
+          # reverse) fails BadDeviceToken - the single most common cause of iOS push
+          # appearing to do nothing at all.
+          APNS_PRODUCTION: ${{ secrets.APNS_PRODUCTION }}
         run: |
           set -e
           KEYS="SENTRY_WEBHOOK_SECRET SENTRY_AUTH_TOKEN GITHUB_ALERT_TOKEN ENABLE_SESSION_MANAGER"
@@ -86,7 +114,14 @@ jobs:
           # the head of an && list exits the whole job, so the short form would
           # abort this workflow precisely when a key is NOT set — the one case the
           # guard exists to survive.
-          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \n                     BREVO_API_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM \n                     RAZORPAY_WEBHOOK_SECRET_ALERTS; do
+          # NOTE: real line continuations. This list previously held a literal
+          # backslash-n, which bash expands to the word `n` - a spurious iteration
+          # that stayed harmless only because ${!n} is unset.
+          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \
+                     BREVO_API_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM \
+                     RAZORPAY_WEBHOOK_SECRET_ALERTS \
+                     APNS_KEY_ID APNS_TEAM_ID APNS_PRIVATE_KEY \
+                     APNS_VOIP_TOPIC APNS_PRODUCTION; do
             if [ -n "${!opt}" ]; then KEYS="$KEYS $opt"; fi
           done
           echo "writing: $KEYS"
@@ -96,6 +131,15 @@ jobs:
           for k in $KEYS; do
             v="${!k}"
             [ -n "$v" ] || { echo "::error::secret for $k is empty"; exit 1; }
+            # A .env is one KEY=VALUE per LINE. A secret containing a real newline
+            # would append its tail as separate, malformed lines: dotenv then reads a
+            # TRUNCATED value and the backend starts with a key that is silently wrong
+            # rather than absent - which is far harder to diagnose than a failed run.
+            # This bites APNS_PRIVATE_KEY first, since a .p8 is natively multi-line and
+            # must be pasted with its newlines escaped, but the rule is general.
+            case $v in
+              *$'\n'*) echo "::error::secret for $k contains a newline; a .env value must be one line (for a .p8, escape its newlines)"; exit 1 ;;
+            esac
             printf '%s=%s\n' "$k" "$v" >> /tmp/newkeys
           done
           ssh -i ~/.ssh/k -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$VPS_USER@$VPS_HOST" "
