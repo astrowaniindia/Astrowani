@@ -517,9 +517,9 @@ vestigial. Live streaming reuses this same WebRTC stack as a **mesh** (see below
   `local-backend-bills-production` memory.
 - A PostgREST missing-table error is `PGRST205`, not `42P01` — a "table missing" branch that
   checks only `42P01` will 500 instead of degrading gracefully.
-- **There are no database backups** (Supabase Free plan). Buy Supabase Pro (~$25/mo, daily
-  backups) before this matters more than it already does — see the backups section further
-  down if still unresolved.
+- ~~**There are no database backups**~~ — **RESOLVED 2026-10-19**: the org is on **Supabase
+  Pro**, so daily backups exist. It was not bought for the backups; it was bought because the
+  Free plan's cached-egress quota ran out and dropped every request to the project. See **EC**.
 
 **OTA / builds**
 - `versionName` must stay the same across store builds so OTA bundles keep matching
@@ -779,7 +779,7 @@ Artifact: `D:\Astrowani-Releases\astrowani-vendor-6.6-27.aab` (versionCode 27, v
 - [ ] **Rotate the Razorpay live key** (still in git history): `MD files/razorpay-key-rotation-runbook.md`.
 - [ ] Set `RAZORPAY_WEBHOOK_SECRET` + add the webhook in the Razorpay dashboard (BT item 7).
 - [x] Apply `hardening_13`, then `11` + `12` — **DONE 2026-09-23**, plus `hardening_17` (BZ, CU).
-- [ ] **Supabase Pro** for database backups (CA). A store launch will bring more users onto a database with no backups.
+- [x] **Supabase Pro** for database backups (CA) — **DONE 2026-10-19**, forced by the egress outage (EC), not chosen.
 - [ ] Moderation: check admin → **Moderation (Reports)** at least daily once live. Both stores expect reported content to be handled promptly (aim for within 24 h).
 
 ### CQ. Google Ads live + customer build 42 (2026-09-17)
@@ -1905,8 +1905,8 @@ first**, or workers cannot see each other's rooms and calls/chat break.
    has **no working relay path at all** and the call simply cannot connect — the most common
    cause of "it sometimes doesn't connect".
 3. Run `apply-scaling-limits.sh` on the VPS and restart the pm2 unit.
-4. **Supabase Pro** (~$25/mo) — lifts the 60-connection/nano ceiling *and* finally provides
-   database backups, which still do not exist.
+4. ~~**Supabase Pro**~~ — **DONE 2026-10-19** (EC). The 60-connection/nano ceiling and the
+   missing backups are both lifted; the project moves off `nano` to `micro` compute.
 5. Rotate the TURN credential once `TURN_STATIC_AUTH_SECRET` is set (the old static pair is in
    both shipped APKs and in git history).
 
@@ -2638,3 +2638,173 @@ run a one-off UPDATE over `blogs.content_en` / `content_hi` for the articles alr
 - Submit the sitemap in Google Search Console once the site is on its final domain.
 - Operator guide, including every failure mode and the SQL to inspect the ledger:
   [`vps-deployment/blog-agent/README.md`](vps-deployment/blog-agent/README.md).
+
+---
+
+## Session 2026-10-19: the free tier ran out of BANDWIDTH, and nothing in the database was the cause
+
+### EC. "Supabase limits are over" was not about space — and looking for space wastes the day
+
+The org was hard-blocked: **Cached egress 6.25 GB against a 5.5 GB cap**, Fair Use Policy
+applied, **every request to the project answering 402** until the cycle refilled on 11 Nov.
+The owner's reading of it — and the obvious one — was "we are out of space, find what is
+taking it up and delete it."
+
+**Nothing was out of space, and deleting data could not have lifted the block.**
+
+| | Used | Allowance |
+|---|---|---|
+| Database size | **40 MB** | 500 MB — 8%, irrelevant |
+| Storage size | **688 MB** | 1 GB — 69%, not the blocker |
+| **Cached egress** | **6.25 GB** | 5.5 GB — the one that was spent |
+
+> **THE RULE: a Supabase quota mail names the quota. Read it before measuring anything.**
+> "Cached egress" is bandwidth served from the storage CDN, it is a per-ORGANISATION monthly
+> figure, and it is spent — it cannot be refunded by deleting the files that spent it. The
+> first two rows of that table took one query each and ruled out the entire premise.
+
+**How the real cause was found, and the query to reuse.** `query_logs` on `source='edge_logs'`,
+summing `log_attributes['response.headers.content_length']` bucketed by path prefix, over the
+24 h before the block:
+
+```
+/storage/v1/object/public/...   4,965 req   651 MB   (134 KB per image)
+/storage/v1/render/image/...    8,449 req    83 MB   ( 10 KB per image)
+every REST table combined     110,000 req   < 5 MB
+```
+
+**735 MB/day — ~22 GB/month against a 5.5 GB allowance — on roughly 130 app opens a day.**
+89% of it was the `app-images` bucket. Every table in the database put together was under 5 MB.
+
+**Three admin-uploaded files were 403 MB/day, 55% of all egress**, each fetched by ~120-130
+DISTINCT IPs:
+
+| File | Size | req/day | uniq IPs | MB/day | Column |
+|---|---|---|---|---|---|
+| `card-image/…3b04b1237be2.jpeg` | 1.23 MB | 139 | 124 | 171 | `astro_services.image` |
+| `customer-profiles/…0cd47f678b94.png` | 1.05 MB | 147 | 130 | 154 | `customers.profile_image` |
+| `card-image/…8d4eaffaa1b3.png` | 608 KB | 132 | 120 | 78 | `astro_services.image` |
+
+The unique-IP counts are the whole diagnosis: these are SHARED SCREENS, so one oversized
+upload is re-downloaded by every user who opens the app. A reviewer's own 1 MB selfie was
+being served to 130 strangers a day because the reviews carousel rendered it full size.
+
+> **DO NOT CIRCUMVENT A RESTRICTION. Two ideas were investigated and abandoned**, and they are
+> written down so nobody re-derives them: (1) connecting **directly to Postgres**, whose port
+> answers separately from the 402-ing API gateway, and (2) creating a **second free
+> organisation** for a fresh quota. Both would have worked. Both are circumvention of an
+> enforcement the provider applied — the mail already says "violations" — and the second is
+> textbook multi-account quota evasion. The owner's instruction was explicit: never risk the
+> account. The legitimate options are exactly three: reduce usage, wait for the refill, pay.
+
+### ED. The fix was already in this repo, wired to ONE surface — plus the PNG trap
+
+`thumbnailUrl` in `index.js` (added 2026-09-09) rewrites a Supabase `object/public` URL to the
+`render/image` endpoint, which resizes and re-encodes on demand and caches the result. It was
+only ever applied to **astrologer profile photos**. That is precisely the cheap half of the
+table above: the 8,449 requests at 10 KB. The expensive half was every surface nobody extended
+it to.
+
+**`src/imageUrl.js` is now the single definition**, with widths named by SURFACE, not by caller
+— the render endpoint caches per distinct URL, so every extra width is another full-cost miss:
+
+| Width | Value | Why that number |
+|---|---|---|
+| `AVATAR` | 300 | unchanged; the 2026-09-09 measured value, covers list avatar + profile header |
+| `AVATAR_SMALL` | 120 | reviewer/customer avatars, never render above ~40px |
+| `ICON` | 240 | category + remedy-category tiles |
+| `CARD` | **520** | the report grid is `width: '48%'`, two per row ≈ **518 physical px** on a 1080px phone |
+| `BANNER` | **1080** | the banner box is `Dimensions.get('window').width` with NO margin — a 1:1 pixel match |
+
+**`BANNER` is the one width NOT to trim.** Lowering it to 720 saves ~36 KB per banner and
+upscales the most prominent image in the app on the device. At 2% of the Pro allowance that is
+a bad trade. `CARD` went the other way: 600 was buying 24% more bytes than the screen can
+physically show, measured across the real card art (320→22K, 480→47K, 600→68K, 1080→177K).
+
+Applied to `/api/astro-services`, `/api/reviews/astrologers/reviews`, `/api/banners/all` (both
+the resolved and the Hindi image), `/api/blogs`, `/api/categories`, `/api/remedy-categories`
+and four vendor-side list routes. **No app, admin or website file was touched** — none of them
+builds a storage URL itself, they all render whatever the API returns, so this reaches every
+installed build with a backend deploy and no OTA.
+
+**`src/uploadRoutes.js` also caps the SOURCE** (1024px for faces, 1600px for artwork). Nothing
+on that path had ever resized anything. Four things in it are load-bearing: `.rotate()` runs
+BEFORE resize (sharp strips metadata on re-encode, so a phone portrait would store sideways),
+`withoutEnlargement`, keeping the original whenever re-encoding comes out bigger, and keeping
+alpha images as PNG rather than introducing a format on a path with no device coverage.
+
+> **THE PNG TRAP — the half of this that resizing cannot fix.** The render endpoint
+> **preserves the source format**, and a photograph saved as PNG barely compresses however
+> much it is resized. One live service card went 608 KB → 491 KB (**−21%**) and a blog
+> thumbnail came back **1 KB LARGER than the original**. Two files, 59 MB/day, after the
+> "fix". Both declared an alpha channel with **minimum alpha 255** — transparency present but
+> never used — so converting to JPEG was visually lossless. **Always check `stats()` on the
+> alpha channel, not `metadata().hasAlpha`**: the flag says a channel exists, the stats say
+> whether anything uses it. Converted in production 2026-10-19 (originals left in storage, one
+> UPDATE from rollback):
+>
+> - `astro_services.image` numerology card → `card-image/1792365865136-9be171f3e786.jpeg`,
+>   608 KB → 63 KB, **78.4 → 4.5 MB/day**
+> - `blogs.thumbnail` "The Light of Numbers" → `thumbnail-url-or-upl/1792365866645-0a6a88c56c00.jpeg`,
+>   112 KB → 17 KB, **9.9 → 1.2 MB/day**
+
+**It makes the app FASTER, not slower.** Measured from a Delhi Cloudflare edge on the 1.2 MB
+card: the cached original **2.57 / 2.65 / 2.60 s**; warm through the render endpoint
+**0.34 / 0.40 / 0.38 s**; and a **COLD miss — the first ever request at a given width, where
+the server must fetch and resize — 1.77 s**, i.e. the worst case of the new path still beats
+the steady state of the old one. That cold miss happens once per image per size, ~650 times
+across the whole library.
+
+### EE. Free is no longer enough for this app — and the grace period is gone
+
+**Measured end to end** (real files through the real module, weighted by the request counts in
+those same edge logs): the twelve heaviest files **520 MB/day → 45 MB/day (−91%)**, and the
+project **735 MB/day → ~165 MB/day, about 5 GB/month**.
+
+> **That is still over the Free plan's 5.5 GB once anything grows, so do not plan on
+> downgrading.** An earlier estimate in this session said ~1.5 GB/month; it was wrong, because
+> it assumed ~10 KB per image when a card at 520px is ~55 KB. The measured figure supersedes
+> it. Roughly **half of the remaining 165 MB is the astrologer avatars**, which already go
+> through the render endpoint at ~10 KB and are simply requested 8,449 times a day — the
+> remaining cost is VOLUME, not waste, and there is no easy ground left.
+
+**The org is on Pro as of 2026-10-19** (~$25/mo: $25 plan + $10 compute − $10 included compute
+credits, one project). Restrictions lift immediately on upgrade. Spend Cap stays **ON**.
+Knock-ons worth knowing:
+
+- **Daily database backups now exist** — the thing flagged in "Standing rules" for months.
+- Compute moves `nano` → `micro`; the 60-connection ceiling from **DN** is lifted.
+- Billing is per ORGANISATION. Address and Tax ID are **ASTROWANIINDIA + GSTIN** per **DW**,
+  entered BEFORE the first invoice because a finalised invoice cannot be regenerated.
+- **The grace period is spent.** Supabase's own docs: after it ends, exceeding limits again
+  brings restriction with **no second grace period**, and the warning only clears after
+  several clean cycles.
+- **Image transformations are listed as "unavailable on Free"** (Pro: 100 origin images
+  included, then $5/1000). Ours have been serving regardless, so something is grandfathered —
+  but the delivery fix now leans on a feature Free is not supposed to have. On Pro it costs
+  ~$2-3/mo for ~650 distinct images. **This is the real argument for the R2 move**: images on
+  R2 with resizing at upload needs no transformation service at all.
+
+**Still open:**
+- **Not deployed.** Commits `8b50292a` and `48e5a557` are on a branch; until the backend ships,
+  the apps still request raw URLs. The two PNG conversions ARE live (they changed stored files,
+  not code).
+- ~~626 MB of dead OTA bundles~~ — **PRUNED 2026-10-19, but only 427 MB of it.** The two
+  legacy `hot-updater-*` buckets held 307 objects; **101 of them (199 MB) are still
+  referenced by 31 `bundles` rows that are `enabled = true`**, targeting app versions still
+  in the wild (customer `24.0`/`24.0.0`/`24.0.x`, vendor `6.5`/`6.5.0`/`6.5.x`) plus 33
+  `bundle_patches` delta rows. Deleting those would silently stop OTA reaching anyone who
+  has not taken the native update — i.e. break the one channel that could fix it for them.
+  **Never prune these buckets by bucket; prune by reference.** The safe set is objects with
+  no row in `bundles` (`storage_uri`, `manifest_storage_uri`, `asset_base_storage_uri`) or
+  `bundle_patches` (`patch_storage_uri`). Storage went **688 MB → 261 MB**.
+  Note `asset_base_storage_uri` is a bare folder prefix (`…/assets`) with no object behind
+  it, so an integrity check will always report it as 2 "missing" references — that is
+  expected, not damage. Verified after: 3 kept bundles still download (5.1-5.3 MB), and the
+  `update-server` function served **373 × HTTP 200** to real devices in the same 24 h.
+- `scripts/testImageEgress.js` (**46 offline checks**, verified to fail on three deliberate
+  regressions) and `scripts/recompressStorageImages.js` (dry-run by default, resizes in place
+  without touching paths or formats).
+- One row in `customers.profile_image` holds an on-device path
+  (`file:///data/user/0/com.astrowanicustomer/cache/rn_image_picker_lib_temp_….jpg`) saved
+  straight into the database. Unrelated pre-existing bug; the helper passes it through untouched.

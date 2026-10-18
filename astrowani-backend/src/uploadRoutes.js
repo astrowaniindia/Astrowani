@@ -51,6 +51,93 @@ async function whitenAstrologerProfilePhoto(buffer, mime) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Downscale + re-encode on upload.
+//
+// Nothing on this path had ever resized anything, so every image was stored at
+// whatever resolution the admin exported or the phone's camera produced. On
+// 2026-10-19 that blew the Supabase free-tier egress quota (6.25 GB against a
+// 5.5 GB cap, every API request dropped until the cycle refilled): the live
+// bucket held three PNGs at 2.1 MB, a 1.23 MB service card and a 1.05 MB
+// customer selfie, and the shared screens re-served them to every user. See
+// src/imageUrl.js for the full measurement.
+//
+// src/imageUrl.js fixes DELIVERY by serving transformed variants. This fixes the
+// SOURCE, and both are worth having: the render endpoint still pays full origin
+// cost on its first miss for each size, a few surfaces (and every already-stored
+// absolute URL) still link originals, and a 2 MB upload is 2 MB of stored space
+// whatever is done downstream.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Longest-edge cap, by folder. Generous on purpose — this is the SOURCE the
+// render endpoint resizes from, not what a screen displays, so it only has to be
+// big enough that no surface ever wants more. Anything already smaller is left
+// at its own size (`withoutEnlargement`), so a 64px icon is never blown up.
+const MAX_EDGE_BY_FOLDER = {
+  'astrologer-profiles': 1024,
+  'customer-profiles': 1024,
+  'profile-photo': 1024,
+  'persona-photo': 1024,
+  'customer-hands': 1024,
+};
+const MAX_EDGE_DEFAULT = 1600; // banners, cards, section/icon artwork, blog thumbnails
+
+function maxEdgeFor(folder) {
+  // Folder names are truncated by the admin dashboard's field-name-derived values
+  // ("profile-photo-url-or", "banner-image-url-or-"), so match on prefix rather
+  // than equality or a lookup miss would silently fall through to the default.
+  const hit = Object.keys(MAX_EDGE_BY_FOLDER).find((k) => folder.startsWith(k));
+  return hit ? MAX_EDGE_BY_FOLDER[hit] : MAX_EDGE_DEFAULT;
+}
+
+/**
+ * Returns {buffer, ext, mime} with the image downscaled and re-encoded, or null
+ * to keep the caller's own buffer. Never throws — a failure here must not cost
+ * someone their upload, it just stores the original.
+ */
+async function downscaleImage(buffer, mime, folder) {
+  // Only still raster formats sharp can round-trip safely. Audio (voice notes
+  // share this route) is excluded by the mime test, and so are SVG — rasterising
+  // a vector logo is a downgrade, not an optimisation — and GIF, which would lose
+  // its animation unless decoded with {animated:true}.
+  if (!/^image\/(jpeg|png|webp)$/.test(mime)) return null;
+  try {
+    const cap = maxEdgeFor(folder);
+    const meta = await sharp(buffer).metadata();
+
+    // .rotate() with no argument applies the EXIF orientation tag. It is REQUIRED
+    // and must come before resize: sharp strips metadata on re-encode, so a photo
+    // whose uprightness lived in that tag would otherwise be stored sideways —
+    // which is exactly how phone-camera portraits arrive.
+    let pipeline = sharp(buffer).rotate();
+    if ((meta.width || 0) > cap || (meta.height || 0) > cap) {
+      pipeline = pipeline.resize({ width: cap, height: cap, fit: 'inside', withoutEnlargement: true });
+    }
+
+    // Transparency decides the output format. A photo re-encodes to JPEG, which is
+    // where the whole saving is; anything with an alpha channel (logos, icons,
+    // background-removed artwork) stays PNG so transparency survives.
+    //
+    // WebP would beat PNG for an alpha-carrying photo, but CLAUDE.md records
+    // admin-uploaded images rendering as a silent blank on some devices after a
+    // format change (the AVIF tarot card), so this deliberately introduces no new
+    // format on a path with no device coverage.
+    const out = meta.hasAlpha
+      ? { buffer: await pipeline.png({ compressionLevel: 9 }).toBuffer(), ext: 'png', mime: 'image/png' }
+      : { buffer: await pipeline.jpeg({ quality: 82, progressive: true, mozjpeg: true }).toBuffer(), ext: 'jpeg', mime: 'image/jpeg' };
+
+    // Re-encoding can enlarge an already-optimised file (a crushed PNG, a
+    // low-quality JPEG). Keeping whichever is smaller means this can only ever
+    // help, so it is safe to leave on for every folder.
+    if (out.buffer.length >= buffer.length) return null;
+    console.log(`[upload-image] ${folder}: ${(buffer.length / 1024).toFixed(0)} KB -> ${(out.buffer.length / 1024).toFixed(0)} KB`);
+    return out;
+  } catch (e) {
+    console.error('[upload-image] downscale skipped, storing original:', e.message);
+    return null;
+  }
+}
+
 function requireAnyAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -109,6 +196,11 @@ module.exports = function registerUploadRoutes(app) {
         const whitened = await whitenAstrologerProfilePhoto(parsed.buffer, parsed.mime);
         if (whitened) ({ buffer: outBuffer, ext: outExt, mime: outMime } = whitened);
       }
+
+      // Last, so it caps whatever the steps above produced (converted AVIF, or a
+      // background-removed profile photo) rather than being undone by them.
+      const smaller = await downscaleImage(outBuffer, outMime, safeFolder);
+      if (smaller) ({ buffer: outBuffer, ext: outExt, mime: outMime } = smaller);
 
       const filename = `${safeFolder}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${outExt}`;
 

@@ -19,6 +19,7 @@ const { withSupabaseRetry } = require('./src/supabaseRetry');
 // customers.mobile column; see src/customerLookup.js for the full failure mode.
 const { findCustomerByPhone, findAstrologerByPhone, isDeletedCustomer } = require('./src/customerLookup');
 const { isUuid } = require('./src/pgrstFilter');
+const imageUrl = require('./src/imageUrl');
 // iOS PushKit/CallKit ring for the vendor app. Degrades to a logged no-op when APNs
 // credentials are absent, so this require is safe on an unconfigured deployment.
 const { sendVoipPush, isVoipReady } = require('./src/voipPush');
@@ -196,39 +197,13 @@ async function buildCategoryMap() {
 /**
  * Rewrite a Supabase Storage image URL to its resized/re-encoded variant.
  *
- * Astrologer photos are uploaded at full camera resolution and were served that
- * way to every list screen, where they render as ~85px avatars. Measured
- * 2026-09-09 against production: 13 astrologers = 1,066 KB of images, 57-138 KB
- * each, 0.34-1.5s apiece. That is the "images take forever to appear" complaint,
- * and it is worst on a first run when nothing is cached.
- *
- * Supabase's render endpoint resizes and re-encodes on demand, and caches the
- * result. Same photo at width=300: ~24 KB (-82%), and 0.13-0.21s once warm.
- *
- * 300px covers a ~85px avatar at 3x density and the profile header too, so one
- * size serves every surface rather than adding a second field the apps would
- * each have to choose between.
- *
- * Anything that is not a Supabase public-object URL is returned untouched --
- * notably the bundled backend.astrowani.com fallbacks, which are already small.
+ * Kept as a named local for the call sites that already use it; the rewrite and
+ * the reasoning behind every parameter now live in src/imageUrl.js, which is
+ * shared with the other surfaces that were serving full-resolution originals and
+ * blew the egress quota on 2026-10-19.
  */
-function thumbnailUrl(url, width = 300) {
-  if (typeof url !== 'string' || !url.includes('/storage/v1/object/public/')) return url;
-  // The render endpoint rejects a URL that already carries a query string of its
-  // own, so only rewrite clean object URLs.
-  if (url.includes('?')) return url;
-  // BOTH dimensions plus resize=contain are REQUIRED. `width=` alone does NOT
-  // scale proportionally — it sets the width and LEAVES THE HEIGHT ALONE, so an
-  // 800x800 photo came back 300x800 and every avatar rendered horizontally
-  // squashed. Measured 2026-09-09 across four real profile photos: 800x800 ->
-  // 300x800 (aspect 1.000 -> 0.375) and 500x500 -> 300x500.
-  //
-  // `contain` fits the image inside the box and preserves the aspect ratio, so a
-  // square photo returns 300x300 and a portrait returns e.g. 200x300. It never
-  // crops, which matters because the apps render these in circular frames that do
-  // their own cropping — cropping twice would cut faces off.
-  return `${url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')}` +
-    `?width=${width}&height=${width}&resize=contain&quality=70`;
+function thumbnailUrl(url, width = imageUrl.WIDTH.AVATAR) {
+  return imageUrl.transformedUrl(url, width);
 }
 
 function formatAstrologer(astro, index, categoryMap = {}, busyMap = {}, deviceSet = null) {
@@ -2887,7 +2862,11 @@ app.get('/api/banners/all', async (req, res) => {
           id: b.id,
           title: b.title,
           description: b.description,
-          imageUrl: (wantsHindi && b.image_hi) ? b.image_hi : b.image,
+          // Served through the render endpoint: banner artwork is admin-uploaded at
+          // whatever size the designer exported (the heaviest live PNGs are 2.1 MB)
+          // and this response is hit on nearly every Home load, so the original was
+          // being re-downloaded by every user. See src/imageUrl.js.
+          imageUrl: imageUrl.bannerUrl((wantsHindi && b.image_hi) ? b.image_hi : b.image),
           link: b.link,
           placement: b.placement,
           actionType: b.action_type,
@@ -2906,7 +2885,7 @@ app.get('/api/banners/all', async (req, res) => {
             description: b.description_hi || b.description,
             // Same resolution as imageUrl above, offered unconditionally so a
             // caller that did not pass ?language= can still pick per-viewer.
-            imageUrl: b.image_hi || b.image,
+            imageUrl: imageUrl.bannerUrl(b.image_hi || b.image),
           },
         })),
       };
@@ -3073,7 +3052,7 @@ app.get('/api/categories', async (req, res) => {
         categories: (data || []).map((c) => ({
           _id: c.id,
           name: c.name,
-          image: c.image,
+          image: imageUrl.iconUrl(c.image),
           hindi: { name: c.name_hi || c.name },
         })),
       };
@@ -3111,7 +3090,7 @@ app.get('/api/blogs', async (req, res) => {
       title: b.title,
       excerpt: b.excerpt,
       metaDescription: b.meta_description,
-      thumbnail: b.thumbnail,
+      thumbnail: imageUrl.cardUrl(b.thumbnail),
       category: { name: b.categories?.name || '' },
       createdAt: b.created_at,
       english: { title: b.title_en || b.title, content: b.content_en || '' },
@@ -3320,7 +3299,7 @@ app.get('/api/remedy-categories', async (req, res) => {
           type: r.type,
           title: r.title,
           description: r.description,
-          image: r.image || null,
+          image: imageUrl.iconUrl(r.image || null),
           // NULL when the admin hasn't written Hindi — NOT the English text.
           // This used to read `r.title_hi || r.title`, so an unfilled Hindi
           // column came back holding the English string. The app cannot tell
@@ -4347,7 +4326,10 @@ app.get('/api/reviews/astrologers/reviews', async (req, res) => {
       const { data: c } = await supabaseService.from('customers').select('id, name, profile_image').in('id', custIds);
       (c || []).forEach((x) => {
         custNames[x.id] = (x.name || '').trim().split(' ')[0] || 'Customer';
-        custPics[x.id] = x.profile_image || null;
+        // A reviewer's own upload, rendered as a ~40px head in the carousel on the
+        // astrologer profile. One live row here was a 1.05 MB PNG fetched by 130
+        // distinct IPs a day = 154 MB/day on its own. See src/imageUrl.js.
+        custPics[x.id] = imageUrl.smallAvatarUrl(x.profile_image || null);
       });
     }
     if (astroIds.length) {
@@ -6721,7 +6703,7 @@ app.post('/api/customers/names', async (req, res) => {
     (data || []).forEach((c) => {
       byId[c.id] = {
         name: c.name || 'Customer',
-        profileImage: c.profile_image || null,
+        profileImage: imageUrl.smallAvatarUrl(c.profile_image || null),
       };
     });
     return res.status(200).json({ success: true, data: byId });
@@ -7194,7 +7176,7 @@ app.get('/vendor/customers', async (req, res) => {
     const data = customerIds.map((id) => ({
       id,
       name: byId[id]?.name || 'Customer',
-      profileImage: byId[id]?.profile_image || null,
+      profileImage: imageUrl.smallAvatarUrl(byId[id]?.profile_image || null),
       lastSessionType: latestByCustomer[id].call_type,
       lastSessionAt: latestByCustomer[id].ended_at || latestByCustomer[id].started_at,
     })).sort((a, b) => new Date(b.lastSessionAt) - new Date(a.lastSessionAt));
@@ -7272,7 +7254,7 @@ app.get('/api/vendor/chat-threads', async (req, res) => {
       .map((id) => ({
         ...byCustomer[id],
         name: byId[id]?.name || 'Customer',
-        profileImage: byId[id]?.profile_image || null,
+        profileImage: imageUrl.smallAvatarUrl(byId[id]?.profile_image || null),
       }))
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
 
@@ -7318,7 +7300,7 @@ app.get('/api/vendor/chat-threads/:customerId', async (req, res) => {
     return res.status(200).json({
       success: true,
       customer: customer
-        ? { id: customer.id, name: customer.name || 'Customer', profileImage: customer.profile_image || null }
+        ? { id: customer.id, name: customer.name || 'Customer', profileImage: imageUrl.smallAvatarUrl(customer.profile_image || null) }
         : { id: customerId, name: 'Customer', profileImage: null },
       // Reverse back to oldest-first for display — fetched newest-first so the
       // LIMIT keeps the most recent 1000 messages, not the oldest 1000.

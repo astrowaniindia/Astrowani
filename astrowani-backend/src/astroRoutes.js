@@ -15,6 +15,7 @@ const { callJyotisham } = require('./jyotishamClient');
 const wallet = require('./wallet');
 const coins = require('./coins');
 const { contentCache } = require('./contentCache');
+const imageUrl = require('./imageUrl');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
@@ -406,7 +407,13 @@ module.exports = function registerAstroRoutes(app) {
           .eq('is_active', true)
           .order('sort_order', { ascending: true });
         if (error) throw error;
-        return data || [];
+        // Card artwork through the render endpoint. These are admin-uploaded at
+        // export resolution and this list is on Home, so the originals were the
+        // single biggest egress line on the project: two rows at 1.23 MB and
+        // 608 KB were 249 MB/day between them, re-downloaded by every user who
+        // opened the app. Mapped INSIDE the cache loader so the rewrite is paid
+        // for once per cache fill rather than per request. See src/imageUrl.js.
+        return (data || []).map((row) => ({ ...row, image: imageUrl.cardUrl(row.image) }));
       });
       return res.json({ success: true, data });
     } catch (err) {
