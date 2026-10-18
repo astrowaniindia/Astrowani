@@ -170,7 +170,16 @@ export default function SignupWelcome({ navigation, route }) {
   // which is a greeting nobody asked for sitting between "Haan, mujhe free call
   // chahiye" and the free call. Read once, at mount, because the pending flag is
   // cleared by the effect below.
-  const campaignRedirectRef = useRef(peekPendingFreeCall() === 'campaign');
+  // 'campaign_declined' is held here too (owner, 2026-10-18). Closing the gift box
+  // with the cross used to mean the free call was simply dropped: this screen showed
+  // the plain welcome and the visitor landed on Home, with the offer only reachable
+  // again through the little gift bubble. They still signed up, so they are still
+  // entitled to it — the cross said "not this screen", not "never". Both paths now end
+  // on the free 11-minute panel, which carries a back arrow of its own (the reset below
+  // leaves DrawerNavigator underneath it), so leaving is one tap and nothing is forced.
+  const campaignRedirectRef = useRef(
+    peekPendingFreeCall() === 'campaign' || peekPendingFreeCall() === 'campaign_declined',
+  );
 
   const enter = useRef(new Animated.Value(0)).current;
   const bubbleIn = useRef(new Animated.Value(0)).current;
@@ -197,12 +206,12 @@ export default function SignupWelcome({ navigation, route }) {
       // were promised -- exactly the gap that let a returning test number fall
       // through to the plain gift card instead of the Metro reveal's payoff.
       const campaignSource = peekPendingFreeCall();
-      if (campaignSource === 'campaign') {
+      if (campaignSource === 'campaign' || campaignSource === 'campaign_declined') {
         clearPendingFreeCall();
         getFreeCallOffer({ usePrefetched: true }).then((fc) => {
           const show = !!(fc?.enabled && fc?.eligible && fc?.offer);
           if (show) {
-            captureEvent('campaign_free_call_auto_opened', { mode: fc.offer?.mode || null });
+            captureEvent('campaign_free_call_auto_opened', { mode: fc.offer?.mode || null, declined: campaignSource === 'campaign_declined' });
             AsyncStorage.getItem('customerId')
               .then((id) => { if (id) markFreeCallOfferSeen(id); })
               .catch(() => {});
@@ -220,8 +229,6 @@ export default function SignupWelcome({ navigation, route }) {
         });
         return undefined;
       }
-      if (campaignSource === 'campaign_declined') clearPendingFreeCall();
-
       setGift(false);
       // A greeting, not a decision point -- nothing here to tap through, so it
       // moves on by itself rather than waiting for "Namaste" like signup does.
@@ -269,10 +276,10 @@ export default function SignupWelcome({ navigation, route }) {
       // better than a second "do you want this?" card) for the scheduled/slots offer,
       // which has no standalone screen of its own outside this card.
       const campaignSource = peekPendingFreeCall();
-      if (campaignSource === 'campaign') {
+      if (campaignSource === 'campaign' || campaignSource === 'campaign_declined') {
         clearPendingFreeCall(); // Home must not also try to open this.
         if (show) {
-          captureEvent('campaign_free_call_auto_opened', { mode: fc.offer?.mode || null });
+          captureEvent('campaign_free_call_auto_opened', { mode: fc.offer?.mode || null, declined: campaignSource === 'campaign_declined' });
           AsyncStorage.getItem('customerId')
             .then((id) => { if (id) markFreeCallOfferSeen(id); })
             .catch(() => {});
@@ -291,15 +298,6 @@ export default function SignupWelcome({ navigation, route }) {
         }
         return;
       }
-      if (campaignSource === 'campaign_declined') {
-        // They were already asked on the pre-login prompt and said no -- this screen's
-        // own "Claim my FREE call" card must not ask a second time. Plain welcome only;
-        // the gift box on Home still offers it later if they change their mind.
-        clearPendingFreeCall();
-        setGift(false);
-        return;
-      }
-
       setGift(show ? fc : false);
       if (show) {
         // Seen here, so Home does not raise the same offer again as a popup.
