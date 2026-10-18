@@ -3429,7 +3429,14 @@ app.get('/api/astrologers', async (req, res) => {
 
     return res.status(200).json({ data: formattedData });
   } catch (err) {
-    console.error(err);
+    // noteReadFailure, not a bare console.error: this is the list every customer
+    // screen is built on, and it was the ONLY major read endpoint not reporting.
+    // On 2026-10-18 a Supabase quota restriction took it to a 100% 500 rate while
+    // banners/categories/blogs/gifts all paged and /health went degraded without
+    // it -- the one outage you most need to see was the one nothing could see.
+    // This endpoint still 500s rather than degrading to an empty list: an empty
+    // list renders as "no astrologers" with no error for the app to retry on.
+    noteReadFailure('astrologers', err);
     return res.status(500).json({ error: 'Failed to fetch astrologers' });
   }
 });
@@ -3478,7 +3485,8 @@ app.get('/api/astrologers/liveAstrologers', async (req, res) => {
 
     return res.status(200).json({ data: formattedData });
   } catch (err) {
-    console.error('liveAstrologers error:', err.message);
+    // Same blind spot as /api/astrologers above.
+    noteReadFailure('astrologers-live', err);
     return res.status(500).json({ data: [] });
   }
 });
