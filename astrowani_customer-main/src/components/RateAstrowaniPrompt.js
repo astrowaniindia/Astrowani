@@ -27,7 +27,7 @@
 // moment a disappointed customer is still willing to say what went wrong.
 
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Image, Linking, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 import { COLORS } from '../Theme/Colors';
@@ -177,9 +177,23 @@ export function RateAstrowaniPromptHost() {
   }, [done, close]);
 
   const goToStore = useCallback((rating) => {
+    // NEVER hand an iPhone to a store from here. The only review prompt Apple allows is
+    // its own SKStoreReviewController (Guideline 5.6.1), and naming another mobile
+    // platform's store is a separate rejection (2.3.10) — so a happy rating on iOS gets
+    // the thank-you and nothing else. Deliberately NOT markReviewed(): that is the
+    // permanent "they have been handed to the listing" stamp, and nobody has been handed
+    // anywhere, so the ordinary answered-cooldown from pick() is the right suppression.
+    // There is also no iOS listing to link to yet (APP_STORE_URL is still ''), and when
+    // there is, the way in is SKStoreReviewController, not a URL — see CLAUDE.md CO
+    // Phase 9. The star taps themselves are our own feedback and stay on both platforms.
+    if (Platform.OS === 'ios') {
+      captureEvent('app_rating_store_skipped_ios', { rating: rating ?? picked, context: req?.context || 'unknown', mode: req?.mode || null });
+      setDone(true);
+      return;
+    }
     captureEvent('app_rating_store_opened', { rating: rating ?? picked, context: req?.context || 'unknown', mode: req?.mode || null });
     // market:// opens the Play app straight on the listing where the review box is;
-    // the https URL is the fallback for a device with no Play app (and for iOS later).
+    // the https URL is the fallback for a device with no Play app.
     // Never let a failed open leave them staring at a dead button — close either way.
     // They have been handed to the listing: never ask again, on any path. Stamped
     // before the open so a link that fails to resolve cannot leave us asking forever.
@@ -256,7 +270,8 @@ export function RateAstrowaniPromptHost() {
             </>
           ) : (
             /* 1-3 stars. A thumbs-up and a thank-you, nothing to tap and nothing asked
-               of them — 4 and 5 never reach here, they go straight to the listing. */
+               of them — on Android 4 and 5 never reach here, they go straight to the
+               listing. On iOS they DO: there is no store to hand them to (goToStore). */
             <>
               <MaterialIcons name="thumb-up" size={moderateScale(32)} color={COLORS.AstroGold} />
               <Text style={styles.title}>{t('rateUs.thanksTitle')}</Text>

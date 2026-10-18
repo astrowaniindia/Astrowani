@@ -21,7 +21,8 @@ export const FREE_BOT_CHAT_ENABLED = Platform.OS !== 'ios';
 // Shagun is ALWAYS first, whatever the call's length and whoever hung up. Paying ends
 // with a thank-you the customer dismisses themselves; pressing ✕ moves straight on. The
 // "more minutes" sheet is the only conditional step. Rating is always last, and 1-3
-// stars apologises while 4-5 offers the Play Store (components/RateAstrowaniPrompt).
+// stars apologises while 4-5 offers the Play Store on Android — on iOS the store handoff
+// is skipped entirely, Apple allows only its own prompt (components/RateAstrowaniPrompt).
 //
 // These were all switched off on 2026-10-03 — the owner wanted the call simply to end —
 // and brought back in this order on 2026-10-04. "Did you like the call?" was NOT brought
