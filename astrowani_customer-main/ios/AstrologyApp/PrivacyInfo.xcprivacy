@@ -14,6 +14,27 @@
   <key>NSPrivacyCollectedDataTypes</key>
   <array>
     <!-- OTP login identity: mobile number and customer name. -->
+    <!-- The email address collected by screens/OtpScreen/EmailOtpScreen.js. Was
+         missing while every other identifier was declared, and Apple cross-checks
+         this file against the App Privacy answers in App Store Connect, so the two
+         disagreeing is itself the finding. There is deliberately NO AudioData entry
+         to match: the customer app never records - VoiceNotesScreen only PLAYS the
+         notes an astrologer recorded in the vendor app (which does declare it), live
+         call audio is peer-to-peer and never stored by us, and the call recorder is
+         Android-only and never starts on iOS. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeEmailAddress</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
     <dict>
       <key>NSPrivacyCollectedDataType</key>
       <string>NSPrivacyCollectedDataTypePhoneNumber</string>
