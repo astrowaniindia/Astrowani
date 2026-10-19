@@ -51,7 +51,18 @@ const SETTINGS_KEY = 'audience_rules';
 // audience is worth a booked slot, a paid-ad audience may be worth an instant call, or
 // neither. Which flow a customer actually sees is still free_call_offer.mode, and the
 // two are mutually exclusive there.
-const FEATURES = ['free_call', 'free_call_instant', 'free_chat'];
+// `welcome_promise` is a different KIND of key from the other three, and the
+// difference matters when writing a rule for it. The others decide whether a
+// customer may use an offer when they reach for it. This one decides, at the moment
+// the account is created, whether to GRANT the free call the reveal screen has
+// already told them they won (src/welcomePromise.js). So a rule here is read exactly
+// once per customer, against the acquisition_source written in that same signup, and
+// narrowing it later does not take the call away from anybody already granted one.
+//
+// It is the key to use for "this ad audience gets the welcome call, that one does
+// not", which is why the hook exists before anyone needs it: today it is unset, so
+// everyone is granted, which is who the screen promises it to.
+const FEATURES = ['free_call', 'free_call_instant', 'free_chat', 'welcome_promise'];
 
 // Instant had no key of its own until 2026-10-01: every free-call path asked
 // `free_call`. So an existing rule written when that was the only key was written with

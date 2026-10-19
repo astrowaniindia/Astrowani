@@ -50,6 +50,7 @@ const contactLeakDetector = require('./src/contactLeakDetector');
 // which took production down in full on 2026-10-12 (see b8adb29).
 const chatImageComposer = require('./src/chatImageComposer');
 const offerGuard = require('./src/offerGuard');
+const welcomePromise = require('./src/welcomePromise');
 const debtGuard = require('./src/debtGuard');
 // iOS-only currency for the App Store's In-App Purchase requirement. Used by the
 // gift path below; never by consultations or remedy orders, which are exempt.
@@ -2375,10 +2376,12 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
         // terms-acceptance record too — which is legally meaningful, while this is
         // only a marketing attribution. Best-effort on purpose: the account already
         // exists by this point and a failure here must never fail the signup.
+        let acquiredSource = null;
         if (supabaseCustomerId) {
           const { source: acqSource, raw: acqRaw } = acquisition.resolveFromRequest({
             acquisitionSource, acquisitionRaw,
           });
+          acquiredSource = acqSource || null;
           if (acqSource || acqRaw) {
             const { error: acqError } = await supabaseService
               .from('customers')
@@ -2395,6 +2398,27 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
               }
             }
           }
+        }
+
+        // The free call the app has ALREADY told this person they won. The gift-box
+        // reveal says "aapne jeet li hai 11 minute ki free call" to every signed-out
+        // first launch, before they have an account and with no eligibility check, so
+        // the entitlement is granted here to make that true rather than the wording
+        // softened (owner, 2026-10-19). See src/welcomePromise.js for what it grants
+        // (the same free_call_invites row the admin card writes), who gets it (the
+        // Audience Targeting `welcome_promise` feature — everyone today, narrowable to
+        // particular ad sources later with no deploy), and the one refusal kept (a
+        // number that already used its free call on an account it then deleted).
+        //
+        // ON THE CREATE BRANCH ONLY, like the attribution above and for the same
+        // reason: a returning customer logging in has just been promised nothing.
+        // Takes the source that was resolved a few lines up rather than re-reading
+        // the row, so it cannot race that update. Best-effort and never throws.
+        if (supabaseCustomerId && isNewAccount) {
+          await welcomePromise.grantOnSignup(supabaseCustomerId, {
+            mobile: phoneNumber,
+            acquisitionSource: acquiredSource,
+          });
         }
 
         if (referrerId && supabaseCustomerId && referrerId !== supabaseCustomerId) {

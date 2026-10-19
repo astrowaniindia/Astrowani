@@ -30,6 +30,7 @@ const {
   REVIEW_KEY: APP_PROMPT_REVIEW_KEY,
 } = require('./appPromptRoutes');
 const audienceRules = require('./audience');
+const welcomePromise = require('./welcomePromise');
 const rechargeOffer = require('./rechargeOffer');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
 const sessionFolding = require('./sessionFolding');
@@ -2049,6 +2050,9 @@ module.exports = function registerAdminRoutes(app) {
     // Same reasoning for the audience rules: an admin switching an offer back ON for a
     // segment should take effect on the next app launch, not up to a minute later.
     if (key === audienceRules.SETTINGS_KEY) audienceRules.invalidateAudienceCache();
+    // The welcome promise grants an offer at sign-up, so an admin switching it off
+    // must stop the very next signup getting one, not the ones in the next minute.
+    if (key === welcomePromise.SETTINGS_KEY) welcomePromise.invalidateWelcomePromiseCache();
     // A recharge offer is money. An admin who switches one OFF because the numbers were
     // wrong must not keep paying it out for another half-minute while a cache expires.
     if (key === rechargeOffer.SETTINGS_KEY) rechargeOffer.invalidateCache();

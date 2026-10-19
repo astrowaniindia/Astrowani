@@ -1765,7 +1765,7 @@ hidden from instant, which genuinely has no slots, lead time or calendar.
 same `free_call_bookings` row as a booked one, so it already appears in the list on the
 booking page. Two lists over one table disagree the moment one is filtered.
 
-### THREE WAYS THE FREE CALL CAN BE LIVE WHEN YOU THINK IT IS NOT (2026-10-01 incident)
+### FOUR WAYS THE FREE CALL CAN BE LIVE WHEN YOU THINK IT IS NOT (2026-10-01 incident)
 
 An astrologer's phone rang with a real free intro call while the feature was believed to
 be off. It was not off: `free_call_offer.enabled` was `true` with `mode: 'instant'`.
@@ -1781,6 +1781,14 @@ be off. It was not off: `free_call_offer.enabled` was `true` with `mode: 'instan
    switched off — deliberate (subsystem CR), and the one route by which a phone can still
    ring after the master switch is off. Check the invite card before concluding it is
    closed.
+4. **EVERY NEW SIGNUP NOW HOLDS AN INVITE** (added 2026-10-19, subsystem EF). The
+   gift-box reveal promises a free call to every signed-out first launch, so
+   `src/welcomePromise.js` grants each new account the same `free_call_invites` row at
+   sign-up. By route 3 above, that means `free_call_offer.enabled = false` **no longer
+   stops the free call reaching new customers** — only the ones who already existed.
+   Their switch is `app_settings.free_call_welcome_promise` (`{"enabled": false}`), and
+   it must be turned off together with the reveal screen
+   (`CAMPAIGN_GIFT_REVEAL_ENABLED`), or the screen promises what the server refuses.
 
 Also: `mode` survives the master switch. Turning `enabled` back on resumes whichever flow
 was last selected — so set the flow first, then enable.
@@ -2808,3 +2816,97 @@ Knock-ons worth knowing:
 - One row in `customers.profile_image` holds an on-device path
   (`file:///data/user/0/com.astrowanicustomer/cache/rn_image_picker_lib_temp_….jpg`) saved
   straight into the database. Unrelated pre-existing bug; the helper passes it through untouched.
+
+---
+
+## Subsystem added 2026-10-19: the welcome promise (EF)
+
+### EF. The app says "you win" before anything has agreed — so the entitlement is granted
+
+`screens/FreeCall/CampaignGiftReveal.js` tells a signed-out visitor **"YOU WIN!"** and
+*"aapne jeet li hai 11 minute ki free call"*, with **no eligibility check of any kind**,
+before they have an account. Four things could then refuse it after signup
+(`free_call_offer.enabled`, the `mode:'selected'` allowlist, `audience_rules`,
+`offerGuard`). Found during the App Store rejection audit — see
+[`MD files/Apple-Rejection-Audit-2026-10-19.md`](MD%20files/Apple-Rejection-Audit-2026-10-19.md).
+
+**Owner's decision: if we say "you win", they get the reward.** So the promise is made
+true at account creation rather than the wording softened. `src/welcomePromise.js`
+`grantOnSignup()` is called from `mobile-otp-verify`, **on the create branch only** (same
+rule as acquisition attribution — a returning customer logging in has just been promised
+nothing), best-effort, never throws.
+
+> **THE REVEAL IS NOT CAMPAIGN-GATED, AND THE NAME LIES.**
+> `acquisition.isTargetCampaignFirstOpen()` is `if (PROMPT_SHOWN_KEY) return false; return
+> true;` — it does not look at the referrer at all (corrected 2026-10-10, comment in
+> `App.js`). So **every** signed-out first cold start sees the promise: organic installs,
+> and every iPhone, which has no install referrer and therefore
+> `acquisition_source = null`. Keying the grant off `acquisition_source` — the obvious
+> move, and what was first asked for — would have honoured it for a minority and left
+> everyone else with exactly the broken promise being fixed.
+
+**It grants the SAME `free_call_invites` row the admin card writes** (subsystem CR), which
+already means "this customer gets the offer whatever is switched off". Nothing new was
+allowed to bypass anything. **The consequence is in the FOUR WAYS section above: turning
+`free_call_offer.enabled` off no longer stops new signups.**
+
+**Who gets it is the Audience Targeting feature `welcome_promise`** (`src/audience.js`
+`FEATURES`, admin → Audience Targeting), matched against the `acquisition_source` written a
+few lines earlier in the same signup. Unset = everyone, which is today's answer and who the
+screen promises it to. Narrowing it later to particular ad sources is an admin edit, no
+deploy — which is the whole reason the hook exists before anyone needs it. It is read
+**once per customer**, so narrowing never takes the call away from someone already granted.
+
+**Fail directions, deliberately not uniform:**
+- The **config read fails OPEN** (grant). This is the opposite of `freeCallRoutes
+  .isNewCustomer`, which fails closed because a free call is a real astrologer's time — and
+  the reason for the inversion is that by the time this runs the app has already told the
+  person they won. A DB blip must not turn that into a lie. Bounded to one per number by
+  `offerGuard`.
+- Only a **literal `false`** switches it off; a typo or half-written blob reads as on.
+- The **one refusal kept** (owner's instruction) is `offerGuard` FREE_CALL with
+  `failClosed: true`: this number already used its free call on an account it then deleted.
+  Honouring a promise is not the same as letting it be farmed (subsystem CY).
+- An empty instant pool is **not** a broken promise — `loadOffer` falls back to
+  `scheduled`, so the call is booked rather than instant.
+
+### Verified 2026-10-19 — 37/37 against the live database and over real HTTP
+`scripts/welcomePromiseCheck.js` (**`index.js` never booted** — a bare Express app on an
+ephemeral port, so no EADDRINUSE to mistake for a product failure). Run it with
+`node --env-file=.env scripts/welcomePromiseCheck.js`; it passed with
+`FREE_CALL_LOCAL_TEST` both true and **false**, which is how production runs (the 2026-10-05
+lesson: that flag has invalidated an assertion before).
+
+The section that matters is the last one: `grantOnSignup` writing a row proves the module,
+not that the row unlocks anything. So it signs a real customer JWT, reads the real
+`GET /api/free-call/offer`, and asserts `invited: true` — **with a negative control first**
+(no invite → not reported as invited), which is also what proves local-test mode is not
+forging that field. Every refusal case is likewise preceded by a positive control.
+
+Covers: the config normalisation (the string `"false"` and `0` do **not** switch it off);
+the grant, its `invited_by: 'welcome_promise'` marker, and a ~30-day expiry; that the row is
+found by **the query `findActiveInvite` actually runs**, not merely present; idempotency on
+a retried OTP verify (compared by `getTime()`, never string equality); `enabled: false`
+refusing and writing nothing; an `only` audience rule excluding an unknown-source customer
+while **granting** a `qr_` one; and the `offerGuard` refusal with another number as its
+control. Teardown is asserted, and production was re-read afterwards: 3 invite rows as
+before, 0 from the promise, 0 synthetic claims, `audience_rules` byte-identical, the
+welcome-promise key still absent.
+
+> **A segment id is not its label.** The first version of the narrowing check wrote
+> `only: ['qr_posters']` because the segment reads "QR posters" in the admin — its id is
+> `qr` — and the grant went through, which looked exactly like a broken gate. It was not:
+> `normalizeRules` drops an `only` naming no known segment and degrades to **everyone**,
+> deliberately (DI), since the alternative is blocking everybody over a typo. There is now
+> a named check for that behaviour.
+
+**Not exercised on a device.** The test worth doing: install fresh, tap the gift box open,
+sign up, and confirm the free call is actually offered — then again pressing ✕ instead of
+the CTA, since both are meant to keep it.
+
+### Noticed while testing, NOT fixed — the demo login is not who the review notes say
+`customers` holds **two** rows for the reviewer number: `parked-reviewer-9999999999` ("Test
+User", `550e8400-…`) and **`9999999999`, named "ansh"** (`bcf31426-…`). So the demo account
+in the App Store / Play review notes now logs a reviewer into an account called "ansh". The
+memory `store_reviewer_accounts` already says to check these against the live DB because
+they have been wrong before — they are wrong again. Fix before submitting.

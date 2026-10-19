@@ -124,10 +124,31 @@ The vendor manifest looked complete, including `NSPrivacyTracking` /
 
 ## LOW — worth knowing, unlikely to be the rejection reason
 
-1. **"YOU WIN" on the pre-login gift box** (`CampaignGiftReveal.js`). Nobody is actually
-   winning anything — everyone sees it. That phrasing invites a 2.3 / 1.1.6 look, and
-   prize language can draw a 5.3.2 "official rules" question. "Your first call is on us"
-   carries no such risk and loses nothing.
+1. **The pre-login gift box promises a reward nothing has agreed to yet**
+   (`CampaignGiftReveal.js`). It says "YOU WIN!" and *"aapne jeet li hai 11 minute ki
+   free call"* with **no eligibility check at all** — not one call to
+   `/api/free-call/offer`. After signup, four things can still refuse it:
+   `free_call_offer.enabled`, the `mode: 'selected'` allowlist, `audience_rules`, and
+   `offer_guard`. Told you won → signed up → didn't get it is a real 1.1.6 / 5.6 look,
+   and it is the first screen a reviewer sees, before login.
+
+   **The fix is the entitlement, not the wording** (owner, 2026-10-19: if we say "you
+   win", they get the reward). `free_call_invites` already means exactly that — an
+   invite bypasses `offer.enabled` (`:1329`, `:2108`, `:2152`), `audience_rules`
+   (`:1239`, `:1345`, `:2168`), the brand-new-customer rule (`:1248`, `:1357`, `:2174`)
+   and the WELCOME offer-guard claim (`:1046`). So a campaign signup should write an
+   invite row and the promise becomes true, with the screen untouched. Two notes: write
+   it off the server-side `acquisition_source` (`ad_`/`qr_`) rather than the client's
+   own `queueFreeCallFromCampaign()` flag, or the app is granting itself the offer (CV's
+   rule); and keep the one refusal an invite does NOT bypass (`:1045`, FREE_CALL claimed
+   by an earlier deleted account on the same number — the CY exploit). An empty instant
+   pool is not a broken promise: `loadOffer` falls back to `scheduled`, so the call is
+   booked rather than instant.
+
+   Earlier drafts of this item argued the copy was misleading because everyone sees it,
+   and floated 5.3.2 (sweepstakes need official rules). Both were wrong: there is no
+   chance element, so it is not a sweepstakes, and promotional excitement over a
+   genuinely delivered reward is not something reviewers hunt for.
 2. **The Wani Shop tab is a WebView of `shop.astrowani.com`** (`StoreWebView.js`,
    `Navigation.js:1226`). Content checked: gemstones, vastu items, pujas — physical goods
    and real-world services, so 3.1.3(e) permits Razorpay and Apple takes nothing.
@@ -189,6 +210,7 @@ The vendor manifest looked complete, including `NSPrivacyTracking` /
 - [ ] Add report + block inside the customer's chat session
 - [ ] Add `EmailAddress` (and audio, if the customer records) to the customer privacy manifest
 - [ ] Staff a live astrologer for the review window; state the window in review notes
-- [ ] Reword "YOU WIN" on the campaign screen
+- [ ] Make the campaign reveal's promise true: write a `free_call_invites` row for a
+      campaign signup (keep the wording)
 - [ ] Remove the `__DEV__` bypass in `appPrompts.js`
 - [ ] Re-verify the live `app_settings` state the reviewer will actually meet

@@ -20,6 +20,7 @@ const FEATURE_LABELS = {
   free_call: 'Free call — booking offer',
   free_call_instant: 'Free call — instant offer',
   free_chat: 'Free 5-minute chat',
+  welcome_promise: 'Welcome free call — granted at sign-up',
 };
 
 const FEATURE_NOTES = {
@@ -28,6 +29,11 @@ const FEATURE_NOTES = {
     'The “ring an astrologer now” flow. Until you set a rule here it follows the booking '
     + 'rule above, so adding this control on its own changed nothing.',
   free_chat: 'Costs Gemini API spend per conversation.',
+  welcome_promise:
+    'Who is GRANTED the free call the gift-box screen already told them they won, at the '
+    + 'moment their account is created. Read once per customer, so narrowing it never takes '
+    + 'the call away from someone already granted one. Unset means everyone — which is who '
+    + 'that screen promises it to, so restrict this only together with turning the screen off.',
 };
 
 const MATCH_KINDS = [
