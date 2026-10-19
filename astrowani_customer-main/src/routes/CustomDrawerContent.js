@@ -17,7 +17,8 @@ import { LanguageContext } from '../context/LanguageContext';
 import { resetAnalyticsIdentity, captureEvent } from '../utils/Analytics';
 import { clearViewerSegment } from '../utils/viewerSegment';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
-import { PLAY_STORE_URL, SOCIAL_LINKS } from '../config/api';
+import { SOCIAL_LINKS } from '../config/api';
+import { shareDownloadUrl } from '../utils/storeLinks';
 
 // Opening a social profile must never be able to crash the drawer. Linking
 // rejects when no app or browser can handle the URL (a stripped-down device, or
@@ -78,14 +79,17 @@ function CustomDrawerContent(props, navigation) {
 
   const handleShareApp = async () => {
     try {
+      // The store link was missing here, so "Share app" used to send a recommendation
+      // with no way to act on it. It goes through shareDownloadUrl() rather than
+      // PLAY_STORE_URL directly, because a Play Store link handed out from an iPhone is a
+      // Guideline 2.3.10 rejection and "Share app" is one tap from the drawer, where a
+      // reviewer will find it. On iOS that returns '' until APP_STORE_URL exists, so the
+      // message simply goes without a link.
+      const downloadUrl = shareDownloadUrl();
       const shareOptions = {
-        // The Play Store link was missing here — this was the only share path in the
-        // app without it, so "Share app" sent a recommendation with no way to act on
-        // it. The two referral share paths (ReferAndEarnScreen, ReferralPromptHost)
-        // already included it.
         message:
-          'Check out this awesome astrology app! Connect with top astrologers today.\n\n' +
-          PLAY_STORE_URL,
+          'Check out this awesome astrology app! Connect with top astrologers today.' +
+          (downloadUrl ? `\n\n${downloadUrl}` : ''),
       };
       const res = await Share.share(shareOptions);
       captureEvent('app_shared', {

@@ -59,8 +59,21 @@ export const DAKSHINA_PROMPT_ENABLED = false;
  * Hinglish note, replacing Dakshina's three-row sheet for this moment. Same backend
  * endpoints as Dakshina (astrowani-backend/src/dakshinaRoutes.js) — see
  * components/ShagunRechargePrompt.js for why this is a new skin, not a new payment path.
+ *
+ * ⚠ OFF ON iOS, AND THIS IS AN APP STORE RULE, NOT A PRODUCT DECISION — unlike the
+ * rest of this block. The sheet draws its tiles from the LIVE GIFT CATALOGUE
+ * (/api/gifts) and charges them through RazorpayCheckout, keeping half as platform
+ * revenue and returning nothing to the customer's wallet. On iPhone that is digital
+ * content sold outside In-App Purchase (Guideline 3.1.1) — the very thing
+ * DIGITAL_PURCHASES_ENABLED hides gifts on iOS to avoid. This flag had no platform
+ * check, so the same catalogue was reachable through a different door, and reachable
+ * for real: free_call_offer.enabled was true in production when this was found.
+ *
+ * To turn it on for iPhone it has to become an IAP purchase (coins, like gifts and
+ * reports), not a Razorpay one. With it off, VoiceCallScreen's post-call chain falls
+ * through to the next step, so the call simply ends.
  */
-export const SHAGUN_RECHARGE_ENABLED = true;
+export const SHAGUN_RECHARGE_ENABLED = Platform.OS !== 'ios';
 
 /**
  * The "thanks — would you share a review?" star card, AFTER A FREE CALL ONLY.

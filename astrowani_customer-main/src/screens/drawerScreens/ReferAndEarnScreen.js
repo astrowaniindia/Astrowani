@@ -21,7 +21,7 @@ import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { COLORS } from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
-import { PLAY_STORE_URL } from '../../config/api';
+import { shareDownloadUrl } from '../../utils/storeLinks';
 import { captureEvent } from '../../utils/Analytics';
 
 const ReferAndEarnScreen = () => {
@@ -61,7 +61,13 @@ const ReferAndEarnScreen = () => {
     }, [])
   );
 
-  const shareMessage = `Join me on Astrowani! Use my referral code ${code} when you sign up and we both earn rewards. Download: ${PLAY_STORE_URL}`;
+  // No Play Store link on an iPhone (Guideline 2.3.10). shareDownloadUrl() returns ''
+  // until APP_STORE_URL is set, so the download clause is dropped rather than left
+  // trailing a colon — see utils/storeLinks.js.
+  const downloadUrl = shareDownloadUrl();
+  const shareMessage =
+    `Join me on Astrowani! Use my referral code ${code} when you sign up and we both earn rewards.` +
+    (downloadUrl ? ` Download: ${downloadUrl}` : '');
 
   const copyToClipboard = () => {
     if (!code) return;

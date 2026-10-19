@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import Instance from '../api/ApiCall';
-import { PLAY_STORE_URL } from '../config/api';
+import { shareDownloadUrl } from '../utils/storeLinks';
 import {useDeferredPresent, useModalPresence} from '../utils/modalPresentation';
 import { captureEvent } from '../utils/Analytics';
 
@@ -72,9 +72,13 @@ export function ReferralPromptHost() {
   };
 
   const share = async () => {
+    // No link at all rather than a Play Store link on an iPhone (Guideline 2.3.10) —
+    // utils/storeLinks.js explains why iOS returns '' until APP_STORE_URL is set, and
+    // why a guessed id would be worse. The clause is dropped, not left dangling.
+    const url = shareDownloadUrl();
     const message = code
-      ? `Join me on Astrowani! Use my referral code ${code} when you sign up — download: ${PLAY_STORE_URL}`
-      : `Join me on Astrowani! Download: ${PLAY_STORE_URL}`;
+      ? `Join me on Astrowani! Use my referral code ${code} when you sign up${url ? ` — download: ${url}` : '.'}`
+      : `Join me on Astrowani!${url ? ` Download: ${url}` : ''}`;
     try {
       const res = await Share.share({ message });
       // The OS sheet reports whether they actually picked a target or backed out.
