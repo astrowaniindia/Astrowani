@@ -12,6 +12,9 @@
     "test:hardening": "node --env-file=.env scripts/testHardening.js",
     "test:billing": "node --env-file=.env scripts/verifyBillingRpc.js",
     "test:concurrency": "node --env-file=.env scripts/testConcurrency.js",
+    "test:backup": "node scripts/testBackupRetention.js",
+    "backup": "node --env-file=.env scripts/backupDatabase.js",
+    "backup:dry": "node --env-file=.env scripts/backupDatabase.js --dry-run",
     "test": "npm run test:wallet && npm run test:billing && npm run test:fanout && npm run test:hardening && npm run test:concurrency"
   },
   "dependencies": {
