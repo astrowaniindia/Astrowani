@@ -16,6 +16,7 @@ import Instance from '../../api/ApiCall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requestUserPermission } from '../../utils/PushNotification';
 import { LanguageContext } from '../../context/LanguageContext';
+import { DEVICE_PLATFORM } from '../../utils/devicePlatform';
 // import { requestUserPermission } from '../../utils/PushNotification';
 
 // import Instance from '../../api/ApiCall';
@@ -67,7 +68,11 @@ const OtpScreen = ({ navigation, route }) => {
     try {
       setLoading(true)
       // const res = await Instance.post('/api/users/otp-verify', { mobile: phone, otp: code, sessionId, fcm: "kjfhsdkjhfkjdfjkfhsjkfhdj" });
-      const res = await Instance.post('/api/users/mobile-otp-verify', { phoneNumber: phone, otp: code,fcmToken: fcmToken,role:"customer" || ''});
+      // devicePlatform: iPhone or Android, for the admin's platform filter. This screen
+      // is the oldest of the three OTP entry points and sends no acquisition data, but
+      // it still creates accounts — so it has to send this or anyone arriving through
+      // here is recorded with no platform at all. See utils/devicePlatform.js.
+      const res = await Instance.post('/api/users/mobile-otp-verify', { phoneNumber: phone, otp: code,fcmToken: fcmToken,role:"customer" || '', devicePlatform: DEVICE_PLATFORM});
       if (res?.data) {
         console.log('OTP verification successful', res.data);
         await AsyncStorage.setItem('token', res.data.token);

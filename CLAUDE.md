@@ -2910,3 +2910,121 @@ User", `550e8400-…`) and **`9999999999`, named "ansh"** (`bcf31426-…`). So t
 in the App Store / Play review notes now logs a reviewer into an account called "ansh". The
 memory `store_reviewer_accounts` already says to check these against the live DB because
 they have been wrong before — they are wrong again. Fix before submitting.
+
+---
+
+## Subsystem added 2026-10-19: telling iPhone and Android customers apart (EG)
+
+### EG. One dashboard with a platform filter — never a second admin
+
+Astrowani is becoming **four store listings** (customer × Play, customer × App Store,
+vendor × Play, vendor × App Store) over **one backend, one database, one admin**. That
+is deliberate and must stay that way; nobody forks a codebase per store. The gap was
+that the admin could not *see* the difference, so nothing could answer "how many
+customers are on iPhone", "is recharge failing only on iOS", "is this refund Razorpay or
+Apple IAP", or "which platform produced that crash".
+
+`vendor_devices.platform` has recorded this for ASTROLOGERS since 2026-09. The customer
+side had nothing, and the customer app sent nothing at all.
+
+**`sql/customer_platform.sql` — APPLIED to production 2026-10-19.** Two nullable columns
+on `customers`, both `CHECK (… IN ('ios','android','unknown'))` matching `vendor_devices`,
+plus a partial index. No grants, so `anon`/`authenticated` stay at zero (verified `NONE`
+after applying).
+
+| Column | Written | Answers |
+|---|---|---|
+| `platform` | **every login**, latest wins | the operational question — is iOS recharge broken, which platform is this ticket |
+| `signup_platform` | **account creation only**, never again | the reporting question — how many of last month's signups were iPhone |
+
+> **WHY TWO COLUMNS, and why this had to ship BEFORE the App Store launch.** A single
+> latest-wins column cannot answer the signup question once anybody changes handset, and
+> **platform is not backfillable** — there is no record anywhere of what a past signup was
+> running. Applying this after the first iPhone signs up means those customers are
+> permanently unattributable. The split mirrors one the codebase already makes:
+> `acquisition_source` is create-branch-only because origin is a property of the account,
+> while `fcm_token` is rewritten every login because reachability is a property of the
+> device in someone's hand.
+
+**It also separates two things that previously looked identical.** `acquisition_source` is
+Android-only (Play Install Referrer, no iOS equivalent without a paid SDK), so every
+iPhone customer lands there as null alongside every pre-2026-09 Android customer. Null in
+*that* column is permanent and normal for iOS; null in `platform` is temporary and shrinks
+as customers log in. **Do not fold them together.**
+
+**Things that are load-bearing — do not "simplify" them:**
+
+- **ABSENT IS NOT `'unknown'`.** `src/devicePlatform.js` `normalizePlatform()` returns
+  **null** for a missing/empty value and `'unknown'` only for something unrecognised.
+  Callers must then write *nothing* — stamping `'unknown'` over a value an earlier login
+  established correctly is strictly worse than leaving it alone, and every installed build
+  predating this sends nothing.
+- **The signup write is SEPARATE from the acquisition write, and that is the whole point.**
+  The acquisition update only runs `if (acqSource || acqRaw)`, and both are **always null
+  on iOS** — folding platform into it would silently skip the exact platform the column
+  exists to measure. Not folded into `insertAccountRow` either: that helper drops its
+  optional columns as one group on a missing-column error, so an unapplied migration would
+  also cost the terms-acceptance record.
+- **The login write is a patch object, not `if (fcmToken)`.** The old customer update was
+  gated on having a push token, so a customer who never granted notification permission
+  would have had no platform recorded *ever* — a large, invisible hole in the one column
+  this exists for. Mirrors the vendor branch's `loginPatch`.
+- **All THREE customer OTP call sites send it** (`SignupGatePopup`, `OtpScreen/VerifyOtp`,
+  `OtpScreen/OtpScreen`) via one shared `utils/devicePlatform.js`. The login screen creates
+  accounts too, so gating on "is this signup" would drop it — the same trap already
+  recorded for acquisition.
+- **The admin list route has a THREE-TIER column fallback** (platform+removal → removal →
+  base). A column PostgREST does not know **400s the whole query** rather than omitting the
+  field, so without it a backend deployed before the migration renders the Customer
+  Tracking page completely empty. Only a missing-column error falls through; anything else
+  is rethrown so a real fault cannot hide behind a silently narrower column set.
+- **`vendorDevices.registerDevice` now uses the shared helper** instead of its own inline
+  whitelist. Identical for every value either app sends, additionally tolerant of casing
+  and whitespace (which the old line recorded as `'unknown'`).
+
+**Admin:** a `ChipGroup` **Platform** filter (All / Android / iPhone / Unknown, with counts
+taken from what the other filters leave) plus a Platform column and both columns in the CSV
+export, on the existing Customers page. **No new page, and there must never be one** —
+per-store dashboards diverge the moment one is filtered.
+
+**Release ledger:** "What's live where" at the top of
+[`MD files/deployment-and-releases.md`](MD%20files/deployment-and-releases.md) — four
+listings × store version × build × newest enabled OTA bundle, seeded with real values
+(customer 24.1/63, vendor 6.6/35, both iOS rows not submitted) and the SQL to read the
+live state back.
+
+### Verified 2026-10-19 — 53/53 through the real route, plus 7/7 on the vendor path
+`scripts/customerPlatformCheck.js`, run as
+`PORT=4599 node --env-file=.env scripts/customerPlatformCheck.js`. It drives the **real**
+`mobile-otp-verify` via `scripts/devServer.js` (so `index.js` is never booted directly and
+the billing worker never runs), forces `FREE_CALL_LOCAL_TEST=false` for production parity,
+and **refuses to start if the boot log shows EADDRINUSE** — a port clash silently tested
+stale code once before (DH). Uses the no-SMS QA number `9123450001`, and refuses to run if
+that number already has a row.
+
+Covers: the helper including absent-vs-unknown and parity with the line it replaced; a
+signup on Android (**the positive control — everything after it is "X did not change"**);
+a signup on iPhone; a login from the other platform moving `platform` while
+`signup_platform` stays; a login with **no fcmToken** still recording it; a build sending
+nothing leaving both values alone rather than writing `'unknown'`; a garbage value stored
+as `'unknown'` and never raw; the database CHECK rejecting a direct bad write; the admin
+route actually serving both fields (with a populated-list control); and that an unknown
+column really does error, which is why the tiers exist. Teardown asserted — production back
+at 4,058 customers, 0 welcome-promise invites.
+
+> **THE SUITE WAS VERIFIED TO FAIL on three deliberately introduced regressions**, which is
+> the only reason to trust it: absent→`'unknown'` (2 failures), the login branch also
+> overwriting `signup_platform` (3 failures, across three independent sections), and the
+> create branch recording nothing (9 failures). `scripts/` had no vendor-path coverage for
+> `registerDevice`, so that was checked separately against the live DB (7/7, synthetic
+> device row removed).
+
+Also: customer app bundles for Android (**8,204,248 bytes**, `devicePlatform` present in the
+shipped JS), `astrowani-admin` `npm run build` clean, `node --check` clean on all changed
+backend files, and eslint on the changed app files **identical to HEAD** (45 problems, the
+same 1 pre-existing error — compared side by side).
+
+**Not exercised on a device, and that is the test worth doing:** sign up fresh on Android
+and on an iPhone, then check the Platform column and filter in admin. Note the column will
+read "Unknown" for all 4,058 existing customers until each of them next logs in on a build
+carrying this — **which needs the customer OTA; the backend half alone records nothing.**

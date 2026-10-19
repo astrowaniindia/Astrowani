@@ -26,6 +26,7 @@ import messaging from '@react-native-firebase/messaging';
 import {identifyCustomer, captureEvent} from '../../utils/Analytics';
 import {apiFailureReason} from '../../utils/apiFailureReason';
 import {getAcquisition} from '../../utils/acquisition';
+import {DEVICE_PLATFORM} from '../../utils/devicePlatform';
 import {LanguageContext} from '../../context/LanguageContext';
 
 // True only on Android builds that include the SMS User Consent native module.
@@ -153,6 +154,12 @@ const VerifyOtp = ({navigation, route}) => {
         // Login. The backend records it only when it actually creates the row.
         acquisitionSource: acq.acquisitionSource,
         acquisitionRaw: acq.acquisitionRaw,
+        // iPhone or Android, for the admin's platform filter (utils/devicePlatform.js).
+        // Sent on BOTH paths for the same reason as acquisition just above — and note
+        // this one is never null even on iOS, where acquisition always is, so it is the
+        // ONLY thing that distinguishes an iPhone customer from an Android customer
+        // whose referrer simply never arrived.
+        devicePlatform: DEVICE_PLATFORM,
         // Labels the acceptance as having come from the Register screen's
         // checkbox rather than the Login screen's notice. The backend stamps the
         // actual timestamp itself — this flag only picks which source to record.

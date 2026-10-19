@@ -10,6 +10,79 @@ See also: [bug-scan-agent.md](bug-scan-agent.md) (opens PRs, never ships them),
 landed, the exact manual fallback commands, and a known SSH-connection flakiness issue and
 its mitigation).
 
+---
+
+## What's live where — FOUR LISTINGS, one backend, one admin
+
+Astrowani is **two apps over four store listings**, not four apps. One backend, one
+database, one admin dashboard; the store is a distribution channel, not a product. Nobody
+forks a codebase per store, and nothing below should ever become a second dashboard.
+
+Platform differences live in exactly three places and nowhere else:
+
+1. **Named flags in code** — `astrowani_customer-main/src/utils/featureFlags.js` and
+   `utils/payments.js`. Each one says *which Apple guideline* forces it. Never write
+   `Platform.OS === 'ios'` inside a screen; scattered checks are how parity drift becomes
+   invisible.
+2. **Money** — Android pays with Razorpay, iOS with coins via Apple IAP
+   (`PAYS_WITH_COINS`). Same wallet, same ledger, same 50/50 split.
+3. **Store metadata** — listing text, screenshots, review notes, data-safety answers.
+   Outside the repo; one checklist per listing (CLAUDE.md **CO** for Apple, **CP** for Play).
+
+### The ledger
+
+**Keep this table current on every store upload and every OTA.** It is the answer to "why
+has this customer not got the fix yet", and without it that has to be reconstructed from
+CLAUDE.md prose.
+
+| Listing | Store version | Build | Newest enabled OTA bundle | As of |
+|---|---|---|---|---|
+| Customer × Play Store | `24.1` | versionCode **63** | `01a14a24-1851-70cb-b1ee-c7f61792a5a0` (target `24.1.x`) | 2026-10-19 |
+| Customer × App Store | `24.1` (`MARKETING_VERSION`) | `CURRENT_PROJECT_VERSION` **1** — **not submitted** | `01a14a2b-2af1-7476-9c5c-1afbd529036a` (target `24.1`) | 2026-10-19 |
+| Vendor × Play Store | `6.6` | versionCode **35** | `01a13240-f2d1-7e15-a631-1d729f5f7266` (target `6.6.x`) | 2026-10-19 |
+| Vendor × App Store | `6.6` (`MARKETING_VERSION`) | `CURRENT_PROJECT_VERSION` **1** — **not submitted** | `01a107ce-a91e-79fa-88b4-af7e47ecbd0e` (target `6.6`) | 2026-10-19 |
+
+Both iOS rows already have OTA bundles because `deployOta.js` publishes for both platforms
+regardless of whether a build is on the App Store. They reach TestFlight and sideloaded
+builds; they reach nobody else until the listings go live.
+
+**Note the target-version asymmetry — it is the tooling's convention, not a mistake.**
+Android bundles target `24.1.x` / `6.6.x`, iOS bundles target `24.1` / `6.6`.
+
+### Reading the live state back
+
+The ledger is a cache. The database is the truth:
+
+```sql
+SELECT target_app_version, platform, count(*) AS enabled_bundles, max(id::text) AS newest
+FROM bundles WHERE enabled = true
+GROUP BY target_app_version, platform ORDER BY target_app_version, platform;
+```
+
+Build numbers come from `android/app/build.gradle` (`versionCode` / `versionName`) and, for
+iOS, `ios/*.xcodeproj/project.pbxproj` (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
+
+**`versionName` must not change between store builds** — `24.1` for customer, `6.6` for
+vendor — or OTA bundles stop matching the installed app. Only `versionCode` goes up.
+
+**Older targets stay enabled on purpose.** `24.0*` and `6.5*` bundles are still live
+because installed builds on those versions exist; disabling them removes the only channel
+that can still fix those phones. Prune R2 **by reference**, never by bucket (CLAUDE.md
+**EC**).
+
+### Telling the two platforms apart in the data
+
+`customers.platform` (current) and `customers.signup_platform` (set once, at account
+creation) — `astrowani-backend/sql/customer_platform.sql`, applied 2026-10-19. Written at
+login from the `devicePlatform` field both apps send. Surfaced as the **Platform** filter
+and column on admin → Customers, with both columns in the CSV export.
+
+Null reads as **"Unknown"** and means *not recorded yet* — every customer who signed up
+before this shipped, and anyone on a build predating it. It shrinks as customers log in.
+It is **not** a third platform, and it is **not** the same as `acquisition_source` being
+null (which is normal and permanent for every iPhone, since the Play Install Referrer has
+no iOS equivalent).
+
 ## Backend (`astrowani-backend/`) — auto-deploys on merge
 
 `.github/workflows/deploy-backend.yml` runs automatically whenever `main` changes **and**

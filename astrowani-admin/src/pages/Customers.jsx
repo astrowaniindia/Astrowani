@@ -6,6 +6,33 @@ import {
   ChipGroup, DateRangeChips, SortableTh, numInputStyle,
 } from '../components/filters';
 
+// iPhone vs Android, for the filter chips and the Platform column.
+//
+// `customers.platform` (sql/customer_platform.sql) is written on every login by builds
+// that send it. It is NULL for every customer who has not logged in on such a build —
+// which on the day this shipped was all 4,000+ of them — and 'unknown' when a request
+// sent something unrecognised. Both collapse to 'unknown' here: neither tells you which
+// store the customer came from, which is the only question this column exists to answer.
+//
+// DO NOT read 'unknown' as a third platform, and do not present it as "Other".
+function platformKey(row) {
+  const p = row?.platform;
+  return p === 'ios' || p === 'android' ? p : 'unknown';
+}
+
+const PLATFORM_FILTERS = [
+  { key: 'all', label: 'All platforms' },
+  { key: 'android', label: 'Android', title: 'Play Store customers. They pay with Razorpay.' },
+  { key: 'ios', label: 'iPhone', title: 'App Store customers. They pay with coins (Apple In-App Purchase), and gifts, reports and the free AI chat are hidden for them.' },
+  {
+    key: 'unknown',
+    label: 'Unknown',
+    title: 'Platform not recorded yet — every customer who signed up before this started being tracked, and anyone still on an older build. It shrinks as customers log in. Not a third platform.',
+  },
+];
+
+const PLATFORM_LABELS = { android: 'Android', ios: 'iPhone', unknown: 'Unknown' };
+
 function isRecent(created, hours = 48) {
   if (!created) return false;
   const diffMs = new Date() - new Date(created);
@@ -74,6 +101,9 @@ const LIST_SORT = {
   mobile: (r) => (r.mobile || '').toLowerCase(),
   email: (r) => (r.email || '').toLowerCase(),
   wallet_balance: (r) => Number(r.wallet_balance || 0),
+  // Sorts Android / iPhone / Unknown alphabetically, which puts the two real platforms
+  // together and the not-yet-known rows at one end rather than scattered through.
+  platform: (r) => PLATFORM_LABELS[platformKey(r)],
   created_at: (r) => (r.created_at ? new Date(r.created_at).getTime() : null),
 };
 
@@ -631,6 +661,10 @@ export default function Customers() {
   const [walletFilter, setWalletFilter] = useState('all');
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' });
   const [appFilter, setAppFilter] = useState('all'); // 'all' | 'removed' | 'push' | 'nopush'
+  // 'all' | 'android' | 'ios' | 'unknown'. 'unknown' is customers whose platform we have
+  // never been told — everyone who signed up before sql/customer_platform.sql, and anyone
+  // on a build predating the app change. It is NOT a third platform.
+  const [platformFilter, setPlatformFilter] = useState('all');
   const [view, setView] = useState('list'); // 'list' | 'recharges'
   const [topup, setTopup] = useState(null); // customer being topped up
   const [amount, setAmount] = useState('');
@@ -727,6 +761,10 @@ export default function Customers() {
       if (appFilter === 'removed' && !r.app_removed_at) return false;
       if (appFilter === 'push' && !(r.fcm_token && !r.app_removed_at)) return false;
       if (appFilter === 'nopush' && (r.fcm_token || r.app_removed_at)) return false;
+      // `platform` is null for everyone until they next log in on a build that sends it,
+      // and 'unknown' only when a request sent something unrecognised — both read as
+      // "Unknown" here, since neither tells us which store they came from.
+      if (platformFilter !== 'all' && platformKey(r) !== platformFilter) return false;
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
       const name = (r.name || '').toLowerCase();
@@ -735,27 +773,50 @@ export default function Customers() {
       const id = String(r.id || '').toLowerCase();
       return name.includes(q) || mobile.includes(q) || email.includes(q) || id.includes(q);
     });
-  }, [rows, timeFilter, dateRange, walletFilter, appFilter, search]);
+  }, [rows, timeFilter, dateRange, walletFilter, appFilter, platformFilter, search]);
 
   const sortedRows = useMemo(() => sortRows(filteredRows, sort, LIST_SORT), [filteredRows, sort]);
 
   const filtersActive =
-    timeFilter !== 'all' || walletFilter !== 'all' || appFilter !== 'all' || search !== '';
+    timeFilter !== 'all' || walletFilter !== 'all' || appFilter !== 'all'
+    || platformFilter !== 'all' || search !== '';
 
   const clearFilters = () => {
     setTimeFilter('all');
     setDateRange({ ...EMPTY_RANGE });
     setWalletFilter('all');
     setAppFilter('all');
+    setPlatformFilter('all');
     setSearch('');
   };
+
+  // Counts for the platform chips. Taken from the rows the OTHER filters leave, not from
+  // the whole table, so the numbers on the chips always add up to what is on screen.
+  const platformCounts = useMemo(() => {
+    const base = rows.filter((r) => {
+      if (!inRange(r.created_at, timeFilter, dateRange)) return false;
+      const wallet = Number(r.wallet_balance || 0);
+      if (walletFilter === 'has' && !(wallet > 0)) return false;
+      if (walletFilter === 'zero' && !(wallet <= 0)) return false;
+      if (appFilter === 'removed' && !r.app_removed_at) return false;
+      if (appFilter === 'push' && !(r.fcm_token && !r.app_removed_at)) return false;
+      if (appFilter === 'nopush' && (r.fcm_token || r.app_removed_at)) return false;
+      return true;
+    });
+    return {
+      all: base.length,
+      android: base.filter((r) => platformKey(r) === 'android').length,
+      ios: base.filter((r) => platformKey(r) === 'ios').length,
+      unknown: base.filter((r) => platformKey(r) === 'unknown').length,
+    };
+  }, [rows, timeFilter, dateRange, walletFilter, appFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
 
   // Any change to what is being filtered puts you back on page 1. Without this you can
   // search from page 9 and land on an empty table that looks like "no results" when the
   // matches are all sitting on page 1.
-  useEffect(() => { setPage(1); }, [timeFilter, dateRange, walletFilter, appFilter, search, showDeleted, pageSize, sort]);
+  useEffect(() => { setPage(1); }, [timeFilter, dateRange, walletFilter, appFilter, platformFilter, search, showDeleted, pageSize, sort]);
 
   // Clamped at RENDER time, not in an effect. A clamping effect raced the reset above:
   // both run in the same commit, the clamp still sees the pre-reset `page`, and its
@@ -831,13 +892,23 @@ export default function Customers() {
   };
 
   const exportCSV = () => {
-    const headers = ['ID', 'Name', 'Mobile', 'Email', 'Wallet Balance (INR)', 'Joined At', 'Status'];
+    // Both platform columns are exported, not just the current one: the signup platform
+    // is what a per-store report needs ("how many App Store signups last month"), and it
+    // is the column that cannot be reconstructed afterwards.
+    const headers = [
+      'ID', 'Name', 'Mobile', 'Email', 'Wallet Balance (INR)',
+      'Platform', 'Signup Platform', 'Joined At', 'Status',
+    ];
     const lines = sortedRows.map((r) => [
       r.id,
       `"${(r.name || '').replace(/"/g, '""')}"`,
       `"${r.isDeleted ? 'Freed' : r.mobile || ''}"`,
       `"${(r.email || '').replace(/"/g, '""')}"`,
       r.wallet_balance ?? 0,
+      PLATFORM_LABELS[platformKey(r)],
+      // Blank rather than "Unknown" when never recorded, so a spreadsheet can tell
+      // "not captured" apart from a platform we actually know.
+      r.signup_platform ? (PLATFORM_LABELS[r.signup_platform] || r.signup_platform) : '',
       r.created_at ? new Date(r.created_at).toISOString() : '',
       r.isDeleted ? 'Deleted' : 'Active',
     ]);
@@ -1020,6 +1091,17 @@ export default function Customers() {
 
           <ChipGroup label="App:" options={APP_FILTERS} value={appFilter} onChange={setAppFilter} />
 
+          {/* iPhone vs Android. One dashboard with a filter, never a separate page per
+              store — see MD files/deployment-and-releases.md. Counts come from what the
+              other filters leave, so they always add up to the rows on screen. */}
+          <ChipGroup
+            label="Platform:"
+            options={PLATFORM_FILTERS}
+            value={platformFilter}
+            onChange={setPlatformFilter}
+            counts={platformCounts}
+          />
+
           {filtersActive && (
             <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={clearFilters} title="Reset every filter on this tab">
               &#10005; Clear filters
@@ -1051,6 +1133,13 @@ export default function Customers() {
               <SortableTh label="Mobile" sortKey="mobile" sort={sort} setSort={setSort} />
               <SortableTh label="Email" sortKey="email" sort={sort} setSort={setSort} />
               <SortableTh label="Wallet" sortKey="wallet_balance" sort={sort} setSort={setSort} numeric />
+              <SortableTh
+                label="Platform"
+                sortKey="platform"
+                sort={sort}
+                setSort={setSort}
+                title="Which app store this customer is on. Unknown until they log in on a build that reports it."
+              />
               <SortableTh label="Joined Date" sortKey="created_at" sort={sort} setSort={setSort} numeric />
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
@@ -1058,7 +1147,7 @@ export default function Customers() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="empty" style={{ padding: '36px 20px' }}>
+                <td colSpan={7} className="empty" style={{ padding: '36px 20px' }}>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
                     <span className="pulse-dot" /> Loading customer records…
                   </div>
@@ -1068,7 +1157,7 @@ export default function Customers() {
 
             {!loading && filteredRows.length === 0 && (
               <tr>
-                <td colSpan={6} className="empty" style={{ padding: '48px 20px', textAlign: 'center' }}>
+                <td colSpan={7} className="empty" style={{ padding: '48px 20px', textAlign: 'center' }}>
                   <div style={{ fontSize: 36, marginBottom: 10 }}>🔍</div>
                   <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', marginBottom: 4 }}>
                     No customers found
@@ -1191,6 +1280,45 @@ export default function Customers() {
                       >
                         ₹{wallet.toLocaleString('en-IN')}
                       </span>
+                    </td>
+
+                    {/* Platform — which store listing this customer came through. Greyed
+                        when unknown, because that is the absence of information rather
+                        than a platform, and it is the normal state for anyone who has not
+                        logged in since this started being recorded. */}
+                    <td>
+                      {platformKey(r) === 'unknown' ? (
+                        <span
+                          style={{ fontSize: 12.5, color: 'var(--text-light)' }}
+                          title="Not recorded yet. Set the first time this customer logs in on a build that reports it — so every customer who signed up before this shipped reads Unknown until then. It is not a third platform."
+                        >
+                          Unknown
+                        </span>
+                      ) : (
+                        <span
+                          className={`pill-badge ${platformKey(r) === 'ios' ? 'blue' : 'green'}`}
+                          title={
+                            platformKey(r) === 'ios'
+                              ? 'iPhone — App Store listing. Pays with coins (Apple In-App Purchase); gifts, reports and the free AI chat are hidden.'
+                              : 'Android — Play Store listing. Pays with Razorpay; all features available.'
+                          }
+                        >
+                          {platformKey(r) === 'ios' ? ' iPhone' : '🤖 Android'}
+                        </span>
+                      )}
+                      {/* Shown only when they signed up on a DIFFERENT platform than they
+                          use now — i.e. they changed handset. Silent otherwise, which is
+                          almost always, so it never adds noise to the common case. */}
+                      {r.signup_platform
+                        && platformKey(r) !== 'unknown'
+                        && r.signup_platform !== r.platform && (
+                        <div
+                          style={{ fontSize: 10.5, color: 'var(--text-light)', marginTop: 3 }}
+                          title="The account was created on one platform and is now used on another — they changed phone. Signup platform is never overwritten, so store-listing reporting stays correct."
+                        >
+                          joined on {PLATFORM_LABELS[r.signup_platform] || r.signup_platform}
+                        </div>
+                      )}
                     </td>
 
                     {/* Joined Date & Relative Time */}

@@ -58,6 +58,7 @@ import { showAlert } from '../Component/CustomAlert';
 import { captureEvent, identifyCustomer } from '../utils/Analytics';
 import { apiFailureReason } from '../utils/apiFailureReason';
 import { getAcquisition } from '../utils/acquisition';
+import { DEVICE_PLATFORM } from '../utils/devicePlatform';
 import { sanitizePhoneInput } from '../utils/phoneInput';
 import { LEGAL_LINKS } from '../config/legal';
 import openExternalUrl from '../utils/openExternalUrl';
@@ -305,6 +306,11 @@ export default function SignupGatePopup({ visible, onDone }) {
         role: 'customer',
         acquisitionSource: acq.acquisitionSource,
         acquisitionRaw: acq.acquisitionRaw,
+        // iPhone or Android. Recorded on the customer row so the admin can tell the two
+        // store listings apart — see utils/devicePlatform.js. Unlike acquisition above
+        // this is never null, which is the point: it is the only platform signal an
+        // iPhone can give us at all.
+        devicePlatform: DEVICE_PLATFORM,
         // The line under the Continue button is the acceptance, same as Login's notice.
         termsAccepted: true,
       });

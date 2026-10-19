@@ -22,6 +22,7 @@
  */
 
 const { createClient } = require('@supabase/supabase-js');
+const { normalizePlatform } = require('./devicePlatform');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co';
 const db = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -67,7 +68,13 @@ async function registerDevice(astrologerId, opts = {}) {
   // notification permission) must not wipe a good token it registered earlier.
   if (fcmToken) row.fcm_token = fcmToken;
   if (voipToken) row.voip_token = voipToken;
-  if (platform) row.platform = ['ios', 'android'].includes(platform) ? platform : 'unknown';
+  // Shared with the customer side (customers.platform / signup_platform) so the
+  // whitelist has one definition — see src/devicePlatform.js. Identical to the
+  // inline check this replaced for every value either app actually sends, and
+  // additionally tolerant of casing and surrounding whitespace, which the old
+  // line recorded as 'unknown'.
+  const normalizedPlatform = normalizePlatform(platform);
+  if (normalizedPlatform) row.platform = normalizedPlatform;
   if (appVersion) row.app_version = String(appVersion).slice(0, 40);
 
   const { error } = await db

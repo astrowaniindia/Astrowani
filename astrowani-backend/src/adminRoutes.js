@@ -1151,6 +1151,11 @@ module.exports = function registerAdminRoutes(app) {
     // removal info" instead, so deploy order does not matter.
     const BASE_COLS = 'id, name, mobile, email, wallet_balance, created_at, fcm_token';
     const REMOVAL_COLS = `${BASE_COLS}, app_removed_at, app_removed_reason`;
+    // `platform` / `signup_platform` come from sql/customer_platform.sql and drive the
+    // iPhone-vs-Android filter and column. Added as a THIRD tier of the same fallback
+    // rather than appended to REMOVAL_COLS, so a database missing only the platform
+    // columns still gets the app-removal info, and one missing both still renders rows.
+    const PLATFORM_COLS = `${REMOVAL_COLS}, platform, signup_platform`;
 
     // `id` is the tiebreaker, not decoration: .range() paging is only correct against
     // a TOTAL order, and created_at alone has ties (bulk signups share a timestamp),
@@ -1161,16 +1166,56 @@ module.exports = function registerAdminRoutes(app) {
       .order('created_at', { ascending: false })
       .order('id', { ascending: false });
 
+    // Tried widest-first, each tier dropping one optional column group. A column
+    // PostgREST does not know 400s the WHOLE query rather than omitting the field, so
+    // without this an un-migrated database shows zero customers instead of showing them
+    // without the extra info. Only a missing-column error falls through — anything else
+    // (auth, network, a real query bug) is rethrown, so a genuine fault cannot hide
+    // behind a silently narrower column set.
+    const isMissingColumn = (err) => {
+      const msg = `${err?.message || ''} ${err?.details || ''}`.toLowerCase();
+      return err?.code === '42703' || err?.code === 'PGRST204'
+        // Postgres' own wording for an unknown column. Matched as well as the codes
+        // because PostgREST does not always carry one through. Deliberately NOT a bare
+        // check for the column names — an unrelated error whose text happens to mention
+        // "platform" would then silently narrow the column set.
+        || msg.includes('does not exist');
+    };
+
+    const TIERS = [
+      { cols: PLATFORM_COLS, warn: null },
+      {
+        cols: REMOVAL_COLS,
+        warn: '[admin] customers.platform missing — run sql/customer_platform.sql. '
+          + 'Listing without platform info; every customer will read "Unknown".',
+      },
+      {
+        cols: BASE_COLS,
+        warn: '[admin] customers.app_removed_at missing — run sql/customer_app_removed.sql. '
+          + 'Listing without app-removal info.',
+      },
+    ];
+
     let data;
     let truncated;
-    try {
-      ({ rows: data, truncated } = await pagedSelect(buildCustomers(REMOVAL_COLS)));
-    } catch (err) {
-      const msg = `${err?.message || ''} ${err?.details || ''}`.toLowerCase();
-      if (!(err?.code === '42703' || err?.code === 'PGRST204' || msg.includes('app_removed_at'))) throw err;
-      console.warn('[admin] customers.app_removed_at missing — run sql/customer_app_removed.sql. Listing without app-removal info.');
-      ({ rows: data, truncated } = await pagedSelect(buildCustomers(BASE_COLS)));
+    let lastErr;
+    for (const tier of TIERS) {
+      try {
+        ({ rows: data, truncated } = await pagedSelect(buildCustomers(tier.cols)));
+        lastErr = null;
+        break;
+      } catch (err) {
+        if (!isMissingColumn(err)) throw err;
+        lastErr = err;
+        // The warning belongs to the tier we are falling BACK to, so it is printed by
+        // the next iteration succeeding — print it here, before retrying.
+        const next = TIERS[TIERS.indexOf(tier) + 1];
+        if (next?.warn) console.warn(next.warn);
+      }
     }
+    // Every tier failed with a missing-column error, which means something other than a
+    // known optional column is wrong. Surfacing it beats returning an empty list.
+    if (lastErr) throw lastErr;
 
     // Deleted accounts are hidden by default. They used to stay in the list forever
     // with "(deleted)" bolted onto the name and a `deleted:…` string where the phone

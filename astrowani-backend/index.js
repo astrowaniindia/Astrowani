@@ -39,6 +39,10 @@ const vendorDevices = require('./src/vendorDevices');
 // Where a signup came from (offline QR poster / Google Ads / organic). See
 // src/acquisition.js for the `qr_` naming rule that keeps those channels apart.
 const acquisition = require('./src/acquisition');
+// Which platform a request came from, whitelisted. Shared with vendorDevices so the
+// customer and astrologer sides cannot drift — see src/devicePlatform.js for why an
+// ABSENT platform must never be recorded as 'unknown'.
+const { normalizePlatform } = require('./src/devicePlatform');
 const audienceRules = require('./src/audience');
 const customerModeration = require('./src/customerModeration');
 const liveModeration = require('./src/liveModeration');
@@ -2128,9 +2132,14 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   // `termsAccepted` tells us the account came from the Register screen's explicit
   // checkbox rather than the Login screen's passive notice. It is a label only —
   // the timestamp itself is stamped server-side (see termsAcceptanceFields).
-  // deviceId / devicePlatform / appVersion are sent by updated vendor builds only.
+  // deviceId / appVersion are sent by updated vendor builds only. `devicePlatform` is
+  // sent by updated builds of BOTH apps — the vendor app records it per-device in
+  // vendor_devices, and the customer app since 2026-10-19 records it on the customer row
+  // (customers.platform / signup_platform, sql/customer_platform.sql), which is what
+  // lets the admin tell iPhone and Android apart once the App Store listing is live.
   // Their ABSENCE is normal and must keep working — see the compatibility rule in
-  // src/vendorDevices.js.
+  // src/vendorDevices.js, and note that an absent platform is recorded as NOTHING
+  // rather than 'unknown' (src/devicePlatform.js).
   // acquisitionSource / acquisitionRaw are the Play Install Referrer the app read for
   // itself (Android only, and only on builds that ship the native reader). They are
   // recorded ONLY when this verify creates the account — see the insert below.
@@ -2296,10 +2305,51 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
 
       if (customersList && customersList.length > 0) {
         supabaseCustomerId = customersList[0].id;
-        if (fcmToken) {
+
+        // Which platform they are on RIGHT NOW. Rewritten on every login, latest wins —
+        // this is the operational half of the pair ("is iOS recharge broken?"), while
+        // `signup_platform` on the create branch below records where the account came
+        // from and is never touched again. See sql/customer_platform.sql.
+        //
+        // Built as a patch object, mirroring the vendor branch above, SPECIFICALLY
+        // because the write below used to be gated on `if (fcmToken)` — a customer who
+        // never granted notification permission, or whose token lookup failed, would
+        // otherwise never have a platform recorded at all. That is a large and
+        // completely invisible hole to leave in the one column this exists for.
+        //
+        // Only set when the request actually sent a platform: an installed build that
+        // predates the app-side change sends nothing, and stamping 'unknown' over a
+        // value a previous login established correctly would be strictly worse than
+        // leaving it alone.
+        const loginPlatform = normalizePlatform(devicePlatform);
+        const customerLoginPatch = {};
+        if (fcmToken) customerLoginPatch.fcm_token = fcmToken;
+        if (loginPlatform) customerLoginPatch.platform = loginPlatform;
+
+        if (Object.keys(customerLoginPatch).length > 0) {
           const { error: updateError } = await supabaseService
-            .from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
-          if (updateError) console.error('Failed to update customer fcm_token:', updateError.message);
+            .from('customers').update(customerLoginPatch).eq('id', supabaseCustomerId);
+          if (updateError) {
+            console.error('Failed to update customer login state:', updateError.message);
+            // A missing `platform` column (migration not yet applied) must not cost the
+            // fcm_token write, which is what keeps them reachable. Retry with just the
+            // token — the pre-existing behaviour. Same shape as the astrologer branch.
+            if (isMissingColumnError(updateError) && fcmToken) {
+              const { error: retryError } = await supabaseService
+                .from('customers').update({ fcm_token: fcmToken }).eq('id', supabaseCustomerId);
+              if (retryError) {
+                console.error('Failed to update customer fcm_token on retry:', retryError.message);
+              } else {
+                console.warn(
+                  '[platform] customers has no platform column — run ' +
+                  'sql/customer_platform.sql. Login succeeded; platform NOT recorded.',
+                );
+              }
+            }
+          }
+        }
+
+        if (fcmToken) {
           // They are reachable again, so drop any "app removed" mark a previous failed
           // push left behind — otherwise a customer who reinstalled would be shown as
           // gone forever while their notifications quietly worked. Not awaited: a login
@@ -2395,6 +2445,45 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
                 );
               } else {
                 console.error('[acquisition] could not record source:', acqError.message);
+              }
+            }
+          }
+        }
+
+        // Which platform this ACCOUNT was created on, plus the current-platform column
+        // the login branch above maintains. `signup_platform` is written here and never
+        // again — it is the reporting half of the pair ("how many of last month's
+        // signups were iPhone?", "is the App Store listing converting?"), which a
+        // latest-wins column cannot answer once anybody changes handset. See
+        // sql/customer_platform.sql for the full split.
+        //
+        // A SEPARATE write rather than folded into the acquisition update just above,
+        // and this is the important part: that update only runs `if (acqSource ||
+        // acqRaw)`, and BOTH are always null on iOS — there is no Play Install Referrer
+        // equivalent on an iPhone. Folding this in would therefore silently skip the
+        // exact platform the column was added to measure. Not folded into
+        // insertAccountRow either, for the same reason the acquisition write is not:
+        // that helper drops its optional columns as one group on a missing-column
+        // error, so an unapplied migration would also cost the terms-acceptance record,
+        // which is legally meaningful where this is operational.
+        //
+        // Best-effort on purpose: the account already exists by this point and a
+        // failure here must never fail a signup.
+        if (supabaseCustomerId) {
+          const signupPlatform = normalizePlatform(devicePlatform);
+          if (signupPlatform) {
+            const { error: platformError } = await supabaseService
+              .from('customers')
+              .update({ platform: signupPlatform, signup_platform: signupPlatform })
+              .eq('id', supabaseCustomerId);
+            if (platformError) {
+              if (isMissingColumnError(platformError)) {
+                console.warn(
+                  '[platform] customers has no platform columns — run ' +
+                  'sql/customer_platform.sql. Signup succeeded; platform NOT recorded.',
+                );
+              } else {
+                console.error('[platform] could not record signup platform:', platformError.message);
               }
             }
           }
