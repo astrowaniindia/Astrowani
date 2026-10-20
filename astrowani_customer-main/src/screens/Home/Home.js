@@ -78,6 +78,7 @@ import { FREE_BOT_CHAT_ENABLED } from '../../utils/featureFlags';
 import FreeCallOffer from '../../components/FreeCallOffer';
 import FreeCallGiftBubble from '../../components/FreeCallGiftBubble';
 import { getFreeCallOffer } from '../../api/FreeCallApi';
+import { getActiveChatSession } from '../../api/SessionApi';
 import { onFreeCallInviteOpen } from '../../utils/freeCallInvite';
 import { hidePendingGift } from '../../utils/pendingGiftBubble';
 import { formatBusyLabel } from '../../utils/busyLabel';
@@ -1333,26 +1334,19 @@ const Home = ({navigation}) => {
     try {
       const customerId = await AsyncStorage.getItem('customerId');
       if (!customerId) return;
-      const { data: rows } = await supabase
-        .from('chat_sessions')
-        .select('id, request_id, vendor_id, call_type')
-        .eq('caller_id', customerId)
-        .eq('is_active', true)
-        .order('started_at', { ascending: false })
-        .limit(1);
-      const s = rows && rows[0];
-      if (!s || s.call_type !== 'chat' || !s.request_id) return;
-      const { data: astro } = await supabase
-        .from('astrologers')
-        .select('id, first_name, last_name, profile_pic_url')
-        .eq('id', s.vendor_id)
-        .maybeSingle();
-      const name = [astro?.first_name, astro?.last_name].filter(Boolean).join(' ') || t('common.astrologer');
+      // One request, and the astrologer comes with it. This used to be two direct
+      // Supabase reads on the anon key (chat_sessions, then astrologers); the server
+      // now answers it so that grant on chat_sessions can be revoked. It applies the
+      // same "only a live CHAT with a request_id is resumable" rule and answers null
+      // rather than an error when there is nothing to resume.
+      const s = await getActiveChatSession();
+      if (!s || !s.requestId) return;
+      const name = s.astrologer?.name || t('common.astrologer');
       captureEvent('chat_resumed_after_relaunch', { session_id: s.id });
       navigation.navigate('ChatSessionScreen', {
-        requestId: s.request_id,
+        requestId: s.requestId,
         sessionId: s.id,
-        person: { id: s.vendor_id, userId: s.vendor_id, name, profileImage: astro?.profile_pic_url || '' },
+        person: { id: s.vendorId, userId: s.vendorId, name, profileImage: s.astrologer?.profilePicUrl || '' },
       });
     } catch (_) {
       // Nothing to resume, or it couldn't be checked — Home carries on as normal.

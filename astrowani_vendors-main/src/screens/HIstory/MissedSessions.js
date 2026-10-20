@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useContext, useRef, useEffect} from 'react';
+import React, {useState, useCallback, useContext, useEffect} from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,23 @@ import {
 import {useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import {supabase} from '../../api/SupabaseClient';
+import {getMissedSessions} from '../../api/SessionApi';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
 import {LanguageContext} from '../../context/LanguageContext';
 
+// Each tab now says which rows of the ONE merged missed list it keeps, rather than
+// which table to read and under which column name. The read itself is
+// GET /api/vendor/missed (astrowani-backend/src/sessionReadRoutes.js), because
+// chat_requests is one of the last two tables the publishable key in this APK can still
+// read and that grant is being revoked.
 const TABS = [
-  {key: 'chat',  labelKey: 'sessionHistory.chat',      icon: 'chatbubble-outline', table: 'chat_requests', idField: 'receiver_id',   nameField: 'caller_name',   types: null},
-  {key: 'audio', labelKey: 'sessionHistory.audioCall', icon: 'call-outline',       table: 'call_requests', idField: 'astrologer_id', nameField: 'customer_name', types: ['audio', 'voice']},
-  {key: 'video', labelKey: 'sessionHistory.videoCall', icon: 'videocam-outline',   table: 'call_requests', idField: 'astrologer_id', nameField: 'customer_name', types: ['video']},
+  {key: 'chat',  labelKey: 'sessionHistory.chat',      icon: 'chatbubble-outline',
+   keep: m => m.kind === 'chat'},
+  {key: 'audio', labelKey: 'sessionHistory.audioCall', icon: 'call-outline',
+   keep: m => m.kind === 'call' && m.callType !== 'video'},
+  {key: 'video', labelKey: 'sessionHistory.videoCall', icon: 'videocam-outline',
+   keep: m => m.kind === 'call' && m.callType === 'video'},
 ];
 
 const fmtTime = ts =>
@@ -29,14 +37,10 @@ const fmtTime = ts =>
       })
     : '';
 
-const TabContent = ({tab, astroId}) => {
+const TabContent = ({tab}) => {
   const {t} = useContext(LanguageContext);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const channelRef = useRef(null);
-
-  const matchesTab = row =>
-    row.status === 'missed' && (!tab.types || tab.types.includes(row.call_type));
 
   useFocusEffect(
     useCallback(() => {
@@ -44,36 +48,18 @@ const TabContent = ({tab, astroId}) => {
       const load = async () => {
         setLoading(true);
         try {
-          if (!astroId) return;
-          let q = supabase
-            .from(tab.table)
-            .select('*')
-            .eq(tab.idField, astroId)
-            .eq('status', 'missed')
-            .order('created_at', {ascending: false})
-            .limit(100);
-          if (tab.types) q = q.in('call_type', tab.types);
-          const {data, error} = await q;
-          if (error || !active) return;
-          setRows(data || []);
+          // One request for calls AND chats, merged and sorted by the server; this tab
+          // keeps its own slice. The astrologer comes from the token, so astroId is no
+          // longer part of the query.
+          const missed = await getMissedSessions({limit: 100});
+          if (!active) return;
+          setRows(missed.filter(tab.keep));
 
-          if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-            channelRef.current = null;
-          }
-          const channel = supabase
-            .channel(`missed_${tab.key}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-            .on(
-              'postgres_changes',
-              {event: 'UPDATE', schema: 'public', table: tab.table, filter: `${tab.idField}=eq.${astroId}`},
-              payload => {
-                const row = payload.new;
-                if (!active || !row || !matchesTab(row)) return;
-                setRows(prev => (prev.some(r => r.id === row.id) ? prev : [row, ...prev]));
-              },
-            )
-            .subscribe();
-          channelRef.current = channel;
+          // The Realtime UPDATE subscription that used to live here is GONE: it cannot
+          // survive RLS being enabled on chat_requests, and useFocusEffect already
+          // re-runs this load every time the screen is focused, which is when a missed
+          // session needs to appear. Nothing arrives while an astrologer stares at their
+          // own missed list that is worth a second websocket to Supabase.
         } catch (e) {
           console.log('[MissedSessions] load error:', e);
         } finally {
@@ -81,14 +67,8 @@ const TabContent = ({tab, astroId}) => {
         }
       };
       load();
-      return () => {
-        active = false;
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
-        }
-      };
-    }, [astroId, tab.key]),
+      return () => { active = false; };
+    }, [tab.keep]),
   );
 
   if (loading) {
@@ -111,8 +91,8 @@ const TabContent = ({tab, astroId}) => {
             <Ionicons name="call-outline" size={20} color={COLORS.red} />
           </View>
           <View style={{flex: 1, marginLeft: scale(12)}}>
-            <Text style={styles.name}>{item[tab.nameField] || t('common.customer')}</Text>
-            <Text style={styles.time}>{fmtTime(item.created_at)}</Text>
+            <Text style={styles.name}>{item.name || t('common.customer')}</Text>
+            <Text style={styles.time}>{fmtTime(item.createdAt)}</Text>
           </View>
           <View style={styles.missedPill}>
             <Ionicons name="close-circle" size={14} color="#fff" />
@@ -134,10 +114,8 @@ const TabContent = ({tab, astroId}) => {
 export default function MissedSessions() {
   const {t} = useContext(LanguageContext);
   const [activeTab, setActiveTab] = useState(0);
-  const [astroId, setAstroId] = useState(null);
 
   useEffect(() => {
-    AsyncStorage.getItem('astroId').then(id => setAstroId(id));
     // Opening the screen clears the drawer's "new missed" badge.
     AsyncStorage.setItem('missed_seen_at', new Date().toISOString());
   }, []);
@@ -162,7 +140,7 @@ export default function MissedSessions() {
           );
         })}
       </View>
-      <TabContent key={tab.key} tab={tab} astroId={astroId} />
+      <TabContent key={tab.key} tab={tab} />
     </View>
   );
 }

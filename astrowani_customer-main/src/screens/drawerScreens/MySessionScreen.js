@@ -4,9 +4,9 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import SessionDetails from '../component/SessionDetails';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import {COLORS} from '../../Theme/Colors';
-import {supabase} from '../../api/SupabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
+import {getMySessions} from '../../api/SessionApi';
 import {LanguageContext} from '../../context/LanguageContext';
 import {captureEvent} from '../../utils/Analytics';
 
@@ -21,27 +21,10 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
   const {t} = React.useContext(LanguageContext);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const channelRef = useRef(null);
-  const astroMapRef = useRef({});
   // sessionId -> rupees actually debited / minutes actually billed, from the backend
   // (the app cannot read wallet_transactions: anon has no SELECT on it).
   const chargeMapRef = useRef({});
   const minuteMapRef = useRef({});
-
-  const resolveAstro = useCallback(async vendorId => {
-    if (!vendorId) return null;
-    if (astroMapRef.current[vendorId]) return astroMapRef.current[vendorId];
-    const {data: a} = await supabase
-      .from('astrologers')
-      // `profile_image` dropped — not in the anon SELECT grant on astrologers
-      // (sql/hardening_02_access_control.sql); profile_pic_url is granted and is
-      // the fallback this screen already reads first below anyway.
-      .select('id, first_name, last_name, profile_pic_url')
-      .eq('id', vendorId)
-      .single();
-    if (a) astroMapRef.current[vendorId] = a;
-    return a || null;
-  }, []);
 
   // Stable English key for color lookup in SessionDetails — sessionTypeLabel is now
   // translated for display, so it can't be used as a lookup key.
@@ -65,12 +48,12 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
       const deduction = charged === undefined ? null : charged;
       const billedMinutes = minuteMapRef.current[item.id] ?? null;
 
-      const name = astro
-        ? `${astro.first_name || ''} ${astro.last_name || ''}`.trim() || t('common.astrologer')
-        : t('common.astrologer');
+      // `astro` is now the astrologer the SERVER joined onto the row
+      // (GET /api/customer/sessions), not a row this screen fetched itself, so the
+      // name is already assembled and the avatar already resized.
+      const name = astro?.name || t('common.astrologer');
       const image =
-        astro?.profile_image ||
-        astro?.profile_pic_url ||
+        astro?.profilePicUrl ||
         'https://cdn-icons-png.flaticon.com/128/3135/3135715.png';
 
       return {
@@ -130,87 +113,22 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
             console.warn('session charges fetch failed:', e.message);
           }
 
-          const {data: records, error} = await supabase
-            .from('chat_sessions')
-            .select('*')
-            .eq('caller_id', myId)
-            .in('call_type', callTypes)
-            .order('started_at', {ascending: false})
-            .limit(100);
+          // ONE request, with the astrologer already joined on each row. This used to be
+          // a direct chat_sessions read on the anon key plus a second read of
+          // astrologers; the server does both now so the chat_sessions grant can be
+          // revoked (it is one of the last two tables that key can still read).
+          const records = await getMySessions(callTypes);
+          if (!active) return;
+          setData(records.map(item => formatSession(item, item.astrologer)));
 
-          if (error || !records || !active) return;
-
-          // Bulk-fetch astrologer info
-          const vendorIds = [...new Set(records.map(r => r.vendor_id).filter(Boolean))];
-          if (vendorIds.length) {
-            const {data: astros} = await supabase
-              .from('astrologers')
-              // `profile_image` dropped — not in the anon SELECT grant on astrologers
-      // (sql/hardening_02_access_control.sql); profile_pic_url is granted and is
-      // the fallback this screen already reads first below anyway.
-      .select('id, first_name, last_name, profile_pic_url')
-              .in('id', vendorIds);
-            if (astros) astros.forEach(a => (astroMapRef.current[a.id] = a));
-          }
-
-          const formatted = records.map(item =>
-            formatSession(item, astroMapRef.current[item.vendor_id]),
-          );
-          if (active) setData(formatted);
-
-          // ── Realtime subscription ─────────────────────────────────────────
-          if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-            channelRef.current = null;
-          }
-
-          const channel = supabase
-            .channel(
-              `cust_sessions_${callTypes[0]}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
-            )
-            .on(
-              'postgres_changes',
-              {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'chat_sessions',
-                filter: `caller_id=eq.${myId}`,
-              },
-              async payload => {
-                const row = payload.new;
-                if (!row || !callTypes.includes(row.call_type)) return;
-                const astro = await resolveAstro(row.vendor_id);
-                if (!active) return;
-                setData(prev => {
-                  if (prev.some(s => s.id === row.id?.toString())) return prev;
-                  return [formatSession(row, astro), ...prev];
-                });
-              },
-            )
-            .on(
-              'postgres_changes',
-              {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'chat_sessions',
-                filter: `caller_id=eq.${myId}`,
-              },
-              payload => {
-                const row = payload.new;
-                if (!row || !callTypes.includes(row.call_type)) return;
-                if (!active) return;
-                setData(prev =>
-                  prev.map(s =>
-                    s.id === row.id?.toString()
-                      ? formatSession(row, astroMapRef.current[row.vendor_id])
-                      : s,
-                  ),
-                );
-              },
-            )
-            .subscribe();
-
-          channelRef.current = channel;
+          // The two Realtime subscriptions that used to live here (INSERT and UPDATE on
+          // chat_sessions, filtered to this customer) are GONE. They cannot survive RLS
+          // being enabled on that table, and this is a history list: useFocusEffect
+          // already re-runs this whole load every time the screen is focused, so a
+          // session that started or ended while the customer was elsewhere is there when
+          // they come back. The only behaviour lost is a row changing while they sit on
+          // this screen, which for a past-sessions list is not worth a second websocket
+          // to Supabase.
         } catch (e) {
           console.log('[MySessionScreen] load error:', e);
         } finally {
@@ -220,13 +138,7 @@ const SessionList = ({callTypes, sessionTypeLabel}) => {
 
       load();
 
-      return () => {
-        active = false;
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
-        }
-      };
+      return () => { active = false; };
     }, [callTypes.join(',')]),
   );
 

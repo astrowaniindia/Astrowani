@@ -18,11 +18,11 @@ import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import {COLORS} from '../Theme/Colors';
 import EvilIcons from 'react-native-vector-icons/EvilIcons';
 import Instance from '../api/ApiCall';
+import { getMissedCount } from '../api/SessionApi';
 import { getDeviceId, preserveDeviceId } from '../utils/deviceId';
 import {useFocusEffect} from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {resetAnalyticsIdentity} from '../utils/Analytics';
-import { supabase } from '../api/SupabaseClient';
 import { fetchAstrologerRow } from '../utils/vendorProfile';
 import { LanguageContext } from '../context/LanguageContext';
 import { SOCIAL_LINKS } from '../config/api';
@@ -60,16 +60,11 @@ function CustomDrawer(props) {
   // Count missed call/chat requests created since the vendor last opened the Missed screen.
   const fetchMissedCount = async () => {
     try {
-      const astroId = await AsyncStorage.getItem('astroId');
-      if (!astroId) return;
       const seenAt = (await AsyncStorage.getItem('missed_seen_at')) || '1970-01-01T00:00:00.000Z';
-      const [callRes, chatRes] = await Promise.all([
-        supabase.from('call_requests').select('id', { count: 'exact', head: true })
-          .eq('astrologer_id', astroId).eq('status', 'missed').gt('created_at', seenAt),
-        supabase.from('chat_requests').select('id', { count: 'exact', head: true })
-          .eq('receiver_id', astroId).eq('status', 'missed').gt('created_at', seenAt),
-      ]);
-      setMissedCount((callRes.count || 0) + (chatRes.count || 0));
+      // One request instead of two head counts on the anon key. The astrologer comes
+      // from the token now rather than AsyncStorage, which is also why astroId is no
+      // longer read here: a tampered id can no longer ask about somebody else's misses.
+      setMissedCount(await getMissedCount(seenAt));
     } catch (e) {
       // non-fatal
     }

@@ -192,6 +192,34 @@ async function main() {
 
     const since = await get('/api/vendor/missed?countOnly=1&since=' + new Date().toISOString(), mTok);
     ok('since=now gives 0 (the drawer badge after being read)', since.body.count === 0, since.body);
+    // `to` mirrors the vendor screen's own .lt(): it builds "yesterday" as
+    // from=startOfYesterday, to=startOfToday, so an inclusive bound would pull a request
+    // created at exactly 00:00:00.000 today into yesterday's list.
+    //
+    // WHAT THIS CAN AND CANNOT PROVE, because an earlier version of this check passed
+    // under BOTH operators and that was a false green. Postgres stores created_at to
+    // MICROseconds; parseInstant truncates the incoming bound to milliseconds. So for a
+    // row at .712756 both .lt('.712') and .lte('.712') exclude it, and no real row in
+    // this table can tell the two apart over HTTP. The assertion below is therefore the
+    // honest one -- the endpoint's window matches a direct .lt() at the bound the app
+    // actually sends -- and the operator itself is held by the source comment, not by
+    // this data. Do not "strengthen" this into an lt-vs-lte claim; it cannot be one
+    // until a row with a millisecond-exact created_at exists.
+    const boundary = missed[0].createdAt;
+    const { data: ltRows } = await db.from('chat_requests').select('id')
+      .eq('receiver_id', MISSED_VENDOR.id).eq('status', 'missed')
+      .lt('created_at', new Date(Date.parse(boundary)).toISOString());
+    const ltIds = new Set((ltRows || []).map((r) => r.id));
+    const apiTo = await get('/api/vendor/missed?limit=200&to=' + encodeURIComponent(boundary), mTok);
+    const apiChatIds = new Set(((apiTo.body && apiTo.body.missed) || [])
+      .filter((m) => m.kind === 'chat').map((m) => m.id));
+    ok('to= window matches a direct .lt() at the same bound',
+      apiChatIds.size === ltIds.size && [...apiChatIds].every((id) => ltIds.has(id)),
+      { api: apiChatIds.size, lt: ltIds.size });
+    ok('control: to= actually narrows the list',
+      apiChatIds.size < missed.filter((m) => m.kind === 'chat').length,
+      { narrowed: apiChatIds.size, all: missed.filter((m) => m.kind === 'chat').length });
+
     const garbage = await get('/api/vendor/missed?countOnly=1&since=not-a-date', mTok);
     ok('an unparseable since is ignored, not passed through',
       garbage.status === 200 && garbage.body.count === cnt.body.count, garbage.body);

@@ -20,9 +20,9 @@ import {
 import FastImage from 'react-native-fast-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { supabase } from '../api/SupabaseClient';
 import { COLORS } from '../Theme/Colors';
 import Instance from '../api/ApiCall';
+import { getSessionState } from '../api/SessionApi';
 import { showReviewPrompt } from '../components/ReviewPrompt';
 import { showStatusPopup } from '../components/StatusPopup';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -531,38 +531,46 @@ const ChatSessionScreen = ({ route, navigation }) => {
           new Promise((_, reject) => setTimeout(() => reject(new Error('attempt timed out')), ms)),
         ]);
 
-      // Resolved by request_id, or straight by id when the waiting popup already learned it
-      // (the accept response / socket / poll all carry the session id now).
-      const findSessionViaSupabase = async () => {
-        let query = supabase.from('chat_sessions').select('*');
-        query = initialSessionId
-          ? query.or(`id.eq.${initialSessionId},request_id.eq.${requestId}`)
-          : query.eq('request_id', requestId);
-        const { data, error } = await query.limit(1).maybeSingle();
-        if (error) throw error;
-        return data || null;
-      };
-
       // Only `id` is load-bearing downstream (the socket room, /api/chat/message,
       // sendCustomerDetails); `started_at` just anchors the timer and falls back to now.
-      // So the id alone is enough to start the chat — we do not need the whole row.
+      // So the id alone is enough to start the chat — we never needed the whole row.
+      //
+      // THE DIRECT chat_sessions READ THAT USED TO RACE THIS IS GONE. That table is one
+      // of the last two still readable with the publishable key in this APK, and the
+      // grant is being revoked; it also cannot survive RLS being enabled. Everything it
+      // did is covered here, and the id branch is now strictly better: it used to trust
+      // whatever sessionId it was handed and hand back a row, where /state CONFIRMS the
+      // session exists, has not ended, and has this customer as a participant — and
+      // returns started_at, which the old backend branch dropped (the timer then
+      // anchored to "now" and under-reported a resumed chat).
       const findSessionViaBackend = async () => {
-        if (!requestId) return null;
         const token = await AsyncStorage.getItem('token');
         if (!token) return null;
-        const res = await Instance.get(`/api/requests/chat/${requestId}/status`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const auth = { headers: { Authorization: `Bearer ${token}` } };
+
+        // The waiting popup / accept response / poll already learned the id.
+        if (initialSessionId) {
+          const st = await Instance.get(`/api/session/${initialSessionId}/state`, auth);
+          if (st?.data?.success && st.data.exists !== false && st.data.ended !== true) {
+            sawAccepted = true;
+            return { id: initialSessionId, request_id: requestId || null, started_at: st.data.startedAt || null };
+          }
+          // Ended or not ours — fall through to the request lookup rather than
+          // returning, so a stale param cannot strand a chat that does have a session.
+        }
+
+        if (!requestId) return null;
+        const res = await Instance.get(`/api/requests/chat/${requestId}/status`, auth);
         if (res?.data?.status === 'accepted') sawAccepted = true;
         const sid = res?.data?.sessionId;
         return sid ? { id: sid, request_id: requestId, started_at: null } : null;
       };
 
-      // Both sources, every tick, first answer wins. allSettled rather than any/race so one
-      // source being broken is simply ignored instead of rejecting the pair.
+      // One source now, still wrapped in allSettled + a timeout so a hung or failing
+      // attempt is ignored and the next tick simply tries again, exactly as before —
+      // this poll must never throw out of its interval.
       const findSession = async () => {
         const results = await Promise.allSettled([
-          withTimeout(findSessionViaSupabase(), ATTEMPT_TIMEOUT_MS),
           withTimeout(findSessionViaBackend(), ATTEMPT_TIMEOUT_MS),
         ]);
         for (const r of results) {
@@ -709,12 +717,11 @@ const ChatSessionScreen = ({ route, navigation }) => {
           // ever dropped, not as the normal detection path.
           pollEndRef.current = setInterval(async () => {
             if (hasEndedRef.current || !sessionRef.current) return;
-            const { data: checkSess } = await supabase
-              .from('chat_sessions')
-              .select('ended_at')
-              .eq('id', sessionRef.current.id)
-              .single();
-            if (checkSess?.ended_at) {
+            // Via the backend now, not a direct chat_sessions read. getSessionState
+            // answers null when it could not tell, and null must mean "carry on" — a
+            // failed poll ending a live chat would be far worse than a late one.
+            const st = await getSessionState(sessionRef.current.id);
+            if (st && st.ended) {
               endSession(t('chatSession.endedGeneric'));
             }
           }, 45000);

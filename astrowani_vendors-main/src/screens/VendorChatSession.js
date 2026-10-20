@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { supabase } from '../api/SupabaseClient';
+import { getSessionIdForRequest, getSessionState } from '../api/SessionApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../Theme/Colors';
 import io from 'socket.io-client';
@@ -271,14 +271,12 @@ const VendorChatSession = ({ route, navigation }) => {
 
       let finalSessionId = initialSessionId;
 
-      // Get session if not passed
+      // Get session if not passed. Via the backend now, not a direct chat_sessions read
+      // on the anon key -- that grant is being revoked. The route is scoped to THIS
+      // astrologer's own sessions, so a request id that is not theirs resolves to null
+      // rather than to somebody else's session.
       if (!finalSessionId) {
-        const { data } = await supabase
-          .from('chat_sessions')
-          .select('id')
-          .eq('request_id', requestId)
-          .single();
-        if (data?.id) finalSessionId = data.id;
+        finalSessionId = await getSessionIdForRequest(requestId);
       }
 
       if (finalSessionId) {
@@ -335,12 +333,12 @@ const VendorChatSession = ({ route, navigation }) => {
           // Check if Customer ended the chat
           pollEndRef.current = setInterval(async () => {
             if (!sessionIdRef.current) return;
-            const { data: checkSess } = await supabase
-              .from('chat_sessions')
-              .select('ended_at')
-              .eq('id', sessionIdRef.current)
-              .single();
-            if (checkSess?.ended_at) {
+            // Via the backend now. getSessionState answers null when it could not tell,
+            // and null must mean "carry on" -- a failed poll ending a live consultation
+            // would be far worse than noticing the end one tick late. The
+            // 'session_ended' socket event above remains the immediate path.
+            const st = await getSessionState(sessionIdRef.current);
+            if (st && st.ended) {
               endSessionLocal();
             }
           }, 5000);

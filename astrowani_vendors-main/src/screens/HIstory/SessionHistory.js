@@ -12,8 +12,7 @@ import {useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import {supabase} from '../../api/SupabaseClient';
-import {resolveCustomerNames} from '../../utils/customerNames';
+import {getMySessions} from '../../api/SessionApi';
 import {resolveSessionEarnings} from '../../utils/sessionEarnings';
 import {COLORS} from '../../Theme/Colors';
 import {scale, verticalScale, moderateScale} from '../../utils/Scaling';
@@ -140,53 +139,44 @@ const TabContent = ({tabKey, types, astroId}) => {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const channelRef = useRef(null);
   const custMapRef = useRef({});
-
-  const resolveName = useCallback(async (callerId) => {
-    if (!callerId) return 'Customer';
-    if (custMapRef.current[callerId]) return custMapRef.current[callerId];
-    const map = await resolveCustomerNames([callerId]);
-    const name = map[callerId]?.name || 'Customer';
-    custMapRef.current[callerId] = name;
-    return name;
-  }, []);
 
   // Shared by the focus-effect load and pull-to-refresh — fetches + enriches
   // sessions without touching the realtime subscription (that's focus-scoped).
   const fetchSessions = useCallback(async (id, active = {current: true}) => {
-    const {data, error} = await supabase
-      .from('chat_sessions')
-      .select('*')
-      .eq('vendor_id', id)
-      .in('call_type', types)
-      .order('started_at', {ascending: false})
-      .limit(100);
-
-    if (error || !data || !active.current) return;
-
-    const callerIds = [...new Set(data.map(s => s.caller_id).filter(Boolean))];
-    if (callerIds.length) {
-      const map = await resolveCustomerNames(callerIds);
-      Object.entries(map).forEach(([id, c]) => {
-        custMapRef.current[id] = c.name || 'Customer';
-      });
+    // ONE request, with the customer's name already joined onto each row. This used to be
+    // a direct chat_sessions read on the anon key plus resolveCustomerNames; the server
+    // does both now (GET /api/vendor/sessions) so the chat_sessions grant can be revoked.
+    // `id` is no longer part of the query -- the astrologer comes from the token -- but it
+    // stays in the signature because both callers still have it to hand and a falsy one is
+    // still the right "not signed in yet" guard.
+    const data = await getMySessions(types);
+    if (!data.length || !active.current) {
+      if (active.current) setSessions([]);
+      return;
     }
+
+    // Still cached locally, because the cards read it and nothing else fills this map now.
+    data.forEach(s => {
+      if (s.caller_id) custMapRef.current[s.caller_id] = s.customerName || 'Customer';
+    });
 
     // The real payout per session, from the ledger. A failed lookup returns {} and every
     // card shows "—": better than the figure this screen used to invent from the customer's
-    // rate (see the comment on `earnings` in SessionCard).
+    // rate (see the comment on `earnings` in SessionCard). Deliberately NOT folded into the
+    // new endpoint: chat_sessions carries no earnings column and the ledger route is
+    // already the authority on this.
     const earningsMap = await resolveSessionEarnings(data.map(s => s.id));
 
     const enriched = data.map(s => ({
       ...s,
-      customerName: custMapRef.current[s.caller_id] || 'Customer',
+      customerName: s.customerName || 'Customer',
       earnings: earningsMap[s.id]?.earned,
       minutesBilled: earningsMap[s.id]?.minutesBilled,
     }));
 
     if (active.current) setSessions(enriched);
-  }, [types.join(',')]);
+  }, [types]);
 
   const onRefresh = useCallback(async () => {
     const id = astroId || (await AsyncStorage.getItem('astroId'));
@@ -212,70 +202,13 @@ const TabContent = ({tabKey, types, astroId}) => {
           await fetchSessions(id, {current: active});
           if (!active) return;
 
-          // ── Realtime subscription ──────────────────────────────────────────
-          if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-            channelRef.current = null;
-          }
-
-          const channel = supabase
-            .channel(`session_history_${tabKey}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
-            .on(
-              'postgres_changes',
-              {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'chat_sessions',
-                filter: `vendor_id=eq.${id}`,
-              },
-              async (payload) => {
-                const row = payload.new;
-                if (!row || !types.includes(row.call_type)) return;
-                const customerName = await resolveName(row.caller_id);
-                if (!active) return;
-                setSessions(prev => {
-                  // Avoid duplicate if focus-refresh already caught it
-                  if (prev.some(s => s.id === row.id)) return prev;
-                  return [{...row, customerName}, ...prev];
-                });
-              },
-            )
-            .on(
-              'postgres_changes',
-              {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'chat_sessions',
-                filter: `vendor_id=eq.${id}`,
-              },
-              async (payload) => {
-                const row = payload.new;
-                if (!row || !types.includes(row.call_type)) return;
-                if (!active) return;
-                // The ledger is only complete once the session has ended, so that is when
-                // the payout is worth reading. `...row` must not clobber the figures we
-                // already hold — chat_sessions carries no earnings column.
-                const ended = row.ended_at;
-                const fresh = ended ? (await resolveSessionEarnings([row.id]))[row.id] : null;
-                if (!active) return;
-                setSessions(prev =>
-                  prev.map(s =>
-                    s.id === row.id
-                      ? {
-                          ...s,
-                          ...row,
-                          customerName: s.customerName,
-                          earnings: fresh ? fresh.earned : s.earnings,
-                          minutesBilled: fresh ? fresh.minutesBilled : s.minutesBilled,
-                        }
-                      : s,
-                  ),
-                );
-              },
-            )
-            .subscribe();
-
-          channelRef.current = channel;
+          // The two Realtime subscriptions that used to live here (INSERT and UPDATE on
+          // chat_sessions for this astrologer) are GONE. They cannot survive RLS being
+          // enabled on that table. This screen already has BOTH a focus refresh and
+          // pull-to-refresh, and a session that started or ended while the astrologer was
+          // elsewhere is there when they come back -- which for a history list is what
+          // matters. The UPDATE handler's job of refreshing earnings once a session ended
+          // is covered by the same refresh, since resolveSessionEarnings re-runs with it.
         } catch (e) {
           console.log('[SessionHistory] load error:', e);
         } finally {
@@ -285,13 +218,7 @@ const TabContent = ({tabKey, types, astroId}) => {
 
       load();
 
-      return () => {
-        active = false;
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
-        }
-      };
+      return () => { active = false; };
     }, [astroId, types.join(',')]),
   );
 

@@ -5,7 +5,6 @@
 import { useState, useRef, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../api/SupabaseClient';
 import { markRequestStatus } from '../api/RequestsApi';
 import Instance from '../api/ApiCall';
 import { showStatusPopup } from '../components/StatusPopup';
@@ -31,7 +30,6 @@ const useChatRequest = (navigation) => {
   const submittingRef = useRef(false);
   const [requestAstro, setRequestAstro] = useState(null);
   const [pendingRequestId, setPendingRequestId] = useState(null);
-  const channelRef = useRef(null);
   const astroRef = useRef(null);
   const timeoutRef = useRef(null);
   const requestIdRef = useRef(null);
@@ -212,7 +210,6 @@ const useChatRequest = (navigation) => {
 
       const teardownListeners = () => {
         if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-        if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
         if (pollerRef.current) { pollerRef.current.stop(); pollerRef.current = null; }
         if (socketRef.current) { try { socketRef.current.disconnect(); } catch (_) {} socketRef.current = null; }
       };
@@ -250,27 +247,18 @@ const useChatRequest = (navigation) => {
         // 'cancelled' is us — say nothing.
       };
 
-      // 1. Supabase Realtime (the original path).
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      channelRef.current = supabase.channel(`req_status_${requestId}`);
-      channelRef.current
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'chat_requests',
-            filter: `id=eq.${requestId}`,
-          },
-          (payload) => {
-            const updated = payload.new;
-            if (updated.status === 'accepted') resolveAccepted(null);
-            else if (updated.status && updated.status !== 'pending') resolveClosed(updated.status);
-          }
-        )
-        .subscribe();
+      // The Supabase Realtime UPDATE on chat_requests that used to be path 1 here is
+      // GONE (2026-10-21). It cannot survive RLS being enabled on that table, which is
+      // the last thing standing between the publishable key in this APK and a
+      // downloadable list of who consulted whom. Both remaining paths below already
+      // cover every case it did, and both are guarded by the same resolvedRef, so
+      // whichever arrives first still wins. It was also the weakest of the three: its
+      // channel name was a FIXED `req_status_<id>`, which the project's own rule
+      // forbids (a repeated name returns the already-subscribed channel and any further
+      // .on() throws), so a second request for the same id in one app session could
+      // take the whole subscription down.
 
-      // 2. Socket — new in 2026-09-30. Chat had no socket path at all; the backend's
+      // 1. Socket — added 2026-09-30. Chat had no socket path at all; the backend's
       //    /api/session/accept now emits `chat_accepted` to the customer's own room itself,
       //    so this works no matter which button the astrologer pressed (in-app card,
       //    notification action, or the draw-over-other-apps overlay).
@@ -287,7 +275,7 @@ const useChatRequest = (navigation) => {
         console.log('[chat request] socket setup skipped:', e.message);
       }
 
-      // 3. Polling — the backstop that cannot miss an edge. See awaitRequestOutcome.js.
+      // 2. Polling — the backstop that cannot miss an edge. See awaitRequestOutcome.js.
       pollerRef.current = awaitRequestOutcome({
         kind: 'chat',
         requestId,
@@ -370,8 +358,7 @@ const useChatRequest = (navigation) => {
           setRequesting(false);
           setPendingRequestId(null);
           setRequestAstro(null);
-          if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
-          navigation.navigate('ChatSessionScreen', { requestId, person: astro, sessionId });
+            navigation.navigate('ChatSessionScreen', { requestId, person: astro, sessionId });
           return;
         }
       }
@@ -381,10 +368,6 @@ const useChatRequest = (navigation) => {
     setRequesting(false);
     setPendingRequestId(null);
     setRequestAstro(null);
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
   };
 
   // Leaving the screen while a request is in flight must not leave a 2s poll loop and a
@@ -393,7 +376,6 @@ const useChatRequest = (navigation) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (pollerRef.current) pollerRef.current.stop();
     if (socketRef.current) { try { socketRef.current.disconnect(); } catch (_) {} }
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
   }, []);
 
   return { requesting, requestAstro, sendChatRequest, cancelRequest, submitting };

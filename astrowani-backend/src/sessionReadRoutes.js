@@ -276,7 +276,11 @@ module.exports = function registerSessionReadRoutes(app) {
       const range = (q) => {
         let out = q;
         if (from) out = out.gte('created_at', from);
-        if (to) out = out.lte('created_at', to);
+        // EXCLUSIVE, deliberately. The vendor screen's own getRange() builds a
+        // "yesterday" window as from=startOfYesterday, to=startOfToday and used .lt
+        // here; lte would pull a request created at exactly 00:00:00.000 today into
+        // yesterday's list.
+        if (to) out = out.lt('created_at', to);
         if (since) out = out.gt('created_at', since);
         return out;
       };

@@ -63,42 +63,23 @@ export default function MissedSessionsHome() {
       const load = async () => {
         setLoading(true);
         try {
-          const astroId = astroIdRef.current || (await AsyncStorage.getItem('astroId'));
-          astroIdRef.current = astroId;
-          if (!astroId) {
-            if (active) { setRows([]); setLoading(false); }
-            return;
-          }
+          // ONE request, merged and sorted server-side. This used to be two direct reads
+          // (call_requests + chat_requests) on the anon key; chat_requests is one of the
+          // last two tables that key can still read, and the grant is being revoked.
+          // The astrologer comes from the token, so no astroId is needed here and a
+          // tampered one can no longer ask about somebody else's missed sessions.
           const range = getRange(filter);
-          const applyRange = q => {
-            if (range?.from) q = q.gte('created_at', range.from);
-            if (range?.to) q = q.lt('created_at', range.to);
-            return q;
-          };
-
-          let callQ = supabase
-            .from('call_requests')
-            .select('id, customer_name, call_type, created_at')
-            .eq('astrologer_id', astroId)
-            .eq('status', 'missed');
-          let chatQ = supabase
-            .from('chat_requests')
-            .select('id, caller_name, created_at')
-            .eq('receiver_id', astroId)
-            .eq('status', 'missed');
-
-          const [callsRes, chatsRes] = await Promise.all([
-            applyRange(callQ).order('created_at', {ascending: false}).limit(50),
-            applyRange(chatQ).order('created_at', {ascending: false}).limit(50),
-          ]);
+          const missed = await getMissedSessions({ from: range?.from, to: range?.to, limit: 50 });
           if (!active) return;
-
-          const calls = (callsRes.data || []).map(r => ({...r, _kind: 'call', name: r.customer_name}));
-          const chats = (chatsRes.data || []).map(r => ({...r, _kind: 'chat', name: r.caller_name}));
-          const merged = [...calls, ...chats].sort(
-            (a, b) => new Date(b.created_at) - new Date(a.created_at),
-          );
-          setRows(merged);
+          // Mapped back to the keys this component's typeLabel/typeIcon/render already
+          // use, so the display code is untouched.
+          setRows(missed.map(m => ({
+            id: m.id,
+            _kind: m.kind,
+            name: m.name,
+            call_type: m.callType,
+            created_at: m.createdAt,
+          })));
         } catch (e) {
           console.log('[MissedSessionsHome] load error:', e);
         } finally {
