@@ -70,6 +70,11 @@ const PRIZE_DROP = verticalScale(94);
 // The prize is not lost by pressing ✕, it is PUT SOMEWHERE, and the customer has
 // watched where. These three must stay in step with that component's own geometry.
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+// ONE width for the prize card and the speech bubble (owner, 2026-10-20): the bubble
+// used to stretch the full guide row, which ran it wider than the prize card and the
+// CTA and made it, not the prize, the widest block on the screen. Both now take this
+// number, so they line up exactly whatever the language does to the text inside.
+const CARD_W = SCREEN_W * 0.86;
 const BUBBLE = scale(52);              // FreeCallGiftBubble SIZE
 const LABEL_W = scale(126);            // PendingGiftBubbleHost GIFT_LABEL_W
 // The host centres the circle over its (wider) hint pill, so the circle itself sits
@@ -288,8 +293,18 @@ export default function CampaignGiftReveal({ navigation, route }) {
     };
     const appStateSub = AppState.addEventListener('change', onAppState);
 
+    // The box opens ITSELF two seconds in (1s originally; raised 2026-10-20 so the
+    // fidget is seen before the lid goes). The tap step was removed deliberately
+    // (owner, 2026-10-20): nothing is gated on the customer touching it, and a
+    // closed box that is never tapped is the single most expensive outcome here
+    // (see the abandon event above). The tap catcher below is kept so an eager
+    // tap inside that first second still works and still records
+    // `seconds_to_open`; `openGift` is ref-guarded, so whichever fires first wins.
+    const autoOpen = setTimeout(() => { openGift(); }, 2000);
+
     return () => {
       clearTimeout(startShake);
+      clearTimeout(autoOpen);
       if (exitTimer.current) clearTimeout(exitTimer.current);
       shake.stop();
       hint.stop();
@@ -374,7 +389,13 @@ export default function CampaignGiftReveal({ navigation, route }) {
       // Asked once here — SignupWelcome must not raise its own offer card afterwards.
       queueCampaignDeclined();
     }
-    navigation.replace('Login');
+    // TWO DIFFERENT LOGIN SCREENS, and which one you get is decided here (owner,
+    // 2026-10-20). Someone who pressed "Haan! Mujhe free call chahiye" is carried
+    // to the free-call version, which repeats the promise they just accepted;
+    // someone who pressed the cross declined it, so they get the ordinary login
+    // screen rather than being sold the same thing again. Every other route into
+    // Login passes no params and therefore also lands on the ordinary one.
+    navigation.replace('Login', accepted ? { fromCampaign: true } : undefined);
   };
 
   /**
@@ -757,6 +778,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 22,
   },
   prizeCard: {
+    width: CARD_W,
     backgroundColor: CREAM,
     borderRadius: moderateScale(18),
     borderWidth: 2,
@@ -805,28 +827,26 @@ const styles = StyleSheet.create({
   // tell which one was the prize. This is a quiet translucent caption — the prize stays
   // the only bright block on the screen.
   bubble: {
-    // FULL WIDTH of the guide row (owner, 2026-10-18): the band between the prize card
-    // and the guide's head was the last bare stretch of this screen, so the bubble now
-    // spans it edge to edge instead of sitting as a narrow caption in the middle of it.
-    // `alignSelf: 'stretch'` rather than a maxWidth, so it tracks the row's own padding
-    // on every screen size instead of being a number that only looks right on one.
-    alignSelf: 'stretch',
+    // Matched to the prize card (owner, 2026-10-20). It spanned the whole guide row
+    // before, which made the explanation wider than the thing it explains.
+    width: CARD_W,
+    alignSelf: 'center',
     marginBottom: verticalScale(14),
     backgroundColor: 'rgba(0,0,0,0.26)',
     borderRadius: moderateScale(14),
     borderWidth: 1,
     borderColor: 'rgba(255,210,51,0.45)',
-    paddingVertical: verticalScale(28),
-    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(18),
+    paddingHorizontal: scale(16),
   },
   bubbleText: {
     color: CREAM,
     // Up from 12.5/18. This is the only sentence on the screen that explains what was
     // just won; at the old size it read as a caption under an illustration rather than
     // as something anyone would stop and read.
-    fontSize: moderateScale(16),
+    fontSize: moderateScale(14),
     fontWeight: '600',
-    lineHeight: moderateScale(25),
+    lineHeight: moderateScale(21),
     textAlign: 'center',
   },
   // Tail pointing DOWN at the guide standing under it: a border triangle with a fill

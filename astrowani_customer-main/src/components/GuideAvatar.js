@@ -20,7 +20,7 @@ import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import { hasSeenGuideHint, markGuideHintSeen } from '../utils/onboardingFlags';
 import { captureEvent } from '../utils/Analytics';
 
-const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, alwaysShow = false, avatarSize, offsetX = 0, avatarOffsetY = 0, boxOffsetY = 0, layout = 'stack', onPress, hideOnKeyboard = true }) => {
+const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, alwaysShow = false, avatarSize, offsetX = 0, avatarOffsetY = 0, boxOffsetY = 0, layout = 'stack', onPress, hideOnKeyboard = true, bounce = true, topOffset, behind = false }) => {
   const [visible, setVisible] = useState(alwaysShow);
   const [checked, setChecked] = useState(alwaysShow);
   const slideAnim = useRef(new Animated.Value(40)).current;
@@ -70,6 +70,11 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
       Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
 
+    // `bounce={false}` keeps him standing still. The entry slide/fade above still runs;
+    // only the endless float is skipped, which on a screen where he is the focal point
+    // reads as fidgeting rather than life.
+    if (!bounce) return undefined;
+
     bounceLoopRef.current = Animated.loop(
       Animated.sequence([
         Animated.timing(bounceAnim, { toValue: -8, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -79,7 +84,7 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
     bounceLoopRef.current.start();
 
     return () => bounceLoopRef.current?.stop();
-  }, [visible, slideAnim, fadeAnim, bounceAnim]);
+  }, [visible, slideAnim, fadeAnim, bounceAnim, bounce]);
 
   const dismiss = () => {
     if (alwaysShow) return;
@@ -104,9 +109,19 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
       pointerEvents="box-none"
       style={[
         styles.container,
+        // BEHIND: he becomes part of the backdrop. zIndex alone is not enough on Android,
+        // where elevation decides who draws on top -- the bubble carries elevation 6 and
+        // would still sit over the button (5) and the field (2). Both have to go.
+        behind && { zIndex: 0, elevation: 0 },
         isRow && styles.rowContainer,
         position === 'left' ? styles.left : position === 'center' ? styles.center : styles.right,
-        bottomOffset != null && { bottom: bottomOffset },
+        // ANCHOR FROM THE TOP when topOffset is given. Android resizes the window for
+        // the keyboard, so anything pinned to the BOTTOM is dragged upwards with it --
+        // which is how the guide ended up on top of the logo. Pinned to the top he does
+        // not move at all, and the keyboard simply covers him.
+        topOffset != null
+          ? { top: topOffset }
+          : { bottom: bottomOffset != null ? bottomOffset : verticalScale(30) },
         { opacity: fadeAnim, transform: [{ translateY: slideAnim }, { translateX: offsetX }] },
       ]}>
       {isRow && (
@@ -125,7 +140,7 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
 
       <BubbleWrapper
         {...bubbleWrapperProps}
-        style={[isRow ? styles.bubbleSquare : styles.bubble, boxOffsetY !== 0 && { transform: [{ translateY: boxOffsetY }] }]}>
+        style={[isRow ? styles.bubbleSquare : styles.bubble, behind && { elevation: 0, shadowOpacity: 0 }, boxOffsetY !== 0 && { transform: [{ translateY: boxOffsetY }] }]}>
         <Text style={styles.bubbleText}>{message}</Text>
         <View style={isRow ? styles.bubbleTailLeft : styles.bubbleTail} />
       </BubbleWrapper>
@@ -156,9 +171,11 @@ const GuideAvatar = ({ storageKey, message, position = 'right', bottomOffset, al
 export default GuideAvatar;
 
 const styles = StyleSheet.create({
+  // No `bottom` here on purpose: top- and bottom-anchoring are applied in the style
+  // array instead, so only ever ONE of them is set. With both present Yoga stretches the
+  // box between them and the offsets stop meaning what they say.
   container: {
     position: 'absolute',
-    bottom: verticalScale(30),
     alignItems: 'center',
     zIndex: 999,
   },

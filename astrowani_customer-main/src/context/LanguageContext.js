@@ -238,11 +238,30 @@ const translations = {
 
     // Login / OTP
     'login.tagline': "Best Astrologer's Team",
-    'login.discoverPath': 'Discover Your Cosmic Path',
+    'login.discoverPath': 'Hand picked Astrologer by Us !',
     'login.phoneNumber': 'Phone number',
-    'login.continue': 'Continue',
+    'login.continue': 'Get Started',
     'login.agreeTerms': 'By signing up, you agree to our ',
+    // Short forms used ONLY on the login screens: the full sentence wrapped to two
+    // lines once the line was narrowed to clear the floating gift bubble.
+    'login.agreeShort': 'By continuing you agree to our ',
+    'login.termsShort': 'Terms',
+    'login.privacyShort': 'Privacy',
     'login.and': ' & ',
+    // The free-call login (Login.js `fromCampaign`), shown only to someone who just
+    // accepted the intro call on the gift reveal. {{minutes}} comes from
+    // FREE_CALL_MINUTES there, which has to track app_settings.free_call_offer.
+    'login.promiseLine1': '{{minutes}} minutes.',
+    'login.promiseLine2': 'Free.',
+    'login.promiseSub': 'Ask a real astrologer anything. Your first call is on us.',
+    'login.topicLove': 'Love',
+    'login.topicCareer': 'Career',
+    'login.topicMoney': 'Money',
+    'login.topicFamily': 'Family',
+    'login.mobileLabel': 'Mobile number',
+    'login.claimFreeCall': 'Claim my free call',
+    'login.phonePlaceholder': '00000 00000',
+    'login.verifyOnly': 'Only to verify your account. No promotional messages.',
     'login.noAccount': "Don't have an account? ",
     'login.selectCountry': 'Select Country',
     'login.close': 'Close',
@@ -252,6 +271,9 @@ const translations = {
     'login.otpFailed': 'Could not send OTP. Please try again.',
     'login.somethingWrong': 'Something went wrong. Please try again.',
     'login.guideHint': 'Welcome to Astrowani!',
+    // Second line of the guide's bubble on login. Kept separate from guideHint so it
+    // is still appended when the first line comes from the admin's Guide Avatar page.
+    'login.guideHintLine2': 'Here you will get the best astrologers team',
 
     // Remedies (static home tiles)
     'remedies.puja': 'Puja',
@@ -1821,11 +1843,25 @@ const translations = {
 
     // Login / OTP
     'login.tagline': 'सर्वश्रेष्ठ ज्योतिषियों की टीम',
-    'login.discoverPath': 'अपना ब्रह्मांडीय पथ खोजें',
+    'login.discoverPath': 'हमारे चुने हुए ज्योतिषी',
     'login.phoneNumber': 'फ़ोन नंबर',
-    'login.continue': 'जारी रखें',
+    'login.continue': 'शुरू करें',
     'login.agreeTerms': 'साइन अप करके, आप हमारी ',
+    'login.agreeShort': 'आगे बढ़ने पर आप हमारी ',
+    'login.termsShort': 'शर्तें',
+    'login.privacyShort': 'प्राइवेसी',
     'login.and': ' और ',
+    'login.promiseLine1': '{{minutes}} मिनट की बात.',
+    'login.promiseLine2': 'बिल्कुल फ्री.',
+    'login.promiseSub': 'असली ज्योतिषी से कुछ भी पूछिए। पहली कॉल हमारी तरफ से।',
+    'login.topicLove': 'प्यार',
+    'login.topicCareer': 'करियर',
+    'login.topicMoney': 'पैसा',
+    'login.topicFamily': 'परिवार',
+    'login.mobileLabel': 'मोबाइल नंबर',
+    'login.claimFreeCall': 'मेरी फ्री कॉल शुरू करें',
+    'login.phonePlaceholder': '00000 00000',
+    'login.verifyOnly': 'सिर्फ अकाउंट वेरिफाई करने के लिए। कोई प्रमोशनल मैसेज नहीं।',
     'login.noAccount': 'खाता नहीं है? ',
     'login.selectCountry': 'देश चुनें',
     'login.close': 'बंद करें',
@@ -1835,6 +1871,7 @@ const translations = {
     'login.otpFailed': 'OTP भेजा नहीं जा सका। कृपया पुनः प्रयास करें।',
     'login.somethingWrong': 'कुछ गलत हो गया। कृपया पुनः प्रयास करें।',
     'login.guideHint': 'Astrowani में आपका स्वागत है!',
+    'login.guideHintLine2': 'यहाँ आपको सर्वश्रेष्ठ ज्योतिषियों की टीम मिलेगी',
 
     // Remedies (static home tiles)
     'remedies.puja': 'पूजा',

@@ -39,9 +39,16 @@ const VerifyOtp = ({navigation, route}) => {
   // `signup` is set by the Register screen. Signup now collects only the phone
   // number before OTP; the name is asked on the next screen (SignupName) once the
   // account exists, and birth details are asked later, when they are needed.
-  const {phoneNumber, role = 'customer', signup, termsAccepted, resendIn} =
+  const {phoneNumber, role = 'customer', signup, termsAccepted, resendIn, variant} =
     route?.params || {};
   const isSignup = !!signup;
+  // Which login screen sent them here ('free_call' | 'standard'), passed through from
+  // Login.js. THE CONVERSION IS RECORDED ON THIS SCREEN, not on the one they came from,
+  // so without carrying it the funnel splits at the first step and merges again at the
+  // last -- which is the one step anybody actually wants split. null for every other
+  // entry point into this screen (Register, a deep link), so those stay distinguishable
+  // from the two login variants rather than being folded into one of them.
+  const variantProps = { variant: variant || null };
 
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -72,7 +79,7 @@ const VerifyOtp = ({navigation, route}) => {
   const flow = isSignup ? 'signup' : 'login';
 
   useEffect(() => {
-    captureEvent('otp_screen_viewed', { flow });
+    captureEvent('otp_screen_viewed', { flow, ...variantProps });
     const onBack = () => {
       captureEvent('otp_back_tapped', { flow });
       return false;
@@ -134,7 +141,7 @@ const VerifyOtp = ({navigation, route}) => {
       showAlert(t('otp.invalidOtpTitle'), t('otp.enterComplete'), 'error');
       return;
     }
-    captureEvent('otp_verify_tapped', { flow, auto });
+    captureEvent('otp_verify_tapped', { flow, auto, ...variantProps });
     verifyingRef.current = true;
     setVerifying(true);
     try {
@@ -182,11 +189,11 @@ const VerifyOtp = ({navigation, route}) => {
           // "completed" (it also feeds the ad platforms' registration event).
           // Name and welcome come next, but a customer who closes the app on the
           // name screen is still a real, signed-in account.
-          captureEvent('signup_otp_verified');
-          captureEvent('signup_completed');
+          captureEvent('signup_otp_verified', variantProps);
+          captureEvent('signup_completed', variantProps);
           navigation.reset({index: 0, routes: [{name: 'SignupName'}]});
         } else {
-          captureEvent('login_completed');
+          captureEvent('login_completed', variantProps);
           // A brief "Namaste ji" welcome-back before Home (2026-09-23) -- distinct
           // from the new-signup gift screen: no free-call offer check here, and
           // SignupWelcome auto-advances instead of waiting for a tap when
@@ -195,7 +202,7 @@ const VerifyOtp = ({navigation, route}) => {
           navigation.reset({index: 0, routes: [{name: 'SignupWelcome', params: { isLogin: true }}]});
         }
       } else {
-        captureEvent(isSignup ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_rejected' });
+        captureEvent(isSignup ? 'signup_failed' : 'login_failed', { reason: 'otp_verify_rejected', ...variantProps });
         showAlert(t('otp.verificationFailed'), res?.data?.message || t('otp.invalidTryAgain'), 'error');
       }
     } catch (error) {
@@ -207,6 +214,7 @@ const VerifyOtp = ({navigation, route}) => {
       // own code; keep the old value only when there is no response at all.
       captureEvent(isSignup ? 'signup_failed' : 'login_failed', {
         reason: apiFailureReason(error),
+        ...variantProps,
       });
       // Past the attempt cap, or when the server couldn't reach Supabase to
       // look up/create the account (ACCOUNT_LOOKUP_FAILED — see mobile-otp-verify,
