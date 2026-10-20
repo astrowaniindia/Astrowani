@@ -29,11 +29,18 @@ import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
-import { prefetchFreeCallOffer } from '../../api/FreeCallApi';
+import { prefetchFreeCallOffer, getFreeCallOffer } from '../../api/FreeCallApi';
+import { markFreeCallOfferSeen } from '../../utils/onboardingFlags';
+import { clearPendingFreeCall } from '../../utils/freeCallInvite';
 
 // Intrinsic aspect of assets/images/guideAvatarLogin.png (145 x 281).
 const GUIDE_AVATAR_ASPECT = 145 / 281;
 const MAX_NAME_LENGTH = 60;
+// How long the name screen will hold its spinner waiting for the free-call answer
+// before giving up and going to Home. Short on purpose: the answer is normally
+// already in hand (prefetched on mount), and Home raises the offer itself when it
+// is not, so waiting longer buys nothing and stalls the signup.
+const OFFER_WAIT_MS = 2500;
 
 export default function SignupName({ navigation }) {
   const { t } = React.useContext(LanguageContext);
@@ -49,10 +56,63 @@ export default function SignupName({ navigation }) {
 
   React.useEffect(() => {
     captureEvent('signup_name_screen_viewed');
-    // Ask for the free-call offer now, so the Welcome screen that follows already
-    // knows whether to show the gift. The answer is kept by FreeCallApi.
+    // Ask for the free-call offer now, so the hop straight to the free-call screen
+    // below is instant rather than a spinner. The answer is kept by FreeCallApi.
     prefetchFreeCallOffer().catch(() => {});
   }, []);
+
+  // The name is the last thing asked, so this is where the signup ends. Straight
+  // onto the free 11-minute call screen -- SignupWelcome used to sit in between and
+  // no longer does for signups (2026-10-20): it asked "do you want this?" with its
+  // own Claim card, which is the third time of asking for anyone who came through
+  // the gift reveal. Its login greeting is untouched, and so is Home's gift bubble.
+  //
+  // Home is the fallback for every case where that screen would be wrong: the offer
+  // switched off, this customer not eligible, the scheduled/slots flow (which has no
+  // screen of its own -- Home's card is the only way to pick a time), or an answer
+  // that did not arrive in time. In the last case Home's own auto-popup still raises
+  // the offer, which is why nothing is marked seen on that path.
+  const goAfterName = async () => {
+    // Whichever way this lands, the offer has been dealt with here; Home must not
+    // raise its sheet on top of it. Cleared BEFORE the await so a campaign flag
+    // cannot outlive a failed or slow fetch.
+    clearPendingFreeCall();
+
+    let fc = null;
+    try {
+      fc = await Promise.race([
+        getFreeCallOffer({ usePrefetched: true }),
+        new Promise((resolve) => { setTimeout(() => resolve(null), OFFER_WAIT_MS); }),
+      ]);
+    } catch (_) {
+      fc = null; // getFreeCallOffer already resolves to "off" on failure; belt and braces.
+    }
+
+    const instant = !!(fc?.enabled && fc?.eligible && fc?.offer && fc.offer.mode === 'instant');
+    captureEvent('signup_name_done', {
+      to: instant ? 'instant_astrologers' : 'home',
+      reason: instant ? 'eligible' : (!fc ? 'no_answer' : (!fc.enabled ? 'offer_off' : (!fc.eligible ? 'not_eligible' : 'not_instant'))),
+    });
+
+    if (!instant) {
+      navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+      return;
+    }
+
+    // Seen here, so Home does not raise the same offer again as a popup behind this
+    // screen. The gift bubble on Home still offers it until they book.
+    try {
+      const id = await AsyncStorage.getItem('customerId');
+      if (id) await markFreeCallOfferSeen(id);
+    } catch (_) {}
+
+    // Home underneath, so closing the free-call screen lands on Home rather than
+    // back on a signup screen that no longer applies.
+    navigation.reset({
+      index: 1,
+      routes: [{ name: 'DrawerNavigator' }, { name: 'InstantAstrologers' }],
+    });
+  };
 
   const handleContinue = async () => {
     const trimmed = name.trim();
@@ -94,7 +154,14 @@ export default function SignupName({ navigation }) {
           });
         }
       }
-      navigation.reset({ index: 0, routes: [{ name: 'SignupWelcome', params: { name: trimmed } }] });
+      // The account and the name are already saved by here, so a failure while
+      // working out where to go must never surface as "save failed" and invite a
+      // retry. Home is always a valid landing.
+      try {
+        await goAfterName();
+      } catch (_) {
+        navigation.reset({ index: 0, routes: [{ name: 'DrawerNavigator' }] });
+      }
     } catch (err) {
       captureEvent('signup_name_save_failed', { reason: err?.response?.data?.code || 'other' });
       // Always our own Hinglish line: the server's message is English and would
