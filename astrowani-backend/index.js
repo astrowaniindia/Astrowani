@@ -3903,8 +3903,11 @@ app.post('/api/vendor/availability', async (req, res) => {
 // never overwritten. 0 rows matched is answered 200 {changed:false}: the request was
 // already resolved elsewhere, which is not the customer's error.
 const CUSTOMER_REQUEST_TABLES = {
-  call: { table: 'call_requests', owner: 'customer_id' },
-  chat: { table: 'chat_requests', owner: 'caller_id' },
+  // `vendor` is the astrologer-side column, used to relay a cancellation to whoever is
+  // being rung. The two tables disagree on every column name, which is exactly why this
+  // map exists rather than an if.
+  call: { table: 'call_requests', owner: 'customer_id', vendor: 'astrologer_id' },
+  chat: { table: 'chat_requests', owner: 'caller_id', vendor: 'receiver_id' },
 };
 const CUSTOMER_SETTABLE_REQUEST_STATUSES = ['cancelled', 'missed'];
 
@@ -4003,12 +4006,41 @@ app.post('/api/requests/:kind/:id/status', async (req, res) => {
       .eq('id', req.params.id)
       .eq(target.owner, customer.id)
       .eq('status', 'pending')
-      .select('id');
+      .select(`id, ${target.vendor}`);
     if (error) {
       // A malformed id (not a uuid) is the client's mistake, not ours.
       if (error.code === '22P02') return res.status(400).json({ success: false, message: 'Invalid request id' });
       throw error;
     }
+
+    // TELL THE ASTROLOGER, from here. Same reasoning as /api/session/accept (2026-09-30):
+    // the notification belongs to the status change, not to whichever client happened to
+    // make it. The vendor app used to learn this only from a Supabase Realtime UPDATE on
+    // these tables, which cannot survive RLS being enabled on them, plus — for chat — a
+    // separate fire-and-forget push the customer app had to remember to send. Wrapped so
+    // a failed emit can never fail the cancellation itself.
+    const changedRow = data && data[0];
+    if (changedRow) {
+      try {
+        const vendorId = changedRow[target.vendor];
+        if (vendorId) {
+          const ringRoom = await vendorDevices.ringRoomFor(vendorId);
+          const payload = {
+            requestId: changedRow.id,
+            callerId: customer.id,
+            kind: req.params.kind,
+            status,
+          };
+          io.to(ringRoom).emit('request_cancelled', payload);
+          // The account room too: ringRoomFor targets the newest signed-in DEVICE, and a
+          // popup showing on an older one must still come down.
+          io.to(String(vendorId)).emit('request_cancelled', payload);
+        }
+      } catch (emitErr) {
+        console.warn('[requests] cancel relay failed:', emitErr.message);
+      }
+    }
+
     return res.status(200).json({ success: true, changed: !!(data && data.length) });
   } catch (e) {
     console.error('[requests] customer status update error:', e.message);
@@ -4854,6 +4886,28 @@ app.post('/api/chat/initiate', async (req, res) => {
           });
         }
         throw error;
+      }
+
+      // NOTIFY THE ASTROLOGER OVER THE SOCKET. Until 2026-10-21 this route emitted
+      // nothing at all: a chat request reached a foregrounded astrologer ONLY through the
+      // vendor HomeScreen's own Supabase Realtime INSERT subscription on chat_requests,
+      // with a separate fire-and-forget /api/push/notify-chat-request from the customer
+      // app as the background fallback. That made the single most important delivery in
+      // the product a property of a table grant that is being revoked, and of the client
+      // remembering to make a second call. Mirrors /api/call/initiate's incoming_call:
+      // ring the newest signed-in device, falling back to the account room.
+      try {
+        const ringRoom = await vendorDevices.ringRoomFor(astrologerId);
+        io.to(ringRoom).emit('incoming_chat', {
+          requestId: row.id,
+          callType: 'chat',
+          callerName: customer.name || 'Customer',
+          callerId: customer.id,
+        });
+      } catch (emitErr) {
+        // A failed emit must not fail the request: the row exists, and the push fallback
+        // plus the astrologer's catch-up fetch still surface it.
+        console.warn('[Chat] incoming_chat emit failed:', emitErr.message);
       }
 
       return res.status(200).json({ success: true, requestId: row.id, callerId: customer.id });

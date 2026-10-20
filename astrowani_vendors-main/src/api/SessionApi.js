@@ -80,6 +80,29 @@ export async function getMySessions(types) {
 }
 
 /**
+ * My newest pending call and chat request, already shaped the way enqueuePopup wants
+ * them — so the screen does no mapping and cannot drift from the socket payload's field
+ * names.
+ *
+ * This is the cold-start catch-up: the socket listeners only see requests that arrive
+ * after they connect, so an app launched BY the incoming-request notification would
+ * otherwise never show the request that woke it.
+ *
+ * @returns {Promise<{call: object|null, chat: object|null}>} both null on failure — a
+ *   failed catch-up must not stop the dashboard painting, and the socket plus the push
+ *   fallback still deliver anything arriving from now on.
+ */
+export async function getPendingRequests() {
+  try {
+    const res = await Instance.get('/api/vendor/pending-requests', await authHeaders());
+    if (!res?.data?.success) return { call: null, chat: null };
+    return { call: res.data.call || null, chat: res.data.chat || null };
+  } catch (_) {
+    return { call: null, chat: null };
+  }
+}
+
+/**
  * The session id behind one of MY requests. Scoped server-side to this astrologer's own
  * sessions, so a request id that is not theirs resolves to null rather than to somebody
  * else's session.

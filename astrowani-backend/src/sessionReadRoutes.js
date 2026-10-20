@@ -377,6 +377,67 @@ module.exports = function registerSessionReadRoutes(app) {
     }
   });
 
+  /* ------------------ vendor: my newest pending request ------------------------
+   * Replaces the vendor HomeScreen's catch-up fetch, which read both request tables
+   * directly.
+   *
+   * WHY A CATCH-UP EXISTS AT ALL: the socket listeners only see requests that arrive
+   * AFTER they subscribe, so an app cold-started by the notification's fullScreenAction
+   * would otherwise never show the very request that woke it. The newest pending row per
+   * table is enough — the app's enqueuePopup de-dupes, so a later socket event for the
+   * same row is a harmless no-op.
+   */
+  app.get('/api/vendor/pending-requests', async (req, res) => {
+    try {
+      const astroId = resolveAstrologerId(req);
+      if (!astroId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+      const [callRes, chatRes] = await Promise.all([
+        db.from('call_requests')
+          .select('id, call_type, customer_name, customer_id, room_token, room_id, session_id, is_free, free_minutes')
+          .eq('astrologer_id', astroId).eq('status', 'pending')
+          .order('created_at', { ascending: false }).limit(1),
+        db.from('chat_requests')
+          .select('id, request_type, caller_name, caller_id')
+          .eq('receiver_id', astroId).eq('status', 'pending')
+          .order('created_at', { ascending: false }).limit(1),
+      ]);
+
+      const call = (callRes.data || [])[0] || null;
+      const chat = (chatRes.data || [])[0] || null;
+
+      return res.status(200).json({
+        success: true,
+        // Shaped as the popup wants it, so the screen does no mapping and cannot drift
+        // from the socket payload's field names.
+        call: call ? {
+          requestId: call.id,
+          callType: call.call_type || 'audio',
+          callerName: call.customer_name || 'Customer',
+          callerId: call.customer_id,
+          token: call.room_token,
+          table: 'call_requests',
+          roomId: call.room_id,
+          sessionId: call.session_id || null,
+          isFree: call.is_free === true,
+          freeMinutes: call.free_minutes || null,
+        } : null,
+        chat: chat ? {
+          requestId: chat.id,
+          callType: chat.request_type || 'chat',
+          callerName: chat.caller_name || 'Customer',
+          callerId: chat.caller_id,
+          table: 'chat_requests',
+        } : null,
+      });
+    } catch (e) {
+      console.error('GET /api/vendor/pending-requests error:', e.message);
+      // 200 with nothing: a failed catch-up must not stop the dashboard painting, and the
+      // socket plus the push fallback still deliver anything that arrives from now on.
+      return res.status(200).json({ success: true, call: null, chat: null });
+    }
+  });
+
   /* ------------- vendor: the session id behind one of my requests ----------------
    * Replaces VendorChatSession's chat_sessions lookup by request_id. Scoped to the
    * asking astrologer's own sessions, so a guessed request id resolves to nothing
