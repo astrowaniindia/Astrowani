@@ -1064,6 +1064,11 @@ freeCallRoutes(app);
 // offer. Unconditional, like sessionManager.attachIo — notifying people must not be
 // tied to whether this process also runs billing.
 freeCallRoutes.attachIo(io);
+// Session/request reads the apps used to do on the public anon key. Additive: these
+// exist so the app reads can be migrated off chat_sessions/chat_requests, after which
+// anon SELECT on those two can finally be revoked (the last rls_disabled_in_public
+// finding). Nothing is revoked by registering this.
+require('./src/sessionReadRoutes')(app);
 require('./src/whatsappRoutes')(app);
 // Dakshina — the voluntary thank-you after a free intro call. Needs adminRoutes'
 // requireAdmin, so it registers after it.
