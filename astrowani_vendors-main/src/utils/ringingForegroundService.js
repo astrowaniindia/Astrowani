@@ -35,9 +35,22 @@ const { RingingCallService } = NativeModules;
 
 const available = Platform.OS === 'android' && !!RingingCallService;
 
+// start() gained its third `requestDataJson` parameter in the same native change that
+// added the overlay. An OTA bundle reaches OLDER store builds too (they share a
+// versionName), and calling a legacy-bridge method with the wrong number of arguments is
+// a FATAL crash on the native modules thread — thrown before any promise exists, so the
+// try/catch below cannot see it and the whole app dies. The overlay methods shipped with
+// that extra parameter, so their presence is how we tell which signature this build has.
+const supportsOverlay =
+  available && typeof RingingCallService.getPendingOverlayAction === 'function';
+
 export async function startRingingService(title, body, requestDataJson) {
   if (!available) return false;
   try {
+    if (!supportsOverlay) {
+      // Older build: still rings, but has no overlay to hand the payload to.
+      return await RingingCallService.start(title || null, body || null);
+    }
     return await RingingCallService.start(title || null, body || null, requestDataJson || null);
   } catch (_) {
     return false;
@@ -98,3 +111,7 @@ export async function getPendingOverlayAction() {
 }
 
 export const isRingingServiceAvailable = available;
+
+// False on a build whose native side has no overlay at all — asking for the permission
+// there would open nothing and could never be satisfied.
+export const isOverlaySupported = supportsOverlay;

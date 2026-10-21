@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
-import { checkOverlayPermission, requestOverlayPermission } from '../utils/ringingForegroundService';
+import { checkOverlayPermission, requestOverlayPermission, isOverlaySupported } from '../utils/ringingForegroundService';
 import { scale, verticalScale, moderateScale } from '../utils/Scaling';
 
 /**
@@ -32,6 +32,8 @@ export default function OverlayPermissionModal({ visibleOverride, onPermissionGr
 
   const verifyPermission = useCallback(async () => {
     if (Platform.OS !== 'android') return;
+    // An older store build has no overlay, so there is nothing to grant.
+    if (!isOverlaySupported) return;
     try {
       const granted = await checkOverlayPermission();
       if (granted) {
