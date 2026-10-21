@@ -531,6 +531,7 @@ import {useModalPresence} from '../../utils/modalPresentation';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 import { sortReachableFirst } from '../../utils/astrologerAvailability';
+import { ensureCallPermissions } from '../../utils/callPermissions';
 
 const CallsList = ({navigation}) => {
   const { t } = React.useContext(LanguageContext);
@@ -658,6 +659,15 @@ const CallsList = ({navigation}) => {
       }
       if (balance < minRequired) {
         showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'call' });
+        return;
+      }
+
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Placed after the wallet check so nobody is asked for a
+      // permission they need only for a call they cannot afford.
+      if (!(await ensureCallPermissions({label: 'Call/audio'}))) {
+        Alert.alert(t('call.permissionRequired'), t('call.micPermissionMsg'));
         return;
       }
 

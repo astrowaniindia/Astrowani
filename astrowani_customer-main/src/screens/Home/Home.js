@@ -99,6 +99,7 @@ import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
+import { ensureCallPermissions } from '../../utils/callPermissions';
 
 // The Om that sits either side of the thought of the day on the dark header. One
 // source, rendered twice — the pair is symmetrical, so there is nothing to keep in step.
@@ -771,6 +772,15 @@ const Home = ({navigation}) => {
         return null;
       }
 
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Placed after the wallet check so nobody is asked for a
+      // permission they need only for a call they cannot afford.
+      if (!(await ensureCallPermissions({label: 'Home/audio'}))) {
+        Alert.alert(t('call.permissionRequired'), t('call.micPermissionMsg'));
+        return null;
+      }
+
       navigatedRef.current = false;
       setIsWaiting(true);
       setWaitingAstroName(item.name);
@@ -918,6 +928,15 @@ const Home = ({navigation}) => {
       }
       if (balance < minRequired) {
         showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'video' });
+        return null;
+      }
+
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Placed after the wallet check so nobody is asked for a
+      // permission they need only for a call they cannot afford.
+      if (!(await ensureCallPermissions({video: true, label: 'Home/video'}))) {
+        Alert.alert(t('call.permissionRequired'), t('call.micCameraPermissionMsg'));
         return null;
       }
 

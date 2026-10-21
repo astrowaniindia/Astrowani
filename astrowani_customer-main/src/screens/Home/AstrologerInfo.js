@@ -53,6 +53,7 @@ import {useModalPresence} from '../../utils/modalPresentation';
 import { DIGITAL_PURCHASES_ENABLED } from '../../utils/payments';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
+import { ensureCallPermissions } from '../../utils/callPermissions';
 
 const { width } = Dimensions.get('window');
 
@@ -214,6 +215,15 @@ const AstrologerInfo = ({route, navigation}) => {
       }
       if (balance < minRequired) {
         showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'call' });
+        return;
+      }
+
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Placed after the wallet check so nobody is asked for a
+      // permission they need only for a call they cannot afford.
+      if (!(await ensureCallPermissions({label: 'AstrologerInfo/audio'}))) {
+        Alert.alert(t('call.permissionRequired'), t('call.micPermissionMsg'));
         return;
       }
 
@@ -423,6 +433,15 @@ const AstrologerInfo = ({route, navigation}) => {
       }
       if (balance < minRequired) {
         showInsufficientBalanceAlert({ navigation, minRequired, balance, t, intent: 'video' });
+        return;
+      }
+
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Placed after the wallet check so nobody is asked for a
+      // permission they need only for a call they cannot afford.
+      if (!(await ensureCallPermissions({video: true, label: 'AstrologerInfo/video'}))) {
+        Alert.alert(t('call.permissionRequired'), t('call.micCameraPermissionMsg'));
         return;
       }
 

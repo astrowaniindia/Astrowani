@@ -40,6 +40,7 @@ import { requestNotifyMe } from '../../utils/notifyMe';
 import { LanguageContext } from '../../context/LanguageContext';
 import { REQUEST_RING_TIMEOUT_MS } from '../../utils/requestTimeouts';
 import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
+import { ensureCallPermissions } from '../../utils/callPermissions';
 
 // Shared detailed astrologer card used by the category screens. Shows the full
 // profile (avatar, rating, name, specialty, languages, experience, price) plus
@@ -156,6 +157,19 @@ const ExpertsList = ({ data, refreshing, onRefresh, showSearch = true }) => {
       }
       if (balance < minRequired) {
         showInsufficientBalanceAlert({ navigation, minRequired, balance, intent: type === 'video' ? 'video' : 'call' });
+        return;
+      }
+
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Placed after the wallet check so nobody is asked for a
+      // permission they need only for a call they cannot afford.
+      const wantsVideo = type === 'video';
+      if (!(await ensureCallPermissions({video: wantsVideo, label: 'ExpertsList'}))) {
+        Alert.alert(
+          t('call.permissionRequired'),
+          wantsVideo ? t('call.micCameraPermissionMsg') : t('call.micPermissionMsg'),
+        );
         return;
       }
 

@@ -3112,12 +3112,20 @@ on the long clock, since what it is waiting for is a human reading a dialog.
 **Crucially, `ended_by_other` is still detected throughout the permission wait**, so a hangup
 during the dialog is reported as promptly as before.
 
-### Verified 2026-10-21 — 11/11, no device, no network, no database
+### Verified 2026-10-21 — 23/23, no device, no network, no database
 `astrowani_customer-main/scripts/testPreConnectWatchdog.js` drives the REAL module on a
 virtual clock with a stubbed poll transport. It asserts the two app copies are byte-identical
 (drift guard, per DY), that the 45s kill no longer fires while media is unopened, that it
 still fires 45s after media opens late, that the old behaviour is preserved without
 `isMediaReady`, and that all four screens declare, set and pass `mediaReadyRef`.
+
+It also asserts the **delivery path** for all seven entry points: that each asks on every one
+of its call paths, and that every `ensureCallPermissions` appears BEFORE every
+`/api/call/initiate` / `ringInstantAstrologer` in that file. A call site that imports the
+helper but asks AFTER the POST has already rung an astrologer, which is the thing this change
+exists to stop — and that is the regression a naive "does it import it" check would miss.
+Both failure modes were introduced deliberately and caught (2 failures for never asking,
+1 for asking too late).
 
 > **The suite was verified to FAIL on the original bug** — restoring
 > `Date.now() - startedAt > deadlineMs` produces 3 failures while the two "behaviour must not
@@ -3125,10 +3133,13 @@ still fires 45s after media opens late, that the old behaviour is preserved with
 > (`still bounded at 120s`, `ended_by_other still gets through`), because a watchdog that had
 > simply stopped working would pass every "not killed" assertion on its own.
 
-**NOT DONE — the paid call entry points still ask on mount.** `Call.js`, `Video.js`,
-`Home.js`, `AstrologerInfo.js` and `ExpertsList.js` have the same one-line change available
-(`ensureCallPermissions` before `/api/call/initiate`); only the free instant flow was wired.
-Paid audio was dying at 26%, so this is worth finishing.
+**All SEVEN call entry points now ask before they ring** (same session): the free instant
+call, `Call.js`, `Video.js`, `Home.js` (audio + video), `AstrologerInfo.js` (audio + video)
+and `ExpertsList.js`. Each asks **after** the wallet check and **before**
+`POST /api/call/initiate`, so nobody is prompted for a permission they only need for a call
+they cannot afford, and no astrologer is rung for a call with no microphone behind it. Video
+paths pass `{video: true}` and use `call.micCameraPermissionMsg` (both languages already had
+the key). Chat is deliberately untouched — it opens no media.
 **Also still open and unrelated to this bug: there is no TURNS/443 relay path** (DM item 2),
 which is the likely explanation for the ~7% floor that survives on repeat calls.
 

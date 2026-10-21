@@ -37,6 +37,15 @@ const SCREENS = [
   [path.resolve(APP, '../astrowani_vendors-main/src/utils/EnxScreenVideo.tsx'), 'vendor video'],
 ];
 
+const ENTRY_POINTS = [
+  [path.join(APP, 'src/screens/FreeCall/InstantAstrologers.js'), 'free instant call', 1],
+  [path.join(APP, 'src/screens/Call/Call.js'), 'Talk To Experts', 1],
+  [path.join(APP, 'src/screens/Video/Video.js'), 'Video With Experts', 1],
+  [path.join(APP, 'src/screens/Home/Home.js'), 'Home cards', 2],
+  [path.join(APP, 'src/screens/Home/AstrologerInfo.js'), 'astrologer profile', 2],
+  [path.join(APP, 'src/screens/component/ExpertsList.js'), 'category list', 1],
+];
+
 let pass = 0, fail = 0;
 const ok = (cond, msg) => {
   if (cond) { pass++; console.log('  PASS ' + msg); }
@@ -138,6 +147,20 @@ async function scenario({ useMediaReady, mediaReadyAt, endsAt, deadlineMs, setup
       && /const mediaReadyRef = useRef\(false\)/.test(s),
       label + ' declares, sets and passes mediaReadyRef');
   }
+
+  console.log('\n7. Every call entry point asks for the microphone BEFORE it rings anybody');
+  // Asserting on the DELIVERY PATH, not on the helper: a call site that imports
+  // ensureCallPermissions but asks AFTER POST /api/call/initiate has already rung an
+  // astrologer, which is the thing this change exists to stop.
+  for (const [file, label, sites] of ENTRY_POINTS) {
+    const src = fs.readFileSync(file, 'utf8');
+    const asks = [...src.matchAll(/await ensureCallPermissions\(/g)].map((m) => m.index);
+    const rings = [...src.matchAll(/\/api\/call\/initiate|ringInstantAstrologer\(/g)].map((m) => m.index);
+    ok(asks.length === sites, label + ' asks on all ' + sites + ' of its call paths (found ' + asks.length + ')');
+    ok(asks.length > 0 && rings.length > 0 && rings.every((r) => asks.some((a) => a < r)),
+      label + ' asks BEFORE every ring/initiate');
+  }
+
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
