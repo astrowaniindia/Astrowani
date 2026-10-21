@@ -65,7 +65,20 @@ class CallForegroundService : Service() {
     // kills the process, so it is the first thing done here.
     val notification = buildNotification(title, body)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+      try {
+        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+      } catch (e: Throwable) {
+        // Android 14+ refuses a microphone-type service unless the app is in a state
+        // eligible to use a while-in-use permission at this exact instant, and a call
+        // can connect a few seconds AFTER the customer pressed Home. This throws here,
+        // inside the service, where CallServiceModule's try/catch cannot reach it — so
+        // without this it took the whole app down mid-call. End quietly instead: losing
+        // the service only gags the mic while backgrounded, which is the behaviour the
+        // service exists to improve, never something to crash a live call over.
+        android.util.Log.w("CallFgService", "startForeground refused: ${e.message}")
+        stopSelfSafely()
+        return START_NOT_STICKY
+      }
     } else {
       // Pre-Q has no typed foreground services, and pre-Android 11 does not gag a
       // backgrounded app's microphone either, so the plain call is correct there.
