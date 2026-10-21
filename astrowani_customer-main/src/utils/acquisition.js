@@ -170,7 +170,7 @@ export async function reportFirstOpen() {
 // expensive campaign's numbers, not a general mechanism. Widening it to other
 // campaigns is a deliberate follow-up, not something this constant should silently do.
 const TARGET_CAMPAIGN_ID = '24326942598';
-// The "Metro" campaign: the same 11-minute free call, but presented in ENGLISH and
+// The "Metro" campaign: the same 7-minute free call, but presented in ENGLISH and
 // routed to ONE named astrologer chosen for the visitor, rather than to the picker.
 //
 // This is the SAME campaign as TARGET_CAMPAIGN_ID, and deliberately so (owner,
@@ -236,7 +236,7 @@ export async function setCampaignVariant(variant) {
 /**
  * True once, for ANY signed-out visitor's first cold start — not gated on a campaign
  * referrer. (Corrected 2026-10-10: this used to require `gad_campaignid` to match the
- * one paid campaign, which meant the gift reveal — and the free 11-minute call offer
+ * one paid campaign, which meant the gift reveal — and the free 7-minute call offer
  * behind it — was only ever shown to the ~1 install in a hundred that came through that
  * specific ad. Every organic install, every other campaign and every QR scan landed on
  * the plain phone-number screen instead, which was never the intent: the reveal and the

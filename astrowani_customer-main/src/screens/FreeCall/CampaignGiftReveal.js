@@ -66,7 +66,7 @@ const PRIZE_DROP = verticalScale(94);
 // ── The "it goes in your pocket" exit ────────────────────────────────────────
 // Dismissing does not just close the screen: the whole screen collapses into the
 // gift bubble and flies to the bottom-right corner — landing exactly where Home's
-// floating gift sits ("Your 11min free call is waiting", components/FreeCallGiftBubble).
+// floating gift sits ("Your 7min free call is waiting", components/FreeCallGiftBubble).
 // The prize is not lost by pressing ✕, it is PUT SOMEWHERE, and the customer has
 // watched where. These three must stay in step with that component's own geometry.
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');

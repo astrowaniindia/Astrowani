@@ -3146,3 +3146,69 @@ which is the likely explanation for the ~7% floor that survives on repeat calls.
 **Not exercised on a device.** The test worth doing: a FRESH install, tap "Call free", and
 confirm the mic dialog appears BEFORE the astrologer's phone rings, that denying it rings
 nobody and leaves the offer unspent, and that allowing it connects.
+
+---
+
+## Session 2026-10-21 (later): free intro call 11 → 7 minutes — CODE ONLY, NOT LIVE
+
+### EI. The change is staged in code; production is still on 11
+
+Owner, 2026-10-21: the free introductory call becomes **7 minutes**, everything else
+unchanged. Then, mid-change: *keep it local for now, we are not pushing it directly* — the
+Google Ads creatives say 11 minutes and the owner will update them first.
+
+> **PRODUCTION IS STILL 11 MINUTES. `app_settings.free_call_offer.durationMinutes` = 11 and
+> `headerText` = "Your first 11-minute call is on us".** The row WAS briefly written to 7
+> during this session and was reverted within minutes; `loadOffer()` was re-read afterwards
+> and confirms 11 / 660s ceiling, with `enabled`, `mode`, `payoutMilestones`,
+> `ringTimeoutSeconds` and `minFreeCallsBeforeOptOut` all untouched.
+
+**TO GO LIVE, two things must happen TOGETHER — and this is the trap.** Per DR the database
+is the authority, so the code alone changes nothing:
+
+```sql
+update app_settings
+set value = ((value::jsonb) || jsonb_build_object(
+      'durationMinutes', 7,
+      'headerText', 'Your first 7-minute call is on us'))::text
+where key = 'free_call_offer';
+```
+
+> **But the app's own copy is NOT server-driven.** `Login.js`'s `FREE_CALL_MINUTES`
+> constant and every `campaignGift.*` / `campaignMetro.*` / `freeCall.giftHint` string are
+> hardcoded, so an app build carrying this change will SAY 7 minutes while a database still
+> on 11 GIVES 11 — and the reverse if the row is flipped before the OTA lands. **Flip the row
+> and ship the OTA in the same window**, or the gift reveal promises one number and the call
+> delivers another. Rollback is the same statement with `11` and the old header.
+
+**What changed in code (nothing applied to the database):**
+- `freeCallRoutes.js` — `DEFAULTS.durationMinutes` 11→7, `headerText`, `instantBodyText`,
+  the `EMPTY` instant fallback, and 4 `|| 11` fallbacks.
+- `sessionManager.js` — the `endOverdueFreeCalls` backstop `(row.duration_minutes || 11)`.
+- `freeCallAnalyticsRoutes.js` — `TALK_BUCKETS` rebuilt around a 420s ceiling
+  (`4 – 6`, `6 – 7`, `Full 7 min`) instead of 480/660.
+- Customer: `Login.js` `FREE_CALL_MINUTES`, `FreeCallApi.js`, `FreeCallIncoming.js`,
+  `InstantAstrologers.js`, `SignupWelcome.js`, and **14 i18n strings in EN + HI**.
+- Vendor: `FreeCalls.js`. Admin: `FreeCallBookings.jsx`, `FreeCallSettings.jsx` DEFAULTS.
+- A comment sweep across 36 files, so no source comment still claims 11 minutes.
+
+**Deliberately NOT changed:**
+- **`payoutMilestones` stays `[{minutes: 4, amount: 5}]`.** The mark is at 4 minutes, still
+  comfortably inside 7, and the payout is FLAT above it (DR) — so the astrologer still earns
+  ₹5 for any call past 4:00 and nothing accrues with length. `MIN_DAKSHINA_SECONDS` (180) is
+  likewise untouched: it decides whether an astrologer hanging up early burns the customer's
+  one free call, not what they are paid.
+- **The Google Ads campaign name `"11 min call better geolocations"` is a PROPER NOUN** and
+  must survive every sweep — it is matched against the install referrer in
+  `customer src/utils/acquisition.js`. Renaming it in comments would misname a live campaign.
+  The sweep asserted its occurrence count was unchanged.
+
+### Verified 2026-10-21
+`freeCallInstantCheck.js` **52/52** (its payout boundaries re-pointed at the 420s ceiling:
+4:00 → ₹5, 6:59 → ₹5, 7:00 → ₹5; 3:59 → ₹0. The above-ceiling cases are PROPERTY checks —
+`freeCallPayout` is pure and must not accrue with length on a clock skew — not scenarios, as
+the screens end at 7:00 and `endOverdueFreeCalls` caps at `start + durationMinutes`).
+`freeCallSlotCheck.js` **23/23**. `node --check` clean on every changed backend file, admin
+`npm run build` clean, customer app bundles for Android with no "11 minute" copy left in the
+shipped JS. **`index.js` was never booted** — `loadOffer()` was called directly, with a local
+`ws` shim for Node 20.

@@ -1,7 +1,7 @@
 // Sign-up, step 3 of 3: the guide avatar welcomes the customer by name, and a
 // single "Hi" button takes them to Home.
 //
-// GIFT MODE (2026-09-19): when the free 11-minute call is on and this customer is
+// GIFT MODE (2026-09-19): when the free 7-minute call is on and this customer is
 // eligible, the screen instead shows "Namaste <name> ji" and the free-call card
 // itself (inline, not a popup), with the guide avatar greeting them. Nobody drops
 // between the OTP and Home, so this is the moment the offer is most likely to land;
@@ -175,7 +175,7 @@ export default function SignupWelcome({ navigation, route }) {
   // the plain welcome and the visitor landed on Home, with the offer only reachable
   // again through the little gift bubble. They still signed up, so they are still
   // entitled to it — the cross said "not this screen", not "never". Both paths now end
-  // on the free 11-minute panel, which carries a back arrow of its own (the reset below
+  // on the free 7-minute panel, which carries a back arrow of its own (the reset below
   // leaves DrawerNavigator underneath it), so leaving is one tap and nothing is forced.
   const campaignRedirectRef = useRef(
     peekPendingFreeCall() === 'campaign' || peekPendingFreeCall() === 'campaign_declined',
@@ -370,7 +370,7 @@ export default function SignupWelcome({ navigation, route }) {
     showStatusPopup({
       variant: 'confirmPay',
       title: t('freeCall.leaveTitle'),
-      message: t('freeCall.leaveMessage', { count: gift?.offer?.durationMinutes || 11 }),
+      message: t('freeCall.leaveMessage', { count: gift?.offer?.durationMinutes || 7 }),
       // Staying is the primary action: the offer is free, so leaving should not be
       // the easiest thing to hit (same reasoning as hooks/useConfirmLeaveReport.js).
       confirmText: t('freeCall.leaveStay'),

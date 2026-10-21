@@ -13,7 +13,7 @@ const VISIBILITY_KEY = 'free_intro_call_visibility';
 
 const OFFER_DEFAULTS = {
   enabled: false,
-  durationMinutes: 11,
+  durationMinutes: 7,
   slotMinutes: 30,
   openTime: '10:00',
   closeTime: '20:00',
@@ -891,7 +891,7 @@ export default function FreeCallSettings({ flow = 'booking' }) {
               onChange={(e) => setOffer((p) => ({ ...p, durationMinutes: e.target.value }))}
             />
             <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-              How long the free introductory consultation lasts (e.g. 11 minutes).
+              How long the free introductory consultation lasts (e.g. 7 minutes).
             </span>
           </div>
 

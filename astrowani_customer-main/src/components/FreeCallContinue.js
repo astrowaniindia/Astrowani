@@ -120,7 +120,7 @@ export function FreeCallContinueHost() {
   // killed the app, they swiped it away, or they pressed Home while the offer was up and
   // came back after Android reclaimed the process. In every one of those the astrologer
   // IS held server-side for the full window, so the offer exists and only the app has
-  // lost it — and an 11-minute conversation cut short by a flat battery is precisely the
+  // lost it — and an 7-minute conversation cut short by a flat battery is precisely the
   // customer most worth asking.
   //
   // Two refusals here are deliberate, not caution:

@@ -98,7 +98,7 @@ export default function MetroCampaignPanel() {
     // customers from a paying campaign see on their first screen.
     const msg = next
       ? 'Switch the Metro campaign ON?\n\nCustomers who arrive from this campaign will be '
-        + `shown ONLY ${config.astrologer?.name || 'the chosen astrologer'} for their free 11-minute call.`
+        + `shown ONLY ${config.astrologer?.name || 'the chosen astrologer'} for their free 7-minute call.`
       : 'Switch the Metro campaign OFF?\n\nIts customers will go back to the ordinary astrologer '
         + 'picker, exactly like organic and every other campaign. Nothing is deleted — the chosen '
         + 'astrologer stays configured and you can switch this back on at any time.';
@@ -198,7 +198,7 @@ export default function MetroCampaignPanel() {
               <>
                 A customer who installed from this campaign goes straight to{' '}
                 <strong>{config?.astrologer?.name || '—'}</strong> and sees nobody else for their free
-                11-minute call. Everything after that — busy handling, the 11-minute timer, the Shagun
+                7-minute call. Everything after that — busy handling, the 7-minute timer, the Shagun
                 pop-up and the rest — is exactly the same as any other free call.
               </>
             ) : (

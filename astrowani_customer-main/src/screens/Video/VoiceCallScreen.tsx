@@ -99,7 +99,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     recieverName = 'Astrologer',
     recieverImage = '',
     recieverId = '',
-    // Free 11-minute introductory call, answered from FreeCallIncoming. The session
+    // Free 7-minute introductory call, answered from FreeCallIncoming. The session
     // is created is_free with per_minute_charge 0 server-side, so this flag only
     // changes what is shown and adds the hard stop -- it does not gate any billing.
     freeCall = false,
@@ -932,7 +932,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         )}
 
         {/* Paid sessions only. The free intro call already says "this call is free"
-            above, and a "your first minute is free" line on top of an 11-minute free
+            above, and a "your first minute is free" line on top of an 7-minute free
             call reads as nonsense. */}
         <SessionIntroBanner visible={isActive && !freeCall} style={{marginHorizontal: 0, marginTop: 14}} />
 

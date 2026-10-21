@@ -1,6 +1,6 @@
 // astrowani-backend/src/freeCallRoutes.js
 //
-// Free 11-minute introductory call — the customer-facing booking API and the
+// Free 7-minute introductory call — the customer-facing booking API and the
 // admin management API. Replaces the free 5-minute scripted bot chat.
 //
 // THE ONE RULE: the server decides which slots exist and which are free. The app
@@ -59,7 +59,7 @@ const DISPLAY_ROSTER_MAX = 6;
 
 const DEFAULTS = {
   enabled: false,
-  durationMinutes: 11,
+  durationMinutes: 7,
   slotMinutes: 30,
   openHour: 10,
   closeHour: 20,
@@ -100,7 +100,7 @@ const DEFAULTS = {
   // an old app build that sends nothing) is never blocked -- only 'android' and
   // 'ios' can actually be turned off.
   enabledPlatforms: { android: true, ios: true },
-  headerText: 'Your first 11-minute call is on us',
+  headerText: 'Your first 7-minute call is on us',
   bodyText: 'Pick a date and time that suits you. Our astrologer will call you directly — you do not have to do anything else.',
   ctaText: 'Book my free call',
   successText: 'Booked! Our astrologer will call you at the time you chose.',
@@ -153,7 +153,7 @@ const DEFAULTS = {
   // they are asked to come back later. Stops the pool being walked for attention.
   maxRingAttempts: 10,
   instantHeaderText: 'Talk to an astrologer free, right now',
-  instantBodyText: 'Pick anyone who is free and we will connect you straight away. Your first 11 minutes are on us.',
+  instantBodyText: 'Pick anyone who is free and we will connect you straight away. Your first 7 minutes are on us.',
 };
 
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
@@ -652,7 +652,7 @@ function offerDateKeys(offer, now = new Date()) {
 
 /**
  * Every slot on one business date. A slot is offered only if it fits entirely
- * inside the working window (an 11-minute call cannot start at 19:55 when the day
+ * inside the working window (an 7-minute call cannot start at 19:55 when the day
  * closes at 20:00) and starts at least minLeadMinutes from now.
  */
 function buildSlots(offer, dateKey, now = new Date()) {
@@ -909,7 +909,7 @@ const MIN_UPSELL_SECONDS = 540; // 9 minutes
 const UPSELL_OPEN_WINDOW_MS = 10 * 60 * 1000;
 
 /** How far back to look for the free call this offer follows. Generous, because the
- *  call itself can run 11 minutes and Shagun Arpan runs before the sheet opens. */
+ *  call itself can run 7 minutes and Shagun Arpan runs before the sheet opens. */
 const SESSION_LOOKBACK_MS = 40 * 60 * 1000;
 
 /**
@@ -1274,7 +1274,7 @@ module.exports = function registerFreeCallRoutes(app) {
    *
    * WHY IT STILL WRITES A free_call_bookings ROW: everything already built on that
    * table keeps working unchanged — one-free-call-per-customer (an index),
-   * closeFreeCallBooking, endOverdueFreeCalls' 11-minute backstop, offerGuard's
+   * closeFreeCallBooking, endOverdueFreeCalls' 7-minute backstop, offerGuard's
    * delete-and-reclaim protection, and the admin list. `kind` tells them apart.
    * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -1517,7 +1517,7 @@ module.exports = function registerFreeCallRoutes(app) {
    * because the "held FOR this customer" exception needs a customer.
    */
   app.get('/api/free-call/instant/preview', h(async (req, res) => {
-    const EMPTY = { success: true, astrologers: [], durationMinutes: 11 };
+    const EMPTY = { success: true, astrologers: [], durationMinutes: 7 };
     // THE OFFER STILL STANDS, THERE IS JUST NOBODY TO RING RIGHT NOW.
     //
     // A visitor reaches this screen seconds after being told they have won eleven
@@ -2851,7 +2851,7 @@ module.exports = function registerFreeCallRoutes(app) {
           rejoined: true,
           sessionId: live.id,
           customerName: booking.customer_name || 'Customer',
-          durationMinutes: booking.duration_minutes || 11,
+          durationMinutes: booking.duration_minutes || 7,
         });
       }
     }
@@ -2876,7 +2876,7 @@ module.exports = function registerFreeCallRoutes(app) {
 
     const sessionId = crypto.randomUUID();
     const startedAt = new Date();
-    const durationMinutes = booking.duration_minutes || 11;
+    const durationMinutes = booking.duration_minutes || 7;
 
     // is_active true from the moment it rings, so the astrologer counts as busy for
     // the whole attempt and a paying customer cannot ring them mid-free-call.
@@ -3026,7 +3026,7 @@ module.exports = function registerFreeCallRoutes(app) {
         astrologerId: booking.astrologer_id,
         astrologerName: booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer',
         astrologerImage: astro?.profile_pic_url || '',
-        durationMinutes: booking.duration_minutes || 11,
+        durationMinutes: booking.duration_minutes || 7,
       },
     });
   }));
@@ -3249,7 +3249,7 @@ function dateLabel(dateKey) {
  *   * sessionManager.closeFreeCallBooking() finds the booking by it — no link, no booking
  *     closure, NO PAYOUT and no hold, so the upsell never appears either;
  *   * sessionManager.endOverdueFreeCalls() finds overrunning calls by it — no link means
- *     the 11-minute limit is never enforced by the server.
+ *     the 7-minute limit is never enforced by the server.
  * The scheduled flow sets this in its own /ring endpoint. The instant flow cannot: the
  * session is created later, by /api/session/accept, when the astrologer accepts.
  *
@@ -3317,7 +3317,7 @@ module.exports.linkInstantBookingToSession = linkInstantBookingToSession;
 async function freeCallDurationSeconds() {
   try {
     const offer = await loadOffer();
-    return (Number(offer.durationMinutes) || 11) * 60;
+    return (Number(offer.durationMinutes) || 7) * 60;
   } catch (_) {
     return 11 * 60;
   }

@@ -652,7 +652,7 @@ const translations = {
     'dakshina.thanksBody': 'Your dakshina of ₹{{amount}} has been sent with our gratitude.',
     'dakshina.failedTitle': 'Payment failed',
     'dakshina.failedBody': 'Your dakshina could not be completed. You have not been charged.',
-    // "Shagun Recharge" (2026-10-03) — the sheet shown after the free 11-minute call.
+    // "Shagun Recharge" (2026-10-03) — the sheet shown after the free 7-minute call.
     // Hinglish on purpose, like the welcome/signup screens. PLACEHOLDER COPY: every
     // string below is a stand-in until the owner supplies the real wording — see
     // components/ShagunRechargePrompt.js.
@@ -1018,20 +1018,20 @@ const translations = {
     'welcome.giftBlessing': 'Aapka jeevan sukh, shanti aur safalta se bhara rahe. Aapke liye ek chhota sa tohfa 🎁',
     // Full-screen prompt shown before login, only to installs from the "11 min call
     // better geolocations" Google Ads campaign (see App.js). Hinglish on purpose.
-    'campaignFreeCall.message': 'Namaste! Kya aap Free 11 minutes ki call lena chahenge expert astrologer ji ke saath, jo bhi sawaal ho unse pooch lijiye',
+    'campaignFreeCall.message': 'Namaste! Kya aap Free 7 minutes ki call lena chahenge expert astrologer ji ke saath, jo bhi sawaal ho unse pooch lijiye',
     'campaignFreeCall.yesButton': 'Haan! Mujhe free call chahiye',
     // The gift-box reveal that replaced the card above (featureFlags
     // CAMPAIGN_GIFT_REVEAL_ENABLED). Hinglish on purpose, like the rest of onboarding.
     'campaignGift.teaser': 'Aapke Liye Chota Shagun Gift',
     'campaignGift.tapToOpen': 'Kholne ke liye tap kariye',
     'campaignGift.youWin': 'YOU WIN!',
-    'campaignGift.prizeTitle': '11 Minute FREE Call',
+    'campaignGift.prizeTitle': '7 Minute FREE Call',
     'campaignGift.prizeSub': 'Expert astrologer ji ke saath',
-    'campaignGift.avatarLine': 'Namaste! Aapne jeet li hai 11 minute ki free call. Jo bhi sawaal ho humare expert astrologer ji se pooch lijiye',
+    'campaignGift.avatarLine': 'Namaste! Aapne jeet li hai 7 minute ki free call. Jo bhi sawaal ho humare expert astrologer ji se pooch lijiye',
     'campaignGift.cta': 'Haan! Mujhe free call chahiye',
     // The carried-over gift bubble, tapped on Login/OTP/name
     'campaignGift.claimTitle': 'Aapka free call reserve hai',
-    'campaignGift.claimSub': '11 minute ki free call expert astrologer ji ke saath',
+    'campaignGift.claimSub': '7 minute ki free call expert astrologer ji ke saath',
     'campaignGift.claimStepPhone': 'Claim karne ke liye apna phone number daaliye',
     'campaignGift.claimStepName': 'Bas apna naam likhiye, phir call shuru',
     'campaignGift.claimStepReady': 'Sab taiyaar hai — abhi apna astrologer chuniye',
@@ -1042,7 +1042,7 @@ const translations = {
     'campaignGift.nudgeTitle': 'Aapki free call pakki hai!',
     'campaignGift.nudgeBody': 'Bas ek chhota sa sign up baaki hai',
 
-    // ── The sign-up card that floats over the free 11-minute panel ────────────
+    // ── The sign-up card that floats over the free 7-minute panel ────────────
     // components/SignupGatePopup.js. Hinglish, like the rest of onboarding. Every
     // line is written as "finish collecting what you won", never "register first" —
     // the astrologers are visible behind the card while these are read.
@@ -1084,9 +1084,9 @@ const translations = {
     'campaignMetro.teaser': 'A gift is waiting for you',
     'campaignMetro.tapToOpen': 'Tap anywhere to open',
     'campaignMetro.youWin': 'YOU WIN!',
-    'campaignMetro.prizeTitle': '11 Minute FREE Call',
+    'campaignMetro.prizeTitle': '7 Minute FREE Call',
     'campaignMetro.prizeSub': 'With a hand-picked expert astrologer',
-    'campaignMetro.avatarLine': 'Congratulations! You have won an 11 minute free call. Ask our astrologer anything you wish',
+    'campaignMetro.avatarLine': 'Congratulations! You have won a 7 minute free call. Ask our astrologer anything you wish',
     'campaignMetro.cta': 'Yes! I want my free call',
     'campaignMetro.nudgeTitle': 'Your free call is confirmed!',
     'campaignMetro.nudgeBody': 'Just a quick sign up left',
@@ -1566,7 +1566,7 @@ const translations = {
     'report.sub': 'Sub',
     'report.subSub': 'Sub-sub',
     'report.significatorsSub': 'Planets signifying each house',
-    // Free 11-minute intro call. The heading/body/CTA/confirmation copy is
+    // Free 7-minute intro call. The heading/body/CTA/confirmation copy is
     // admin-authored (app_settings key free_call_offer) and arrives from the
     // API, so only the structural labels live here.
     'freeCall.pickDate': 'Pick a date',
@@ -1612,7 +1612,7 @@ const translations = {
     'rateApp.later': 'Maybe later',
     'rateApp.thanksTitle': 'Thank you for your feedback',
     'rateApp.thanksMsg': 'We value your feedback and we will definitely work on it.',
-    'freeCall.giftHint': 'Your 11min free call is waiting',
+    'freeCall.giftHint': 'Your 7min free call is waiting',
     'freeCall.inviteAlreadyBookedTitle': 'Your free call is booked',
     'freeCall.inviteAlreadyBookedMsg': 'You already have a free call booked ({{time}}). Our astrologer will call you then.',
     'freeCall.inviteExpiredTitle': 'Offer not available',
@@ -2577,17 +2577,17 @@ const translations = {
     'welcome.giftTitle': 'Astrowani में आपका स्वागत है, {{name}} जी 🙏',
     'welcome.giftTitleNoName': 'Astrowani में आपका स्वागत है 🙏',
     'welcome.giftBlessing': 'आपका जीवन सुख, शांति और सफलता से भरा रहे। आपके लिए एक छोटा सा उपहार 🎁',
-    'campaignFreeCall.message': 'नमस्ते! क्या आप फ्री 11 मिनट की कॉल लेना चाहेंगे एक्सपर्ट ज्योतिषी जी के साथ, जो भी सवाल हो उनसे पूछ लीजिए',
+    'campaignFreeCall.message': 'नमस्ते! क्या आप फ्री 7 मिनट की कॉल लेना चाहेंगे एक्सपर्ट ज्योतिषी जी के साथ, जो भी सवाल हो उनसे पूछ लीजिए',
     'campaignFreeCall.yesButton': 'हाँ! मुझे फ्री कॉल चाहिए',
     'campaignGift.teaser': 'आपके लिए छोटा शगुन गिफ्ट',
     'campaignGift.tapToOpen': 'खोलने के लिए टैप कीजिए',
     'campaignGift.youWin': 'YOU WIN!',
-    'campaignGift.prizeTitle': '11 मिनट की फ्री कॉल',
+    'campaignGift.prizeTitle': '7 मिनट की फ्री कॉल',
     'campaignGift.prizeSub': 'एक्सपर्ट ज्योतिषी जी के साथ',
-    'campaignGift.avatarLine': 'नमस्ते! आपने जीत ली है 11 मिनट की फ्री कॉल. जो भी सवाल हो हमारे एक्सपर्ट ज्योतिषी जी से पूछ लीजिए',
+    'campaignGift.avatarLine': 'नमस्ते! आपने जीत ली है 7 मिनट की फ्री कॉल. जो भी सवाल हो हमारे एक्सपर्ट ज्योतिषी जी से पूछ लीजिए',
     'campaignGift.cta': 'हाँ! मुझे फ्री कॉल चाहिए',
     'campaignGift.claimTitle': 'आपकी फ्री कॉल रिज़र्व है',
-    'campaignGift.claimSub': 'एक्सपर्ट ज्योतिषी जी के साथ 11 मिनट की फ्री कॉल',
+    'campaignGift.claimSub': 'एक्सपर्ट ज्योतिषी जी के साथ 7 मिनट की फ्री कॉल',
     'campaignGift.claimStepPhone': 'क्लेम करने के लिए अपना फोन नंबर डालिए',
     'campaignGift.claimStepName': 'बस अपना नाम लिखिए, फिर कॉल शुरू',
     'campaignGift.claimStepReady': 'सब तैयार है — अभी अपना ज्योतिषी चुनिए',
@@ -2625,9 +2625,9 @@ const translations = {
     'campaignMetro.teaser': 'A gift is waiting for you',
     'campaignMetro.tapToOpen': 'Tap anywhere to open',
     'campaignMetro.youWin': 'YOU WIN!',
-    'campaignMetro.prizeTitle': '11 Minute FREE Call',
+    'campaignMetro.prizeTitle': '7 Minute FREE Call',
     'campaignMetro.prizeSub': 'With a hand-picked expert astrologer',
-    'campaignMetro.avatarLine': 'Congratulations! You have won an 11 minute free call. Ask our astrologer anything you wish',
+    'campaignMetro.avatarLine': 'Congratulations! You have won a 7 minute free call. Ask our astrologer anything you wish',
     'campaignMetro.cta': 'Yes! I want my free call',
     'campaignMetro.nudgeTitle': 'Your free call is confirmed!',
     'campaignMetro.nudgeBody': 'Just a quick sign up left',
@@ -3102,7 +3102,7 @@ const translations = {
     'report.sub': 'उप',
     'report.subSub': 'उप-उप',
     'report.significatorsSub': 'प्रत्येक भाव के कारक ग्रह',
-    // Free 11-minute intro call — structural labels only (see the English block).
+    // Free 7-minute intro call — structural labels only (see the English block).
     'freeCall.pickDate': 'तारीख चुनें',
     'freeCall.pickTime': 'समय चुनें',
     'freeCall.noSlots': 'इस दिन कोई समय उपलब्ध नहीं है। दूसरी तारीख चुनें।',
@@ -3142,7 +3142,7 @@ const translations = {
     'rateApp.later': 'बाद में',
     'rateApp.thanksTitle': 'आपकी प्रतिक्रिया के लिए धन्यवाद',
     'rateApp.thanksMsg': 'हम आपकी प्रतिक्रिया की कद्र करते हैं और इस पर ज़रूर काम करेंगे।',
-    'freeCall.giftHint': 'आपकी 11 मिनट की मुफ़्त कॉल इंतज़ार कर रही है',
+    'freeCall.giftHint': 'आपकी 7 मिनट की मुफ़्त कॉल इंतज़ार कर रही है',
     'freeCall.inviteAlreadyBookedTitle': 'आपकी मुफ़्त कॉल बुक है',
     'freeCall.inviteAlreadyBookedMsg': 'आपकी मुफ़्त कॉल पहले से बुक है ({{time}})। उसी समय हमारे ज्योतिषी आपको कॉल करेंगे।',
     'freeCall.inviteExpiredTitle': 'ऑफ़र उपलब्ध नहीं है',

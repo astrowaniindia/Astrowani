@@ -1,4 +1,4 @@
-// "My Free Calls" — the free 11-minute introductory calls an admin has assigned
+// "My Free Calls" — the free 7-minute introductory calls an admin has assigned
 // to THIS astrologer.
 //
 // The astrologer rings the customer INSIDE THE APP -- the same WebRTC audio call
@@ -110,7 +110,7 @@ const FreeCalls = () => {
         Alert.alert(t('freeCalls.startFailed'), res.data?.message || t('common.tryAgain'));
         return;
       }
-      const minutes = res.data.durationMinutes || item.durationMinutes || 11;
+      const minutes = res.data.durationMinutes || item.durationMinutes || 7;
       navigation.navigate('AudioCall', {
         sessionId: res.data.sessionId,
         callerName: res.data.customerName || item.customerName || t('common.customer'),

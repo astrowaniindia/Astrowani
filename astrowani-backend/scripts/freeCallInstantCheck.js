@@ -39,13 +39,18 @@ ok(pay(239) === 0, '3:59 misses the mark entirely, got ' + pay(239));
 ok(pay(240) === 5, 'exactly 4:00 reaches the mark and pays 5, got ' + pay(240));
 ok(pay(241) === 5, '4:01 still pays 5 — nothing accrues past the mark');
 ok(pay(300) === 5, '5 minutes pays 5, got ' + pay(300));
-ok(pay(600) === 5, '10 minutes still pays 5 — the payout is FLAT, got ' + pay(600));
-ok(pay(660) === 5, 'a full 11-minute call pays 5, not more, got ' + pay(660));
+ok(pay(419) === 5, '6:59 still pays 5 — the payout is FLAT, got ' + pay(419));
+ok(pay(420) === 5, 'a full 7-minute call pays 5, not more, got ' + pay(420));
+// Above the ceiling is unreachable in product (the screens end at 7:00 and
+// endOverdueFreeCalls caps at start + durationMinutes), so these are PROPERTY checks:
+// freeCallPayout is pure and pays out whatever second-count it is handed, and nothing in
+// it may accrue with length on a clock skew or a bad endedAtMs.
+ok(pay(660) === 5, 'past the ceiling still pays only 5, got ' + pay(660));
 ok(pay(7200) === 5, 'an absurd 2-hour value still pays only 5, got ' + pay(7200));
 
 // The ledger note has to name what was actually reached, or an astrologer querying a
 // ₹5 credit has no way to see which mark it was for.
-ok(freeCallPayout(660, M).label === '4m', 'the label names the mark reached, got ' + freeCallPayout(660, M).label);
+ok(freeCallPayout(420, M).label === '4m', 'the label names the mark reached, got ' + freeCallPayout(420, M).label);
 ok(freeCallPayout(240, M).label === '4m', 'a single mark labels itself, got ' + freeCallPayout(240, M).label);
 ok(freeCallPayout(60, M).label === '', 'an unpaid call has no label');
 ok(freeCallPayout(660, M).reached.join(',') === '4', 'reached marks are reported for the log');

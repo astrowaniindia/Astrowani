@@ -2,7 +2,7 @@
 //
 // ── WHY THIS EXISTS ───────────────────────────────────────────────────────────
 // screens/FreeCall/CampaignGiftReveal.js says "YOU WIN!" and "aapne jeet li hai
-// 11 minute ki free call" to EVERY signed-out first cold start — organic installs
+// 7 minute ki free call" to EVERY signed-out first cold start — organic installs
 // and every iPhone included, not just paid-campaign ones (acquisition.js
 // isTargetCampaignFirstOpen ignores the referrer entirely; the "campaign" in the
 // file name is a leftover from when it did not). It makes that promise with no

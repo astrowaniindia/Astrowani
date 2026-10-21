@@ -1,7 +1,7 @@
 // Draws the "bas ek chhota sa sign up" reassurance above the navigator — see
 // utils/signupNudge.js for why it cannot belong to a screen.
 //
-// WHY IT EXISTS: someone who has just been told they won an 11-minute call taps the
+// WHY IT EXISTS: someone who has just been told they won an 7-minute call taps the
 // button and lands on a phone-number field. Without a word in between that reads as a
 // bait and switch, and that is exactly the moment the expensive campaign visitor
 // leaves. This says, warmly and in one breath, that the call is already theirs.

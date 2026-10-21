@@ -14,7 +14,7 @@ export const FREE_BOT_CHAT_ENABLED = Platform.OS !== 'ios';
 
 // ── Post-free-call prompts (owner, rewritten 2026-10-04) ──────────────────────
 //
-// THE ORDER AFTER AN 11-MINUTE FREE CALL, and it is deliberate:
+// THE ORDER AFTER A 7-MINUTE FREE CALL, and it is deliberate:
 //
 //     Shagun Arpan  ->  [ more minutes, ONLY if the call ran >= 9 min ]  ->  rate us
 //
@@ -89,7 +89,7 @@ export const FREE_CALL_RATING_PROMPT_ENABLED = true;
  * Which pre-login campaign screen a targeted Google Ads install lands on (App.js).
  *
  * true  -> screens/FreeCall/CampaignGiftReveal.js    — the gift box that bursts open
- *          into "YOU WIN · 11 minute free call" (owner, 2026-10-09).
+ *          into "YOU WIN · 7 minute free call" (owner, 2026-10-09).
  * false -> screens/FreeCall/CampaignFreeCallPrompt.js — the earlier, quieter
  *          speech-bubble version. Kept in the codebase, not deleted: it is one flag
  *          away from being the one shown again, and both hand off identically

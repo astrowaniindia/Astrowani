@@ -1,4 +1,4 @@
-// Incoming free-call screen — the customer side of the free 11-minute intro call.
+// Incoming free-call screen — the customer side of the free 7-minute intro call.
 //
 // WHY THIS EXISTS: every other call in this app runs customer → astrologer. The
 // customer app had no "someone is ringing you" UI at all; /api/call/initiate only
@@ -84,7 +84,7 @@ export const FreeCallIncomingHost = () => {
       astrologerId: String(data.astrologerId || ''),
       astrologerName: data.astrologerName || 'Astrologer',
       astrologerImage: data.astrologerImage || '',
-      durationMinutes: Number(data.durationMinutes) || 11,
+      durationMinutes: Number(data.durationMinutes) || 7,
     });
     // A repeating pattern, not one buzz — the phone may be in a pocket and this is
     // a scheduled appointment the customer asked for.

@@ -1,6 +1,6 @@
-// The whole sign-up, as one card floating over the free 11-minute panel.
+// The whole sign-up, as one card floating over the free 7-minute panel.
 //
-// WHY IT EXISTS (owner, 2026-10-17). The gift reveal ends with "YOU WIN — 11 minutes
+// WHY IT EXISTS (owner, 2026-10-17). The gift reveal ends with "YOU WIN — 7 minutes
 // free", and until now the very next thing the visitor saw was a full-screen maroon
 // phone-number form. The prize vanished off the screen at the exact moment we asked
 // for something, which reads as the catch. Now the reveal hands straight over to the

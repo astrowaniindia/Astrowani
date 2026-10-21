@@ -664,7 +664,7 @@ class SessionManager {
       // ALL active billed sessions, not only the ones due: presence is checked on
       // every tick (see below), so a participant who left is caught within a tick
       // instead of only when their next minute comes due.
-      // is_free excludes the free 11-minute introductory calls (see
+      // is_free excludes the free 7-minute introductory calls (see
       // sql/free_call_in_app.sql). Those run on a real chat_sessions row so the
       // WebRTC screens' membership checks work, but they must never be billed —
       // this filter is the single place that guarantees it.
@@ -1390,7 +1390,7 @@ class SessionManager {
   /**
    * Ends free introductory calls that have overrun their allotted minutes.
    *
-   * The 11 minutes is the whole promise of the offer, so it is enforced here and
+   * The 7 minutes is the whole promise of the offer, so it is enforced here and
    * not only in the two call screens — a killed app, a lost socket or a phone that
    * slept must not leave the astrologer marked busy indefinitely (the zombie-session
    * shape called out in CLAUDE.md's data-layer audit). Two minutes of slack is
@@ -1513,7 +1513,7 @@ class SessionManager {
       for (const row of rows) {
         if (!row.call_started_at) continue;
         const startedMs = new Date(row.call_started_at).getTime();
-        const promisedMs = (row.duration_minutes || 11) * 60 * 1000;
+        const promisedMs = (row.duration_minutes || 7) * 60 * 1000;
         if (now - startedMs < promisedMs + 120_000) continue;
 
         // DID THIS PROCESS WATCH THE CALL? Everything below turns on it.
@@ -1553,7 +1553,7 @@ class SessionManager {
 
         console.log(`[SessionManager] Free call ${row.call_session_id} overran — ending it.`);
         // Recorded as exactly the minutes that were promised, not the extra two of slack
-        // plus however long this sweep took to come round. The offer was 11 minutes; a
+        // plus however long this sweep took to come round. The offer was 7 minutes; a
         // call closed by the backstop did not earn a thirteenth.
         await this.terminateSession(row.call_session_id, 'Free call time is up',
           { endedAtMs: startedMs + promisedMs });

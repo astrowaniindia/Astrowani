@@ -56,7 +56,7 @@ const STAGES = [
 const EVENTS = [
   /* ── 1. First open ─────────────────────────────────────────────────────── */
   { stage: 'install', event: 'campaign_gift_reveal_shown', label: 'Metro campaign: the closed gift box appeared on the very first screen after install' },
-  { stage: 'install', event: 'campaign_gift_reveal_opened', label: 'Metro campaign: tapped the box open and saw "YOU WIN — 11 minute free call"' },
+  { stage: 'install', event: 'campaign_gift_reveal_opened', label: 'Metro campaign: tapped the box open and saw "YOU WIN — 7 minute free call"' },
   { stage: 'install', event: 'campaign_gift_reveal_abandoned', label: 'Metro campaign: left the app WITHOUT ever tapping the gift box open', drop: true, note: 'The most expensive drop-off on a paid install — they saw an unopened present and walked away.' },
   { stage: 'install', event: 'campaign_gift_reveal_accepted', label: 'Metro campaign: tapped "Yes! I want my free call"' },
   { stage: 'install', event: 'campaign_gift_reveal_closed', label: 'Metro campaign: pressed the ✕ on the reveal instead of accepting', drop: true },

@@ -9,7 +9,7 @@
 //
 // It IS tappable: tapping raises a small "your free call is reserved" sheet whose
 // button takes the customer to whichever step they are actually missing — phone
-// number, name, or (everything done) straight to the 11-minute astrologer picker.
+// number, name, or (everything done) straight to the 7-minute astrologer picker.
 // A reminder they cannot act on is just a sticker; this is the way back into the
 // offer for someone who pressed ✕ on the reveal.
 import React, { useContext, useEffect, useRef, useState } from 'react';
@@ -140,7 +140,7 @@ export default function PendingGiftBubbleHost() {
     setSheet(null);
     // Re-arms the campaign hand-off even for someone who pressed ✕ on the reveal
     // (which queued a decline): SignupWelcome reads this and sends them straight to
-    // the 11-minute picker instead of showing its own offer card.
+    // the 7-minute picker instead of showing its own offer card.
     queueFreeCallFromCampaign();
     captureEvent('campaign_gift_bubble_claimed', { step });
     if (!navigationRef.isReady()) return;

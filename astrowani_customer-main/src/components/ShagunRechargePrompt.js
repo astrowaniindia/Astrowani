@@ -1,4 +1,4 @@
-// "Shagun Dakshina" — the voluntary thank-you sheet shown after the free 11-minute call
+// "Shagun Dakshina" — the voluntary thank-you sheet shown after the free 7-minute call
 // (owner, 2026-10-03). This REPLACES the older Dakshina sheet's UI for that moment —
 // three rows of amounts plus a custom field — with the profile screen's "Send a Gift"
 // grid (picture, name, price, three to a row) and the guide mascot + a short note

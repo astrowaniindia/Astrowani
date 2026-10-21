@@ -62,7 +62,7 @@ export default function SignupName({ navigation }) {
   }, []);
 
   // The name is the last thing asked, so this is where the signup ends. Straight
-  // onto the free 11-minute call screen -- SignupWelcome used to sit in between and
+  // onto the free 7-minute call screen -- SignupWelcome used to sit in between and
   // no longer does for signups (2026-10-20): it asked "do you want this?" with its
   // own Claim card, which is the third time of asking for anyone who came through
   // the gift reveal. Its login greeting is untouched, and so is Home's gift bubble.

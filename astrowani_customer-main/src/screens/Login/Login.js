@@ -32,7 +32,7 @@ import Svg, { Path } from 'react-native-svg';
 // `durationMinutes` inside app_settings.free_call_offer, not this constant and not
 // freeCallRoutes.DEFAULTS (see CLAUDE.md DR) -- there is no pre-login endpoint to read
 // it from, so if the owner ever changes that row this has to move with it.
-const FREE_CALL_MINUTES = 11;
+const FREE_CALL_MINUTES = 7;
 const FREE_CALL_TOPIC_KEYS = ['login.topicLove', 'login.topicCareer', 'login.topicMoney', 'login.topicFamily'];
 
 const Login = ({navigation, route}) => {

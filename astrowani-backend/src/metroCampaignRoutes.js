@@ -79,7 +79,7 @@ const REVEAL_EVENTS = [
   },
   {
     event: 'campaign_gift_reveal_opened', step: 'reveal',
-    label: 'Tapped the screen to open the gift box and reveal "YOU WIN — 11 minute free call"',
+    label: 'Tapped the screen to open the gift box and reveal "YOU WIN — 7 minute free call"',
   },
   {
     event: 'campaign_gift_reveal_abandoned', step: 'reveal', drop: true,

@@ -54,7 +54,7 @@ async function resolveCustomer(req) {
 const DAKSHINA_VENDOR_SHARE = 0.5;
 
 // Amount ladder redesigned 2026-10-03 (owner) as "Shagun Recharge" — a voluntary
-// thank-you shown after the free 11-minute call, nine fixed buttons rather than three
+// thank-you shown after the free 7-minute call, nine fixed buttons rather than three
 // plus a custom field. allowCustom is kept OFF by default to match: a grid of nine
 // already covers the range the owner wants offered, and a tenth free-text box would
 // crowd the sheet. Admin can still flip allowCustom back on; nothing here forbids it.

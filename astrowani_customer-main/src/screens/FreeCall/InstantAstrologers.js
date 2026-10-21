@@ -58,7 +58,7 @@ export default function InstantAstrologers({ navigation, route }) {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [data, setData] = useState({ astrologers: [], durationMinutes: 11 });
+  const [data, setData] = useState({ astrologers: [], durationMinutes: 7 });
   const [blocked, setBlocked] = useState(null); // { code, message } when the server refuses
   const [notified, setNotified] = useState({}); // astrologerId -> true
 
@@ -123,7 +123,7 @@ export default function InstantAstrologers({ navigation, route }) {
         astrologer_id: data.chosen.id,
         astrologer_name: data.chosen.name,
         is_busy: !!data.chosen.isBusy,
-        duration_minutes: data.durationMinutes || 11,
+        duration_minutes: data.durationMinutes || 7,
       });
     } else if (data.chosenOffline && !chosenSeenRef.current) {
       // The reserved astrologer was offline or hidden. A campaign customer who hits
@@ -223,7 +223,7 @@ export default function InstantAstrologers({ navigation, route }) {
         seconds_to_ring: Math.round((Date.now() - screenAtRef.current) / 1000),
       });
 
-      const freeSeconds = (Number(res.durationMinutes) || 11) * 60;
+      const freeSeconds = (Number(res.durationMinutes) || 7) * 60;
 
       // Accepted → straight into the same call screen the paid flow uses. `freeCall`
       // and `freeCallSeconds` are what put it in free mode and start its countdown.
@@ -456,7 +456,7 @@ export default function InstantAstrologers({ navigation, route }) {
         <View style={styles.chosenBadge}>
           <Icon name="timer" size={moderateScale(14)} color={COLORS.AstroMaroon} />
           <Text style={styles.chosenBadgeTxt}>
-            {t('metroChosen.badge', { minutes: data.durationMinutes || 11 })}
+            {t('metroChosen.badge', { minutes: data.durationMinutes || 7 })}
           </Text>
         </View>
 
@@ -557,7 +557,7 @@ export default function InstantAstrologers({ navigation, route }) {
           <Icon name="arrow-back" size={moderateScale(22)} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {t('freeCallInstant.title', { minutes: data.durationMinutes || 11 })}
+          {t('freeCallInstant.title', { minutes: data.durationMinutes || 7 })}
         </Text>
       </View>
 
@@ -594,7 +594,7 @@ export default function InstantAstrologers({ navigation, route }) {
                   undersells it. It also pairs with the minutes figure beside it. */}
               <Icon name="timer" size={moderateScale(14)} color={COLORS.AstroMaroon} />
               <Text style={styles.heroBadgeTxt}>
-                {t('freeCallInstant.minutesOnUs', { minutes: data.durationMinutes || 11 })}
+                {t('freeCallInstant.minutesOnUs', { minutes: data.durationMinutes || 7 })}
               </Text>
             </View>
             <Text style={styles.heroLine}>

@@ -14,7 +14,7 @@
 //     crossed 4 minutes  -> ₹5, and that is the whole payout
 //
 // FLAT ABOVE THE MARK, on purpose. ₹5 at 4:00, ₹5 at 10:00, ₹5 on a call that runs the
-// full 11 minutes — there is no second step and nothing accrues with length. So the
+// full 7 minutes — there is no second step and nothing accrues with length. So the
 // astrologer is paid for HOLDING a conversation past the four-minute line, not for picking
 // up and not for stretching it out. A call that ends at 3:59 pays nothing at all. The
 // thresholds and the amounts are admin-configurable (free_call_offer.payoutMilestones), so

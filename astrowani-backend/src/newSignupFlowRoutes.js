@@ -2,8 +2,8 @@
  * "New Signup Flow 17th Oct" — the analytics for the flow shipped on 2026-10-17.
  *
  * THE FLOW THIS MEASURES. A signed-out visitor opens the app and gets a gift box;
- * tapping it bursts into "YOU WIN · 11 minute free call"; after a reading beat the app
- * hands over to the free 11-minute panel itself, and a card rises over the bottom of it
+ * tapping it bursts into "YOU WIN · 7 minute free call"; after a reading beat the app
+ * hands over to the free 7-minute panel itself, and a card rises over the bottom of it
  * carrying the whole sign-up — phone, OTP and name, without leaving the screen. The
  * card cannot be dismissed. (Before this, the reveal ended by replacing itself with the
  * full-screen Login form.)

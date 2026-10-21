@@ -5,7 +5,7 @@ import client from '../api/client';
  * "New Signup Flow 17th Oct" — its own page, at the top of the sidebar.
  *
  * THE FLOW. A signed-out visitor gets a gift box; tapping it bursts into "YOU WIN · 11
- * minute free call"; the app then hands over to the free 11-minute panel itself and a
+ * minute free call"; the app then hands over to the free 7-minute panel itself and a
  * card rises over the bottom of it carrying the whole sign-up — phone, OTP and name —
  * without leaving the screen. The card cannot be dismissed.
  *
@@ -149,7 +149,7 @@ export default function NewSignupFlow() {
     <div style={{ maxWidth: 1320 }}>
       <h2 style={{ marginBottom: 2 }}>New Signup Flow 17th Oct</h2>
       <p style={{ marginTop: 0, fontSize: 13, opacity: 0.75, maxWidth: 820 }}>
-        Gift box → “YOU WIN” → the free 11-minute panel, with the whole sign-up
+        Gift box → “YOU WIN” → the free 7-minute panel, with the whole sign-up
         happening in a card over it. Distinct people, from PostHog. The older
         Login → OTP → Name route is still live for sign-out and expired sessions and is
         measured separately on <strong>Analytics</strong>.

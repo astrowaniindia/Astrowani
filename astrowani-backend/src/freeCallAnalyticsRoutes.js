@@ -352,9 +352,9 @@ const TALK_BUCKETS = [
   { label: 'Under 90s (did not count)', min: 0, max: 89 },
   { label: '90s – 2 min', min: 90, max: 119 },
   { label: '2 – 4 min (before payout)', min: 120, max: 239 },
-  { label: '4 – 8 min (payout earned)', min: 240, max: 479 },
-  { label: '8 – 11 min', min: 480, max: 659 },
-  { label: 'Full 11 min', min: 660, max: Infinity },
+  { label: '4 – 6 min (payout earned)', min: 240, max: 359 },
+  { label: '6 – 7 min', min: 360, max: 419 },
+  { label: 'Full 7 min', min: 420, max: Infinity },
 ];
 
 function bucketTalk(seconds) {
