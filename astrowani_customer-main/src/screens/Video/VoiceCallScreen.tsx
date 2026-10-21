@@ -133,6 +133,10 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const isConnectedRef = useRef(false);
   const callDurationRef = useRef(0);
   const isEndingRef = useRef(false);
+  // True once getUserMedia has actually handed us a stream, i.e. the microphone prompt is
+  // answered and the mic is open. The pre-connect watchdog's deadline runs from here, never
+  // from mount — see utils/preConnectWatchdog.js.
+  const mediaReadyRef = useRef(false);
   // Set when the END came from the other side rather than our own hang-up button.
   // Only read for free intro calls, where an astrologer dropping out early has to send
   // the customer back to pick somebody else instead of just closing the screen.
@@ -569,6 +573,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       const stream = await (mediaDevices as any).getUserMedia({audio: true, video: false});
       if (cancelled) { stream.getTracks().forEach((t: any) => t.stop()); return; }
       localStreamRef.current = stream;
+      mediaReadyRef.current = true;
 
       const pc = new RTCPeerConnection(await getIceServers());
       pcRef.current = pc;
@@ -752,6 +757,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     // start until the 'ringing' state — so this used to hang with no message at all.
     // See utils/preConnectWatchdog.js.
     watchdogRef.current = createPreConnectWatchdog({
+      isMediaReady: () => mediaReadyRef.current,
       label: 'Customer/Voice',
       getSessionId: () => sessionIdRef.current,
       isConnected: () => isConnectedRef.current,

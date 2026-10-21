@@ -79,6 +79,10 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const [remoteVideoPaused, setRemoteVideoPaused] = useState(false);
 
   const isEndingRef = useRef(false);
+  // True once getUserMedia has actually handed us a stream, i.e. the microphone prompt is
+  // answered and the mic is open. The pre-connect watchdog's deadline runs from here, never
+  // from mount — see utils/preConnectWatchdog.js.
+  const mediaReadyRef = useRef(false);
   const isConnectedRef = useRef(false);
   const callDurationRef = useRef(0);
 
@@ -314,6 +318,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       });
       if (cancelled) { stream.getTracks().forEach((t: any) => t.stop()); return; }
       localStreamRef.current = stream;
+      mediaReadyRef.current = true;
       setLocalStreamURL((stream as any).toURL());
 
       const pc = new RTCPeerConnection(await getIceServers());
@@ -472,6 +477,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     // no session_ended listener, so a customer hanging up before media started reached this
     // app nowhere at all. See utils/preConnectWatchdog.js.
     watchdogRef.current = createPreConnectWatchdog({
+      isMediaReady: () => mediaReadyRef.current,
       label: 'Vendor/Video',
       getSessionId: () => sessionId,
       isConnected: () => isConnectedRef.current,

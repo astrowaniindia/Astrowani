@@ -35,6 +35,7 @@ import AstrologerBadge from '../../components/AstrologerBadge';
 import RequestingPopup from '../../components/RequestingPopup';
 import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
+import { ensureCallPermissions } from '../../utils/callPermissions';
 import { captureEvent } from '../../utils/Analytics';
 
 const CREAM = '#FFF9F3';
@@ -193,6 +194,24 @@ export default function InstantAstrologers({ navigation, route }) {
     if (busyRef.current || ringRef.current) return;
     busyRef.current = true;
     try {
+      // The microphone is settled BEFORE the astrologer's phone rings. The call screen used
+      // to ask on mount, where the dialog raced its own 45s connect watchdog and lost — see
+      // src/utils/callPermissions.js. Asking here also means a customer who says no does not
+      // spend their one free call on a call that could never have carried audio.
+      if (!(await ensureCallPermissions({ label: 'FreeCall/Instant' }))) {
+        busyRef.current = false;
+        captureEvent('free_call_mic_denied', {
+          astrologer_id: astro.id,
+          variant: variantRef.current,
+        });
+        showStatusPopup({
+          variant: 'info',
+          title: t('call.permissionRequired'),
+          message: t('call.micPermissionMsg'),
+        });
+        return;
+      }
+
       const res = await ringInstantAstrologer(astro.id);
       ringRef.current = { requestId: res.requestId, sessionId: res.sessionId, astrologerId: astro.id };
       navigatedRef.current = false;

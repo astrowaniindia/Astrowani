@@ -3028,3 +3028,110 @@ same 1 pre-existing error — compared side by side).
 and on an iPhone, then check the Platform column and filter in admin. Note the column will
 read "Unknown" for all 4,058 existing customers until each of them next logs in on a build
 carrying this — **which needs the customer OTA; the backend half alone records nothing.**
+
+---
+
+## Session 2026-10-21: 14% of calls were killed by a timer while the mic dialog was still open
+
+### EH. The permission prompt raced the connect watchdog, and the watchdog won
+
+Reported as "calls get cut under one minute, most calls go this way". It was not most calls,
+and the shape of the data is what gave it away.
+
+**Measured first, 7 days to 2026-10-21.** The distribution is BIMODAL — survivors run a
+median 5-6 minutes, and a separate population dies almost immediately:
+
+| | calls | died <60s | never activated |
+|---|---|---|---|
+| free audio | 394 | 143 (36%) | 98 |
+| paid audio | 81 | 21 (26%) | 12 |
+| chat | 107 | 10 (9%) | 3 |
+
+The deaths are not spread across that minute. They are a spike at **47-51s: 63 sessions, 56
+of them with `next_billing_at` still NULL**, i.e. no media ever flowed. Humans hanging up do
+not cluster in a 5-second window; a timer does.
+
+**THE CAUSE.** Every call screen asked for `RECORD_AUDIO` on mount inside `setupWebRTC()`,
+and armed `createPreConnectWatchdog()` in the same effect — but the watchdog captured
+`startedAt = Date.now()` at creation, while `setupWebRTC()` was still sitting on
+`await PermissionsAndroid.request(...)`, **which blocks on a human tapping "Allow"**. 45s
+later the watchdog ended the call with "We could not connect this call", underneath a dialog
+the customer had not answered yet. 45s deadline + 3s poll + the `/api/call/end` round trip is
+exactly the observed 47-51s.
+
+> **THE CONFIRMING NUMBER, and the one to reuse: a customer's FIRST EVER call failed 16.4%
+> of the time against 7.3% for every later call.** Android shows that dialog once. That gap
+> *is* the dialog. It also explains why the free intro call is worst hit — a free call is
+> almost always someone's first-ever call, on an app installed two minutes earlier.
+
+**This is the same bug family as the 60-second `sessionRoom` cap (DO): a clock captured at
+mount that outlived what it was meant to measure.** When a deadline and the thing it bounds
+start at different moments, say so explicitly.
+
+### What was ruled out, with evidence — do not re-derive this
+
+- **The relay is healthy.** A real TURN `Allocate` against `76.13.243.165:3478` using the
+  exact credentials compiled into the shipped APKs → **SUCCESS**, relay allocated. UDP and
+  TCP both answer Binding too. coturn listens on **3478 only** (checked `ss -lntup`): there is
+  no TLS listener, and **443 is nginx** (a raw STUN probe there returns `0x4854`, i.e. "HT").
+  Note a TCP probe of 5349 can look like a connection that never answers — that is a false
+  positive from a script printing on timeout, not a listener.
+- **Not capacity.** The busiest hour (16:00 IST, 51 calls) has the LOWEST failure rate (6%);
+  quiet hours are worst. Saturation would do the opposite.
+- **Not one bad astrologer or handset.** Spread 7-38% across all 23 astrologers, 370 distinct
+  customers, and 14 of 35 repeat customers got MIXED outcomes.
+- **Not the backend.** `logs/errors.log` holds no entry for any of these sessions — only SMS
+  failures and billing reconciliation. The server behaved correctly throughout.
+- **VPS access for this:** `ssh -i ~/.ssh/astrodilip_deploy -p 2222 deploy@76.13.243.165`.
+  That user has **no `sudo`** (so `/root/.pm2/logs` is unreachable), but
+  `/var/www/astrowani-monorepo/astrowani-backend/logs/errors.log` is world-readable.
+
+### The fix
+
+**Primary — ask at the tap, not on mount.** `customer src/utils/callPermissions.js`
+(`ensureCallPermissions({video})`), called from `InstantAstrologers.onCall` **before**
+`ringInstantAstrologer`. By the time the call screen mounts the permission is settled, so
+there is nothing to race. It also means a customer who denies the mic **never rings an
+astrologer and never spends their one-per-customer free call** on a call that could not have
+carried audio (`free_call_mic_denied` is captured). Reuses the existing `call.permissionRequired`
+/ `call.micPermissionMsg` keys — no new i18n. `check()` runs before `request()` so a repeat
+caller never sees a dialog on a tap that used to be instant.
+- **It FAILS OPEN.** Only an explicit denial returns false; a thrown bridge error or an
+  unreadable result proceeds, because the call screen asks again and handles a real denial
+  itself. Refusing to place a call because a permission probe misfired is the worse failure.
+- **iOS has no `PermissionsAndroid`**, so there the prompt is raised by opening a
+  `getUserMedia` stream and releasing it immediately; the OS caches the grant, so the call
+  screen's own `getUserMedia` a moment later does not prompt again.
+
+**Secondary, the safety net — `preConnectWatchdog` now takes `isMediaReady`**, and
+`deadlineMs` runs from the moment media is genuinely open rather than from mount. A caller
+passing no `isMediaReady` keeps exactly the old behaviour. Wired in all four call screens via
+a `mediaReadyRef` set where `getUserMedia` resolves. A **new `setupDeadlineMs` (120s)** still
+bounds "media never opened at all", because *nothing may sit on "Connecting…" forever* — but
+on the long clock, since what it is waiting for is a human reading a dialog.
+**Crucially, `ended_by_other` is still detected throughout the permission wait**, so a hangup
+during the dialog is reported as promptly as before.
+
+### Verified 2026-10-21 — 11/11, no device, no network, no database
+`astrowani_customer-main/scripts/testPreConnectWatchdog.js` drives the REAL module on a
+virtual clock with a stubbed poll transport. It asserts the two app copies are byte-identical
+(drift guard, per DY), that the 45s kill no longer fires while media is unopened, that it
+still fires 45s after media opens late, that the old behaviour is preserved without
+`isMediaReady`, and that all four screens declare, set and pass `mediaReadyRef`.
+
+> **The suite was verified to FAIL on the original bug** — restoring
+> `Date.now() - startedAt > deadlineMs` produces 3 failures while the two "behaviour must not
+> change" cases still pass. Every negative check is paired with a positive control
+> (`still bounded at 120s`, `ended_by_other still gets through`), because a watchdog that had
+> simply stopped working would pass every "not killed" assertion on its own.
+
+**NOT DONE — the paid call entry points still ask on mount.** `Call.js`, `Video.js`,
+`Home.js`, `AstrologerInfo.js` and `ExpertsList.js` have the same one-line change available
+(`ensureCallPermissions` before `/api/call/initiate`); only the free instant flow was wired.
+Paid audio was dying at 26%, so this is worth finishing.
+**Also still open and unrelated to this bug: there is no TURNS/443 relay path** (DM item 2),
+which is the likely explanation for the ~7% floor that survives on repeat calls.
+
+**Not exercised on a device.** The test worth doing: a FRESH install, tap "Call free", and
+confirm the mic dialog appears BEFORE the astrologer's phone rings, that denying it rings
+nobody and leaves the offer unspent, and that allowing it connects.

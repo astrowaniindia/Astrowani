@@ -91,6 +91,10 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const isConnectedRef = useRef(false);
   const callDurationRef = useRef(0);
   const isEndingRef = useRef(false);
+  // True once getUserMedia has actually handed us a stream, i.e. the microphone prompt is
+  // answered and the mic is open. The pre-connect watchdog's deadline runs from here, never
+  // from mount — see utils/preConnectWatchdog.js.
+  const mediaReadyRef = useRef(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const sessionJoinRef = useRef<any>(null);
@@ -346,6 +350,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
       });
       if (cancelled) { stream.getTracks().forEach((t: any) => t.stop()); return; }
       localStreamRef.current = stream;
+      mediaReadyRef.current = true;
       setLocalStreamURL((stream as any).toURL());
 
       const pc = new RTCPeerConnection(await getIceServers());
@@ -523,6 +528,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
 
     // Nothing may sit on "Connecting…" forever — see utils/preConnectWatchdog.js.
     watchdogRef.current = createPreConnectWatchdog({
+      isMediaReady: () => mediaReadyRef.current,
       label: 'Customer/Video',
       getSessionId: () => sessionIdRef.current,
       isConnected: () => isConnectedRef.current,

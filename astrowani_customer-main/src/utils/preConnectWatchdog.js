@@ -26,6 +26,10 @@ const POLL_MS = 3000;
 // Long enough that a slow-but-real connection is never cut short (ICE over a relay on a poor
 // mobile network can take a good few seconds), short enough that a dead call is not a mystery.
 const DEFAULT_DEADLINE_MS = 45000;
+// The outer bound, measured from mount, for media never opening at all. Generous on purpose:
+// the thing it is usually waiting for is a human reading a permission dialog, and cutting that
+// short is the exact bug this guard was added to stop (see isMediaReady below).
+const DEFAULT_SETUP_DEADLINE_MS = 120000;
 
 /**
  * @param {object} args
@@ -33,11 +37,14 @@ const DEFAULT_DEADLINE_MS = 45000;
  * @param {() => boolean} args.isConnected        true once media is flowing; stops the watchdog
  * @param {() => boolean} args.isEnding           true once we are already tearing down
  * @param {(info:{reason:'ended_by_other'|'timeout'}) => void} args.onGiveUp
+ * @param {() => boolean} [args.isMediaReady] true once the mic is actually open — see below
  * @param {number} [args.deadlineMs]
+ * @param {number} [args.setupDeadlineMs]
  * @param {string} [args.label]
  */
 export function createPreConnectWatchdog({
-  getSessionId, isConnected, isEnding, onGiveUp, deadlineMs = DEFAULT_DEADLINE_MS, label = 'call',
+  getSessionId, isConnected, isEnding, onGiveUp, isMediaReady = null,
+  deadlineMs = DEFAULT_DEADLINE_MS, setupDeadlineMs = DEFAULT_SETUP_DEADLINE_MS, label = 'call',
 }) {
   let stopped = false;
   let timer = null;
@@ -48,6 +55,16 @@ export function createPreConnectWatchdog({
   // the server we simply behave as before: no forced give-up.
   let sawServer = false;
   const startedAt = Date.now();
+  // WHEN THE 45s CLOCK IS ALLOWED TO START (2026-10-21). It used to start at mount — but at
+  // mount the screen may still be awaiting `PermissionsAndroid.request(RECORD_AUDIO)`, which
+  // blocks on a human tapping "Allow". The deadline then expired underneath the dialog and
+  // killed a call that had never been given a microphone to connect with: 14% of all audio
+  // calls, and 16.4% of every customer's FIRST call. The permission is now asked for at the
+  // tap instead (src/utils/callPermissions.js), so this should no longer be reachable — but
+  // the clock belongs where it measures the right thing regardless, so `deadlineMs` now runs
+  // from the moment media is genuinely open. A caller that passes no isMediaReady keeps
+  // exactly the old behaviour.
+  let readyAt = isMediaReady ? null : startedAt;
 
   const stop = () => { stopped = true; if (timer) { clearTimeout(timer); timer = null; } };
 
@@ -81,7 +98,17 @@ export function createPreConnectWatchdog({
       }
     }
 
-    if (sawServer && Date.now() - startedAt > deadlineMs) { finish('timeout'); return; }
+    if (readyAt === null) {
+      try { if (isMediaReady()) readyAt = Date.now(); } catch (_) {}
+    }
+
+    if (sawServer) {
+      // Media is open: the connection itself is what we are now waiting on.
+      if (readyAt !== null && Date.now() - readyAt > deadlineMs) { finish('timeout'); return; }
+      // Media never opened. Still bounded — "nothing may sit on Connecting… forever" — but on
+      // the long clock, because this is the permission-dialog case and not a failing call.
+      if (readyAt === null && Date.now() - startedAt > setupDeadlineMs) { finish('timeout'); return; }
+    }
     if (!stopped) { timer = setTimeout(tick, POLL_MS); }
   };
 
