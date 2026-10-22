@@ -266,7 +266,12 @@ for (const platform of targets) {
   // If a future hot-updater renames that string this will report FAILED for a
   // deploy that worked. That is the safe direction: a false alarm you can see
   // beats a false success you cannot.
-  const run = spawnSync('npx', args, { cwd: ROOT, encoding: 'utf8', shell: true });
+  // shell: true means the OS re-parses this as a command LINE, so any argument
+  // carrying a space is split again on the way in. A multi-word -m message therefore
+  // arrived as one word per argument and hot-updater rejected the lot with "too many
+  // arguments for 'deploy'" — the deploy never ran. Quote anything with whitespace.
+  const shellArgs = args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a));
+  const run = spawnSync('npx', shellArgs, { cwd: ROOT, encoding: 'utf8', shell: true });
   const output = `${run.stdout || ''}${run.stderr || ''}`;
   process.stdout.write(output);
 

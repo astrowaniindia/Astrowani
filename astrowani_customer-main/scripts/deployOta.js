@@ -266,19 +266,12 @@ for (const platform of targets) {
   // If a future hot-updater renames that string this will report FAILED for a
   // deploy that worked. That is the safe direction: a false alarm you can see
   // beats a false success you cannot.
-  // --require raises undici's 10s default timeout, which is shorter than a
-  // bundle upload takes on anything but a fast link — see longFetchTimeouts.js.
-  const run = spawnSync('npx', args, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    shell: true,
-    env: {
-      ...process.env,
-      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${JSON.stringify(
-        path.join(__dirname, 'longFetchTimeouts.js'),
-      )}`.trim(),
-    },
-  });
+  // shell: true means the OS re-parses this as a command LINE, so any argument
+  // carrying a space is split again on the way in. A multi-word -m message therefore
+  // arrived as one word per argument and hot-updater rejected the lot with "too many
+  // arguments for 'deploy'" — the deploy never ran. Quote anything with whitespace.
+  const shellArgs = args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a));
+  const run = spawnSync('npx', shellArgs, { cwd: ROOT, encoding: 'utf8', shell: true });
   const output = `${run.stdout || ''}${run.stderr || ''}`;
   process.stdout.write(output);
 
