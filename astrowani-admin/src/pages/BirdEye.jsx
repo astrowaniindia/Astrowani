@@ -1,39 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import client from '../api/client';
 
 /**
- * BIRD EYE — one screen, live, for watching the platform all day.
+ * BIRD EYE — the whole platform on ONE SCREEN. No scrolling. Ever.
  *
- * NOT ANALYTICS, and deliberately not named it. Analytics is twenty cards and a date
- * picker, for answering "why did last fortnight look like that"; nobody leaves it open.
- * This answers "is the platform healthy right now, and is today going better or worse
- * than yesterday", and it has no date control at all — today IS the range.
+ * THAT CONSTRAINT IS THE FEATURE, not a styling choice. A page you scroll is a report,
+ * and a report is something you read occasionally; this is meant to be left open on a
+ * second monitor and taken in at a glance, the way a dashboard in a control room is. The
+ * moment it scrolls, the half below the fold stops being seen and it has quietly become
+ * another analytics page.
  *
- * THE HARD PART OF THIS SCREEN IS WHAT IS NOT ON IT. A single screen holding every
- * metric we have is a worse screen than four pages, because a glance stops working: the
- * eye has nowhere to land and the operator goes back to reading rows. So the bands are
- * in a fixed priority order — what is happening this second, then how today is going,
- * then what is waiting for a human, then the two shapes worth watching over days — and
- * anything that failed to change an operator's next action was left on Analytics. Resist
- * adding tiles here; add them there and link.
+ * SO EVERYTHING HERE IS FIGHTING FOR FIXED SPACE, and that is what makes the screen
+ * honest: a new metric cannot be "added", it can only REPLACE one. The grid below is
+ * four fixed bands — header, twelve tiles, two charts, one queue strip — and it fills
+ * exactly the viewport height. If something new deserves a place, something else has to
+ * lose one. Do not add a band, and do not let a band grow its own scrollbar.
  *
- * EVERYTHING COMPARES AGAINST THE SAME TIME YESTERDAY, never against yesterday's total.
- * A bare "₹4,200 today" is unreadable at 11am and a full-day comparison makes every
- * morning look like a collapse. The pairing is computed server-side so the two halves
- * always come from one snapshot.
+ * HOW THE HEIGHT IS PINNED. The admin shell gives `.main-content` 32px/56px of padding
+ * inside a `.content-wrap` that is `height: 100vh; overflow-y: auto`. A page cannot fill
+ * that exactly without neutralising the padding, so this component tags <body> while it
+ * is mounted and removes the tag on unmount — scoped, reversible, and it leaves
+ * styles.css alone so no other page is affected.
  *
- * FOUR INDEPENDENT POLLS AT FOUR RATES, one per endpoint. A live tile is worthless at a
- * 2-minute refresh and a 14-day aggregate re-run every 10s is pure load — and keeping
- * them separate means PostHog being down costs the signup graph and nothing else.
+ * Numbers, days, pacing and polling rates: see src/birdEyeRoutes.js, which explains why
+ * today is compared against the same hours of yesterday and why there are four endpoints
+ * rather than one.
  */
 
-// Poll intervals, in ms. Chosen against what each number can actually change in:
-// live state moves second to second, a day's totals do not, and a 14-day aggregate
-// barely moves at all within a shift.
+// Poll intervals, in ms, matched to what each number can actually change in.
 const PULSE_MS = 10_000;
 const TODAY_MS = 30_000;
 const TREND_MS = 120_000;
@@ -42,25 +40,25 @@ const TREND_DAYS = 14;
 
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const num = (n) => Number(n || 0).toLocaleString('en-IN');
+const compactMoney = (n) => {
+  const v = Number(n || 0);
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
+  if (v >= 1000) return `₹${(v / 1000).toFixed(1)}k`;
+  return `₹${v}`;
+};
 
 /**
- * A live poller that pauses itself when the tab is hidden.
+ * A live poller that pauses itself when the tab is hidden and re-fetches on focus.
  *
- * A screen meant to be left open all day would otherwise keep four timers running in a
- * background tab forever — and on resume the operator reads whatever the last tick
- * happened to leave behind. Re-fetching immediately on focus is what makes "live"
- * actually true at the moment somebody looks.
- *
- * `error` deliberately does not clear the previous data. A single failed poll must not
- * blank a working tile; the band keeps the last good numbers and says it is stale.
+ * `error` deliberately does not clear the previous data: one failed poll must not blank
+ * a working tile on a screen somebody is watching. The band keeps its last good numbers
+ * and is dimmed instead.
  */
 function useLivePoll(path, intervalMs, { paused = false, params } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [at, setAt] = useState(null);
   const [loading, setLoading] = useState(true);
-  // Kept in a ref so changing the interval or the paused flag never re-creates the
-  // fetch function and re-triggers a fetch on every render.
   const paramsRef = useRef(params);
   paramsRef.current = params;
 
@@ -83,13 +81,9 @@ function useLivePoll(path, intervalMs, { paused = false, params } = {}) {
 
   useEffect(() => {
     if (paused) return undefined;
-    let timer = null;
-    const tick = () => {
-      // Nothing is fetched for a hidden tab; the focus handler below covers the gap.
-      if (document.visibilityState === 'visible') load();
-    };
+    const tick = () => { if (document.visibilityState === 'visible') load(); };
     tick();
-    timer = setInterval(tick, intervalMs);
+    const timer = setInterval(tick, intervalMs);
     const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -102,12 +96,11 @@ function useLivePoll(path, intervalMs, { paused = false, params } = {}) {
 }
 
 /**
- * "4s ago" — the only honest label for a number that refreshes on its own.
+ * The seconds counter, as its own component.
  *
- * ITS OWN COMPONENT ON PURPOSE. This ticks every second, and as a hook inside the page
- * it re-rendered the entire screen once a second — including both recharts charts, which
- * is heavy and makes the lines twitch on a screen that is meant to be left open for
- * hours. Isolating it means the second hand costs one text node.
+ * It ticks every second, and as a hook in the page it re-rendered everything once a
+ * second — including both charts, which makes the lines twitch on a screen meant to be
+ * watched for hours. Isolated, the second hand costs one text node.
  */
 function Ago({ at }) {
   const [, force] = useState(0);
@@ -117,118 +110,146 @@ function Ago({ at }) {
   }, []);
   if (!at) return '—';
   const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
-  return secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m`;
 }
 
 /**
- * Today against the same elapsed slice of yesterday.
+ * Today against the same elapsed slice of yesterday, as a chip.
  *
- * Yesterday at zero is NOT a percentage — "+100%" off a base of nothing reads as a
- * doubling of something. It is reported as "first today" instead, and a genuine
- * no-change-from-nothing stays blank rather than claiming 0%.
+ * Compressed to a chip on purpose — the long sentence this used to print ("vs 754 by now
+ * yesterday") is good writing and bad dashboard: twelve of them is a wall of prose. The
+ * baseline moves into the tooltip, where it is there when wanted and silent otherwise.
+ *
+ * Yesterday at zero is NOT a percentage: "+100%" off a base of nothing reads as a
+ * doubling of something real.
  */
 function Delta({ now, before, format = num }) {
   const a = Number(now || 0);
   const b = Number(before || 0);
-  if (!a && !b) return <span style={{ color: 'var(--text-light)' }}>nothing yet</span>;
-  if (!b) return <span style={{ color: 'var(--emerald)', fontWeight: 700 }}>first today</span>;
+  if (!a && !b) return null;
+  if (!b) {
+    return <span style={chipStyle('var(--emerald)')} title="Nothing by this time yesterday">new</span>;
+  }
   const pct = Math.round(((a - b) / b) * 100);
-  if (pct === 0) return <span style={{ color: 'var(--text-muted)' }}>level with yesterday</span>;
+  const title = `${format(b)} by this time yesterday`;
+  if (pct === 0) return <span style={chipStyle('var(--text-light)')} title={title}>level</span>;
   const up = pct > 0;
   return (
-    <span style={{ color: up ? 'var(--emerald)' : 'var(--crimson)', fontWeight: 700 }}>
-      {up ? '▲' : '▼'} {Math.abs(pct)}%
-      {/* The baseline is formatted the same way as the tile above it — a money tile
-          reading "vs 754 by now yesterday" invites it to be read as a count. */}
-      <span style={{ color: 'var(--text-light)', fontWeight: 500 }}> vs {format(b)} by now yesterday</span>
+    <span style={chipStyle(up ? 'var(--emerald)' : 'var(--crimson)')} title={title}>
+      {up ? '▲' : '▼'}{Math.abs(pct)}%
     </span>
   );
 }
 
-function Band({ title, hint, right, children, style }) {
-  return (
-    <section style={{ marginBottom: 18, ...style }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-            {title}
-          </h3>
-          {hint && <div style={{ fontSize: 11.5, color: 'var(--text-light)', marginTop: 2 }}>{hint}</div>}
-        </div>
-        {right}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-const grid = (min) => ({
-  display: 'grid',
-  gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`,
-  gap: 12,
+const chipStyle = (colour) => ({
+  color: colour,
+  fontSize: 10.5,
+  fontWeight: 800,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
 });
 
-function Tile({ label, value, sub, foot, accent, big }) {
+/** One fixed-height tile. Three lines, never four — four is how a band starts growing. */
+function Tile({ label, value, sub, subColour, accent, delta }) {
   return (
-    <div
-      className="card"
-      style={{
-        margin: 0, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 2,
-        borderLeft: `3px solid ${accent || 'var(--border-dark)'}`,
-      }}
-    >
-      <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderLeft: `3px solid ${accent || 'var(--border-dark)'}`,
+      borderRadius: 10,
+      padding: '7px 10px',
+      display: 'flex',
+      flexDirection: 'column',
+      // flex-start, NOT center. Centring inside a fixed height clips BOTH ends the
+      // moment the content is a pixel too tall, which ate the top of every label.
+      justifyContent: 'flex-start',
+      gap: 1,
+      minWidth: 0,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase',
+        color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>
         {label}
       </div>
-      <div style={{ fontSize: big ? 30 : 25, fontWeight: 800, lineHeight: 1.15, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-      </div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{sub}</div>}
-      {foot && <div style={{ fontSize: 11.5, marginTop: 2 }}>{foot}</div>}
-    </div>
-  );
-}
-
-function Stale({ error, children }) {
-  if (!error) return children;
-  return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ opacity: 0.45 }}>{children}</div>
-      <div style={{
-        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        pointerEvents: 'none',
-      }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
         <span style={{
-          background: 'var(--crimson-bg)', color: 'var(--crimson)', border: '1px solid var(--crimson-border)',
-          borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700,
+          fontSize: 21, fontWeight: 800, lineHeight: 1.15, color: 'var(--text-primary)',
+          fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
         }}>
-          {error} — showing the last good numbers
+          {value}
         </span>
+        {delta}
+      </div>
+      <div style={{
+        fontSize: 10, color: subColour || 'var(--text-light)', whiteSpace: 'nowrap',
+        overflow: 'hidden', textOverflow: 'ellipsis', minHeight: 12,
+      }}>
+        {sub || ''}
       </div>
     </div>
   );
 }
 
-/** The six sign-up-flow lines, off by default where they would only crowd the chart. */
+/** The six sign-up-flow lines. Two start off: they sit on top of a neighbour. */
 const SIGNUP_SERIES = [
-  { key: 'shown', label: 'Gift box shown', colour: 'var(--text-light)', on: true },
-  { key: 'opened', label: 'Gift opened', colour: 'var(--gold-dark)', on: false },
-  { key: 'card', label: 'Sign-up card shown', colour: 'var(--sky)', on: true },
+  { key: 'shown', label: 'Gift shown', colour: '#9aa5b1', on: true },
+  { key: 'opened', label: 'Opened', colour: 'var(--gold-dark)', on: false },
+  { key: 'card', label: 'Card shown', colour: 'var(--sky)', on: true },
   { key: 'signedIn', label: 'Signed in', colour: 'var(--emerald)', on: true },
-  { key: 'rang', label: 'Rang an astrologer', colour: 'var(--indigo)', on: true },
-  { key: 'answered', label: 'Call answered', colour: 'var(--maroon)', on: true },
+  { key: 'rang', label: 'Rang', colour: 'var(--indigo)', on: true },
+  { key: 'answered', label: 'Answered', colour: 'var(--maroon)', on: true },
 ];
 
 const shortDay = (day) => (day || '').slice(5).replace('-', '/');
 
+/**
+ * Short names for the queue strip.
+ *
+ * The backend's labels ("Astrologers to approve") are written for a page with room; in a
+ * six-across strip every one of them truncates to "Astrologer…", which is worse than a
+ * shorter name chosen on purpose. The full label stays as the link's tooltip, and an
+ * unmapped key falls through to the server's wording rather than disappearing.
+ */
+const QUEUE_SHORT = {
+  astrologers: 'Approvals',
+  withdrawals: 'Payouts',
+  flags: 'Contact flags',
+  moderation: 'Reports',
+  support: 'Support',
+  orders: 'Orders',
+};
+
+const PANEL = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: '8px 10px 4px',
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: 0,
+  minHeight: 0,
+};
+
+const PANEL_TITLE = {
+  fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase',
+  color: 'var(--text-muted)', margin: 0,
+};
+
 export default function BirdEye() {
-  // One pause for the whole screen. An operator reading a number should be able to stop
-  // it moving under them, and a per-band pause would be four switches for one intent.
   const [paused, setPaused] = useState(false);
   const [series, setSeries] = useState(() => new Set(SIGNUP_SERIES.filter((s) => s.on).map((s) => s.key)));
 
-  const trendParams = useMemo(() => ({ days: TREND_DAYS }), []);
+  // Neutralise the shell's padding so the grid below can fill the viewport exactly, and
+  // put it back on unmount. Done from here rather than in styles.css so no other page is
+  // touched and nothing is left behind if this screen is removed.
+  useEffect(() => {
+    document.body.classList.add('bird-eye-screen');
+    return () => document.body.classList.remove('bird-eye-screen');
+  }, []);
 
+  const trendParams = useMemo(() => ({ days: TREND_DAYS }), []);
   const pulse = useLivePoll('/api/admin/bird-eye/pulse', PULSE_MS, { paused });
   const today = useLivePoll('/api/admin/bird-eye/today', TODAY_MS, { paused });
   const trends = useLivePoll('/api/admin/bird-eye/trends', TREND_MS, { paused, params: trendParams });
@@ -244,11 +265,10 @@ export default function BirdEye() {
   const health = today.data?.health || {};
   const queues = today.data?.queues || [];
   const waiting = queues.reduce((sum, q) => sum + (q.count || 0), 0);
-
   const connectRate = health.calls ? Math.round((health.connected / health.calls) * 100) : null;
 
-  const signupPoints = signup.data?.points || [];
-  const trendPoints = trends.data?.points || [];
+  const dash = pulse.loading ? '…' : null;
+  const tDash = today.loading ? '…' : null;
 
   const toggle = (key) => setSeries((prev) => {
     const next = new Set(prev);
@@ -256,215 +276,306 @@ export default function BirdEye() {
     return next;
   });
 
-  const refreshAll = () => {
-    pulse.reload(); today.reload(); trends.reload(); signup.reload();
+  const refreshAll = () => { pulse.reload(); today.reload(); trends.reload(); signup.reload(); };
+
+  const chartTooltip = {
+    contentStyle: {
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 8, fontSize: 11, padding: '6px 8px',
+    },
+    labelStyle: { fontSize: 11, fontWeight: 700 },
   };
 
   return (
-    <div style={{ maxWidth: 1420 }}>
-      {/* ── Header ───────────────────────────────────────────────────────────── */}
-      <div className="page-header" style={{ marginBottom: 18 }}>
-        <div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--maroon)', background: 'var(--maroon-50)', padding: '3px 10px', borderRadius: 20, marginBottom: 8 }}>
-            <span>🦅</span> BIRD EYE
-          </div>
-          <h1 style={{ marginBottom: 2 }}>The whole platform, right now</h1>
-          <p style={{ margin: 0 }}>
-            Live and self-refreshing. Today is the range — every figure is paired with the
-            same time of day yesterday, so it reads at 9am as well as at 9pm.
-          </p>
-        </div>
-        <div className="btn-group" style={{ alignItems: 'center' }}>
+    <>
+      <style>{`
+        /* Only while Bird Eye is on screen. */
+        body.bird-eye-screen .main-content { padding: 0; height: calc(100vh - 64px); overflow: hidden; }
+        body.bird-eye-screen .content-wrap { overflow: hidden; }
+        /* The escape hatch, set deliberately low. Below this the charts would be a few
+           pixels tall and the screen would be unreadable rather than merely tight — at
+           which point scrolling is the lesser evil. On any real monitor it never fires. */
+        @media (max-height: 620px) {
+          body.bird-eye-screen .main-content { height: auto; overflow: visible; }
+          body.bird-eye-screen .content-wrap { overflow-y: auto; }
+          .bird-eye-grid { height: auto !important; min-height: 620px; }
+        }
+      `}</style>
+
+      <div
+        className="bird-eye-grid"
+        style={{
+          height: '100%',
+          display: 'grid',
+          // header · tiles · charts (takes what is left) · queues
+          gridTemplateRows: 'auto auto minmax(0, 1fr) auto',
+          gap: 8,
+          padding: '10px 14px 12px',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+        }}
+      >
+        {/* ── Header ───────────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ fontSize: 15 }}>🦅</span>
+          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, whiteSpace: 'nowrap' }}>
+            Bird Eye
+          </h1>
+          <span style={{ fontSize: 11, color: 'var(--text-light)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            Today so far, against the same hours yesterday
+          </span>
+          <div style={{ flex: 1 }} />
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700,
+            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700,
             color: paused ? 'var(--amber)' : 'var(--emerald)',
             background: paused ? 'var(--amber-bg)' : 'var(--emerald-bg)',
             border: `1px solid ${paused ? 'var(--amber-border)' : 'var(--emerald-border)'}`,
-            borderRadius: 20, padding: '5px 12px',
+            borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap',
           }}>
             <span style={{
-              width: 8, height: 8, borderRadius: '50%',
+              width: 7, height: 7, borderRadius: '50%',
               background: paused ? 'var(--amber)' : 'var(--emerald)',
-              // `pulse` is the keyframe styles.css already defines for .pulse-dot.
               animation: paused ? 'none' : 'pulse 2s infinite',
             }} />
             {paused ? 'Paused' : <>Live · <Ago at={pulse.at} /></>}
           </span>
-          <button type="button" className="btn secondary sm" onClick={() => setPaused((p) => !p)}>
-            {paused ? '▶ Resume' : '⏸ Pause'}
+          <button type="button" className="btn secondary sm" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => setPaused((p) => !p)}>
+            {paused ? '▶' : '⏸'}
           </button>
-          <button type="button" className="btn sm" onClick={refreshAll}>↻ Refresh</button>
+          <button type="button" className="btn sm" style={{ padding: '3px 10px', fontSize: 11 }} onClick={refreshAll}>↻</button>
         </div>
-      </div>
 
-      {/* ── 1. RIGHT NOW ─────────────────────────────────────────────────────── */}
-      <Band
-        title="Right now"
-        hint={`Live state, rechecked every ${PULSE_MS / 1000} seconds.`}
-      >
-        <Stale error={pulse.data && pulse.error ? 'Live feed interrupted' : ''}>
-          <div style={grid(220)}>
-            <Tile
-              big
-              label="Astrologers taking work"
-              value={pulse.loading ? '…' : num(a.takingWork)}
-              sub={`${num(a.free)} free · ${num(a.busy)} busy`}
-              accent={a.takingWork ? 'var(--emerald)' : 'var(--crimson)'}
-              foot={a.onlineButUnreachable
-                ? (
-                  <Link to="/astrologers" style={{ color: 'var(--amber)', fontWeight: 700, textDecoration: 'none' }}>
-                    {num(a.onlineButUnreachable)} more are online but no customer can reach them →
-                  </Link>
-                )
-                : <span style={{ color: 'var(--text-light)' }}>Everyone online is reachable</span>}
-            />
-            <Tile
-              big
-              label="Consultations in progress"
-              value={pulse.loading ? '…' : num(s.active)}
-              sub={`${num(s.byType?.chat)} chat · ${num(s.byType?.audio)} call · ${num(s.byType?.video)} video`}
-              accent="var(--indigo)"
-              foot={s.active
-                ? <span style={{ color: 'var(--text-light)' }}>{num(s.paid)} paid · {num(s.free)} free · longest running {num(s.longestMinutes)} min</span>
-                : <span style={{ color: 'var(--text-light)' }}>Nobody is talking to anybody</span>}
-            />
-            <Tile
-              label="Ringing now"
-              value={pulse.loading ? '…' : num(ring.total)}
-              sub={`${num(ring.calls)} call · ${num(ring.chats)} chat`}
-              accent={ring.total ? 'var(--amber)' : 'var(--border-dark)'}
-              foot={<span style={{ color: 'var(--text-light)' }}>Requests waiting for someone to answer</span>}
-            />
-            <Tile
-              label="Live streams"
-              value={pulse.loading ? '…' : num(live.streams)}
-              sub={`${num(live.viewers)} watching`}
-              accent={live.streams ? 'var(--maroon)' : 'var(--border-dark)'}
-              foot={<Link to="/live" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Open Live Video Streams →</Link>}
-            />
-          </div>
-        </Stale>
-        {pulse.error && !pulse.data && <div className="error-text" style={{ marginTop: 8 }}>{pulse.error}</div>}
-      </Band>
+        {/* ── Twelve tiles: four live, eight for today ──────────────────────── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+          gridAutoRows: '70px',
+          gap: 8,
+          opacity: (pulse.error && pulse.data) || (today.error && today.data) ? 0.55 : 1,
+          transition: 'opacity .2s',
+        }}>
+          <Tile
+            label="Taking work"
+            value={dash || num(a.takingWork)}
+            accent={a.takingWork ? 'var(--emerald)' : 'var(--crimson)'}
+            sub={a.onlineButUnreachable
+              ? `${num(a.free)} free · ${num(a.busy)} busy · ${num(a.onlineButUnreachable)} unreachable`
+              : `${num(a.free)} free · ${num(a.busy)} busy`}
+            subColour={a.onlineButUnreachable ? 'var(--amber)' : undefined}
+          />
+          <Tile
+            label="In progress"
+            value={dash || num(s.active)}
+            accent="var(--indigo)"
+            sub={`${num(s.byType?.chat)} chat · ${num(s.byType?.audio)} call · ${num(s.byType?.video)} video`}
+          />
+          <Tile
+            label="Ringing now"
+            value={dash || num(ring.total)}
+            accent={ring.total ? 'var(--amber)' : 'var(--border-dark)'}
+            sub={`${num(ring.calls)} call · ${num(ring.chats)} chat`}
+          />
+          <Tile
+            label="Live streams"
+            value={dash || num(live.streams)}
+            accent={live.streams ? 'var(--maroon)' : 'var(--border-dark)'}
+            sub={`${num(live.viewers)} watching`}
+          />
+          <Tile
+            label="Money in"
+            value={tDash || money(t.moneyIn)}
+            accent="var(--emerald)"
+            delta={<Delta now={t.moneyIn} before={y.moneyIn} format={money} />}
+            sub={`${num(t.rechargesPaid)}/${num(t.rechargeAttempts)} recharges paid`}
+          />
+          <Tile
+            label="Platform share"
+            value={tDash || money(t.platformShare)}
+            accent="var(--gold-dark)"
+            delta={<Delta now={t.platformShare} before={y.platformShare} format={money} />}
+            sub="our cut, all sources"
+          />
 
-      {/* ── 2. TODAY SO FAR ──────────────────────────────────────────────────── */}
-      <Band
-        title="Today so far"
-        hint="Compared with the same hours of yesterday, not with yesterday's full day."
-      >
-        <Stale error={today.data && today.error ? 'Refresh failed' : ''}>
-          <div style={grid(240)}>
-            <Tile
-              big
-              label="Money in"
-              value={today.loading ? '…' : money(t.moneyIn)}
-              sub={`${num(t.rechargesPaid)} of ${num(t.rechargeAttempts)} recharge attempts went through`}
-              accent="var(--emerald)"
-              foot={<Delta now={t.moneyIn} before={y.moneyIn} format={money} />}
-            />
-            <Tile
-              big
-              label="Platform share earned"
-              value={today.loading ? '…' : money(t.platformShare)}
-              sub="Our half of consultations, plus reports, gifts and orders"
-              accent="var(--gold-dark)"
-              foot={<Delta now={t.platformShare} before={y.platformShare} format={money} />}
-            />
-            <Tile
-              label="New signups"
-              value={today.loading ? '…' : num(t.signups)}
-              accent="var(--sky)"
-              foot={<Delta now={t.signups} before={y.signups} />}
-            />
-            <Tile
-              label="Consultations"
-              value={today.loading ? '…' : num(t.sessions)}
-              sub={`${num(t.paidSessions)} paid · ${num(t.minutes)} minutes talked`}
-              accent="var(--indigo)"
-              foot={<Delta now={t.sessions} before={y.sessions} />}
-            />
-            <Tile
-              label="Customers who spent"
-              value={today.loading ? '…' : num(t.payingCustomers)}
-              sub="Charged for at least one minute"
-              accent="var(--maroon)"
-              foot={<Delta now={t.payingCustomers} before={y.payingCustomers} />}
-            />
-            <Tile
-              label="Free intro calls answered"
-              value={today.loading ? '…' : num(t.freeCallsAnswered)}
-              sub="The offer actually delivered, not just booked"
-              accent="var(--amber)"
-              foot={<Delta now={t.freeCallsAnswered} before={y.freeCallsAnswered} />}
-            />
-          </div>
-        </Stale>
-        {today.error && !today.data && <div className="error-text" style={{ marginTop: 8 }}>{today.error}</div>}
+          <Tile
+            label="Signups"
+            value={tDash || num(t.signups)}
+            accent="var(--sky)"
+            delta={<Delta now={t.signups} before={y.signups} />}
+            sub="new accounts today"
+          />
+          <Tile
+            label="Consultations"
+            value={tDash || num(t.sessions)}
+            accent="var(--indigo)"
+            delta={<Delta now={t.sessions} before={y.sessions} />}
+            sub={`${num(t.paidSessions)} paid`}
+          />
+          <Tile
+            label="Talk minutes"
+            value={tDash || num(t.minutes)}
+            accent="var(--indigo)"
+            delta={<Delta now={t.minutes} before={y.minutes} />}
+            sub="billed and free"
+          />
+          <Tile
+            label="Paying customers"
+            value={tDash || num(t.payingCustomers)}
+            accent="var(--maroon)"
+            delta={<Delta now={t.payingCustomers} before={y.payingCustomers} />}
+            sub="charged at least once"
+          />
+          <Tile
+            label="Free intro calls"
+            value={tDash || num(t.freeCallsAnswered)}
+            accent="var(--amber)"
+            delta={<Delta now={t.freeCallsAnswered} before={y.freeCallsAnswered} />}
+            sub="answered, not just booked"
+          />
+          <Tile
+            label="Calls connected"
+            value={tDash || (connectRate === null ? '—' : `${connectRate}%`)}
+            accent={connectRate === null ? 'var(--border-dark)'
+              : connectRate >= 90 ? 'var(--emerald)'
+                : connectRate >= 75 ? 'var(--amber)' : 'var(--crimson)'}
+            sub={health.calls
+              ? `${num(health.connected)}/${num(health.calls)} carried audio`
+              : 'no calls yet today'}
+            subColour={connectRate !== null && connectRate < 75 ? 'var(--crimson)' : undefined}
+          />
+        </div>
 
-        {/* Call connection health. Kept in this band rather than given its own, because
-            it is a property of today — but it is a RATIO and needs a sentence, which is
-            why it is not squeezed into a tile. This is the number the 2026-10-21 fault
-            was invisible without: calls were being killed before they connected while
-            every other figure on the platform looked entirely normal. */}
-        <div
-          className="card"
-          style={{ margin: '12px 0 0', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}
-        >
-          <div style={{ minWidth: 150 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Calls that connected
+        {/* ── Two charts, sharing whatever height is left ───────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, minHeight: 0 }}>
+          {/* Sign-up flow — LINES, not a funnel. A funnel answers "where do people drop
+              out", which you ask once while tuning; these answer "is it better or worse
+              than yesterday", which is what a live screen is for. */}
+          <div style={PANEL}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+              <h2 style={PANEL_TITLE}>Sign-up flow · {TREND_DAYS} days</h2>
+              <div style={{ flex: 1 }} />
+              {SIGNUP_SERIES.map((sr) => {
+                const on = series.has(sr.key);
+                return (
+                  <button
+                    key={sr.key}
+                    type="button"
+                    onClick={() => toggle(sr.key)}
+                    title={on ? 'Hide this line' : 'Show this line'}
+                    style={{
+                      cursor: 'pointer', border: 'none', background: 'none', padding: 0,
+                      fontSize: 9.5, fontWeight: 700, lineHeight: 1,
+                      color: on ? 'var(--text-secondary)' : 'var(--text-light)',
+                      opacity: on ? 1 : 0.5,
+                      display: 'inline-flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: on ? sr.colour : 'var(--border-dark)',
+                    }} />
+                    {sr.label}
+                  </button>
+                );
+              })}
             </div>
-            <div style={{
-              fontSize: 25, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
-              color: connectRate === null ? 'var(--text-light)'
-                : connectRate >= 90 ? 'var(--emerald)'
-                  : connectRate >= 75 ? 'var(--amber)' : 'var(--crimson)',
-            }}>
-              {connectRate === null ? '—' : `${connectRate}%`}
+            <div style={{ flex: 1, minHeight: 0 }}>
+              {signup.error ? (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: 8 }}>
+                  {signup.error} Only this panel comes from product analytics; everything
+                  else on screen is from the database and unaffected.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={signup.data?.points || []} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+                    <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" interval="preserveStartEnd" minTickGap={18} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" width={42} />
+                    <Tooltip {...chartTooltip} />
+                    {SIGNUP_SERIES.filter((sr) => series.has(sr.key)).map((sr) => (
+                      <Line key={sr.key} type="monotone" dataKey={sr.key} name={sr.label} stroke={sr.colour} strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
-          <div style={{ flex: '1 1 260px', minWidth: 220 }}>
-            <div style={{ height: 10, borderRadius: 6, background: 'var(--surface-muted)', overflow: 'hidden', display: 'flex' }}>
-              <div style={{ width: `${connectRate ?? 0}%`, background: 'var(--emerald)' }} />
-              <div style={{ flex: 1, background: 'var(--crimson)' }} />
+
+          {/* Money and demand. Two axes: rupees and headcounts differ by orders of
+              magnitude, and on one axis the people lines flatten into the floor. */}
+          <div style={PANEL}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+              <h2 style={PANEL_TITLE}>Money &amp; demand · {TREND_DAYS} days</h2>
+              <div style={{ flex: 1 }} />
+              {[
+                ['Recharges', 'var(--emerald)'],
+                ['Consultations', 'var(--indigo)'],
+                ['Paid', 'var(--maroon)'],
+                ['Signups', 'var(--sky)'],
+              ].map(([label, colour]) => (
+                <span key={label} style={{
+                  fontSize: 9.5, fontWeight: 700, color: 'var(--text-secondary)',
+                  display: 'inline-flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+                }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: colour }} />
+                  {label}
+                </span>
+              ))}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
-              {health.calls
-                ? <>
-                    {num(health.connected)} of {num(health.calls)} audio and video calls today carried
-                    audio. {num(health.neverConnected)} never did{health.diedUnderAMinute ? `, and ${num(health.diedUnderAMinute)} ended inside a minute` : ''}.
-                  </>
-                : 'No audio or video calls have been placed today yet. Chat is excluded — it opens no microphone and cannot fail this way.'}
+            <div style={{ flex: 1, minHeight: 0 }}>
+              {trends.error && !trends.data ? (
+                <div style={{ fontSize: 11, color: 'var(--crimson)', padding: 8 }}>{trends.error}</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trends.data?.points || []} margin={{ top: 4, right: 2, left: -18, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+                    <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" interval="preserveStartEnd" minTickGap={18} />
+                    <YAxis yAxisId="money" tick={{ fontSize: 9.5 }} stroke="var(--text-light)" width={44} tickFormatter={compactMoney} />
+                    <YAxis yAxisId="count" orientation="right" allowDecimals={false} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" width={28} />
+                    <Tooltip {...chartTooltip} formatter={(v, name) => (name === 'Recharges' ? money(v) : num(v))} />
+                    <Line yAxisId="money" type="monotone" dataKey="revenue" name="Recharges" stroke="var(--emerald)" strokeWidth={2.2} dot={false} isAnimationActive={false} />
+                    <Line yAxisId="count" type="monotone" dataKey="consultations" name="Consultations" stroke="var(--indigo)" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                    <Line yAxisId="count" type="monotone" dataKey="paidConsultations" name="Paid" stroke="var(--maroon)" strokeWidth={1.8} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                    <Line yAxisId="count" type="monotone" dataKey="signups" name="Signups" stroke="var(--sky)" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
-      </Band>
 
-      {/* ── 3. WAITING FOR A HUMAN ───────────────────────────────────────────── */}
-      <Band
-        title="Waiting for a human"
-        hint="Counts only. Every one is a link to the page that clears it."
-        right={
-          <span style={{ fontSize: 12, fontWeight: 700, color: waiting ? 'var(--amber)' : 'var(--emerald)' }}>
-            {today.loading ? '' : waiting ? `${num(waiting)} items in the queues` : 'All clear'}
-          </span>
-        }
-      >
-        <div style={grid(190)}>
+        {/* ── Queue strip. Counts only — the page behind each one does the work. ── */}
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px',
+            background: waiting ? 'var(--amber-bg)' : 'var(--emerald-bg)',
+            border: `1px solid ${waiting ? 'var(--amber-border)' : 'var(--emerald-border)'}`,
+            borderRadius: 10, whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase', color: waiting ? 'var(--amber)' : 'var(--emerald)' }}>
+              {today.loading ? 'Queues' : waiting ? `${num(waiting)} waiting` : 'All clear'}
+            </span>
+          </div>
           {queues.map((q) => (
             <Link
               key={q.key}
               to={q.to}
-              className="card"
+              title={`Open ${q.label}`}
               style={{
-                margin: 0, padding: '12px 14px', textDecoration: 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                flex: 1, minWidth: 0, textDecoration: 'none',
+                background: 'var(--surface)', border: '1px solid var(--border)',
                 borderLeft: `3px solid ${q.count ? 'var(--amber)' : 'var(--border-dark)'}`,
+                borderRadius: 10, padding: '6px 10px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
               }}
             >
-              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>{q.label}</span>
               <span style={{
-                fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                fontSize: 10.5, fontWeight: 600, color: 'var(--text-secondary)',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {QUEUE_SHORT[q.key] || q.label}
+              </span>
+              <span style={{
+                fontSize: 17, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
                 color: q.ok === false ? 'var(--text-light)' : q.count ? 'var(--amber)' : 'var(--text-light)',
               }}>
                 {/* A queue we could not read must never render as a reassuring zero. */}
@@ -472,156 +583,27 @@ export default function BirdEye() {
               </span>
             </Link>
           ))}
-          {!queues.length && (
-            <div className="card" style={{ margin: 0, padding: '12px 14px', color: 'var(--text-light)', fontSize: 12.5 }}>
-              {today.loading ? 'Loading the queues…' : 'No queues reported.'}
-            </div>
-          )}
-        </div>
-      </Band>
-
-      {/* ── 4. SIGN-UP FLOW, DAY BY DAY ──────────────────────────────────────── */}
-      <Band
-        title="Sign-up flow, day by day"
-        hint={`Distinct people per day over ${TREND_DAYS} days. The gift box through to a call being answered.`}
-        right={
-          <Link to="/new-signup-flow" style={{ fontSize: 12, fontWeight: 700, color: 'var(--maroon)', textDecoration: 'none' }}>
-            Step-by-step drop-off →
+          {/* Google Ads has no live figure in this console yet — reaching the Ads API
+              needs a developer token and OAuth, which is its own job. A labelled empty
+              slot is honest; a number nobody can trust is not. Acquisition already has
+              the other half (which campaign each signup came from). */}
+          <Link
+            to="/acquisition"
+            title="Ad spend is not wired to this console yet — open Acquisition"
+            style={{
+              flex: '0 0 158px', minWidth: 0, textDecoration: 'none',
+              background: 'transparent', border: '1px dashed var(--border-dark)',
+              borderRadius: 10, padding: '6px 10px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-light)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Ad spend
+            </span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-light)', whiteSpace: 'nowrap' }}>not wired</span>
           </Link>
-        }
-      >
-        <div className="card" style={{ margin: 0, padding: '16px 14px 10px' }}>
-          {/* Chips rather than a six-line legend that nobody can read. Two steps are off
-              by default because they sit almost on top of their neighbour and only
-              crowd the chart until somebody is specifically looking for them. */}
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>
-            {SIGNUP_SERIES.map((sr) => {
-              const on = series.has(sr.key);
-              return (
-                <button
-                  key={sr.key}
-                  type="button"
-                  onClick={() => toggle(sr.key)}
-                  style={{
-                    cursor: 'pointer', borderRadius: 20, padding: '4px 11px', fontSize: 12, fontWeight: 700,
-                    border: `1px solid ${on ? sr.colour : 'var(--border)'}`,
-                    background: on ? 'var(--surface-muted)' : 'transparent',
-                    color: on ? 'var(--text-primary)' : 'var(--text-light)',
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                  }}
-                >
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: on ? sr.colour : 'var(--border-dark)' }} />
-                  {sr.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {signup.error ? (
-            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '20px 0' }}>
-              {signup.error} This graph is the only thing here that comes from product
-              analytics rather than the database — everything else on the screen is
-              unaffected.
-            </div>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={signupPoints} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-                  <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fontSize: 11 }} stroke="var(--text-light)" />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="var(--text-light)" />
-                  <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }}
-                    labelFormatter={(d) => d}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11.5 }} />
-                  {SIGNUP_SERIES.filter((sr) => series.has(sr.key)).map((sr) => (
-                    <Line
-                      key={sr.key}
-                      type="monotone"
-                      dataKey={sr.key}
-                      name={sr.label}
-                      stroke={sr.colour}
-                      strokeWidth={2}
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-              {/* Days before the flow shipped have none of these events at all. Saying
-                  so beats drawing a flat zero that reads as a collapse. */}
-              {signup.data?.launchedOn && signupPoints.length
-                && signupPoints[0].day < signup.data.launchedOn && (
-                <div style={{ fontSize: 11.5, color: 'var(--text-light)', marginTop: 6 }}>
-                  This flow went live on {signup.data.launchedOn}. Anything before that day is
-                  zero because the events did not exist yet — not because it stopped working.
-                </div>
-              )}
-            </>
-          )}
         </div>
-      </Band>
-
-      {/* ── 5. MONEY AND DEMAND ──────────────────────────────────────────────── */}
-      <Band
-        title="Money and demand"
-        hint={`${TREND_DAYS} days from the database — recharges, consultations and signups on one picture.`}
-        right={
-          <Link to="/analytics" style={{ fontSize: 12, fontWeight: 700, color: 'var(--maroon)', textDecoration: 'none' }}>
-            Full analytics →
-          </Link>
-        }
-      >
-        <div className="card" style={{ margin: 0, padding: '16px 14px 10px' }}>
-          {trends.error && !trends.data ? (
-            <div className="error-text">{trends.error}</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={trendPoints} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-                <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fontSize: 11 }} stroke="var(--text-light)" />
-                {/* Two axes on purpose: rupees and headcounts differ by orders of
-                    magnitude, and on one axis the people lines flatten into the floor. */}
-                <YAxis yAxisId="money" tick={{ fontSize: 11 }} stroke="var(--text-light)" tickFormatter={(v) => `₹${v >= 1000 ? `${Math.round(v / 1000)}k` : v}`} />
-                <YAxis yAxisId="count" orientation="right" allowDecimals={false} tick={{ fontSize: 11 }} stroke="var(--text-light)" />
-                <Tooltip
-                  contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }}
-                  formatter={(v, name) => (name === 'Recharges' ? money(v) : num(v))}
-                />
-                <Legend wrapperStyle={{ fontSize: 11.5 }} />
-                <Line yAxisId="money" type="monotone" dataKey="revenue" name="Recharges" stroke="var(--emerald)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-                <Line yAxisId="count" type="monotone" dataKey="consultations" name="Consultations" stroke="var(--indigo)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                <Line yAxisId="count" type="monotone" dataKey="paidConsultations" name="Paid consultations" stroke="var(--maroon)" strokeWidth={2} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                <Line yAxisId="count" type="monotone" dataKey="signups" name="Signups" stroke="var(--sky)" strokeWidth={2} dot={false} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </Band>
-
-      {/* ── 6. GOOGLE ADS — not wired yet ────────────────────────────────────── */}
-      <Band title="Ad spend" hint="Not connected yet.">
-        <div
-          className="card"
-          style={{ margin: 0, padding: '14px 16px', borderLeft: '3px dashed var(--border-dark)' }}
-        >
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            <strong style={{ color: 'var(--text-primary)' }}>Spend, installs and cost per signup will sit here.</strong>{' '}
-            Google Ads has no live figure in this console yet — reaching the Ads API needs a
-            developer token and OAuth against the account, which is a separate job from this
-            screen. Until then the honest answer is to leave the space empty rather than
-            print a number nobody can trust.
-            <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 12.5 }}>
-              What we already have, today, without any of that: every signup carries the
-              campaign or poster it arrived from, and{' '}
-              <Link to="/acquisition" style={{ color: 'var(--maroon)', fontWeight: 700, textDecoration: 'none' }}>Acquisition</Link>{' '}
-              reports the activation and revenue behind each one. Put spend next to that and
-              cost per paying customer falls out of it.
-            </div>
-          </div>
-        </div>
-      </Band>
-    </div>
+      </div>
+    </>
   );
 }
