@@ -56,16 +56,23 @@ import {
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
 
-// Matches MIN_UPSELL_SECONDS in astrowani-backend/src/sessionManager.js.
-const MIN_UPSELL_SECONDS = 540;   // 9 min - the "buy more minutes" line
+// Matches MIN_UPSELL_SECONDS in astrowani-backend/src/sessionManager.js AND
+// freeCallRoutes.js — the server REFUSES to build the offer below this line, so all
+// three have to move together or the sheet opens against an endpoint that returns
+// nothing. Dropped 540 -> 180 on 2026-10-22 (owner): the free call is 7 minutes now,
+// so a 9-minute rule could never fire.
+const MIN_UPSELL_SECONDS = 180;   // 3 min - the "buy more minutes" line
 
 /**
- * Below this, the call ends and NOTHING is asked — no Shagun, no rating (owner,
- * 2026-10-04; was 3 min). It is also where the astrologer first earns from a free call:
- * the payout milestone is ₹5 at 4 minutes, so this is the point at which there is
- * genuinely something to thank them for.
+ * Below this, the call ends and NOTHING is asked — no sheet, no rating.
+ *
+ * It gates the WHOLE post-call chain, not just the thank-you ask, which is why it is no
+ * longer named after Shagun: with that sheet hidden (featureFlags), the first thing past
+ * this line is the "more minutes" offer. Back to 180 on 2026-10-22 (owner) so that offer
+ * reaches a 3-minute call; it was raised to 240 on 2026-10-04 to match the ₹5-at-4-min
+ * payout, which only ever mattered for the thank-you ask.
  */
-const MIN_SHAGUN_SECONDS = 240;   // 4 min
+const MIN_POSTCALL_SECONDS = 180; // 3 min
 
 /**
  * DIFFERENT LINE, DIFFERENT JOB — do not merge this with the one above.
@@ -443,7 +450,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
       // Too short to ask anything of them. Checked AFTER goHome so the call still ends
       // normally — this only decides whether the chain below runs.
-      if (freeSeconds < MIN_SHAGUN_SECONDS) return;
+      if (freeSeconds < MIN_POSTCALL_SECONDS) return;
 
       // EACH STEP FALLS THROUGH TO THE NEXT WHEN IT IS SWITCHED OFF (utils/featureFlags),
       // rather than one flag short-circuiting the whole chain, so any single step can be

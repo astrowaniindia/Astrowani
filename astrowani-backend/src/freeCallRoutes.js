@@ -902,8 +902,10 @@ async function findActiveInvite(customerId) {
 }
 
 /** A free call must have run at least this long to earn a "more minutes" offer.
- *  Matches MIN_UPSELL_SECONDS in sessionManager.js and VoiceCallScreen.tsx. */
-const MIN_UPSELL_SECONDS = 540; // 9 minutes
+ *  Matches MIN_UPSELL_SECONDS in sessionManager.js and VoiceCallScreen.tsx.
+ *  THIS is the authoritative one: the endpoint returns no offer below it, so the sheet
+ *  would open against nothing if the app's copy were lower. 540 -> 180 on 2026-10-22. */
+const MIN_UPSELL_SECONDS = 180; // 3 minutes
 
 /** How long after a call ends the continue offer can still be opened. */
 const UPSELL_OPEN_WINDOW_MS = 10 * 60 * 1000;

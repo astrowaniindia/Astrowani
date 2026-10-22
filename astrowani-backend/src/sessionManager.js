@@ -58,12 +58,17 @@ const MIN_REAL_CALL_SECONDS = 90;
  * a call nobody had takes a working astrologer off the market for ninety seconds for an
  * offer that will never be shown.
  */
-const MIN_UPSELL_SECONDS = 540;
+// 540 -> 180 on 2026-10-22 (owner): the free call is 7 minutes now, so a 9-minute rule
+// could never fire. Mirrored in freeCallRoutes.js and VoiceCallScreen.tsx — all three
+// have to move together.
+const MIN_UPSELL_SECONDS = 180;
 /**
- * Above this, but below MIN_UPSELL_SECONDS, the customer is not offered more minutes —
- * they are offered the chance to give a Dakshina instead. A six-minute conversation was
- * worth something but was not cut short mid-flow, so "buy more time" is the wrong ask
- * and "thank them if you want to" is the right one.
+ * Used to mark the band above this but below MIN_UPSELL_SECONDS, where the customer was
+ * offered a Dakshina rather than more minutes. Both lines are 180 as of 2026-10-22, so
+ * THAT BAND IS NOW EMPTY and `qualifiesForDakshina` tracks `qualifiesForUpsell` exactly.
+ * Kept, and kept separate, because it is also the `abandonedByAstrologer` line that
+ * decides whether a customer loses their free call (VoiceCallScreen's
+ * MIN_ABANDON_SECONDS, same 180) — a money/eligibility rule, not a presentation one.
  */
 const MIN_DAKSHINA_SECONDS = 180;
 

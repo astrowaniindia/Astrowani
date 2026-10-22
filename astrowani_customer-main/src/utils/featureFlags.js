@@ -72,8 +72,13 @@ export const DAKSHINA_PROMPT_ENABLED = false;
  * To turn it on for iPhone it has to become an IAP purchase (coins, like gifts and
  * reports), not a Razorpay one. With it off, VoiceCallScreen's post-call chain falls
  * through to the next step, so the call simply ends.
+ *
+ * HIDDEN EVERYWHERE 2026-10-22 (owner): the thank-you ask is out of the post-call chain
+ * for now, so "more minutes" is the first thing a customer sees after a free call. The
+ * iOS rule above still stands on its own — switching this back on must stay
+ * platform-guarded, not a bare `true`.
  */
-export const SHAGUN_RECHARGE_ENABLED = Platform.OS !== 'ios';
+export const SHAGUN_RECHARGE_ENABLED = false;
 
 /**
  * The "thanks — would you share a review?" star card, AFTER A FREE CALL ONLY.
