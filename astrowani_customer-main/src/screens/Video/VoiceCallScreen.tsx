@@ -257,6 +257,11 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   // happens". The vendor's own call screen has always navigated from a `finally` for
   // this reason; this brings the customer side in line.
   const leftScreenRef = useRef(false);
+  // Set while the free-call post-call chain is deliberately holding this screen open so
+  // its sheet opens HERE rather than over Home. doEndCall's `finally` leaves the screen
+  // unconditionally -- and a `return` inside a `try` still runs it -- so without this the
+  // chain's own branch navigates away a frame after asking for the sheet.
+  const holdForChainRef = useRef(false);
   const leaveCallScreen = useCallback(() => {
     if (leftScreenRef.current) return;
     leftScreenRef.current = true;
@@ -356,6 +361,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
     if (freeCall) {
       const goHome = () => {
+        holdForChainRef.current = false;   // release the finally-guard before leaving
         leftScreenRef.current = true;
         navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       };
@@ -478,9 +484,14 @@ const VoiceCallScreen = ({route, navigation}: any) => {
       // Too short to ask anything of them: leave exactly as before.
       if (freeSeconds < MIN_POSTCALL_SECONDS) { goHome(); return; }
 
-      // Otherwise STAY on the call screen and let the chain open over it. If nothing is
-      // on screen within this window the sheet is never coming, so leave anyway — the
-      // call must always end, which is what the old unconditional goHome() guaranteed.
+      // Otherwise STAY on the call screen and let the chain open over it. This also tells
+      // the `finally` below to leave us here; every path out of the chain clears it via
+      // goHome().
+      holdForChainRef.current = true;
+
+      // If nothing is on screen within this window the sheet is never coming, so leave
+      // anyway — the call must always end, which is what the old unconditional goHome()
+      // guaranteed.
       homeTimer = setTimeout(() => {
         homeTimer = null;
         if (!leftScreenRef.current) goHome();
@@ -505,7 +516,13 @@ const VoiceCallScreen = ({route, navigation}: any) => {
      // Whatever happened above — a throw in the WebRTC teardown, a native module that has
      // gone away, an analytics call that blew up — the customer does not stay on a dead
      // call screen. Idempotent, so the branches that already navigated are a no-op.
-     leaveCallScreen();
+     //
+     // EXCEPT when the free-call chain is holding the screen on purpose: this runs on the
+     // way out of `return` too, so it was navigating Home a frame after the chain asked
+     // for its sheet, which is why the sheet kept appearing over Home. The chain owns the
+     // exit from here (askRating -> goHome), and its 12s backstop covers a chain that
+     // never gets there.
+     if (!holdForChainRef.current) leaveCallScreen();
    }
   }, [stopCallTimer, stopRingCountdown, stopRipple, cleanupWebRTC, navigation, leaveCallScreen, recieverId, recieverName, recieverImage, freeCall, freeCallSeconds, freeCallMode]);
 
