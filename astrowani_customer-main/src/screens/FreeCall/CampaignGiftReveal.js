@@ -59,7 +59,10 @@ const BOX = scale(168);
 const TEASER_LIFT = BOX * 0.80;
 const HINT_DROP = BOX * 0.72;
 // How far "YOU WIN!" travels from dead centre up to its resting place at the top.
-const WIN_RISE = verticalScale(215);
+// 215 -> 175 (2026-10-22): the limited-time note shares the top strip now, and at 215
+// "YOU WIN!" rode up into it. There is ~217px of empty stage between this line and the
+// prize card at PRIZE_DROP, so it has room to drop without crowding anything below.
+const WIN_RISE = verticalScale(175);
 // Where the prize card settles: just under the risen title.
 const PRIZE_DROP = verticalScale(94);
 
@@ -646,6 +649,15 @@ export default function CampaignGiftReveal({ navigation, route }) {
         <Animated.View
           style={[styles.closeWrap, { top: insets.top + verticalScale(10), opacity: avatarIn }]}
         >
+          {/* BESIDE the ✕, not under it. Stacked, it hung down into "YOU WIN!"; laid out
+              along the empty top strip it stays clear of the stage entirely while still
+              sitting right where a thumb heading for the cross will pass. Deliberately a
+              note, not a second button — the ✕ still works on the first tap. */}
+          <View style={styles.closeNote}>
+            <Text style={styles.closeNoteTitle}>{t('campaignGift.closeNoteTitle')}</Text>
+            <Text style={styles.closeNoteSub}>{t('campaignGift.closeNoteSub')}</Text>
+          </View>
+
           <TouchableOpacity
             style={styles.closeBtn}
             activeOpacity={0.7}
@@ -654,14 +666,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
           >
             <Icon name="close" size={moderateScale(22)} color={CREAM} />
           </TouchableOpacity>
-
-          {/* Sits directly under the ✕ so it is read by the one person it is for:
-              somebody whose thumb is already on the way to dismissing. Deliberately a
-              note, not a second button — the ✕ still works on the first tap. */}
-          <View style={styles.closeNote}>
-            <Text style={styles.closeNoteTitle}>{t('campaignGift.closeNoteTitle')}</Text>
-            <Text style={styles.closeNoteSub}>{t('campaignGift.closeNoteSub')}</Text>
-          </View>
         </Animated.View>
       )}
 
@@ -693,23 +697,33 @@ export default function CampaignGiftReveal({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.AstroMaroon, overflow: 'hidden' },
   tapCatcher: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
-  closeWrap: { position: 'absolute', right: scale(16), zIndex: 30, alignItems: 'flex-end' },
+  // A ROW along the top strip: note on the left, ✕ on the right. left is set as well as
+  // right so the row has a width to lay out in.
+  closeWrap: {
+    position: 'absolute',
+    left: scale(16),
+    right: scale(16),
+    zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
   closeNote: {
-    marginTop: verticalScale(7),
-    maxWidth: scale(164),
+    flexShrink: 1,
+    marginRight: scale(9),
     backgroundColor: 'rgba(0,0,0,0.32)',
     borderWidth: 1,
     borderColor: 'rgba(255,215,0,0.38)',
     borderRadius: moderateScale(10),
-    paddingHorizontal: scale(9),
-    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(5),
   },
   closeNoteTitle: {
     color: GOLD,
-    fontSize: moderateScale(10.5),
+    fontSize: moderateScale(10),
     fontWeight: '800',
     textAlign: 'right',
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
   },
   closeNoteSub: {
     color: CREAM,
@@ -717,7 +731,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'right',
     marginTop: verticalScale(1),
-    lineHeight: moderateScale(14),
   },
   closeBtn: {
     width: scale(36),
