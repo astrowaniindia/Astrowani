@@ -135,6 +135,9 @@ const VoiceCallScreen = ({route, navigation}: any) => {
   const [timerActive, setTimerActive] = useState(false);
   const callDuration = useElapsedSeconds(callStartMs, timerActive);
   const [ringCountdown, setRingCountdown] = useState(30);
+  // True from the moment the call starts tearing down, so the connection banner stops
+  // reporting the deliberate disconnect as a network fault. See doEndCall.
+  const [callEnded, setCallEnded] = useState(false);
 
   const callStateRef = useRef<CallState>('connecting');
   const isConnectedRef = useRef(false);
@@ -281,6 +284,13 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
   const doEndCall = useCallback(async () => {
    try {
+    // Silence the connection banner for the rest of this screen's life. Tearing down the
+    // peer connection below makes the other side look "absent", which is exactly what
+    // that banner reports — and now that the free-call chain holds this screen open for
+    // its sheet, the customer sits looking at "Network problem … the call will end in
+    // 22s" about a call that has already ended. Nothing is being billed by then either,
+    // so the warning is not merely ugly, it is untrue.
+    setCallEnded(true);
     stopCallTimer();
     stopRingCountdown();
     stopRipple();
@@ -918,12 +928,14 @@ const VoiceCallScreen = ({route, navigation}: any) => {
 
       {/* Call media is peer-to-peer, so the server cannot cut it — the 30s timer is the only
           control here. The least we can do is say what is happening and who dropped. */}
-      <SessionConnectionNotice
-        conn={conn}
-        t={t}
-        mode="call"
-        style={{position: 'absolute', top: 96, left: 10, right: 10, zIndex: 50}}
-      />
+      {!callEnded && (
+        <SessionConnectionNotice
+          conn={conn}
+          t={t}
+          mode="call"
+          style={{position: 'absolute', top: 96, left: 10, right: 10, zIndex: 50}}
+        />
+      )}
 
       {recieverImage ? (
         <Image source={{uri: recieverImage}} style={StyleSheet.absoluteFillObject} blurRadius={22} />
