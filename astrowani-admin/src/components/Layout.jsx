@@ -52,6 +52,10 @@ const ALL_GROUPS = [
     workspace: 'overview',
     title: 'Executive Center',
     items: [
+      // FIRST ITEM IN THE CONSOLE, and meant to stay there. Bird Eye is the screen that
+      // gets left open all day; everything below it is something you go to in order to
+      // act on what Bird Eye showed you.
+      { to: '/bird-eye', label: 'Bird Eye', badge: 'Live' },
       // Pinned ABOVE Dashboard on purpose (owner, 2026-10-17): this flow is the one
       // being watched day to day while it beds in. Move it down the list once it is
       // no longer the newest thing on the app.

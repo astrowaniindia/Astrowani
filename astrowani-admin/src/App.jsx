@@ -34,6 +34,7 @@ import ReferralPopup from './pages/ReferralPopup';
 import AppPrompts from './pages/AppPrompts';
 import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
+import BirdEye from './pages/BirdEye';
 import Support from './pages/Support';
 import SupportInbox from './pages/SupportInbox';
 import FreeBotChat from './pages/FreeBotChat';
@@ -50,6 +51,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
+        <Route path="bird-eye" element={<BirdEye />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="blogs" element={<Blogs />} />
         <Route path="banners" element={<Banners />} />

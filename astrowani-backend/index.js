@@ -983,6 +983,12 @@ require('./src/metroCampaignRoutes')(app);
 // products together would make neither number mean anything. Same ENV_FILTER reuse, so
 // it registers after postHogRoutes.
 require('./src/newSignupFlowRoutes')(app);
+// "Bird Eye" — the single live operations screen (/api/admin/bird-eye/*). Four small
+// endpoints polled at four different rates, deliberately NOT part of Analytics: this
+// one answers "is the platform healthy right now" with no date control at all. Reuses
+// postHogRoutes' ENV_FILTER/runHogQL for its signup line chart and newSignupFlowRoutes'
+// LAUNCHED_ON, so it registers after both.
+require('./src/birdEyeRoutes')(app);
 // The whole customer journey in one ordered list (journeyCatalogue.js), one query.
 require('./src/journeyRoutes')(app);
 require('./src/sentryRoutes')(app);
