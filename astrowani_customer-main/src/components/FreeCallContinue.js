@@ -108,6 +108,19 @@ export function FreeCallContinueHost() {
   const visible = useDeferredPresent(!!req && ready);
   useModalPresence(visible);
 
+  // Tells the caller the sheet is actually on screen. VoiceCallScreen now keeps the
+  // customer ON THE CALL SCREEN until this fires, so it needs to know the difference
+  // between "the sheet is coming" and "the sheet will never come" (host not mounted, a
+  // dead fetch) -- in the second case it gives up and goes Home on its own.
+  const openedRef = useRef(false);
+  useEffect(() => {
+    if (!req) { openedRef.current = false; return; }
+    if (visible && !openedRef.current) {
+      openedRef.current = true;
+      try { req.onOpened?.(); } catch (_) {}
+    }
+  }, [visible, req]);
+
   useEffect(() => {
     listener = (o) => { setReady(false); setReq(o); };
     return () => { listener = null; };

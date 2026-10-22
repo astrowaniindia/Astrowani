@@ -360,7 +360,26 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         navigation.reset({index: 0, routes: [{name: 'DrawerNavigator'}]});
       };
 
+      // THE CHAIN NOW RUNS ON THE CALL SCREEN, NOT OVER HOME (owner, 2026-10-22).
+      // The sheet used to open after navigating away, so it read as a stray popup on
+      // Home rather than the end of the call. We stay put until the chain finishes.
+      //
+      // The cost is that `goHome` is no longer unconditional, so every exit has to reach
+      // it or the customer is stranded on a dead call screen. `askRating` is that single
+      // exit -- ✕, the countdown expiring and "nothing to sell" all funnel through
+      // onDeclined into it -- and this timer is the backstop for the one case that
+      // cannot: the sheet never appearing at all. Cancelled the moment it does appear,
+      // because once it is up it owns the screen for its own decide window.
+      let homeTimer: ReturnType<typeof setTimeout> | null = null;
+      const cancelHomeTimer = () => {
+        if (homeTimer) { clearTimeout(homeTimer); homeTimer = null; }
+      };
+
       const askRating = () => {
+        cancelHomeTimer();
+        // Leave first: the rating floats on whatever is underneath, and that should be
+        // Home, not the call screen we have just finished with.
+        goHome();
         if (!FREE_CALL_RATING_PROMPT_ENABLED) return;
         showRateAstrowani({
           context: 'free_call',
@@ -410,6 +429,9 @@ const VoiceCallScreen = ({route, navigation}: any) => {
           mode: freeCallMode,
           durationSeconds: freeSeconds,
           ranFullLength: freeCallSeconds > 0 && freeSeconds >= freeCallSeconds * 0.7,
+          // It is up: stop the backstop. From here the sheet's own decide window runs,
+          // and buying navigates to the paid call instead of going Home at all.
+          onOpened: cancelHomeTimer,
           // Dismissed, expired, or they joined the waitlist -> rate us. Buying instead
           // reconnects them to a paid call and none of this runs.
           onDeclined: askRating,
@@ -453,11 +475,16 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         return;
       }
 
-      goHome();
+      // Too short to ask anything of them: leave exactly as before.
+      if (freeSeconds < MIN_POSTCALL_SECONDS) { goHome(); return; }
 
-      // Too short to ask anything of them. Checked AFTER goHome so the call still ends
-      // normally — this only decides whether the chain below runs.
-      if (freeSeconds < MIN_POSTCALL_SECONDS) return;
+      // Otherwise STAY on the call screen and let the chain open over it. If nothing is
+      // on screen within this window the sheet is never coming, so leave anyway — the
+      // call must always end, which is what the old unconditional goHome() guaranteed.
+      homeTimer = setTimeout(() => {
+        homeTimer = null;
+        if (!leftScreenRef.current) goHome();
+      }, 12000);
 
       // EACH STEP FALLS THROUGH TO THE NEXT WHEN IT IS SWITCHED OFF (utils/featureFlags),
       // rather than one flag short-circuiting the whole chain, so any single step can be
