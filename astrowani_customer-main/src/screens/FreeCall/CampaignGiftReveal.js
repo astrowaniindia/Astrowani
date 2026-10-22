@@ -654,6 +654,14 @@ export default function CampaignGiftReveal({ navigation, route }) {
           >
             <Icon name="close" size={moderateScale(22)} color={CREAM} />
           </TouchableOpacity>
+
+          {/* Sits directly under the ✕ so it is read by the one person it is for:
+              somebody whose thumb is already on the way to dismissing. Deliberately a
+              note, not a second button — the ✕ still works on the first tap. */}
+          <View style={styles.closeNote}>
+            <Text style={styles.closeNoteTitle}>{t('campaignGift.closeNoteTitle')}</Text>
+            <Text style={styles.closeNoteSub}>{t('campaignGift.closeNoteSub')}</Text>
+          </View>
         </Animated.View>
       )}
 
@@ -685,7 +693,32 @@ export default function CampaignGiftReveal({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.AstroMaroon, overflow: 'hidden' },
   tapCatcher: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
-  closeWrap: { position: 'absolute', right: scale(16), zIndex: 30 },
+  closeWrap: { position: 'absolute', right: scale(16), zIndex: 30, alignItems: 'flex-end' },
+  closeNote: {
+    marginTop: verticalScale(7),
+    maxWidth: scale(164),
+    backgroundColor: 'rgba(0,0,0,0.32)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.38)',
+    borderRadius: moderateScale(10),
+    paddingHorizontal: scale(9),
+    paddingVertical: verticalScale(6),
+  },
+  closeNoteTitle: {
+    color: GOLD,
+    fontSize: moderateScale(10.5),
+    fontWeight: '800',
+    textAlign: 'right',
+    letterSpacing: 0.2,
+  },
+  closeNoteSub: {
+    color: CREAM,
+    fontSize: moderateScale(10),
+    fontWeight: '600',
+    textAlign: 'right',
+    marginTop: verticalScale(1),
+    lineHeight: moderateScale(14),
+  },
   closeBtn: {
     width: scale(36),
     height: scale(36),

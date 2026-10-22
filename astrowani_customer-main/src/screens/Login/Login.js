@@ -852,7 +852,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
   },
   fcCtaDisabled: {
-    backgroundColor: 'rgba(255,210,51,0.5)',
+    // OPAQUE, not a 50%-alpha gold. This button carries elevation: 6, and on Android an
+    // elevated view with a translucent background composites against the dark screen
+    // behind it — which drew a brown rounded block inside the button for the whole time
+    // the spinner was up. A dimmer solid gold reads as disabled without the artefact.
+    backgroundColor: '#E2BD30',
   },
   fcCtaText: {
     color: '#3E1B0E',
