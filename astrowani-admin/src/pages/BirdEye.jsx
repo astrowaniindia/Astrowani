@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -36,7 +36,10 @@ const PULSE_MS = 10_000;
 const TODAY_MS = 30_000;
 const TREND_MS = 120_000;
 
-const TREND_DAYS = 14;
+// Both charts are TODAY, hour by hour. There is no range control and no range
+// constant, because this screen has exactly one range: today. A fortnight of daily
+// points answers "how has the month gone", which is Analytics' question and reads as a
+// contradiction sitting under twelve tiles that all say "today".
 
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const num = (n) => Number(n || 0).toLocaleString('en-IN');
@@ -202,8 +205,6 @@ const SIGNUP_SERIES = [
   { key: 'answered', label: 'Answered', colour: 'var(--maroon)', on: true },
 ];
 
-const shortDay = (day) => (day || '').slice(5).replace('-', '/');
-
 /**
  * Short names for the queue strip.
  *
@@ -249,11 +250,10 @@ export default function BirdEye() {
     return () => document.body.classList.remove('bird-eye-screen');
   }, []);
 
-  const trendParams = useMemo(() => ({ days: TREND_DAYS }), []);
   const pulse = useLivePoll('/api/admin/bird-eye/pulse', PULSE_MS, { paused });
   const today = useLivePoll('/api/admin/bird-eye/today', TODAY_MS, { paused });
-  const trends = useLivePoll('/api/admin/bird-eye/trends', TREND_MS, { paused, params: trendParams });
-  const signup = useLivePoll('/api/admin/bird-eye/signup-trend', TREND_MS, { paused, params: trendParams });
+  const trends = useLivePoll('/api/admin/bird-eye/trends', TREND_MS, { paused });
+  const signup = useLivePoll('/api/admin/bird-eye/signup-trend', TREND_MS, { paused });
 
   const a = pulse.data?.astrologers || {};
   const s = pulse.data?.sessions || {};
@@ -269,6 +269,14 @@ export default function BirdEye() {
 
   const dash = pulse.loading ? '…' : null;
   const tDash = today.loading ? '…' : null;
+
+  // A line needs two points. In the first hour after midnight IST each chart holds
+  // exactly one, and with dot={false} recharts draws literally nothing — so every night
+  // the panels would sit blank for an hour and read as "the feed is broken" rather than
+  // "the day just started". Dots are turned on while the day is too young for a line.
+  const signupPoints = signup.data?.points || [];
+  const trendPoints = trends.data?.points || [];
+  const dotFor = (points) => (points.length <= 2 ? { r: 2.6 } : false);
 
   const toggle = (key) => setSeries((prev) => {
     const next = new Set(prev);
@@ -451,7 +459,7 @@ export default function BirdEye() {
               than yesterday", which is what a live screen is for. */}
           <div style={PANEL}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-              <h2 style={PANEL_TITLE}>Sign-up flow · {TREND_DAYS} days</h2>
+              <h2 style={PANEL_TITLE}>Sign-up flow · today by hour</h2>
               <div style={{ flex: 1 }} />
               {SIGNUP_SERIES.map((sr) => {
                 const on = series.has(sr.key);
@@ -486,13 +494,13 @@ export default function BirdEye() {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={signup.data?.points || []} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                  <LineChart data={signupPoints} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-                    <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" interval="preserveStartEnd" minTickGap={18} />
+                    <XAxis dataKey="label" tick={{ fontSize: 9.5 }} stroke="var(--text-light)" interval="preserveStartEnd" minTickGap={26} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" width={42} />
                     <Tooltip {...chartTooltip} />
                     {SIGNUP_SERIES.filter((sr) => series.has(sr.key)).map((sr) => (
-                      <Line key={sr.key} type="monotone" dataKey={sr.key} name={sr.label} stroke={sr.colour} strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                      <Line key={sr.key} type="monotone" dataKey={sr.key} name={sr.label} stroke={sr.colour} strokeWidth={1.8} dot={dotFor(signupPoints)} isAnimationActive={false} />
                     ))}
                   </LineChart>
                 </ResponsiveContainer>
@@ -504,7 +512,7 @@ export default function BirdEye() {
               magnitude, and on one axis the people lines flatten into the floor. */}
           <div style={PANEL}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-              <h2 style={PANEL_TITLE}>Money &amp; demand · {TREND_DAYS} days</h2>
+              <h2 style={PANEL_TITLE}>Money &amp; demand · today by hour</h2>
               <div style={{ flex: 1 }} />
               {[
                 ['Recharges', 'var(--emerald)'],
@@ -526,16 +534,16 @@ export default function BirdEye() {
                 <div style={{ fontSize: 11, color: 'var(--crimson)', padding: 8 }}>{trends.error}</div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trends.data?.points || []} margin={{ top: 4, right: 2, left: -18, bottom: 0 }}>
+                  <LineChart data={trendPoints} margin={{ top: 4, right: 2, left: -18, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-                    <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" interval="preserveStartEnd" minTickGap={18} />
+                    <XAxis dataKey="label" tick={{ fontSize: 9.5 }} stroke="var(--text-light)" interval="preserveStartEnd" minTickGap={26} />
                     <YAxis yAxisId="money" tick={{ fontSize: 9.5 }} stroke="var(--text-light)" width={44} tickFormatter={compactMoney} />
                     <YAxis yAxisId="count" orientation="right" allowDecimals={false} tick={{ fontSize: 9.5 }} stroke="var(--text-light)" width={28} />
                     <Tooltip {...chartTooltip} formatter={(v, name) => (name === 'Recharges' ? money(v) : num(v))} />
-                    <Line yAxisId="money" type="monotone" dataKey="revenue" name="Recharges" stroke="var(--emerald)" strokeWidth={2.2} dot={false} isAnimationActive={false} />
-                    <Line yAxisId="count" type="monotone" dataKey="consultations" name="Consultations" stroke="var(--indigo)" strokeWidth={1.8} dot={false} isAnimationActive={false} />
-                    <Line yAxisId="count" type="monotone" dataKey="paidConsultations" name="Paid" stroke="var(--maroon)" strokeWidth={1.8} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                    <Line yAxisId="count" type="monotone" dataKey="signups" name="Signups" stroke="var(--sky)" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                    <Line yAxisId="money" type="monotone" dataKey="revenue" name="Recharges" stroke="var(--emerald)" strokeWidth={2.2} dot={dotFor(trendPoints)} isAnimationActive={false} />
+                    <Line yAxisId="count" type="monotone" dataKey="consultations" name="Consultations" stroke="var(--indigo)" strokeWidth={1.8} dot={dotFor(trendPoints)} isAnimationActive={false} />
+                    <Line yAxisId="count" type="monotone" dataKey="paidConsultations" name="Paid" stroke="var(--maroon)" strokeWidth={1.8} strokeDasharray="4 3" dot={dotFor(trendPoints)} isAnimationActive={false} />
+                    <Line yAxisId="count" type="monotone" dataKey="signups" name="Signups" stroke="var(--sky)" strokeWidth={1.8} dot={dotFor(trendPoints)} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               )}

@@ -332,62 +332,91 @@ async function main() {
   eq('…and counts zero', emptyCount.count, 0);
 
   // ── trends ────────────────────────────────────────────────────────────────
-  section('trends — daily lines, every day seeded');
-  const tr = await get('/api/admin/bird-eye/trends?days=14');
+  section('trends — TODAY by hour, every elapsed hour seeded');
+  const nowHour = new Date(Date.now() + IST_OFFSET_MS).getUTCHours();
+  const tr = await get('/api/admin/bird-eye/trends');
   eq('trends answers 200', tr.status, 200);
   const pts = tr.body?.points || [];
-  eq('exactly 14 points for 14 days', pts.length, 14);
-  eq('the last point is today IST', pts[pts.length - 1]?.day, istDayOf(Date.now()));
-  ok('days ascend', pts.every((pt, i) => i === 0 || pt.day > pts[i - 1].day));
-  ok('days are contiguous — no gap collapsed into a straight line', pts.every((pt, i) => {
-    if (i === 0) return true;
-    return new Date(`${pt.day}T00:00:00Z`) - new Date(`${pts[i - 1].day}T00:00:00Z`) === 86400000;
-  }));
+  eq('it reports today', tr.body?.day, istDayOf(Date.now()));
+  eq('…and the hour it ran through', tr.body?.throughHour, nowHour);
+  eq('one point per elapsed hour, midnight through now', pts.length, nowHour + 1);
+  eq('the first bucket is midnight IST', pts[0]?.label, '00:00');
+  eq('the last bucket is the current IST hour', pts[pts.length - 1]?.hour, nowHour);
+
+  // THE ONE THAT MATTERS: hours still to come must be absent, not zero. Seeding all 24
+  // would draw the rest of the day as a hard zero, so at 10am the chart would show a
+  // fourteen-hour cliff to the floor — which reads as the platform dying rather than as
+  // the day not having happened yet.
+  ok('no bucket exists for an hour that has not happened', pts.every((pt) => pt.hour <= nowHour),
+    JSON.stringify(pts.map((p) => p.hour)));
+  ok('hours ascend and are contiguous', pts.every((pt, i) => (i === 0 ? pt.hour === 0 : pt.hour === pts[i - 1].hour + 1)));
+  ok('elapsed-but-quiet hours ARE present as zeros', pts.length === nowHour + 1,
+    'a 4am with no traffic is information; dropping it would join 3am to 5am with a straight line');
   ok('every point carries all four series, zeros included', pts.every((pt) => (
     typeof pt.revenue === 'number' && typeof pt.signups === 'number'
     && typeof pt.consultations === 'number' && typeof pt.paidConsultations === 'number'
   )));
-  ok('paid consultations never exceed all consultations on any day', pts.every((pt) => pt.paidConsultations <= pt.consultations));
-  ok('the range is not all zeros', pts.some((pt) => pt.signups || pt.consultations || pt.revenue),
-    'an empty range cannot verify the aggregation');
-  // Optional-chained deliberately. An empty series used to throw here, which aborted
-  // main() and took every later section down with it — so one broken aggregate hid the
-  // whole signup-trend check rather than failing one line (found by the day-seeding
-  // regression). A suite that crashes reports less than one that fails.
-  eq('today lines up with the today endpoint', pts[pts.length - 1]?.signups, T.signups);
+  ok('labels are zero-padded hours', pts.every((pt) => /^\d{2}:00$/.test(pt.label || '')));
+  ok('paid consultations never exceed all consultations in any hour', pts.every((pt) => pt.paidConsultations <= pt.consultations));
 
-  // Clamping. A hand-typed or stale query string must not become a 60-day scan of
-  // every table, or a zero-length chart.
-  const trBig = await get('/api/admin/bird-eye/trends?days=9999');
-  eq('days is clamped to 60', trBig.body?.days, 60);
-  eq('…and that many points come back', trBig.body?.points?.length, 60);
-  const trZero = await get('/api/admin/bird-eye/trends?days=0');
-  eq('days=0 falls back to the default', trZero.body?.days, 14);
-  const trJunk = await get('/api/admin/bird-eye/trends?days=abc');
-  eq('a junk days value falls back to the default', trJunk.body?.days, 14);
-  const trOne = await get('/api/admin/bird-eye/trends?days=1');
-  eq('days=1 is floored to 2 (one point is not a line)', trOne.body?.days, 2);
+  // The day's hours must sum to the figures the tiles show, or the chart and the tile
+  // above it are telling an operator two different things about the same day.
+  // Optional-chained/guarded deliberately: an empty series used to throw here, which
+  // aborted main() and hid every later section (found by the day-seeding regression).
+  const sum = (k) => pts.reduce((acc, pt) => acc + (pt[k] || 0), 0);
+  eq('hourly signups sum to today\'s signup tile', sum('signups'), T.signups);
+  eq('hourly consultations sum to today\'s consultation tile', sum('consultations'), T.sessions);
+  eq('hourly paid consultations sum to the paid figure', sum('paidConsultations'), T.paidSessions);
+  eq('hourly revenue sums to the money-in tile', sum('revenue'), T.moneyIn);
+  ok('the day is not entirely empty', sum('signups') + sum('consultations') + sum('revenue') > 0,
+    'nothing happened today, so these sums cannot verify the bucketing');
 
   // ── signup-trend ──────────────────────────────────────────────────────────
-  section('signup-trend — the flow as lines, not as a funnel');
-  const st = await get('/api/admin/bird-eye/signup-trend?days=14');
+  section('signup-trend — the flow by hour, as lines, not as a funnel');
+  const st = await get('/api/admin/bird-eye/signup-trend');
   if (st.status === 503) {
     ok('PostHog is not configured here, and the route says so instead of 500ing', true);
     ok('…and it is the ONLY route that degrades this way', [p0.status, td.status, tr.status].every((s) => s === 200));
   } else {
     eq('signup-trend answers 200', st.status, 200);
     eq('counted as people, not events', st.body?.basis, 'persons');
-    ok('the launch date is carried so pre-launch zeros can be labelled', !!st.body?.launchedOn);
+    eq('it reports today', st.body?.day, istDayOf(Date.now()));
     const sp = st.body?.points || [];
-    eq('exactly 14 points', sp.length, 14);
-    eq('the last point is today IST', sp[sp.length - 1]?.day, istDayOf(Date.now()));
-    ok('days are contiguous', sp.every((pt, i) => i === 0
-      || new Date(`${pt.day}T00:00:00Z`) - new Date(`${sp[i - 1].day}T00:00:00Z`) === 86400000));
+    eq('one point per elapsed hour', sp.length, nowHour + 1);
+    eq('the first bucket is midnight IST', sp[0]?.label, '00:00');
+    ok('no bucket for an hour that has not happened', sp.every((pt) => pt.hour <= nowHour));
+    ok('hours ascend and are contiguous', sp.every((pt, i) => (i === 0 ? pt.hour === 0 : pt.hour === sp[i - 1].hour + 1)));
+    ok('the two charts cover exactly the same hours', sp.length === pts.length,
+      `signup ${sp.length} vs money ${pts.length} — the panels would disagree about the day`);
     ok('every point carries all six steps', sp.every((pt) => ['shown', 'opened', 'card', 'signedIn', 'rang', 'answered']
       .every((k) => typeof pt[k] === 'number')));
     ok('no negative counts', sp.every((pt) => ['shown', 'opened', 'card', 'signedIn', 'rang', 'answered'].every((k) => pt[k] >= 0)));
-    ok('the chart is not flat zero (the events are arriving)', sp.some((pt) => pt.shown || pt.signedIn || pt.rang),
+    ok('today is not flat zero (the events are arriving)', sp.some((pt) => pt.shown || pt.rang),
       'all zeros — either the flow is dead or the query is wrong');
+    // ── The timezone cross-check between the two panels ─────────────────────
+    //
+    // The two charts sit side by side and come from DIFFERENT sources — one from
+    // Postgres, one from PostHog — but must agree about when the day happened. The
+    // failure to catch is PostHog bucketing in UTC: 00:00–05:30 IST is the PREVIOUS
+    // UTC day, so those events would land in buckets 18–23, which seedTodayHours drops,
+    // and the whole early morning would silently vanish from one panel only.
+    //
+    // Measured against production: midnight–01:00 IST is genuinely this app's busiest
+    // hour (13 of today's 16 signups), so "the peak looks like a waking hour" is NOT a
+    // valid test here — it fails on correct data. What is valid is that if the database
+    // recorded signups before 06:00 IST, the app was demonstrably in use then and
+    // PostHog must show something in those same buckets.
+    const early = (rows, keys) => rows.filter((pt) => pt.hour <= 5)
+      .reduce((acc, pt) => acc + keys.reduce((n, k) => n + (pt[k] || 0), 0), 0);
+    const earlyDb = early(pts, ['signups']);
+    const earlyPh = early(sp, ['shown', 'rang']);
+    if (earlyDb > 0) {
+      ok('PostHog buckets the early hours in IST, like the database panel beside it',
+        earlyPh > 0,
+        `${earlyDb} signups before 06:00 IST in the database but no PostHog activity there — UTC bucketing would do exactly this`);
+    } else {
+      ok('(no pre-06:00 signups today, so the IST cross-check cannot run)', true);
+    }
   }
 
   // ── Teardown ──────────────────────────────────────────────────────────────

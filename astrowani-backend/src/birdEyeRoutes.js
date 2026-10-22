@@ -56,6 +56,35 @@ function istMidnight(daysAgo = 0) {
   return new Date(dayStart - IST_OFFSET_MS).toISOString();
 }
 
+/** The IST hour-of-day (0–23) an instant falls in. */
+function istHour(value) {
+  const t = new Date(value).getTime();
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + IST_OFFSET_MS).getUTCHours();
+}
+
+/** The IST hour it is right now — the last bucket that has any data in it. */
+const currentIstHour = () => new Date(Date.now() + IST_OFFSET_MS).getUTCHours();
+
+const hourLabel = (h) => `${String(h).padStart(2, '0')}:00`;
+
+/**
+ * Today's elapsed hours, seeded at zero: 00:00 IST through the hour it is now.
+ *
+ * ⚠️ IT STOPS AT THE CURRENT HOUR, and that is the whole trick. Seeding all 24 would draw
+ * every hour still to come as a hard zero, so at 10am the chart would show two hours of
+ * activity followed by a fourteen-hour cliff to the floor — which reads as the platform
+ * dying, not as the day not having happened yet. Hours already past DO get a zero,
+ * because a quiet hour at 4am is real information.
+ */
+function seedTodayHours(fields) {
+  const byHour = new Map();
+  for (let h = 0; h <= currentIstHour(); h += 1) {
+    byHour.set(h, { hour: h, label: hourLabel(h), ...fields });
+  }
+  return byHour;
+}
+
 /**
  * How long an unanswered request keeps ringing. Must stay in step with
  * PENDING_REQUEST_TTL_MS in src/busyStatus.js, which is not exported — a `pending` row
@@ -359,29 +388,26 @@ module.exports = function registerBirdEyeRoutes(app) {
   }));
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 3. TRENDS — daily lines straight from the database, polled every 2 minutes.
-  //    Money and demand, which no client event can reproduce accurately.
+  // 3. TODAY BY HOUR — money and demand, straight from the database.
+  //
+  //    ONE DAY, NOT A RANGE. This screen has no date control and today is the only
+  //    range it has; a fortnight of daily points answers "how has the month gone",
+  //    which is Analytics' job and is unreadable next to tiles that all say "today".
+  //    Hour by hour also answers something a daily series never can — whether the
+  //    thing that just broke broke an hour ago.
   // ───────────────────────────────────────────────────────────────────────────
   app.get('/api/admin/bird-eye/trends', requireAdmin, h(async (req, res) => {
-    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 2), 60);
-    const since = istMidnight(days - 1);
+    const dayStart = istMidnight(0);
 
     const [signupRows, rechargeRows, sessionRows] = await Promise.all([
-      pagedSelect(() => db.from('customers').select('id, created_at').gte('created_at', since).order('created_at')),
-      pagedSelect(() => db.from('wallet_recharges').select('amount, customer_id, paid_at').eq('status', 'paid').gte('paid_at', since).order('paid_at')),
-      pagedSelect(() => db.from('chat_sessions').select('caller_id, is_free, started_at').gte('started_at', since).order('started_at')),
+      pagedSelect(() => db.from('customers').select('id, created_at').gte('created_at', dayStart).order('created_at')),
+      pagedSelect(() => db.from('wallet_recharges').select('amount, customer_id, paid_at').eq('status', 'paid').gte('paid_at', dayStart).order('paid_at')),
+      pagedSelect(() => db.from('chat_sessions').select('caller_id, is_free, started_at').gte('started_at', dayStart).order('started_at')),
     ]);
 
-    // Every day in the range is seeded, including the empty ones. A line built only from
-    // the days that have rows draws a straight segment across a dead weekend, which
-    // reads as steady traffic rather than as no traffic.
-    const byDay = new Map();
-    for (let i = days - 1; i >= 0; i -= 1) {
-      const key = istDay(istMidnight(i));
-      byDay.set(key, { day: key, revenue: 0, signups: 0, consultations: 0, paidConsultations: 0 });
-    }
+    const byHour = seedTodayHours({ revenue: 0, signups: 0, consultations: 0, paidConsultations: 0 });
     const bump = (iso, fn) => {
-      const entry = byDay.get(istDay(iso));
+      const entry = byHour.get(istHour(iso));
       if (entry) fn(entry);
     };
 
@@ -396,39 +422,42 @@ module.exports = function registerBirdEyeRoutes(app) {
       });
     }
 
-    const points = [...byDay.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue) }));
+    const points = [...byHour.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue) }));
     return res.json({
       success: true,
-      days,
+      day: istDay(dayStart),
+      throughHour: currentIstHour(),
       points,
       truncated: [signupRows, rechargeRows, sessionRows].some((r) => r.truncated),
     });
   }));
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 4. SIGNUP FLOW, AS LINES — the gift-reveal flow of 2026-10-17, per day.
+  // 4. SIGNUP FLOW BY HOUR — the gift-reveal flow of 2026-10-17, today only.
   //
-  //    A LINE CHART, NOT THE FUNNEL the New Signup Flow page draws, and the difference
-  //    is not cosmetic. A funnel answers "where do people fall out", which is a question
-  //    you ask once while tuning a flow, and it collapses a whole range into bars that
-  //    look identical whether yesterday was a record or a disaster. Lines over fourteen
-  //    days answer the question this screen exists for — is the flow getting better or
-  //    worse, and did something change TODAY. The funnel page stays exactly as it is;
-  //    this is the same events asked a different question, not a replacement.
+  //    LINES, NOT THE FUNNEL the New Signup Flow page draws, and the difference is not
+  //    cosmetic. A funnel answers "where do people fall out", which you ask once while
+  //    tuning a flow; it collapses a range into bars that look identical whether the
+  //    morning was a record or a disaster. Hour by hour answers the question a live
+  //    screen is for — is the flow working RIGHT NOW, and if it stopped, when. The
+  //    funnel page stays exactly as it is; this is the same events asked differently.
   // ───────────────────────────────────────────────────────────────────────────
   app.get('/api/admin/bird-eye/signup-trend', requireAdmin, h(async (req, res) => {
     if (!isConfigured()) {
       return res.status(503).json({ success: false, message: 'PostHog is not configured on this server.' });
     }
-    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 2), 60);
+    const day = istDay(istMidnight(0));
 
-    // Distinct PEOPLE per day, not events: somebody who retypes a wrong OTP three times
+    // Distinct PEOPLE per hour, not events: somebody who retypes a wrong OTP three times
     // fires the submit event three times, and on an event basis that line would sit
     // ABOVE the one before it. A funnel that widens as it descends is unreadable, and
     // the same arithmetic ruins a line chart just as thoroughly.
+    //
+    // `day` is built by istDay() from a timestamp, never from the request, so there is
+    // nothing of the caller's in this query string.
     const rows = await runHogQL(`
       SELECT
-        toDate(toTimeZone(timestamp, 'Asia/Kolkata')) AS day,
+        toHour(toTimeZone(timestamp, 'Asia/Kolkata')) AS hour,
         count(DISTINCT if(event = 'campaign_gift_reveal_shown', person_id, NULL)) AS shown,
         count(DISTINCT if(event = 'campaign_gift_reveal_opened', person_id, NULL)) AS opened,
         count(DISTINCT if(event = 'signup_gate_shown', person_id, NULL)) AS card,
@@ -437,19 +466,13 @@ module.exports = function registerBirdEyeRoutes(app) {
         count(DISTINCT if(event = 'free_call_instant_answered', person_id, NULL)) AS answered
       FROM events
       WHERE properties.app = 'customer' AND ${ENV_FILTER}
-        AND timestamp >= now() - INTERVAL ${days} DAY
-      GROUP BY day ORDER BY day
+        AND toDate(toTimeZone(timestamp, 'Asia/Kolkata')) = toDate('${day}')
+      GROUP BY hour ORDER BY hour
     `);
 
-    // Seeded the same way as /trends, and for the same reason.
-    const byDay = new Map();
-    for (let i = days - 1; i >= 0; i -= 1) {
-      const key = istDay(istMidnight(i));
-      byDay.set(key, { day: key, shown: 0, opened: 0, card: 0, signedIn: 0, rang: 0, answered: 0 });
-    }
+    const byHour = seedTodayHours({ shown: 0, opened: 0, card: 0, signedIn: 0, rang: 0, answered: 0 });
     for (const row of rows || []) {
-      const key = String(row[0]).slice(0, 10);
-      const entry = byDay.get(key);
+      const entry = byHour.get(Number(row[0]));
       if (!entry) continue;
       entry.shown = Number(row[1]) || 0;
       entry.opened = Number(row[2]) || 0;
@@ -462,11 +485,9 @@ module.exports = function registerBirdEyeRoutes(app) {
     return res.json({
       success: true,
       basis: 'persons',
-      // The flow shipped on this date; nothing before it can have produced these events,
-      // and the page says so rather than drawing the zeros as a collapse.
-      launchedOn: require('./newSignupFlowRoutes').LAUNCHED_ON,
-      days,
-      points: [...byDay.values()],
+      day,
+      throughHour: currentIstHour(),
+      points: [...byHour.values()],
     });
   }));
 
@@ -474,6 +495,8 @@ module.exports = function registerBirdEyeRoutes(app) {
 };
 
 module.exports.istDay = istDay;
+module.exports.istHour = istHour;
+module.exports.currentIstHour = currentIstHour;
 module.exports.istMidnight = istMidnight;
 // Exported for scripts/birdEyeCheck.js only. Its unreadable-queue branch cannot be
 // reached through an endpoint without breaking a table, and that branch is precisely
