@@ -14,6 +14,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import {LEGAL_LINKS} from '../../config/legal';
 import {COLORS} from '../../Theme/Colors';
@@ -43,6 +44,32 @@ const Login = ({navigation, route}) => {
   // other route into this screen, leaves it undefined and renders the ordinary login
   // below -- so the free-call promise is only ever repeated to somebody who just took it.
   const fromCampaign = route?.params?.fromCampaign === true;
+
+  // Tapping a topic chip opens a short note about what that topic covers. The card is
+  // positioned ABSOLUTELY under the chip row rather than inserted into the column, so it
+  // overlays the guide avatar instead of squeezing him -- the promise block already gives
+  // up its height to the keyboard, and pushing it would move the phone field too.
+  const [openTopic, setOpenTopic] = useState(null);
+  // The chip row's BOTTOM edge inside the wrapper, not its height: the row carries a
+  // top margin, so using height alone placed the card that much too high and it sat on
+  // the chips.
+  const [chipsBottom, setChipsBottom] = useState(0);
+  const chipSpans = useRef({});
+  const topicAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleTopic = (key) => {
+    const next = openTopic === key ? null : key;
+    setOpenTopic(next);
+    topicAnim.stopAnimation();
+    if (next) {
+      topicAnim.setValue(0);
+      Animated.timing(topicAnim, {
+        toValue: 1, duration: 170, useNativeDriver: true,
+      }).start();
+    } else {
+      topicAnim.setValue(0);
+    }
+  };
   // The guide is the one thing on the free-call screen that can be given up when the
   // keyboard takes half the window. Without this he keeps his share of the space and
   // squeezes the field and the button down behind the keys.
@@ -236,12 +263,69 @@ const Login = ({navigation, route}) => {
             <Text style={styles.fcHeadline}>{t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}</Text>
             <Text style={styles.fcHeadlineAccent}>{t('login.promiseLine2')}</Text>
             <Text style={styles.fcSub}>{t('login.promiseSub')}</Text>
-            <View style={styles.fcChips}>
-              {FREE_CALL_TOPIC_KEYS.map((key) => (
-                <View key={key} style={styles.fcChip}>
-                  <Text style={styles.fcChipText}>{t(key)}</Text>
-                </View>
-              ))}
+            <View style={styles.fcChipsWrap}>
+              <View
+                style={styles.fcChips}
+                onLayout={(e) =>
+                  setChipsBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)
+                }>
+                {FREE_CALL_TOPIC_KEYS.map((key) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.fcChip}
+                    activeOpacity={0.75}
+                    onPress={() => toggleTopic(key)}
+                    onLayout={(e) => {
+                      const {x, width} = e.nativeEvent.layout;
+                      chipSpans.current[key] = {x, width};
+                    }}>
+                    <Text style={styles.fcChipText}>{t(key)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {!!openTopic && (
+                <Animated.View
+                  style={[
+                    styles.fcTopicCard,
+                    {
+                      top: chipsBottom + verticalScale(10),
+                      opacity: topicAnim,
+                      transform: [
+                        {
+                          translateY: topicAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [-verticalScale(6), 0],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}>
+                  {/* Points at the chip that opened it, so the card needs no label to
+                      say which topic it belongs to. */}
+                  <View
+                    style={[
+                      styles.fcTopicCaret,
+                      {
+                        left: Math.max(
+                          scale(14),
+                          (chipSpans.current[openTopic]?.x || 0) +
+                            (chipSpans.current[openTopic]?.width || 0) / 2 -
+                            scale(5),
+                        ),
+                      },
+                    ]}
+                  />
+                  <Text style={styles.fcTopicTitle}>{t(openTopic)}</Text>
+                  <Text style={styles.fcTopicBody}>{t(`${openTopic}Info`)}</Text>
+                  <TouchableOpacity
+                    style={styles.fcTopicClose}
+                    hitSlop={{top: 12, bottom: 12, left: 12, right: 12}}
+                    onPress={() => toggleTopic(openTopic)}>
+                    <Text style={styles.fcTopicCloseText}>✕</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
             </View>
           </View>
 
@@ -601,6 +685,8 @@ const styles = StyleSheet.create({
   fcPromise: {
     paddingHorizontal: scale(24),
     paddingTop: verticalScale(34),
+    // Raised above fcGuideZone so the topic card can overlay the avatar.
+    zIndex: 30,
   },
   fcHeadline: {
     color: GOLD,
@@ -623,9 +709,68 @@ const styles = StyleSheet.create({
     lineHeight: moderateScale(21),
     maxWidth: scale(250),
   },
+  // The chip row and its info card live in their own stacking context so the card can
+  // sit ON TOP of the guide avatar, which is a LATER sibling and would otherwise paint
+  // over it. zIndex alone is enough here because fcGuideZone has pointerEvents="none".
+  fcChipsWrap: {
+    position: 'relative',
+    zIndex: 30,
+  },
   fcChips: {
     flexDirection: 'row',
     marginTop: verticalScale(16),
+  },
+  fcTopicCard: {
+    position: 'absolute',
+    left: 0,
+    width: scale(268),
+    backgroundColor: 'rgba(43,16,8,0.97)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,200,92,0.38)',
+    borderRadius: moderateScale(14),
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(10),
+    paddingBottom: verticalScale(12),
+    paddingRight: scale(30),
+    zIndex: 31,
+    elevation: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 5},
+  },
+  fcTopicCaret: {
+    position: 'absolute',
+    top: -moderateScale(5),
+    width: moderateScale(10),
+    height: moderateScale(10),
+    backgroundColor: 'rgba(43,16,8,0.97)',
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'rgba(255,200,92,0.38)',
+    transform: [{rotate: '45deg'}],
+  },
+  fcTopicTitle: {
+    color: '#FFC85C',
+    fontSize: moderateScale(12.5),
+    fontWeight: '700',
+    marginBottom: verticalScale(3),
+  },
+  fcTopicBody: {
+    color: 'rgba(255,246,234,0.88)',
+    fontSize: moderateScale(12),
+    fontWeight: '500',
+    lineHeight: moderateScale(18),
+  },
+  fcTopicClose: {
+    position: 'absolute',
+    top: verticalScale(7),
+    right: scale(9),
+  },
+  fcTopicCloseText: {
+    color: 'rgba(255,246,234,0.55)',
+    fontSize: moderateScale(12),
+    fontWeight: '700',
   },
   fcChip: {
     borderWidth: 1,
