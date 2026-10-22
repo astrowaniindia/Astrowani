@@ -42,9 +42,10 @@ import { LiveBookedBadge, AstrologerCluster } from './FreeCallOffer';
 import Instance from '../api/ApiCall';
 
 // The free-call duration this pre-login card advertises. Home's own card reads it from
-// the server's offer; there is no account here to fetch one against, and the campaign
-// that leads to this screen is sold on eleven minutes throughout.
-const FREE_MINUTES = 11;
+// the server's offer; there is no account here to fetch one against, so this has to
+// track app_settings.free_call_offer.durationMinutes by hand -- same as Login.js's
+// FREE_CALL_MINUTES. Both were 11 and moved to 7 with the live row on 2026-10-22.
+const FREE_MINUTES = 7;
 // Home's card gets its faces from the server's offer roster, which needs an account.
 // There is none here, so the faces come from the PUBLIC astrologer list (the same
 // approved, visible astrologers that roster is built from) — real bookable people,
