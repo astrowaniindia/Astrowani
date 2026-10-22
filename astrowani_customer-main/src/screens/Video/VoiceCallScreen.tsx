@@ -389,10 +389,17 @@ const VoiceCallScreen = ({route, navigation}: any) => {
         // POST /api/call/end writes. We no longer block the SCREEN on that request, so
         // the wait happens here, where nobody is looking at a spinner. Bounded, and the
         // sheet opens either way — a slow end request must never swallow the chain.
+        //
+        // 5000 -> 1500 on 2026-10-22: this wait is INVISIBLE, so every millisecond of it
+        // is the customer sitting on Home wondering if anything is coming, and it stacks
+        // on top of the sheet's own fetch. The request is already in flight well before
+        // this line (doEndCall fires it, then goHome and the chain run), so 1.5s is
+        // normally slack rather than a wait at all; past it the fetch below still has an
+        // 8s budget and the server keeps the offer open for ten minutes.
         if (endRequestRef.current) {
           await Promise.race([
             endRequestRef.current,
-            new Promise((r) => setTimeout(r, 5000)),
+            new Promise((r) => setTimeout(r, 1500)),
           ]).catch(() => {});
         }
         showFreeCallContinue({

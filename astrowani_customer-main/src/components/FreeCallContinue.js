@@ -234,7 +234,12 @@ export function FreeCallContinueHost() {
     // rather than throwing, and caps itself at 8s (see the note there), so the worst
     // case is this floor firing and the request landing shortly after — not the
     // customer watching a spinner and never being rated.
-    const floor = setTimeout(() => { if (!cancelled) setReady(true); }, 3500);
+    //
+    // 3500 -> 1000 on 2026-10-22: until this fires the customer is looking at Home with
+    // nothing happening, and that silence stacks on top of VoiceCallScreen's own wait
+    // for the end request. A spinner inside the sheet reads as "it is coming"; a bare
+    // Home screen reads as "nothing is coming", which is how a late sheet gets missed.
+    const floor = setTimeout(() => { if (!cancelled) setReady(true); }, 1000);
     (async () => {
       const res = await getContinueOptions();
       if (cancelled) return;
