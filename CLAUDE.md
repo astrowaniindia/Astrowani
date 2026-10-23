@@ -655,16 +655,37 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
 - [ ] Report anything broken to Claude **before** enrolling. Fixes then go into the first real build.
 
 #### Phase 3: Apple Developer Program enrolment
-- [x] **Account type: ORGANIZATION, entity ASTROWANIINDIA** (decided 2026-10-12 — ASTROWANIINDIA is separately registered; the parent **Nexetern** must never appear on a platform record). See **DW** at the end of this file. The App Store will show ASTROWANIINDIA as seller. Needs a D-U-N-S number, a company website and a company-domain email.
-  - Note: the Privacy Policy still says "astrowani.com is not a registered firm" while also calling it "the firm Astrowaniindia". Both are now wrong — it must name ASTROWANIINDIA as the registered entity.
-- [ ] Apple Account (account.apple.com): company email, **two-factor authentication ON**, legal name exactly as on your ID/company papers.
-- [ ] A card with **international payments enabled**. The fee is US$99/year, charged in INR.
-- [ ] Check or request a **D-U-N-S number for ASTROWANIINDIA** at developer.apple.com/enroll/duns-lookup (free). Use the company name exactly as registered with the MCA. It takes ~5 working days, then ~2 more days for Apple to see it. **The same record also satisfies Google Ads advertiser verification (DW) — request it once, for ASTROWANIINDIA, not Nexetern.**
-- [ ] Enrol through the **Apple Developer app** on an iPhone (Account → Enroll Now) or at developer.apple.com/programs/enroll. Pay.
-- [ ] **Organization:** answer Apple's verification phone call.
-- [ ] Wait for the **"Welcome to the Apple Developer Program"** email.
-- [ ] developer.apple.com/account → Membership details → note the **Team ID** (10 characters) → **send it to Claude**.
-- [ ] If enrolment is still pending after 7 days (Individual) or 14 days after D-U-N-S (Organization), contact Apple: developer.apple.com/contact → Membership and Account.
+- [x] **ENROLLED 2026-10-23 as INDIVIDUAL. Team ID `U49M3S8V97`.** Paid, enrolment complete.
+  **This reverses the 2026-10-12 decision in DW, deliberately and with the owner's agreement
+  (2026-10-23): Individual now, convert to Organization later.** Individual needs no D-U-N-S
+  number and no verification phone call, which is why it completed in a day — Organization
+  would have blocked the first submission behind a ~1-week D&B lead time for no launch benefit,
+  because **the first build sells nothing through Apple** (`DIGITAL_PURCHASES_ENABLED = false`,
+  subsystem CN), so the Paid Apps agreement, bank details and tax forms are not required yet.
+  - **THE TWO COSTS, and neither blocks launch — they come due later.**
+    1. **The App Store seller name is the OWNER'S PERSONAL LEGAL NAME, not ASTROWANIINDIA.**
+       It is public on both listings, and it contradicts Google Ads (payments profile
+       "ASTROWANIINDIA") and the Privacy Policy rewrite that names ASTROWANIINDIA as the
+       registered entity. Three records, two different answers.
+    2. **IAP revenue would land on the individual's PAN, not ASTROWANIINDIA's PAN/GSTIN** —
+       the exact problem the Play Console personal account already has (DW). Converting
+       before coins/IAP avoids having it on both stores at once. Confirm with the accountant.
+  - **CONVERT BEFORE ENABLING COINS/IAP (CO Phase 9), not after.** Apple's Individual →
+    Organization path was NOT verified in this session — it is believed to be a Developer
+    Support request plus a D-U-N-S number rather than a self-service button, but check it
+    with Apple rather than planning around that. The D-U-N-S for ASTROWANIINDIA is still
+    worth requesting (free, ~5 working days) since the Play personal → organization
+    conversion needs it too.
+  - Note: the Privacy Policy still says "astrowani.com is not a registered firm" while also
+    calling it "the firm Astrowaniindia". Both are wrong — it must name ASTROWANIINDIA as
+    the registered entity. Unchanged by this; it is about the firm, not about who holds the
+    Apple account.
+- [x] Apple Account: two-factor authentication ON, card charged (US$99/year).
+- [ ] D-U-N-S number for ASTROWANIINDIA — **no longer blocks Apple**, still needed for the
+  Play personal → organization conversion and for the later Apple conversion. Request at
+  developer.apple.com/enroll/duns-lookup, company name exactly as registered with the MCA.
+- [x] Team ID noted: **`U49M3S8V97`** (not a secret — it ships inside every binary and is
+  part of the APNs topic).
 
 #### Phase 4: agreements (App Store Connect → Business)
 - [ ] Accept the latest **Apple Developer Program License Agreement**. Nothing can be submitted until it is accepted, and Apple re-asks when it changes.
@@ -672,15 +693,56 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
 
 #### Phase 5: identifiers, push keys, server config
 - [ ] Certificates, Identifiers & Profiles → **Identifiers**: confirm (or create) App IDs `com.astrowanicustomer` and `com.astrowaniVendor` with the **Push Notifications** capability enabled. EAS/Xcode may create these automatically on the first signed build. **(Claude** can do this via EAS with the owner signed in.)
-- [ ] **Keys → + → Apple Push Notifications service (APNs)** → download the **`.p8` file**. It can be downloaded **only once**, so store it in a password manager. Note the **Key ID**. One key works for both apps.
-- [ ] Firebase console → Project settings → **Cloud Messaging** → iOS app `com.astrowanicustomer` → upload the `.p8` (Key ID + Team ID).
-- [ ] Repeat for the iOS app `com.astrowaniVendor`. Without this, no push notification reaches any iPhone, including astrologers' incoming chat/call alerts.
-- [ ] **VoIP push for the astrologer app** (rings the phone when the app is killed). Set in the VPS backend `.env`, then run `pm2 restart astrowani-backend --update-env`:
-  - [ ] `APNS_KEY_ID`
-  - [ ] `APNS_TEAM_ID`
-  - [ ] `APNS_PRIVATE_KEY` (contents of the `.p8`; `\n` newlines accepted) or `APNS_PRIVATE_KEY_PATH`
-  - [ ] `APNS_VOIP_TOPIC=com.astrowaniVendor.voip` (**the `.voip` suffix is required**; without it you get `TopicDisallowed`, which reads like a credential problem)
-  - [ ] **`APNS_PRODUCTION=true`**, but only once TestFlight/App Store builds are in use. It defaults to sandbox. **This flag is the #1 cause of VoIP push silently doing nothing.** Sideloaded/dev builds need `false`, TestFlight/App Store builds need `true`.
+- [x] **APNs key created 2026-10-23. Key ID `49V28JX3XB`, Team ID `U49M3S8V97`.**
+  File `AuthKey_49V28JX3XB.p8` (PEM, EC P-256, 257 bytes) is at **`D:\secrets\`** on the
+  owner's machine — **deliberately OUTSIDE the repo, which is PUBLIC**, alongside
+  `sentry.env`. It cannot be downloaded from Apple a second time; if it is lost, revoke and
+  make a new one rather than hunting for a copy.
+  - Registered **Environment: Sandbox & Production** and **Key Restriction: Team Scoped (All
+    Topics)** — one key therefore serves the customer app, the astrologer app AND the
+    astrologer `.voip` topic. **A Topic-Specific key would have to be replaced**, because
+    three topics are in play.
+  - No other service (DeviceCheck, Sign in with Apple, Maps) is attached, on purpose: a
+    `.p8` is a private key, so it carries only what it must. Sign in with Apple is not
+    needed at all — the apps are phone + OTP only, with no third-party social login.
+- [x] **Firebase APNs auth key uploaded 2026-10-23 — BOTH Apple apps, BOTH rows.**
+  Project `astrowani-b1845` holds four apps (Android + Apple of each), and the Apple ones
+  carry the right bundle ids. Under Project settings → Cloud Messaging → Apple app
+  configuration, each Apple app has **two separate slots — "Development APNs auth key" and
+  "Production APNs auth key"** — and the SAME key (`49V28JX3XB` / `U49M3S8V97`) is uploaded
+  to both, for both apps. **Filling only one is a real trap**: Development serves sideloaded
+  and dev builds, Production serves TestFlight and the App Store, so a half-filled app pushes
+  fine on the test phone and goes silent in TestFlight (or the reverse) with no error
+  anywhere. This is the Firebase-side twin of the `APNS_PRODUCTION` flag below.
+  - **APNs Certificates** (the section underneath) is the older mechanism and is deliberately
+    left empty — auth keys supersede it.
+  - **Web Push certificates** is deliberately left empty too: no browser push here. Do not
+    "Generate key pair".
+- [x] **VoIP push env SHIPPED 2026-10-23** (rings the astrologer's phone when the app is
+  killed - FCM cannot do this, which is why it is separate from the Firebase upload above).
+  All five GitHub secrets were set with `gh secret set` (the private key piped straight from
+  `D:\secrets\APNS_PRIVATE_KEY_oneline.txt`, never through a clipboard), then the **Set backend env keys** workflow
+  was run: run `39899385862`, success, log confirms all five written and `restarted`. The
+  backend answered 200 on `/api/astrologers` afterwards.
+  - [x] `APNS_KEY_ID=49V28JX3XB`
+  - [x] `APNS_TEAM_ID=U49M3S8V97`
+  - [x] `APNS_PRIVATE_KEY` - one line, newlines escaped. **The workflow hard-FAILS on a
+        secret containing a real newline**, deliberately: a raw multi-line `.p8` would write
+        a truncated value into the `.env` and the backend would start with a key that is
+        silently WRONG rather than absent. `D:\secrets\APNS_PRIVATE_KEY_oneline.txt` is the pre-escaped copy.
+  - [x] `APNS_VOIP_TOPIC=com.astrowaniVendor.voip` (**the `.voip` suffix is required**;
+        without it APNs answers `TopicDisallowed`, which reads like a credential problem)
+  - [ ] **`APNS_PRODUCTION` is `false` and MUST become `true` the day TestFlight/App Store
+        builds are in use** - one more run of the same workflow, no code change. It is the
+        #1 cause of VoIP push silently doing nothing: a sandbox token sent to the production
+        host (or the reverse) fails `BadDeviceToken`.
+  - **NOT verified at runtime.** `voipPush.js` logs `[voipPush] APNs VoIP enabled` at boot,
+    but that goes to the root-owned pm2 log and the `deploy` SSH user has no `sudo`, so it
+    could not be read from here. `getVoipDebugInfo()` is exported but NOT routed; the only
+    observable signal is `voipConfigured` on the `POST /api/vendor/voip-token` response,
+    which needs a real vendor JWT. What IS confirmed is that the five values are in the
+    `.env` and the process restarted with them. **The real proof is a killed-app iPhone
+    actually ringing** (CO Phase 7).
   - Details: `astrowani_vendors-main/ios/README-iOS-SETUP.md`.
 
 #### Phase 6: App Store Connect records (both apps)
@@ -2301,8 +2363,12 @@ with Google and is not the legal publisher of anything. So:
   with the accountant.
 
 **Knock-ons:**
-- **Apple enrolment is Organization, not Individual** (CO Phase 3) — the same D-U-N-S is
-  reused, and the App Store seller name becomes ASTROWANIINDIA.
+- **Apple was enrolled as INDIVIDUAL on 2026-10-23, Team ID `U49M3S8V97`** — the owner chose
+  Individual now and Organization later, so the App Store seller name will be the owner's
+  personal legal name, NOT ASTROWANIINDIA. This is a deliberate, recorded exception to the
+  one-entity-everywhere rule above, taken because Organization needed a D-U-N-S number the
+  first submission did not. It must be converted before coins/IAP are enabled, or Apple
+  payouts land on the individual exactly as Play's do today. See CO Phase 3.
 - **The Privacy Policy's "astrowani.com is not a registered firm" is now factually wrong** and
   contradicts what Google and Apple are being told. Fix it to name ASTROWANIINDIA as the
   registered entity (already on the CO Phase 1 website checklist).
@@ -2904,12 +2970,30 @@ welcome-promise key still absent.
 sign up, and confirm the free call is actually offered — then again pressing ✕ instead of
 the CTA, since both are meant to keep it.
 
-### Noticed while testing, NOT fixed — the demo login is not who the review notes say
-`customers` holds **two** rows for the reviewer number: `parked-reviewer-9999999999` ("Test
-User", `550e8400-…`) and **`9999999999`, named "ansh"** (`bcf31426-…`). So the demo account
-in the App Store / Play review notes now logs a reviewer into an account called "ansh". The
-memory `store_reviewer_accounts` already says to check these against the live DB because
-they have been wrong before — they are wrong again. Fix before submitting.
+### The demo login — FIXED 2026-10-23, and the state is different again from this note
+
+**Customer side: fixed.** `customers` now holds exactly **ONE** row for 9999999999 —
+`2e23b19d-3221-42bd-b967-2dcc9dd8cbbd`, created 2026-10-22, renamed **"Ansh" → "Test User"**
+on 2026-10-23 so the App Store / Play review notes are true again. Safe to rename: the row
+had 0 sessions, 0 wallet transactions, 0 orders and 0 free-call bookings (just the one
+`free_call_invites` row every signup now gets, subsystem EF) — it is a test signup, not a
+real customer. **The `parked-reviewer-9999999999` row and the ids in the old version of this
+note (`550e8400-…`, `bcf31426-…`) NO LONGER EXIST.** Do not look for them.
+
+> **THE RULE, now demonstrated three times: never quote a reviewer-account id or name from
+> this file or from the `store_reviewer_accounts` memory — re-read the live DB.** The row is
+> deleted and recreated whenever someone tests the delete-account flow on that number, so
+> every recorded id goes stale and the name reverts to whatever the tester typed. The only
+> durable facts are the NUMBER (9999999999) and the OTP (123456).
+
+**Astrologer side: STILL BROKEN, and it is a submission blocker.**
+`astrologers` row `1f70210e-6234-4f49-a764-13e851968e1e` ("Play Store Reviewer", created
+2026-08-14) is `approval_status = 'approved'` and `hidden_from_customers = true` as intended
+— but **`is_suspended = true`**. CLAUDE.md's 2026-09-16 record (subsystem CN) says approved
+and says nothing about suspension, so this was set later. A reviewer logging into the
+astrologer app on that number hits the suspended path, not the dashboard. **Clear it before
+submitting either astrologer app**, and re-check it on the day of submission rather than
+trusting this line.
 
 ---
 
