@@ -151,5 +151,48 @@ target 'AstrologyApp' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # ───────────────────────────────────────────────────────────────────────
+    # Raise every pod target to the app's own minimum (15.1).
+    #
+    # WHY: the first EAS build on `"image": "latest"` failed the Xcode step with
+    # a dozen of these, and they are NOT the app's own setting — ours is already
+    # 15.1:
+    #   The iOS deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to 9.0,
+    #   but the range of supported deployment target versions is 15.0 to 27.1.x.
+    #   (in target 'RNCAsyncStorage-RNCAsyncStorage_resources' from project 'Pods')
+    #
+    # Every one of them is a CocoaPods-GENERATED target - privacy manifests and
+    # resource bundles - which inherits the pod's own ancient minimum (9.0 /
+    # 12.0 / 13.0) rather than ours. Older Xcode only warned; the Xcode behind
+    # `image: "latest"` errors, and the build dies at the very end having
+    # compiled everything.
+    #
+    # Raising them is safe BECAUSE the app is 15.1: no device that can install
+    # this app is excluded by a pod claiming to support 9.0. The pods are not
+    # shipped separately.
+    #
+    # Both loops are needed. Resource-bundle targets normally live in the Pods
+    # project, but with multiple pod projects enabled they live in per-pod
+    # subprojects instead, and missing those would leave exactly the targets
+    # this exists to fix. `.to_f` on a nil setting is 0.0, which is < 15.1, so
+    # an unset target is raised too.
+    deployment_target = '15.1'
+    bump = lambda do |project|
+      project.targets.each do |target|
+        target.build_configurations.each do |build_config|
+          current = build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+          if current.to_f < deployment_target.to_f
+            build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = deployment_target
+          end
+        end
+      end
+      project.save
+    end
+
+    bump.call(installer.pods_project)
+    if installer.respond_to?(:pod_target_subprojects)
+      installer.pod_target_subprojects.each { |subproject| bump.call(subproject) }
+    end
   end
 end

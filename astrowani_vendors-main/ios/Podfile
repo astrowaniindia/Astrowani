@@ -128,5 +128,41 @@ target 'AstroIndia_Astrologers' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # ───────────────────────────────────────────────────────────────────────
+    # Raise every pod target to the app's own minimum (15.1). Identical to the
+    # customer app's Podfile, and added here BEFORE this app's first iOS build
+    # rather than after it failed: same React Native version, same Firebase and
+    # RN pods, same 15.1 app target, so it would have died the same way.
+    #
+    # The failure it prevents (seen on the customer app, 2026-10-23):
+    #   The iOS deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to 9.0,
+    #   but the range of supported deployment target versions is 15.0 to 27.1.x.
+    #   (in target 'RNCAsyncStorage-RNCAsyncStorage_resources' from project 'Pods')
+    #
+    # Those are CocoaPods-GENERATED privacy-manifest and resource-bundle
+    # targets, which inherit each pod's own ancient minimum instead of ours.
+    # Older Xcode warned; the Xcode behind `image: "latest"` errors, at the very
+    # end of the build. Raising them is safe because the app is already 15.1.
+    #
+    # Both loops are needed: resource bundles live in the Pods project normally,
+    # but in per-pod subprojects when multiple pod projects are enabled.
+    deployment_target = '15.1'
+    bump = lambda do |project|
+      project.targets.each do |target|
+        target.build_configurations.each do |build_config|
+          current = build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+          if current.to_f < deployment_target.to_f
+            build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = deployment_target
+          end
+        end
+      end
+      project.save
+    end
+
+    bump.call(installer.pods_project)
+    if installer.respond_to?(:pod_target_subprojects)
+      installer.pod_target_subprojects.each { |subproject| bump.call(subproject) }
+    end
   end
 end
