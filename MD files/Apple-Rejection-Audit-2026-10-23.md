@@ -143,8 +143,11 @@ on us"` — and the app's hardcoded copy (`Login.js` `FREE_CALL_MINUTES = 7`, th
 - [x] Clear `is_suspended` on the reviewer astrologer — **done 2026-10-23**
 - [x] Change `free_call_offer.astrologerName` off "Play Store Reviewer (QA test)" — **done
       2026-10-23**, now "Our Expert Astrologer"
-- [ ] **Point `free_call_offer.assignedAstrologerId` at a real astrologer** — still the
-      reviewer account; only bites if instant degrades to scheduled
+- [x] **Point `free_call_offer.assignedAstrologerId` at a real astrologer** — **done
+      2026-10-23**: Dilip Sharma (`f36f19e8-…`), approved and not suspended. Only this one
+      field was changed; mode, duration, payouts and the pools were re-read unchanged. Note
+      his `free_intro_call_enabled` is false, which governs the INSTANT pool only, so this
+      makes him the fallback for BOOKED free calls and nothing else.
 - [ ] Staff a live astrologer for the review window; put the window + timezone in the notes
 - [ ] Re-read the reviewer rows on the day of submission — they have been wrong three times
 - [ ] Screenshots (iPhone 6.9") and the App Store Connect records (CO Phase 6)
