@@ -629,7 +629,7 @@ apps only get today's app changes through the next OTA or store build.
 
 ### CO. OWNER CHECKLIST: Apple Developer enrolment → first App Store submission
 
-Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrowani Astrologer** (`com.astrowaniVendor`, version 6.6). Both are iPhone-only (no `TARGETED_DEVICE_FAMILY`). Steps marked **(Claude)** are for Claude, and only need the owner to send the values asked for.
+Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrowani Astrologer** (`com.astrowaniVendor`, version 6.6). Both are iPhone-only — **`TARGETED_DEVICE_FAMILY = "1"`, set explicitly in both `.pbxproj` files on 2026-10-23.** This file previously said they were iPhone-only *because* the setting was absent, which is backwards: **absent means Xcode's default of `1,2`, i.e. iPhone AND iPad.** Both apps would have built universal. That matters twice over — App Store Connect demands iPad screenshots for a universal app, and Apple may review on an iPad, where Home cards are still untappable (memory `ios_home_touch_investigation`, OPEN and unexplained after 7 eliminated causes). **Do not remove this setting to "add iPad support"** — adding iPad is flipping it to `"1,2"` *after* that bug is solved, plus iPad screenshots, as an ordinary update: same app record, same listing, same reviews. Steps marked **(Claude)** are for Claude, and only need the owner to send the values asked for.
 
 #### Phase 1: website (can be done today, before Apple)
 - [ ] **Publish `astrowani.com/delete-account/`**, using `MD files/Astrowani-Delete-Account-Page.docx` (copy everything below the yellow box). The slug must be exactly `delete-account`. It is **404 right now** and both apps link to it.
@@ -762,7 +762,7 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
   - **Tracking: No.** The iOS build has no ad SDKs: Meta and Firebase Analytics are `ios: null`. If that ever changes, the App Tracking Transparency prompt and a "Yes" are required.
   - Payment details are handled by Razorpay and not collected by us.
 - [ ] **Pricing:** Free. **Availability:** your choice, but **untick China for Astrowani Astrologer** (it uses CallKit, and Apple rejects CallKit apps on the China storefront).
-- [ ] **Screenshots:** iPhone **6.9" (1320×2868)** is required; 6.5" is optional. No iPad screenshots (the apps are iPhone-only). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
+- [ ] **Screenshots:** iPhone **6.9" (1320×2868)** is required; 6.5" is optional. No iPad screenshots — the apps are iPhone-only by explicit build setting (see Phase 3 above). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
 - [ ] **Description, subtitle, keywords:** lifestyle wording (CN). Don't mention Android, Google Play, or prices that differ by platform.
 - [ ] **App Review Information:** contact name/phone/email, **sign-in required: Yes**, demo account **9999999999 / 123456**, and the Notes text from CN (a different note for each app).
 - [ ] **Version release:** "Manually release this version", so the owner controls launch day.
