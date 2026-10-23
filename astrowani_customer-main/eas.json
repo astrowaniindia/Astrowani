@@ -11,7 +11,7 @@
       },
       "ios": {
         "credentialsSource": "remote",
-        "image": "latest"
+        "image": "macos-sequoia-15.6-xcode-16.4"
       },
       "env": {
         "RCT_NEW_ARCH_ENABLED": "0"
@@ -25,7 +25,7 @@
       "ios": {
         "simulator": false,
         "credentialsSource": "remote",
-        "image": "latest"
+        "image": "macos-sequoia-15.6-xcode-16.4"
       },
       "env": {
         "RCT_NEW_ARCH_ENABLED": "0"
