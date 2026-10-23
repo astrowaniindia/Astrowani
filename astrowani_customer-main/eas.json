@@ -10,7 +10,8 @@
         "credentialsSource": "local"
       },
       "ios": {
-        "credentialsSource": "remote"
+        "credentialsSource": "remote",
+        "image": "latest"
       },
       "env": {
         "RCT_NEW_ARCH_ENABLED": "0"
@@ -23,7 +24,8 @@
       "distribution": "internal",
       "ios": {
         "simulator": false,
-        "credentialsSource": "remote"
+        "credentialsSource": "remote",
+        "image": "latest"
       },
       "env": {
         "RCT_NEW_ARCH_ENABLED": "0"
