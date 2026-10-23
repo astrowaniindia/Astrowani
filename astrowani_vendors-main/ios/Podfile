@@ -160,6 +160,62 @@ target 'AstroIndia_Astrologers' do
       project.save
     end
 
+
+    # ───────────────────────────────────────────────────────────────────────
+    # Force FMT_USE_CONSTEVAL off in the fmt pod.
+    #
+    # WHY THIS IS NOT OPTIONAL: Apple refuses uploads built with anything older
+    # than the iOS 26 SDK (ITMS-90725, hit on 2026-10-23 with an Xcode 16.4
+    # build), and React Native 0.77 does not compile on Xcode 26:
+    #
+    #   call to consteval function 'fmt::basic_format_string<...>' is not a
+    #   constant expression
+    #
+    # Xcode 26's clang advertises __cpp_consteval, so fmt turns FMT_USE_CONSTEVAL
+    # on and takes a path that same compiler then rejects. There is no older
+    # toolchain left to retreat to - Apple's floor and RN's ceiling now overlap -
+    # so the header is patched instead.
+    #
+    # A -DFMT_USE_CONSTEVAL=0 compiler flag DOES NOT WORK. React Native pins
+    # fmt 11.0.2 through RCT-Folly, and in 11.0.2 the macro is defined by an
+    # unguarded #if/#elif chain that overwrites anything passed with -D. The
+    # `#ifdef FMT_USE_CONSTEVAL` guard that would make flags work only arrived in
+    # fmt 12.1.0, which React Native has not taken yet.
+    #
+    # This RAISES rather than skipping when it finds nothing to patch. The
+    # documented failure mode of every version of this workaround is that the
+    # pattern stops matching after a dependency bump, the hook silently does
+    # nothing, and the identical build failure returns ~15 minutes later looking
+    # like a fresh problem. A loud failure at pod-install time is far cheaper.
+    #
+    # Remove this whole block when React Native ships fmt >= 12.1.0.
+    fmt_header = nil
+    ['fmt/include/fmt/base.h', 'fmt/include/fmt/core.h'].each do |rel|
+      candidate = File.join(installer.sandbox.root, rel)
+      fmt_header = candidate if File.exist?(candidate)
+      break if fmt_header
+    end
+
+    if fmt_header.nil?
+      raise 'fmt patch: could not find fmt/include/fmt/base.h or core.h under ' \
+            "#{installer.sandbox.root}. The fmt pod moved or is gone - check " \
+            'whether React Native still vendors fmt before deleting this hook.'
+    end
+
+    fmt_source = File.read(fmt_header)
+    patched = fmt_source.gsub(/^(\s*#\s*define\s+FMT_USE_CONSTEVAL\s+).*$/) { |_| "#{$1}0" }
+
+    if patched == fmt_source
+      raise "fmt patch: no FMT_USE_CONSTEVAL definition found in #{fmt_header}. " \
+            'If fmt is now >= 12.1.0 the macro is #ifdef-guarded and this hook ' \
+            'should be deleted; otherwise the pattern needs updating. Failing ' \
+            'loudly on purpose - silently skipping reproduces the original ' \
+            'consteval build failure much later and much less obviously.'
+    end
+
+    File.write(fmt_header, patched)
+    Pod::UI.puts "Patched #{File.basename(fmt_header)}: FMT_USE_CONSTEVAL forced to 0 (Xcode 26 + fmt 11.0.2)".green
+
     bump.call(installer.pods_project)
     if installer.respond_to?(:pod_target_subprojects)
       installer.pod_target_subprojects.each { |subproject| bump.call(subproject) }
