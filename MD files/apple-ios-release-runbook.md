@@ -114,6 +114,21 @@ unzip -o -q build.ipa "Payload/*.app/Info.plist" "Payload/*.app/embedded.mobilep
 Also sanity-check: no `ProvisionedDevices` key in the profile (its presence means an ad-hoc
 build, not App Store).
 
+> **NOT EVERY APPLE EMAIL IS A REJECTION, and the first line tells you which it is.**
+> ITMS-90725 ("must be built with the iOS 26 SDK") refused the delivery outright — that
+> build never existed as far as Apple is concerned. ITMS-90683 ("Missing purpose
+> string") opens with **"Although delivery was successful"**: the build IS in TestFlight
+> and usable, and Apple only asks you to correct it in the NEXT delivery. Read that first
+> line before rebuilding anything.
+>
+> Seen on 24.1(2): `NSLocationAlwaysAndWhenInUseUsageDescription` was required because
+> react-native-permissions' LocationWhenInUse handler REFERENCES the always-on API, even
+> though the app never calls it. Apple scans statically and cannot tell a reference from
+> a call — its own wording is "While your app might not use these APIs, a purpose string
+> is still required." Write the string truthfully (ours says location is never used in
+> the background); a string promising background tracking would contradict the App
+> Privacy answers and turn a warning into a 5.1.1 problem.
+
 ---
 
 ## 5. Submit
@@ -187,3 +202,4 @@ was found `is_suspended = true` on 2026-10-23.
 | **ITMS-90725** email after a successful upload | built below the iOS 26 SDK | §2 pin, then §4 |
 | `Set ascAppId in the submit profile` | missing `submit.production.ios.ascAppId` | §5 |
 | `no matching bundle ID` | record tied to a malformed App ID | §6 trap |
+| **ITMS-90683** missing purpose string (a WARNING — delivery still succeeded) | an SDK REFERENCES a sensitive API the app never calls | add the key to Info.plist, ship it in the next build |
