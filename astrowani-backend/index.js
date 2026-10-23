@@ -4546,7 +4546,7 @@ app.post('/api/call/initiate', async (req, res) => {
     // exactly who cut them off invites retaliation against that astrologer, which is
     // the opposite of what a block is for. isBlocked fails OPEN — see
     // src/customerModeration.js for why that direction was chosen on this path.
-    if (await customerModeration.isBlocked(receiverId, callerInfo.id)) {
+    if (await customerModeration.isContactBlocked(receiverId, callerInfo.id)) {
       return res.status(403).json({
         success: false,
         blocked: true,
@@ -4767,7 +4767,7 @@ app.post('/api/chat/check-availability', async (req, res) => {
     // so the customer is told before a request row is written, not after.
     const requester = await resolveCustomerFromReq(req);
     if (requester && requester.id
-        && await customerModeration.isBlocked(astrologerId, requester.id)) {
+        && await customerModeration.isContactBlocked(astrologerId, requester.id)) {
       return res.status(403).json({
         success: false,
         blocked: true,
@@ -4801,7 +4801,7 @@ app.post('/api/chat/initiate', async (req, res) => {
 
     // Same enforced block as the call path — a block that stopped calls but let chat
     // through would not be a block at all.
-    if (await customerModeration.isBlocked(astrologerId, customer.id)) {
+    if (await customerModeration.isContactBlocked(astrologerId, customer.id)) {
       return res.status(403).json({
         success: false,
         blocked: true,

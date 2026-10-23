@@ -40,9 +40,11 @@ import ChatImageBubble from '../components/chatImage/ChatImageBubble';
 import ImageEditorModal from '../components/chatImage/ImageEditorModal';
 import AttachSourceSheet from '../components/chatImage/AttachSourceSheet';
 import { pickChatImage, sendChatImage, imageErrorKey } from '../utils/chatImage';
+import ChatModerationSheet from '../components/ChatModerationSheet';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
+  const [moderationVisible, setModerationVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const { t } = useContext(LanguageContext);
 
@@ -898,12 +900,39 @@ const ChatSessionScreen = ({ route, navigation }) => {
 
         <View style={styles.headerRight}>
           <Text style={styles.timer}>{pad(minutes)}:{pad(secs)}</Text>
+          {/* Report / block. Required by App Store 1.2 and Play's UGC policy: the
+              astrologer has had this inside the chat since 2026-09, the customer
+              had neither anywhere. Placed in the header so it is reachable without
+              leaving the conversation — a reviewer, and an upset customer, both
+              look here first. */}
+          <TouchableOpacity
+            style={styles.moreBtn}
+            onPress={() => setModerationVisible(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={t('chatModeration.a11yOpen')}>
+            <Ionicons name="ellipsis-vertical" size={18} color="#fff" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.endBtn} onPress={confirmEndChat}>
             <Ionicons name="call" size={16} color="#fff" />
             <Text style={styles.endText}>{t('chatSession.end')}</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      <ChatModerationSheet
+        visible={moderationVisible}
+        astrologer={{
+          id: person?.userId || person?._id || person?.id,
+          name: person?.name || person?.firstName || t('common.astrologer'),
+        }}
+        onClose={() => setModerationVisible(false)}
+        // A block takes effect for FUTURE contact; it deliberately does not end the
+        // session underneath the customer. Ending it here would mean tearing down a
+        // live, billing consultation from a moderation sheet — the customer may well
+        // want to finish the minutes they have paid for, and the End button is right
+        // next to this one. The popup says as much.
+        onBlocked={() => {}}
+      />
 
       {/* ── Messages ──────────────────────────── */}
       {connecting ? (
@@ -1001,6 +1030,7 @@ const styles = StyleSheet.create({
   charge: { color: COLORS.AstroGold, fontSize: 12, marginTop: 2 },
   headerRight: { alignItems: 'center', flexDirection: 'row' },
   timer: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 1, fontVariant: ['tabular-nums'], marginRight: 12 },
+  moreBtn: { paddingHorizontal: 6, paddingVertical: 4, marginRight: 4 },
   endBtn: { backgroundColor: '#ff4444', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, elevation: 2 },
   endText: { color: '#fff', marginLeft: 4, fontWeight: '700', fontSize: 13 },
   walletBal: { color: '#ffd', fontSize: 12, marginTop: 2 },

@@ -3233,6 +3233,102 @@ nobody and leaves the offer unspent, and that allowing it connects.
 
 ---
 
+## Subsystem added 2026-10-23: a customer can finally block an astrologer (EJ)
+
+### EJ. The two directions were asymmetric, and the customer had the weaker half
+
+App Store Guideline 1.2 asks for three things where users contribute content: a filter,
+a way to report, and **the ability to block abusive users**. Before today:
+
+| Surface | Report | Block |
+|---|---|---|
+| Live-stream comments | yes | yes |
+| Astrologer profile | yes | **no** |
+| Astrologer's side of a chat | yes (`ReportCustomerSheet`) | yes |
+| **Customer's side of a chat** | **no** | **no** |
+
+So the astrologer could report AND block the customer mid-consultation, while the customer
+could only report from the astrologer's PROFILE — never from inside the conversation — and
+**could not block anybody, anywhere in the app**. That asymmetry is what a reviewer testing
+a 1:1 chat app probes for, and it mattered more after 2026-10-12 (DX), when astrologers
+gained the ability to send **photographs** into that chat: unmoderated image content from
+one user to another, with the recipient unable to report it in context or stop the sender.
+
+| Piece | Where |
+|---|---|
+| `sql/astrologer_blocks.sql` | the missing table. **APPLIED 2026-10-23.** RLS on, zero anon/authenticated grants, self-verifying `DO $$` tail |
+| `src/customerModeration.js` | `isBlockedByCustomer`, `blockAstrologer`, `unblockAstrologer`, `listBlockedAstrologers`, and **`isContactBlocked`** |
+| `src/moderationRoutes.js` | `POST /api/astrologers/block` / `unblock`, `GET /api/astrologers/blocked`, plus `customerFromReq` |
+| customer `components/ChatModerationSheet.js` | the sheet; a ⋮ in `ChatSessionScreen`'s header opens it |
+| 22 i18n keys, EN + HI | `context/LanguageContext.js` |
+
+**Things that are load-bearing — do not "simplify" them:**
+
+- **THE TABLE NAMES READ BACKWARDS, and both are correct.** `customer_blocks` holds
+  "an astrologer has blocked a customer"; `astrologer_blocks` holds "a customer has
+  blocked an astrologer". **Each is named after WHO IS BLOCKED**, not who did the
+  blocking. Getting this backwards silently inverts a moderation decision.
+- **The three contact paths call `isContactBlocked`, NOT `isBlocked`.** It asks both
+  directions. `index.js` `/api/call/initiate`, `/api/chat/check-availability` and
+  `/api/chat/initiate` were all switched. Leaving them on `isBlocked` would have meant a
+  customer-side block was written, confirmed to the customer, and then **silently ignored
+  on the one path where it has to bite** — which is exactly what the verification suite
+  was confirmed to catch.
+- **It FAILS OPEN**, like the astrologer-side check it mirrors, and for the same reason:
+  this runs on the initiation path for every call and chat, so a transient database error
+  must not take the whole marketplace dark. A blocked astrologer may get through during an
+  outage; the alternative is every consultation on the platform failing on a blip.
+- **`customerFromReq` REFUSES AN ASTROLOGER TOKEN before any lookup.** One phone number
+  can be both a customer and an astrologer — the store-reviewer account 9999999999 is
+  exactly that — and the lookup works by phone, so an astrologer's token would otherwise
+  resolve to the customer sharing the number and let them block in that person's name.
+  Same trap, same fix, as `/api/requests/:kind/:id/status` and `/api/notifications/read`.
+- **Report and block stay INDEPENDENT.** Someone may want to flag an astrologer without
+  cutting off a consultation they have paid for, or cut contact without filing a complaint.
+  The sheet offers report, report-and-block, and block-alone; the server keeps them separate.
+  On a combined submit the REPORT goes first and the block is best-effort, because the
+  report is the record that matters and must not be lost to a failed block.
+- **A block does NOT end the live session.** Tearing down a billing consultation from a
+  moderation sheet would be worse than the problem: the customer may want to finish the
+  minutes they paid for, and the End button is immediately beside the ⋮. The popup says the
+  chat is still open. The block governs FUTURE contact.
+- **The reason slugs must stay inside `moderationRoutes.REASONS`**, which the block endpoint
+  validates against; anything else is a 400. The *report* sends an English label instead,
+  because `astrologer_reports.reason` is free text read by an admin — same split, and same
+  reason, as `LiveReportSheet`'s `STREAM_REASON_LABELS`.
+
+### Verified 2026-10-23 — 26/26 over real HTTP against the live database
+`scripts/chatModerationCheck.js` (`node --env-file=.env scripts/chatModerationCheck.js`).
+**`index.js` is never booted** — only the moderation routes are mounted on a bare Express
+app on an **ephemeral port**, so there is no EADDRINUSE to mistake for a product failure
+(the 2026-09-30 lesson). It drives the real routes with real signed JWTs rather than calling
+the module, because a harness that only tests its own helper reports green while the call
+sites stay broken (BN).
+
+Every refusal is preceded by a POSITIVE CONTROL, so a route that refused everything could
+not pass: contact is asserted ALLOWED before the block and allowed again after the unblock.
+Covers the write, the reason, idempotency via the UNIQUE pair, the caller-scoped list,
+`isContactBlocked` seeing a customer-side block, the astrologer-side direction staying
+independent, an unauthenticated refusal, **an astrologer token refused twice**, a missing
+id, an unknown reason writing nothing, and unblocking twice being a success rather than a
+404. Teardown is asserted.
+
+> **The suite was verified to FAIL on a deliberate regression** — reducing
+> `isContactBlocked` to the astrologer direction alone produces exactly one failure,
+> "isContactBlocked sees a CUSTOMER-side block", which is the assertion that stands between
+> this feature and a block that does nothing. That is the only reason to trust the 26.
+
+Also: 22 i18n keys with zero one-sided (EN + HI both 22), `node --check` clean on all three
+backend files, and eslint on the changed app files back to the single pre-existing
+`exhaustive-deps` error at `ChatSessionScreen.js:757`.
+
+**Not exercised on a device, and that is the test worth doing:** open a chat, tap the ⋮,
+report with the block checkbox, then confirm from the astrologer's phone that a new chat or
+call to that customer is refused with the neutral "not accepting consultations" message —
+neutral on purpose, since naming who blocked someone invites retaliation.
+
+---
+
 ## Session 2026-10-21 (later): free intro call 11 → 7 minutes — CODE ONLY, NOT LIVE
 
 ### EI. The change is staged in code; production is still on 11
