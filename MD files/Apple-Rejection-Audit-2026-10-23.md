@@ -47,13 +47,19 @@ block the sender at all. A reviewer testing a 1:1 chat app looks for exactly thi
 Minimum fix: a ⋮ or flag in the chat header reusing the existing `/api/reports` call, plus
 a block writing `customer_blocks` in the other direction.
 
-### 2. The reviewer astrologer account is SUSPENDED (2.1)
+### 2. ~~The reviewer astrologer account is SUSPENDED (2.1)~~ — CLEARED 2026-10-23
 
 `astrologers` row `1f70210e-6234-4f49-a764-13e851968e1e` ("Play Store Reviewer"):
 `approval_status = approved`, `hidden_from_customers = true` — both intended — but
 **`is_suspended = true`**. A reviewer signing into the **astrologer app** with
 9999999999 / 123456 hits the suspended path instead of the dashboard. That fails the
 astrologer app on its own, on the most basic check a reviewer makes.
+
+**Cleared 2026-10-23**: `is_suspended = false`. Checked first that this does NOT put the
+account back in front of customers — it is not among the 10 ids in
+`free_intro_call_visibility.allowedAstrologerIds` (mode `selected`), so it cannot enter the
+instant free-call pool, and `hidden_from_customers` is still `true`, so it stays out of every
+listing. The other 11 suspended astrologers were not touched.
 
 ### 3. 2.1 completeness — can the reviewer actually complete a consultation?
 
@@ -67,7 +73,7 @@ free call. If nobody answers, that reads as "I tried to start a consultation and
 happened" — Apple's single largest rejection bucket. **Staff a known astrologer for the
 review window and state the window, with timezone, in the review notes.**
 
-### 4. The free-call offer is branded "Play Store Reviewer (QA test)"
+### 4. ~~The free-call offer is branded "Play Store Reviewer (QA test)"~~ — RENAMED, but see below
 
 `free_call_offer.astrologerName` is literally **"Play Store Reviewer (QA test)"**, with
 `assignedAstrologerId` pointing at the suspended reviewer account. In `instant` mode that
@@ -75,6 +81,18 @@ name is not the primary surface — but `instantPoolAstrologerIds` is empty, and
 CLAUDE.md **DV** an empty effective pool degrades instant → `scheduled`, which is the mode
 that shows exactly this name and photo. A customer, or a reviewer, being told
 "Play Store Reviewer (QA test)" will call them is a bad look that costs nothing to fix.
+
+**Renamed 2026-10-23** to **"Our Expert Astrologer"**, which matches the body text the
+screen already shows ("Our astrologer will call you directly").
+
+> **STILL OPEN, and it is the half that actually matters: `assignedAstrologerId` is
+> UNCHANGED and still points at the reviewer account** (`1f70210e-…`), with
+> `assignmentMode: "single"`. While `mode` is `instant` nothing routes through it. But an
+> empty effective instant pool degrades instant → `scheduled` (CLAUDE.md **DV**), and in
+> that mode a real customer's booked free call is assigned to an account that is hidden
+> from customers and that nobody monitors. **Renaming the label did not fix that** — it
+> only stopped the label being embarrassing. Point it at a real astrologer who has agreed
+> to take booked free calls; that is a product decision, not a cleanup.
 
 ### 5. Low, worth doing, won't be the rejection reason
 
@@ -122,8 +140,11 @@ on us"` — and the app's hardcoded copy (`Login.js` `FREE_CALL_MINUTES = 7`, th
 ## Before submitting
 
 - [x] Report + block inside the customer's chat session — **done 2026-10-23**, 26/26 verified
-- [ ] Clear `is_suspended` on the reviewer astrologer
-- [ ] Change `free_call_offer.astrologerName` off "Play Store Reviewer (QA test)"
+- [x] Clear `is_suspended` on the reviewer astrologer — **done 2026-10-23**
+- [x] Change `free_call_offer.astrologerName` off "Play Store Reviewer (QA test)" — **done
+      2026-10-23**, now "Our Expert Astrologer"
+- [ ] **Point `free_call_offer.assignedAstrologerId` at a real astrologer** — still the
+      reviewer account; only bites if instant degrades to scheduled
 - [ ] Staff a live astrologer for the review window; put the window + timezone in the notes
 - [ ] Re-read the reviewer rows on the day of submission — they have been wrong three times
 - [ ] Screenshots (iPhone 6.9") and the App Store Connect records (CO Phase 6)
