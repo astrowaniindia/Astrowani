@@ -4,6 +4,7 @@
 
 import { useState, useRef, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
+import { describeBlockError } from '../utils/blockedAstrologers';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { markRequestStatus } from '../api/RequestsApi';
 import Instance from '../api/ApiCall';
@@ -311,6 +312,14 @@ const useChatRequest = (navigation) => {
       }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       console.log('sendChatRequest error:', err?.message || JSON.stringify(err));
+      // A block is a refusal with a reason, not a failure. Saying "could not send
+      // request, please try again" to someone who blocked this astrologer themselves
+      // sends them round the same loop forever.
+      const blockMsg = describeBlockError(err, item?.userId || item?._id || item?.id);
+      if (blockMsg) {
+        Alert.alert(t('alerts.unavailable'), blockMsg);
+        return;
+      }
       Alert.alert(t('common.error'), t('chat.couldNotSendRequest', { msg: err?.message || 'Please try again.' }));
     } finally {
       // Always clears, on every path including the early returns above. By now the

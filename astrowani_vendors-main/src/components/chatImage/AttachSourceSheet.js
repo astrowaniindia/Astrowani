@@ -10,8 +10,8 @@
 // nothing else — no documents, no video — and saying so here is cheaper than
 // letting someone hunt for a file attachment that does not exist.
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useContext } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
+import React, { useContext, useRef } from 'react';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Pressable, Platform, InteractionManager } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../Theme/Colors';
@@ -20,19 +20,60 @@ import { LanguageContext } from '../../context/LanguageContext';
 const AttachSourceSheet = ({ visible, onClose, onPick }) => {
   const { t } = useContext(LanguageContext);
   const insets = useSafeAreaInsets();
+  // THE CHOICE IS REMEMBERED AND ACTED ON AFTER THIS SHEET HAS ACTUALLY GONE, never
+  // in the row's own onPress.
+  //
+  // iOS presents the camera and the photo library as view controllers on top of the
+  // key window. Asking for one while THIS Modal is still playing its dismissal
+  // animation hands it a presenter that is on its way out, and iOS tears the picker
+  // down with it -- which is exactly what was reported from TestFlight on 2026-10-24:
+  // the gallery never appeared at all, and the camera flashed up and closed itself
+  // after about a second. `onDismiss` is the real "the modal is gone now" signal, so
+  // the launch hangs off that instead of a guessed delay.
+  //
+  // Android gets no onDismiss, and does not need one: there the picker is a separate
+  // Activity, so nothing about this Modal can interfere with it.
+  const pendingRef = useRef(null);
+
+  const flush = () => {
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (pending) onPick(pending);
+  };
+
+  const choose = (opts) => {
+    pendingRef.current = opts;
+    onClose();
+    if (Platform.OS !== 'ios') {
+      InteractionManager.runAfterInteractions(flush);
+    }
+  };
+
+  // Backing out must not leave a choice armed, or the next time the sheet closes for
+  // any reason the picker would open on its own.
+  const cancel = () => {
+    pendingRef.current = null;
+    onClose();
+  };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={cancel}
+      onDismiss={Platform.OS === 'ios' ? flush : undefined}
+      statusBarTranslucent>
       {/* Tapping the dimmed area closes it — the gesture everyone already expects
           from a sheet, and the only way out on a phone with gesture navigation
           where there is no visible back button. */}
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable style={styles.backdrop} onPress={cancel}>
         <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 18 }]} onPress={() => {}}>
           <View style={styles.grabber} />
           <Text style={styles.title}>{t('chatImage.sendPhoto')}</Text>
           <Text style={styles.subtitle}>{t('chatImage.photosOnly')}</Text>
 
-          <TouchableOpacity style={styles.row} onPress={() => onPick({ fromCamera: true })}>
+          <TouchableOpacity style={styles.row} onPress={() => choose({ fromCamera: true })}>
             <View style={styles.iconCircle}>
               <Ionicons name="camera" size={21} color="#fff" />
             </View>
@@ -40,7 +81,7 @@ const AttachSourceSheet = ({ visible, onClose, onPick }) => {
             <Ionicons name="chevron-forward" size={18} color="#bbb" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row} onPress={() => onPick({ fromCamera: false })}>
+          <TouchableOpacity style={styles.row} onPress={() => choose({ fromCamera: false })}>
             <View style={styles.iconCircle}>
               <Ionicons name="images" size={20} color="#fff" />
             </View>
@@ -48,7 +89,7 @@ const AttachSourceSheet = ({ visible, onClose, onPick }) => {
             <Ionicons name="chevron-forward" size={18} color="#bbb" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.cancel} onPress={onClose}>
+          <TouchableOpacity style={styles.cancel} onPress={cancel}>
             <Text style={styles.cancelTxt}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         </Pressable>

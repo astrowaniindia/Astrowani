@@ -170,13 +170,56 @@ export async function requestUserPermission() {
     if (isAndroidPrompt) retryPermissionWhenActive();
   }
 }
-const getFCMToken = async () => {
+/**
+ * iOS ONLY, and it is what makes push work there at all.
+ *
+ * On iOS an FCM token cannot exist until APNs has handed the device its own token,
+ * and that arrives asynchronously some time after the permission dialog is answered.
+ * Call `getToken()` before then and firebase-messaging throws
+ * "You must be running on a physical device and your device must be registered for
+ * remote messages" -- which this function used to catch, log, and give up on. The
+ * result was a phone that had granted notifications, had a working connection, and
+ * had simply never told the backend a token existed, so nothing was ever pushed to
+ * it. Exactly what was reported from the first TestFlight round (2026-10-24): the
+ * in-app notification list filled up normally while nothing appeared outside the app.
+ *
+ * `registerDeviceForRemoteMessages()` is the documented way to wait for that
+ * registration; it is idempotent and resolves immediately once it has happened.
+ * Android registers as part of Play Services and needs none of this.
+ */
+async function ensureRegisteredForRemoteMessages() {
+  if (Platform.OS !== 'ios') return;
   try {
+    if (!messaging().isDeviceRegisteredForRemoteMessages) {
+      await messaging().registerDeviceForRemoteMessages();
+    }
+  } catch (e) {
+    // Non-fatal: getToken below retries, and its own failure is handled there.
+    console.log('registerDeviceForRemoteMessages failed:', e?.message);
+  }
+}
+
+// Retried, with a widening gap, because the first attempt legitimately loses the race
+// with APNs on a cold start. Giving up after one try is what broke iOS push; giving up
+// after ~30s of trying means something is actually wrong, and `onTokenRefresh` below is
+// still there as the long-stop.
+const TOKEN_RETRY_DELAYS_MS = [0, 1500, 4000, 10000, 15000];
+
+const getFCMToken = async (attempt = 0) => {
+  try {
+    await ensureRegisteredForRemoteMessages();
     let token = await messaging().getToken();
+    if (!token) throw new Error('empty token');
     await AsyncStorage.setItem('fcmToken', token);
     console.log('FCM Token:', token);
     await syncTokenWithBackend(token);
   } catch (error) {
+    const next = attempt + 1;
+    if (next < TOKEN_RETRY_DELAYS_MS.length) {
+      console.log(`FCM token not ready (${error?.message}) — retry ${next}`);
+      setTimeout(() => { getFCMToken(next).catch(() => {}); }, TOKEN_RETRY_DELAYS_MS[next]);
+      return;
+    }
     console.error('Error fetching FCM Token:', error);
   }
 };

@@ -35,6 +35,7 @@ import { showStatusPopup } from '../components/StatusPopup';
 import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
 import {createIceRecovery} from './iceRecovery';
+import {createRemoteVideoWatchdog} from './remoteVideoWatchdog';
 import {joinSessionWithRetry} from './sessionRoom';
 import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../components/SessionConnectionNotice';
 import SessionIntroBanner from '../components/SessionIntroBanner';
@@ -77,6 +78,11 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   // Disabling a video track sends no signal of its own, so without this the
   // remote view just holds its last frame and looks like a frozen call.
   const [remoteVideoPaused, setRemoteVideoPaused] = useState(false);
+  // Bumped by the remote-video watchdog. Changing an RTCView's key is what forces a
+  // fresh renderer underneath it; see utils/remoteVideoWatchdog.js for why that is
+  // the recovery for a picture that has gone black while the call is still alive.
+  const [remoteViewEpoch, setRemoteViewEpoch] = useState(0);
+  const remoteWatchdogRef = useRef<any>(null);
 
   const isEndingRef = useRef(false);
   // True once getUserMedia has actually handed us a stream, i.e. the microphone prompt is
@@ -153,6 +159,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
   const cleanupWebRTC = useCallback(() => {
     if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
     if (watchdogRef.current) { watchdogRef.current.stop(); watchdogRef.current = null; }
+    if (remoteWatchdogRef.current) { remoteWatchdogRef.current.stop(); remoteWatchdogRef.current = null; }
     if (readyRetryRef.current) { clearInterval(readyRetryRef.current); readyRetryRef.current = null; }
     if (iceRecoveryRef.current) {
       iceRecoveryRef.current.dispose();
@@ -359,6 +366,14 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
             );
             stopRipple();
             startCallTimer();
+            if (!remoteWatchdogRef.current) {
+              remoteWatchdogRef.current = createRemoteVideoWatchdog({
+                label: 'Vendor/Video',
+                getPeer: () => pcRef.current,
+                onStalled: () => setRemoteViewEpoch((n) => n + 1),
+              });
+              remoteWatchdogRef.current.start();
+            }
             if (socketRef.current && sessionId) {
               socketRef.current.emit('signal_connection', {sessionId});
               console.log('[Vendor/Video] Emitted signal_connection for session:', sessionId);
@@ -563,6 +578,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       {/* Remote video full-screen background */}
       {isConnected && remoteStreamURL && !remoteVideoPaused ? (
         <RTCView
+          key={`remote-${remoteViewEpoch}`}
           streamURL={remoteStreamURL}
           style={StyleSheet.absoluteFillObject}
           objectFit="cover"

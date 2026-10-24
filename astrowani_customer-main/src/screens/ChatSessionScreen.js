@@ -41,6 +41,7 @@ import ImageEditorModal from '../components/chatImage/ImageEditorModal';
 import AttachSourceSheet from '../components/chatImage/AttachSourceSheet';
 import { pickChatImage, sendChatImage, imageErrorKey } from '../utils/chatImage';
 import ChatModerationSheet from '../components/ChatModerationSheet';
+import { isAstrologerBlocked, markAstrologerBlocked, subscribeBlockedAstrologers } from '../utils/blockedAstrologers';
 
 const ChatSessionScreen = ({ route, navigation }) => {
   const { requestId, person, sessionId: initialSessionId } = route.params;
@@ -77,6 +78,12 @@ const ChatSessionScreen = ({ route, navigation }) => {
   // Photo attachment: the "camera or gallery?" sheet, the photo being edited, and
   // whether an upload is in flight. See src/components/chatImage/.
   const [attachOpen, setAttachOpen] = useState(false);
+  // Set when this customer blocks the astrologer from the header's moderation sheet.
+  // Until 2026-10-24 blocking mid-chat changed nothing visible: the conversation
+  // carried on exactly as before and nothing said the block had happened.
+  const [blockedByMe, setBlockedByMe] = useState(
+    isAstrologerBlocked(person?.userId || person?._id || person?.id),
+  );
   const [editorSource, setEditorSource] = useState(null);
   const [imageSending, setImageSending] = useState(false);
 
@@ -786,6 +793,11 @@ const ChatSessionScreen = ({ route, navigation }) => {
     setAttachOpen(true);
   };
 
+  useEffect(() => {
+    const id = person?.userId || person?._id || person?.id;
+    return subscribeBlockedAstrologers(() => setBlockedByMe(isAstrologerBlocked(id)));
+  }, [person?.userId, person?._id, person?.id]);
+
   const choosePhoto = async ({ fromCamera }) => {
     setAttachOpen(false);
     const picked = await pickChatImage({ fromCamera });
@@ -931,7 +943,15 @@ const ChatSessionScreen = ({ route, navigation }) => {
         // live, billing consultation from a moderation sheet — the customer may well
         // want to finish the minutes they have paid for, and the End button is right
         // next to this one. The popup says as much.
-        onBlocked={() => {}}
+        // The session is deliberately NOT torn down from here -- the customer may
+        // want to finish minutes they have already paid for, and ending a live
+        // billing consultation out from under them is not something a moderation
+        // sheet should do. What DOES change (2026-10-24) is that the conversation
+        // stops accepting new messages and says why, with End right beside it.
+        onBlocked={() => {
+          markAstrologerBlocked(person?.userId || person?._id || person?.id);
+          setBlockedByMe(true);
+        }}
       />
 
       {/* ── Messages ──────────────────────────── */}
@@ -964,11 +984,27 @@ const ChatSessionScreen = ({ route, navigation }) => {
       {/* Connection notice — in the chat, above the input, never a popup. */}
       {!connecting && <SessionConnectionNotice conn={conn} t={t} />}
 
+      {/* Says the block happened, and stays said. The popup the sheet shows is gone
+          in a few seconds; this is what is still there a minute later when the
+          customer wonders whether it worked. */}
+      {blockedByMe && (
+        <View style={styles.blockedBanner}>
+          <Ionicons name="ban" size={16} color="#8c2f2f" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.blockedBannerTitle}>
+              {t('blocked.chatDisabledTitle').replace('{{name}}', person?.name || person?.firstName || t('common.astrologer'))}
+            </Text>
+            <Text style={styles.blockedBannerBody}>{t('blocked.chatDisabledBody')}</Text>
+          </View>
+        </View>
+      )}
+
       {/* ── Input ─────────────────────────────── */}
       {!connecting && (
         <View style={[styles.inputRow, {paddingBottom: (kbHeight > 0 ? 0 : insets.bottom) + 16}]}>
           <TouchableOpacity
-            style={[styles.attachBtn, conn.blocked && { opacity: 0.45 }]}
+            style={[styles.attachBtn, (conn.blocked || blockedByMe) && { opacity: 0.45 }]}
+            disabled={blockedByMe}
             onPress={openAttach}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
           >
@@ -976,17 +1012,18 @@ const ChatSessionScreen = ({ route, navigation }) => {
           </TouchableOpacity>
           <TextInput
             ref={inputRef}
-            style={styles.input}
+            style={[styles.input, blockedByMe && styles.inputDisabled]}
             value={text}
+            editable={!blockedByMe}
             onChangeText={handleTyping}
-            placeholder={t('chatSession.messagePlaceholder')}
+            placeholder={blockedByMe ? t('blocked.bannerBody') : t('chatSession.messagePlaceholder')}
             placeholderTextColor="#aaa"
             multiline
           />
           <TouchableOpacity
-            style={[styles.sendBtn, conn.blocked && { opacity: 0.45 }]}
+            style={[styles.sendBtn, (conn.blocked || blockedByMe) && { opacity: 0.45 }]}
             onPress={sendMessage}
-            disabled={conn.blocked}
+            disabled={conn.blocked || blockedByMe}
           >
             <Ionicons name="send" size={22} color="#fff" />
           </TouchableOpacity>
@@ -1063,6 +1100,14 @@ const styles = StyleSheet.create({
   myTimeText: { color: 'rgba(255,255,255,0.7)' },
   readIcon: { marginLeft: 4 },
 
+  blockedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fdeaea', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0c9c9',
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  blockedBannerTitle: { fontSize: 13, fontWeight: '800', color: '#8c2f2f' },
+  blockedBannerBody: { fontSize: 11.5, color: '#7a5a52', marginTop: 1 },
+  inputDisabled: { color: '#999' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',

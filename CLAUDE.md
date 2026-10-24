@@ -3233,6 +3233,79 @@ nobody and leaves the offer unspent, and that allowing it connects.
 
 ---
 
+## Session 2026-10-23: the first iOS builds, and five failures worth not repeating (EK)
+
+### EK. A build that COMPILES is not a build Apple ACCEPTS
+
+The first ever signed iOS build of the customer app took five attempts. Every failure was
+toolchain, not app code, and each only became visible once the previous one was fixed.
+
+| # | Failed at | Cause | Fix |
+|---|---|---|---|
+| 1 | Apple sign-in | `iTunes service key is empty` | eas-cli **22.2.0 -> 25.3.0**. It bundles fastlane's Apple-auth code; Apple moved the endpoints. It died BEFORE asking for 2FA, which is how you tell it is not the password. |
+| 2 | Xcode compile | `AppTransaction has no member 'appTransactionID'` | `react-native-iap` 13.0.4 reads an iOS 18.4 property. The `#available` guard is correct, but Swift still COMPILES the line, so it needs the 18.4+ SDK. |
+| 3 | Xcode compile | `IPHONEOS_DEPLOYMENT_TARGET ... 9.0 ... supported is 15.0 to 27.1` | CocoaPods-GENERATED privacy-manifest and resource-bundle targets inherit each pod's ancient minimum. Podfile `post_install` raises them to 15.1. Older Xcode only warned. |
+| 4 | Xcode compile | `call to consteval function 'fmt::basic_format_string<...>'` | RN 0.77 does not compile on Xcode 26. See below. |
+| 5 | **Apple, after a successful upload** | **ITMS-90725** | **The one that matters — read on.** |
+
+> **THE RULE: a green build tells you nothing about whether Apple will take the binary.**
+> Build 1 compiled, signed, uploaded and was then refused at processing:
+> *"This app was built with the iOS 18.5 SDK. All iOS and iPadOS apps must be built with the
+> iOS 26 SDK or later."* The reaction to failure 2 had been to pin `"image": "latest"`; the
+> reaction to failure 4 was to retreat to Xcode 16.4, which compiled — and produced exactly
+> the binary Apple refuses. **Verify `DTSDKName` in the built `.ipa` BEFORE submitting**
+> (see the check at the end of this section); it costs thirty seconds against a
+> twenty-minute round trip and an email.
+
+**APPLE'S FLOOR AND REACT NATIVE'S CEILING NOW OVERLAP.** Apple requires Xcode 26+; RN 0.77
+does not compile on it. There is no older toolchain to retreat to, so `fmt` is patched:
+
+- `ios/Podfile` `post_install` (BOTH apps) forces `FMT_USE_CONSTEVAL` to 0 in the fmt pod.
+- **A `-DFMT_USE_CONSTEVAL=0` compiler flag DOES NOT WORK.** RN pins **fmt 11.0.2** through
+  `RCT-Folly`, and in 11.0.2 the macro is set by an unguarded `#if/#elif` chain that
+  overwrites anything passed with `-D`. The `#ifdef` guard that would honour a flag arrived
+  in **fmt 12.1.0**, which RN has not adopted. Patching the header is the only route.
+- **The hook RAISES when it finds nothing to patch**, deliberately. Every published version
+  of this workaround shares one failure mode: the pattern stops matching after a dependency
+  bump, the hook silently does nothing, and the same consteval error returns fifteen minutes
+  later looking like a new problem. **Delete the whole block when RN ships fmt >= 12.1.0.**
+- Ruby trap, caught before it cost a build: `gsub(..., '\\10')` is **backreference 10**, not
+  group 1 followed by a zero. With one capture group it substitutes empty and emits a
+  valueless `#define`. Use the block form.
+
+**`"image"` IS PINNED AND MUST STAY PINNED** — `macos-sequoia-15.6-xcode-26.0`, the EARLIEST
+image meeting Apple's floor. `"latest"` is not a stable target (it resolved to Xcode 27.1
+today) and a floating alias on a React Native app means the toolchain moves under a release
+that has not changed a line. Xcode 27 images additionally require the UIKit scene life cycle.
+Move the pin deliberately, when RN is upgraded.
+
+### What is live
+- **Apple Developer Program: INDIVIDUAL**, Team ID `U49M3S8V97`, seller name **Ansh Sharma**
+  (see CO Phase 3 for why Individual, and what it defers).
+- **App Store Connect app: `Astrowani - Ask an Astrologer`, Apple ID `6826113999`**, primary
+  language English (U.K.), bundle `com.astrowanicustomer`. Written into
+  `astrowani_customer-main/eas.json` as `submit.production.ios.ascAppId`, so submits need no
+  interactive lookup.
+- **Customer build 24.1 (2)** uploaded and accepted for processing. Build 1 is spent.
+- APNs key `49V28JX3XB`, Firebase (both apps, both slots), VoIP env on the VPS — all 2026-10-23.
+
+> **THE App ID TRAP.** `developer.apple.com` holds THREE identifiers: the real
+> `com.astrowanicustomer` (ugly EAS-generated name), plus `com.astrowanicustomer.U49M3S8V97`
+> and `com.astrowaniVendor.U49M3S8V97` — two hand-made App IDs with the TEAM ID pasted into
+> the identifier. **The tidy-looking names are the broken ones.** Pick by IDENTIFIER, never
+> by name. The vendor app still has NO usable `com.astrowaniVendor` App ID; EAS registers it
+> on that app's first build.
+
+### Verify a built .ipa before submitting
+Unzip `Payload/*.app/Info.plist` and `embedded.mobileprovision` and check four things:
+`DTSDKName` (must be `iphoneos26.x` — this is ITMS-90725), `CFBundleVersion` (must exceed
+every number already uploaded, accepted or not), `UIDeviceFamily` (`[1]` = iPhone only, see
+CO Phase 3), and the profile's `aps-environment` (must be `production`, or push works on a
+dev build and goes silent in TestFlight). Build 24.1(2) was confirmed as
+`iphoneos26.0` / `2` / `[1]` / `production`, with no `ProvisionedDevices` (App Store, not ad hoc).
+
+---
+
 ## Subsystem added 2026-10-23: a customer can finally block an astrologer (EJ)
 
 ### EJ. The two directions were asymmetric, and the customer had the weaker half

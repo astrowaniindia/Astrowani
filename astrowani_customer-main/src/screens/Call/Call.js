@@ -512,6 +512,7 @@ import StarRating from '../../components/StarRating';
 import { ensureProfileComplete } from '../../utils/profileGate';
 import { getWalletBalance } from '../../utils/wallet';
 import { showInsufficientBalanceAlert } from '../../utils/insufficientBalanceAlert';
+import { describeBlockError } from '../../utils/blockedAstrologers';
 import axios from 'axios';
 import {COLORS} from '../../Theme/Colors';
 import Instance from '../../api/ApiCall';
@@ -812,6 +813,12 @@ const CallsList = ({navigation}) => {
       }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsWaiting(false);
+      // Blocked is a refusal WITH a reason; the generic handler below has none.
+      const blockMsg = describeBlockError(err, item?.userId || item?._id || item?.id);
+      if (blockMsg) {
+        Alert.alert(t('alerts.unavailable'), blockMsg);
+        return;
+      }
       if (err?.response?.status === 409) {
         const errorData = err.response.data;
         showStatusPopup({
