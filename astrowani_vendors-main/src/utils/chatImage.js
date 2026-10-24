@@ -16,6 +16,7 @@
 //   server's auto-orient therefore agree about which way up the photo is — the
 //   single most common source of "it looked right before I sent it".
 // ─────────────────────────────────────────────────────────────────────────────
+import { Platform, PermissionsAndroid } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
@@ -41,7 +42,33 @@ const PICKER_OPTIONS = {
  * interrupting a paid consultation for. `error` is returned separately for the one
  * case worth a word to the user.
  */
+/**
+ * Android only. react-native-image-picker's own documentation is explicit about this:
+ * an app whose manifest declares CAMERA must request it itself, because the OS then
+ * treats the picker's implicit camera intent as a permission-protected action. Ours
+ * declares it (video calls need it), so without this `launchCamera` comes straight
+ * back with nothing and the camera never opens -- reported 2026-10-24.
+ *
+ * Returns false ONLY on an explicit refusal. A thrown bridge call proceeds, because
+ * the picker reports a genuine denial itself and refusing to even try on a misfiring
+ * probe is the worse failure.
+ */
+async function ensureCameraPermission() {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const already = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+    if (already) return true;
+    const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+    return res !== PermissionsAndroid.RESULTS.DENIED && res !== PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
+  } catch (e) {
+    return true;
+  }
+}
+
 export async function pickChatImage({ fromCamera } = {}) {
+  if (fromCamera && !(await ensureCameraPermission())) {
+    return { error: 'permission' };
+  }
   const launch = fromCamera ? launchCamera : launchImageLibrary;
   const response = await new Promise((resolve) => {
     try {

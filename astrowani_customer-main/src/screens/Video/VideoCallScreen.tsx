@@ -37,6 +37,7 @@ import SessionIntroBanner from '../../components/SessionIntroBanner';
 import {LanguageContext} from '../../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from '../../utils/callRecording';
 import {createIceRecovery} from '../../utils/iceRecovery';
+import {createRemoteVideoWatchdog} from '../../utils/remoteVideoWatchdog';
 import {joinSessionWithRetry} from '../../utils/sessionRoom';
 import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
@@ -83,6 +84,11 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const [ringCountdown, setRingCountdown] = useState(30);
   const [localStreamURL, setLocalStreamURL] = useState<string | null>(null);
   const [remoteStreamURL, setRemoteStreamURL] = useState<string | null>(null);
+  // Bumped by the remote-video watchdog. Changing an RTCView's key is what forces a
+  // fresh renderer underneath it; see utils/remoteVideoWatchdog.js for why that is
+  // the recovery for a picture that has gone black while the call is still alive.
+  const [remoteViewEpoch, setRemoteViewEpoch] = useState(0);
+  const remoteWatchdogRef = useRef<any>(null);
   // Disabling a video track sends no signal of its own, so without this the
   // remote view just holds its last frame and looks like a frozen call.
   const [remoteVideoPaused, setRemoteVideoPaused] = useState(false);
@@ -166,6 +172,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const cleanupWebRTC = useCallback(() => {
     if (sessionJoinRef.current) { sessionJoinRef.current.stop(); sessionJoinRef.current = null; }
     if (watchdogRef.current) { watchdogRef.current.stop(); watchdogRef.current = null; }
+    if (remoteWatchdogRef.current) { remoteWatchdogRef.current.stop(); remoteWatchdogRef.current = null; }
     if (iceRecoveryRef.current) {
       iceRecoveryRef.current.dispose();
       iceRecoveryRef.current = null;
@@ -399,6 +406,14 @@ const VideoCallScreen = ({route, navigation}: any) => {
             stopRipple();
             stopRingCountdown();
             startCallTimer();
+            if (!remoteWatchdogRef.current) {
+              remoteWatchdogRef.current = createRemoteVideoWatchdog({
+                label: 'Customer/Video',
+                getPeer: () => pcRef.current,
+                onStalled: () => setRemoteViewEpoch((n) => n + 1),
+              });
+              remoteWatchdogRef.current.start();
+            }
           }
         } else {
           // 'failed' no longer ends the call outright. It is the state WebRTC is
@@ -621,7 +636,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
 
       {/* Remote video — full screen when in_call */}
       {remoteStreamURL && isActive && !remoteVideoPaused && (
-        <RTCView streamURL={remoteStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" zOrder={0} />
+        <RTCView key={`remote-${remoteViewEpoch}`} streamURL={remoteStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" zOrder={0} />
       )}
 
       {/* The peer turned their camera off. Covering the RTCView rather than leaving

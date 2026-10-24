@@ -456,7 +456,19 @@ const Login = ({navigation, route}) => {
           (documented iOS trap, see CLAUDE.md subsystem BG). Confirmed live via Appetize
           (2026-09-22): this, not contentStyle, is what was leaving the strip above the
           home indicator on Login/VerifyOtp. */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
+      {/* bounces={false}: the guide is absolutely positioned against the SCREEN (see the
+          comment where he is rendered), so he does not move with the content. iOS
+          rubber-band scrolling was therefore sliding the wordmark and the number field
+          underneath him -- reported from TestFlight 2026-10-24, and visible as the
+          avatar overlapping the field halfway through a drag. The content fits the
+          screen; the bounce was the only thing moving it. */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContainer}
+        bounces={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never"
+        keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Image
             source={require('../../assets/images/logo2.jpeg')}
@@ -896,7 +908,12 @@ const styles = StyleSheet.create({
 
   main: {
     flex: 1,
-    backgroundColor: COLORS.AstroMaroon,
+    // White, NOT maroon. This is what shows through wherever the white sheet does not
+    // reach -- on an iPhone that is the home-indicator strip, which read as a dark band
+    // glued to the bottom of the screen (reported from TestFlight, 2026-10-24). The brown
+    // that the top of the screen needs is painted by `header` below, which is the only
+    // part that actually wants it.
+    backgroundColor: 'white',
   },
   langPill: {
     position: 'absolute',
@@ -934,6 +951,7 @@ const styles = StyleSheet.create({
   // moves only the logo and the wordmark inside the brown.
   header: {
     alignItems: 'center',
+    backgroundColor: COLORS.AstroMaroon,
     paddingTop: verticalScale(88),
     paddingBottom: verticalScale(22),
   },

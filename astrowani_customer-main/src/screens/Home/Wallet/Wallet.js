@@ -466,9 +466,9 @@ const Wallet = ({navigation, route}) => {
             <Text style={styles.billAmount}>₹{Number(amount || 0) + currentBonus}</Text>
           </View>
         )}
-        {/* Slide, not tap — this opens Razorpay and takes real money. A drag is
-            much harder to trigger by accident than a button under a thumb, and it
-            matches the confirm gesture used on the paid astro reports. */}
+        {/* A button, not a slide (owner, 2026-10-24). SwipeToConfirm keeps its name
+            and its props but now renders a plain button -- see the file header for why
+            the accidental-tap argument that justified the drag no longer applies. */}
         <View style={styles.swipeWrap}>
           <SwipeToConfirm
             label={t('wallet.slideToPay')}

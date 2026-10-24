@@ -44,19 +44,48 @@ async function syncTokenWithBackend(token) {
   }
 }
 
-export const getFCMToken = async () => {
+/**
+ * iOS ONLY, and it is what makes push work there at all. On iOS an FCM token cannot
+ * exist until APNs has handed the device its own token, which arrives asynchronously
+ * after the permission dialog is answered. `getToken()` called before then throws,
+ * and this function used to catch that and give up -- leaving a phone that had
+ * granted notifications and simply never told the backend a token existed. Same fix,
+ * same reason, as the customer app's utils/PushNotification.js (2026-10-24).
+ */
+async function ensureRegisteredForRemoteMessages() {
+  if (Platform.OS !== 'ios') return;
+  try {
+    if (!messaging().isDeviceRegisteredForRemoteMessages) {
+      await messaging().registerDeviceForRemoteMessages();
+    }
+  } catch (e) {
+    console.log('registerDeviceForRemoteMessages failed:', e?.message);
+  }
+}
+
+const TOKEN_RETRY_DELAYS_MS = [0, 1500, 4000, 10000, 15000];
+
+export const getFCMToken = async (attempt = 0) => {
   try {
     let fcmToken = await AsyncStorage.getItem('fcmToken');
     if (!fcmToken) {
+      await ensureRegisteredForRemoteMessages();
       fcmToken = await messaging().getToken();
       if (fcmToken) {
         await AsyncStorage.setItem('fcmToken', fcmToken);
       }
     }
+    if (!fcmToken) throw new Error('empty token');
     console.log('FCM Token:', fcmToken);
     await syncTokenWithBackend(fcmToken);
     return fcmToken;
   } catch (error) {
+    const next = attempt + 1;
+    if (next < TOKEN_RETRY_DELAYS_MS.length) {
+      console.log(`FCM token not ready (${error?.message}) — retry ${next}`);
+      setTimeout(() => { getFCMToken(next).catch(() => {}); }, TOKEN_RETRY_DELAYS_MS[next]);
+      return null;
+    }
     console.log('Error getting FCM token:', error);
   }
 };

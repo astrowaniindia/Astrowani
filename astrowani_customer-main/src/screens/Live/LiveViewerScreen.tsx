@@ -4,6 +4,7 @@ import {
   Text,
   View,
   TouchableOpacity,
+  Keyboard,
   TextInput,
   FlatList,
   Image,
@@ -182,7 +183,17 @@ const LiveViewerScreen = ({route, navigation}: any) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      // Belt and braces with the app-wide handler in App.js. This is the screen the
+      // stuck keyboard was actually reported on (2026-10-24): tapping the stream did
+      // nothing because the video fills the screen and nothing above it was
+      // dismissing. Bubbling phase, so the comment box, the send button and the
+      // report/close controls still claim their own taps first.
+      onStartShouldSetResponder={() => {
+        Keyboard.dismiss();
+        return false;
+      }}>
       <StatusBar barStyle="light-content" />
       {remoteStreamURL ? (
         <RTCView streamURL={remoteStreamURL} style={StyleSheet.absoluteFillObject} objectFit="cover" zOrder={0} />

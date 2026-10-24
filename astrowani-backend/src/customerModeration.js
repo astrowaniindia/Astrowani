@@ -187,12 +187,29 @@ async function isBlockedByCustomer(customerId, astrologerId) {
  * Both reads run concurrently because this is on the hot path, and both fail open.
  */
 async function isContactBlocked(astrologerId, customerId) {
-  if (!astrologerId || !customerId) return false;
+  const { blocked } = await describeContactBlock(astrologerId, customerId);
+  return blocked;
+}
+
+/**
+ * The same question, but it also says WHICH SIDE set the block.
+ *
+ * The refusal a customer sees is deliberately neutral -- "not accepting
+ * consultations at the moment" -- because naming the astrologer who blocked them
+ * invites retaliation. That reasoning does NOT apply to a block the customer set
+ * themselves: hiding their own action from them is not discretion, it is the
+ * "I tried to call and was not told why" complaint from the 2026-10-24 TestFlight
+ * round. So `byYou` is safe to disclose and nothing else is.
+ *
+ * Both reads run concurrently because this is on the hot path, and both fail open.
+ */
+async function describeContactBlock(astrologerId, customerId) {
+  if (!astrologerId || !customerId) return { blocked: false, byYou: false };
   const [byAstrologer, byCustomer] = await Promise.all([
     isBlocked(astrologerId, customerId),
     isBlockedByCustomer(customerId, astrologerId),
   ]);
-  return byAstrologer || byCustomer;
+  return { blocked: byAstrologer || byCustomer, byYou: byCustomer };
 }
 
 /** Block an astrologer. Idempotent via UNIQUE(customer_id, astrologer_id). */
@@ -257,6 +274,7 @@ module.exports = {
   reportCustomer,
   isBlockedByCustomer,
   isContactBlocked,
+  describeContactBlock,
   blockAstrologer,
   unblockAstrologer,
   listBlockedAstrologers,
