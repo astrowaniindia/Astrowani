@@ -8,7 +8,6 @@ import {
   StatusBar,
   TextInput,
   TouchableOpacity,
-  Keyboard,
   Alert,
   ActivityIndicator,
   ScrollView,
@@ -19,12 +18,12 @@ import {
 import {LEGAL_LINKS} from '../../config/legal';
 import {COLORS} from '../../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
+import FeaturedAstrologerRow from '../../components/FeaturedAstrologerRow';
 import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import {apiFailureReason} from '../../utils/apiFailureReason';
-import GuideAvatar from '../../components/GuideAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sanitizePhoneInput } from '../../utils/phoneInput';
 import Svg, { Path } from 'react-native-svg';
@@ -70,10 +69,6 @@ const Login = ({navigation, route}) => {
       topicAnim.setValue(0);
     }
   };
-  // The guide is the one thing on the free-call screen that can be given up when the
-  // keyboard takes half the window. Without this he keeps his share of the space and
-  // squeezes the field and the button down behind the keys.
-  const [keyboardUp, setKeyboardUp] = useState(false);
   // Which of the two login screens this is, stamped on EVERY event the shared submit
   // path emits. Without it the two variants are indistinguishable past the view event,
   // and the one question worth asking -- does the free-call screen convert better than
@@ -84,30 +79,12 @@ const Login = ({navigation, route}) => {
   const [phoneNumber, setPhoneNumber] = useState(sanitizePhoneInput(route?.params?.phoneNumber || ''));
   const [loading, SetLoading] = useState(false);
   const phoneRef = useRef(null);
-  // Admin-editable via the dashboard's Guide Avatar page (GET /api/guide-avatar/config) —
-  // null while loading, so the hint stays hidden rather than flashing the bundled
-  // default text before the real config arrives.
-  const [guideAvatarConfig, setGuideAvatarConfig] = useState(null);
 
   // Top of the login funnel. Everything downstream (submit -> otp sent -> verified ->
   // completed) is a percentage of this, so without it a drop-off has no denominator.
   useEffect(() => {
     captureEvent('login_screen_viewed', { variant: analyticsVariant });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    Instance.get('/api/guide-avatar/config')
-      .then((res) => { if (!cancelled) setGuideAvatarConfig(res.data); })
-      .catch(() => {});
-    return () => { cancelled = true; };
   }, []);
 
   const validateFields = () => {
@@ -329,17 +306,14 @@ const Login = ({navigation, route}) => {
             </View>
           </View>
 
-          {/* The guide holds the middle of the screen open and bleeds off the right
-              edge, so he reads as part of the screen rather than placed on it. Hidden
-              by the same admin switch that hides him on the standard login. */}
+          {/* The guide avatar stood here until 2026-10-26; a row of real astrologer
+              faces takes his place (owner). THE ZONE ITSELF MUST NOT BE DELETED -- it
+              is the slack in this layout, the one thing that gives up its height when
+              the keyboard opens, and without it the field and the button get pushed off
+              the bottom on a short display. The row is centred inside it and shrinks
+              out of the way rather than fighting for space. */}
           <View style={styles.fcGuideZone} pointerEvents="none">
-            {!keyboardUp && guideAvatarConfig?.login?.enabled !== false && (
-              <Image
-                source={require('../../assets/images/guideAvatarLogin.png')}
-                style={styles.fcGuide}
-                resizeMode="contain"
-              />
-            )}
+            <FeaturedAstrologerRow />
           </View>
 
           <View style={[styles.fcForm, { paddingBottom: insets.bottom + verticalScale(20) }]}>
@@ -480,28 +454,26 @@ const Login = ({navigation, route}) => {
               thing better, so the generic one goes. */}
           <Text style={styles.title}>Astrowani</Text>
 
-          {/* THE PILL BELONGS TO THE HEADER, NOT TO THE WHITE SHEET. As a child of the
-              sheet it was inside a flex column that the keyboard shrinks, so it was
-              squeezed away whenever the keyboard opened -- flexShrink: 0 was not enough,
-              because the sheet itself ends up shorter than its own contents. The brown
-              header is a fixed block that the keyboard never resizes. Absolutely
-              positioned so it adds no height and the seam stays exactly where it was,
-              and raised above the sheet, which is a later sibling and would otherwise
-              paint over it (elevation is the one that matters on Android). */}
-          <View style={styles.taglineDock} pointerEvents="box-none">
-            <View style={styles.taglineContainer}>
-              <Text style={styles.tagline}>{t('login.discoverPath')}</Text>
-            </View>
-          </View>
         </View>
 
         <View style={styles.loginContainer}>
 
-          {/* The form sits at the BOTTOM of the sheet and the guide holds the middle
-              (owner, 2026-10-20). This spacer is what pushes it down; the guide is
-              absolutely positioned against the screen bottom, so its offset below has
-              to be read together with this. */}
-          <View style={styles.formSpacer} />
+          {/* The pill straddles the seam, as it originally did (restored 2026-10-26).
+              It was tried as an absolutely-positioned child of the brown header instead,
+              and that is NOT a working alternative here: an Android ViewGroup clips its
+              children to its own bounds, so the half hanging below the seam was sliced
+              off, and neither overflow: visible nor a higher elevation brought it back.
+              As a normal first child of the sheet with a negative top margin it needs no
+              z-order trickery at all -- it is simply drawn by the view that owns the
+              white background.
+              The keyboard squeeze this used to suffer is handled by `flexShrink: 0`
+              below together with the sheet's `overflow: visible`.
+
+              The spacer that used to push the form to the bottom went with the guide
+              (owner, 2026-10-26); it only existed to hold the middle open for him. */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.tagline}>{t('login.discoverPath')}</Text>
+          </View>
 
           <View style={styles.inputContainer}>
           {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
@@ -597,55 +569,17 @@ const Login = ({navigation, route}) => {
 
           {/* No separate Register link: this screen signs up a new number itself. The
               empty footer that used to sit here is gone: it carried `marginTop: 'auto'`,
-              so it fought `formSpacer` for the slack and the two split it, leaving the
-              field and the button floating short of the bottom. The guide no longer needs
-              it to reserve space either -- he is positioned absolutely now. */}
+              which fought the layout for slack and left the field and the button
+              floating short of the bottom. */}
         </View>
 
       </ScrollView>
 
-      {/* OUTSIDE the sheet, over the whole screen. He was moved inside it while trying
-          to draw him behind the form; that idea was dropped, and leaving him in there
-          left an absolutely-positioned child with its own zIndex inside the sheet's
-          flex column, mounting and unmounting on every keyboard event. Out here he
-          cannot affect how the form's own children are laid out or drawn.
-          `topOffset` is measured from the top of the SCREEN. */}
-      {guideAvatarConfig?.login?.enabled !== false && (
-        <GuideAvatar
-          storageKey="login"
-          // Two lines. The second is appended rather than folded into the first, so it
-          // survives whatever the admin's Guide Avatar page sets as the greeting.
-          message={`${(language === 'Hindi' ? guideAvatarConfig?.login?.textHi : guideAvatarConfig?.login?.textEn) || t('login.guideHint')}
-${t('login.guideHintLine2')}`}
-          alwaysShow
-          // STACKED, not side by side (owner, 2026-10-20): the bubble sits above the
-          // guide and he stands centred under it. The row layout hung the bubble off
-          // his shoulder, which read as a label pinned next to him. The two offsets
-          // below were tuned for that row and have to be zero here, or the bubble and
-          // the avatar slide apart.
-          layout="stack"
-          position="center"
-          // He is hidden while the keyboard is up (the component's default). Keeping him
-          // on screen was tried and reverted: the keyboard halves the window, so he and
-          // the bubble end up over the field whatever they are anchored to, and drawing
-          // him UNDER the form meant dropping the bubble's shadow, which stopped it
-          // reading as a card at all.
-          // Dropped so the guide stands just above the number field, with the bubble
-          // over his head, instead of floating in the middle of the empty sheet.
-          // Read together with `formSpacer`, which is what puts the field down there.
-          topOffset={verticalScale(302)}
-          avatarSize={scale(150)}
-          offsetX={0}
-          avatarOffsetY={0}
-          boxOffsetY={0}
-          bounce={false}
-          onPress={() => {
-            // "Already have an account? Sign in here": the number box is right here.
-            captureEvent('guide_avatar_tapped', { screen: 'login' });
-            phoneRef.current?.focus();
-          }}
-        />
-      )}
+      {/* The guide avatar and his speech bubble were removed from this screen
+          (owner, 2026-10-26) -- it goes back to the plain logo, tagline, number and
+          button it started as. Only the look changed: this is still the one screen
+          that both signs in and signs up, so a new number is still registered rather
+          than dead-ended, and the keyboard/clipping fixes stay as they are. */}
     </KeyboardAvoidingView>
   );
 };
@@ -799,18 +733,13 @@ const styles = StyleSheet.create({
   },
   // No minHeight on purpose: this is the slack in the layout. It gives up its height
   // first when the keyboard opens or the display is short, so the field and the button
-  // never get pushed off the bottom.
+  // never get pushed off the bottom. Now empty (the guide was removed 2026-10-26) --
+  // it still has to exist for that reason alone.
   fcGuideZone: {
     flex: 1,
     minHeight: 0,
-    justifyContent: 'flex-end',
-    alignItems: 'flex-end',
-  },
-  fcGuide: {
-    flex: 1,
-    width: scale(126),
-    marginRight: scale(8),
-    marginBottom: -verticalScale(8),
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // THE BOTTOM PADDING IS NOT OPTIONAL. This screen draws edge to edge, so the window
   // extends BEHIND the Android navigation bar, and the scroll content ends exactly at
@@ -1003,26 +932,20 @@ const styles = StyleSheet.create({
   // to shrink every child -- which is how first the pill and then the number field were
   // squeezed out of existence. This collapses to nothing first; past that the ScrollView
   // scrolls, which is the correct behaviour, instead of the form quietly disappearing.
-  formSpacer: {
-    flex: 1,
-    minHeight: 0,
-  },
   // Overhangs the bottom of the header by half its own height, so it still straddles
   // the seam exactly as before. `bottom` is the knob that moves it across the seam.
-  taglineDock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -verticalScale(18),
-    alignItems: 'center',
-    zIndex: 10,
-    elevation: 6,
-  },
   taglineContainer: {
+    alignSelf: 'center',
     backgroundColor: COLORS.AstroMaroon,
     paddingHorizontal: moderateScale(20),
     paddingVertical: verticalScale(10),
     borderRadius: moderateScale(25),
+    // Lifts the pill up over the seam so it sits half on the brown, half on the white.
+    marginTop: -verticalScale(48),
+    marginBottom: verticalScale(18),
+    // The keyboard shrinks this sheet; without this the pill is the first thing squeezed
+    // out of it. This is why it can live here rather than in the header.
+    flexShrink: 0,
     elevation: 6,
   },
   tagline: {
