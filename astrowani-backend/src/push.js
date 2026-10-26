@@ -288,7 +288,31 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
       notification: (alertTitle || alertBody) ? { title: alertTitle, body: alertBody } : undefined,
       data: stringData,
       android: { priority: 'high' },
-      apns: { payload: { aps: { sound: 'default' } } },
+      // ── TELL APNs WHAT THIS IS ────────────────────────────────────────────
+      // We used to send no APNs headers at all, leaving Apple to infer the push
+      // type and priority. Apple is explicit that it may DELAY OR DROP a push it
+      // has not been told is time-sensitive, and that is the shape of what was
+      // reported on 2026-10-26: the first notification after the app had been
+      // force-quit never appeared, the second one sent a minute later did, with
+      // the SAME device token both times and FCM reporting success for both.
+      //
+      // 'apns-push-type' is REQUIRED by APNs on iOS 13+; a push whose type does
+      // not match its contents is rejected outright. So the two cases are split
+      // rather than hardcoded:
+      //   alert      something to show. priority 10 = deliver immediately.
+      //   background a silent data-only push (sessionManager's session_ended).
+      //              Apple REFUSES these at priority 10 -- 5 is the only legal
+      //              value -- and they need content-available to be delivered at
+      //              all, which is why this is not one shared header block.
+      apns: (alertTitle || alertBody)
+        ? {
+          headers: { 'apns-push-type': 'alert', 'apns-priority': '10' },
+          payload: { aps: { sound: 'default' } },
+        }
+        : {
+          headers: { 'apns-push-type': 'background', 'apns-priority': '5' },
+          payload: { aps: { 'content-available': 1 } },
+        },
     });
 
     // Deliberately NOT awaited: the caller is usually mid-request (an incoming call, a
