@@ -53,7 +53,19 @@ const TRUST_BADGES = [
   { key: 'gpay', kind: 'icon', name: 'google-pay', color: '#4285F4' },
   { key: 'phonepe', kind: 'image', source: require('../../../assets/images/phonepe.png') },
   { key: 'paypal', kind: 'icon', name: 'cc-paypal', color: '#003087' },
-  { key: 'upi', kind: 'text', label: 'UPI', color: COLORS.AstroMaroon },
+  // The official NPCI mark (owner-supplied, 2026-10-26), replacing the plain word
+  // "UPI" that stood in while this project had no UPI artwork at all.
+  //
+  // The MARK ONLY -- the supplied lockup carries "UNIFIED PAYMENTS INTERFACE" on a
+  // second line, and that line is dropped deliberately. Same reasoning as PhonePe
+  // above: inside a 48dp circle it is sub-pixel, so it renders as a grey smear that
+  // makes the logo look damaged rather than detailed. Cut at the blank band between
+  // the two (source rows 253-288), so nothing of the mark itself is clipped.
+  //
+  // It is also the one badge that is WIDE -- 3.79:1 after trimming, against the
+  // square tiles Paytm and PhonePe use. At the shared 22x22 it would come out 22
+  // wide and 6 tall, so it gets its own style below. Nothing else needs one.
+  { key: 'upi', kind: 'image', wide: true, source: require('../../../assets/images/upi.png') },
   // Trailing "+ more" -- Razorpay's own checkout sheet supports netbanking,
   // wallets and every major bank beyond what fits in six small circles here;
   // this says so honestly without naming a specific count we cannot guarantee.
@@ -402,7 +414,11 @@ const Wallet = ({navigation, route}) => {
                 {b.kind === 'icon' ? (
                   <FontAwesome5 name={b.name} brand size={moderateScale(24)} color={b.color} />
                 ) : b.kind === 'image' ? (
-                  <Image source={b.source} style={styles.trustBadgeImage} resizeMode="contain" />
+                  <Image
+                    source={b.source}
+                    style={b.wide ? styles.trustBadgeImageWide : styles.trustBadgeImage}
+                    resizeMode="contain"
+                  />
                 ) : b.kind === 'more' ? (
                   <>
                     <Text style={styles.trustMorePlus}>+</Text>
@@ -657,6 +673,13 @@ const styles = StyleSheet.create({
   trustBadgeImage: {
     width: moderateScale(22),
     height: moderateScale(22),
+  },
+  // For a wordmark rather than a tile. 34dp wide leaves a 7dp margin each side of
+  // the 48dp circle, and at 3x that is 102 real pixels across -- enough for the
+  // "UPI" letters to read properly instead of closing up into a block.
+  trustBadgeImageWide: {
+    width: moderateScale(34),
+    height: moderateScale(9),
   },
   trustBadge: {
     width: scale(48),
