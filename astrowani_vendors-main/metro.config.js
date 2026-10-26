@@ -8,6 +8,18 @@ const {withSentryConfig} = require('@sentry/react-native/metro');
  * @type {import('metro-config').MetroConfig}
  */
 const config = {
+  // THE ANDROID BUNDLE RAN OUT OF MEMORY WITHOUT THIS (2026-10-27). Metro defaults to
+  // one transform worker per CPU core, each a separate Node process with its own heap,
+  // and on this 16GB machine they collectively exhausted the free RAM part-way through
+  // the release bundle -- "WebAssembly.Instance(): Out of memory: Cannot allocate Wasm
+  // memory for new instance", which reads like a corrupt dependency rather than a
+  // memory problem. Raising NODE_OPTIONS does not help, because the ceiling is the
+  // total across workers and not any single one.
+  //
+  // The customer app hit the identical failure earlier the same day and was capped at
+  // 4; this app never got the fix, so its first OTA after that failed the same way.
+  // Four keeps the bundle reasonably fast while leaving room alongside it.
+  maxWorkers: 4,
   resolver: {
     // posthog-react-native depends on @posthog/core subpaths (e.g. @posthog/core/surveys)
     // declared via package.json "exports" — Metro doesn't resolve those by default, which
