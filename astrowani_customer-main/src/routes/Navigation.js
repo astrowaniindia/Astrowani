@@ -209,7 +209,21 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           plain white, which is what showed as a brief "white screen" during any
           loading gap (navigator mount, data fetch) instead of the brand's cream.
           Individual screens below still override it (e.g. Login/VerifyOtp -> maroon). */}
-      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ animation: 'slide_from_right', contentStyle: { backgroundColor: COLORS.AstroSoftOrange } }}>
+      {/* headerBackTitle '' + headerBackTitleVisible false, once, for every screen.
+          Without them iOS labels the back button with the PREVIOUS ROUTE'S NAME, so
+          Wallet, Settings, Chat History and My Sessions all shipped a button reading
+          "DrawerNavigator" -- an internal navigator id shown to customers. Reported
+          from TestFlight 2026-10-26. Android ignores both, so this is iOS-only in
+          effect but set globally because the next screen added would inherit the
+          same bug. */}
+      <Stack.Navigator
+        initialRouteName={initialRoute}
+        screenOptions={{
+          animation: 'slide_from_right',
+          headerBackTitle: '',
+          headerBackTitleVisible: false,
+          contentStyle: { backgroundColor: COLORS.AstroSoftOrange },
+        }}>
         <Stack.Screen options={{ headerShown: false }} name="Splash" component={Splash} />
         {/* Both are only ever an initialRoute (App.js picks one via
             CAMPAIGN_GIFT_REVEAL_ENABLED), never navigated to from elsewhere —

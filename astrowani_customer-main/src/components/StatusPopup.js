@@ -47,6 +47,7 @@ const BLOCK_REASON_BY_VARIANT = {
   busy: 'astrologer_busy',
   insufficient: 'low_balance',
   unavailable: 'service_off',
+  blocked: 'blocked',
 };
 
 export const showStatusPopup = (opts) => {
@@ -74,6 +75,9 @@ const VARIANTS = {
   endCall:      { icon: 'call-end', color: '#C0392B', tint: 'rgba(192,57,43,0.12)' },
   // Soft amber, not red: a failed action is something to retry, not an alarm.
   error:        { icon: 'error-outline', color: '#D9822B', tint: 'rgba(217,130,43,0.14)' },
+  // A block is not a failure, so it does not get the amber error treatment: it is a
+  // state the customer themselves created and can undo.
+  blocked:      { icon: 'block', color: '#8c2f2f', tint: 'rgba(140,47,47,0.12)' },
   // Customer backed out of a payment. Neutral — nothing went wrong.
   cancelled:    { icon: 'cancel', color: '#7d6b64', tint: 'rgba(125,107,100,0.14)' },
   // A review that can't be posted yet.

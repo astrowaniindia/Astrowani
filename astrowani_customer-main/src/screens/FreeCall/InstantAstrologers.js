@@ -13,6 +13,7 @@
 // long to ring, how many astrologers one customer may try. This screen renders answers.
 
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { markFreeCallHandled } from '../../components/FreeCallIncoming';
 import {
   ActivityIndicator, FlatList, Image, RefreshControl, StatusBar,
   StyleSheet, Text, TouchableOpacity, View,
@@ -244,6 +245,11 @@ export default function InstantAstrologers({ navigation, route }) {
         // sheet and the rating prompt on top of a list of "Call free" buttons the
         // customer can no longer use. Replacing pops it, so the call ends onto whatever
         // they were on before (Home), and there is no route back to a spent offer.
+        // The customer placed this call themselves, so FreeCallIncomingHost never saw
+        // it. Without this, its foreground recovery check finds the live session and
+        // raises "Astrologer is calling you" over the call already in progress --
+        // reported from TestFlight after switching to WhatsApp and back.
+        markFreeCallHandled(sessionId || res.sessionId);
         navigation.replace('VoiceCallScreen', {
           sessionId: sessionId || res.sessionId,
           recieverName: astro.name,

@@ -235,6 +235,17 @@ export default function ChatModerationSheet({ visible, astrologer, onClose, onBl
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  // THE SHEET MUST CONTAIN ITSELF. `maxHeight` alone bounded the CARD but not its
+  // children: the reasons list sized itself to its content, pushed the action row and
+  // "Block without reporting" past the bottom of the card, and -- with overflow
+  // visible -- they drew on top of the chat composer behind the sheet. Reported from
+  // TestFlight 2026-10-26.
+  //
+  // Three things together fix it, and all three are needed: the card is a flex column
+  // bounded by maxHeight, the scroll area is allowed to SHRINK (flexShrink on
+  // reasonScroll below) so the fixed rows underneath always get their space first, and
+  // overflow is clipped so nothing can paint outside the card even if a future child
+  // refuses to shrink.
   sheet: {
     backgroundColor: '#fff',
     borderTopLeftRadius: moderateScale(18),
@@ -242,6 +253,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(18),
     paddingBottom: verticalScale(28),
     maxHeight: '85%',
+    overflow: 'hidden',
   },
   grabber: {
     width: scale(44), height: verticalScale(4), borderRadius: 4,
@@ -252,7 +264,8 @@ const styles = StyleSheet.create({
     color: COLORS.AstroMaroon, marginTop: verticalScale(12),
   },
   subtitle: { fontSize: moderateScale(12), color: '#7b6a60', marginTop: verticalScale(3) },
-  reasonScroll: { marginTop: verticalScale(12) },
+  // flexShrink: the ONE thing that lets the buttons below keep their space.
+  reasonScroll: { marginTop: verticalScale(12), flexShrink: 1 },
   reasonRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: verticalScale(10), paddingHorizontal: scale(10),
@@ -273,7 +286,7 @@ const styles = StyleSheet.create({
   },
   blockLabel: { fontSize: moderateScale(13), fontFamily: 'Lato-Bold', fontWeight: 'bold', color: '#3b2a20' },
   blockHint: { fontSize: moderateScale(11), color: '#7b6a60', marginTop: verticalScale(2) },
-  actions: { flexDirection: 'row', marginTop: verticalScale(14) },
+  actions: { flexDirection: 'row', marginTop: verticalScale(14), flexShrink: 0 },
   btn: {
     flex: 1, paddingVertical: verticalScale(12), borderRadius: moderateScale(11),
     alignItems: 'center', justifyContent: 'center',
@@ -285,7 +298,7 @@ const styles = StyleSheet.create({
   submitText: { color: '#fff', fontFamily: 'Lato-Bold', fontWeight: 'bold', fontSize: moderateScale(14) },
   justBlock: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: verticalScale(12), paddingVertical: verticalScale(6),
+    marginTop: verticalScale(12), paddingVertical: verticalScale(6), flexShrink: 0,
   },
   justBlockText: {
     marginLeft: scale(6), color: '#b03a2e', fontFamily: 'Lato-Bold', fontWeight: 'bold',

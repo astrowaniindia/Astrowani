@@ -536,6 +536,18 @@ const VendorChatSession = ({ route, navigation }) => {
       // 409 NOT_CONNECTED is the service gate, not a network failure — "check your internet"
       // is the wrong thing to say when it was the CUSTOMER's connection that dropped.
       const code = e?.response?.data?.code;
+      // BLOCKED is new (2026-10-26) and is its own case, not a send failure: the
+      // server now refuses messages in both directions once either side has blocked
+      // the other. Saying "could not send, check your connection" here would send the
+      // astrologer chasing a network problem that does not exist.
+      if (code === 'BLOCKED') {
+        showStatusPopup({
+          variant: 'error',
+          title: t('call.blockedTitle'),
+          message: e?.response?.data?.message || t('call.blockedMsg'),
+        });
+        return;
+      }
       const gated = code === 'NOT_CONNECTED' || code === 'SESSION_ENDED';
       showStatusPopup({
         variant: 'error',

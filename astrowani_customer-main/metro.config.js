@@ -8,6 +8,15 @@ const {withSentryConfig} = require('@sentry/react-native/metro');
  * @type {import('metro-config').MetroConfig}
  */
 const config = {
+  // RELEASE BUILDS RAN OUT OF MEMORY WITHOUT THIS (2026-10-26). Metro defaults to one
+  // transform worker per CPU core, and each is a separate Node process with its own
+  // heap -- on this 16GB machine that collectively exhausted the free RAM part-way
+  // through `createBundleReleaseJsAndAssets` and the bundle died with
+  // "FATAL ERROR: ... JavaScript heap out of memory" (exit 134). Raising NODE_OPTIONS
+  // alone did NOT fix it, because the ceiling was the total across workers, not any
+  // single one. Four is enough to keep the bundle reasonably fast while leaving room
+  // for Gradle's own JVM alongside it.
+  maxWorkers: 4,
   resolver: {
     // posthog-react-native depends on @posthog/core subpaths (e.g. @posthog/core/surveys)
     // declared via package.json "exports" — Metro doesn't resolve those by default, which

@@ -323,7 +323,13 @@ const VerifyOtp = ({navigation, route}) => {
 
       {/* style={{flex:1}} required on iOS, not just contentContainerStyle -- see
           CLAUDE.md subsystem BG and Login.js's identical fix. */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContainer}
+        bounces={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never"
+        keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
@@ -414,7 +420,11 @@ export default VerifyOtp;
 const styles = StyleSheet.create({
   main: {
     flex: 1,
-    backgroundColor: COLORS.AstroMaroon,
+    // White, NOT maroon -- same fix as Login.js. This is what shows wherever the white
+    // sheet does not reach, which on an iPhone is the home-indicator strip; it read as
+    // a dark band glued to the bottom (reported again on the OTP screen, 2026-10-26).
+    // The brown the top needs is painted by `header` instead.
+    backgroundColor: 'white',
   },
   scrollView: {
     flex: 1,
@@ -424,6 +434,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
+    backgroundColor: COLORS.AstroMaroon,
     paddingTop: verticalScale(60),
     paddingBottom: verticalScale(20),
     paddingHorizontal: scale(20),
