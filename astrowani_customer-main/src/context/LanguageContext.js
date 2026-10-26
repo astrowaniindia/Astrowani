@@ -257,8 +257,10 @@ const translations = {
     // The free-call login (Login.js `fromCampaign`), shown only to someone who just
     // accepted the intro call on the gift reveal. {{minutes}} comes from
     // FREE_CALL_MINUTES there, which has to track app_settings.free_call_offer.
-    'login.promiseLine1': '{{minutes}} minutes.',
-    'login.promiseLine2': 'Free.',
+    // Two lines on purpose: line 1 is drawn in gold, line 2 in white. No full stops
+    // (owner, 2026-10-26) -- it is a headline, not a sentence.
+    'login.promiseLine1': '{{minutes}} Minutes Call',
+    'login.promiseLine2': 'Free with Astrologer',
     'login.promiseSub': 'Ask a real astrologer anything. The best astrologers team is here, hand picked by us.',
     'login.topicLove': 'Love',
     'login.topicCareer': 'Career',
@@ -1909,8 +1911,8 @@ const translations = {
     'login.termsShort': 'शर्तें',
     'login.privacyShort': 'प्राइवेसी',
     'login.and': ' और ',
-    'login.promiseLine1': '{{minutes}} मिनट की बात.',
-    'login.promiseLine2': 'बिल्कुल फ्री.',
+    'login.promiseLine1': '{{minutes}} मिनट की कॉल',
+    'login.promiseLine2': 'ज्योतिषी से बिल्कुल फ्री',
     'login.promiseSub': 'असली ज्योतिषी से कुछ भी पूछिए। हमारे चुने हुए सर्वश्रेष्ठ ज्योतिषियों की टीम यहाँ है।',
     'login.topicLove': 'प्यार',
     'login.topicCareer': 'करियर',

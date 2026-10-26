@@ -295,8 +295,26 @@ const Login = ({navigation, route}) => {
                   pushes the number field and the CTA off the bottom with no way to
                   reach them, and the free call cannot be claimed at all. The multipliers
                   are low because this text is already large by design. */}
-              <Text style={styles.fcHeadline} maxFontSizeMultiplier={1.15}>{t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}</Text>
-              <Text style={styles.fcHeadlineAccent} maxFontSizeMultiplier={1.15}>{t('login.promiseLine2')}</Text>
+              {/* ONE LINE EACH, shrunk only as far as it has to be (owner, 2026-10-26).
+                  A fixed smaller size was the obvious fix and the wrong one: the right
+                  size differs by line, by language (the Hindi is longer) and by screen
+                  width, so anything hardcoded either still wraps somewhere or is
+                  needlessly small everywhere. This keeps 42 as the ceiling and lets the
+                  longer line come down to meet the width. */}
+              <Text
+                style={styles.fcHeadline}
+                maxFontSizeMultiplier={1.15}
+                numberOfLines={1}
+                adjustsFontSizeToFit>
+                {t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}
+              </Text>
+              <Text
+                style={styles.fcHeadlineAccent}
+                maxFontSizeMultiplier={1.15}
+                numberOfLines={1}
+                adjustsFontSizeToFit>
+                {t('login.promiseLine2')}
+              </Text>
               <Text style={styles.fcSub} maxFontSizeMultiplier={1.2}>{t('login.promiseSub')}</Text>
             </Pressable>
             <View style={styles.fcChipsWrap}>
@@ -548,6 +566,15 @@ const Login = ({navigation, route}) => {
           <View style={styles.taglineContainer}>
             <Text style={styles.tagline} maxFontSizeMultiplier={1.3}>{t('login.discoverPath')}</Text>
           </View>
+
+          {/* A matching spacer ABOVE the banner (owner, 2026-10-26). With slack only
+              below, the banner and faces sat hard against the pill; with equal flex on
+              both sides they centre in whatever room is left between the pill and the
+              form. The top one is deliberately SMALLER than the bottom one, so the
+              block sits a little above true centre rather than drifting down onto the
+              number field (owner, 2026-10-26). Both collapse to nothing when the
+              keyboard needs the space, so the form still ends up at the bottom. */}
+          <View style={styles.topSpacer} />
 
           {/* The welcome line that used to come out of the guide's speech bubble
               (owner, 2026-10-26). Same two i18n keys, so nothing new to translate and
@@ -1169,6 +1196,11 @@ const styles = StyleSheet.create({
   // to give up its height when the keyboard halves the window.
   formSpacer: {
     flex: 1,
+    minHeight: 0,
+  },
+  // Less than `formSpacer`'s 1, which is what lifts the banner and faces above centre.
+  topSpacer: {
+    flex: 0.55,
     minHeight: 0,
   },
   facesRow: {
