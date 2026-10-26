@@ -25,7 +25,7 @@ import Instance from '../../api/ApiCall';
 import { showAlert } from '../../Component/CustomAlert';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
-import {apiFailureReason} from '../../utils/apiFailureReason';
+import {apiFailureReason, isConnectivityError} from '../../utils/apiFailureReason';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sanitizePhoneInput } from '../../utils/phoneInput';
 import Svg, { Path } from 'react-native-svg';
@@ -148,8 +148,35 @@ const Login = ({navigation, route}) => {
         return;
       }
       captureEvent('signup_failed', { reason: apiFailureReason(error), via: 'login_screen', variant: analyticsVariant });
-      showAlert(t('common.error'), data?.message || t('login.somethingWrong'), 'error');
+      // Retries the WHOLE submit, not startSignup alone: by now the account may have
+      // been created by the attempt that failed on the way back, and re-running the
+      // signup send for an existing number is the wrong call to make.
+      reportOtpFailure(error, handleGetOtp);
     }
+  };
+
+  /**
+   * What a failed OTP request says. A dropped connection and a server error are not
+   * the same thing and must not read the same: "something went wrong" for the former
+   * blames the app for the user's network, and hides the only thing that helps. The
+   * single button retries, so the fix is one tap and not a re-typed phone number.
+   */
+  const reportOtpFailure = (error, retry) => {
+    if (isConnectivityError(error)) {
+      showAlert(
+        t('common.noConnectionTitle'),
+        t('common.noConnectionMsg'),
+        'error',
+        retry,
+        t('common.tryAgain'),
+      );
+      return;
+    }
+    showAlert(
+      t('common.error'),
+      error?.response?.data?.message || t('login.somethingWrong'),
+      'error',
+    );
   };
 
   const handleGetOtp = async () => {
@@ -201,7 +228,7 @@ const Login = ({navigation, route}) => {
         } else {
           console.log('Login error:', error);
           captureEvent('login_failed', { reason: apiFailureReason(error), variant: analyticsVariant });
-          showAlert(t('common.error'), data?.message || t('login.somethingWrong'), 'error');
+          reportOtpFailure(error, handleGetOtp);
         }
       } finally {
         SetLoading(false);

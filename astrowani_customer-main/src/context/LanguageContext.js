@@ -132,6 +132,12 @@ const translations = {
     'common.noCall': 'No Call',
     'common.noVideo': 'No Video',
     'common.offline': 'Offline',
+    // Shown when a request never reached the server (offline / timed out), as opposed
+    // to anything the server actually answered. Names the likely cause and offers the
+    // only action that helps, instead of the generic "something went wrong".
+    'common.noConnectionTitle': 'No internet connection',
+    'common.noConnectionMsg': "We couldn't reach Astrowani. Check your connection and try again.",
+    'common.tryAgain': 'Try again',
     'common.unavailable': 'Unavailable',
     'common.live': 'Live',
     'common.scheduled': 'Scheduled',
@@ -1786,6 +1792,9 @@ const translations = {
     'common.noCall': 'कॉल उपलब्ध नहीं',
     'common.noVideo': 'वीडियो उपलब्ध नहीं',
     'common.offline': 'ऑफ़लाइन',
+    'common.noConnectionTitle': 'इंटरनेट कनेक्शन नहीं है',
+    'common.noConnectionMsg': 'हम Astrowani से जुड़ नहीं पाए। अपना कनेक्शन जांचकर दोबारा कोशिश करें।',
+    'common.tryAgain': 'दोबारा कोशिश करें',
     'common.unavailable': 'अनुपलब्ध',
     'common.live': 'लाइव',
     'common.scheduled': 'निर्धारित',
