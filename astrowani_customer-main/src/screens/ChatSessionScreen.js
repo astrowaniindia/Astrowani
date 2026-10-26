@@ -247,10 +247,20 @@ const ChatSessionScreen = ({ route, navigation }) => {
       }
     };
 
+    // LEAVE FIRST, EXPLAIN SECOND. Navigation used to hang off the popup's onClose,
+    // which made getting out of an ended chat depend on that particular popup being
+    // the one still on screen when it closed. StatusPopup is a single root-level host,
+    // so a second popup raised at the same moment replaces the first and its onClose
+    // never runs -- and the customer is left sitting in a dead session with a composer
+    // that does nothing. Exactly what happened when blocking mid-chat (2026-10-26):
+    // the moderation sheet's own confirmation landed at the same instant as the
+    // server's session_ended, and the only way out was force-quitting the app.
+    //
+    // The popup is rendered above the navigator, so it survives the screen it was
+    // raised from and still gets read.
+    goBackOrHome();
     if (message) {
-      showStatusPopup({ variant: 'info', title: t('chatSession.sessionEnded'), message, onClose: goBackOrHome });
-    } else {
-      goBackOrHome();
+      showStatusPopup({ variant: 'info', title: t('chatSession.sessionEnded'), message });
     }
   };
 
@@ -951,6 +961,14 @@ const ChatSessionScreen = ({ route, navigation }) => {
         onBlocked={() => {
           markAstrologerBlocked(person?.userId || person?._id || person?.id);
           setBlockedByMe(true);
+          // Leave the conversation here, on this device, rather than waiting for the
+          // server's session_ended to come back round the socket. The server does end
+          // the session now (moderationRoutes.endLiveSessionBetween), but relying on
+          // that round trip is what left the customer stranded on a dead chat when the
+          // event was missed -- and this app already knows the block succeeded.
+          // endSession is guarded by hasEndedRef, so whichever arrives first wins and
+          // the other is a no-op.
+          endSession(t('blocked.chatEnded'));
         }}
       />
 
