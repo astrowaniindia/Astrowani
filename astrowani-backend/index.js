@@ -4546,11 +4546,15 @@ app.post('/api/call/initiate', async (req, res) => {
     // exactly who cut them off invites retaliation against that astrologer, which is
     // the opposite of what a block is for. isBlocked fails OPEN — see
     // src/customerModeration.js for why that direction was chosen on this path.
-    if (await customerModeration.isContactBlocked(receiverId, callerInfo.id)) {
+    const callBlock = await customerModeration.describeContactBlock(receiverId, callerInfo.id);
+    if (callBlock.blocked) {
       return res.status(403).json({
         success: false,
         blocked: true,
-        message: 'This astrologer is not accepting consultations from you at the moment.',
+        blockedByYou: callBlock.byYou,
+        message: callBlock.byYou
+          ? 'You blocked this astrologer. Unblock them to chat or call again.'
+          : 'This astrologer is not accepting consultations from you at the moment.',
       });
     }
 
@@ -4766,12 +4770,17 @@ app.post('/api/chat/check-availability', async (req, res) => {
     // Pre-check only — /api/chat/initiate re-checks and is the real gate. This exists
     // so the customer is told before a request row is written, not after.
     const requester = await resolveCustomerFromReq(req);
-    if (requester && requester.id
-        && await customerModeration.isContactBlocked(astrologerId, requester.id)) {
+    const availabilityBlock = requester && requester.id
+      ? await customerModeration.describeContactBlock(astrologerId, requester.id)
+      : { blocked: false, byYou: false };
+    if (availabilityBlock.blocked) {
       return res.status(403).json({
         success: false,
         blocked: true,
-        message: 'This astrologer is not accepting consultations from you at the moment.',
+        blockedByYou: availabilityBlock.byYou,
+        message: availabilityBlock.byYou
+          ? 'You blocked this astrologer. Unblock them to chat or call again.'
+          : 'This astrologer is not accepting consultations from you at the moment.',
       });
     }
 
@@ -4801,11 +4810,15 @@ app.post('/api/chat/initiate', async (req, res) => {
 
     // Same enforced block as the call path — a block that stopped calls but let chat
     // through would not be a block at all.
-    if (await customerModeration.isContactBlocked(astrologerId, customer.id)) {
+    const chatBlock = await customerModeration.describeContactBlock(astrologerId, customer.id);
+    if (chatBlock.blocked) {
       return res.status(403).json({
         success: false,
         blocked: true,
-        message: 'This astrologer is not accepting consultations from you at the moment.',
+        blockedByYou: chatBlock.byYou,
+        message: chatBlock.byYou
+          ? 'You blocked this astrologer. Unblock them to chat or call again.'
+          : 'This astrologer is not accepting consultations from you at the moment.',
       });
     }
 

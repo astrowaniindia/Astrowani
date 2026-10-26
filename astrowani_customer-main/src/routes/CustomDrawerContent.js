@@ -18,6 +18,7 @@ import { resetAnalyticsIdentity, captureEvent } from '../utils/Analytics';
 import { clearViewerSegment } from '../utils/viewerSegment';
 import { resetWalletBalance } from '../hooks/useWalletBalance';
 import { SOCIAL_LINKS } from '../config/api';
+import { resetBlockedAstrologers } from '../utils/blockedAstrologers';
 import { shareDownloadUrl } from '../utils/storeLinks';
 
 // Opening a social profile must never be able to crash the drawer. Linking
@@ -129,6 +130,9 @@ function CustomDrawerContent(props, navigation) {
       clearViewerSegment();
       resetWalletBalance();
       await AsyncStorage.clear();
+      // In-memory, so clearing storage does not touch it: the next account to sign in
+      // on this phone would otherwise inherit the previous one's blocked astrologers.
+      resetBlockedAstrologers();
       props.navigation.reset({
         index: 0,
         routes: [{ name: 'Login' }],

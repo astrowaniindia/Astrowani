@@ -45,11 +45,20 @@ import { queueFreeCallFromCampaign, queueCampaignDeclined } from '../../utils/fr
 import { showPendingGift } from '../../utils/pendingGiftBubble';
 import { showSignupNudge } from '../../utils/signupNudge';
 import { NUDGE_MS } from '../../components/SignupNudgeHost';
+import FeaturedAstrologerRow from '../../components/FeaturedAstrologerRow';
+import {prefetchLiveAstrologers} from '../../utils/featuredAstrologersLive';
 
 const GOLD = COLORS.AstroGold;
 const CREAM = '#FFF8EE';
 const DEEP = '#4A1C10';
-const GUIDE_AVATAR_ASPECT = 145 / 281;
+
+// If nobody presses anything, this screen takes the offer by itself. There is NO
+// visible countdown (owner, 2026-10-26): a ticking clock turns a gift into a deadline,
+// and it also invites people to sit and watch it instead of acting. The wait starts
+// once the reveal has settled -- the CTA springs in at 1820ms -- so the full six
+// seconds are six seconds of a finished, readable screen.
+const AUTO_ACCEPT_SECONDS = 6;
+const AUTO_ARM_MS = 2200;
 
 const BOX = scale(168);
 // The teaser and the tap hint float a fixed distance above/below the box's centre, so
@@ -188,7 +197,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
   const avatarIn = useRef(new Animated.Value(0)).current;  // guide slides up
   const ctaIn = useRef(new Animated.Value(0)).current;     // button slides up
   const pulse = useRef(new Animated.Value(1)).current;     // button heartbeat
-  const float = useRef(new Animated.Value(0)).current;     // guide bob
   const collapse = useRef(new Animated.Value(0)).current;  // screen -> corner bubble
   const [collapsing, setCollapsing] = useState(false);
   // Once the landed bubble has been handed to PendingGiftBubbleHost, this screen stops
@@ -200,6 +208,18 @@ export default function CampaignGiftReveal({ navigation, route }) {
   const shakeRef = useRef(null);
   const exitTimer = useRef(null);
   const nudgingRef = useRef(false);
+
+  // ── Takes the offer by itself if nobody presses anything ───────────────────
+  // (owner, 2026-10-26). The CTA still works and is still the thing to press; this
+  // just means nobody has to. Invisible by design -- see AUTO_ACCEPT_SECONDS above.
+  // Everything about it is cancellable, because the ONE unacceptable outcome is
+  // auto-accepting an offer the person has already declined.
+  const armRef = useRef(null);
+  const autoRef = useRef(null);
+  // `collapsing` is state, and the ✕ does not set leftRef until its animation has
+  // finished almost a second and a half later, so this needs a ref it can read
+  // synchronously or it can fire in the middle of the dismissal.
+  const collapsingRef = useRef(false);
 
   // ── Journey timing ─────────────────────────────────────────────────────────
   // Every event this screen sends carries how long the person had been looking at
@@ -240,6 +260,14 @@ export default function CampaignGiftReveal({ navigation, route }) {
     // again next time rather than burning the one chance silently.
     markCampaignFreeCallPromptShown();
 
+    // Warm the LOGIN screen's faces while this one is being read (owner, 2026-10-26).
+    // That screen swaps four of its five circles for astrologers who are reachable now,
+    // and starting the fetch when it mounts would draw the bundled five and visibly
+    // shuffle them a beat later. Several seconds pass here before the CTA is tapped, so
+    // the names and the image bytes are both in memory by then. Fire and forget: it
+    // resolves to the bundled five on any failure and can never block this screen.
+    prefetchLiveAstrologers();
+
     // The box drops in and settles...
     Animated.timing(drop, {
       toValue: 1, duration: 620, easing: Easing.bezier(0.2, 1.3, 0.4, 1), useNativeDriver: true,
@@ -263,12 +291,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
         Animated.timing(hintPulse, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
-    const bob = Animated.loop(
-      Animated.sequence([
-        Animated.timing(float, { toValue: -8, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(float, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
     const beat = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.045, duration: 820, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
@@ -276,7 +298,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
       ]),
     );
     hint.start();
-    bob.start();
     beat.start();
 
     // THE ONE EXIT NOTHING ELSE SEES. The ✕ only exists after the box is open, and
@@ -309,9 +330,10 @@ export default function CampaignGiftReveal({ navigation, route }) {
       clearTimeout(startShake);
       clearTimeout(autoOpen);
       if (exitTimer.current) clearTimeout(exitTimer.current);
+      if (armRef.current) clearTimeout(armRef.current);
+      if (autoRef.current) clearTimeout(autoRef.current);
       shake.stop();
       hint.stop();
-      bob.stop();
       beat.stop();
       appStateSub.remove();
     };
@@ -358,6 +380,38 @@ export default function CampaignGiftReveal({ navigation, route }) {
         Animated.spring(ctaIn, { toValue: 1, friction: 8, tension: 65, useNativeDriver: true }),
       ]),
     ]).start();
+
+    // Armed on a timer rather than in the .start() callback above: that callback waits
+    // for the slowest spring to fully settle, which is both later and less predictable
+    // than the moment the CTA is actually readable.
+    armRef.current = setTimeout(armAutoAccept, AUTO_ARM_MS);
+  };
+
+  /** Stops it dead. Safe to call twice, and from any of the exit paths. */
+  const cancelAuto = () => {
+    if (armRef.current) { clearTimeout(armRef.current); armRef.current = null; }
+    if (autoRef.current) { clearTimeout(autoRef.current); autoRef.current = null; }
+  };
+
+  /**
+   * Armed once the reveal has settled rather than when the box opens, so the clock is
+   * not running under an animation nobody has finished reading.
+   *
+   * The guard is repeated INSIDE the timeout as well as before it. Clearing a timer
+   * and the timer firing are not mutually exclusive -- a tap landing in the same frame
+   * as the deadline can already have been queued -- and the cost of being wrong here
+   * is accepting an offer somebody just declined.
+   */
+  const armAutoAccept = () => {
+    if (leftRef.current || nudgingRef.current || collapsingRef.current) return;
+    autoRef.current = setTimeout(() => {
+      autoRef.current = null;
+      if (leftRef.current || nudgingRef.current || collapsingRef.current) return;
+      // The SAME path the button takes, deliberately: the sign-up card still shows and
+      // the free call is still queued, so an auto-advance and a tap are
+      // indistinguishable from here on. Only the analytics `via` tells them apart.
+      acceptWithNudge('auto');
+    }, AUTO_ACCEPT_SECONDS * 1000);
   };
 
   /**
@@ -366,11 +420,12 @@ export default function CampaignGiftReveal({ navigation, route }) {
    * the card says the call is already theirs and that the form is three taps — then
    * the app moves on by itself. Nothing to press, nothing to get past.
    */
-  const acceptWithNudge = () => {
+  const acceptWithNudge = (via = 'cta') => {
     if (leftRef.current || nudgingRef.current) return;
     nudgingRef.current = true;
+    cancelAuto();
     showSignupNudge();
-    exitTimer.current = setTimeout(() => leave('cta', true), NUDGE_MS);
+    exitTimer.current = setTimeout(() => leave(via, true), NUDGE_MS);
   };
 
   const leave = (via, accepted) => {
@@ -410,6 +465,11 @@ export default function CampaignGiftReveal({ navigation, route }) {
    */
   const dismissIntoBubble = () => {
     if (leftRef.current || collapsing) return;
+    // Both, and in this order: the ref is what the running tick reads, and it has to
+    // be true before the first await-like boundary or the clock can still fire during
+    // the fold-away animation and accept an offer that was just declined.
+    collapsingRef.current = true;
+    cancelAuto();
     setCollapsing(true);
     captureEvent('campaign_gift_reveal_collapsed');
     Animated.timing(collapse, {
@@ -540,6 +600,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
           <>
             <View pointerEvents="none" style={styles.layer}>
               <Animated.Text
+                maxFontSizeMultiplier={1.2}
                 style={[styles.teaser, { opacity: drop, transform: [{ translateY: -TEASER_LIFT }] }]}
               >
                 {t('campaignGift.teaser')}
@@ -547,6 +608,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
             </View>
             <View pointerEvents="none" style={styles.layer}>
               <Animated.Text
+                maxFontSizeMultiplier={1.2}
                 style={[styles.tapHint, { opacity: hintFade, transform: [{ translateY: HINT_DROP }] }]}
               >
                 {t('campaignGift.tapToOpen')}
@@ -562,6 +624,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
               <Animated.Text
                 numberOfLines={1}
                 adjustsFontSizeToFit
+                maxFontSizeMultiplier={1.1}
                 style={[
                   styles.youWin,
                   { opacity: winPop, transform: [{ translateY: winTravel }, { scale: winScale }] },
@@ -580,10 +643,16 @@ export default function CampaignGiftReveal({ navigation, route }) {
                   },
                 ]}
               >
-                <Text style={styles.prizeTitle}>{t('campaignGift.prizeTitle')}</Text>
-                <Text style={styles.prizeSub}>{t('campaignGift.prizeSub')}</Text>
+                {/* CAPPED. This stage is built from ABSOLUTELY POSITIONED layers that
+                    already overlap by design, and nothing on it scrolls or reflows
+                    around anything else -- so at Android's 2x font setting the prize
+                    card grew down, the bubble grew up, and the two rendered on top of
+                    each other as unreadable overlapping text. */}
+                <Text style={styles.prizeTitle} maxFontSizeMultiplier={1.15}>{t('campaignGift.prizeTitle')}</Text>
+                <Text style={styles.prizeSub} maxFontSizeMultiplier={1.15}>{t('campaignGift.prizeSub')}</Text>
               </Animated.View>
             </View>
+
           </>
         )}
       </View>
@@ -598,17 +667,21 @@ export default function CampaignGiftReveal({ navigation, route }) {
         pointerEvents="none"
       >
         <View style={styles.bubble}>
-          <Text style={styles.bubbleText}>{t('campaignGift.avatarLine')}</Text>
+          <Text style={styles.bubbleText} maxFontSizeMultiplier={1.2}>{t('campaignGift.avatarLine')}</Text>
           <View style={styles.bubbleTailWrap}>
             <View style={styles.bubbleTailBorder} />
             <View style={styles.bubbleTail} />
           </View>
         </View>
-        <Animated.Image
-          source={require('../../assets/images/guideAvatarLogin.png')}
-          style={[styles.guide, { transform: [{ translateY: float }] }]}
-          resizeMode="contain"
-        />
+        {/* The illustrated guide stood here until 2026-10-26 (owner); the same five
+            real astrologers the free-call login shows now stand under the bubble, so
+            the face a brand-new visitor is promised a call with is the face they
+            actually meet.
+            NO CONTINUOUS FLOAT (owner, 2026-10-26). The guide bobbed forever because he
+            was a drawing; real photographs drifting up and down read as a glitch. They
+            still slide up once on entry -- that is `guideRow`'s avatarIn/avatarRise
+            above -- and then hold still. */}
+        <FeaturedAstrologerRow />
       </Animated.View>
 
       {/* ── CTA. pointerEvents is gated on `opened`: before the reveal this button is
@@ -627,7 +700,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
       >
         <Animated.View style={{ transform: [{ scale: pulse }] }}>
           <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={acceptWithNudge}>
-            <Text style={styles.ctaText}>{t('campaignGift.cta')}</Text>
+            <Text style={styles.ctaText} maxFontSizeMultiplier={1.2}>{t('campaignGift.cta')}</Text>
             <Icon name="arrow-forward" size={moderateScale(20)} color={COLORS.AstroMaroon} />
           </TouchableOpacity>
         </Animated.View>
@@ -654,8 +727,8 @@ export default function CampaignGiftReveal({ navigation, route }) {
               sitting right where a thumb heading for the cross will pass. Deliberately a
               note, not a second button — the ✕ still works on the first tap. */}
           <View style={styles.closeNote}>
-            <Text style={styles.closeNoteTitle}>{t('campaignGift.closeNoteTitle')}</Text>
-            <Text style={styles.closeNoteSub}>{t('campaignGift.closeNoteSub')}</Text>
+            <Text style={styles.closeNoteTitle} maxFontSizeMultiplier={1.2}>{t('campaignGift.closeNoteTitle')}</Text>
+            <Text style={styles.closeNoteSub} maxFontSizeMultiplier={1.2}>{t('campaignGift.closeNoteSub')}</Text>
           </View>
 
           <TouchableOpacity
@@ -867,7 +940,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(12),
     marginBottom: verticalScale(36),
   },
-  guide: { height: verticalScale(140), aspectRatio: GUIDE_AVATAR_ASPECT },
   // DELIBERATELY NOT the prize card's solid cream slab with a thick gold frame: at that
   // weight two cream cards stacked up the screen competed with each other and the eye could not
   // tell which one was the prize. This is a quiet translucent caption — the prize stays

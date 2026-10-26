@@ -33,3 +33,19 @@ export function apiFailureReason(error) {
 
   return 'unknown';
 }
+
+/**
+ * True when the request never got an answer -- the phone was offline, the connection
+ * dropped, or it timed out waiting. NOT true for anything the server replied with,
+ * however bad: a 500 is our fault and must not be blamed on the user's internet.
+ *
+ * It exists so screens can tell the two apart in what they SAY. "Something went wrong"
+ * for a dropped connection reads as a bug in the app, sends people to support for a
+ * problem support cannot fix, and hides the one action that actually works -- trying
+ * again. Measured 2026-10-26 on the dev machine: a dead IPv6 route plus a slow IPv4
+ * fallback produced exactly this error on the login screen.
+ */
+export function isConnectivityError(error) {
+  const reason = apiFailureReason(error);
+  return reason === 'timeout' || reason === 'network_error';
+}

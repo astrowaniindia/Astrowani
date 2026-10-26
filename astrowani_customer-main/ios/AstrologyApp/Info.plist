@@ -59,6 +59,22 @@
 	<string>Astrowani saves your astrology report to your photo library when you choose to download it.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Astrowani uses your location to fill in your delivery address and to calculate accurate Shubh Muhurat timings for where you are.</string>
+	<!-- ITMS-90683, 2026-10-23. Apple warned on build 24.1(2): the binary must
+	     carry this key even though the app NEVER requests always-on location.
+	     react-native-permissions' LocationWhenInUse handler is compiled in (see
+	     setup_permissions! in the Podfile) and its code REFERENCES the "always"
+	     API; Apple scans statically and cannot tell a reference from a call.
+	     Apple's own wording: "While your app might not use these APIs, a purpose
+	     string is still required."
+
+	     The text below is deliberately truthful about that — we only ever ask for
+	     while-in-use, and this prompt is never shown, because nothing in the app
+	     calls requestAlwaysAuthorization. Do NOT reword it to promise background
+	     tracking we do not do: App Privacy answers and the Privacy Policy both say
+	     location is used only in-app, and a purpose string that contradicts them
+	     is a 5.1.1 problem rather than the warning it is fixing. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Astrowani uses your location only while you are using the app, to fill in your delivery address and to calculate accurate Shubh Muhurat timings. Your location is never tracked in the background.</string>
 
 	<!-- ================================================================
 	     Background modes.
@@ -154,6 +170,12 @@
 		<string>FontAwesome.ttf</string>
 		<string>MaterialCommunityIcons.ttf</string>
 		<string>AntDesign.ttf</string>
+		<string>FontAwesome5_Brands.ttf</string>
+		<string>FontAwesome5_Regular.ttf</string>
+		<string>FontAwesome5_Solid.ttf</string>
+		<string>FontAwesome6_Brands.ttf</string>
+		<string>FontAwesome6_Regular.ttf</string>
+		<string>FontAwesome6_Solid.ttf</string>
 	</array>
 </dict>
 </plist>

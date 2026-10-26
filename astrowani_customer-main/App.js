@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Alert, View, StyleSheet } from 'react-native';
+import { Alert, View, StyleSheet, Keyboard } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Navigation from './src/routes/Navigation';
@@ -31,6 +31,7 @@ import { resetAnalyticsIdentity } from './src/utils/Analytics';
 import { COLORS } from './src/Theme/Colors';
 import { onHomeReady } from './src/utils/appReady';
 import { hydrateWalletBalance } from './src/hooks/useWalletBalance';
+import { prefetchLiveAstrologers } from './src/utils/featuredAstrologersLive';
 
 // Which pre-login screen a targeted-campaign install opens on. The older
 // speech-bubble prompt is hidden rather than deleted — see featureFlags.js.
@@ -133,6 +134,13 @@ const App = () => {
     prefetchHomeData({ force: true });
     // Guide mascot tips: admin config + "already seen" memory, ready before any screen.
     loadMascotTips();
+    // The faces on the free-call login screen. Started HERE, at boot, rather than on
+    // the gift screen that precedes it: measured 2026-10-26, the first
+    // /api/astrologers of a cold backend took 23s (787ms and 416ms once warm), which
+    // is far longer than the ~6s the gift screen is on display, so starting it any
+    // later meant a fresh install reliably fell back to the bundled five. Background,
+    // never blocks anything, and falls back to the bundled faces on any failure.
+    prefetchLiveAstrologers();
     // QR poster funnel: report this install's first launch (before any signup). Background,
     // never blocks or fails anything; a no-op for installs not from a poster.
     reportFirstOpen();
@@ -250,7 +258,23 @@ const App = () => {
         {/* Cream, not transparent-over-native-white — the backstop behind
             Navigation.js's own per-screen contentStyle/sceneContainerStyle, for
             the one frame before any of those have painted. */}
-        <GestureHandlerRootView style={{ flex: 1, backgroundColor: COLORS.AstroSoftOrange }}>
+        <GestureHandlerRootView
+          style={{ flex: 1, backgroundColor: COLORS.AstroSoftOrange }}
+          /* Tap anywhere that is not interactive and the keyboard goes away -- reported
+             from TestFlight 2026-10-24, where it would not close during a live stream
+             however far outside the comment box you tapped.
+
+             This is the BUBBLING phase, deliberately, not `...Capture`. A touch is
+             offered to the deepest view first and bubbles outward only while nobody
+             claims it, so a button, a Touchable or a ScrollView claims it and this
+             never runs -- which is what keeps "send" from closing the keyboard under
+             the message you are still typing. It fires only for the inert background,
+             which is exactly where "outside" means. Returning false means we never
+             become the responder, so nothing downstream is stolen. */
+          onStartShouldSetResponder={() => {
+            Keyboard.dismiss();
+            return false;
+          }}>
           {/* Root boundary. Inside LanguageProvider so the fallback renders in the
               customer's own language, and inside GestureHandlerRootView so the
               fallback's buttons are actually tappable.

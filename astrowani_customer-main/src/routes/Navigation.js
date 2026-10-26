@@ -18,12 +18,14 @@ import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import CustomHeader from './CustomHeader';
+import HeaderBackButton from './HeaderBackButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LanguageContext } from '../context/LanguageContext';
 import Chat from '../screens/chat/Chat';
 import CustomDrawerContent from './CustomDrawerContent'; // Your custom drawer content
 import ErrorBoundary from '../components/ErrorBoundary';
 import UserProfileScreen from '../screens/drawerScreens/UserProfileScreen';
+import BlockedAstrologersScreen from '../screens/drawerScreens/BlockedAstrologersScreen';
 import ChatSessionScreen from '../screens/ChatSessionScreen';
 import FreeBotChatScreen from '../screens/FreeBotChat/FreeBotChatScreen';
 import Video from '../screens/Video/Video';
@@ -247,8 +249,9 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
         <Stack.Screen options={{ headerShown: false }} name="DrawerNavigator" component={DrawerNavigator} />
 
         <Stack.Screen name="UserProfileScreen" component={UserProfileScreen} options={{ title: 'Profile', headerBackTitleVisible: true, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} />
+        <Stack.Screen name="BlockedAstrologers" component={BlockedAstrologersScreen} options={({ navigation }) => ({ title: 'Blocked astrologers', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18) }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} /> })} />
 
-        <Stack.Screen name="AstrologerInfo" component={AstrologerInfo} options={({ route }) => ({ title: route.params?.person.name, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
+        <Stack.Screen name="AstrologerInfo" component={AstrologerInfo} options={({ route, navigation }) => ({ title: route.params?.person.name, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} />, tabBarStyle: { display: 'none' }, })} />
         <Stack.Screen name="AddReview" component={AddReview} options={{ title: 'Add Review', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff' }} />
         <Stack.Screen name="Kundali Details" component={KundaliDetails} options={({ route }) => ({ title: 'Kundali Details', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />
         <Stack.Screen name="KundaliMatchScreen" component={KundaliMatchScreen} options={({ route }) => ({ title: 'Match Kundali', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, tabBarStyle: { display: 'none' }, })} />

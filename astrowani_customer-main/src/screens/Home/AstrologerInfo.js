@@ -57,6 +57,8 @@ import { ensureCallPermissions } from '../../utils/callPermissions';
 
 const { width } = Dimensions.get('window');
 
+import { isAstrologerBlocked, refreshBlockedAstrologers, subscribeBlockedAstrologers, unblockAstrologer as unblockAstrologerApi, describeBlockError } from '../../utils/blockedAstrologers';
+
 const AstrologerInfo = ({route, navigation}) => {
   const { t } = React.useContext(LanguageContext);
   const {person} = route.params;
@@ -392,6 +394,14 @@ const AstrologerInfo = ({route, navigation}) => {
       }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsCallWaiting(false);
+      // A refused-because-blocked call used to land in the generic handler below and
+      // say nothing useful. The server sends the reason; show it.
+      const blockMsg = describeBlockError(err, person.userId || person._id || person.id);
+      if (blockMsg) {
+        captureEvent('consult_blocked', { reason: 'blocked', intent: 'call', astrologer_id: person.userId });
+        Alert.alert(t('alerts.unavailable'), blockMsg);
+        return;
+      }
       if (err?.response?.status === 409) {
         const errorData = err.response.data;
         showStatusPopup({
@@ -610,6 +620,14 @@ const AstrologerInfo = ({route, navigation}) => {
       }, REQUEST_RING_TIMEOUT_MS);
     } catch (err) {
       setIsCallWaiting(false);
+      // A refused-because-blocked call used to land in the generic handler below and
+      // say nothing useful. The server sends the reason; show it.
+      const blockMsg = describeBlockError(err, person.userId || person._id || person.id);
+      if (blockMsg) {
+        captureEvent('consult_blocked', { reason: 'blocked', intent: 'call', astrologer_id: person.userId });
+        Alert.alert(t('alerts.unavailable'), blockMsg);
+        return;
+      }
       if (err?.response?.status === 409) {
         const errorData = err.response.data;
         showStatusPopup({
@@ -800,6 +818,41 @@ const AstrologerInfo = ({route, navigation}) => {
   const busySinceMs = person.busySince ? new Date(person.busySince).getTime() : null;
   const busyElapsed = useElapsedSeconds(busySinceMs, isBusy);
   const [notifyMeSent, setNotifyMeSent] = useState(false);
+
+  // Has THIS customer blocked this astrologer? Before 2026-10-24 the profile had no
+  // idea: a blocked astrologer's page looked exactly like anyone else's, the three
+  // buttons stayed live, and tapping one failed with no reason given. The store is
+  // shared with the blocked-list screen so an unblock on either is reflected on both
+  // without a refetch.
+  const [blockedByMe, setBlockedByMe] = useState(isAstrologerBlocked(person.userId || person._id || person.id));
+  const [unblocking, setUnblocking] = useState(false);
+  useEffect(() => {
+    const id = person.userId || person._id || person.id;
+    const sync = () => setBlockedByMe(isAstrologerBlocked(id));
+    const unsub = subscribeBlockedAstrologers(sync);
+    refreshBlockedAstrologers().then(sync);
+    return unsub;
+  }, [person.userId, person._id, person.id]);
+
+  const handleUnblock = () => {
+    const id = person.userId || person._id || person.id;
+    Alert.alert(
+      t('blocked.confirmTitle').replace('{{name}}', person.name || t('common.astrologer')),
+      t('blocked.confirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('blocked.unblock'),
+          onPress: async () => {
+            setUnblocking(true);
+            const res = await unblockAstrologerApi(id);
+            setUnblocking(false);
+            if (!res.ok) Alert.alert(t('blocked.unblockFailed'));
+          },
+        },
+      ],
+    );
+  };
 
   // Plain Alerts, so not covered by StatusPopup.js's central consult_blocked hook.
   const INTENT_BY_KEY = {
@@ -1040,7 +1093,26 @@ const AstrologerInfo = ({route, navigation}) => {
 
       {/* Floating Action Dock */}
       <View style={styles.floatingDock}>
-        {isOffline ? (
+        {/* Checked BEFORE offline/busy/live. Whatever else is true of this astrologer,
+            the reason this customer cannot reach them is their own block, and that is
+            the one they can do something about. */}
+        {blockedByMe ? (
+          <View style={styles.blockedDock}>
+            <View style={styles.blockedDockText}>
+              <Text style={styles.blockedDockTitle} numberOfLines={1}>{t('blocked.bannerTitle')}</Text>
+              <Text style={styles.blockedDockBody} numberOfLines={2}>{t('blocked.bannerBody')}</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.blockedDockBtn, unblocking && { opacity: 0.55 }]}
+              disabled={unblocking}
+              activeOpacity={0.85}
+              onPress={handleUnblock}>
+              <Text style={styles.blockedDockBtnTxt}>
+                {unblocking ? t('blocked.unblocking') : t('blocked.unblock')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : isOffline ? (
           <TouchableOpacity
             style={styles.actionBtnOffline}
             activeOpacity={0.8}
@@ -1269,6 +1341,15 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: COLORS.AstroMaroon,
     elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4,
   },
+  blockedDock: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: scale(10) },
+  blockedDockText: { flex: 1 },
+  blockedDockTitle: { fontSize: moderateScale(13), fontFamily: 'Poppins-Bold', color: '#8c2f2f' },
+  blockedDockBody: { fontSize: moderateScale(11), color: '#7a6356', marginTop: 1 },
+  blockedDockBtn: {
+    paddingHorizontal: scale(16), paddingVertical: verticalScale(9),
+    borderRadius: moderateScale(20), backgroundColor: COLORS.AstroMaroon,
+  },
+  blockedDockBtnTxt: { color: '#fff', fontSize: moderateScale(13), fontFamily: 'Poppins-Bold' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: verticalScale(10), gap: 8 },
   sectionTitle: { fontSize: moderateScale(16), fontFamily: 'Lato-Bold', color: '#000' },
   giftGrid: { flexDirection: 'row', flexWrap: 'wrap' },

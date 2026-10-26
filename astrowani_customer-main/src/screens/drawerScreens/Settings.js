@@ -14,6 +14,7 @@ import {moderateScale, scale, verticalScale} from '../../utils/Scaling';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {COLORS} from '../../Theme/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resetBlockedAstrologers } from '../../utils/blockedAstrologers';
 import {LanguageContext} from '../../context/LanguageContext';
 import {resetWalletBalance} from '../../hooks/useWalletBalance';
 
@@ -76,6 +77,7 @@ export default function Settings({navigation}) {
       resetAnalyticsIdentity();
       resetWalletBalance();
       await AsyncStorage.removeItem('token');
+      resetBlockedAstrologers();
       setDeleteModalVisible(false);
       navigation.reset({index: 0, routes: [{name: 'Login'}]});
       Alert.alert(t('settings.accountDeleted'));
@@ -96,6 +98,7 @@ export default function Settings({navigation}) {
       captureEvent('logout', {source: 'settings'});
       resetWalletBalance();
       await AsyncStorage.removeItem('token');
+      resetBlockedAstrologers();
 
       // Resetting any navigation state or redirection
       navigation.reset({
@@ -114,6 +117,23 @@ export default function Settings({navigation}) {
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollContainer}>
+        {/* First, because it is the only entry here that undoes something the
+            customer did. Everything below it is a document to read. */}
+        <TouchableOpacity
+          onPress={() => { captureEvent('settings_item_tapped', {item: 'blocked_astrologers'}); navigation.navigate('BlockedAstrologers'); }}
+          style={styles.item}>
+          <View style={styles.itemContent}>
+            <Icon
+              name="block"
+              size={25}
+              color={COLORS.AstroMaroon}
+              style={styles.icon}
+            />
+            <Text style={styles.text}>{t('blocked.screenTitle')}</Text>
+          </View>
+          <Icon name="keyboard-arrow-right" size={25} color="#000" />
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => { captureEvent('settings_item_tapped', {item: 'about_us'}); navigation.navigate('AboutUsScreen'); }}
           style={styles.item}>
