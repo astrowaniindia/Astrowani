@@ -30,6 +30,8 @@ const SWAPPABLE = 4;
 // Long enough that walking back and forth between the two screens does not refetch,
 // short enough that "available right now" stays honest.
 const FRESH_MS = 60 * 1000;
+// Longest the published list will wait on image bytes. See the race below.
+const WARM_MS = 2500;
 
 let cache = [];
 let fetchedAt = 0;
@@ -72,7 +74,13 @@ export const prefetchLiveAstrologers = () => {
     return Promise.resolve(cache);
   }
 
-  inFlight = Instance.get('/api/astrologers')
+  // BOUNDED, and the bound is not optional. Measured 2026-10-26 from the device: a
+  // COLD /api/astrologers took 23s (787ms and 416ms once warm), against 722ms for the
+  // OTP request this must never get in front of. The backend is a single Node process
+  // on one core, so a long request here is not free for the rest of the app -- and
+  // nothing on this path is worth waiting 23s for, because the bundled faces are
+  // already on screen and are a correct answer.
+  inFlight = Instance.get('/api/astrologers', { timeout: 12000 })
     .then(async (res) => {
       const rows = Array.isArray(res?.data) ? res.data : res?.data?.data || [];
       const picked = rows
@@ -92,16 +100,19 @@ export const prefetchLiveAstrologers = () => {
         }))
         .filter((a) => !!a.uri);
 
-      // THE PREFETCH IS THE WHOLE POINT, so it is awaited before the cache is published.
-      // Publishing first would hand the row a set of URLs whose bytes have not arrived,
-      // and it would draw five empty rings and fill them in one by one -- worse than the
-      // bundled faces it replaced. A failure to warm one image is not fatal: it still
-      // renders, just a beat later, and a broken URL falls back to its bundled face.
-      await Promise.all(
-        picked.map((a) =>
-          Image.prefetch(a.uri).catch(() => {}),
-        ),
-      );
+      // The images are warmed BEFORE the cache is published, because publishing first
+      // would hand the row URLs whose bytes have not arrived and it would draw empty
+      // rings filling in one by one -- worse than the bundled faces it replaced.
+      //
+      // BUT THE WAIT IS BOUNDED TOO: Image.prefetch returns a promise with NO timeout
+      // of its own, so one stalled connection would hang Promise.all for as long as the
+      // socket stayed open and the row would sit on the bundled five forever. Past the
+      // window it publishes anyway -- slightly late images cost far less than never
+      // swapping at all.
+      await Promise.race([
+        Promise.all(picked.map((a) => Image.prefetch(a.uri).catch(() => {}))),
+        new Promise((resolve) => setTimeout(resolve, WARM_MS)),
+      ]);
 
       cache = picked;
       fetchedAt = Date.now();

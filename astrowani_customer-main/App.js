@@ -31,6 +31,7 @@ import { resetAnalyticsIdentity } from './src/utils/Analytics';
 import { COLORS } from './src/Theme/Colors';
 import { onHomeReady } from './src/utils/appReady';
 import { hydrateWalletBalance } from './src/hooks/useWalletBalance';
+import { prefetchLiveAstrologers } from './src/utils/featuredAstrologersLive';
 
 // Which pre-login screen a targeted-campaign install opens on. The older
 // speech-bubble prompt is hidden rather than deleted — see featureFlags.js.
@@ -133,6 +134,13 @@ const App = () => {
     prefetchHomeData({ force: true });
     // Guide mascot tips: admin config + "already seen" memory, ready before any screen.
     loadMascotTips();
+    // The faces on the free-call login screen. Started HERE, at boot, rather than on
+    // the gift screen that precedes it: measured 2026-10-26, the first
+    // /api/astrologers of a cold backend took 23s (787ms and 416ms once warm), which
+    // is far longer than the ~6s the gift screen is on display, so starting it any
+    // later meant a fresh install reliably fell back to the bundled five. Background,
+    // never blocks anything, and falls back to the bundled faces on any failure.
+    prefetchLiveAstrologers();
     // QR poster funnel: report this install's first launch (before any signup). Background,
     // never blocks or fails anything; a no-op for installs not from a poster.
     reportFirstOpen();

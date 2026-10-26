@@ -52,6 +52,14 @@ const GOLD = COLORS.AstroGold;
 const CREAM = '#FFF8EE';
 const DEEP = '#4A1C10';
 
+// If nobody presses anything, this screen takes the offer by itself. There is NO
+// visible countdown (owner, 2026-10-26): a ticking clock turns a gift into a deadline,
+// and it also invites people to sit and watch it instead of acting. The wait starts
+// once the reveal has settled -- the CTA springs in at 1820ms -- so the full six
+// seconds are six seconds of a finished, readable screen.
+const AUTO_ACCEPT_SECONDS = 6;
+const AUTO_ARM_MS = 2200;
+
 const BOX = scale(168);
 // The teaser and the tap hint float a fixed distance above/below the box's centre, so
 // the BOX itself stays exactly on the stage centre — which is where the rays and the
@@ -201,6 +209,18 @@ export default function CampaignGiftReveal({ navigation, route }) {
   const exitTimer = useRef(null);
   const nudgingRef = useRef(false);
 
+  // ── Takes the offer by itself if nobody presses anything ───────────────────
+  // (owner, 2026-10-26). The CTA still works and is still the thing to press; this
+  // just means nobody has to. Invisible by design -- see AUTO_ACCEPT_SECONDS above.
+  // Everything about it is cancellable, because the ONE unacceptable outcome is
+  // auto-accepting an offer the person has already declined.
+  const armRef = useRef(null);
+  const autoRef = useRef(null);
+  // `collapsing` is state, and the ✕ does not set leftRef until its animation has
+  // finished almost a second and a half later, so this needs a ref it can read
+  // synchronously or it can fire in the middle of the dismissal.
+  const collapsingRef = useRef(false);
+
   // ── Journey timing ─────────────────────────────────────────────────────────
   // Every event this screen sends carries how long the person had been looking at
   // it, because on a paid install the question is never just "did they convert" but
@@ -310,6 +330,8 @@ export default function CampaignGiftReveal({ navigation, route }) {
       clearTimeout(startShake);
       clearTimeout(autoOpen);
       if (exitTimer.current) clearTimeout(exitTimer.current);
+      if (armRef.current) clearTimeout(armRef.current);
+      if (autoRef.current) clearTimeout(autoRef.current);
       shake.stop();
       hint.stop();
       beat.stop();
@@ -358,6 +380,38 @@ export default function CampaignGiftReveal({ navigation, route }) {
         Animated.spring(ctaIn, { toValue: 1, friction: 8, tension: 65, useNativeDriver: true }),
       ]),
     ]).start();
+
+    // Armed on a timer rather than in the .start() callback above: that callback waits
+    // for the slowest spring to fully settle, which is both later and less predictable
+    // than the moment the CTA is actually readable.
+    armRef.current = setTimeout(armAutoAccept, AUTO_ARM_MS);
+  };
+
+  /** Stops it dead. Safe to call twice, and from any of the exit paths. */
+  const cancelAuto = () => {
+    if (armRef.current) { clearTimeout(armRef.current); armRef.current = null; }
+    if (autoRef.current) { clearTimeout(autoRef.current); autoRef.current = null; }
+  };
+
+  /**
+   * Armed once the reveal has settled rather than when the box opens, so the clock is
+   * not running under an animation nobody has finished reading.
+   *
+   * The guard is repeated INSIDE the timeout as well as before it. Clearing a timer
+   * and the timer firing are not mutually exclusive -- a tap landing in the same frame
+   * as the deadline can already have been queued -- and the cost of being wrong here
+   * is accepting an offer somebody just declined.
+   */
+  const armAutoAccept = () => {
+    if (leftRef.current || nudgingRef.current || collapsingRef.current) return;
+    autoRef.current = setTimeout(() => {
+      autoRef.current = null;
+      if (leftRef.current || nudgingRef.current || collapsingRef.current) return;
+      // The SAME path the button takes, deliberately: the sign-up card still shows and
+      // the free call is still queued, so an auto-advance and a tap are
+      // indistinguishable from here on. Only the analytics `via` tells them apart.
+      acceptWithNudge('auto');
+    }, AUTO_ACCEPT_SECONDS * 1000);
   };
 
   /**
@@ -366,11 +420,12 @@ export default function CampaignGiftReveal({ navigation, route }) {
    * the card says the call is already theirs and that the form is three taps — then
    * the app moves on by itself. Nothing to press, nothing to get past.
    */
-  const acceptWithNudge = () => {
+  const acceptWithNudge = (via = 'cta') => {
     if (leftRef.current || nudgingRef.current) return;
     nudgingRef.current = true;
+    cancelAuto();
     showSignupNudge();
-    exitTimer.current = setTimeout(() => leave('cta', true), NUDGE_MS);
+    exitTimer.current = setTimeout(() => leave(via, true), NUDGE_MS);
   };
 
   const leave = (via, accepted) => {
@@ -410,6 +465,11 @@ export default function CampaignGiftReveal({ navigation, route }) {
    */
   const dismissIntoBubble = () => {
     if (leftRef.current || collapsing) return;
+    // Both, and in this order: the ref is what the running tick reads, and it has to
+    // be true before the first await-like boundary or the clock can still fire during
+    // the fold-away animation and accept an offer that was just declined.
+    collapsingRef.current = true;
+    cancelAuto();
     setCollapsing(true);
     captureEvent('campaign_gift_reveal_collapsed');
     Animated.timing(collapse, {
@@ -584,6 +644,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
                 <Text style={styles.prizeSub}>{t('campaignGift.prizeSub')}</Text>
               </Animated.View>
             </View>
+
           </>
         )}
       </View>

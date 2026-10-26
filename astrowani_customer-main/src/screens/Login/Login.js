@@ -8,6 +8,8 @@ import {
   StatusBar,
   TextInput,
   TouchableOpacity,
+  Pressable,
+  Keyboard,
   Alert,
   ActivityIndicator,
   ScrollView,
@@ -69,6 +71,11 @@ const Login = ({navigation, route}) => {
       topicAnim.setValue(0);
     }
   };
+  // The faces are the one thing on the free-call screen that can be given up when the
+  // keyboard takes half the window. `fcGuideZone` is the slack and shrinks, but the row
+  // inside it is a fixed height and does NOT -- so without this it keeps its full size
+  // in a zone with no room left and lands on top of the topic chips.
+  const [keyboardUp, setKeyboardUp] = useState(false);
   // Which of the two login screens this is, stamped on EVERY event the shared submit
   // path emits. Without it the two variants are indistinguishable past the view event,
   // and the one question worth asking -- does the free-call screen convert better than
@@ -79,6 +86,12 @@ const Login = ({navigation, route}) => {
   const [phoneNumber, setPhoneNumber] = useState(sanitizePhoneInput(route?.params?.phoneNumber || ''));
   const [loading, SetLoading] = useState(false);
   const phoneRef = useRef(null);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Top of the login funnel. Everything downstream (submit -> otp sent -> verified ->
   // completed) is a percentage of this, so without it a drop-off has no denominator.
@@ -237,9 +250,15 @@ const Login = ({navigation, route}) => {
           </View>
 
           <View style={styles.fcPromise}>
-            <Text style={styles.fcHeadline}>{t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}</Text>
-            <Text style={styles.fcHeadlineAccent}>{t('login.promiseLine2')}</Text>
-            <Text style={styles.fcSub}>{t('login.promiseSub')}</Text>
+            {/* The headline block is INSIDE `fcPromise`, which is deliberately raised
+                above the backdrop so the chips stay tappable -- so the backdrop cannot
+                collect taps that land up here. This does it for them, and between the
+                two every pixel outside the card closes it. */}
+            <Pressable onPress={() => { if (openTopic) toggleTopic(null); }}>
+              <Text style={styles.fcHeadline}>{t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}</Text>
+              <Text style={styles.fcHeadlineAccent}>{t('login.promiseLine2')}</Text>
+              <Text style={styles.fcSub}>{t('login.promiseSub')}</Text>
+            </Pressable>
             <View style={styles.fcChipsWrap}>
               <View
                 style={styles.fcChips}
@@ -295,12 +314,6 @@ const Login = ({navigation, route}) => {
                   />
                   <Text style={styles.fcTopicTitle}>{t(openTopic)}</Text>
                   <Text style={styles.fcTopicBody}>{t(`${openTopic}Info`)}</Text>
-                  <TouchableOpacity
-                    style={styles.fcTopicClose}
-                    hitSlop={{top: 12, bottom: 12, left: 12, right: 12}}
-                    onPress={() => toggleTopic(openTopic)}>
-                    <Text style={styles.fcTopicCloseText}>✕</Text>
-                  </TouchableOpacity>
                 </Animated.View>
               )}
             </View>
@@ -312,13 +325,19 @@ const Login = ({navigation, route}) => {
               the keyboard opens, and without it the field and the button get pushed off
               the bottom on a short display. The row is centred inside it and shrinks
               out of the way rather than fighting for space. */}
-          <View style={styles.fcGuideZone} pointerEvents="none">
+          <Pressable
+            style={styles.fcGuideZone}
+            // Inert unless a card is open, so the faces stay decoration the rest of
+            // the time and never swallow a tap meant for something behind them.
+            pointerEvents={openTopic ? 'auto' : 'none'}
+            onPress={() => toggleTopic(null)}
+          >
             {/* `live`: the centre face is pinned, the other four are whoever can
                 actually take a call right now. The list and its images were warmed on
                 the gift screen before this one mounted, so this draws them on the
                 first frame rather than shuffling a moment later. */}
-            <FeaturedAstrologerRow live />
-          </View>
+            {!keyboardUp && <FeaturedAstrologerRow live />}
+          </Pressable>
 
           <View style={[styles.fcForm, { paddingBottom: insets.bottom + verticalScale(20) }]}>
             <View style={styles.fcInputRow}>
@@ -336,6 +355,8 @@ const Login = ({navigation, route}) => {
                 keyboardType="phone-pad"
                 value={phoneNumber}
                 onChangeText={(text) => setPhoneNumber(sanitizePhoneInput(text))}
+                // Reaching for the number field means they are done reading the card.
+                onFocus={() => { if (openTopic) toggleTopic(null); }}
                 // The visible "Mobile number" label was dropped (owner, 2026-10-20);
                 // the field still has to be named for a screen reader.
                 accessibilityLabel={t('login.mobileLabel')}
@@ -635,7 +656,7 @@ const styles = StyleSheet.create({
   fcPromise: {
     paddingHorizontal: scale(24),
     paddingTop: verticalScale(34),
-    // Raised above fcGuideZone so the topic card can overlay the avatar.
+    // Raised above fcGuideZone so the topic card can overlay the faces.
     zIndex: 30,
   },
   fcHeadline: {
@@ -681,7 +702,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(14),
     paddingTop: verticalScale(10),
     paddingBottom: verticalScale(12),
-    paddingRight: scale(30),
     zIndex: 31,
     elevation: 14,
     shadowColor: '#000',
@@ -711,16 +731,6 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     fontWeight: '500',
     lineHeight: moderateScale(18),
-  },
-  fcTopicClose: {
-    position: 'absolute',
-    top: verticalScale(7),
-    right: scale(9),
-  },
-  fcTopicCloseText: {
-    color: 'rgba(255,246,234,0.55)',
-    fontSize: moderateScale(12),
-    fontWeight: '700',
   },
   fcChip: {
     borderWidth: 1,
