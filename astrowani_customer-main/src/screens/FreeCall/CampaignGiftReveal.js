@@ -45,11 +45,12 @@ import { queueFreeCallFromCampaign, queueCampaignDeclined } from '../../utils/fr
 import { showPendingGift } from '../../utils/pendingGiftBubble';
 import { showSignupNudge } from '../../utils/signupNudge';
 import { NUDGE_MS } from '../../components/SignupNudgeHost';
+import FeaturedAstrologerRow from '../../components/FeaturedAstrologerRow';
+import {prefetchLiveAstrologers} from '../../utils/featuredAstrologersLive';
 
 const GOLD = COLORS.AstroGold;
 const CREAM = '#FFF8EE';
 const DEEP = '#4A1C10';
-const GUIDE_AVATAR_ASPECT = 145 / 281;
 
 const BOX = scale(168);
 // The teaser and the tap hint float a fixed distance above/below the box's centre, so
@@ -188,7 +189,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
   const avatarIn = useRef(new Animated.Value(0)).current;  // guide slides up
   const ctaIn = useRef(new Animated.Value(0)).current;     // button slides up
   const pulse = useRef(new Animated.Value(1)).current;     // button heartbeat
-  const float = useRef(new Animated.Value(0)).current;     // guide bob
   const collapse = useRef(new Animated.Value(0)).current;  // screen -> corner bubble
   const [collapsing, setCollapsing] = useState(false);
   // Once the landed bubble has been handed to PendingGiftBubbleHost, this screen stops
@@ -240,6 +240,14 @@ export default function CampaignGiftReveal({ navigation, route }) {
     // again next time rather than burning the one chance silently.
     markCampaignFreeCallPromptShown();
 
+    // Warm the LOGIN screen's faces while this one is being read (owner, 2026-10-26).
+    // That screen swaps four of its five circles for astrologers who are reachable now,
+    // and starting the fetch when it mounts would draw the bundled five and visibly
+    // shuffle them a beat later. Several seconds pass here before the CTA is tapped, so
+    // the names and the image bytes are both in memory by then. Fire and forget: it
+    // resolves to the bundled five on any failure and can never block this screen.
+    prefetchLiveAstrologers();
+
     // The box drops in and settles...
     Animated.timing(drop, {
       toValue: 1, duration: 620, easing: Easing.bezier(0.2, 1.3, 0.4, 1), useNativeDriver: true,
@@ -263,12 +271,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
         Animated.timing(hintPulse, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
-    const bob = Animated.loop(
-      Animated.sequence([
-        Animated.timing(float, { toValue: -8, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(float, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
     const beat = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.045, duration: 820, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
@@ -276,7 +278,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
       ]),
     );
     hint.start();
-    bob.start();
     beat.start();
 
     // THE ONE EXIT NOTHING ELSE SEES. The ✕ only exists after the box is open, and
@@ -311,7 +312,6 @@ export default function CampaignGiftReveal({ navigation, route }) {
       if (exitTimer.current) clearTimeout(exitTimer.current);
       shake.stop();
       hint.stop();
-      bob.stop();
       beat.stop();
       appStateSub.remove();
     };
@@ -604,11 +604,15 @@ export default function CampaignGiftReveal({ navigation, route }) {
             <View style={styles.bubbleTail} />
           </View>
         </View>
-        <Animated.Image
-          source={require('../../assets/images/guideAvatarLogin.png')}
-          style={[styles.guide, { transform: [{ translateY: float }] }]}
-          resizeMode="contain"
-        />
+        {/* The illustrated guide stood here until 2026-10-26 (owner); the same five
+            real astrologers the free-call login shows now stand under the bubble, so
+            the face a brand-new visitor is promised a call with is the face they
+            actually meet.
+            NO CONTINUOUS FLOAT (owner, 2026-10-26). The guide bobbed forever because he
+            was a drawing; real photographs drifting up and down read as a glitch. They
+            still slide up once on entry -- that is `guideRow`'s avatarIn/avatarRise
+            above -- and then hold still. */}
+        <FeaturedAstrologerRow />
       </Animated.View>
 
       {/* ── CTA. pointerEvents is gated on `opened`: before the reveal this button is
@@ -867,7 +871,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(12),
     marginBottom: verticalScale(36),
   },
-  guide: { height: verticalScale(140), aspectRatio: GUIDE_AVATAR_ASPECT },
   // DELIBERATELY NOT the prize card's solid cream slab with a thick gold frame: at that
   // weight two cream cards stacked up the screen competed with each other and the eye could not
   // tell which one was the prize. This is a quiet translucent caption — the prize stays

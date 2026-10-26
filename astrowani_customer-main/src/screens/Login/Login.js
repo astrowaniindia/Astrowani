@@ -313,7 +313,11 @@ const Login = ({navigation, route}) => {
               the bottom on a short display. The row is centred inside it and shrinks
               out of the way rather than fighting for space. */}
           <View style={styles.fcGuideZone} pointerEvents="none">
-            <FeaturedAstrologerRow />
+            {/* `live`: the centre face is pinned, the other four are whoever can
+                actually take a call right now. The list and its images were warmed on
+                the gift screen before this one mounted, so this draws them on the
+                first frame rather than shuffling a moment later. */}
+            <FeaturedAstrologerRow live />
           </View>
 
           <View style={[styles.fcForm, { paddingBottom: insets.bottom + verticalScale(20) }]}>
