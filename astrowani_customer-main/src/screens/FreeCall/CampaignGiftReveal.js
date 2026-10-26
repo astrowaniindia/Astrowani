@@ -600,6 +600,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
           <>
             <View pointerEvents="none" style={styles.layer}>
               <Animated.Text
+                maxFontSizeMultiplier={1.2}
                 style={[styles.teaser, { opacity: drop, transform: [{ translateY: -TEASER_LIFT }] }]}
               >
                 {t('campaignGift.teaser')}
@@ -607,6 +608,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
             </View>
             <View pointerEvents="none" style={styles.layer}>
               <Animated.Text
+                maxFontSizeMultiplier={1.2}
                 style={[styles.tapHint, { opacity: hintFade, transform: [{ translateY: HINT_DROP }] }]}
               >
                 {t('campaignGift.tapToOpen')}
@@ -622,6 +624,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
               <Animated.Text
                 numberOfLines={1}
                 adjustsFontSizeToFit
+                maxFontSizeMultiplier={1.1}
                 style={[
                   styles.youWin,
                   { opacity: winPop, transform: [{ translateY: winTravel }, { scale: winScale }] },
@@ -640,8 +643,13 @@ export default function CampaignGiftReveal({ navigation, route }) {
                   },
                 ]}
               >
-                <Text style={styles.prizeTitle}>{t('campaignGift.prizeTitle')}</Text>
-                <Text style={styles.prizeSub}>{t('campaignGift.prizeSub')}</Text>
+                {/* CAPPED. This stage is built from ABSOLUTELY POSITIONED layers that
+                    already overlap by design, and nothing on it scrolls or reflows
+                    around anything else -- so at Android's 2x font setting the prize
+                    card grew down, the bubble grew up, and the two rendered on top of
+                    each other as unreadable overlapping text. */}
+                <Text style={styles.prizeTitle} maxFontSizeMultiplier={1.15}>{t('campaignGift.prizeTitle')}</Text>
+                <Text style={styles.prizeSub} maxFontSizeMultiplier={1.15}>{t('campaignGift.prizeSub')}</Text>
               </Animated.View>
             </View>
 
@@ -659,7 +667,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
         pointerEvents="none"
       >
         <View style={styles.bubble}>
-          <Text style={styles.bubbleText}>{t('campaignGift.avatarLine')}</Text>
+          <Text style={styles.bubbleText} maxFontSizeMultiplier={1.2}>{t('campaignGift.avatarLine')}</Text>
           <View style={styles.bubbleTailWrap}>
             <View style={styles.bubbleTailBorder} />
             <View style={styles.bubbleTail} />
@@ -692,7 +700,7 @@ export default function CampaignGiftReveal({ navigation, route }) {
       >
         <Animated.View style={{ transform: [{ scale: pulse }] }}>
           <TouchableOpacity style={styles.cta} activeOpacity={0.85} onPress={acceptWithNudge}>
-            <Text style={styles.ctaText}>{t('campaignGift.cta')}</Text>
+            <Text style={styles.ctaText} maxFontSizeMultiplier={1.2}>{t('campaignGift.cta')}</Text>
             <Icon name="arrow-forward" size={moderateScale(20)} color={COLORS.AstroMaroon} />
           </TouchableOpacity>
         </Animated.View>
@@ -719,8 +727,8 @@ export default function CampaignGiftReveal({ navigation, route }) {
               sitting right where a thumb heading for the cross will pass. Deliberately a
               note, not a second button — the ✕ still works on the first tap. */}
           <View style={styles.closeNote}>
-            <Text style={styles.closeNoteTitle}>{t('campaignGift.closeNoteTitle')}</Text>
-            <Text style={styles.closeNoteSub}>{t('campaignGift.closeNoteSub')}</Text>
+            <Text style={styles.closeNoteTitle} maxFontSizeMultiplier={1.2}>{t('campaignGift.closeNoteTitle')}</Text>
+            <Text style={styles.closeNoteSub} maxFontSizeMultiplier={1.2}>{t('campaignGift.closeNoteSub')}</Text>
           </View>
 
           <TouchableOpacity
