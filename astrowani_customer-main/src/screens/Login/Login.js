@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  useWindowDimensions,
 } from 'react-native';
 import {LEGAL_LINKS} from '../../config/legal';
 import {COLORS} from '../../Theme/Colors';
@@ -76,6 +77,13 @@ const Login = ({navigation, route}) => {
   // inside it is a fixed height and does NOT -- so without this it keeps its full size
   // in a zone with no room left and lands on top of the topic chips.
   const [keyboardUp, setKeyboardUp] = useState(false);
+  // Android's "Font size" accessibility slider goes to 2x, which is enough to push the
+  // button and the legal line off the bottom of this screen. The screen still scrolls,
+  // so nothing is unreachable -- but somebody who needs big text should not have to
+  // discover that to sign in. Past this point the decoration stands aside instead, the
+  // same way it does for the keyboard, and the form keeps the room.
+  const {fontScale} = useWindowDimensions();
+  const bigText = fontScale > 1.3;
   // Which of the two login screens this is, stamped on EVERY event the shared submit
   // path emits. Without it the two variants are indistinguishable past the view event,
   // and the one question worth asking -- does the free-call screen convert better than
@@ -282,9 +290,14 @@ const Login = ({navigation, route}) => {
                 collect taps that land up here. This does it for them, and between the
                 two every pixel outside the card closes it. */}
             <Pressable onPress={() => { if (openTopic) toggleTopic(null); }}>
-              <Text style={styles.fcHeadline}>{t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}</Text>
-              <Text style={styles.fcHeadlineAccent}>{t('login.promiseLine2')}</Text>
-              <Text style={styles.fcSub}>{t('login.promiseSub')}</Text>
+              {/* CAPPED HARD, and this is not cosmetic. This screen is a plain View on
+                  purpose -- it does not scroll -- so copy that grows without limit
+                  pushes the number field and the CTA off the bottom with no way to
+                  reach them, and the free call cannot be claimed at all. The multipliers
+                  are low because this text is already large by design. */}
+              <Text style={styles.fcHeadline} maxFontSizeMultiplier={1.15}>{t('login.promiseLine1', { minutes: FREE_CALL_MINUTES })}</Text>
+              <Text style={styles.fcHeadlineAccent} maxFontSizeMultiplier={1.15}>{t('login.promiseLine2')}</Text>
+              <Text style={styles.fcSub} maxFontSizeMultiplier={1.2}>{t('login.promiseSub')}</Text>
             </Pressable>
             <View style={styles.fcChipsWrap}>
               <View
@@ -302,7 +315,7 @@ const Login = ({navigation, route}) => {
                       const {x, width} = e.nativeEvent.layout;
                       chipSpans.current[key] = {x, width};
                     }}>
-                    <Text style={styles.fcChipText}>{t(key)}</Text>
+                    <Text style={styles.fcChipText} maxFontSizeMultiplier={1.2}>{t(key)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -363,7 +376,7 @@ const Login = ({navigation, route}) => {
                 actually take a call right now. The list and its images were warmed on
                 the gift screen before this one mounted, so this draws them on the
                 first frame rather than shuffling a moment later. */}
-            {!keyboardUp && <FeaturedAstrologerRow live />}
+            {!keyboardUp && !bigText && <FeaturedAstrologerRow live />}
           </Pressable>
 
           <View style={[styles.fcForm, { paddingBottom: insets.bottom + verticalScale(20) }]}>
@@ -376,6 +389,7 @@ const Login = ({navigation, route}) => {
               <TextInput
                 ref={phoneRef}
                 style={styles.fcInput}
+                maxFontSizeMultiplier={1.3}
                 maxLength={12}
                 placeholder={t('login.phonePlaceholder')}
                 placeholderTextColor="rgba(62,27,14,0.38)"
@@ -398,7 +412,7 @@ const Login = ({navigation, route}) => {
               {loading ? (
                 <ActivityIndicator color={COLORS.AstroMaroon} />
               ) : (
-                <Text style={styles.fcCtaText}>{t('login.claimFreeCall')}</Text>
+                <Text style={styles.fcCtaText} maxFontSizeMultiplier={1.3}>{t('login.claimFreeCall')}</Text>
               )}
             </TouchableOpacity>
 
@@ -423,7 +437,7 @@ const Login = ({navigation, route}) => {
                   strokeLinejoin="round"
                 />
               </Svg>
-              <Text style={styles.fcReassure}>{t('login.verifyOnly')}</Text>
+              <Text style={styles.fcReassure} maxFontSizeMultiplier={1.2}>{t('login.verifyOnly')}</Text>
             </View>
 
             <View style={styles.fcTermsRow}>
@@ -532,14 +546,14 @@ const Login = ({navigation, route}) => {
               The spacer that used to push the form to the bottom went with the guide
               (owner, 2026-10-26); it only existed to hold the middle open for him. */}
           <View style={styles.taglineContainer}>
-            <Text style={styles.tagline}>{t('login.discoverPath')}</Text>
+            <Text style={styles.tagline} maxFontSizeMultiplier={1.3}>{t('login.discoverPath')}</Text>
           </View>
 
           {/* The welcome line that used to come out of the guide's speech bubble
               (owner, 2026-10-26). Same two i18n keys, so nothing new to translate and
               the admin-editable greeting keeps working. Folded in with the faces so
               the pair disappears together when the keyboard needs the room. */}
-          {!keyboardUp && (
+          {!keyboardUp && !bigText && (
             <View style={styles.welcomeBanner}>
               <Text style={styles.welcomeTitle}>{t('login.guideHint')}</Text>
               <Text style={styles.welcomeBody}>{t('login.guideHintLine2')}</Text>
@@ -551,7 +565,7 @@ const Login = ({navigation, route}) => {
               Hidden while the keyboard is up for the reason the free-call screen
               hides them: this row is a FIXED height inside a zone that shrinks, so
               with the keyboard open it has nowhere to go and lands on the field. */}
-          {!keyboardUp && <FeaturedAstrologerRow style={styles.facesRow} />}
+          {!keyboardUp && !bigText && <FeaturedAstrologerRow style={styles.facesRow} />}
 
           {/* Everything below is pushed to the bottom of the sheet so it is all inside
               thumb reach (owner, 2026-10-26) -- the field, the button and the legal
@@ -577,6 +591,9 @@ const Login = ({navigation, route}) => {
             <TextInput
               ref={phoneRef}
               style={[styles.input, styles.phoneInput]}
+              // Capped: at 2x the placeholder was cut mid-word and a typed number
+              // scrolled out of its own box. Still scales, just not past useful.
+              maxFontSizeMultiplier={1.3}
               maxLength={12}
               placeholder={t('login.phoneNumber')}
               placeholderTextColor={COLORS.placeholder}
@@ -597,7 +614,7 @@ const Login = ({navigation, route}) => {
             {loading ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.btnTxt}>{t('login.continue')}</Text>
+              <Text style={styles.btnTxt} maxFontSizeMultiplier={1.3}>{t('login.continue')}</Text>
             )}
           </TouchableOpacity>
 
@@ -668,6 +685,11 @@ const Login = ({navigation, route}) => {
 };
 
 export default Login;
+
+// The white sheet's corner radius. It is ALSO how far the sheet is pulled up over the
+// brown header, and how much extra bottom padding the header carries to pay for it --
+// the three must stay equal or the seam moves.
+const SHEET_RADIUS = moderateScale(30);
 
 const GOLD = '#FFD233';
 const CREAM = '#FFF6EA';
@@ -954,7 +976,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.AstroMaroon,
     paddingTop: verticalScale(88),
-    paddingBottom: verticalScale(22),
+    // The extra SHEET_RADIUS is the brown that sits BEHIND the sheet's rounded top.
+    // It is cancelled by the sheet's negative marginTop, so the seam does not move.
+    paddingBottom: verticalScale(22) + SHEET_RADIUS,
   },
   logo: {
     width: scale(100),
@@ -994,8 +1018,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 0,
     width: '100%',
-    borderTopLeftRadius: moderateScale(30),
-    borderTopRightRadius: moderateScale(30),
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    // THE CURVE NEEDS BROWN BEHIND IT. `main` is white on purpose (the iPhone
+    // home-indicator strip, 2026-10-24), so the rounded corners were revealing white on
+    // white and the seam read as a straight line. Pulling the sheet up over the header
+    // by exactly its own radius puts the header's brown behind that curve, and the
+    // matching paddingBottom above means nothing else shifts.
+    marginTop: -SHEET_RADIUS,
     paddingTop: verticalScale(30),
     paddingHorizontal: scale(20),
   },
