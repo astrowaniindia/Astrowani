@@ -26,7 +26,16 @@ export default function HeaderBackButton({ navigation, color = '#fff' }) {
         }
       }}
       hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      style={{ paddingRight: moderateScale(8), paddingVertical: moderateScale(4) }}
+      // Centred, with EQUAL padding on every side. The first version padded only the
+      // right and the vertical, which pushed the glyph off-centre inside the circular
+      // press area -- visible on the astrologer profile and reported as a misaligned
+      // arrow. alignItems/justifyContent keep it centred whatever the icon metrics do.
+      style={{
+        width: moderateScale(34),
+        height: moderateScale(34),
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
       accessibilityRole="button"
       accessibilityLabel="Go back">
       <MaterialIcons name="arrow-back" size={moderateScale(24)} color={color} />

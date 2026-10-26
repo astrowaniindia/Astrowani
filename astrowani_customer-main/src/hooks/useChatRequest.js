@@ -4,7 +4,7 @@
 
 import { useState, useRef, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
-import { describeBlockError } from '../utils/blockedAstrologers';
+import { describeBlockError, markAstrologerBlocked } from '../utils/blockedAstrologers';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { markRequestStatus } from '../api/RequestsApi';
 import Instance from '../api/ApiCall';
@@ -96,6 +96,24 @@ const useChatRequest = (navigation) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ astrologerId: receiverId }),
         });
+        // A BLOCK IS A REASON, NOT A CRASH. This path uses fetch(), so there is no
+        // axios `error.response` for describeBlockError to read, and a 403 used to
+        // fall through to /api/chat/initiate and end up in the generic catch below --
+        // which renders as "Something went wrong" (CustomAlert replaces the generic
+        // title "Error" with that). Reported from TestFlight: the customer blocked an
+        // astrologer, tapped chat, and was told something went wrong.
+        if (availResp.status === 403) {
+          const blockedJson = await availResp.json().catch(() => null);
+          if (blockedJson?.blocked) {
+            if (blockedJson.blockedByYou) markAstrologerBlocked(receiverId);
+            showStatusPopup({
+              variant: 'blocked',
+              title: blockedJson.blockedByYou ? t('blocked.bannerTitle') : t('alerts.unavailable'),
+              message: blockedJson.message || t('blocked.cannotContact'),
+            });
+            return;
+          }
+        }
         if (availResp.status === 409) {
           const availJson = await availResp.json().catch(() => null);
           showStatusPopup({
@@ -178,6 +196,17 @@ const useChatRequest = (navigation) => {
           message: initJson?.selfBusy
             ? (initJson.message || t('alerts.selfBusy'))
             : t('alerts.astrologerBusy'),
+        });
+        return;
+      }
+      // Same reason as the 403 branch above: the availability check sits in a
+      // try/catch that swallows its own failures, so a block can still reach here.
+      if (initRes.status === 403 && initJson?.blocked) {
+        if (initJson.blockedByYou) markAstrologerBlocked(receiverId);
+        showStatusPopup({
+          variant: 'blocked',
+          title: initJson.blockedByYou ? t('blocked.bannerTitle') : t('alerts.unavailable'),
+          message: initJson.message || t('blocked.cannotContact'),
         });
         return;
       }

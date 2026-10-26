@@ -131,7 +131,9 @@ module.exports = function registerModerationRoutes(app) {
           : 'Could not block this customer',
       });
     }
-    return res.json({ success: true, alreadyBlocked: !!r.alreadyBlocked });
+    // Same as the customer-side block: the consultation ends now, not later.
+    const ended = await endLiveSessionBetween(astrologerId, customerId);
+    return res.json({ success: true, alreadyBlocked: !!r.alreadyBlocked, sessionEnded: ended > 0 });
   });
 
   app.post('/api/vendor/customers/unblock', async (req, res) => {
@@ -168,6 +170,42 @@ module.exports = function registerModerationRoutes(app) {
   // Same one rule as above: the customer id comes from the VERIFIED JWT and never
   // from the body. There is deliberately no /:customerId.
 
+
+/**
+ * End any consultation the two are in RIGHT NOW, because a block was just set.
+ *
+ * Owner's instruction, 2026-10-26, and it reverses the call made on 2026-10-23. The
+ * reasoning then was that a customer might want to finish minutes they had already
+ * paid for, so a block governed only FUTURE contact. In practice someone who blocks
+ * mid-conversation wants out of THAT conversation, and leaving it open read as the
+ * block not working -- which is how it was reported.
+ *
+ * Best-effort and never throws: the block itself is already written and confirmed to
+ * the user by the time this runs, so a failure here must not turn a successful block
+ * into an error. The guard added to /api/chat/message, /api/chat/image and
+ * /api/vendor/voice-notes refuses anything further regardless, so the worst case is a
+ * session that stays open but silent until somebody taps End.
+ */
+async function endLiveSessionBetween(astrologerId, customerId) {
+  try {
+    const sessionManager = require('./sessionManager');
+    const { data } = await db
+      .from('chat_sessions')
+      .select('id')
+      .eq('vendor_id', astrologerId)
+      .eq('caller_id', customerId)
+      .is('ended_at', null)
+      .eq('is_active', true);
+    for (const row of data || []) {
+      await sessionManager.terminateSession(row.id, 'Blocked by the other participant');
+    }
+    return (data || []).length;
+  } catch (e) {
+    console.error('[moderation] could not end live session after block:', e.message);
+    return 0;
+  }
+}
+
   app.post('/api/astrologers/block', async (req, res) => {
     const customerId = await customerFromReq(req);
     if (!customerId) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -187,7 +225,8 @@ module.exports = function registerModerationRoutes(app) {
           : 'Could not block this astrologer',
       });
     }
-    return res.json({ success: true, alreadyBlocked: !!r.alreadyBlocked });
+    const ended = await endLiveSessionBetween(astrologerId, customerId);
+    return res.json({ success: true, alreadyBlocked: !!r.alreadyBlocked, sessionEnded: ended > 0 });
   });
 
   app.post('/api/astrologers/unblock', async (req, res) => {

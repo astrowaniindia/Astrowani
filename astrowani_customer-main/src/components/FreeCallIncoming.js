@@ -47,6 +47,42 @@ import { captureEvent } from '../utils/Analytics';
 // leaving a stale full-screen modal over the app if the call quietly went away.
 const RING_TIMEOUT_MS = 60 * 1000;
 
+// Sessions this device is already in, or has already answered or declined. MODULE
+// level, not component state, for two reasons: it survives the host remounting, and
+// call paths that never touch the Answer button can write to it.
+//
+// THE BUG THIS FIXES (TestFlight, 2026-10-26): "a weird screen came saying astrologer
+// is calling you and the call was already going on". The customer had started a free
+// call themselves from the instant flow, switched to WhatsApp, and come back. On every
+// foreground this host asks /api/free-call/incoming whether anyone is ringing -- and
+// that endpoint cannot tell ringing from answered, because free-call sessions are
+// created with is_active already true so the astrologer counts as busy for the whole
+// attempt. So it returned the customer's OWN live call, and the Answer screen was
+// raised over a conversation already in progress.
+//
+// The component's own `handledRef` was meant to prevent exactly this, but it is only
+// written when somebody taps Answer or Decline. A call the customer placed themselves
+// was never in it.
+const handledSessions = new Set();
+
+/** Mark a free-call session as one this device is already in. */
+export function markFreeCallHandled(sessionId) {
+  if (sessionId) handledSessions.add(String(sessionId));
+}
+
+// Being on a call screen at all is the broader guard, and the one that covers paths
+// nobody has thought of: whatever the server says, an incoming-call screen must never
+// be raised over a call already on screen.
+const CALL_ROUTES = ['VoiceCallScreen', 'VideoCallScreen', 'AudioCall', 'VideoCall'];
+function isOnACallScreen() {
+  try {
+    if (!navigationRef.isReady()) return false;
+    return CALL_ROUTES.includes(navigationRef.getCurrentRoute()?.name);
+  } catch (e) {
+    return false;
+  }
+}
+
 export const FreeCallIncomingHost = () => {
   const [call, setCall] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +113,8 @@ export const FreeCallIncomingHost = () => {
     if (!data?.sessionId || !data?.bookingId) return;
     if (shownRef.current === data.sessionId) return;
     if (handledRef.current.has(String(data.sessionId))) return;
+    if (handledSessions.has(String(data.sessionId))) return;
+    if (isOnACallScreen()) return;
     shownRef.current = data.sessionId;
     setCall({
       bookingId: String(data.bookingId),
@@ -185,6 +223,7 @@ export const FreeCallIncomingHost = () => {
       duration_minutes: target.durationMinutes,
     });
     handledRef.current.add(String(target.sessionId));
+    markFreeCallHandled(target.sessionId);
     clearRing();
     // Same screen the paid calls use. freeCall only changes what is displayed and
     // adds the hard stop — the session is already priced at 0 server-side.
@@ -210,6 +249,7 @@ export const FreeCallIncomingHost = () => {
       astrologer_id: target.astrologerId,
     });
     handledRef.current.add(String(target.sessionId));
+    markFreeCallHandled(target.sessionId);
     // Dismiss immediately — the customer said no, so the UI should not sit there
     // waiting on a network round trip to agree with them.
     clearRing();

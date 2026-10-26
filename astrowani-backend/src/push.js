@@ -256,10 +256,36 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
     stringData[key] = String(value);
   });
 
+  // ── THE iOS PUSH FIX (2026-10-26) ──────────────────────────────────────────
+  // Several callers pass the words to show INSIDE `data` -- `{data: {type, title,
+  // body}}` -- rather than as the top-level `title`/`body` this function destructures.
+  // That produced a DATA-ONLY FCM message, and the difference between the platforms is
+  // total:
+  //
+  //   Android  the app's own setBackgroundMessageHandler receives it and builds a local
+  //            notification from data.title/data.body, so it looks like it works.
+  //   iOS      a data-only message carries no alert for the system to render, and
+  //            without content-available it does not even wake the app. NOTHING is
+  //            shown, ever, while the app is closed.
+  //
+  // That is exactly what was reported twice from TestFlight: notifications appear in
+  // the in-app list (written by the socket and the notifications table) and never
+  // outside it. Registering the APNs token, which was the first thing fixed, was
+  // necessary but could not have helped on its own.
+  //
+  // Reading the fallback HERE rather than correcting the five call sites is deliberate:
+  // it fixes every one of them at once, and it fixes the next caller that repeats the
+  // mistake -- which is likely, since the shape reads perfectly naturally.
+  //
+  // A genuinely silent push stays silent: `sessionManager`'s session_ended ping sends
+  // no title or body in either place, so no alert block is built for it.
+  const alertTitle = title || data.title || undefined;
+  const alertBody = body || data.body || undefined;
+
   try {
     const response = await getMessaging().sendEachForMulticast({
       tokens: tokenList,
-      notification: (title || body) ? { title, body } : undefined,
+      notification: (alertTitle || alertBody) ? { title: alertTitle, body: alertBody } : undefined,
       data: stringData,
       android: { priority: 'high' },
       apns: { payload: { aps: { sound: 'default' } } },

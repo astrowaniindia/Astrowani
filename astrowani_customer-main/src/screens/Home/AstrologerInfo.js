@@ -1341,10 +1341,22 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: COLORS.AstroMaroon,
     elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4,
   },
-  blockedDock: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: scale(10) },
-  blockedDockText: { flex: 1 },
-  blockedDockTitle: { fontSize: moderateScale(13), fontFamily: 'Poppins-Bold', color: '#8c2f2f' },
-  blockedDockBody: { fontSize: moderateScale(11), color: '#7a6356', marginTop: 1 },
+  // The dock's own padding is scale(8), which is right for three pill buttons that
+  // carry their own inner padding but far too tight for running text -- the title and
+  // the sentence ran into the Unblock button and the card edge (reported 2026-10-26).
+  // This row therefore adds its own breathing room on top of the dock's.
+  blockedDock: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(12),
+    paddingLeft: scale(8),
+    paddingRight: scale(4),
+    paddingVertical: verticalScale(4),
+  },
+  blockedDockText: { flex: 1, minWidth: 0 },
+  blockedDockTitle: { fontSize: moderateScale(12.5), fontFamily: 'Poppins-Bold', color: '#8c2f2f' },
+  blockedDockBody: { fontSize: moderateScale(10.5), lineHeight: moderateScale(14), color: '#7a6356', marginTop: verticalScale(2) },
   blockedDockBtn: {
     paddingHorizontal: scale(16), paddingVertical: verticalScale(9),
     borderRadius: moderateScale(20), backgroundColor: COLORS.AstroMaroon,

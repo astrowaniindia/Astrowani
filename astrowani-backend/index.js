@@ -4996,6 +4996,24 @@ app.post('/api/chat/message', async (req, res) => {
       if (sessionRow.ended_at || sessionRow.is_active === false) {
         return res.status(409).json({ success: false, code: 'SESSION_ENDED', message: 'This session has ended.' });
       }
+      // BLOCKED MEANS BLOCKED IN BOTH DIRECTIONS, INSIDE A LIVE SESSION TOO.
+      // Until 2026-10-26 the block was checked only where a consultation is STARTED
+      // (/api/call/initiate, /api/chat/check-availability, /api/chat/initiate), so a
+      // block set during an open chat changed nothing on the wire. The customer's own
+      // app greyed its composer out, which made it look enforced -- while the
+      // astrologer, whose app knew nothing about it, carried on sending. Reported from
+      // TestFlight: "the customer is not able to send messages but the astrologer was
+      // able to send the messages".
+      //
+      // Checked against the SESSION ROW, not the sender, so one test covers both
+      // directions and it cannot be got round by whichever side sends first.
+      if (await customerModeration.isContactBlocked(sessionRow.vendor_id, sessionRow.caller_id)) {
+        return res.status(403).json({
+          success: false,
+          code: 'BLOCKED',
+          message: 'This conversation is closed because one of you blocked the other.',
+        });
+      }
       // THE SERVICE GATE — see SERVICE_PRESENCE_GRACE_MS.
       if (!(await senderMayBeServed(sessionId, senderId, sessionRow.started_at))) {
         return res.status(409).json({
@@ -5136,6 +5154,14 @@ app.post('/api/chat/image', async (req, res) => {
     }
     if (sessionRow.ended_at || sessionRow.is_active === false) {
       return res.status(409).json({ success: false, code: 'SESSION_ENDED', message: 'This session has ended.' });
+    }
+    // Same both-directions block as POST /api/chat/message. A photo is a message.
+    if (await customerModeration.isContactBlocked(sessionRow.vendor_id, sessionRow.caller_id)) {
+      return res.status(403).json({
+        success: false,
+        code: 'BLOCKED',
+        message: 'This conversation is closed because one of you blocked the other.',
+      });
     }
     if (!(await senderMayBeServed(sessionId, senderId, sessionRow.started_at))) {
       return res.status(409).json({
@@ -6830,6 +6856,18 @@ app.post('/api/vendor/voice-notes', async (req, res) => {
     const vendorId = decoded.astroId || decoded.vendorId || decoded.id;
 
     const { customerId, audioUrl, durationSeconds } = req.body || {};
+
+    // A voice note needs NO live session, so it was the one channel a blocked
+    // astrologer could still use to reach a customer who had cut them off -- the exact
+    // thing a block is for. Checked both ways: an astrologer the customer blocked
+    // cannot send, and nor can one who blocked the customer themselves.
+    if (customerId && await customerModeration.isContactBlocked(vendorId, customerId)) {
+      return res.status(403).json({
+        success: false,
+        code: 'BLOCKED',
+        message: 'You cannot send a voice note to this customer.',
+      });
+    }
     if (!customerId || !audioUrl) {
       return res.status(400).json({ success: false, message: 'customerId and audioUrl are required' });
     }
