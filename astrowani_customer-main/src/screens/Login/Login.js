@@ -508,7 +508,15 @@ const Login = ({navigation, route}) => {
 
         </View>
 
-        <View style={styles.loginContainer}>
+        <View
+          style={[
+            styles.loginContainer,
+            // The form now sits ON the bottom edge, so the terms line would otherwise
+            // land under the navigation bar. `insets.bottom` reads 0 on a three-button
+            // bar here, which is why a fixed amount is added on top of it rather than
+            // trusted alone -- the same reason `fcForm` pads by hand.
+            { paddingBottom: insets.bottom + verticalScale(18) },
+          ]}>
 
           {/* The pill straddles the seam, as it originally did (restored 2026-10-26).
               It was tried as an absolutely-positioned child of the brown header instead,
@@ -526,6 +534,29 @@ const Login = ({navigation, route}) => {
           <View style={styles.taglineContainer}>
             <Text style={styles.tagline}>{t('login.discoverPath')}</Text>
           </View>
+
+          {/* The welcome line that used to come out of the guide's speech bubble
+              (owner, 2026-10-26). Same two i18n keys, so nothing new to translate and
+              the admin-editable greeting keeps working. Folded in with the faces so
+              the pair disappears together when the keyboard needs the room. */}
+          {!keyboardUp && (
+            <View style={styles.welcomeBanner}>
+              <Text style={styles.welcomeTitle}>{t('login.guideHint')}</Text>
+              <Text style={styles.welcomeBody}>{t('login.guideHintLine2')}</Text>
+            </View>
+          )}
+
+          {/* The same five faces this app shows everywhere else (owner, 2026-10-26).
+              Bundled, so they draw on the first frame with no network.
+              Hidden while the keyboard is up for the reason the free-call screen
+              hides them: this row is a FIXED height inside a zone that shrinks, so
+              with the keyboard open it has nowhere to go and lands on the field. */}
+          {!keyboardUp && <FeaturedAstrologerRow style={styles.facesRow} />}
+
+          {/* Everything below is pushed to the bottom of the sheet so it is all inside
+              thumb reach (owner, 2026-10-26) -- the field, the button and the legal
+              line sit together at the bottom instead of stranded under the header. */}
+          <View style={styles.formSpacer} />
 
           <View style={styles.inputContainer}>
           {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
@@ -1103,6 +1134,36 @@ const styles = StyleSheet.create({
     color: '#6A4A38',
     fontSize: moderateScale(12),
     fontWeight: '600',
+  },
+  // The slack that pushes the form to the bottom. No minHeight: it is the first thing
+  // to give up its height when the keyboard halves the window.
+  formSpacer: {
+    flex: 1,
+    minHeight: 0,
+  },
+  facesRow: {
+    marginTop: verticalScale(14),
+  },
+  // Quiet on purpose: this sheet is white and the brown button below is the thing to
+  // press, so the banner must not compete with it for attention.
+  welcomeBanner: {
+    marginTop: verticalScale(4),
+    alignItems: 'center',
+    paddingHorizontal: scale(10),
+  },
+  welcomeTitle: {
+    color: COLORS.AstroMaroon,
+    fontSize: moderateScale(16),
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  welcomeBody: {
+    marginTop: verticalScale(4),
+    color: 'rgba(62,27,14,0.62)',
+    fontSize: moderateScale(12.5),
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: moderateScale(18),
   },
   termsView: {
     flexShrink: 0,
