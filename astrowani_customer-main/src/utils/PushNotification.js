@@ -229,6 +229,34 @@ messaging().onTokenRefresh(async token => {
   await syncTokenWithBackend(token);
 });
 
+// ── RE-SYNC ON EVERY FOREGROUND ───────────────────────────────────────────────
+// A token can stop being the right one without this app ever being told. Deleting
+// and reinstalling an iOS app invalidates its APNs token, so the phone comes back
+// with a NEW FCM token while the backend still holds the old one -- and a send to a
+// known-but-dead token is ACCEPTED by FCM and reported as a success, then dropped
+// silently by Apple. Nothing appears on the phone and nothing looks wrong anywhere:
+// push_success 1, push_failure 0, no error. That is exactly the state this app was
+// found in on 2026-10-26, after the tester reinstalled to escape a stuck screen.
+//
+// `onTokenRefresh` above is not enough on its own: it fires when Firebase decides the
+// token changed, which it cannot do for the launch where the app is brand new to the
+// device and has already read its token before anything was listening.
+//
+// So the token is re-sent whenever the app comes back to the foreground. It is a
+// cheap idempotent write on a path the customer is not waiting for, and it converts
+// "push silently stopped working" into "push works again the next time they open the
+// app", which is the behaviour anyone would assume it already had.
+let lastTokenSyncAt = 0;
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active') return;
+  // Not on every single foreground -- a customer flicking between apps should not
+  // generate a write per switch. A minute is far below how often a token changes and
+  // far above how often this can be triggered by hand.
+  if (Date.now() - lastTokenSyncAt < 60000) return;
+  lastTokenSyncAt = Date.now();
+  getFCMToken().catch(() => {});
+});
+
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
 
