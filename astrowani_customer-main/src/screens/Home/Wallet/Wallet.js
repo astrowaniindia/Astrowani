@@ -50,7 +50,14 @@ import { razorpayPrefill } from '../../../utils/customerIdentity';
 const TRUST_BADGES = [
   { key: 'visa', kind: 'icon', name: 'cc-visa', color: '#1A1F71' },
   { key: 'paytm', kind: 'image', source: require('../../../assets/images/paytm.png') },
-  { key: 'gpay', kind: 'icon', name: 'google-pay', color: '#4285F4' },
+  // Owner-supplied Google Pay artwork (2026-10-26), replacing FontAwesome5's
+  // single-colour 'google-pay' glyph. THE MARK ONLY: the supplied lockup carries the
+  // "Google Pay" wordmark on a second line, cut at the blank band between them
+  // (source rows 299-326, measured). Near-square at 1.12:1, so it uses the same
+  // 22x22 slot as Paytm and PhonePe rather than UPI's wide one. White background
+  // left in, like PhonePe -- the badge behind it is exactly #fff and keying white
+  // out of anti-aliased artwork leaves a fringe.
+  { key: 'gpay', kind: 'image', source: require('../../../assets/images/gpay.png') },
   { key: 'phonepe', kind: 'image', source: require('../../../assets/images/phonepe.png') },
   { key: 'paypal', kind: 'icon', name: 'cc-paypal', color: '#003087' },
   // The official NPCI mark (owner-supplied, 2026-10-26), replacing the plain word

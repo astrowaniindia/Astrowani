@@ -18,7 +18,7 @@ import VerifyOtp from '../screens/OtpScreen/VerifyOtp';
 import { moderateScale, scale, verticalScale } from '../utils/Scaling';
 import EmailOtpScreen from '../screens/OtpScreen/EmailOtpScreen';
 import CustomHeader from './CustomHeader';
-import HeaderBackButton from './HeaderBackButton';
+import HeaderBackButton, { HeaderIconButton } from './HeaderBackButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LanguageContext } from '../context/LanguageContext';
 import Chat from '../screens/chat/Chat';
@@ -262,7 +262,7 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
         <Stack.Screen options={{ title: 'Verify Email', headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} name="EmailOtpScreen" component={EmailOtpScreen} />
         <Stack.Screen options={{ headerShown: false }} name="DrawerNavigator" component={DrawerNavigator} />
 
-        <Stack.Screen name="UserProfileScreen" component={UserProfileScreen} options={{ title: 'Profile', headerBackTitleVisible: true, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} />
+        <Stack.Screen name="UserProfileScreen" component={UserProfileScreen} options={{ title: 'Profile', headerBackTitleVisible: false, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} />
         <Stack.Screen name="BlockedAstrologers" component={BlockedAstrologersScreen} options={({ navigation }) => ({ title: 'Blocked astrologers', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18) }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} /> })} />
 
         <Stack.Screen name="AstrologerInfo" component={AstrologerInfo} options={({ route, navigation }) => ({ title: route.params?.person.name, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} />, tabBarStyle: { display: 'none' }, })} />
@@ -350,7 +350,7 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           options={{
             title: 'Refer a friend',
 
-            headerBackTitleVisible: true,
+            headerBackTitleVisible: false,
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
             },
@@ -444,7 +444,7 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           options={{
             title: 'Free Astrology ',
 
-            headerBackTitleVisible: true,
+            headerBackTitleVisible: false,
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
             },
@@ -730,7 +730,7 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           options={{
             title: 'My Favorites',
 
-            headerBackTitleVisible: true,
+            headerBackTitleVisible: false,
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
             },
@@ -759,13 +759,9 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           options={({ navigation }) => ({
             headerTitle: () => <WalletBalanceHeaderTitle />,
             headerRight: () => (
-              <TouchableOpacity
-                style={{ marginRight: scale(15) }}
-                onPress={() => navigation.navigate('History')}>
-                <MaterialIcons name="history" size={24} color="#fff" />
-              </TouchableOpacity>
+              <HeaderIconButton name="history" onPress={() => navigation.navigate('History')} />
             ),
-            headerBackTitleVisible: true,
+            headerBackTitleVisible: false,
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
             },
@@ -783,7 +779,7 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           options={{
             title: 'Transaction History',
 
-            headerBackTitleVisible: true,
+            headerBackTitleVisible: false,
             headerStyle: {
               backgroundColor: COLORS.AstroMaroon,
             },
@@ -1130,7 +1126,7 @@ function HomeStack({ navigation }) {
         options={{
           title: 'Our Blogs',
 
-          headerBackTitleVisible: true,
+          headerBackTitleVisible: false,
           headerStyle: {
             backgroundColor: COLORS.AstroMaroon,
           },
@@ -1257,7 +1253,7 @@ function SessionStack() {
         component={MySessionScreen}
         options={({ navigation }) => ({
           title: 'My Sessions',
-          headerBackTitleVisible: true,
+          headerBackTitleVisible: false,
           headerTitleAlign: 'center',
           headerStyle: {
             backgroundColor: COLORS.AstroMaroon,
@@ -1272,9 +1268,10 @@ function SessionStack() {
           // The drawer itself still remembers what was open before, so goBack() on
           // the PARENT (drawer) navigator returns there correctly.
           headerLeft: () => (
-            <TouchableOpacity onPress={() => navigation.getParent()?.goBack()} style={{ marginLeft: scale(12) }}>
-              <MaterialIcons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
+            <HeaderBackButton
+              navigation={navigation}
+              onPress={() => navigation.getParent()?.goBack()}
+            />
           ),
         })}
       />
