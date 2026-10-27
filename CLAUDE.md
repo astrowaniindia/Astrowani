@@ -3618,3 +3618,75 @@ camera, mic and payments, none of it tested on macOS.
 
 **Still open:** astrologer screenshots (none), attaching a build on both versions, publishing
 App Privacy on both. Those last two are the final push and were deliberately not done.
+
+### EL (2026-10-28): the customer app is in review, the astrologer app is staged, and the privacy labels were WRONG on both
+
+**`Astrowani - Ask an Astrologer` 24.1 is `WAITING_FOR_REVIEW`** with `releaseType: MANUAL`,
+so approval does NOT publish it — it waits in Pending Developer Release. **`Astrowani for
+Astrologers` 6.6 is fully staged at `PREPARE_FOR_SUBMISSION`**: 7 screenshots, build 6.6 (1)
+attached and VALID, Content Rights answered, App Privacy published with 17 data types.
+Deliberately not submitted.
+
+> **THE PRIVACY LABELS WERE UNDER-DECLARED ON BOTH APPS, and the fix is a check, not a
+> judgement.** Every SDK ships a `PrivacyInfo.xcprivacy` manifest declaring what IT collects,
+> and they are all inside the `.ipa` (16 in the customer build, 18 in the astrologer one).
+> Unzip the build, read every manifest's `NSPrivacyCollectedDataTypes`, and diff that against
+> the App Store Connect declaration. Doing that found:
+>
+> | App | Missing | Declared by |
+> |---|---|---|
+> | customer | **Payment Info** | `RazorpayStandard.framework` |
+> | customer | **Device ID** | Firebase Messaging, Razorpay |
+> | customer | **Other Diagnostic Data** | Firebase Installations, Messaging, GoogleDataTransport |
+> | customer | **Other Data Types** | Firebase Messaging |
+> | astrologer | **Other Diagnostic Data**, **Other Data Types** | the same Firebase trio |
+> | astrologer | **Other Financial Info** | the app's OWN manifest — earnings and wallet balances |
+>
+> **Payment Info was reasoned away and that reasoning was wrong.** "Razorpay handles cards, we
+> never store them" is irrelevant: Apple's own wording in that dialog is *"you're responsible
+> for any third-party code that is added to your app, so if your third-party partners collect
+> data from your app, you must represent that."* It is about what is IN THE BINARY.
+> **Other Financial Info** is the same lesson from the other direction — a prediction of
+> "two missing" was wrong because the repo's own manifest declares a third. **Read the
+> manifests; do not reason about it.**
+
+**App Privacy is editable and republishable after publishing**, including once the app is
+live, so discovering this after pressing Publish costs nothing. Nothing is public until the
+app is released.
+
+**`Content Rights` blocks submission and is easy to miss.** `Add for Review` refused with
+*"You must set up Content Rights Information in App Information."* It is per-app, so both
+apps need it. The answer is **Yes, and I have the necessary rights** — the apps show
+astrologer photos, live video, user chat and photos, blog articles and stock imagery. "No"
+would be disprovable in thirty seconds. It needs a **Save on the App Information page**
+afterwards; the dialog alone does not persist it.
+
+**Screenshots: the customer app uses the owner's own Canva set (5, 1206x2622), the astrologer
+app reuses the Play captures (7).** The Play ones are raw 1080x2400 Android screenshots, so
+the **status bar and gesture bar were cropped** (TOP 118 / BOTTOM 52 px) before fitting —
+the punch-hole dot and Android signal/battery icons are the only platform tells, and the
+app's own header then starts at the top edge. Owner was told that customer screenshot #1 is a
+stock portrait with **no app UI** (Guideline 2.3.3, and it sits in the search-results slot)
+and chose to keep it; if Apple rejects, that is the first thing to swap, and swapping a
+screenshot needs no new build.
+
+> **Scripted clicks do NOT register with App Store Connect's React radios.** Setting
+> `.checked` or calling `.click()` from JavaScript leaves the DOM looking right, the control
+> looking selected, and the Next/Publish button **permanently disabled**, because React never
+> sees a change event. Checkboxes and ordinary buttons are fine; radios are not. Use real
+> mouse clicks for them, and click the LABEL rather than the radio circle — the circle is a
+> small target and a near miss silently does nothing. The same class of failure left
+> `releaseType` as `AFTER_APPROVAL` on the astrologer app for a day after a batch "Save" that
+> looked successful. **Verify every setting by reading it back from `/iris/v1/...`, never
+> from the page.**
+
+**Also fixed today:** the reviewer astrologer `9999999999` had `hidden_from_customers = false`
+— publicly listed, online, with charges set, able to take real customer calls during review.
+Set back to `true`; verified by `GET /api/astrologers` returning 57 astrologers without it.
+Login still works (`approved`, not suspended).
+
+**Still open:** the astrologer app's `Add for Review`; the demo login proven on a device for
+both apps; the "Exprienced" typo in the WordPress site title (it is in every browser tab,
+including on the privacy policy a reviewer opens); the boy/girl prediction screenshot still
+live on the Play listing; and the 7-minute screenshot copy against a database that still says
+11.
