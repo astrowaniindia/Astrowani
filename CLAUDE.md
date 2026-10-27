@@ -762,7 +762,7 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
   - **Tracking: No.** The iOS build has no ad SDKs: Meta and Firebase Analytics are `ios: null`. If that ever changes, the App Tracking Transparency prompt and a "Yes" are required.
   - Payment details are handled by Razorpay and not collected by us.
 - [x] **DONE 2026-10-27 - free, 174 regions, China mainland removed from BOTH apps.** **Pricing:** Free. **Availability:** your choice, but **untick China for Astrowani Astrologer** (it uses CallKit, and Apple rejects CallKit apps on the China storefront).
-- [ ] **STILL OPEN - the one blocker left for submission.** **Screenshots:** iPhone **6.9" (1320×2868)** is required; 6.5" is optional. No iPad screenshots — the apps are iPhone-only by explicit build setting (see Phase 3 above). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
+- [ ] **STILL OPEN - the one blocker left for submission.** **Screenshots:** the CUSTOMER app is DONE (4 uploaded 2026-10-27); the ASTROLOGER app has none. **The required size is 1206×2622 or 1179×2556 (iPhone 6.1"/6.3"), NOT the 1320×2868 this line used to claim** - App Store Connect rejected that outright with "File dimensions are invalid" and names the accepted set itself. Om's iPhone 14 Pro captures at 1179×2556 natively, so screenshots can come straight off the phone with no resizing. No iPad screenshots — the apps are iPhone-only by explicit build setting (see Phase 3 above). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
 - [x] **DONE 2026-10-27.** **Description, subtitle, keywords:** lifestyle wording (CN). Don't mention Android, Google Play, or prices that differ by platform.
 - [x] **DONE 2026-10-27.** **App Review Information:** contact name/phone/email, **sign-in required: Yes**, demo account **9999999999 / 123456**, and the Notes text from CN (a different note for each app).
 - [x] **DONE 2026-10-27, both set to manual.** **Version release:** "Manually release this version", so the owner controls launch day.
@@ -3549,3 +3549,72 @@ completely and have a customer call. `astrologers.voip_token` is **empty for eve
 astrologer in the database** — no device has ever registered one, because free-provisioned
 sideloads strip the entitlement. If it does not ring, read that column first: empty means
 the token never registered, populated means the push failed. Different bugs.
+
+### EL (later the same day): build 4, the EU removed, and the screenshot size that is NOT 6.9"
+
+**Customer build 24.1 (4) is uploaded and VALID** (`5715444c` bumped
+`CURRENT_PROJECT_VERSION` 3 -> 4; `MARKETING_VERSION` stays **24.1**, because the iOS OTA
+bundles target that exact string). App Store Connect now holds builds 2, 3 and 4.
+
+> **Why a new build rather than submitting build 3: so the BINARY carries what the OTA
+> carries.** Build 3 predates the second TestFlight round. Checked before bumping —
+> `git diff --name-only 43563587..main -- astrowani_customer-main/` returns **zero files**,
+> where `43563587` is the commit behind the newest enabled iOS bundle for 24.1
+> (`01a179a7`). So build 4 and that bundle are the same JS, and a reviewer sees the real app
+> on first launch instead of whatever the binary shipped with plus an OTA patch.
+
+`.ipa` verified before upload: `iphoneos26.0`, `CFBundleVersion` 4, `UIDeviceFamily [1]`,
+`aps-environment` **production**, `get-task-allow` false, no `ProvisionedDevices`,
+`UIBackgroundModes` `audio, remote-notification` — **no `voip`, which is correct**: the
+customer app places calls, the astrologer app receives them.
+
+> **`eas submit` does NOT submit for review.** It uploads the binary to App Store Connect
+> and makes it selectable in TestFlight and on the version page. Review is the separate
+> "Add for Review" button. The name causes real alarm; it is worth saying out loud. Expect
+> EAS's own queue ("waiting for an available submitter") to sit for 10-20 minutes on the
+> free tier — the job is already scheduled server-side, so Ctrl+C stops the watching, not
+> the upload. Do not re-run it; that queues a duplicate.
+
+**THE SCREENSHOT SIZE IN THE CO CHECKLIST WAS WRONG, and it cost a render cycle.** The
+checklist said 6.9" / 1320x2868. App Store Connect rejected all four with **"File dimensions
+are invalid"** and states the real requirement itself:
+
+> for iPhone 6.1" or 6.3" displays ... supported sizes include 2556 x 1179px, 1179 x 2556px,
+> 2622 x 1206px and 1206 x 2622px
+
+The set registers as `APP_IPHONE_61`. The aspect ratios are near-identical (2.1727 vs
+2.1741) so it was a resize, not a redo — but **read the slot's own hint before rendering
+anything**. Om's iPhone 14 Pro is 1179x2556, i.e. natively acceptable: no simulator, no Mac,
+no resizing.
+
+**Four customer screenshots uploaded**, built from the live Play Store artwork (1024x1536,
+2:3) scaled to width and extended upward by stretching the top pixel row. The top third is
+empty cream, because Play's canvas is far squarer than Apple's; it is valid but a designer
+re-lay would be better.
+
+> **TWO of the six Play screenshots MUST NOT be reused, and one of them is a live problem.**
+> (1) A chat screenshot shows a customer asking *"Sir Will I have a boy or a girl"* and the
+> astrologer answering that a boy is likelier. **Predicting the sex of an unborn child is
+> prohibited in India under the PCPNDT Act, and advertising it is a separate offence.** It is
+> public on the Play listing right now and should come down there too, not merely be left out
+> of the App Store set. (2) The astrologer-profile screenshot shows a **Gift** button, and
+> gifts are hidden on iOS (`DIGITAL_PURCHASES_ENABLED = false`) — a screenshot showing a
+> feature the build does not have is a Guideline 2.3.3 rejection.
+
+**Both apps dropped from 174 to 147 countries: the 27 EU states removed**, so the **EU
+Digital Services Act trader declaration no longer applies**. The alternative was declaring as
+a trader, which publishes name, address, phone and email on the EU product page — and on an
+INDIVIDUAL account those are the owner's personal details, not ASTROWANIINDIA's (DW again).
+Reversible in minutes: re-tick the countries and declare, once the Organization conversion is
+done. UK, Norway and Switzerland are NOT in the EU and stayed ticked.
+
+> **Apple lists Czechia as "Czech Republic".** An exact-name match on the modern name
+> silently misses it and leaves 148 countries instead of 147. Apple's own confirmation
+> dialog states the number being removed — read it, it is the check.
+
+**One thing deliberately left ON**, owner's call: the customer app is still offered on Apple
+Silicon Macs ("Make this app available", Automatic macOS 11.0). The app is WebRTC calls,
+camera, mic and payments, none of it tested on macOS.
+
+**Still open:** astrologer screenshots (none), attaching a build on both versions, publishing
+App Privacy on both. Those last two are the final push and were deliberately not done.
