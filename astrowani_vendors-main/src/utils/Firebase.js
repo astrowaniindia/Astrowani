@@ -1,7 +1,7 @@
 
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, Alert, PermissionsAndroid } from 'react-native';
+import { Platform, Alert, PermissionsAndroid, AppState } from 'react-native';
 import Instance from '../api/ApiCall';
 import { getDeviceId } from './deviceId';
 import { hideOngoingSession } from './ongoingSession';
@@ -67,13 +67,26 @@ const TOKEN_RETRY_DELAYS_MS = [0, 1500, 4000, 10000, 15000];
 
 export const getFCMToken = async (attempt = 0) => {
   try {
-    let fcmToken = await AsyncStorage.getItem('fcmToken');
+    // ASK FIREBASE, DO NOT TRUST THE CACHE. This used to return the AsyncStorage
+    // value whenever one existed and never call getToken() again, which meant a
+    // token that CHANGED was never picked up -- the backend kept pushing to the old
+    // one forever. Firebase caches the token natively, so getToken() is cheap and is
+    // the only thing that can tell us it changed.
+    //
+    // A dead token is invisible from the server: FCM ACCEPTS a send to a
+    // known-but-stale token and reports success, and Apple then drops it. Nothing
+    // errors, push_success reads 1, and no notification arrives. The customer app had
+    // the same weakness in a milder form (it did call getToken, but only at launch);
+    // this copy was worse. Fixed 2026-10-27 alongside it.
+    await ensureRegisteredForRemoteMessages();
+    let fcmToken = await messaging().getToken();
     if (!fcmToken) {
-      await ensureRegisteredForRemoteMessages();
-      fcmToken = await messaging().getToken();
-      if (fcmToken) {
-        await AsyncStorage.setItem('fcmToken', fcmToken);
-      }
+      // Only now fall back to whatever was stored, so a transient getToken failure
+      // does not lose a token that was working a moment ago.
+      fcmToken = await AsyncStorage.getItem('fcmToken');
+    }
+    if (fcmToken) {
+      await AsyncStorage.setItem('fcmToken', fcmToken);
     }
     if (!fcmToken) throw new Error('empty token');
     console.log('FCM Token:', fcmToken);
@@ -93,6 +106,19 @@ export const getFCMToken = async (attempt = 0) => {
 messaging().onTokenRefresh(async token => {
   await AsyncStorage.setItem('fcmToken', token);
   await syncTokenWithBackend(token);
+});
+
+// Re-sync on every foreground, same as the customer app. onTokenRefresh alone cannot
+// cover the launch where the app is new to the device and has already read its token
+// before anything was listening -- which is exactly what a reinstall looks like.
+// Throttled, because an astrologer switching between apps during a consultation must
+// not generate a write per switch.
+let lastTokenSyncAt = 0;
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active') return;
+  if (Date.now() - lastTokenSyncAt < 60000) return;
+  lastTokenSyncAt = Date.now();
+  getFCMToken().catch(() => {});
 });
 
 export async function requestUserPermission() {
