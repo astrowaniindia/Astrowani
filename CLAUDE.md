@@ -3690,3 +3690,156 @@ both apps; the "Exprienced" typo in the WordPress site title (it is in every bro
 including on the privacy policy a reviewer opens); the boy/girl prediction screenshot still
 live on the Play listing; and the 7-minute screenshot copy against a database that still says
 11.
+
+---
+
+## Session 2026-10-28/29: the chat that would not ring, and both apps submitted (EM)
+
+### EM. Three wrong theories about a notification sound, and the fix that sidestepped it
+
+The astrologer's phone did not make a sound for an incoming CHAT request, while CALLS rang
+perfectly throughout. Three causes were proposed and shipped, and **all three were wrong**:
+an unentitled `timeSensitive` interruption level, a missing foreground presentation option,
+and `content-available` on the alert push silencing it. Each was plausible, each was deployed,
+and the chat stayed silent.
+
+> **THE LESSON, and it is the one worth keeping from this whole session: calls rang the entire
+> time because CallKit DOES NOT USE THE NOTIFICATION SYSTEM AT ALL.** Three rounds were spent
+> theorising about notification delivery while a working counter-example sat in the same app.
+> When one path works and a neighbouring one does not, compare the two MECHANISMS before
+> theorising about the broken one — and if two fixes in a row do not land, stop fixing and
+> start measuring.
+
+**So the chat now takes the call's road.** `POST /api/push/notify-chat-request` sends a VoIP
+push alongside the ordinary one, and the astrologer gets the native full-screen incoming UI.
+**Almost nothing new was needed** — `screenFor('chat')` already mapped to `VendorChatSession`,
+`reqFromPayload` already set `table: 'chat_requests'`, `AppDelegate.mm` reports whatever
+`callType` it is handed, and `pushTargetFor` already returned `voip_token`. The push was the
+only missing piece.
+
+- **KILL SWITCH: `app_settings.chat_callkit_enabled` set to `{"enabled": false}`.** One row, no
+  deploy, no app update, no review. Apple intends VoIP pushes for calls and a chat arriving
+  this way appears in the iPhone's call history, so this must stay one statement away.
+  Cached 60s and **fails OPEN** — the whole reason it exists is that an ordinary notification
+  could not be made to ring, so a transient blip must not silently drop the astrologer back
+  to a notification they will not hear.
+
+### EM1. The CallKit screen's text is ONE field, and it is native
+
+iOS writes its own "app name + Audio" line from the provider configuration and **it cannot be
+varied per call**. The caller name below it is the only text we control, and `AppDelegate.mm`
+reads **`callerName` and nothing else** for both the handle and the localized caller name.
+That is native, so the label has to be decorated SERVER-SIDE — which also means it ships
+without a new build. Now "Chat from Ansh" / "Audio call from Ansh" / "Video call from Ansh",
+set in `notify-chat-request`, `src/ringAstrologer.js` and the `/api/call/initiate` path.
+
+> **`callerName` CANNOT SIMPLY BE RENAMED.** `/api/session/accept` echoes `reqBody.callerName`
+> straight back in `navigationParams`, which becomes the chat/call screen's own header — so the
+> astrologer would have landed in a consultation captioned "Chat from Ansh". The undecorated
+> name travels alongside as **`callerRealName`**, and `reqFromPayload` prefers it, falling back
+> to `callerName` so a call payload and any older bundle behave exactly as before.
+
+### EM2. One bug behind "the popup goes invisible" AND "it keeps vibrating after I accept"
+
+**Nothing ever removed a request from HomeScreen's `popupQueue` when it was handled OUTSIDE
+HomeScreen.** That queue is emptied only by its own Accept button or by a socket cancellation,
+and answering on the CallKit screen goes through neither. Since the ringtone is driven by
+`popupQueue.length > 0`, the leftover entry meant the phone kept ringing after the chat had
+opened, **and** the card went on rendering underneath whatever screen was on top — which is
+what "the accept/reject popup gets invisible" actually was. One defect, two long-standing
+symptoms that looked unrelated.
+
+`callKeep` now emits `REQUEST_RESOLVED_EVENT` on answer and on decline and HomeScreen dismisses
+the matching entry. **`stopRinging()` alone is not enough**: the queue effect re-arms on the
+next state change, so the entry itself has to go.
+
+### EM3. A cancelled request needs a poller, because the socket cannot be there yet
+
+The socket path (`cancel_call` to `call_cancelled` to `dismissPopupIfMatches`) needs HomeScreen
+mounted AND its socket already joined to the astrologer's room. **Neither holds in the case
+CallKit exists for** — a VoIP push into a KILLED app, where the socket is still connecting and
+Socket.io never replays what it missed. A customer cancelling within a second or two was simply
+never heard, and the phone rang on for somebody who had already gone.
+
+The ringing call now polls `/api/vendor/pending-requests` (the same endpoint HomeScreen's
+catch-up uses) every 2.5s and ends itself once the request is no longer listed.
+**Deliberately conservative:** a failed fetch returns nulls, which is indistinguishable from
+"cancelled", so a disappearance only counts once the request has been seen at least once.
+Otherwise one flaky poll would hang up on a real customer.
+
+### EM4. iOS WILL NOT LET AN APP FOREGROUND ITSELF — and the function that pretends otherwise
+
+Answering on the CallKit screen left the astrologer on the lock screen having to hunt for the
+app; the consultation connected server-side, and while the app sat suspended a "network
+problem" banner appeared about 30 seconds later for a connection that was fine.
+
+**`RNCallKeep.backToForeground()` is literally an `isIOS` early return with no native
+implementation.** The line meant to open the app has never done anything on iOS, and the
+comment above it claiming otherwise was wrong. This is a platform rule, not a library gap —
+which is also why VIDEO behaved identically; video gets no special privilege here.
+
+What IS available is CallKit's own in-call banner, so the answered call is now **kept alive**
+for every type, and tapping that banner opens the app. Chat was ending the call immediately,
+which removed even that. **Chat has no `doEndCall`**, so `VendorChatSession.endSessionLocal`
+closes it instead, or the call would outlive the conversation.
+
+> **A test result is only valid once you know which bundle was running.** The owner reported
+> "audio opens the app, chat and video do not", then later "none of them open", then finally
+> "all three were working fine" — three different answers to the same question across three
+> OTA bundles, because an iOS OTA needs TWO force-quit relaunches to take effect. Before
+> theorising about a behaviour difference between screens, establish that both tests ran the
+> same JS. Lock state matters too: iOS can foreground an app on answer from an UNLOCKED phone
+> and cannot from a locked one.
+
+### EM5. The brown band was a BLEND, which is why grepping for a colour never found it
+
+A muted taupe band sat below the white card on Login and the OTP screen. Grepping for
+`AstroMaroon` and for greys found nothing, through several rounds of guessing.
+
+**Measured off the owner's screenshot by decoding the PNG: `#b29b93`, which is AstroMaroon
+(`#592a19`) at about 45% over white.** Not either colour on its own — the screen ROOT showing
+through a translucent layer in the gap below the card. The card carries `flex: 1` inside a
+`flexGrow: 1` container and usually does reach the bottom; something intermittently shrinks
+it (the `KeyboardAvoidingView`'s own padding is the likeliest).
+
+Rather than win that argument, **the root is now white and the maroon belongs to the header
+block that wants it**, so a gap is white on white and invisible whatever opens it.
+
+> **Sample the pixels before theorising about a colour.** Two rounds were spent grepping for a
+> colour that was never in the source.
+
+### EM6. Both apps are WAITING_FOR_REVIEW (2026-10-29)
+
+| | Apple ID | Version | Build | Release |
+|---|---|---|---|---|
+| Astrowani - Ask an Astrologer | 6826113999 | 24.1 | — | MANUAL |
+| **Astrowani for Astrologers** | 6827442905 | **6.6** | **3** | MANUAL |
+
+Astrologer build 3 (`CURRENT_PROJECT_VERSION` 2 to 3, `MARKETING_VERSION` still **6.6**) was
+built from commit `90b01787`, the same commit the newest enabled 6.6 OTA bundle was built
+from, so a reviewer sees the real app on first launch rather than the binary plus a patch.
+Verified in the `.ipa` before upload: `iphoneos26.0`, `CFBundleVersion` 3, `UIDeviceFamily [1]`,
+`aps-environment` production, `get-task-allow` false, no `ProvisionedDevices`,
+`UIBackgroundModes` includes **voip**. Its `main.jsbundle` was also opened and confirmed to
+carry the session's fixes — source being right does not prove the binary is.
+
+App Review notes are **3,626 characters** (4,000 cap) and carry the demonstration video,
+confirmed readable to an anonymous fetch. The reviewer astrologer was re-hidden before
+submitting (`hidden_from_customers = true`; `/api/astrologers` went 58 to 57), because the
+notes state it is kept out of public listings and that sentence had to be true.
+
+> **"Add for Review" IS NOT THE SUBMIT.** It moves the version to `READY_FOR_REVIEW` and opens
+> a **Draft Submission** panel; a second **"Submit for Review"** button inside that panel is
+> what reaches `WAITING_FOR_REVIEW`. Stopping at the first button leaves a version that looks
+> submitted and is not. Every step here was verified by reading `/iris/v1/...` back from the
+> server rather than from the page, per EL.
+>
+> **The built-in browser pane has its own cookie jar and is NOT signed in to App Store
+> Connect.** Use Claude in Chrome for ASC work; its Apple session restores itself. Do not try
+> to sign in to Apple from the pane — that needs the owner's password and a 2FA code.
+
+**Still open:** the demo login proven on a device for both apps; the "Exprienced" typo in the
+WordPress site title; the boy/girl prediction screenshot still live on the Play listing; the
+7-minute free-call copy against a database that still says 11; and
+`MD files/astrologer-app-review-notes.txt` is deliberately **untracked** (it holds the video
+link and this repo is public).

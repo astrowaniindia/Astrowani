@@ -38,9 +38,9 @@ CLAUDE.md prose.
 | Listing | Store version | Build | Newest enabled OTA bundle | As of |
 |---|---|---|---|---|
 | Customer × Play Store | `24.1` | versionCode **63** | `01a14a24-1851-70cb-b1ee-c7f61792a5a0` (target `24.1.x`) | 2026-10-19 |
-| Customer × App Store | `24.1` (`MARKETING_VERSION`) | `CURRENT_PROJECT_VERSION` **1** — **not submitted** | `01a14a2b-2af1-7476-9c5c-1afbd529036a` (target `24.1`) | 2026-10-19 |
+| Customer × App Store | `24.1` (`MARKETING_VERSION`) | `CURRENT_PROJECT_VERSION` **4** — **WAITING_FOR_REVIEW**, manual release | `01a179a7-4727-7002-98ba-926f446ad410` (target `24.1`) | 2026-10-29 |
 | Vendor × Play Store | `6.6` | versionCode **35** | `01a13240-f2d1-7e15-a631-1d729f5f7266` (target `6.6.x`) | 2026-10-19 |
-| Vendor × App Store | `6.6` (`MARKETING_VERSION`) | `CURRENT_PROJECT_VERSION` **1** — **not submitted** | `01a107ce-a91e-79fa-88b4-af7e47ecbd0e` (target `6.6`) | 2026-10-19 |
+| Vendor × App Store | `6.6` (`MARKETING_VERSION`) | `CURRENT_PROJECT_VERSION` **3** — **WAITING_FOR_REVIEW**, manual release | `01a183fe-8297-75f8-8526-e3fb5cde4f65` (target `6.6`) | 2026-10-29 |
 
 Both iOS rows already have OTA bundles because `deployOta.js` publishes for both platforms
 regardless of whether a build is on the App Store. They reach TestFlight and sideloaded
