@@ -103,9 +103,37 @@ try {
 // Accepting from the notification does not leave the in-app popup stranded: HomeScreen's
 // Realtime listener on call_requests/chat_requests dismisses on ANY status change away
 // from 'pending', 'accepted' included.
+// A notification's `data` comes from one of TWO places, and they are not the same shape.
+//
+//   our own notifee notification -> displayIncomingRequestNotification's requestData,
+//                                   which carries `table` and `callType`
+//   a SYSTEM-RENDERED push       -> the raw FCM data payload, which carries neither
+//
+// The second case only exists on iOS, and only when the app is fully killed: iOS draws
+// the alert itself, our JS never runs to build a richer one, and the action press then
+// arrives here with `{type, callerName, callerId}` and nothing else. With `callType`
+// undefined the screen ternary below falls through to its last branch, so accepting a
+// CHAT from the lock screen opened the AUDIO CALL screen. `table` was absent too, which
+// the backend happens to tolerate for chats (it defaults to chat_requests) and would not
+// for anything else.
+//
+// Deriving both from `type` here fixes every delivery shape at once, and leaves an
+// explicit value untouched so the notifee path is unaffected.
+const normaliseRequest = (raw = {}) => {
+  const kind = raw.type;
+  const callType =
+    raw.callType ||
+    (kind === 'incoming_video_call' ? 'video' : kind === 'incoming_call' ? 'audio' : kind === 'chat_request' ? 'chat' : undefined);
+  return {
+    ...raw,
+    ...(callType ? {callType} : {}),
+    table: raw.table || (callType === 'chat' ? 'chat_requests' : callType ? 'call_requests' : undefined),
+  };
+};
+
 const handleNotificationAction = async ({type, detail}) => {
   if (type !== EventType.ACTION_PRESS) return;
-  const req = detail.notification?.data || {};
+  const req = normaliseRequest(detail.notification?.data || {});
   const pressActionId = detail.pressAction?.id;
 
   try {

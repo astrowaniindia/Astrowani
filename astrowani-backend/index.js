@@ -4218,6 +4218,12 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
           type: 'chat_request',
           callerName: caller.name || 'Customer',
           callerId: caller.id,
+          // Carried explicitly because a SYSTEM-RENDERED iOS notification (killed app)
+          // hands the vendor app this raw payload instead of the richer one our own
+          // notifee path builds. The app can infer both from `type`, but sending them
+          // means an Accept from the lock screen does not depend on that inference.
+          callType: 'chat',
+          table: 'chat_requests',
         },
         // iOS ONLY — Android must stay data-only here or it loses its ringtone and its
         // Accept/Reject buttons (see the block comment in src/push.js). Without this an
