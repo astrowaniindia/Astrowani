@@ -258,7 +258,12 @@ function reqFromPayload(uuid, payload = {}) {
     roomId: payload.roomId || null,
     sessionId: payload.sessionId || uuid || null,
     callerId: payload.callerId || null,
-    callerName: payload.callerName || null,
+    // `callerName` in a chat payload is DECORATED for the CallKit screen ("Chat from Ansh"),
+    // because that label is drawn by native code which reads only that field. It must not
+    // travel on: /api/session/accept echoes it back in navigationParams, which becomes the
+    // chat screen's header. `callerRealName` is the plain name; falling back to callerName
+    // keeps a call payload, and any older backend, behaving exactly as before.
+    callerName: payload.callerRealName || payload.callerName || null,
     callType,
     // Distinguishes CallKit answers from popup/notification ones in the
     // request_accepted / request_rejected analytics events.
@@ -326,12 +331,30 @@ async function onAnswerCall({ callUUID }) {
       return;
     }
 
-    // Keep the CallKit call ALIVE for the duration. It is what owns the audio session on
-    // iOS, and ending it here would tear that session down underneath the WebRTC screen
-    // we are about to open. It gets ended in doEndCall via endCallKitCall().
-    try {
-      RNCallKeep.setCurrentCallActive(uuid);
-    } catch (_) {}
+    // A CHAT IS NOT A CALL ONCE IT IS ANSWERED — end the CallKit call immediately.
+    //
+    // For audio and video we keep it alive, because it owns the iOS audio session and
+    // ending it would tear that session down underneath the WebRTC screen about to open;
+    // the call screen's doEndCall closes it later via endCallKitCall().
+    //
+    // A chat has neither. There is no audio session to own, and VendorChatSession has no
+    // doEndCall — it ends through endSessionLocal, which never touches CallKit. So the call
+    // was reported, answered, and then left open forever: iOS went on believing a call was
+    // in progress and kept ringing and vibrating while the astrologer sat in the chat room.
+    // Reported as "the chat opens but it keeps vibrating and ringing".
+    //
+    // Ending it here closes the loop at the only point that knows this was a chat.
+    if (req.callType === 'chat') {
+      endCallKitCall(uuid);
+      // endCallKitCall clears activeUuid and the pending entry, so re-silence anything the
+      // notifee/FCM path may have started in parallel — the chat also gets an ordinary
+      // push, and its ringtone is a separate, infinitely repeating one.
+      silenceIncoming(payload);
+    } else {
+      try {
+        RNCallKeep.setCurrentCallActive(uuid);
+      } catch (_) {}
+    }
 
     const screen = screenFor(req.callType);
     if (navigationRef.current?.isReady()) {

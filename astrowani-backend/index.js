@@ -4293,7 +4293,20 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
       sendVoipPush(vendorRow.voip_token, {
         type: 'incoming_chat_request',
         uuid: crypto.randomUUID(),
-        callerName: caller.name || 'Customer',
+        // WHAT CALLKIT PUTS ON THE SCREEN, and the only text we control there.
+        //
+        // iOS writes its own "<app name> Audio" line above this from the provider
+        // configuration; it cannot be varied per call, so a chat arriving through CallKit
+        // reads as an audio call unless the name itself says otherwise. AppDelegate.mm
+        // uses `callerName` for both the handle and the localized caller name, and it is
+        // NATIVE — it reads this field and no other — so the label has to be decorated
+        // here rather than in the app, which also means it ships by OTA.
+        callerName: `Chat from ${caller.name || 'Customer'}`,
+        // ...and the UNDECORATED name, because /api/session/accept echoes reqBody.callerName
+        // straight back in navigationParams, which becomes the chat screen's header. Without
+        // this the astrologer would sit in a chat titled "Chat from Ansh". reqFromPayload
+        // prefers this field and falls back to callerName for any older bundle.
+        callerRealName: caller.name || 'Customer',
         callerId: caller.id,
         callType: 'chat',
       })
