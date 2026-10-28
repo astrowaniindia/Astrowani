@@ -293,6 +293,45 @@ const HomeScreen = () => {
     });
   };
 
+  /**
+   * Ask the server what is still pending and queue it.
+   *
+   * THE SOCKET IS NOT A RELIABLE DELIVERY CHANNEL ON iOS. The moment the app is
+   * backgrounded the OS suspends it and the socket drops, so an `incoming_chat` /
+   * `incoming_call` emitted in that window reaches nobody — Socket.io does not replay
+   * events to a client that was absent when they fired. Coming back to the foreground
+   * reconnects the socket, but the request that arrived meanwhile is simply gone.
+   *
+   * This ran exactly ONCE, inside initRequestListener's mount effect, which covers only a
+   * COLD start. The reported case is the other one and is far more common: the astrologer
+   * taps the notification, the app was already mounted and merely backgrounded, so nothing
+   * re-fetches — and they arrive at a dashboard with no card on it, for a customer who is
+   * still waiting. "I click on notification it brings me to dashboard but it is not even
+   * present there too."
+   *
+   * enqueuePopup de-dupes on requestId/roomId, so running this alongside a socket event
+   * for the same row is a harmless no-op.
+   */
+  const refreshPendingRequests = useCallback(async () => {
+    try {
+      const pending = await getPendingRequests();
+      if (pending?.call) enqueuePopup(pending.call);
+      if (pending?.chat) enqueuePopup(pending.chat);
+    } catch (e) {
+      console.warn('[Vendor] pending-request catch-up fetch failed:', e?.message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Every return to the foreground, not just the first mount. This is the half that was
+  // missing; see refreshPendingRequests above for why the socket cannot cover it.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') refreshPendingRequests();
+    });
+    return () => sub.remove();
+  }, [refreshPendingRequests]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -501,13 +540,7 @@ const HomeScreen = () => {
     // direct reads, already shaped the way enqueuePopup wants it, and the astrologer comes
     // from the token. enqueuePopup de-dupes, so a socket event for the same row afterwards
     // is a harmless no-op.
-    try {
-      const pending = await getPendingRequests();
-      if (pending.call) enqueuePopup(pending.call);
-      if (pending.chat) enqueuePopup(pending.chat);
-    } catch (e) {
-      console.warn('[Vendor] pending-request catch-up fetch failed:', e?.message);
-    }
+    await refreshPendingRequests();
   };
 
   // ─── Accept ───────────────────────────────────────────────────────────────

@@ -177,12 +177,21 @@ export async function displayIncomingRequestNotification(payload, { foreground =
       // foreground case on iOS is CallKit's full-screen UI rather than this notification,
       // so there is no in-app ringtone for this to double up against.
       sound: 'default',
-      // Lets an incoming consultation through Focus / Do Not Disturb, which is the whole
-      // point of a call alert. Requires the Time Sensitive Notifications capability in the
-      // app's entitlements to take effect; without it iOS silently treats this as a normal
-      // alert, so it is safe to ship ahead of that capability being added.
-      interruptionLevel: 'timeSensitive',
-      // Keep it on screen until acted on, like the Android `ongoing: true` above.
+      // An incoming notification while the app is OPEN is silent on iOS unless the app
+      // says otherwise — the OS assumes you can already see it. An astrologer looking at
+      // the dashboard is exactly who needs to hear a request arrive.
+      foregroundPresentationOptions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      // NO `interruptionLevel`. It was set to 'timeSensitive' to break through Focus, which
+      // requires the com.apple.developer.usernotifications.time-sensitive entitlement — and
+      // this app's .entitlements holds only `aps-environment`, so the level is unentitled.
+      // Apple documents an unentitled level as ignored, but the observed behaviour on a real
+      // device was a notification delivered with NO SOUND, which is the one thing this block
+      // exists to fix. Omitting it falls back to `active`, which rings normally.
+      // Add it back only together with the entitlement, which needs a new build.
       critical: false,
     },
     android: {

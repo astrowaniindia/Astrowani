@@ -357,7 +357,12 @@ async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}
               // Wakes the app as well when it is merely backgrounded, so it can still
               // post its own richer notification and start ringing.
               'content-available': 1,
-              'interruption-level': 'time-sensitive',
+              // NO 'interruption-level'. 'time-sensitive' needs the Time Sensitive
+              // Notifications entitlement, which the astrologer app does not carry — its
+              // .entitlements holds only `aps-environment`. Apple documents an unentitled
+              // level as ignored; what was actually observed on a device was a chat
+              // notification delivered SILENTLY while CallKit calls rang fine. Leaving it
+              // out falls back to `active`, which plays the sound below.
             },
           },
         }
