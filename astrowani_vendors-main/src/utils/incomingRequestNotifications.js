@@ -2,8 +2,60 @@
 // even when the app is backgrounded or fully killed (unlike the in-app-only popup in
 // HomeScreen.js, which only works while that screen is mounted). Data-only FCM payloads
 // from the backend land here via Firebase.js's onMessage/setBackgroundMessageHandler.
+import { Platform } from 'react-native';
 import notifee, { AndroidImportance, AndroidVisibility, AndroidCategory } from '@notifee/react-native';
 import { startRinging, stopRinging } from './incomingRingtone';
+
+const IS_IOS = Platform.OS === 'ios';
+
+// ---------------------------------------------------------------------------
+// iOS ACTION BUTTONS AND SOUND
+//
+// Everything below the `android:` key in displayNotification() is Android-only. For the
+// whole of the iOS rollout this notification therefore had NO sound (notifee's iOS
+// default is silent unless `sound` is set) and NO Accept/Reject buttons — `android.actions`
+// does not cross platforms. Reported from TestFlight as "it even not rings, nothing, no
+// sound comes" and "not able to pick it up from the notification bar", both exactly right.
+//
+// iOS buttons do not travel with the notification the way Android's do. They come from a
+// CATEGORY registered with the system up front; the notification then names that category
+// and iOS draws the matching buttons. The id is also what the backend puts in the APNs
+// payload's `aps.category`, which is what gives a SYSTEM-RENDERED push (a killed app,
+// where our JS never runs to build a notifee notification) the same two buttons.
+//
+// The action ids are deliberately the same strings the Android pressActions use —
+// 'accept' and 'reject' — so index.js's shared handleNotificationAction switch needs no
+// platform branch at all.
+export const IOS_INCOMING_CATEGORY_ID = 'astrowani-incoming-request';
+
+let iosCategoriesPromise = null;
+function ensureIosCategories() {
+  if (!IS_IOS) return Promise.resolve();
+  if (!iosCategoriesPromise) {
+    iosCategoriesPromise = notifee
+      .setNotificationCategories([
+        {
+          id: IOS_INCOMING_CATEGORY_ID,
+          actions: [
+            // destructive => rendered in red, and does NOT open the app, which is what a
+            // decline should do.
+            { id: 'reject', title: 'Reject', destructive: true },
+            // foreground: true brings the app up, mirroring the Android action's
+            // `launchActivity: 'default'`. Accept has to open the app — it navigates
+            // straight into the consultation.
+            { id: 'accept', title: 'Accept', foreground: true },
+          ],
+        },
+      ])
+      .catch((e) => {
+        // Never let a failed category registration stop the notification itself from
+        // being shown. Worst case it appears without buttons, which is still better than
+        // the astrologer learning nothing at all.
+        console.warn('[incomingRequestNotifications] iOS categories failed:', e?.message);
+      });
+  }
+  return iosCategoriesPromise;
+}
 
 // TWO channels, and the difference is the whole point (fixed 2026-09-28).
 //
@@ -97,6 +149,7 @@ function idKeyFor(payload) {
 export async function displayIncomingRequestNotification(payload, { foreground = false } = {}) {
   const ringing = !foreground;
   await ensureChannel(ringing);
+  await ensureIosCategories();
   const type = payload.type;
   const isChat = type === 'chat_request';
   const notificationId = `incoming_${idKeyFor(payload) || Date.now()}`;
@@ -116,6 +169,22 @@ export async function displayIncomingRequestNotification(payload, { foreground =
     title: titleFor(type),
     body: payload.callerName ? `From ${payload.callerName}` : undefined,
     data: requestData,
+    ios: {
+      // Draws the Reject / Accept buttons registered in ensureIosCategories() above.
+      categoryId: IOS_INCOMING_CATEGORY_ID,
+      // iOS notifications are SILENT unless this is set. There is no iOS equivalent of
+      // the Android channel split above (CHANNEL_ID_RINGING vs _SILENT), because the
+      // foreground case on iOS is CallKit's full-screen UI rather than this notification,
+      // so there is no in-app ringtone for this to double up against.
+      sound: 'default',
+      // Lets an incoming consultation through Focus / Do Not Disturb, which is the whole
+      // point of a call alert. Requires the Time Sensitive Notifications capability in the
+      // app's entitlements to take effect; without it iOS silently treats this as a normal
+      // alert, so it is safe to ship ahead of that capability being added.
+      interruptionLevel: 'timeSensitive',
+      // Keep it on screen until acted on, like the Android `ongoing: true` above.
+      critical: false,
+    },
     android: {
       channelId: ringing ? CHANNEL_ID_RINGING : CHANNEL_ID_SILENT,
       importance: AndroidImportance.HIGH,

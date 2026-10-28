@@ -886,9 +886,28 @@ io.on('connection', (socket) => {
     if (data?.sessionId) socket.to(data.sessionId).emit('video_paused', data);
   });
 
+  // "I am leaving on purpose", as opposed to a socket that simply went quiet.
+  //
+  // The two are indistinguishable at the transport layer, and the server used to report
+  // both as a connection problem — so an astrologer whose customer had deliberately
+  // backed out was shown "Network problem - the customer's connection" and a countdown,
+  // for someone who was never coming back. This only RECORDS the intent; the disconnect
+  // handler below still does the work, so a client that never sends it behaves exactly as
+  // it always did.
+  socket.on('leave_session', (data) => {
+    try {
+      if (!socket.data) socket.data = {};
+      if (!data?.sessionId || String(data.sessionId) === String(socket.data.sessionId)) {
+        socket.data.leftDeliberately = true;
+      }
+    } catch (e) {
+      console.error('[socket] leave_session failed:', e.message);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    const { sessionId, participantId, isVendorParticipant } = socket.data || {};
+    const { sessionId, participantId, isVendorParticipant, leftDeliberately } = socket.data || {};
     if (sessionId && participantId) {
       scheduleSessionAbandonCheck(sessionId, participantId, isVendorParticipant);
       // Tell whoever is still in the room IMMEDIATELY. sessionManager also emits this, but
@@ -910,6 +929,9 @@ io.on('connection', (socket) => {
           role: isVendorParticipant ? 'vendor' : 'caller',
           who: isVendorParticipant ? 'astrologer' : 'customer',
           graceMs,
+          // 'left' only when the client actually said so; everything else stays
+          // 'connection', which is what every existing client already assumes.
+          reason: leftDeliberately ? 'left' : 'connection',
         });
       } catch (e) {
         console.error('[socket] immediate participant_absent failed:', e.message);
@@ -4196,6 +4218,21 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
           type: 'chat_request',
           callerName: caller.name || 'Customer',
           callerId: caller.id,
+          // Carried explicitly because a SYSTEM-RENDERED iOS notification (killed app)
+          // hands the vendor app this raw payload instead of the richer one our own
+          // notifee path builds. The app can infer both from `type`, but sending them
+          // means an Accept from the lock screen does not depend on that inference.
+          callType: 'chat',
+          table: 'chat_requests',
+        },
+        // iOS ONLY — Android must stay data-only here or it loses its ringtone and its
+        // Accept/Reject buttons (see the block comment in src/push.js). Without this an
+        // incoming chat was completely invisible on a killed iPhone, because a chat
+        // request has no VoIP/CallKit path to fall back on the way a call does.
+        iosAlert: {
+          title: 'New Chat Request',
+          body: `From ${caller.name || 'Customer'}`,
+          category: 'astrowani-incoming-request',
         },
       });
     }

@@ -30,7 +30,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
 import {startCallForegroundService, stopCallForegroundService} from './callForegroundService';
-import {endCallKitCall} from './callKeep';
+import {endCallKitCall, awaitCallKitAudioSession} from './callKeep';
 import { showStatusPopup } from '../components/StatusPopup';
 import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
@@ -309,8 +309,15 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       // Video calls default to loudspeaker. Use the force- variant on iOS so the
       // route survives InCallManager's own updateAudioRoute() recomputations
       // (see the toggleSpeaker comment above).
+      // See the matching comment in EnxScreenVoice.tsx: when CallKit answered the call,
+      // iOS has already activated the audio session and InCallManager.start() would
+      // reconfigure it underneath WebRTC. The speaker route is still ours to set either
+      // way — that is a route change, not a session activation.
+      const callKitAudio = await awaitCallKitAudioSession();
       try {
-        InCallManager.start({media: 'video'});
+        if (!callKitAudio) {
+          InCallManager.start({media: 'video'});
+        }
         if (Platform.OS === 'ios') {
           InCallManager.setForceSpeakerphoneOn(true);
         } else {

@@ -29,6 +29,8 @@ import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import Instance from '../api/ApiCall';
 import { acceptRequest, rejectRequest } from './incomingRequestActions';
+import { stopRinging } from './incomingRingtone';
+import { cancelIncomingRequestNotification } from './incomingRequestNotifications';
 import { navigationRef } from './navigationRef';
 
 const IS_IOS = Platform.OS === 'ios';
@@ -50,6 +52,64 @@ const pendingByUuid = new Map();
 const answeredUuids = new Set();
 let activeUuid = null;
 let didSetup = false;
+
+// ---------------------------------------------------------------------------
+// WHO OWNS THE AUDIO SESSION
+//
+// On iOS, answering through CallKit means the SYSTEM activates AVAudioSession and tells
+// us afterwards, via the provider's didActivate callback (surfaced by react-native-callkeep
+// as the `didActivateAudioSession` event). Calling InCallManager.start() in that window
+// reconfigures and re-activates the same session underneath WebRTC, and the reported
+// result was a connected call with no audio in either direction.
+//
+// It also explains why video seemed fine while audio did not: the video call under test
+// was answered from the IN-APP popup, where no CallKit call exists and InCallManager is
+// the only thing touching the session. The split was CallKit-vs-in-app, not video-vs-audio.
+//
+// `audioSessionActive` is reset on every teardown so a second call in the same app run
+// does not inherit the first one's state.
+let audioSessionActive = false;
+const audioSessionWaiters = [];
+
+function resolveAudioSessionWaiters() {
+  while (audioSessionWaiters.length) {
+    const w = audioSessionWaiters.shift();
+    clearTimeout(w.timer);
+    w.resolve(true);
+  }
+}
+
+/**
+ * True when a CallKit call is live, i.e. the system owns the audio session and the call
+ * screen must not configure it itself. Always false on Android and for in-app answers.
+ */
+export function callKitOwnsAudio() {
+  return IS_IOS && activeUuid !== null;
+}
+
+/**
+ * Resolves once CallKit has activated the audio session, or immediately when CallKit is
+ * not involved.
+ *
+ * Resolves `false` on timeout rather than rejecting or hanging: a call that proceeds with
+ * a possibly-misconfigured session is recoverable, whereas a call screen stuck awaiting an
+ * event that never arrives is a dead consultation. The caller treats a false the same as
+ * "no CallKit", i.e. it falls back to configuring the session itself.
+ */
+export function awaitCallKitAudioSession(timeoutMs = 4000) {
+  if (!callKitOwnsAudio()) return Promise.resolve(false);
+  if (audioSessionActive) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const waiter = { resolve };
+    waiter.timer = setTimeout(() => {
+      const i = audioSessionWaiters.indexOf(waiter);
+      if (i >= 0) audioSessionWaiters.splice(i, 1);
+      log('timed out waiting for CallKit audio session');
+      resolve(false);
+    }, timeoutMs);
+    audioSessionWaiters.push(waiter);
+  });
+}
 
 function log(...args) {
   console.log('[callKeep]', ...args);
@@ -117,7 +177,13 @@ export function endCallKitCall(uuid) {
   }
   pendingByUuid.delete(target);
   answeredUuids.delete(target);
-  if (activeUuid === target) activeUuid = null;
+  if (activeUuid === target) {
+    activeUuid = null;
+    // The system deactivates the session when the CallKit call ends. Clearing the flag
+    // here means the NEXT call waits for its own activation rather than assuming the
+    // previous one's is still good.
+    audioSessionActive = false;
+  }
 }
 
 /**
@@ -155,14 +221,30 @@ export function endCallKitCallForRequest(data) {
 // Turning a payload into the shape acceptRequest/rejectRequest expect
 // ---------------------------------------------------------------------------
 function reqFromPayload(uuid, payload = {}) {
+  const callType = payload.callType || 'audio';
   return {
+    // THE FIELD THAT MAKES THE BACKEND LOOK IN THE RIGHT TABLE, and it is not optional.
+    //
+    // Both /api/session/accept and /api/session/reject do `reqBody.table ||
+    // 'chat_requests'`. Omitting it therefore sent every CallKit answer looking for the
+    // call in chat_requests, where resolveOwnedRequestRow's `roomId` branch is not even
+    // reachable (it is gated on targetTable === 'call_requests'). The route answered
+    // `{ok: false, reason: 'not_found'}`, onAnswerCall tore the CallKit screen down, and
+    // the astrologer saw Accept do nothing at all. Decline took the identical path, so
+    // the customer was never told it had been declined either.
+    //
+    // Worse than a plain miss: with no requestId and no usable roomId, the chat_requests
+    // branch falls through to `caller_id = <customer> ORDER BY created_at DESC LIMIT 1`,
+    // so a customer who had ever chatted with this astrologer could have had an unrelated
+    // older request accepted or rejected in place of the call they were actually making.
+    table: callType === 'chat' ? 'chat_requests' : 'call_requests',
     // `roomId` is what matters for the backend's resolveOwnedRequestRow lookup — the
     // VoIP payload carries no requestId, and that function accepts either.
     roomId: payload.roomId || null,
     sessionId: payload.sessionId || uuid || null,
     callerId: payload.callerId || null,
     callerName: payload.callerName || null,
-    callType: payload.callType || 'audio',
+    callType,
     // Distinguishes CallKit answers from popup/notification ones in the
     // request_accepted / request_rejected analytics events.
     source: 'callkit',
@@ -176,6 +258,34 @@ function screenFor(callType) {
   return 'AudioCall';
 }
 
+/**
+ * Silence everything the FCM/notifee path started for this request.
+ *
+ * CallKit answers and declines used to leave it all running. `startRinging()` arms
+ * `Vibration.vibrate(pattern, repeat = true)`, which is INFINITE and is cancelled only by
+ * `stopRinging()` — and nothing on the CallKit path ever called it, because this module
+ * imported neither the ringtone nor the notification helpers. HomeScreen's own
+ * `popupQueue` effect could not cover it either: a VoIP push answered from the lock
+ * screen never enqueues a popup, so that effect never runs.
+ *
+ * The symptom was a phone that vibrated continuously through an answered call, stopped
+ * when the app was backgrounded (iOS freezes the scheduler) and started again on return.
+ *
+ * Called SYNCHRONOUSLY at the top of both handlers, before the first `await`. Every await
+ * yields the event loop, and a buzzing phone for the length of a network round trip is
+ * exactly the complaint this fixes.
+ */
+function silenceIncoming(payload = {}) {
+  try { stopRinging(); } catch (_) {}
+  // Mirrors idKeyFor() in incomingRequestNotifications.js — calls key on roomId, chats on
+  // callerId. A mismatch here is harmless (notifee ignores an unknown id) but a match is
+  // what takes the heads-up notification down.
+  const key = payload.roomId || payload.callerId;
+  if (key) {
+    try { cancelIncomingRequestNotification(`incoming_${key}`)?.catch?.(() => {}); } catch (_) {}
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
@@ -186,7 +296,10 @@ async function onAnswerCall({ callUUID }) {
   answeredUuids.add(uuid);
   activeUuid = uuid;
 
-  const req = reqFromPayload(uuid, pendingByUuid.get(uuid));
+  const payload = pendingByUuid.get(uuid);
+  silenceIncoming(payload);
+
+  const req = reqFromPayload(uuid, payload);
 
   try {
     const result = await acceptRequest(req);
@@ -232,6 +345,10 @@ async function onAnswerCall({ callUUID }) {
 async function onEndCall({ callUUID }) {
   const uuid = callUUID;
   log('endCall', uuid, 'answered:', answeredUuids.has(uuid));
+
+  // Unconditional, and before the answered/declined split below: both branches end the
+  // ringing state, and the declined branch awaits a network call before it returns.
+  silenceIncoming(pendingByUuid.get(uuid));
 
   // Already answered => this is a normal hangup, and the call screen's own doEndCall
   // handles billing finalisation. Rejecting here would both post a bogus
@@ -418,6 +535,22 @@ export function initCallKeep() {
 
   RNCallKeep.addEventListener('answerCall', onAnswerCall);
   RNCallKeep.addEventListener('endCall', onEndCall);
+
+  // iOS hands the activated audio session over here. The call screens wait on this before
+  // touching InCallManager — see callKitOwnsAudio() / awaitCallKitAudioSession() above for
+  // why configuring it any earlier produced a silent call.
+  RNCallKeep.addEventListener('didActivateAudioSession', () => {
+    log('CallKit activated the audio session');
+    audioSessionActive = true;
+    resolveAudioSessionWaiters();
+  });
+
+  // The system took the session back (another call, Siri, a hangup). Anything that
+  // reconfigures audio after this has to wait for a fresh activation.
+  RNCallKeep.addEventListener('didDeactivateAudioSession', () => {
+    log('CallKit deactivated the audio session');
+    audioSessionActive = false;
+  });
 
   // iOS mutes/unmutes and holds through CallKit's own UI. We do not bridge those into the
   // WebRTC tracks yet — the in-app controls remain the source of truth — so they are

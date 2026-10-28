@@ -68,7 +68,15 @@ export function useSessionConnection(socketRef, sessionId) {
         // restart the countdown and throw away the pause already accrued, so the timer
         // would jump and the grace would silently double.
         if (absenceRef.current) return;
-        setAbsence({ mine: false, startedAt: Date.now(), graceMs: (d && d.graceMs) || CONNECTION_GRACE_MS });
+        setAbsence({
+          mine: false,
+          startedAt: Date.now(),
+          graceMs: (d && d.graceMs) || CONNECTION_GRACE_MS,
+          // 'left' when the other side told the server it was leaving on purpose. Absent
+          // on every older backend and every other cause, where it reads as a connection
+          // drop exactly as before.
+          left: d?.reason === 'left',
+        });
       };
       const onBack = (d) => {
         if (!sameSession(d)) return;
@@ -165,7 +173,11 @@ export default function SessionConnectionNotice({ conn, t, mode = 'chat', style 
   return (
     <View style={[styles.box, style]}>
       <Text style={styles.title}>
-        {conn.absence.mine ? t('call.connYouOffline') : t('call.connOtherOffline')}
+        {conn.absence.mine
+          ? t('call.connYouOffline')
+          : conn.absence.left
+            ? t('call.connOtherLeft')
+            : t('call.connOtherOffline')}
       </Text>
       {/* The wallet line goes FIRST and in bold: it is the only line that is about money,
           and it is the thing neither side knew during the 2026-10-01 incident. */}

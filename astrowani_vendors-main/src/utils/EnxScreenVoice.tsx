@@ -29,7 +29,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import useElapsedSeconds from './useElapsedSeconds';
 import {captureEvent} from './Analytics';
 import {startCallForegroundService, stopCallForegroundService} from './callForegroundService';
-import {endCallKitCall} from './callKeep';
+import {endCallKitCall, awaitCallKitAudioSession} from './callKeep';
 import { showStatusPopup } from '../components/StatusPopup';
 import {LanguageContext} from '../context/LanguageContext';
 import {startCallRecording, setCallRecordingMuted, stopAndUploadCallRecording} from './callRecording';
@@ -289,7 +289,24 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       }
       if (cancelled) return;
 
-      try { InCallManager.start({media: 'audio'}); } catch (_) {}
+      // WHO CONFIGURES THE AUDIO SESSION, and it must be exactly one of us.
+      //
+      // Answered through CallKit, iOS activates AVAudioSession itself and tells us via
+      // didActivateAudioSession. Calling InCallManager.start() in that window reconfigures
+      // and re-activates the same session underneath WebRTC, which is what produced a
+      // connected call with no audio either way. So on a CallKit call we wait for the
+      // system's activation and then leave the session alone.
+      //
+      // awaitCallKitAudioSession resolves false on timeout as well as when CallKit is not
+      // involved at all (Android, or an answer from the in-app popup), and both of those
+      // fall through to the original behaviour — which is the path the working video call
+      // was already taking.
+      if (await awaitCallKitAudioSession()) {
+        console.log('[Vendor/Voice] CallKit owns the audio session; not starting InCallManager');
+      } else {
+        try { InCallManager.start({media: 'audio'}); } catch (_) {}
+      }
+      if (cancelled) return;
       startRipple();
 
       const stream = await (mediaDevices as any).getUserMedia({audio: true, video: false});

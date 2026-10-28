@@ -230,7 +230,22 @@ const ChatSessionScreen = ({ route, navigation }) => {
     hideActiveSessionNotification();
     if (pollRef.current) clearInterval(pollRef.current);
     if (pollEndRef.current) clearInterval(pollEndRef.current);
-    if (socketRef.current) socketRef.current.disconnect();
+    // SAY WE ARE LEAVING, BEFORE DROPPING THE SOCKET.
+    //
+    // Without this the astrologer's only signal is the socket going quiet, which the
+    // server cannot tell apart from a tunnel or a dead battery — so it reported a
+    // deliberate exit as "Network problem - the customer's connection" and made the
+    // astrologer sit out a countdown for someone who had already walked away. Emitted
+    // best-effort and never awaited: leaving must not depend on the network.
+    if (socketRef.current) {
+      try {
+        socketRef.current.emit('leave_session', {
+          sessionId: sessionRef.current?.id,
+          reason: 'left',
+        });
+      } catch (_) {}
+      socketRef.current.disconnect();
+    }
 
     const goBackOrHome = () => {
       if (navigation.canGoBack()) {
