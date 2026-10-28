@@ -35,6 +35,11 @@ import ReportCustomerSheet from '../components/ReportCustomerSheet';
 import SessionConnectionNotice, { useSessionConnection, billableSeconds } from '../components/SessionConnectionNotice';
 import SessionIntroBanner from '../components/SessionIntroBanner';
 import { showOngoingSession, hideOngoingSession } from '../utils/ongoingSession';
+// A chat answered on the CallKit screen leaves a LIVE CallKit call behind on purpose:
+// iOS will not let the app foreground itself, so that call's in-call banner is the one
+// tap that gets the astrologer into the app. It has to be closed here, because a chat
+// has no doEndCall -- the path the voice and video screens use.
+import { endCallKitCall } from '../utils/callKeep';
 import ChatImageBubble from '../components/chatImage/ChatImageBubble';
 import ImageEditorModal from '../components/chatImage/ImageEditorModal';
 import AttachSourceSheet from '../components/chatImage/AttachSourceSheet';
@@ -402,6 +407,9 @@ const VendorChatSession = ({ route, navigation }) => {
     // goBack(), so a chat that ended two ways popped TWO screens.
     if (isEndingRef.current) return;
     isEndingRef.current = true;
+    // Close the CallKit call this chat was answered from, if there was one. A no-op on
+    // Android, and when the chat was accepted in-app rather than from the lock screen.
+    try { endCallKitCall(); } catch (_) {}
     captureEvent('chat_ended', {
       session_id: sessionIdRef.current,
       // A ref, not the sessionStartMs state: this is called from socket/poll handlers

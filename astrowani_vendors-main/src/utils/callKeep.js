@@ -359,30 +359,28 @@ async function onAnswerCall({ callUUID }) {
       return;
     }
 
-    // A CHAT IS NOT A CALL ONCE IT IS ANSWERED — end the CallKit call immediately.
+    // KEEP THE CALLKIT CALL ALIVE — FOR CHAT TOO, and this is deliberate.
     //
-    // For audio and video we keep it alive, because it owns the iOS audio session and
-    // ending it would tear that session down underneath the WebRTC screen about to open;
-    // the call screen's doEndCall closes it later via endCallKitCall().
+    // iOS does not let an app bring itself to the foreground. RNCallKeep.backToForeground()
+    // is literally `if (isIOS) return;` with no native implementation, so the line that was
+    // supposed to open the app after answering has never done anything here. Answering a
+    // CallKit call leaves the astrologer on the lock screen, having to hunt for the app --
+    // which is exactly what was reported, for chat, audio and video alike.
     //
-    // A chat has neither. There is no audio session to own, and VendorChatSession has no
-    // doEndCall — it ends through endSessionLocal, which never touches CallKit. So the call
-    // was reported, answered, and then left open forever: iOS went on believing a call was
-    // in progress and kept ringing and vibrating while the astrologer sat in the chat room.
-    // Reported as "the chat opens but it keeps vibrating and ringing".
+    // A live CallKit call is the one lever left: iOS shows its own in-call banner at the
+    // top of the screen, and tapping that opens the app. One tap instead of a search. Ending
+    // the call immediately -- which is what chat did a moment ago -- removes even that.
     //
-    // Ending it here closes the loop at the only point that knows this was a chat.
-    if (req.callType === 'chat') {
-      endCallKitCall(uuid);
-      // endCallKitCall clears activeUuid and the pending entry, so re-silence anything the
-      // notifee/FCM path may have started in parallel — the chat also gets an ordinary
-      // push, and its ringtone is a separate, infinitely repeating one.
-      silenceIncoming(payload);
-    } else {
-      try {
-        RNCallKeep.setCurrentCallActive(uuid);
-      } catch (_) {}
-    }
+    // For audio and video it is also what owns the iOS audio session, and their call screens
+    // close it in doEndCall. CHAT HAS NO doEndCall, so VendorChatSession.endSessionLocal
+    // now closes it instead; without that the call would linger after the chat ended.
+    //
+    // This does NOT bring back the ringing. That came from HomeScreen's popupQueue, which
+    // drives the ringtone and which silenceIncoming() above now empties; CallKit's own
+    // ringing stops the moment the call is answered.
+    try {
+      RNCallKeep.setCurrentCallActive(uuid);
+    } catch (_) {}
 
     const screen = screenFor(req.callType);
     if (navigationRef.current?.isReady()) {
