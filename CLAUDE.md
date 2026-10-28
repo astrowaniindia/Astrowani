@@ -746,11 +746,11 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
   - Details: `astrowani_vendors-main/ios/README-iOS-SETUP.md`.
 
 #### Phase 6: App Store Connect records (both apps)
-- [ ] appstoreconnect.apple.com → **My Apps → + → New App**, for each app: platform iOS; name (must be unique on the App Store, e.g. "Astrowani" / "Astrowani Astrologer", with a fallback ready); primary language English; bundle ID; SKU (e.g. `astrowani-customer-ios`, `astrowani-astrologer-ios`).
-- [ ] **Category:** primary **Lifestyle** for both (see CN positioning).
-- [ ] **Age rating questionnaire → 18+.** The Terms and Child Safety pages say 18+. Answer honestly: users can chat and interact (yes); user-generated content (yes, live comments); web access limited to our own shop.
-- [ ] **Privacy Policy URL:** `https://astrowani.com/privacy-policy/`. **Support URL:** e.g. `https://astrowani.com/` or a contact page. **Copyright:** "2026 <legal name>".
-- [ ] **App Privacy (nutrition labels)** must match the Privacy Policy and the app:
+- [x] **DONE 2026-10-27, both apps.** appstoreconnect.apple.com → **My Apps → + → New App**, for each app: platform iOS; name (must be unique on the App Store, e.g. "Astrowani" / "Astrowani Astrologer", with a fallback ready); primary language English; bundle ID; SKU (e.g. `astrowani-customer-ios`, `astrowani-astrologer-ios`).
+- [x] **DONE 2026-10-27.** **Category:** primary **Lifestyle** for both (see CN positioning).
+- [x] **DONE 2026-10-27, both at 18+ via Override to Higher Age Rating.** **Age rating questionnaire → 18+.** The Terms and Child Safety pages say 18+. Answer honestly: users can chat and interact (yes); user-generated content (yes, live comments); web access limited to our own shop.
+- [x] **DONE 2026-10-27.** **Privacy Policy URL:** `https://astrowani.com/privacy-policy/`. **Support URL:** e.g. `https://astrowani.com/` or a contact page. **Copyright:** "2026 <legal name>".
+- [x] **ENTERED 2026-10-27, deliberately NOT PUBLISHED.** **App Privacy (nutrition labels)** must match the Privacy Policy and the app:
   - **Contact info:** name, email, phone.
   - **User content:** photos (profile, palm), other user content (chat messages, reviews, live comments, birth details), customer support.
   - **Location:** precise, only when "use my current location" is used for an address.
@@ -761,18 +761,18 @@ Two iOS apps: **Astrowani** (`com.astrowanicustomer`, version 24.1) and **Astrow
   - All **linked to the user**.
   - **Tracking: No.** The iOS build has no ad SDKs: Meta and Firebase Analytics are `ios: null`. If that ever changes, the App Tracking Transparency prompt and a "Yes" are required.
   - Payment details are handled by Razorpay and not collected by us.
-- [ ] **Pricing:** Free. **Availability:** your choice, but **untick China for Astrowani Astrologer** (it uses CallKit, and Apple rejects CallKit apps on the China storefront).
-- [ ] **Screenshots:** iPhone **6.9" (1320×2868)** is required; 6.5" is optional. No iPad screenshots — the apps are iPhone-only by explicit build setting (see Phase 3 above). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
-- [ ] **Description, subtitle, keywords:** lifestyle wording (CN). Don't mention Android, Google Play, or prices that differ by platform.
-- [ ] **App Review Information:** contact name/phone/email, **sign-in required: Yes**, demo account **9999999999 / 123456**, and the Notes text from CN (a different note for each app).
-- [ ] **Version release:** "Manually release this version", so the owner controls launch day.
-- [ ] Export compliance: `ITSAppUsesNonExemptEncryption=false` is already in both Info.plists, so there are no encryption questions per build.
+- [x] **DONE 2026-10-27 - free, 174 regions, China mainland removed from BOTH apps.** **Pricing:** Free. **Availability:** your choice, but **untick China for Astrowani Astrologer** (it uses CallKit, and Apple rejects CallKit apps on the China storefront).
+- [ ] **STILL OPEN - the one blocker left for submission.** **Screenshots:** the CUSTOMER app is DONE (4 uploaded 2026-10-27); the ASTROLOGER app has none. **The required size is 1206×2622 or 1179×2556 (iPhone 6.1"/6.3"), NOT the 1320×2868 this line used to claim** - App Store Connect rejected that outright with "File dimensions are invalid" and names the accepted set itself. Om's iPhone 14 Pro captures at 1179×2556 natively, so screenshots can come straight off the phone with no resizing. No iPad screenshots — the apps are iPhone-only by explicit build setting (see Phase 3 above). Show live consultations, experts, chat and the shop. Do **not** show reports, horoscopes, gifts, free services or the free chat (hidden on iOS, and they don't fit the lifestyle positioning).
+- [x] **DONE 2026-10-27.** **Description, subtitle, keywords:** lifestyle wording (CN). Don't mention Android, Google Play, or prices that differ by platform.
+- [x] **DONE 2026-10-27.** **App Review Information:** contact name/phone/email, **sign-in required: Yes**, demo account **9999999999 / 123456**, and the Notes text from CN (a different note for each app).
+- [x] **DONE 2026-10-27, both set to manual.** **Version release:** "Manually release this version", so the owner controls launch day.
+- [x] Export compliance: `ITSAppUsesNonExemptEncryption=false` is already in both Info.plists, so there are no encryption questions per build.
 
 #### Phase 7: signed builds + TestFlight
-- [ ] **(Claude)** With the Team ID: set up signing (EAS `credentialsSource: remote` is already in both `eas.json`), build `production` for both apps, and submit to App Store Connect (`eas submit` or Transporter).
+- [x] **ASTROLOGER DONE 2026-10-27; the customer app still needs a rebuild at 24.1.** **(Claude)** With the Team ID: set up signing (EAS `credentialsSource: remote` is already in both `eas.json`), build `production` for both apps, and submit to App Store Connect (`eas submit` or Transporter).
   - `CURRENT_PROJECT_VERSION` is 1 in both projects and must go up on every upload.
   - Check that iOS OTA targets the same `24.1` / `6.6` versions.
-- [ ] Wait for processing (~15–30 min), then add the owner and testers under **TestFlight → Internal Testing**.
+- [x] **DONE 2026-10-27 - internal group "Astrowani Team", automatic distribution on, 2 testers.** Wait for processing (~15–30 min), then add the owner and testers under **TestFlight → Internal Testing**.
 - [ ] **Two real iPhones**, one with each app:
   - [ ] **Push:** a customer chat request reaches the astrologer iPhone.
   - [ ] **VoIP:** with the astrologer app **fully killed**, a customer call rings full-screen (CallKit), answering lands in the call, and hanging up ends it on both phones. If it doesn't ring, check `APNS_PRODUCTION=true` first.
@@ -3465,3 +3465,228 @@ the screens end at 7:00 and `endOverdueFreeCalls` caps at `start + durationMinut
 `npm run build` clean, customer app bundles for Android with no "11 minute" copy left in the
 shipped JS. **`index.js` was never booted** — `loadOffer()` was called directly, with a local
 `ws` shim for Node 20.
+
+---
+
+## Session 2026-10-27: the astrologer app reached TestFlight, and both listings were filled in (EL)
+
+### EL. Two App Store Connect records, one build, and the access trap that hid a teammate
+
+The astrologer app went from "no App ID" to a build installable on a phone in one
+session. Both listings were filled in; **nothing was published and nothing was submitted
+for review** — both still read `PREPARE_FOR_SUBMISSION`.
+
+| | Customer | Astrologer |
+|---|---|---|
+| Apple ID | `6826113999` | **`6827442905`** (new) |
+| Bundle | `com.astrowanicustomer` | `com.astrowaniVendor` |
+| ASC version | 1.0 → **24.1** | **6.6** |
+| TestFlight | 24.1 (3) installed | **6.6 (1), VALID** |
+
+> **THE CUSTOMER LISTING WAS COMPLETELY BLANK, and CLAUDE.md implied otherwise.** EK
+> records the record being created and build 24.1(2) accepted — both true — so it read as
+> "the customer app is ready and waiting on screenshots". It was not: `versionString` was
+> still `1.0`, and description, keywords, promotional text, support URL, copyright and
+> **every App Review field** were empty. TestFlight does not read any of that, which is
+> exactly why it went unnoticed for four days. **A build in TestFlight says nothing about
+> whether the App Store listing exists.** Both were filled in today.
+
+**The App ID trap from EK bit again, in its other form.** The New App dialog offered only
+`com.astrowanicustomer.U49M3S8V97` and `com.astrowaniVendor.U49M3S8V97` — both decoys with
+the Team ID pasted into the identifier. The real `com.astrowaniVendor` was **absent because
+it did not exist yet**, and picking the decoy would have bound the record permanently (the
+bundle ID cannot be changed after Create). It was registered by hand at
+developer.apple.com → Identifiers, Explicit, **Push Notifications only**; everything else
+left off, because the app's `.entitlements` contains exactly one key (`aps-environment`)
+and a provisioning profile must match the entitlements in the binary.
+`AutoFill Credential Provider` is NOT how OTP autofill works — `react-native-otp-entry`
+already sets `textContentType: "oneTimeCode"` and `autoComplete: "sms-otp"/"one-time-code"`
+on its hidden input, so it needs no capability at all.
+
+**The build compiled first time.** All five EK failures were pre-empted: the EAS image is
+pinned to `macos-sequoia-15.6-xcode-26.0`, the Podfile carries the fmt
+`FMT_USE_CONSTEVAL` patch and the pod deployment-target bump, and this app has no
+`react-native-iap`. Certificate `KVP59Z2S2T` was **reused** from the customer app (a
+distribution certificate is per TEAM, and an Individual account's slots are scarce); the
+provisioning profile was newly generated, because a profile is per APP ID.
+
+**Verified in the `.ipa` before submitting** (`DTSDKName` `iphoneos26.0`, `CFBundleVersion`
+1, `UIDeviceFamily` `[1]`, `aps-environment` **production**, `get-task-allow` false, no
+`ProvisionedDevices`). `eas submit` then resolved the destination from
+`eas.json`'s new `submit.production.ios.ascAppId`, with no interactive lookup.
+
+> **THE ACCESS TRAP — why a teammate can be invisible.** Om Naphade did not appear in the
+> astrologer app's internal-tester picker, which read as "he is not on the team". He is:
+> Users and Access, role **DEVELOPER**, and he already had the customer app **INSTALLED**
+> (24.1 build 3, iPhone15_2). The cause is `allAppsVisible: false` — his account was scoped
+> to `com.astrowanicustomer` alone, so for any other app he does not exist. **An internal
+> tester is a team user filtered by VISIBLE APPS, not by team membership.** The fix is
+> Users and Access → the user → Manage apps, not a new invitation. Granting it is a
+> permission change and needs the owner.
+
+**TestFlight:** internal group **Astrowani Team**
+(`3ddc452f-66c0-4993-a9bb-d34e698a4911`), **automatic distribution ON** (it cannot be
+changed later), 2 testers — `anshmanu2006@gmail.com` and `omnaphade199@gmail.com`, both
+INVITED — with 6.6 (1) attached.
+
+**Other facts worth keeping:**
+- **Free Apps Agreement is Active** (22 Oct 2026 - 22 Oct 2027). The Paid Apps agreement is
+  still not needed; the first builds sell nothing through Apple.
+- `APNS_PRODUCTION` was flipped to **`true`** earlier the same day (`set-backend-env.yml`
+  run `40460591096`). That is correct for TestFlight and **kills VoIP on sideloaded builds**.
+- **China mainland was removed from BOTH apps.** CO only required it for the astrologer app
+  (CallKit), but mainland China needs an ICP filing nobody has. Reversible before release.
+- The reviewer astrologer `9999999999` currently has **`hidden_from_customers = false`**, so
+  the customer-app review note's sentence about the demo account being kept out of public
+  listings was **deliberately left out** — it would have been untrue.
+
+**Still open:** screenshots (6.9" iPhone, both apps), publishing App Privacy on both, a
+customer rebuild at 24.1, and the **EU Digital Services Act trader status**, which App Store
+Connect is warning about and which blocks EU distribution for both apps.
+
+**The test that still matters, and that nothing has ever proven:** kill the astrologer app
+completely and have a customer call. `astrologers.voip_token` is **empty for every
+astrologer in the database** — no device has ever registered one, because free-provisioned
+sideloads strip the entitlement. If it does not ring, read that column first: empty means
+the token never registered, populated means the push failed. Different bugs.
+
+### EL (later the same day): build 4, the EU removed, and the screenshot size that is NOT 6.9"
+
+**Customer build 24.1 (4) is uploaded and VALID** (`5715444c` bumped
+`CURRENT_PROJECT_VERSION` 3 -> 4; `MARKETING_VERSION` stays **24.1**, because the iOS OTA
+bundles target that exact string). App Store Connect now holds builds 2, 3 and 4.
+
+> **Why a new build rather than submitting build 3: so the BINARY carries what the OTA
+> carries.** Build 3 predates the second TestFlight round. Checked before bumping —
+> `git diff --name-only 43563587..main -- astrowani_customer-main/` returns **zero files**,
+> where `43563587` is the commit behind the newest enabled iOS bundle for 24.1
+> (`01a179a7`). So build 4 and that bundle are the same JS, and a reviewer sees the real app
+> on first launch instead of whatever the binary shipped with plus an OTA patch.
+
+`.ipa` verified before upload: `iphoneos26.0`, `CFBundleVersion` 4, `UIDeviceFamily [1]`,
+`aps-environment` **production**, `get-task-allow` false, no `ProvisionedDevices`,
+`UIBackgroundModes` `audio, remote-notification` — **no `voip`, which is correct**: the
+customer app places calls, the astrologer app receives them.
+
+> **`eas submit` does NOT submit for review.** It uploads the binary to App Store Connect
+> and makes it selectable in TestFlight and on the version page. Review is the separate
+> "Add for Review" button. The name causes real alarm; it is worth saying out loud. Expect
+> EAS's own queue ("waiting for an available submitter") to sit for 10-20 minutes on the
+> free tier — the job is already scheduled server-side, so Ctrl+C stops the watching, not
+> the upload. Do not re-run it; that queues a duplicate.
+
+**THE SCREENSHOT SIZE IN THE CO CHECKLIST WAS WRONG, and it cost a render cycle.** The
+checklist said 6.9" / 1320x2868. App Store Connect rejected all four with **"File dimensions
+are invalid"** and states the real requirement itself:
+
+> for iPhone 6.1" or 6.3" displays ... supported sizes include 2556 x 1179px, 1179 x 2556px,
+> 2622 x 1206px and 1206 x 2622px
+
+The set registers as `APP_IPHONE_61`. The aspect ratios are near-identical (2.1727 vs
+2.1741) so it was a resize, not a redo — but **read the slot's own hint before rendering
+anything**. Om's iPhone 14 Pro is 1179x2556, i.e. natively acceptable: no simulator, no Mac,
+no resizing.
+
+**Four customer screenshots uploaded**, built from the live Play Store artwork (1024x1536,
+2:3) scaled to width and extended upward by stretching the top pixel row. The top third is
+empty cream, because Play's canvas is far squarer than Apple's; it is valid but a designer
+re-lay would be better.
+
+> **TWO of the six Play screenshots MUST NOT be reused, and one of them is a live problem.**
+> (1) A chat screenshot shows a customer asking *"Sir Will I have a boy or a girl"* and the
+> astrologer answering that a boy is likelier. **Predicting the sex of an unborn child is
+> prohibited in India under the PCPNDT Act, and advertising it is a separate offence.** It is
+> public on the Play listing right now and should come down there too, not merely be left out
+> of the App Store set. (2) The astrologer-profile screenshot shows a **Gift** button, and
+> gifts are hidden on iOS (`DIGITAL_PURCHASES_ENABLED = false`) — a screenshot showing a
+> feature the build does not have is a Guideline 2.3.3 rejection.
+
+**Both apps dropped from 174 to 147 countries: the 27 EU states removed**, so the **EU
+Digital Services Act trader declaration no longer applies**. The alternative was declaring as
+a trader, which publishes name, address, phone and email on the EU product page — and on an
+INDIVIDUAL account those are the owner's personal details, not ASTROWANIINDIA's (DW again).
+Reversible in minutes: re-tick the countries and declare, once the Organization conversion is
+done. UK, Norway and Switzerland are NOT in the EU and stayed ticked.
+
+> **Apple lists Czechia as "Czech Republic".** An exact-name match on the modern name
+> silently misses it and leaves 148 countries instead of 147. Apple's own confirmation
+> dialog states the number being removed — read it, it is the check.
+
+**One thing deliberately left ON**, owner's call: the customer app is still offered on Apple
+Silicon Macs ("Make this app available", Automatic macOS 11.0). The app is WebRTC calls,
+camera, mic and payments, none of it tested on macOS.
+
+**Still open:** astrologer screenshots (none), attaching a build on both versions, publishing
+App Privacy on both. Those last two are the final push and were deliberately not done.
+
+### EL (2026-10-28): the customer app is in review, the astrologer app is staged, and the privacy labels were WRONG on both
+
+**`Astrowani - Ask an Astrologer` 24.1 is `WAITING_FOR_REVIEW`** with `releaseType: MANUAL`,
+so approval does NOT publish it — it waits in Pending Developer Release. **`Astrowani for
+Astrologers` 6.6 is fully staged at `PREPARE_FOR_SUBMISSION`**: 7 screenshots, build 6.6 (1)
+attached and VALID, Content Rights answered, App Privacy published with 17 data types.
+Deliberately not submitted.
+
+> **THE PRIVACY LABELS WERE UNDER-DECLARED ON BOTH APPS, and the fix is a check, not a
+> judgement.** Every SDK ships a `PrivacyInfo.xcprivacy` manifest declaring what IT collects,
+> and they are all inside the `.ipa` (16 in the customer build, 18 in the astrologer one).
+> Unzip the build, read every manifest's `NSPrivacyCollectedDataTypes`, and diff that against
+> the App Store Connect declaration. Doing that found:
+>
+> | App | Missing | Declared by |
+> |---|---|---|
+> | customer | **Payment Info** | `RazorpayStandard.framework` |
+> | customer | **Device ID** | Firebase Messaging, Razorpay |
+> | customer | **Other Diagnostic Data** | Firebase Installations, Messaging, GoogleDataTransport |
+> | customer | **Other Data Types** | Firebase Messaging |
+> | astrologer | **Other Diagnostic Data**, **Other Data Types** | the same Firebase trio |
+> | astrologer | **Other Financial Info** | the app's OWN manifest — earnings and wallet balances |
+>
+> **Payment Info was reasoned away and that reasoning was wrong.** "Razorpay handles cards, we
+> never store them" is irrelevant: Apple's own wording in that dialog is *"you're responsible
+> for any third-party code that is added to your app, so if your third-party partners collect
+> data from your app, you must represent that."* It is about what is IN THE BINARY.
+> **Other Financial Info** is the same lesson from the other direction — a prediction of
+> "two missing" was wrong because the repo's own manifest declares a third. **Read the
+> manifests; do not reason about it.**
+
+**App Privacy is editable and republishable after publishing**, including once the app is
+live, so discovering this after pressing Publish costs nothing. Nothing is public until the
+app is released.
+
+**`Content Rights` blocks submission and is easy to miss.** `Add for Review` refused with
+*"You must set up Content Rights Information in App Information."* It is per-app, so both
+apps need it. The answer is **Yes, and I have the necessary rights** — the apps show
+astrologer photos, live video, user chat and photos, blog articles and stock imagery. "No"
+would be disprovable in thirty seconds. It needs a **Save on the App Information page**
+afterwards; the dialog alone does not persist it.
+
+**Screenshots: the customer app uses the owner's own Canva set (5, 1206x2622), the astrologer
+app reuses the Play captures (7).** The Play ones are raw 1080x2400 Android screenshots, so
+the **status bar and gesture bar were cropped** (TOP 118 / BOTTOM 52 px) before fitting —
+the punch-hole dot and Android signal/battery icons are the only platform tells, and the
+app's own header then starts at the top edge. Owner was told that customer screenshot #1 is a
+stock portrait with **no app UI** (Guideline 2.3.3, and it sits in the search-results slot)
+and chose to keep it; if Apple rejects, that is the first thing to swap, and swapping a
+screenshot needs no new build.
+
+> **Scripted clicks do NOT register with App Store Connect's React radios.** Setting
+> `.checked` or calling `.click()` from JavaScript leaves the DOM looking right, the control
+> looking selected, and the Next/Publish button **permanently disabled**, because React never
+> sees a change event. Checkboxes and ordinary buttons are fine; radios are not. Use real
+> mouse clicks for them, and click the LABEL rather than the radio circle — the circle is a
+> small target and a near miss silently does nothing. The same class of failure left
+> `releaseType` as `AFTER_APPROVAL` on the astrologer app for a day after a batch "Save" that
+> looked successful. **Verify every setting by reading it back from `/iris/v1/...`, never
+> from the page.**
+
+**Also fixed today:** the reviewer astrologer `9999999999` had `hidden_from_customers = false`
+— publicly listed, online, with charges set, able to take real customer calls during review.
+Set back to `true`; verified by `GET /api/astrologers` returning 57 astrologers without it.
+Login still works (`approved`, not suspended).
+
+**Still open:** the astrologer app's `Add for Review`; the demo login proven on a device for
+both apps; the "Exprienced" typo in the WordPress site title (it is in every browser tab,
+including on the privacy policy a reviewer opens); the boy/girl prediction screenshot still
+live on the Play listing; and the 7-minute screenshot copy against a database that still says
+11.
