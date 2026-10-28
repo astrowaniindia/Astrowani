@@ -354,9 +354,21 @@ async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}
               // JS never runs. Must match the id registered with
               // notifee.setNotificationCategories() in the vendor app.
               ...(iosAlert?.category ? { category: iosAlert.category } : {}),
-              // Wakes the app as well when it is merely backgrounded, so it can still
-              // post its own richer notification and start ringing.
-              'content-available': 1,
+              // NO 'content-available'. It was added here to ALSO wake a backgrounded app
+              // so it could post its own richer notification — and that is what made the
+              // notification SILENT.
+              //
+              // Apple defines `content-available` as the marker of a BACKGROUND
+              // notification, and states that a background notification must not carry an
+              // alert, a sound or a badge. Combining them is unsupported: iOS delivers the
+              // alert but handles the push as a background update, and the `sound` above is
+              // dropped. Observed on a real device as a chat notification that appeared
+              // correctly and never made a noise, while CallKit calls — which ring natively
+              // and never touch this payload — were fine.
+              //
+              // Nothing is lost by removing it. The alert already names the category, and
+              // the app registers that category at startup (see index.js), so iOS can draw
+              // Accept/Reject without our JS running at all.
               // NO 'interruption-level'. 'time-sensitive' needs the Time Sensitive
               // Notifications entitlement, which the astrologer app does not carry — its
               // .entitlements holds only `aps-environment`. Apple documents an unentitled
