@@ -245,7 +245,16 @@ async function clearAppRemovedMark(customerId) {
 }
 
 // tokens: string | string[]. data values are coerced to strings (FCM requirement).
-async function sendPush(tokens, { title, body, data = {} } = {}) {
+/**
+ * @param {object}  opts
+ * @param {string} [opts.title] Shown on BOTH platforms (builds a top-level `notification`).
+ * @param {string} [opts.body]
+ * @param {object} [opts.data]
+ * @param {object} [opts.iosAlert] `{title, body, category}` — shown on iOS ONLY, leaving
+ *   the message data-only for Android. See the block comment below for why that
+ *   distinction is load-bearing rather than a convenience.
+ */
+async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}) {
   const tokenList = (Array.isArray(tokens) ? tokens : [tokens]).filter(Boolean);
   if (!isReady || !tokenList.length) {
     return { successCount: 0, failureCount: tokenList.length };
@@ -282,6 +291,28 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
   const alertTitle = title || data.title || undefined;
   const alertBody = body || data.body || undefined;
 
+  // ── iOS-ONLY ALERTS, AND WHY THEY CANNOT JUST BE title/body ────────────────
+  // An incoming CHAT request used to be sent with neither, i.e. `{data: {type,
+  // callerName, callerId}}`. With no alert to build, the block above produced a SILENT
+  // background push, and iOS does not deliver one of those to a killed app at all. On an
+  // iPhone a chat request was therefore invisible unless the app happened to be open —
+  // reported as "when I open the app, then only that comes for chat".
+  //
+  // The obvious repair — pass title/body — would have broken Android. Firebase decides
+  // delivery by payload shape: a message carrying a top-level `notification` is rendered
+  // by the Android system tray and does NOT run setBackgroundMessageHandler, which is the
+  // handler that posts our own notification with Accept/Reject and starts
+  // RingingCallService. Android would have gained a tap-only banner and LOST its ringtone
+  // and its buttons, trading one platform's bug for the other's.
+  //
+  // So the alert is attached inside the APNs payload instead. Android still receives a
+  // data-only message and behaves exactly as before; iOS gets a real alert it can render
+  // itself without our JS running. `category` ties it to the notifee category registered
+  // in the app, which is what puts Reject/Accept on a system-rendered notification.
+  const iosAlertTitle = iosAlert?.title || undefined;
+  const iosAlertBody = iosAlert?.body || undefined;
+  const hasIosOnlyAlert = !alertTitle && !alertBody && (iosAlertTitle || iosAlertBody);
+
   try {
     const response = await getMessaging().sendEachForMulticast({
       tokens: tokenList,
@@ -308,6 +339,27 @@ async function sendPush(tokens, { title, body, data = {} } = {}) {
         ? {
           headers: { 'apns-push-type': 'alert', 'apns-priority': '10' },
           payload: { aps: { sound: 'default' } },
+        }
+        : hasIosOnlyAlert
+        ? {
+          // Same 'alert' type and immediate priority as the branch above — this IS an
+          // alert as far as APNs is concerned. The difference is only that Android never
+          // sees one, because nothing was added to the top-level `notification`.
+          headers: { 'apns-push-type': 'alert', 'apns-priority': '10' },
+          payload: {
+            aps: {
+              alert: { title: iosAlertTitle, body: iosAlertBody },
+              sound: 'default',
+              // Draws the Reject / Accept buttons even when the app is killed and our
+              // JS never runs. Must match the id registered with
+              // notifee.setNotificationCategories() in the vendor app.
+              ...(iosAlert?.category ? { category: iosAlert.category } : {}),
+              // Wakes the app as well when it is merely backgrounded, so it can still
+              // post its own richer notification and start ringing.
+              'content-available': 1,
+              'interruption-level': 'time-sensitive',
+            },
+          },
         }
         : {
           headers: { 'apns-push-type': 'background', 'apns-priority': '5' },
