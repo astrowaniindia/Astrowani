@@ -4843,7 +4843,11 @@ app.post('/api/call/initiate', async (req, res) => {
             sendVoipPush(data.voip_token, {
               type: callType === 'video' ? 'incoming_video_call' : 'incoming_call',
               uuid: sessionId,
-              callerName: callerInfo.name || 'Astrowani',
+              // Decorated for the CallKit screen; see the matching comment in
+              // src/ringAstrologer.js. `callerRealName` carries the plain name so the call
+              // screen's own header is not captioned "Audio call from Ansh".
+              callerName: `${callType === 'video' ? 'Video call' : 'Audio call'} from ${callerInfo.name || 'Customer'}`,
+              callerRealName: callerInfo.name || 'Customer',
               callerId: callerInfo.id || '',
               callType: callType || 'audio',
               sessionId,

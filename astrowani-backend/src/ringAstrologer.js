@@ -102,7 +102,17 @@ async function ringAstrologer({
         sendVoipPush(data.voip_token, {
           type,
           uuid: sessionId,
-          callerName: callerName || 'Astrowani',
+          // WHAT THE CALLKIT SCREEN SAYS, and the only text we control on it. iOS writes
+          // its own "<app name> Audio" line from the provider configuration and it cannot
+          // be varied per call, so the kind of consultation has to live in the name.
+          // AppDelegate.mm reads `callerName` and nothing else, and it is NATIVE — so this
+          // has to be decorated here, which also means it ships without a new build.
+          callerName: `${callType === 'video' ? 'Video call' : 'Audio call'} from ${callerName || 'Customer'}`,
+          // ...and the plain name, because /api/session/accept echoes reqBody.callerName
+          // back in navigationParams, which becomes the call screen's header. Without this
+          // the astrologer would be in a call captioned "Audio call from Ansh".
+          // reqFromPayload prefers this and falls back, so an older bundle is unaffected.
+          callerRealName: callerName || 'Customer',
           callerId: callerId || '',
           callType: callType || 'audio',
           sessionId,
