@@ -215,6 +215,21 @@ export function endCallKitCallForRequest(data) {
       return;
     }
   }
+
+  // CHAT HAS NEITHER A roomId NOR A sessionId. The session is created when the astrologer
+  // accepts, and a chat request carries only the caller — so every match above misses and a
+  // cancelled chat would keep ringing on the lock screen until iOS gave up, for a customer
+  // who had already left. Matched last, and only against a chat payload, so it can never
+  // tear down a CALL that happens to share a caller.
+  const callerId = data.callerId || data.caller_id || data.customer_id;
+  if (callerId) {
+    for (const [uuid, payload] of pendingByUuid.entries()) {
+      if (payload?.callType === 'chat' && payload?.callerId === callerId) {
+        endCallKitCall(uuid);
+        return;
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

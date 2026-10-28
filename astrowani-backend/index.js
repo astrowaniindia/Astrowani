@@ -4201,6 +4201,35 @@ app.post('/api/push/notify-chat-message', async (req, res) => {
 // a fake "New Chat Request" push to that astrologer's phone (griefing / social engineering,
 // e.g. luring them to open the app expecting a paying customer). Now requires a valid
 // customer JWT; callerId/callerName come from the resolved customer, not the request body.
+// Is the chat allowed to ring through CallKit? See the block comment at the call site.
+//
+// Cached for 60s so a chat request never waits on a settings read, and it FAILS OPEN: a
+// missing row, bad JSON or an unreachable database all answer true. The whole reason this
+// exists is that an ordinary notification could not be made to ring, so a transient blip
+// must not silently drop the astrologer back to a notification they will not hear. Turning
+// it off is a deliberate act — the literal `false` below — never an accident.
+let chatCallKitCache = { value: true, at: 0 };
+async function isChatCallKitEnabled() {
+  const now = Date.now();
+  if (now - chatCallKitCache.at < 60_000) return chatCallKitCache.value;
+  let value = true;
+  try {
+    const { data } = await supabaseService
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'chat_callkit_enabled')
+      .maybeSingle();
+    if (data?.value) {
+      const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      if (parsed?.enabled === false) value = false;
+    }
+  } catch (e) {
+    console.warn('[chat] chat_callkit_enabled read failed, defaulting ON:', e.message);
+  }
+  chatCallKitCache = { value, at: now };
+  return value;
+}
+
 app.post('/api/push/notify-chat-request', async (req, res) => {
   try {
     const caller = await resolveCustomerFromReq(req);
@@ -4236,6 +4265,52 @@ app.post('/api/push/notify-chat-request', async (req, res) => {
         },
       });
     }
+
+    // ── THE CHAT RINGS LIKE A CALL ON iOS ─────────────────────────────────────
+    //
+    // An ordinary iOS notification could not be made to ring. Three separate causes were
+    // tried and each was wrong, while CallKit calls rang perfectly throughout — because
+    // CallKit does not use the notification system at all. So a chat request now takes the
+    // same road a call does: a VoIP push, the native full-screen incoming UI, Accept, and
+    // straight into the chat room.
+    //
+    // ALMOST NOTHING NEW WAS NEEDED. callKeep's screenFor() already maps 'chat' to
+    // VendorChatSession, reqFromPayload already sets table 'chat_requests', AppDelegate.mm
+    // reports whatever callType it is handed (hasVideo false here), and pushTargetFor
+    // already returns voip_token. This push was the only missing piece.
+    //
+    // NO sessionId OR roomId EXISTS YET — the session is created when the astrologer
+    // accepts. `callerId` is what resolves the request: resolveOwnedRequestRow's
+    // chat_requests branch looks up the newest pending row for that caller, which is the
+    // same mechanism the notification's Accept button has always used. The CallKit uuid
+    // must still be a real UUID, so one is minted for the call itself.
+    //
+    // KILL SWITCH, and it is deliberate. Apple intends VoIP pushes for calls, and a chat
+    // shown this way appears in the iPhone's call history. If Apple ever objects, set
+    // app_settings.chat_callkit_enabled to {"enabled": false} — a single row, no deploy,
+    // no app update, no review. Defaults to ON.
+    if (vendorRow?.voip_token && (await isChatCallKitEnabled())) {
+      sendVoipPush(vendorRow.voip_token, {
+        type: 'incoming_chat_request',
+        uuid: crypto.randomUUID(),
+        callerName: caller.name || 'Customer',
+        callerId: caller.id,
+        callType: 'chat',
+      })
+        .then((r) => {
+          if (r && r.unregistered) {
+            console.warn(`[chat] clearing dead VoIP token for astrologer ${vendorId} (${r.reason})`);
+            supabaseService
+              .from('astrologers')
+              .update({ voip_token: null, voip_platform: null })
+              .eq('id', vendorId)
+              .then(() => {})
+              .catch((e) => console.error('[chat] voip token clear error:', e.message));
+          }
+        })
+        .catch((e) => console.error('[chat] voip send error:', e.message));
+    }
+
     return res.status(200).json({ success: true });
   } catch (e) {
     console.error('[push] notify-chat-request error:', e.message);
