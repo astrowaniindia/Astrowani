@@ -99,13 +99,17 @@ const Login = ({navigation}) => {
         contentContainerStyle={styles.scrollContainer}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <Image
-          source={require('../../assets/images/logo1.png')}
-          style={styles.logo}
-        />
-        <Text style={styles.title}>Astrowani</Text>
+        {/* The maroon now belongs to THIS block rather than to the screen root — see the
+            `main` / `header` styles for why. */}
+        <View style={styles.header}>
+          <Image
+            source={require('../../assets/images/logo1.png')}
+            style={styles.logo}
+          />
+          <Text style={styles.title}>Astrowani</Text>
 
-        <Text style={styles.subTitle}>{t('login.forAstrologers')}</Text>
+          <Text style={styles.subTitle}>{t('login.forAstrologers')}</Text>
+        </View>
         <View style={styles.loginContainer}>
           <View style={styles.numberInput}>
             {/* Fixed +91, not a picker (audit 2026-08-18 finding 4).
@@ -171,12 +175,31 @@ const Login = ({navigation}) => {
 export default Login;
 
 const styles = StyleSheet.create({
+  // THE BROWN BAND AT THE BOTTOM OF THIS SCREEN.
+  //
+  // Measured off a device screenshot, the band was #b29b93 — which is AstroMaroon
+  // (#592a19) at about 45% over white, not either colour on its own. That is why
+  // grepping for AstroMaroon or gray never found it: it is the screen ROOT showing
+  // through a translucent layer in the gap below the white card.
+  //
+  // The card carries `flex: 1` inside a `flexGrow: 1` content container, so it should
+  // reach the bottom and usually does. Something intermittently shrinks that container —
+  // the KeyboardAvoidingView's own padding is the likeliest — and whatever leaks through
+  // is the root's colour.
+  //
+  // So the root is WHITE and the maroon now belongs to the header block that actually
+  // wants it. A gap below the card is then white on white and invisible, whatever opens
+  // it. This fixes the symptom without having to win an argument with the keyboard.
   main: {
     flex: 1,
+    backgroundColor: COLORS.white,
+  },
+  header: {
     backgroundColor: COLORS.AstroMaroon,
   },
   scrollView: {
     flex: 1,
+    backgroundColor: COLORS.white,
   },
   scrollContainer: {
     flexGrow: 1,

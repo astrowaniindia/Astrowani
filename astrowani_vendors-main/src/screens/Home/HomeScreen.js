@@ -16,6 +16,7 @@ import {
   Pressable,
   RefreshControl,
   AppState,
+  DeviceEventEmitter,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
@@ -37,7 +38,7 @@ import OverlayPermissionModal from '../../components/OverlayPermissionModal';
 import { isVendorProfileComplete, ensureVendorProfileComplete, fetchAstrologerRow } from '../../utils/vendorProfile';
 import { requestUserPermission } from '../../utils/Firebase';
 import { acceptRequest, rejectRequest } from '../../utils/incomingRequestActions';
-import { endCallKitCallForRequest } from '../../utils/callKeep';
+import { endCallKitCallForRequest, REQUEST_RESOLVED_EVENT } from '../../utils/callKeep';
 import { startRinging, stopRinging } from '../../utils/incomingRingtone';
 import { stopRingingService } from '../../utils/ringingForegroundService';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
@@ -331,6 +332,19 @@ const HomeScreen = () => {
     });
     return () => sub.remove();
   }, [refreshPendingRequests]);
+
+  // A request answered or declined on the CallKit screen never touched this queue, because
+  // nothing on that path goes through handleAccept or a socket cancellation. The entry
+  // stayed, and since the ringtone is driven by `popupQueue.length > 0` the phone went on
+  // ringing after the chat had already opened — and the card sat rendering underneath
+  // whatever screen was on top, which is what "the popup gets invisible" was.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(REQUEST_RESOLVED_EVENT, (data) => {
+      dismissPopupIfMatches(data || {});
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   useEffect(() => {

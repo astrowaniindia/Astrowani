@@ -305,14 +305,18 @@ const VerifyOtp = ({navigation, route}) => {
 export default VerifyOtp;
 
 const styles = StyleSheet.create({
+  // See the matching comment in Login.js. The band below the white card measured as
+  // AstroMaroon at ~45% over white — the screen root leaking through the gap. Root is now
+  // white and the maroon belongs to `header`, so a gap is invisible instead of brown.
   main: {
     flex: 1,
-    backgroundColor: COLORS.AstroMaroon,
+    backgroundColor: COLORS.white,
   },
   scrollContainer: {
     flexGrow: 1,
   },
   header: {
+    backgroundColor: COLORS.AstroMaroon,
     alignItems: 'center',
     paddingTop: verticalScale(60),
     paddingBottom: verticalScale(20),

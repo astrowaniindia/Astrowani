@@ -23,11 +23,12 @@
 // react-native.config.js — its ConnectionService would add CALL_PHONE and friends to a
 // live Play Store listing). Every export here is a no-op on Android, which keeps using
 // the existing notifee + FCM + foreground-service path.
-import { Platform } from 'react-native';
+import { DeviceEventEmitter, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import Instance from '../api/ApiCall';
+import { getPendingRequests } from '../api/SessionApi';
 import { acceptRequest, rejectRequest } from './incomingRequestActions';
 import { stopRinging } from './incomingRingtone';
 import { cancelIncomingRequestNotification } from './incomingRequestNotifications';
@@ -295,8 +296,35 @@ function screenFor(callType) {
  * yields the event loop, and a buzzing phone for the length of a network round trip is
  * exactly the complaint this fixes.
  */
+/**
+ * Event name HomeScreen listens on. See silenceIncoming().
+ */
+export const REQUEST_RESOLVED_EVENT = 'astrowaniRequestResolved';
+
 function silenceIncoming(payload = {}) {
   try { stopRinging(); } catch (_) {}
+
+  // TELL HomeScreen THE REQUEST IS DEALT WITH.
+  //
+  // Nothing did, and that is one bug behind two reported symptoms. HomeScreen's ringtone is
+  // driven by `popupQueue.length > 0`, and the queue is only ever emptied by its own Accept
+  // button or by a socket cancellation. Answering through CallKit goes through neither, so
+  // the entry stayed:
+  //
+  //   * the phone kept ringing and vibrating after the chat had opened, because the queue
+  //     was still non-empty and that effect re-arms `startRinging()` on every change; and
+  //   * the card looked "invisible" whenever the astrologer was on any screen stacked above
+  //     HomeScreen — it was rendering underneath, ringing, with no way to reach it.
+  //
+  // stopRinging() above is not enough on its own: the queue effect runs again on the next
+  // state change and starts it back up. The entry itself has to go.
+  try {
+    DeviceEventEmitter.emit(REQUEST_RESOLVED_EVENT, {
+      requestId: payload?.requestId || null,
+      roomId: payload?.roomId || null,
+      callerId: payload?.callerId || null,
+    });
+  } catch (_) {}
   // Mirrors idKeyFor() in incomingRequestNotifications.js — calls key on roomId, chats on
   // callerId. A mismatch here is harmless (notifee ignores an unknown id) but a match is
   // what takes the heads-up notification down.
@@ -407,6 +435,76 @@ async function onEndCall({ callUUID }) {
   } catch (e) {
     console.warn('[callKeep] reject failed:', e?.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// THE CUSTOMER HUNG UP WHILE IT WAS STILL RINGING
+//
+// The socket path (cancel_call -> call_cancelled -> dismissPopupIfMatches) only works
+// when HomeScreen is mounted AND its socket has already joined the astrologer's room.
+// Neither is true in the case CallKit exists for: a VoIP push into a KILLED app. The app
+// is only just launching, the socket is still connecting, and Socket.io does not replay an
+// event that fired before the client joined. A customer who cancels within a second or two
+// — which is exactly what was reported — is therefore never heard, and the phone rings on
+// for somebody who has already gone.
+//
+// So the ringing call asks the server directly. /api/vendor/pending-requests is the same
+// endpoint HomeScreen's catch-up already uses, scoped to this astrologer, and returns only
+// what is still PENDING. If our request is no longer in it, it has been cancelled, rejected
+// or swept — so stop ringing.
+//
+// Deliberately conservative: it only ever ENDS a call that the server no longer lists, and
+// a failed request returns {call: null, chat: null}, which would be indistinguishable from
+// "cancelled". So a null answer is IGNORED unless the request has been seen at least once —
+// otherwise a single flaky fetch while the phone rang would hang up on a real customer.
+// ---------------------------------------------------------------------------
+const CANCEL_POLL_MS = 2500;
+const CANCEL_POLL_MAX_MS = 60000;
+const cancelPollers = new Map();
+
+function stopCancelPoll(uuid) {
+  const t = cancelPollers.get(uuid);
+  if (t) {
+    clearInterval(t);
+    cancelPollers.delete(uuid);
+  }
+}
+
+function matchesPending(payload, pending) {
+  if (!payload || !pending) return false;
+  if (payload.callType === 'chat') {
+    return !!(pending.chat && payload.callerId && pending.chat.callerId === payload.callerId);
+  }
+  if (!pending.call) return false;
+  if (payload.roomId && pending.call.roomId) return pending.call.roomId === payload.roomId;
+  // No roomId to compare — fall back to the caller, which is still this astrologer's own
+  // newest pending call.
+  return !!(payload.callerId && pending.call.callerId === payload.callerId);
+}
+
+function startCancelPoll(uuid, payload) {
+  if (!IS_IOS || cancelPollers.has(uuid)) return;
+  const startedAt = Date.now();
+  let everSeen = false;
+  const timer = setInterval(async () => {
+    // Answered, declined or already torn down — nothing left to watch.
+    if (!pendingByUuid.has(uuid) || answeredUuids.has(uuid)) { stopCancelPoll(uuid); return; }
+    if (Date.now() - startedAt > CANCEL_POLL_MAX_MS) { stopCancelPoll(uuid); return; }
+    let pending;
+    try {
+      pending = await getPendingRequests();
+    } catch (_) {
+      return; // a failed poll says nothing; try again next tick
+    }
+    if (matchesPending(payload, pending)) { everSeen = true; return; }
+    // Never seen it listed: the request may simply not be visible yet. Only treat a
+    // disappearance as a cancellation once we have confirmed it was there.
+    if (!everSeen) return;
+    log('request no longer pending — ending the CallKit call', uuid);
+    stopCancelPoll(uuid);
+    endCallKitCall(uuid);
+  }, CANCEL_POLL_MS);
+  cancelPollers.set(uuid, timer);
 }
 
 function onVoipNotification(payload) {
