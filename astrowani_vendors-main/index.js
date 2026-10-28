@@ -90,6 +90,19 @@ try {
   console.warn('[startup] initCallKeep failed:', e?.message || e);
 }
 
+// Register the iOS notification category HERE, at startup, for the same reason as
+// initCallKeep above: a KILLED app renders the incoming-request push with iOS's own UI,
+// and iOS will only draw Accept/Reject if the category named in the payload is already
+// registered. Doing it lazily when we display a notification is too late — on a killed app
+// our JS never runs before the alert is shown. No-op on Android; never throws.
+try {
+  const {registerIncomingRequestCategories} = require('./src/utils/incomingRequestNotifications');
+  const p = registerIncomingRequestCategories();
+  if (p && typeof p.catch === 'function') p.catch(() => {});
+} catch (e) {
+  console.warn('[startup] notification categories failed:', e?.message || e);
+}
+
 // Accept/Reject pressed on the incoming-request notification.
 //
 // Notifee splits delivery by app state: presses reach onBackgroundEvent when the app is

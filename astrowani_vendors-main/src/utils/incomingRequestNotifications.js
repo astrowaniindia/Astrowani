@@ -29,6 +29,29 @@ const IS_IOS = Platform.OS === 'ios';
 export const IOS_INCOMING_CATEGORY_ID = 'astrowani-incoming-request';
 
 let iosCategoriesPromise = null;
+
+/**
+ * Register the category with iOS. MUST run at app STARTUP, not lazily.
+ *
+ * THE BUG THIS FIXES: this was only ever called from inside
+ * displayIncomingRequestNotification, i.e. only when OUR JS posts a notification. On a
+ * KILLED app our JS never runs at all — iOS renders the APNs alert itself. That alert
+ * names `category: astrowani-incoming-request`, iOS looks it up, finds nothing registered,
+ * and draws a plain two-line notification with no buttons. Which is exactly what was
+ * reported: "at the top, New Chat Request, and just below it a simple line. But there is
+ * no accept, reject, nothing."
+ *
+ * It also explains why the buttons appeared ONCE and then stopped: a session where the app
+ * had already displayed a notification had the category registered as a side effect, so the
+ * next push could use it. A fresh kill lost it again.
+ *
+ * iOS persists registered categories for the app, so doing this on every launch is cheap
+ * and idempotent.
+ */
+export function registerIncomingRequestCategories() {
+  return ensureIosCategories();
+}
+
 function ensureIosCategories() {
   if (!IS_IOS) return Promise.resolve();
   if (!iosCategoriesPromise) {
