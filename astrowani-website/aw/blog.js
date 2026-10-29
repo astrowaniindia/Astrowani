@@ -13,13 +13,11 @@ import { api } from './api.js?v=51';
  * flips) decides which one shows. No re-render needed when the user toggles
  * language.
  *
- * There is no single-post endpoint on the backend, so the article page asks
- * for the same list and finds its id client-side — fine at today's post
- * count, and it means this file has exactly one fetch function to keep
- * correct.
+ * Direct article lookup is independent of archive pagination. Production
+ * article HTML is rendered by the backend; this also supports static previews.
  */
 
-const PAGE_SIZE = 50; // the backend's own cap (Math.min(50, ...)) — one request covers every post that exists today
+const PAGE_SIZE = 50;
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
@@ -69,6 +67,7 @@ function mapPost(row) {
     // ?id=, so the original five keep resolving.
     slug: row.slug || '',
     metaDescription: row.metaDescription || '',
+    metaDescriptionHi: row.hindi?.metaDescription || '',
     titleEn, titleHi,
     contentEn, contentHi,
     excerptEn, excerptHi,
@@ -111,7 +110,7 @@ function featuredTemplate(post) {
     ? `style="background-image:url('${esc(post.thumbnail)}')"`
     : '';
   return `
-    <a href="${href(post)}" class="blog-featured reveal reveal-wipe">
+    <a href="${href(post)}" class="blog-featured">
       <div class="blog-featured-media" ${media}></div>
       <div class="blog-featured-body">
         ${post.category ? `<span class="blog-badge">${esc(post.category)}</span>` : ''}
@@ -127,7 +126,7 @@ function featuredTemplate(post) {
 
 function cardTemplate(post) {
   return `
-    <a href="${href(post)}" class="blog-card reveal reveal-wipe">
+    <a href="${href(post)}" class="blog-card">
       ${cardMedia(post)}
       <div class="blog-card-body">
         ${post.category ? `<span class="blog-badge">${esc(post.category)}</span>` : ''}
@@ -155,84 +154,33 @@ function skeletonCards(n) {
 
 /** ===================== Listing page (blog.html) ===================== */
 
-function initBlogList() {
+async function initBlogList() {
   const grid = document.getElementById('blog-grid');
-  const filterBar = document.getElementById('blog-filter-bar');
-  const loadMoreWrap = document.getElementById('blog-load-more-wrap');
-  if (!grid) return;
-
-  const state = { all: [], page: 1, totalPages: 1, category: 'all', loading: false };
-
+  if (!grid || grid.dataset.serverRendered === 'true') return;
   grid.innerHTML = `<div class="blog-grid">${skeletonCards(6)}</div>`;
-
-  function renderCategoryPills() {
-    if (!filterBar) return;
-    const cats = Array.from(new Set(state.all.map((p) => p.category).filter(Boolean)));
-    if (!cats.length) { filterBar.innerHTML = ''; return; }
-    filterBar.innerHTML = [
-      `<button type="button" class="blog-pill${state.category === 'all' ? ' active' : ''}" data-cat="all">All</button>`,
-      ...cats.map((c) => `<button type="button" class="blog-pill${state.category === c ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`),
-    ].join('');
-    filterBar.querySelectorAll('.blog-pill').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.category = btn.getAttribute('data-cat');
-        renderCategoryPills();
-        renderGrid();
-      });
-    });
-  }
-
-  function renderGrid() {
-    const filtered = state.category === 'all' ? state.all : state.all.filter((p) => p.category === state.category);
-    if (!filtered.length) {
-      grid.innerHTML = `<div class="blog-empty"><div class="blog-empty-icon">📝</div><div>No articles in this category yet.</div></div>`;
+  try {
+    const data = await api.get(`/api/blogs/archive${location.search}`, {auth:false});
+    grid.innerHTML = data.grid;
+    document.getElementById('blog-filter-bar').innerHTML = data.filters;
+    document.getElementById('blog-load-more-wrap').innerHTML = data.pagination;
+    document.title = data.title;
+    document.querySelector('h1').textContent = data.title.replace(' | Astrowani Blog', '');
+    for (const prefix of ['og', 'twitter']) {
+      const attr = prefix === 'og' ? 'property' : 'name';
+      for (const key of ['title', 'description']) setMeta(`meta[${attr}="${prefix}:${key}"]`, {[attr]:`${prefix}:${key}`,content:data[key]});
+    }
+    setMeta('meta[property="og:url"]', {property:'og:url',content:new URL(data.path,location.href).href});
+    setMeta('meta[name="description"]', {name:'description',content:data.description});
+    setMeta('link[rel="canonical"]', {rel:'canonical',href:new URL(data.path,location.href).href});
+  } catch (err) {
+    if (err.status === 404 && err.code === 'ARCHIVE_NOT_FOUND') {
+      setMeta('meta[name="robots"]', {name:'robots',content:'noindex, follow'});
+      grid.innerHTML = '<p>Archive not found.</p><a href="blog.html">All articles</a>';
     } else {
-      const showFeatured = state.category === 'all';
-      const featured = showFeatured ? filtered[0] : null;
-      const rest = showFeatured ? filtered.slice(1) : filtered;
-      grid.innerHTML = `
-        ${featured ? featuredTemplate(featured) : ''}
-        <div class="blog-grid">${rest.map(cardTemplate).join('')}</div>`;
-    }
-    if (loadMoreWrap) {
-      loadMoreWrap.innerHTML = (state.category === 'all' && state.page < state.totalPages)
-        ? `<button type="button" class="blog-load-more" id="blog-load-more-btn">Load more articles</button>`
-        : '';
-      const btn = document.getElementById('blog-load-more-btn');
-      if (btn) btn.addEventListener('click', loadMore);
+      grid.innerHTML = '<p>Articles are temporarily unavailable.</p><button id="blog-retry-btn">Try again</button>';
+      document.getElementById('blog-retry-btn').addEventListener('click',initBlogList);
     }
   }
-
-  async function loadMore() {
-    if (state.loading || state.page >= state.totalPages) return;
-    state.loading = true;
-    try {
-      const { posts, totalPages } = await fetchPage(state.page + 1);
-      state.all = state.all.concat(posts);
-      state.page += 1;
-      state.totalPages = totalPages;
-      renderGrid();
-    } catch (err) {
-      console.warn('[aw/blog] load more failed:', err.message);
-    } finally {
-      state.loading = false;
-    }
-  }
-
-  (async () => {
-    try {
-      const { posts, totalPages } = await fetchPage(1);
-      state.all = posts;
-      state.totalPages = totalPages;
-      renderCategoryPills();
-      renderGrid();
-    } catch (err) {
-      grid.innerHTML = `<div class="blog-error"><div class="blog-error-icon">⚠️</div><div>Could not load articles right now.</div><button type="button" id="blog-retry-btn">Try again</button></div>`;
-      const retry = document.getElementById('blog-retry-btn');
-      if (retry) retry.addEventListener('click', () => { grid.innerHTML = `<div class="blog-grid">${skeletonCards(6)}</div>`; initBlogList(); });
-      console.warn('[aw/blog] initial load failed:', err.message);
-    }
-  })();
 }
 
 /** ===================== Article page (blog-post.html) ===================== */
@@ -244,7 +192,7 @@ function relatedTemplate(post) {
 function articleTemplate(post, all) {
   const related = all.filter((p) => p.id !== post.id).slice(0, 3);
   return `
-    <a href="blog.html" class="blog-back-link">← Back to all articles</a>
+    <a href="${document.documentElement.lang === 'hi' ? '../blog.html' : 'blog.html'}" class="blog-back-link">← Back to all articles</a>
     ${post.thumbnail ? `<img class="blog-hero-image" src="${esc(post.thumbnail)}" alt="">` : ''}
     ${post.category ? `<span class="blog-badge">${esc(post.category)}</span>` : ''}
     <div class="blog-meta">${esc(post.dateLabel)}<span class="dot-sep">·</span>${post.readMinutes} min read</div>
@@ -289,7 +237,9 @@ function bestDescription(post) {
  * HTML file — there is one blog-post.html serving every article.
  */
 function setMeta(selector, attrs) {
-  let el = document.head.querySelector(selector);
+  const matches = [...document.head.querySelectorAll(selector)];
+  let el = matches.shift();
+  matches.forEach((duplicate) => duplicate.remove());
   if (!el) {
     el = document.createElement(attrs.rel ? 'link' : 'meta');
     document.head.appendChild(el);
@@ -301,10 +251,20 @@ function setMeta(selector, attrs) {
 function initBlogPost() {
   const root = document.getElementById('blog-post-root');
   if (!root) return;
+  if (root.dataset.serverRendered === 'true') {
+    const related = document.getElementById('blog-related-root');
+    if (related) fetchPage(1).then(({ posts }) => {
+      const others = posts.filter(p => p.id !== related.dataset.postId).slice(0, 3);
+      if (others.length) related.innerHTML = `<h2 class="blog-related-title">${document.documentElement.lang === 'hi' ? 'और लेख' : 'More from the Astrowani blog'}</h2><div class="blog-grid">${others.map(relatedTemplate).join('')}</div>`;
+    }).catch(() => {}); // Recommendations must never hide a successfully loaded article.
+    return;
+  }
 
   const params = new URLSearchParams(location.search);
   const slug = params.get('slug');
   const id = params.get('id');
+  const hi = document.documentElement.lang === 'hi';
+  document.documentElement.setAttribute('data-lang', hi ? 'hi' : 'en');
   root.innerHTML = `
     <div class="blog-skeleton-line w-60" style="height:16px; max-width:200px;"></div>
     <div class="blog-skeleton-img" style="height:360px; border-radius:24px; margin:20px 0 32px;"></div>
@@ -313,25 +273,25 @@ function initBlogPost() {
     <div class="blog-skeleton-line w-60"></div>`;
 
   if (!slug && !id) {
+    setMeta('meta[name="robots"]', { name: 'robots', content: 'noindex, follow' });
     root.innerHTML = `<div class="blog-error"><div class="blog-error-icon">🔍</div><div>No article was specified.</div><a href="blog.html" class="blog-back-link" style="margin-top:14px;">← Back to all articles</a></div>`;
     return;
   }
 
   (async () => {
     try {
-      const { posts } = await fetchPage(1);
-      // Slug first, id second. Both are accepted for the life of the site: the
-      // posts written before slugs existed have none, and any link already shared
-      // uses ?id=.
-      const post = slug
-        ? posts.find((p) => p.slug === slug)
-        : posts.find((p) => String(p.id) === String(id));
-      if (!post) {
-        root.innerHTML = `<div class="blog-error"><div class="blog-error-icon">🔍</div><div>This article could not be found — it may have been unpublished.</div><a href="blog.html" class="blog-back-link" style="margin-top:14px;">← Back to all articles</a></div>`;
+      const key = slug ? `slug=${encodeURIComponent(slug)}` : `id=${encodeURIComponent(id)}`;
+      const result = await api.get(`/api/blogs/post?${key}`, { auth: false });
+      if (!result?.data) throw new Error('Invalid article response');
+      if (hi && !(result.data.hindi?.title && result.data.hindi?.content)) {
+        location.replace(`../blog-post.html?${key}`);
         return;
       }
-      document.title = `${post.titleEn} — Astrowani Blog`;
-      const description = bestDescription(post);
+      const post = mapPost(result.data);
+      const posts = [];
+      const title = hi ? post.titleHi : post.titleEn;
+      document.title = `${title} — Astrowani Blog`;
+      const description = hi ? (post.metaDescriptionHi || post.excerptHi) : bestDescription(post);
       setMeta('meta[name="description"]', { name: 'description', content: description });
 
       // A CANONICAL URL matters more here than it looks. The same article is
@@ -346,16 +306,49 @@ function initBlogPost() {
       // Open Graph / Twitter, so a shared link shows the article's own title and
       // photograph instead of the generic site card.
       setMeta('meta[property="og:type"]', { property: 'og:type', content: 'article' });
-      setMeta('meta[property="og:title"]', { property: 'og:title', content: post.titleEn });
+      setMeta('meta[property="og:title"]', { property: 'og:title', content: title });
       setMeta('meta[property="og:description"]', { property: 'og:description', content: description });
       setMeta('meta[property="og:url"]', { property: 'og:url', content: canonical });
-      if (post.thumbnail) {
-        setMeta('meta[property="og:image"]', { property: 'og:image', content: post.thumbnail });
-        setMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
+      const image = post.thumbnail || new URL(`${hi ? '../' : ''}assets/og-default.jpg`, location.href).href;
+      setMeta('meta[property="og:image"]', { property: 'og:image', content: image });
+      setMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
+      setMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title });
+      setMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description });
+      setMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: image });
+      document.querySelectorAll('meta[property="og:image:width"],meta[property="og:image:height"]').forEach((el) => el.remove());
+      document.querySelectorAll('link[hreflang]').forEach((el) => {
+        if (!(result.data.hindi?.title && result.data.hindi?.content)) { el.remove(); return; }
+        const alternate = new URL(el.href);
+        alternate.search = new URL(canonical).search;
+        el.href = alternate.href;
+      });
+
+      let structured = document.getElementById('blog-article-schema');
+      if (!structured) {
+        structured = document.createElement('script');
+        structured.id = 'blog-article-schema';
+        structured.type = 'application/ld+json';
+        document.head.appendChild(structured);
       }
+      const faq = hi ? result.data.faqHindi : result.data.faqEnglish;
+      structured.textContent = JSON.stringify({ '@context': 'https://schema.org', '@graph': [{
+        '@type': 'Article', headline: title, description, image: [image], mainEntityOfPage: canonical,
+        datePublished: result.data.createdAt, dateModified: result.data.updatedAt || result.data.createdAt,
+        inLanguage: hi ? 'hi-IN' : 'en-IN', author: { '@type': 'Organization', name: 'Astrowani' },
+      }, ...(faq ? [faq] : [])] });
 
       root.innerHTML = articleTemplate(post, posts);
+      // Related articles are optional and independent of the direct lookup.
+      fetchPage(1).then(({ posts: recent }) => {
+        root.innerHTML = articleTemplate(post, recent);
+      }).catch(() => {});
     } catch (err) {
+      if (err.status === 404 && err.code === 'BLOG_NOT_FOUND') {
+        document.title = 'Article not found — Astrowani';
+        setMeta('meta[name="robots"]', { name: 'robots', content: 'noindex, follow' });
+        root.innerHTML = `<h1>Article not found</h1><p>This article may have been removed.</p><a href="${hi ? '../blog.html' : 'blog.html'}">Back to all articles</a>`;
+        return;
+      }
       root.innerHTML = `<div class="blog-error"><div class="blog-error-icon">⚠️</div><div>Could not load this article right now.</div><button type="button" id="blog-post-retry-btn">Try again</button></div>`;
       const retry = document.getElementById('blog-post-retry-btn');
       if (retry) retry.addEventListener('click', initBlogPost);

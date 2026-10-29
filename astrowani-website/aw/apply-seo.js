@@ -74,7 +74,7 @@ const PAGES = {
   },
   'about.html': {
     title: 'About Astrowani — Verified Astrologers Online',
-    desc: 'Why Astrowani is different: a proper first consultation with a verified astrologer, instead of a rushed free reading that leaves you with more questions.',
+    desc: 'Learn about Astrowani consultations, astrologer profiles, learning resources and support. Review how to choose a service and where to find our policies.',
   },
   'astrologers.html': {
     title: 'Ask an Astrologer — Verified Astrologers | Astrowani',
@@ -103,8 +103,8 @@ const PAGES = {
     desc: 'Chat, call or video with a verified astrologer on Astrowani. Pick someone available right now and start a one-to-one consultation.',
   },
   'courses.html': {
-    title: 'Learn Astrology — Online Courses | Astrowani',
-    desc: "Learn astrology from Astrowani's own verified astrologers — structured courses from first principles through to advanced remedies.",
+    title: 'Astrology Course Enquiries — Learning Options | Astrowani',
+    desc: "Enquire about astrology, numerology and tarot learning options. Ask Astrowani about availability, instructors, syllabus, fees and schedules before enrolling.",
   },
   'free-services.html': {
     title: 'Free Kundli, Horoscope & Matching Tools | Astrowani',
@@ -300,7 +300,10 @@ function siteGraph() {
     '@id': `${SITE_BASE}/#website`,
     url: `${SITE_BASE}/`,
     name: SITE_NAME,
-    inLanguage: 'en-IN',
+    // One WebSite entity, shared by both languages through its fixed @id — so it
+    // lists both. Saying 'en-IN' here while serving /hi/ describes the site
+    // wrongly on every Hindi page.
+    inLanguage: ['en-IN', 'hi-IN'],
     publisher: { '@id': `${SITE_BASE}/#organization` },
   };
 }
@@ -346,7 +349,8 @@ function crumbGraph(file, html) {
     itemListElement: parts.map((p, i) => {
       const node = { '@type': 'ListItem', position: i + 1, name: p.name };
       if (p.href) {
-        node.item = p.href === 'index.html' ? `${SITE_BASE}/` : `${SITE_BASE}/${p.href}`;
+        node.item = new URL(p.href, `${SITE_BASE}/${file}`).href;
+        if (node.item === `${SITE_BASE}/index.html`) node.item = `${SITE_BASE}/`;
       }
       return node;
     }),
@@ -505,6 +509,12 @@ for (const [file, cfg] of Object.entries(PAGES)) {
     // The old 522 KB favicon line is superseded by the icons in the block.
     next = next.replace(/\n?<link rel="icon" href="assets\/logo\.png">/i, '');
   }
+
+  // The generated block owns the description; remove legacy tags outside it.
+  const blockStart = next.indexOf(START);
+  const blockEnd = next.indexOf(END) + END.length;
+  const stripDescription = (s) => s.replace(/<meta\b[^>]*name=["']description["'][^>]*>\r?\n?/gi, '');
+  next = stripDescription(next.slice(0, blockStart)) + next.slice(blockStart, blockEnd) + stripDescription(next.slice(blockEnd));
 
   if (next !== original) {
     changed++;

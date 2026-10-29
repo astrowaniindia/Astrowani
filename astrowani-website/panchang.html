@@ -26,14 +26,17 @@
 <link rel="icon" href="assets/favicon-16.png" sizes="16x16">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
+<link rel="alternate" hreflang="en-IN" href="https://shop.astrowani.com/test-site/panchang.html">
+<link rel="alternate" hreflang="hi-IN" href="https://shop.astrowani.com/test-site/hi/panchang.html">
+<link rel="alternate" hreflang="x-default" href="https://shop.astrowani.com/test-site/panchang.html">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shop.astrowani.com/test-site/#organization","name":"Astrowani","url":"https://shop.astrowani.com/test-site/","logo":{"@type":"ImageObject","@id":"https://shop.astrowani.com/test-site/#logo","url":"https://shop.astrowani.com/test-site/assets/logo.png","width":1024,"height":1024},"description":"Astrowani connects people with verified Indian astrologers for live one-to-one chat, voice and video consultations.","sameAs":["https://www.facebook.com/jyotishjagrati","https://www.instagram.com/astrowani_official/","https://x.com/astrowani_","https://www.linkedin.com/company/astrowani/","https://www.youtube.com/@Astrowani"],"contactPoint":{"@type":"ContactPoint","contactType":"customer support","email":"support@astrowani.com","areaServed":"IN","availableLanguage":["en","hi"]}},{"@type":"WebSite","@id":"https://shop.astrowani.com/test-site/#website","url":"https://shop.astrowani.com/test-site/","name":"Astrowani","inLanguage":"en-IN","publisher":{"@id":"https://shop.astrowani.com/test-site/#organization"}},{"@type":"BreadcrumbList","@id":"https://shop.astrowani.com/test-site/panchang.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://shop.astrowani.com/test-site/"},{"@type":"ListItem","position":2,"name":"Panchang"}]}]}
+{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shop.astrowani.com/test-site/#organization","name":"Astrowani","url":"https://shop.astrowani.com/test-site/","logo":{"@type":"ImageObject","@id":"https://shop.astrowani.com/test-site/#logo","url":"https://shop.astrowani.com/test-site/assets/logo.png","width":1024,"height":1024},"description":"Astrowani connects people with verified Indian astrologers for live one-to-one chat, voice and video consultations.","sameAs":["https://www.facebook.com/jyotishjagrati","https://www.instagram.com/astrowani_official/","https://x.com/astrowani_","https://www.linkedin.com/company/astrowani/","https://www.youtube.com/@Astrowani"],"contactPoint":{"@type":"ContactPoint","contactType":"customer support","email":"support@astrowani.com","areaServed":"IN","availableLanguage":["en","hi"]}},{"@type":"WebSite","@id":"https://shop.astrowani.com/test-site/#website","url":"https://shop.astrowani.com/test-site/","name":"Astrowani","inLanguage":["en-IN","hi-IN"],"publisher":{"@id":"https://shop.astrowani.com/test-site/#organization"}},{"@type":"BreadcrumbList","@id":"https://shop.astrowani.com/test-site/panchang.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://shop.astrowani.com/test-site/"},{"@type":"ListItem","position":2,"name":"Panchang"}]}]}
 </script>
 <!-- SEO:END -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=51">
+<link rel="stylesheet" href="style.css?v=53">
 <link rel="stylesheet" href="aw/aw.css?v=51">
 </head>
 <body>
@@ -81,7 +84,7 @@
 
     <div class="calc-card" id="tithi">
       <div class="calc-card-title">Tithi &amp; Karana</div>
-      <div id="pan-tithi-body"></div>
+      <div id="karana"><div id="pan-tithi-body"></div></div>
     </div>
 
     <div class="calc-card" id="vaar">
@@ -119,7 +122,7 @@
       </div>
     </div>
 
-    <div class="calc-card" id="numerology-panchang">
+    <div class="calc-card" id="numerology">
       <div class="calc-card-title">Today's Numerology Number</div>
       <div id="pan-numerology-body"></div>
     </div>
@@ -167,13 +170,13 @@
 
 <script src="astro-engine.js"></script>
 <script src="astrologers-data.js"></script>
-<script src="script.js?v=51"></script>
+<script src="script.js?v=53"></script>
 <script type="module" src="aw/boot.js?v=51"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const hash = (window.location.hash || '#today').replace('#', '');
   const nonDayAnchors = ['tithi', 'vaar', 'rahu-kaal', 'shubh-muhurat', 'choghadiya', 'hora', 'numerology', 'karana'];
-  const day = hash === 'tomorrow' ? 'tomorrow' : 'today';
+  let day = hash === 'tomorrow' ? 'tomorrow' : 'today';
   document.querySelectorAll('.consult-mode-pill').forEach((p) => p.classList.toggle('active', p.getAttribute('data-day') === day));
 
   const citySel = document.getElementById('pan-city');
@@ -227,6 +230,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('pan-numerology-body').innerHTML = `<div class="panchang-stat-value" style="font-size:22px;">Number ${numDigit}</div><div class="calc-card-desc" style="margin-bottom:0;">${ASTRO_LIFE_PATH_MEANINGS[numDigit] || ''}</div>`;
   }
 
+  window.addEventListener('hashchange', () => {
+    if (!['#today', '#tomorrow'].includes(location.hash)) return;
+    day = location.hash === '#tomorrow' ? 'tomorrow' : 'today';
+    document.querySelectorAll('[data-day]').forEach((p) => p.classList.toggle('active', p.dataset.day === day));
+    render();
+  });
   citySel.addEventListener('change', render);
   render();
 });

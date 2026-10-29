@@ -1,3 +1,17 @@
+// On a /hi/ page, a bare page link resolves inside /hi/ — which is right only
+// where that Hindi page exists. The list is EMITTED INTO THE PAGE by
+// aw/make-hindi-pages.js, never written here: a hardcoded copy goes stale the
+// moment another page is translated, and it fails silently (the link just goes
+// to English). With no list we send everything to English, because a link to a
+// missing /hi/ page is a 404 while a link to the English page always works.
+function astroPageHref(href) {
+  if (document.documentElement.lang !== 'hi') return href;
+  const match = href.match(/^([\w-]+\.html)([?#].*)?$/);
+  if (!match) return href;
+  const hi = Array.isArray(window.ASTROWANI_HI_PAGES) ? window.ASTROWANI_HI_PAGES : [];
+  return hi.includes(match[1]) ? href : `../${href}`;
+}
+
 // ---------- shared astrologer card renderer (real data, used on every page) ----------
 const ASTROWANI_APP_LINK = 'https://play.google.com/store/apps/details?id=com.astrowanicustomer&hl=en_IN';
 const ASTROWANI_STAR_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>';
@@ -279,6 +293,8 @@ function injectNavUtilButtons() {
   const langBtn = document.querySelector('.nav-util-btn[data-role="lang"]');
   langBtn.addEventListener('click', () => {
     const next = document.documentElement.getAttribute('data-lang') === 'hi' ? 'en' : 'hi';
+    const alternate = document.querySelector(`link[hreflang="${next === 'hi' ? 'hi-IN' : 'en-IN'}"]`);
+    if (alternate) { window.location.href = alternate.href; return; }
     localStorage.setItem('astro-lang', next);
     astroApplyLang(next);
   });
@@ -529,7 +545,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // sits last in the bar (the hamburger is the right-most control).
   injectMobileNav();
   injectFooterSocial();
-  astroApplyLang(document.documentElement.getAttribute('data-lang') === 'hi' ? 'hi' : 'en');
+  // A generated /hi/ page is ALREADY Hindi in its markup. Running the old
+  // in-place swapper over it would capture that Hindi as each node's
+  // `i18nEn` baseline and then write it back as the 'English' text — so the
+  // language button would have nothing left to restore. Only the shared
+  // English pages use it.
+  if (!window.ASTROWANI_HI_STRINGS) {
+    astroApplyLang(document.documentElement.getAttribute('data-lang') === 'hi' ? 'hi' : 'en');
+  }
   // Every astrologer surface renders from window.ASTROWANI_ASTROLOGERS. That array
   // starts as the bundled snapshot (so the page paints instantly, with no layout
   // shift and no blank grid if the API is slow) and is REPLACED by aw/astrologers.js
@@ -549,7 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const titleEl = document.getElementById('consult-title');
     const descEl = document.getElementById('consult-desc');
     if (titleEl) titleEl.textContent = mode === 'video' ? 'Video call with an astrologer' : `${cfg.label} with an astrologer`;
-    if (descEl) descEl.textContent = `Every astrologer below is available for a 1-to-1 ${cfg.label.toLowerCase()} — pick one and continue in the Astrowani app.`;
+    if (descEl) descEl.textContent = `Compare astrologers for a 1-to-1 ${cfg.label.toLowerCase()}. Check their current availability, language and per-minute rate before connecting.`;
     document.querySelectorAll('.consult-mode-pill').forEach((p) => {
       p.classList.toggle('active', p.getAttribute('data-mode') === mode);
     });
@@ -725,43 +748,52 @@ document.addEventListener('DOMContentLoaded', () => {
     sweepReveals();
   };
 
-  // ---------- "drag to rotate" hint on the 3D model ----------
-  // Shown once the model scrolls into view, hidden ONLY the instant the
-  // model-viewer reports a REAL user drag (camera-change with source
-  // 'user-interaction' — model-viewer also fires this on its own initial
-  // auto-framing, which is why that source check matters). No timed auto-hide
-  // — it used to give up after ~6.5s even if nobody had dragged yet, which
-  // reads as the hint being broken rather than as "already understood".
-  //
-  // A rect check on scroll/resize/interval, same as the .reveal sweep above,
-  // not IntersectionObserver — this file already carries that fallback because
-  // IO has proven unreliable here before (see the comment on scanReveals).
+  // Load the optional renderer and model only after a visitor asks for them.
   (() => {
-    const hint = document.getElementById('app-3d-hint');
+    const button = document.getElementById('app-3d-load');
     const model = document.getElementById('app-3d-model');
-    if (!hint || !model) return;
-    let shown = false;
-    let hidden = false;
-    model.addEventListener('camera-change', (e) => {
-      if (e.detail?.source !== 'user-interaction' || hidden) return;
-      hidden = true;
-      hint.classList.remove('is-shown');
-    });
-    function checkVisible() {
-      if (shown || hidden) return;
-      const r = model.getBoundingClientRect();
-      if (r.top < window.innerHeight - 40 && r.bottom > 0) {
-        shown = true;
-        hint.classList.add('is-shown');
+    if (!button || !model) return;
+    const status = document.getElementById('app-3d-status');
+    const poster = document.getElementById('app-3d-poster');
+    const hint = document.getElementById('app-3d-hint');
+    let loader;
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      status.textContent = 'Loading 3D preview…';
+      try {
+        if (!customElements.get('model-viewer')) {
+          loader ||= import('https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js').catch(err => { loader = null; throw err; });
+          await loader;
+        }
+        model.hidden = false;
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => finish(new Error('Timeout')), 45000);
+          const loaded = () => finish();
+          const failed = () => finish(new Error('Model load failed'));
+          function finish(err) {
+            clearTimeout(timer);
+            model.removeEventListener('load', loaded);
+            model.removeEventListener('error', failed);
+            err ? reject(err) : resolve();
+          }
+          model.addEventListener('load', loaded, {once:true});
+          model.addEventListener('error', failed, {once:true});
+          model.setAttribute('src', model.dataset.src);
+        });
+        poster.hidden = true;
+        button.hidden = true;
+        status.textContent = '';
+        hint?.classList.add('is-shown');
+      } catch (_) {
+        model.hidden = true;
+        model.removeAttribute('src');
+        status.textContent = 'The preview could not load. You can try again.';
+        button.disabled = false;
       }
-    }
-    window.addEventListener('scroll', checkVisible, { passive: true });
-    window.addEventListener('resize', checkVisible);
-    checkVisible();
-    const t = setInterval(() => {
-      checkVisible();
-      if (shown) clearInterval(t);
-    }, 250);
+    });
+    model.addEventListener('camera-change', e => {
+      if (e.detail?.source === 'user-interaction') hint?.classList.remove('is-shown');
+    });
   })();
 
   // ---------- hero phone carousel: cycle which phone is centre, every 5s ----------
@@ -918,11 +950,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function buildOdometer(el) {
     const text = el.getAttribute('data-text') || el.textContent;
     el.textContent = '';
+    el.setAttribute('role', 'img');
+    el.setAttribute('aria-label', text);
     el.classList.add('odo');
     [...text].forEach((ch) => {
       if (/[0-9]/.test(ch)) {
         const cell = document.createElement('span');
         cell.className = 'odo-cell';
+        cell.setAttribute('aria-hidden', 'true');
         const strip = document.createElement('span');
         strip.className = 'odo-strip';
         const seq = [parseInt(ch, 10)];
@@ -943,6 +978,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         const span = document.createElement('span');
         span.className = 'odo-static';
+        span.setAttribute('aria-hidden', 'true');
         span.textContent = ch;
         el.appendChild(span);
       }
@@ -1034,3 +1070,83 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 });
+
+/**
+ * Translate text this file INJECTS — nav dropdowns, footer columns, category
+ * chips. aw/make-hindi-pages.js only ever sees the static markup, so without
+ * this the body of a /hi/ page is Hindi and its navigation is English.
+ *
+ * The table is emitted into the page by that same generator, so the two can
+ * never disagree. Matching is EXACT on the trimmed English, the same rule the
+ * generator uses: a partial or case-insensitive match would mangle Hindi text
+ * that happens to contain a Latin word (every 'Astrowani' on the page).
+ * Running it document-wide is safe for the same reason — already-translated
+ * text matches no English key.
+ */
+function astroLocaliseInjected(root) {
+  const dict = window.ASTROWANI_HI_STRINGS;
+  if (!dict) return;
+  const walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+  const pending = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const t = n.nodeValue.trim();
+    if (t && dict[t]) pending.push([n, dict[t]]);
+  }
+  // Collected first, replaced after: editing while walking invalidates it.
+  for (const [n, hi] of pending) n.nodeValue = n.nodeValue.replace(n.nodeValue.trim(), hi);
+  for (const el of (root || document).querySelectorAll('[aria-label],[title],[alt],[placeholder]')) {
+    for (const a of ['aria-label', 'title', 'alt', 'placeholder']) {
+      const v = el.getAttribute(a);
+      if (v && dict[v.trim()]) el.setAttribute(a, dict[v.trim()]);
+    }
+  }
+}
+window.astroLocaliseInjected = astroLocaliseInjected;
+
+function astroRepairHindiLinks() {
+  if (document.documentElement.lang !== 'hi') return;
+  document.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href');
+    const fixed = astroPageHref(href);
+    if (fixed !== href) a.setAttribute('href', fixed);
+  });
+}
+/**
+ * A /hi/ page sits one directory deeper, so a relative `assets/...` built at
+ * runtime resolves to /hi/assets/ and 404s. aw/make-hindi-pages.js rewrites the
+ * STATIC markup only, so every astrologer avatar — fetched from the API long
+ * after load — was broken on every Hindi page. Measured, not assumed.
+ *
+ * Idempotent by construction: a path that has been rewritten no longer starts
+ * with `assets/`, so re-running cannot stack another `../` on it.
+ */
+function astroRerootInjectedAssets(root) {
+  for (const el of (root.querySelectorAll ? root.querySelectorAll('img[src^="assets/"]') : [])) {
+    el.setAttribute('src', `../${el.getAttribute('src')}`);
+  }
+  if (root.matches && root.matches('img[src^="assets/"]')) {
+    root.setAttribute('src', `../${root.getAttribute('src')}`);
+  }
+}
+
+function astroFinishHindiPage() {
+  astroRepairHindiLinks();
+  astroLocaliseInjected();
+  if (document.documentElement.lang !== 'hi') return;
+  astroRerootInjectedAssets(document);
+  // Cards arrive from the API after this runs, and more arrive on "load more",
+  // so a one-off pass at DOMContentLoaded is not enough.
+  new MutationObserver((records) => {
+    for (const r of records) {
+      for (const node of r.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        astroRerootInjectedAssets(node);
+        astroLocaliseInjected(node);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
+// Registered LAST, so it runs after this file's other DOMContentLoaded
+// handlers have injected the nav, the footer and the category chips.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', astroFinishHindiPage);
+else astroFinishHindiPage();

@@ -67,6 +67,9 @@ const PAGES = [
  */
 const MIN_COVERAGE = 0.9;
 
+/** Longest string worth shipping to the runtime swapper. See the emit below. */
+const RUNTIME_STRING_MAX = 70;
+
 // Tags whose contents are never text to translate.
 const SKIP_TAGS = new Set(['script', 'style', 'svg', 'code', 'pre']);
 
@@ -135,11 +138,21 @@ function collect(html) {
   return [...found];
 }
 
-/** Rewrite relative asset paths for a page that now sits one directory deeper. */
-function reroot(html) {
-  // Only asset-ish paths move. A link to another PAGE must stay relative, so
-  // /hi/vastu.html -> marriage.html resolves to /hi/marriage.html.
+/**
+ * Rewrite relative paths for a page that now sits one directory deeper, and
+ * point every page link at the version that will actually exist.
+ *
+ * `translated` is the set of pages this run will write, NOT what is on disk.
+ * Asking the filesystem makes the output depend on build ORDER and on what a
+ * previous run happened to leave behind: astrologers.html is built before
+ * kundli-reading.html, so on a clean checkout it would link to the English
+ * kundli page, and a page could never link to the Hindi version of ITSELF
+ * because its own file is written after this runs. Both were measured.
+ */
+function reroot(html, translated) {
   return html
+    .replace(/href="([\w-]+\.html)([?#][^"]*)?"/g, (tag, file, suffix = '') =>
+      `href="${translated.has(file) ? '' : '../'}${file}${suffix}"`)
     .replace(/(["'(])(assets\/)/g, '$1../$2')
     .replace(/(["'(])(aw\/)/g, '$1../$2')
     .replace(/(["'])(style\.css)/g, '$1../$2')
@@ -190,32 +203,65 @@ let built = 0;
 let skipped = 0;
 const missingAll = new Map();
 
+/**
+ * PASS 1 — decide which pages qualify, before writing any of them. The link
+ * rewrite in pass 2 needs the whole set up front; see reroot().
+ */
+const sources = new Map();
+const translated = new Set();
 for (const page of PAGES) {
   const src = path.join(ROOT, page);
   if (!fs.existsSync(src)) { console.log(`  (no ${page})`); continue; }
   const html = fs.readFileSync(src, 'utf8');
-
   const strings = collect(html);
   const missing = strings.filter((s) => !dict[s]);
   const coverage = strings.length ? (strings.length - missing.length) / strings.length : 1;
+  sources.set(page, { html, missing, strings, coverage });
+  if (coverage >= MIN_COVERAGE) translated.add(page);
+}
+
+// PASS 2 — build.
+for (const [page, info] of sources) {
+  const { html, missing, strings, coverage } = info;
 
   if (listMissing) {
     if (missing.length) missingAll.set(page, missing);
     continue;
   }
 
-  if (coverage < MIN_COVERAGE) {
+  if (!translated.has(page)) {
     skipped++;
     console.log(`  skip  ${page.padEnd(28)} ${Math.round(coverage * 100)}% translated (${missing.length} of ${strings.length} missing)`);
     continue;
   }
 
   const built1 = buildPage(html, dict);
-  let out = reroot(built1.html);
+  let out = reroot(built1.html, translated);
+  // Links created at runtime (nav dropdowns, cards, chips) cannot be rewritten
+  // here, so script.js needs the same set. It is emitted rather than hardcoded:
+  // a hardcoded copy goes stale the moment another page is translated, and the
+  // staleness is silent — the link just quietly goes to English.
+  // …and the short strings themselves, for text script.js injects AFTER load
+  // (nav dropdowns, footer columns, category chips). Those never pass through
+  // this generator, so without them the nav on a fully translated page is
+  // still English. SHORT ONLY: the dictionary is mostly article-length prose,
+  // and shipping all of it would add ~100 KB of unused text to every page.
+  // Nothing injected at runtime is a paragraph.
+  const runtime = Object.fromEntries(
+    Object.entries(dict).filter(([en, hi]) => en !== '_README' && en.length <= RUNTIME_STRING_MAX && hi),
+  );
+  out = out.replace(/<head>/i, () =>
+    `<head>
+<script>window.ASTROWANI_HI_PAGES=${JSON.stringify([...translated])};`
+    + `window.ASTROWANI_HI_STRINGS=${JSON.stringify(runtime)};</script>`);
   // The page is Hindi now, and its own SEO block is written by apply-seo.js on
   // the next run — strip the English one so it cannot be left behind.
   out = out.replace(/<!-- SEO:START[\s\S]*?<!-- SEO:END -->\r?\n?/, '');
-  out = out.replace(/<html([^>]*)\blang="[^"]*"/i, '<html$1lang="hi"');
+  // BOTH attributes. `lang` is what Google and screen readers read;
+  // `data-lang` is what script.js reads, and with it missing every Hindi page
+  // ran astroApplyLang('en') on load and the language button could not tell
+  // which way round it was.
+  out = out.replace(/<html([^>]*)\blang="[^"]*"/i, '<html$1lang="hi" data-lang="hi"');
 
   const dest = path.join(HI_DIR, page);
   if (!check) fs.writeFileSync(dest, out);
