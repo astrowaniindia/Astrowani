@@ -200,6 +200,64 @@ function orgGraph() {
   };
 }
 
+/**
+ * FAQPage, built by READING THE PAGE'S OWN VISIBLE FAQ BLOCK.
+ *
+ * This is not a convenience. Google's structured-data policy requires the
+ * question and answer in the markup to be the ones a visitor actually sees;
+ * schema carrying FAQs that are not on the page is a manual-action risk, not a
+ * clever shortcut. Parsing what is rendered makes the two impossible to
+ * diverge — edit the HTML and the schema follows, with no second list to
+ * forget.
+ *
+ * Two shapes exist on this site and both are handled:
+ *   homepage       <button class="faq-q">Q</button> … <div class="faq-a">A</div>
+ *   service pages  <h3>Q</h3> followed by <p>A</p>, inside the FAQ band
+ *
+ * Returns null when a page has no FAQ block, which is correct — most do not.
+ */
+function faqGraph(file, html) {
+  const strip = (s) => s
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const pairs = [];
+
+  // Shape 1: the accordion.
+  const qs = [...html.matchAll(/<button[^>]*class="[^"]*faq-q[^"]*"[^>]*>([\s\S]*?)<\/button>/gi)];
+  const as = [...html.matchAll(/<div[^>]*class="[^"]*faq-a[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)];
+  if (qs.length && qs.length === as.length) {
+    for (let i = 0; i < qs.length; i++) pairs.push([strip(qs[i][1]), strip(as[i][1])]);
+  }
+
+  // Shape 2: h3 + p inside the generated FAQ band.
+  if (!pairs.length) {
+    for (const m of html.matchAll(/<h3[^>]*>([\s\S]*?)<\/h3>\s*<p[^>]*>([\s\S]*?)<\/p>/gi)) {
+      const q = strip(m[1]);
+      const a = strip(m[2]);
+      // A heading that is not a question, or an empty answer, is not an FAQ.
+      if (q.endsWith('?') && a.length > 20) pairs.push([q, a]);
+    }
+  }
+
+  const usable = pairs.filter(([q, a]) => q && a);
+  if (usable.length < 2) return null;
+
+  return {
+    '@type': 'FAQPage',
+    '@id': `${SITE_BASE}/${file === 'index.html' ? '' : file}#faq`,
+    mainEntity: usable.map(([q, a]) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a },
+    })),
+  };
+}
+
 function siteGraph() {
   return {
     '@type': 'WebSite',
@@ -328,6 +386,8 @@ function block(file, cfg, html) {
     const graph = [orgGraph(), siteGraph()];
     const crumb = crumbGraph(file, html);
     if (crumb) graph.push(crumb);
+    const faq = faqGraph(file, html);
+    if (faq) graph.push(faq);
     lines.push(
       '<script type="application/ld+json">',
       JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }),
