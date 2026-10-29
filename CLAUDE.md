@@ -4110,9 +4110,16 @@ State now: three timers installed and armed — `astrowani-blog-morning/midday/e
 03:30 / 09:30 / 17:30 IST — and the agent **OFF**. The timers fire and exit immediately while the
 flag is false, which is the designed resting state.
 
-**Still missing: an image provider key.** `--status` reports `image providers none set`, so every
-article would get a locally generated gradient card rather than a photograph. A free
-`PEXELS_API_KEY` takes two minutes.
+**The image provider is now set — `UNSPLASH_ACCESS_KEY`** (2026-10-29, later the same day).
+`--status` had reported `image providers none set`, so every article would have published with
+a locally generated gradient card. The key existed in the LOCAL repo `.env` all along and had
+simply never been pushed — there was no GitHub secret for it either. `set-backend-env.yml`
+already listed both `PEXELS_API_KEY` and `UNSPLASH_ACCESS_KEY` as optional keys, so it took a
+`gh secret set` plus one run of that workflow, with no code change.
+
+> **Unsplash asks for attribution and Pexels does not**, which is why `images.js` tries Pexels
+> first. With only Unsplash configured, `images.creditHtml` appends a visible credit under
+> every article that uses one of its photographs. A free `PEXELS_API_KEY` would remove that.
 
 ### EO5. The admin switch
 
