@@ -31,6 +31,31 @@ const ASTROWANI_NAV_MENUS = [
       ['Video Call with Astrologer', 'consult.html?mode=video'],
     ],
   },
+  // SERVICES: real pages, one per intent.
+  //
+  // This menu previously offered 44 destinations that resolved to FIVE
+  // indexable URLs, because 35 of them were hash fragments (calculators.html
+  // #numerology and so on) and Google strips a fragment entirely — it is not a
+  // URL and never was. "Numerology consultation" had nowhere to rank.
+  //
+  // Every entry below is its own page with its own title, H1 and content, and
+  // every one is backed by astrologers who actually offer it (counts checked
+  // against the live categories table, 2026-10-29). Kundli matching stays on
+  // marriage.html and muhurat on panchang.html rather than being duplicated —
+  // two pages chasing one phrase compete and both lose.
+  {
+    label: 'Services', wide: 'wide', cols: 2,
+    items: [
+      ['Kundli Reading', 'kundli-reading.html'],
+      ['Kundli Matching for Marriage', 'marriage.html'],
+      ['Tarot Card Reading', 'tarot-reading.html'],
+      ['Numerology Consultation', 'numerology.html'],
+      ['Career & Business Astrology', 'career-astrology.html'],
+      ['Vastu Consultation', 'vastu.html'],
+      ['Lal Kitab Consultation', 'lal-kitab.html'],
+      ['Muhurat & Panchang', 'panchang.html'],
+    ],
+  },
   {
     label: 'Horoscope', wide: '', cols: 1,
     items: [

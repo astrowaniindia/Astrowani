@@ -38,6 +38,16 @@ const STATIC_PAGES = [
   ['panchang.html', '0.7', 'daily'],
   ['calculators.html', '0.7', 'monthly'],
   ['free-services.html', '0.7', 'weekly'],
+  // The six service landing pages (astrowani-website/aw/service-pages.js).
+  // Each one targets a supplied keyword that previously had no URL to land on,
+  // because the mega menu pointed at hash fragments and Google strips those.
+  // Priority 0.8: these are commercial intent pages, the same tier as consult.
+  ['kundli-reading.html', '0.8', 'monthly'],
+  ['tarot-reading.html', '0.8', 'monthly'],
+  ['numerology.html', '0.8', 'monthly'],
+  ['career-astrology.html', '0.8', 'monthly'],
+  ['vastu.html', '0.8', 'monthly'],
+  ['lal-kitab.html', '0.8', 'monthly'],
   ['courses.html', '0.6', 'monthly'],
   // chat.html and call.html were here and have been REMOVED. They are not
   // landing pages -- they are the live consultation screens, and their entire
