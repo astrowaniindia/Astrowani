@@ -83,6 +83,7 @@ jobs:
             --exclude 'concept-hero.html' \
             --exclude 'aw/chat-image-selftest.html' \
             --exclude 'aw/sync-chat-image-geometry.js' \
+            --exclude 'aw/test-analytics-scrub.mjs' \
             astrowani-website/. /var/www/astrowani/shop/test-site/
           chown -R www-data:www-data /var/www/astrowani/shop/test-site
           echo "test-site deployed: $(find /var/www/astrowani/shop/test-site -type f | wc -l) files"

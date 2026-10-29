@@ -1,6 +1,7 @@
-import { api, ApiError } from './api.js?v=54';
-import { getUser, isSignedIn, onAuthChange } from './session.js?v=54';
-import { loadScript } from './ui.js?v=54';
+import { api, ApiError } from './api.js?v=55';
+import { getUser, isSignedIn, onAuthChange } from './session.js?v=55';
+import { loadScript } from './ui.js?v=55';
+import { track } from './analytics.js?v=55';
 
 /**
  * The wallet. Deliberately thin: it reads and tops up the SAME balance the app
@@ -91,6 +92,7 @@ export async function fetchTransactions() {
  */
 export function startRecharge(amount) {
   return new Promise(async (resolve) => {
+    track('recharge_started', { amount: Number(amount) || 0 });
     try {
       await loadScript(RAZORPAY_CHECKOUT);
       const order = await api.post('/api/wallet/create-order', { amount });
@@ -117,24 +119,41 @@ export function startRecharge(amount) {
               razorpay_signature: response.razorpay_signature,
             });
             await fetchBalance({ force: true });
+            // `settled` is the difference between "the backend confirmed the
+            // signature and credited the wallet" and "the money is in flight and
+            // the webhook will settle it". Both are ok:true to the customer, and
+            // folding them into one event would hide a verify endpoint that had
+            // started failing — the balance still arrives, so nobody complains.
+            track('wallet_recharged', { amount: Number(amount) || 0, settled: true });
             resolve({ ok: true });
           } catch (_) {
             // The money may well have left the customer's account, and the
             // Razorpay webhook settles it either way — never report an outright
             // failure here.
             await fetchBalance({ force: true });
+            track('wallet_recharged', { amount: Number(amount) || 0, settled: false });
             resolve({ ok: true, message: 'Payment received. Your balance will update shortly.' });
           }
         },
-        modal: { ondismiss: () => resolve({ ok: false }) },
+        modal: {
+          ondismiss: () => {
+            // Closed the Razorpay sheet without paying. The app cannot see this
+            // (its checkout is native), so it is the one recharge event the
+            // website measures that the apps do not.
+            track('recharge_abandoned', { amount: Number(amount) || 0 });
+            resolve({ ok: false });
+          },
+        },
       });
 
       rzp.on('payment.failed', (resp) => {
+        track('recharge_failed', { amount: Number(amount) || 0, stage: 'payment' });
         resolve({ ok: false, message: resp?.error?.description || 'That payment did not go through.' });
       });
 
       rzp.open();
     } catch (err) {
+      track('recharge_failed', { amount: Number(amount) || 0, stage: 'create_order' });
       resolve({ ok: false, message: err instanceof ApiError ? err.message : 'Could not start the payment.' });
     }
   });

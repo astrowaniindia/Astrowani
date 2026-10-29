@@ -4141,3 +4141,109 @@ status and rejection reasons, because **a quiet agent and a broken one look iden
 
 Verified in the live admin: the card renders `OFF`, reports 0 published in 24 h, and lists the
 four runs from 2026-10-13 including the rejected Mangal Dosh attempt.
+
+---
+
+## Subsystem added 2026-10-30: the website finally measures something (EP)
+
+### EP. PostHog on the website — one project, two surfaces, the app's own event names
+
+The 2026-10-29 audit's A1 ("Search/traffic/conversion data unavailable") was literal: a
+grep for `googletagmanager`, `gtag(`, `plausible`, `clarity.ms` and `G-XXXXXXXX` across
+every HTML and JS file in `astrowani-website` returned **nothing**. The site had no
+analytics of any kind.
+
+**It is PostHog, not GA4, and two facts decided that before any code was written:**
+
+1. **The Privacy Policy already named PostHog** and named no Google Analytics. Adding GA4
+   means editing a live legal page (and those edits are still pending on the CO Phase 1
+   checklist); adding PostHog meant widening four words — "app usage analytics" to **"app
+   and website usage analytics"**, in `privacy-policy.html`, `hi/privacy-policy.html` and
+   the `hindi-strings.json` key that regenerates the Hindi page.
+2. **The admin dashboard IS PostHog** — `postHogRoutes.js`, `journeyRoutes.js`,
+   `birdEyeRoutes.js`, `freeCallAnalyticsRoutes.js` and the Excluded-from-analytics
+   feature all query this one project. GA4 numbers would land where nobody looks.
+
+| Piece | Where |
+|---|---|
+| `aw/analytics.js` | init, super properties, identity, `track()`, the two delegated clicks |
+| `aw/analytics-scrub.js` | **pure** — the URL allowlist and the property filter |
+| `aw/test-analytics-scrub.mjs` | 50 checks, no browser, no network |
+| `aw/vendor/posthog-1.438.12.js` | the SDK, vendored |
+| event call sites | `boot.js`, `auth.js`, `consult.js`, `wallet.js`, `chat-page.js`, `call-page.js`, `blog.js` |
+
+**Things that are load-bearing — do not "simplify" them:**
+
+- **THE EVENT NAMES ARE THE APP'S, DELIBERATELY.** `recharge_started`, `wallet_recharged`,
+  `chat_initiated`, `chat_started`, `chat_ended`, `call_initiated`, `call_connected`,
+  `call_ended`, `consult_cta_click`, `consult_blocked`, `login_otp_sent`,
+  `login_completed`, `signup_completed`, `login_failed`, `blog_opened`, `language_toggled`.
+  The website is a second SURFACE on the same funnel, so the existing dashboards pick it up
+  as a breakdown instead of needing charts of their own. Inventing `web_recharge_start`
+  would produce a second set of numbers that never reconciles with the first.
+  Only two names are new, because the apps cannot see them: **`recharge_abandoned`** (the
+  Razorpay sheet closed without paying — the apps' checkout is native) and
+  **`app_store_click`**.
+- **`app: 'website'` + `environment` are registered as SUPER PROPERTIES.** Every HogQL
+  query in the admin backend filters `environment = 'production'`, so an event without it
+  is invisible to every chart — the app lost 873 events exactly that way. `environment` is
+  decided from the HOSTNAME, synchronously, before the first event, and the stored
+  `aw_analytics_env` override may only **downgrade** production to test. The reverse is
+  what let the app count emulator sessions as real traffic and move its measured
+  call-failure rate from 9.7% to 14.3%.
+- **`shop.astrowani.com/test-site` reports `production`**, whatever the path is called —
+  it is the live website. Only a developer machine reports `test`. This is also why the
+  eventual move to astrowani.com needs no change here.
+- **THE URL SCRUB IS NOT PARANOIA.** PostHog stamps `$current_url`, `$referrer` and the
+  initial person properties onto every event, so one personal value in one URL is one
+  personal value on every event of that session. `URL_PARAMS_KEPT` is an **allowlist** of
+  the eight content selectors the site actually reads (`slug`, `id`, `cat`, `type`, `mode`,
+  `astrologer`, `page`, `lang`); anything else — now or added later — is dropped, including
+  inside `$set` / `$set_once`.
+- **`SENSITIVE_KEY` matches `name` as a SUBSTRING, not a word.** It was `\bname\b` first,
+  and `_` is a word character, so **`customer_name` sailed straight through** the guard
+  that exists to stop exactly that. A call site naming an astrologer sends
+  `astrologer_id`.
+- **The vendored build is `module.slim.no-external.js`, and all three words matter.**
+  "no-external" is what stops the SDK fetching further bundles from
+  `us-assets.i.posthog.com` at runtime; the full build would reintroduce a third-party
+  script host. The version is in the FILENAME, so the file is immutable and
+  `aw/bump-version.js` deliberately does not rewrite that import.
+- **`advanced_disable_flags`, not `advanced_disable_decide`** — the SDK warns the latter is
+  deprecated and will be removed in a major version.
+- **The scrub lives in its own module so it can be TESTED.** `analytics.js` needs
+  `location` and `localStorage` at import time, so none of it is reachable from Node.
+  The test imports a temporary `.mjs` copy because this directory cannot carry
+  `{"type":"module"}` — `apply-seo.js`, `bump-version.js` and `make-hindi-pages.js` sit
+  beside it and are CommonJS — and renaming the module to `.mjs` would be worse, since
+  `bump-version.js` only versions `.js` imports and the browser would cache it forever.
+- Autocapture, session recording and surveys are **off**; the SDK loads on
+  `requestIdleCallback` after `load`, with events queued (bounded at 50) until it is up.
+
+### Verified 2026-10-30
+- `aw/test-analytics-scrub.mjs` **50/50**, every drop paired with a keep — a scrubber that
+  returned `{}` for everything would otherwise pass every "does not leak" assertion and
+  silently turn analytics off. **Verified to FAIL on three deliberate regressions:**
+  allowlist disabled (9 failures), `name` back to a `\b` boundary (3, naming
+  `customer_name` and `astrologer_name`), `sanitiseProps` dropping everything (27).
+- **In a real browser** against `dev-server.js`: the vendored SDK serves from our own
+  origin, PostHog initialises with `app: "website"` and `environment: "test"` in its
+  persistence, and a `$pageview` reaches `https://us.i.posthog.com/e/`. Driving the real
+  `scrubEvent` on a page loaded as
+  `about.html?slug=keep-me&phone=…&otp=…&session=abc` returned `about.html?slug=keep-me`
+  for both `$current_url` and `$initial_current_url`, with `customer_name` and `phone`
+  dropped while `astrologer_id` and `amount` survived.
+  (The payload bytes on the wire could not be read: posthog-js holds its own `fetch`,
+  `console` and transport references from init, so patching any of them afterwards sees
+  nothing. The Node suite is what covers the payload.)
+- `apply-seo.js --check` **0 pages would change**; `make-hindi-pages.js` round-trips with
+  only the one intended privacy-policy line changed; 52 pages of JSON-LD still parse with
+  **0 invalid blocks and 0 FAQ text mismatches**; `hindi-strings.json` still **1,173
+  entries**; every asset reference at `?v=55` with no `?v=50..54` anywhere.
+
+**Not yet done, and the other half of A1: Search Console.** Verifying `astrowani.com` as a
+Domain property is a browser job on the owner's account, and worth doing **before** the site
+move so there is a baseline of the WordPress site's existing queries. Also still true: the
+site has **no consent banner** (the policy's cookie section covers India; the EU is a live
+question, since the 27 EU states were removed from the App Store but the website is still
+reachable from there).

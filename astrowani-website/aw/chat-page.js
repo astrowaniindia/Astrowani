@@ -1,13 +1,14 @@
-import { api } from './api.js?v=54';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=54';
-import { toast, esc, confirmDialog } from './ui.js?v=54';
-import { isSignedIn, getUser } from './session.js?v=54';
-import { requireSignIn } from './auth.js?v=54';
-import { fetchBalance, ensureFunds } from './wallet.js?v=54';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=54';
-import { requestConsultation, RequestClosed } from './request.js?v=54';
-import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=54';
-import { attachChatImages, captionOf, openLightbox } from './chat-image.js?v=54';
+import { api } from './api.js?v=55';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=55';
+import { toast, esc, confirmDialog } from './ui.js?v=55';
+import { isSignedIn, getUser } from './session.js?v=55';
+import { requireSignIn } from './auth.js?v=55';
+import { fetchBalance, ensureFunds } from './wallet.js?v=55';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=55';
+import { requestConsultation, RequestClosed } from './request.js?v=55';
+import { trackViewportHeight, keepScrolledToLatest } from './mobile.js?v=55';
+import { attachChatImages, captionOf, openLightbox } from './chat-image.js?v=55';
+import { track } from './analytics.js?v=55';
 
 /**
  * chat.html — the chat consultation screen.
@@ -101,6 +102,7 @@ export async function initChatPage() {
   });
 
   try {
+    track('chat_initiated', { astrologer_id: astro.id, rate });
     const { sessionId, requestId } = await requestConsultation({
       kind: 'chat',
       astrologer: astro,
@@ -112,9 +114,15 @@ export async function initChatPage() {
     });
     runChat({ sessionId, requestId, astro, rate });
   } catch (err) {
+    // Reuses the app's `consult_blocked` rather than inventing a name, so the
+    // gap between chat_initiated and chat_started has a reason attached to it:
+    // a request that was cancelled, declined or timed out otherwise looks
+    // identical to a visitor who closed the tab.
     if (err instanceof RequestClosed) {
+      track('consult_blocked', { mode: 'chat', astrologer_id: astro.id, reason: 'request_closed' });
       setStage('Chat not started', err.message, { showHome: true });
     } else {
+      track('consult_blocked', { mode: 'chat', astrologer_id: astro.id, reason: 'error' });
       setStage('Something went wrong', 'Please try again in a moment.', { showHome: true });
     }
   }
@@ -253,6 +261,8 @@ function runChat({ sessionId, requestId, astro, rate }) {
   let timer = null;
   const startedAt = Date.now();
 
+  track('chat_started', { astrologer_id: astro.id, rate });
+
   function addMessage(row) {
     const id = row.id ? String(row.id) : null;
     if (id && seen.has(id)) return;
@@ -344,6 +354,10 @@ function runChat({ sessionId, requestId, astro, rate }) {
   }
 
   function leave(message) {
+    track('chat_ended', {
+      astrologer_id: astro.id,
+      duration_seconds: Math.round((Date.now() - startedAt) / 1000),
+    });
     teardown();
     fetchBalance({ force: true });
     sessionStorage.setItem('aw_flash', message);

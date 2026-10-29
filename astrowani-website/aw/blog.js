@@ -1,4 +1,5 @@
-import { api } from './api.js?v=54';
+import { api } from './api.js?v=55';
+import { track } from './analytics.js?v=55';
 
 /**
  * The blog section.
@@ -288,6 +289,10 @@ function initBlogPost() {
         return;
       }
       const post = mapPost(result.data);
+      // After the fetch succeeded, so a 404 or a Hindi redirect is never counted
+      // as an article read. The slug is what makes this useful: it is the only
+      // place the blog agent's output can be ranked by what people actually open.
+      track('blog_opened', { slug: post.slug || '', article_language: hi ? 'hi' : 'en' });
       const posts = [];
       const title = hi ? post.titleHi : post.titleEn;
       document.title = `${title} — Astrowani Blog`;

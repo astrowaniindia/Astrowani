@@ -1,6 +1,7 @@
-import { api, ApiError } from './api.js?v=54';
-import { signIn, isSignedIn, getUser, getToken } from './session.js?v=54';
-import { createOverlay, toast, esc } from './ui.js?v=54';
+import { api, ApiError } from './api.js?v=55';
+import { signIn, isSignedIn, getUser, getToken } from './session.js?v=55';
+import { createOverlay, toast, esc } from './ui.js?v=55';
+import { track } from './analytics.js?v=55';
 
 /**
  * Sign-in / sign-up in one popup: phone -> OTP -> (name, only for a brand new
@@ -144,6 +145,7 @@ export function requireSignIn({ reason } = {}) {
       setBusy(true, 'Sending…');
       try {
         await api.post('/api/users/mobile-otp-request', { phoneNumber: phone }, { auth: false });
+        track('login_otp_sent');
         step = 'otp';
         // Cleared BEFORE the re-render, not via setBusy: render() replaces the
         // card, so setBusy would be re-enabling a button that no longer exists
@@ -160,6 +162,7 @@ export function requireSignIn({ reason } = {}) {
         body.querySelector('input[name="otp"]')?.focus();
       } catch (err) {
         setBusy(false);
+        track('login_failed', { stage: 'otp_request' });
         showError(err instanceof ApiError ? err.message : 'Could not send the OTP. Please try again.');
       }
     }
@@ -180,6 +183,11 @@ export function requireSignIn({ reason } = {}) {
         if (name) payload.name = name;
         const res = await api.post('/api/users/mobile-otp-verify', payload, { auth: false });
         if (!res?.token) throw new ApiError(res?.message || 'Could not sign you in.');
+
+        // `signup_completed` and `login_completed` are the app's names for these
+        // two outcomes, and the backend's isNewAccount is the only thing that can
+        // tell them apart — the same request creates or finds the account.
+        track(res.isNewAccount ? 'signup_completed' : 'login_completed', { surface: 'web_popup' });
 
         signIn(res.token, {
           id: res.user?.id,
@@ -217,6 +225,7 @@ export function requireSignIn({ reason } = {}) {
         close();
       } catch (err) {
         setBusy(false);
+        track('login_failed', { stage: 'otp_verify' });
         showError(err instanceof ApiError ? err.message : 'Could not verify that OTP.');
       }
     }

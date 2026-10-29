@@ -1,12 +1,13 @@
-import { api } from './api.js?v=54';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=54';
-import { toast, esc, confirmDialog } from './ui.js?v=54';
-import { isSignedIn } from './session.js?v=54';
-import { requireSignIn } from './auth.js?v=54';
-import { fetchBalance, ensureFunds } from './wallet.js?v=54';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=54';
-import { requestConsultation, RequestClosed } from './request.js?v=54';
-import { trackViewportHeight, keepAwake, ensureAudioPlays } from './mobile.js?v=54';
+import { api } from './api.js?v=55';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=55';
+import { toast, esc, confirmDialog } from './ui.js?v=55';
+import { isSignedIn } from './session.js?v=55';
+import { requireSignIn } from './auth.js?v=55';
+import { fetchBalance, ensureFunds } from './wallet.js?v=55';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=55';
+import { requestConsultation, RequestClosed } from './request.js?v=55';
+import { trackViewportHeight, keepAwake, ensureAudioPlays } from './mobile.js?v=55';
+import { track } from './analytics.js?v=55';
 
 /**
  * call.html — the voice / video consultation screen.
@@ -79,6 +80,7 @@ export async function initCallPage() {
   });
 
   try {
+    track('call_initiated', { astrologer_id: astro.id, rate, call_type: video ? 'video' : 'audio' });
     const { sessionId } = await requestConsultation({
       kind: 'call',
       astrologer: astro,
@@ -91,6 +93,11 @@ export async function initCallPage() {
     });
     runCall({ sessionId, astro, rate, video });
   } catch (err) {
+    track('consult_blocked', {
+      mode: video ? 'video' : 'call',
+      astrologer_id: astro.id,
+      reason: err instanceof RequestClosed ? 'request_closed' : 'error',
+    });
     setStage('Call not started', err instanceof RequestClosed ? err.message : 'Please try again in a moment.', { home: true });
   }
 }
@@ -175,6 +182,11 @@ function runCall({ sessionId, astro, rate, video }) {
     if (connected || ended) return;
     connected = true;
     connectedAt = Date.now();
+    // Fired where the ICE state actually reaches connected, not where the
+    // request was accepted. The app learned this distinction expensively: the
+    // gap between accepted and connected is where the 14% of calls that died in
+    // the permission-prompt race lived, and only a connect event can see it.
+    track('call_connected', { astrologer_id: astro.id, call_type: video ? 'video' : 'audio' });
     live.classList.add('is-connected');
     clearInterval(tick);
     tick = setInterval(paintTimer, 1000);
@@ -264,6 +276,12 @@ function runCall({ sessionId, astro, rate, video }) {
   async function finish(message) {
     if (ended) return;
     ended = true;
+    track('call_ended', {
+      astrologer_id: astro.id,
+      call_type: video ? 'video' : 'audio',
+      connected,
+      duration_seconds: connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0,
+    });
     // ALWAYS settle through the API, even when the other side hung up first —
     // this is what finalises billing.
     try { await api.post('/api/call/end', { sessionId }); } catch (_) {}

@@ -1,5 +1,6 @@
-import { toast } from './ui.js?v=54';
-import { findAstrologer } from './astrologers.js?v=54';
+import { toast } from './ui.js?v=55';
+import { findAstrologer } from './astrologers.js?v=55';
+import { track } from './analytics.js?v=55';
 
 /**
  * Turning a "Chat / Call / Video" button into a consultation.
@@ -24,6 +25,12 @@ export function startConsultation(mode, astrologerId) {
   const cfg = MODE[mode];
   if (!cfg) return;
 
+  // Named for the app's own event, so the website shows up as a surface on the
+  // existing consultation funnel rather than in a chart of its own. The paired
+  // `consult_blocked` below is what makes the drop-off between them readable:
+  // without it a toast-and-stop looks identical to a visitor changing their mind.
+  track('consult_cta_click', { mode, astrologer_id: astrologerId });
+
   const astro = findAstrologer(astrologerId);
 
   // No roster yet (a very early click, or a failed roster fetch) — route anyway.
@@ -35,14 +42,21 @@ export function startConsultation(mode, astrologerId) {
   }
 
   if (!astro[cfg.toggle]) {
+    track('consult_blocked', { mode, astrologer_id: astrologerId, reason: 'service_off' });
     toast(`${astro.name} is not taking ${cfg.label}s right now.`, { kind: 'error' });
     return;
   }
   if (astro.isOffline || astro.isLoggedOut) {
+    track('consult_blocked', { mode, astrologer_id: astrologerId, reason: 'offline' });
     toast(`${astro.name} is offline right now.`, { kind: 'error' });
     return;
   }
   if (astro.isBusy) {
+    track('consult_blocked', {
+      mode,
+      astrologer_id: astrologerId,
+      reason: astro.busyReason === 'live' ? 'busy_live' : 'busy_session',
+    });
     toast(
       astro.busyReason === 'live'
         ? `${astro.name} is live right now and cannot take a ${cfg.label}.`
