@@ -69,15 +69,19 @@ const ROOT = path.join(__dirname, '..');
  */
 const PAGES = {
   'index.html': {
+    title: 'Talk to Verified Astrologers Online | Astrowani',
     desc: "Chat, call or video with India's verified astrologers for love, career, marriage and family guidance — in your own language, available around the clock.",
   },
   'about.html': {
+    title: 'About Astrowani — Verified Astrologers Online',
     desc: 'Why Astrowani is different: a proper first consultation with a verified astrologer, instead of a rushed free reading that leaves you with more questions.',
   },
   'astrologers.html': {
+    title: 'Ask an Astrologer — Verified Astrologers | Astrowani',
     desc: 'Browse every verified astrologer on Astrowani. Each one is reviewed before they can take consultations — filter by what you need help with.',
   },
   'blog.html': {
+    title: 'Astrology Blog — Kundli, Doshas & Remedies | Astrowani',
     desc: 'Astrology articles from the Astrowani team — doshas, remedies, muhurats and everyday guidance, explained plainly and without scare tactics.',
   },
   'blog-post.html': {
@@ -87,27 +91,35 @@ const PAGES = {
     type: 'article',
   },
   'book-call.html': {
+    title: 'Talk to an Astrologer by Phone or Chat | Astrowani',
     desc: 'Book a consultation with a verified astrologer. Choose who you want to speak to, pick chat, call or video, and connect from the Astrowani app.',
   },
   'calculators.html': {
+    title: 'Free Astrology Calculators & Kundli Tools | Astrowani',
     desc: "Free astrology calculators — instant, real calculations for the ones that don't need a full birth chart, and an honest note on the ones that do.",
   },
   'consult.html': {
+    title: 'Astrology Consultation Online — Chat, Call or Video',
     desc: 'Chat, call or video with a verified astrologer on Astrowani. Pick someone available right now and start a one-to-one consultation.',
   },
   'courses.html': {
+    title: 'Learn Astrology — Online Courses | Astrowani',
     desc: "Learn astrology from Astrowani's own verified astrologers — structured courses from first principles through to advanced remedies.",
   },
   'free-services.html': {
+    title: 'Free Kundli, Horoscope & Matching Tools | Astrowani',
     desc: 'Free astrology services on Astrowani — kundli, kundali matching and more. Try the quick versions free here, or get the full reading in the app.',
   },
   'horoscope.html': {
+    title: 'Free Daily Horoscope by Zodiac Sign | Astrowani',
     desc: 'Daily, weekly, monthly and yearly horoscope for every zodiac sign — written for real life, not vague predictions.',
   },
   'marriage.html': {
+    title: 'Online Kundli Matching for Marriage | Astrowani',
     desc: 'Kundali matching for marriage — traditional Ashtakoot Guna Milan, read and explained by a real astrologer rather than reduced to a compatibility score.',
   },
   'panchang.html': {
+    title: "Today's Panchang & Online Muhurat | Astrowani",
     desc: "Today's Panchang — tithi, nakshatra, yoga, karana and the day's auspicious and inauspicious timings, updated every day.",
   },
   'delete-account.html': {
@@ -242,8 +254,18 @@ function crumbGraph(file, html) {
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** Strip tags and entities from the page's own <title> so og:title reads cleanly. */
-function titleOf(html) {
+/**
+ * The page title. `cfg.title` wins where it is set, otherwise the page keeps the
+ * one already in its HTML.
+ *
+ * TITLES ARE KEYWORD-LED, not section-led. Eleven of them used to read
+ * "<Section> — Astrowani" and were under 30 characters against a usable ~60,
+ * which spends the strongest on-page signal on the brand name. They now lead
+ * with the phrase a person actually types, from the keyword list supplied
+ * 2026-10-29, and keep the brand as a suffix.
+ */
+function titleOf(html, cfg) {
+  if (cfg && cfg.title) return cfg.title;
   const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   if (!m) return SITE_NAME;
   return m[1].replace(/<[^>]+>/g, '')
@@ -254,7 +276,7 @@ function block(file, cfg, html) {
   // index.html canonicalises to the bare directory, so / and /index.html agree
   // on one address rather than competing.
   const url = file === 'index.html' ? `${SITE_BASE}/` : `${SITE_BASE}/${file}`;
-  const title = titleOf(html);
+  const title = titleOf(html, cfg);
   const desc = cfg.desc;
   const img = `${SITE_BASE}/${cfg.ogImage || OG_DEFAULT}`;
   const lines = [
@@ -315,8 +337,25 @@ let changed = 0, skipped = [];
 for (const [file, cfg] of Object.entries(PAGES)) {
   const p = path.join(ROOT, file);
   if (!fs.existsSync(p)) { skipped.push(file); continue; }
-  let html = fs.readFileSync(p, 'utf8');
-  const fresh = block(file, cfg, html);
+  const original = fs.readFileSync(p, 'utf8');
+  let html = original;
+
+  // Rewrite the <title> itself where PAGES sets one. Done BEFORE the block is
+  // built so og:title and twitter:title pick up the same string — three places
+  // claiming different titles for one page is its own problem.
+  if (cfg.title) {
+    const want = `<title>${cfg.title.replace(/&/g, '&amp;')}</title>`;
+    if (/<title[^>]*>[\s\S]*?<\/title>/i.test(html)) {
+      html = html.replace(/<title[^>]*>[\s\S]*?<\/title>/i, want);
+    }
+  }
+
+  // Match the file's own line endings. git checks these files out with CRLF on
+  // Windows, and a block written with LF makes every page differ on every run —
+  // a 24-line diff per page, forever, for no actual change. Caught 2026-10-29
+  // when a title-only edit reported 21 pages changed instead of 12.
+  const eol = original.includes('\r\n') ? '\r\n' : '\n';
+  const fresh = block(file, cfg, html).split('\n').join(eol);
 
   const re = new RegExp(`${START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${END}`);
   let next;
@@ -330,7 +369,7 @@ for (const [file, cfg] of Object.entries(PAGES)) {
     next = next.replace(/\n?<link rel="icon" href="assets\/logo\.png">/i, '');
   }
 
-  if (next !== html) {
+  if (next !== original) {
     changed++;
     if (!check) fs.writeFileSync(p, next);
     console.log(`${check ? 'would update' : 'updated'}  ${file}`);
