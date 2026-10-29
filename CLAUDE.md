@@ -3843,3 +3843,168 @@ WordPress site title; the boy/girl prediction screenshot still live on the Play 
 7-minute free-call copy against a database that still says 11; and
 `MD files/astrologer-app-review-notes.txt` is deliberately **untracked** (it holds the video
 link and this repo is public).
+
+---
+
+## Session 2026-10-29: the new website was built well and made invisible (EN)
+
+Full measured audit: [`MD files/SEO-Audit-new-website-2026-10-29.md`](MD%20files/SEO-Audit-new-website-2026-10-29.md).
+Every figure in it came from parsing all 24 pages, loading them in a real browser, reading the
+HTTP headers and fetching both robots.txt files — not from reasoning about the code.
+
+**The verdict in one line: the expensive half was already done and the cheap half was missing.**
+The static pages are real server-rendered HTML with genuine content, clean heading hierarchy and
+100% alt-text coverage — the thing most JS-heavy sites get wrong. But there was **no canonical
+tag on any page, no Open Graph anywhere, no structured data on any static page, and no meta
+description on 22 of 24**.
+
+| | Before | After |
+|---|---|---|
+| pages with no meta description | 22 | 0 |
+| pages with no canonical | 24 | 0 |
+| pages with no Open Graph / Twitter | 24 | 0 |
+| pages with no JSON-LD | 24 | 0 (of the indexable ones) |
+| images with no width/height | 80 | 0 |
+| favicon weight | 521 KB | 1.5 KB |
+| service landing pages | 2 | 8 |
+
+### EN1. THE DOMAIN LIVES IN ONE LINE — `SITE_BASE` in `aw/apply-seo.js`
+
+The site is served from `shop.astrowani.com/test-site/` and moves to its real domain **at
+launch, last** (owner's decision 2026-10-29). Every canonical, `og:url`, `og:image` and JSON-LD
+`@id` is built from that one constant, so the move is: change the line, re-run the script,
+commit. **A canonical pointing at the wrong host is worse than no canonical at all** — it tells
+Google the real page lives somewhere else — which is why this is a script and not 24 hand-edited
+`<head>` blocks. It **exits non-zero if a page exists with no entry in `PAGES`**, because such a
+page silently gets nothing, which is the state the script exists to end.
+
+Three scripts, all idempotent, all run from `astrowani-website/`:
+- `aw/apply-seo.js` — titles, descriptions, canonicals, OG/Twitter, icons, manifest, noindex,
+  and the JSON-LD graph. **Owns the `<title>` too**: a title and a description aimed at
+  different intents is how a page ends up ranking for neither.
+- `aw/apply-image-dims.js` — intrinsic `width`/`height` plus lazy-loading below the fold.
+- `aw/make-icons.js` — favicon set, nav logo and the 1200×630 OG card, from `assets/logo.png`.
+- `aw/service-pages.js` — generates the six service landing pages; `apply-seo.js` imports its
+  `PAGES` for the titles, so neither file can drift from the other.
+
+### EN2. The traps found, in the order they would bite somebody else
+
+- **`robots.txt` ONLY WORKS AT A HOST ROOT.** While the site is at `/test-site/`, a crawler
+  reads `shop.astrowani.com/robots.txt` — a Cloudflare content-signals file — and never sees
+  ours. Its rules and its `Sitemap:` line do nothing today. The sitemap must be submitted by
+  hand in Search Console until the domain move.
+- **A MISSING URL RETURNS 200, NOT 404.** `GET /test-site/no-such-page-xyz` → `200 OK`. This is
+  the most damaging single fault on the site: every typo and every crawler guess becomes a page
+  Google may index, without limit. `404.html` now exists; **nginx still has to serve it with a
+  404 status** — see `vps-deployment/website-nginx-seo.conf`, which also lifts the 4-hour cache
+  on `?v=`-versioned assets. **NOT APPLIED — needs root on the VPS.**
+- **`chat.html` and `call.html` are the LIVE CONSULTATION SCREENS, not landing pages**, and
+  `robots.txt` stated the opposite *in writing* while the sitemap submitted both. Their entire
+  content is "Connecting… / Mute / End chat / Billing is per minute from now"; neither has an
+  `<h1>`. Indexed, Google could serve a page reading "Connecting…" for *chat with an
+  astrologer*. Both are now `noindex`, disallowed, and out of the sitemap. **The real page for
+  that intent is `consult.html`.** The blog agent's `chat`/`call` link targets pointed at them
+  too and were repointed; a test now fails if any link target resolves to a noindex page.
+- **44 MENU DESTINATIONS RESOLVED TO 5 INDEXABLE URLS.** 35 of the mega menu's entries are hash
+  fragments (`calculators.html#numerology`) and **Google strips a fragment entirely** — it is
+  not a URL and never was. The other 9 are query strings sharing one title and one H1. This is
+  the single biggest finding of the audit and the reason the six service pages exist.
+- **ADDING `width`/`height` WITHOUT `height: auto` SQUASHES EVERY IMAGE.** `style.css` had
+  `img { max-width: 100%; display: block; }` with no height rule, so the attribute holds the
+  height while max-width shrinks the width. `apply-image-dims.js` refuses to run if it cannot
+  find that rule.
+- **AND THE `?v=` BUMP IS LOAD-BEARING FOR THE SAME REASON, IN REVERSE.** The new HTML depends
+  on the new CSS, and Cloudflare caches them independently — shipping without bumping would
+  serve old CSS against new HTML and squash every image on the live site.
+- **git checks these files out as CRLF; a script writing `\n` churns all 24 pages on every
+  run**, a 24-line diff per page that changes nothing. It surfaced as "21 pages would change"
+  for an edit touching 12. Both scripts now match the file's own endings.
+- **A FOOTER PATTERN `index.html` DID NOT SHARE.** The footer pass reported "20 pages updated"
+  and the homepage — the page that matters most — was not one of them. Found by reading the
+  rendered DOM, not by trusting the count. **Check the homepage separately after any sweep;
+  its markup differs from every other page.**
+- **The misspelled `astrowani.com/astrologer-ragistration/` is the LIVE page** (200) while the
+  correct spelling 404s. It appears in 20 links. "Correcting" them would break them — the fix
+  belongs on the WordPress side.
+
+### EN3. The six service landing pages
+
+`kundli-reading` · `tarot-reading` · `numerology` · `career-astrology` · `vastu` · `lal-kitab`
+— generated by `aw/service-pages.js`, ~450-510 words each, one H1, an FAQ block, breadcrumbs,
+valid JSON-LD, priority 0.8 in the sitemap, and in the nav and footer.
+
+- **EVERY ONE IS BACKED BY REAL COVERAGE**, checked against the live `categories` table before
+  anything was written: Vedic Astrology 53 astrologers, Love 49, Business 47, Health 46,
+  Marriage 43, Career 42, Palmistry 23, Vastu 20, Numerology 16, Tarot 13. **Lal Kitab had no
+  category at all** and was built only after the owner confirmed the service is offered —
+  **the category itself still needs creating in admin, with an icon** (every existing one has a
+  JPEG in storage; a category without one renders blank in the app).
+- **NOT DUPLICATED:** `marriage.html` keeps kundli matching and `panchang.html` keeps muhurat.
+  Two pages chasing one phrase compete, Google picks one — often the wrong one — and both do
+  worse than a single good page.
+- **The prose was written, not pasted.** The supplied blueprint's long-form sections repeat the
+  target phrases heavily and are in places ungrammatical ("So Astrowani explore to discover
+  online astrology services"). Published as-is that reads as machine filler, which is exactly
+  what Google's helpful-content systems demote — the opposite of what the keywords are for.
+- **`FAQPage` schema is parsed from each page's own visible FAQ block**, not from a second
+  list. Google requires the two to match; parsing what is rendered makes them unable to
+  diverge. 24 question/answer pairs across 7 pages, each verified against the page's own
+  rendered text with tags stripped.
+- **`sameAs` is deliberately absent from the Organization schema.** The live WordPress site
+  carries no social profile links at all — only one YouTube *video*, which is not a channel.
+  A wrong `sameAs` misinforms the knowledge graph. Add real profile URLs when they exist.
+  The postal address is omitted for the same reason.
+
+### EN4. The blog agent's commercial keyword rotation
+
+Owner's brief: three target keywords per article, nine a day across three articles, continuing
+indefinitely. Implemented in `seo.COMMERCIAL` — 11 ordered link targets covering all ten
+supplied keywords. Article N takes entries N*3, N*3+1, N*3+2 modulo the length, seeded by
+`history.usedTopicKeys.size`, which only increases — so the rotation survives restarts and
+never depends on the clock. Verified: 40 consecutive days each give **9 distinct** targets, and
+every target is used within 14 days.
+
+> **THE KEYWORDS ARE LINK TARGETS, NOT ARTICLE TOPICS, and that distinction is the whole
+> design.** An article trying to rank for "vastu consultation" would compete with `vastu.html`,
+> and at three posts a day that is a thousand competitors within a year — every one fighting
+> the page that converts. Used as ANCHORS, the same thousand articles push authority toward it.
+> Same keywords, same frequency, opposite effect. The agent's titles keep coming from its own
+> 2,383-topic catalogue, which is what stops it duplicating itself for two years.
+
+23 new checks (274 total), asserting the PROPERTY rather than the implementation, and **verified
+to fail on two deliberate regressions** — freezing the rotation gives 2 failures, re-pointing
+`chat` at the noindex page gives exactly 1.
+
+### EN5. Other changes the same day
+
+- **The light/dark toggle is gone; the site is dark maroon only** (owner's decision). It lived
+  in FOUR places — the desktop nav button, its handler, the mobile drawer button and the drawer
+  handler — **plus the inline boot script in every page's `<head>`**, which is the one that
+  mattered: left in place, anyone whose `localStorage` still held `astro-theme: 'inverted'`
+  would have kept the light theme forever with no button to change it. The
+  `[data-theme="inverted"]` CSS is deliberately left in both stylesheets; it cannot activate
+  without the attribute, and keeping it makes this reversible in one commit.
+- **The homepage** H1 now reads "Guidance from **Verified** Astrologers" (keyword #1; "real"
+  ranks for nothing), its concern cards resolve to the service pages for 7 of 10 categories,
+  and a 3-section content block before the FAQ carries 13 contextual links and takes the page
+  from ~900 to 1,373 words. **Health is deliberately untargeted** — a "your money or your life"
+  topic held to a far higher bar, and the Wani Shop health claims already had to be reworded
+  once for the App Store (`fc964c0`).
+
+### Still open on the website (owner)
+
+- **`vps-deployment/website-nginx-seo.conf` — NOT APPLIED.** 404 status and cache headers.
+- **The domain move**, last, before launch. Then `BLOG_SITE_BASE_URL` and a one-off UPDATE over
+  `blogs.content_en`/`content_hi`, whose internal links are absolute and point at the test path.
+- **Submit the sitemap in Search Console** once the site is on its final domain.
+- **Lal Kitab category** in admin, with an icon, then tag astrologers.
+- **The blog agent timers were never installed** (`blog_agent_config` says enabled, 4 runs ever,
+  last 2026-10-13, and `systemctl list-timers` on the VPS shows nothing). It is configured
+  correctly and writes nothing until `vps-deployment/blog-agent/install.sh` is run as root.
+- **Hindi has no URLs and no `hreflang`** — it is a client-side dictionary swap in `script.js`,
+  so every Hindi query can only reach an English page. The largest single lever left, and the
+  only item here that is days rather than hours.
+- **Palmistry** has 23 astrologers, no page and no keyword.
+- **The website still says 11 and 12 minutes** for the free call (`about.html` twice,
+  `index.html` plus `assets/promo-free-11min-woman.webp`) while the database, the customer app
+  and the blueprint all say **7**. Owner's decision: fix it last, before launch.
