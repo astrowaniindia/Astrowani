@@ -1118,3 +1118,30 @@ html[data-lang="hi"] .lang-en { display: none; }
   .blog-article-title { font-size: 27px; }
   .blog-hero-image { max-height: 260px; }
 }
+
+/* Readable service guides and linked blog archives. */
+.landing-guide { max-width: 920px; margin: 0 auto; padding: 48px 24px 64px; line-height: 1.8; overflow-wrap: anywhere; }
+.landing-guide h2 { margin: 32px 0 14px; color: var(--maroon); font-family: Georgia, serif; font-size: 28px; line-height: 1.3; }
+.landing-guide h3 { margin: 26px 0 10px; color: var(--maroon); font-size: 19px; line-height: 1.4; }
+.landing-guide p { margin: 0 0 18px; color: var(--ink-soft); }
+.landing-guide a { color: var(--maroon); text-decoration: underline; text-underline-offset: 3px; }
+.blog-filter-bar nav, .archive-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; }
+.archive-pagination a { padding: 12px 18px; color: var(--maroon); text-decoration: underline; }
+.blog-card-title { overflow-wrap: anywhere; }
+#app-3d-poster { max-width: 100%; height: 281px; object-fit: contain; margin-bottom: 16px; }
+.app-3d-model[hidden], #app-3d-poster[hidden], #app-3d-load[hidden] { display: none; }
+#app-3d-status { text-align: center; }
+@media (max-width: 760px) {
+  .astro-marquee-wrap { width: 100%; margin-left: 0; padding-inline: 0; }
+  .app-panel { padding: 28px 20px; gap: 24px; }
+  .svc-grid[style] { grid-template-columns: minmax(0, 1fr) !important; }
+  .landing-guide { padding: 28px 20px 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .astro-marquee-track, .ch-zodiac-bg { animation: none !important; }
+}
+
+/* Horizontal entrance offsets must not widen small screens before scrolling. */
+@media (max-width: 760px) {
+  .reveal-slide-right:not(.is-visible), .reveal-slide-left:not(.is-visible) { transform: translateY(24px); }
+}
