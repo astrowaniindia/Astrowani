@@ -39,8 +39,13 @@ const STATIC_PAGES = [
   ['calculators.html', '0.7', 'monthly'],
   ['free-services.html', '0.7', 'weekly'],
   ['courses.html', '0.6', 'monthly'],
-  ['chat.html', '0.6', 'monthly'],
-  ['call.html', '0.6', 'monthly'],
+  // chat.html and call.html were here and have been REMOVED. They are not
+  // landing pages -- they are the live consultation screens, and their entire
+  // text content is "Astrologer / Connecting... / Mute / End chat / Billing is
+  // per minute from now". Submitting them meant Google could serve a page
+  // reading "Connecting..." for the query "chat with an astrologer". Both now
+  // carry <meta name="robots" content="noindex, follow">. The real landing page
+  // for that intent is consult.html, already listed above at 0.8.
   ['book-call.html', '0.6', 'monthly'],
   ['about.html', '0.4', 'monthly'],
   ['privacy-policy.html', '0.2', 'yearly'],

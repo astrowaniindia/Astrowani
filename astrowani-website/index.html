@@ -26,12 +26,15 @@
 <link rel="icon" href="assets/favicon-16.png" sizes="16x16">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shop.astrowani.com/test-site/#organization","name":"Astrowani","url":"https://shop.astrowani.com/test-site/","logo":{"@type":"ImageObject","@id":"https://shop.astrowani.com/test-site/#logo","url":"https://shop.astrowani.com/test-site/assets/logo.png","width":1024,"height":1024},"description":"Astrowani connects people with verified Indian astrologers for live one-to-one chat, voice and video consultations.","contactPoint":{"@type":"ContactPoint","contactType":"customer support","email":"support@astrowani.com","areaServed":"IN","availableLanguage":["en","hi"]}},{"@type":"WebSite","@id":"https://shop.astrowani.com/test-site/#website","url":"https://shop.astrowani.com/test-site/","name":"Astrowani","inLanguage":"en-IN","publisher":{"@id":"https://shop.astrowani.com/test-site/#organization"}}]}
+</script>
 <!-- SEO:END -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=44">
-<link rel="stylesheet" href="aw/aw.css?v=44">
+<link rel="stylesheet" href="style.css?v=46">
+<link rel="stylesheet" href="aw/aw.css?v=46">
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 </head>
 <body>
@@ -39,7 +42,7 @@
 <div id="scroll-progress"></div>
 
 <!-- Floating nav: hidden above the viewport, slides down once the hero's own pill nav
-     scrolls out of view (see script.js?v=44 onScroll), reverses on the way back up. -->
+     scrolls out of view (see script.js?v=46 onScroll), reverses on the way back up. -->
 <div id="site-nav-floating">
   <div class="nav-inner">
     <a href="index.html" style="display:flex; align-items:center; gap:10px;">
@@ -153,7 +156,7 @@
   <!-- full-bleed: breaks out of the centered .block so the fade sits at the real screen edges -->
   <div class="astro-marquee-wrap">
     <div class="astro-marquee-track astro-marquee-track-ltr" id="astro-marquee-track">
-      <!-- astrologer cards (half the featured set) are injected twice by script.js?v=44 for a seamless loop -->
+      <!-- astrologer cards (half the featured set) are injected twice by script.js?v=46 for a seamless loop -->
     </div>
   </div>
   <div class="astro-marquee-wrap" style="margin-top:20px;">
@@ -369,7 +372,7 @@
     </div>
 
     <div class="cat-grid" id="home-cat-grid">
-      <!-- rendered by script.js?v=44 from the real app categories in astrologers-data.js -->
+      <!-- rendered by script.js?v=46 from the real app categories in astrologers-data.js -->
     </div>
   </div>
 </div>
@@ -449,7 +452,7 @@
       <a href="astrologers.html" class="magnetic" style="font-size:14.5px; font-weight:800; color:var(--maroon); border:1.5px solid var(--border-soft); padding:11px 20px; border-radius:999px;">View all astrologers →</a>
     </div>
     <div id="home-more-astrologers" class="astro-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
-      <!-- rendered by script.js?v=44 from astrologers-data.js, a fresh batch not shown in the marquee -->
+      <!-- rendered by script.js?v=46 from astrologers-data.js, a fresh batch not shown in the marquee -->
     </div>
   </div>
 </div>
@@ -552,7 +555,7 @@
 </footer>
 
 <script src="astrologers-data.js"></script>
-<script src="script.js?v=44"></script>
-<script type="module" src="aw/boot.js?v=44"></script>
+<script src="script.js?v=46"></script>
+<script type="module" src="aw/boot.js?v=46"></script>
 </body>
 </html>
