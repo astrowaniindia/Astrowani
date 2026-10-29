@@ -254,10 +254,6 @@ function astroApplyLang(lang) {
 function injectNavUtilButtons() {
   if (document.querySelector('.nav-util-group')) return;
   const html = `<div class="nav-util-group">
-    <button type="button" class="nav-util-btn" data-role="theme" title="Toggle site colors" aria-label="Toggle site colors">
-      <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.6.6 0 0 0-.7-.8A10 10 0 1 0 21.5 15.6a.6.6 0 0 0-.8-.7z"/></svg>
-      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none;"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
-    </button>
     <button type="button" class="nav-util-btn" data-role="lang" title="Switch to Hindi / अंग्रेज़ी में बदलें" aria-label="Switch language">
       <span class="i18n-glyph">अ</span>
     </button>
@@ -273,19 +269,12 @@ function injectNavUtilButtons() {
     return;
   }
 
-  const themeBtn = document.querySelector('.nav-util-btn[data-role="theme"]');
-  const updateThemeIcon = () => {
-    const inverted = document.documentElement.getAttribute('data-theme') === 'inverted';
-    themeBtn.querySelector('.icon-moon').style.display = inverted ? 'none' : '';
-    themeBtn.querySelector('.icon-sun').style.display = inverted ? '' : 'none';
-  };
-  updateThemeIcon();
-  themeBtn.addEventListener('click', () => {
-    const inverted = document.documentElement.getAttribute('data-theme') === 'inverted';
-    if (inverted) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('astro-theme', 'default'); }
-    else { document.documentElement.setAttribute('data-theme', 'inverted'); localStorage.setItem('astro-theme', 'inverted'); }
-    updateThemeIcon();
-  });
+  // THE LIGHT/DARK TOGGLE WAS REMOVED 2026-10-29, owner's decision: the site is
+  // the dark maroon theme only. The [data-theme="inverted"] rules are LEFT in
+  // style.css deliberately -- they cannot activate without the attribute, and
+  // keeping them makes this reversible in one commit rather than a rewrite.
+  // A visitor whose localStorage still holds astro-theme:'inverted' simply gets
+  // the dark theme, because nothing reads that key any more.
 
   const langBtn = document.querySelector('.nav-util-btn[data-role="lang"]');
   langBtn.addEventListener('click', () => {
@@ -373,7 +362,6 @@ function injectMobileNav() {
       </nav>
 
       <footer class="m-nav-foot">
-        <button type="button" class="m-nav-util" data-role="m-theme">Switch colours</button>
         <button type="button" class="m-nav-util" data-role="m-lang">हिंदी / English</button>
       </footer>
     </aside>`;
@@ -413,11 +401,8 @@ function injectMobileNav() {
   // The account links open a popup or navigate; either way the drawer should go.
   panel.querySelectorAll('.nav-login, .m-nav-cta').forEach((a) => a.addEventListener('click', close));
 
-  // The drawer's own theme/language buttons drive the existing nav-util buttons,
-  // so there is one implementation of each and they cannot drift apart.
-  panel.querySelector('[data-role="m-theme"]').addEventListener('click', () => {
-    document.querySelector('.nav-util-btn[data-role="theme"]')?.click();
-  });
+  // The drawer's own language button drives the existing nav-util button, so
+  // there is one implementation and the two cannot drift apart.
   panel.querySelector('[data-role="m-lang"]').addEventListener('click', () => {
     document.querySelector('.nav-util-btn[data-role="lang"]')?.click();
   });
