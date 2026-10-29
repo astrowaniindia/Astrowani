@@ -1,4 +1,4 @@
-import { api } from './api.js?v=50';
+import { api } from './api.js?v=51';
 
 /**
  * The blog section.

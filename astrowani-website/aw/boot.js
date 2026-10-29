@@ -13,13 +13,13 @@
  * and the nav still works. That is why boot never throws past this file.
  */
 
-import { wireAccountUi } from './account.js?v=50';
-import { wireActionButtons } from './consult.js?v=50';
-import { start as startRoster } from './astrologers.js?v=50';
-import { isSignedIn } from './session.js?v=50';
-import { fetchBalance } from './wallet.js?v=50';
-import { showResumeBar } from './resume.js?v=50';
-import { toast } from './ui.js?v=50';
+import { wireAccountUi } from './account.js?v=51';
+import { wireActionButtons } from './consult.js?v=51';
+import { start as startRoster } from './astrologers.js?v=51';
+import { isSignedIn } from './session.js?v=51';
+import { fetchBalance } from './wallet.js?v=51';
+import { showResumeBar } from './resume.js?v=51';
+import { toast } from './ui.js?v=51';
 
 let started = null;
 
